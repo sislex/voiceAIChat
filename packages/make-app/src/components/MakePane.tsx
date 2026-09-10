@@ -41,12 +41,11 @@ import { pushHistory, readHistory, type FileVersion } from '@voicechat/ui-founda
 import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTemplateCompatible, makeStackLabel, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment, type MakePresenceClient, type MakeTestFile, type MakeProjectNotes } from '@shared/make'
 
-// Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
-// сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
-// /api/preview/make/<conv>/, пресеты ширины, выбор элемента для правки через чат),
-// «Код» (дерево файлов + редактор с сохранением) и «История» (снимки/откат/сброс).
-// Ассистент меняет файлы MCP-инструментами; сервер шлёт `make.changed` — панель
-// перезагружает превью и, если редактор не грязный, содержимое открытого файла.
+// Make's project panel, similar to Figma Make: the conversation's static site lives in a server
+// workshop. Preview mode uses a same-origin iframe at /api/preview/make/<conv>/ with width presets
+// and element selection for chat-driven edits. Code mode has a file tree and editor; History
+// supports snapshots, restore, and reset. Assistant MCP edits trigger make.changed, refreshing the
+// preview and any open file without unsaved edits.
 
 export interface MakeSelectedElement {
   selector: string
@@ -63,7 +62,7 @@ const MODE_LABEL: Record<Mode, string> = { preview: 'Превью', code: 'Ко�
 type Device = 'desktop' | 'tablet' | 'mobile' | 'all'
 const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390, all: null }
 const DEVICE_LABEL: Record<Device, string> = { desktop: 'Десктоп', tablet: 'Планшет', mobile: 'Телефон', all: 'Три ширины рядом' }
-/** Три ширины рядом (roadmap-4 п.21): дополнительные кадры к основному; скролл синхронизируется через vc-make.state → vc-make.restore. */
+/** Three side-by-side widths (roadmap-4, item 21): extra frames synchronize scrolling through vc-make.state and vc-make.restore. */
 const SYNC_WIDTHS = [820, 390]
 
 function formatSize(bytes: number): string {
@@ -74,7 +73,7 @@ function formatTime(ms: number): string {
   return new Date(ms).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-/** Дерево: файлы группируются по первому каталогу, корневые — первыми. */
+/** Group the file tree by the first directory, with root files first. */
 function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFileInfo[] }> {
   const groups = new Map<string, MakeFileInfo[]>()
   for (const file of files) {
@@ -95,15 +94,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [fullscreen, setFullscreen] = useState(false)
   const [inspect, setInspect] = useState(false)
   const [selected, setSelected] = useState<MakeSelectedElement | null>(null)
-  // Последнее известное состояние страницы превью (скролл/hash) — восстанавливается после перезагрузки (п.11).
+  // Restore the preview's last known scroll position and hash after reload (item 11).
   const pageStateRef = useRef<{ x: number; y: number; hash: string } | null>(null)
   const syncFramesRef = useRef<Array<HTMLIFrameElement | null>>([])
   const syncMuteUntil = useRef(0)
-  // Тема/язык превью (п.12): пересылаются в iframe и повторяются после каждой перезагрузки.
+  // Preview theme and language (item 12): send them to the iframe again after every reload.
   const [previewScheme, setPreviewScheme] = useState<'auto' | 'light' | 'dark'>('auto')
   const [previewLang, setPreviewLang] = useState('')
   const envRef = useRef<{ scheme: 'auto' | 'light' | 'dark'; lang: string; state: 'hover' | 'focus' | 'active' | null; reducedMotion: boolean; slowMs: number }>({ scheme: 'auto', lang: '', state: null, reducedMotion: false, slowMs: 0 })
-  /** Эмуляция окружения превью (roadmap-4 п.20): принудительное состояние выбранного элемента, reduced-motion, задержка моков. */
+  /** Preview environment emulation (roadmap-4, item 20): forced element state, reduced motion, and mock delay. */
   const [forcedState, setForcedState] = useState<'hover' | 'focus' | 'active' | null>(null)
   const [reducedMotion, setReducedMotion] = useState(false)
   const [slowMs, setSlowMs] = useState(0)
@@ -113,11 +112,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const toggleReducedMotion = (): void => { const next = !reducedMotion; setReducedMotion(next); sendEnv(previewScheme, previewLang, { reducedMotion: next }) }
   const cycleSlowMs = (): void => { const next = slowMs === 0 ? 1500 : slowMs === 1500 ? 4000 : 0; setSlowMs(next); sendEnv(previewScheme, previewLang, { slowMs: next }) }
   const cycleScheme = (): void => { const next = previewScheme === 'auto' ? 'dark' : previewScheme === 'dark' ? 'light' : 'auto'; setPreviewScheme(next); sendEnv(next, previewLang) }
-  // Опрос same-origin iframe: события scroll из родителя ненадёжны, а прямое чтение — всегда работает.
+  // Poll the same-origin iframe directly because parent-side scroll events are unreliable.
   useEffect(() => {
     const timer = setInterval(() => {
       const w = frameRef.current?.contentWindow
-      try { if (w && w.document?.readyState === 'complete') pageStateRef.current = { x: w.scrollX, y: w.scrollY, hash: w.location.hash } } catch { /* чужой origin — не наш случай */ }
+      try { if (w && w.document?.readyState === 'complete') pageStateRef.current = { x: w.scrollX, y: w.scrollY, hash: w.location.hash } } catch { /* Cross-origin frames are outside this workflow. */ }
     }, 500)
     return () => clearInterval(timer)
   }, [])
@@ -130,7 +129,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
   const [styleOpen, setStyleOpen] = useState(false)
   const previewStyles = (values: StyleValues): void => { frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.style', values }, '*') }
-  /** Дописать правило в главную таблицу стилей проекта (первый <link rel=stylesheet> из index.html, иначе styles.css). */
+  /** Append a rule to the project's main stylesheet: the first stylesheet link in index.html, or styles.css as fallback. */
   const writeStyles = async (rule: string, values: StyleValues): Promise<void> => {
     try {
       let target = 'styles.css'
@@ -138,10 +137,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         const index = await api['make:read']({ conversationId, path: 'index.html' })
         const m = index.content.match(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']([^"'#?]+)["']/i) ?? index.content.match(/<link[^>]*href=["']([^"'#?]+\.css)["'][^>]*rel=["']stylesheet["']/i)
         if (m?.[1] && !/^https?:/i.test(m[1])) target = m[1].replace(/^\.\//, '')
-      } catch { /* нет index.html — пишем в styles.css */ }
+      } catch { /* Without index.html, write to styles.css. */ }
       let css = ''
       try { css = (await api['make:read']({ conversationId, path: target })).content } catch { css = '' }
-      const block = `\n/* Правка из панели стилей Make */\n${cssRule(rule, values)}`
+      const block = `\n/* Edited in the Make style panel */\n${cssRule(rule, values)}`
       const next = await api['make:write']({ conversationId, path: target, content: css.replace(/\s*$/, '\n') + block })
       setState(next); setPreviewRev(next.rev)
       toast.success(`Правило ${rule} записано в ${target}`)
@@ -151,9 +150,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [content, setContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
-  // Вкладки открытых файлов (как в VS Code) и автосохранение с паузой — правки не теряются при переключении.
+  // Open-file tabs and debounced autosave preserve edits when switching files, as in VS Code.
   const [tabs, setTabs] = useState<string[]>([])
-  // Содержимое всех текстовых файлов — для моделей Monaco (резолв импортов). Перечитываем по rev.
+  // All text file contents for Monaco models and import resolution; reload on revision changes.
   const [projectFiles, setProjectFiles] = useState<Array<{ path: string; content: string }>>([])
   useEffect(() => {
     if (mode !== 'code' || !state) return
@@ -165,33 +164,33 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }, [mode, state?.rev, conversationId, api, state])
   const [autosave, setAutosave] = useState<boolean>(() => { try { return localStorage.getItem(MAKE_AUTOSAVE_KEY) !== 'off' } catch { return true } })
   const [formatOnSave, setFormatOnSave] = useState<boolean>(() => { try { return localStorage.getItem(MAKE_FORMAT_ON_SAVE_KEY) === 'on' } catch { return false } })
-  const toggleFormatOnSave = (): void => { setFormatOnSave((v) => { const next = !v; try { localStorage.setItem(MAKE_FORMAT_ON_SAVE_KEY, next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
-  const toggleAutosave = (): void => { setAutosave((v) => { const next = !v; try { localStorage.setItem(MAKE_AUTOSAVE_KEY, next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
+  const toggleFormatOnSave = (): void => { setFormatOnSave((v) => { const next = !v; try { localStorage.setItem(MAKE_FORMAT_ON_SAVE_KEY, next ? 'on' : 'off') } catch { /* Private browsing. */ } return next }) }
+  const toggleAutosave = (): void => { setAutosave((v) => { const next = !v; try { localStorage.setItem(MAKE_AUTOSAVE_KEY, next ? 'on' : 'off') } catch { /* Private browsing. */ } return next }) }
   const [saving, setSaving] = useState(false)
-  /** Превью готово к загрузке: cookie выпущена (или гейта нет). */
+  /** The preview can load once its cookie has been issued, or when no gate is configured. */
   const [previewReady, setPreviewReady] = useState(!ensurePreview)
-  /** Диалог ввода имени (новый файл / переименование / подпись снимка) — вместо window.prompt. */
+  /** Name-entry dialog for new files, renaming, and snapshot labels, replacing window.prompt. */
   const [ask, setAsk] = useState<{ title: string; label: string; initial: string; submit: string; onSubmit: (value: string) => void } | null>(null)
   const [askValue, setAskValue] = useState('')
   const [publishOpen, setPublishOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [issues, setIssues] = useState<MakeCheckIssue[] | null>(null)
-  // Поиск: фильтр дерева по пути — мгновенно; по содержимому — запросом на Enter.
+  // Filter tree paths immediately; search file contents on Enter.
   const [query, setQuery] = useState('')
   const [matches, setMatches] = useState<MakeSearchMatch[] | null>(null)
   const [searching, setSearching] = useState(false)
-  // Сториз: список файлов *.stories.* и выбранная стори; раннер — отдельная страница превью.
+  // Story files and the selected story; the runner is a separate preview page.
   const [storyFiles, setStoryFiles] = useState<MakeStoryFile[] | null>(null)
   const [story, setStory] = useState<{ file: string; name: string } | null>(null)
-  // Controls: args, которые раннер разрешил для стори, и переопределения из панели (в файл не пишутся).
+  // Controls store runner-accepted story args and panel overrides without writing them to files.
   const [storyArgs, setStoryArgs] = useState<Record<string, unknown> | null>(null)
   const [argOverrides, setArgOverrides] = useState<Record<string, unknown>>({})
   const [argOptions, setArgOptions] = useState<Record<string, string[]>>({})
   const [argTypes, setArgTypes] = useState<Record<string, ArgType>>({})
-  // Результаты play-функций (п.18): ключ file::story → passed/failed + ошибка.
+  // Play-function results (item 18): map file::story to passed/failed and any error.
   const [playResults, setPlayResults] = useState<Record<string, { status: 'passed' | 'failed'; ms: number; error?: string }>>({})
   const [ideasOpen, setIdeasOpen] = useState(false)
-  // Консоль превью: строки из iframe (console.* и ошибки), сбрасываются при перезагрузке превью.
+  // Preview console messages and errors from the iframe, cleared on preview reload.
   const [consoleLines, setConsoleLines] = useState<MakeConsoleLine[]>([])
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [network, setNetwork] = useState<MakeNetworkEntry[]>([])
@@ -203,18 +202,18 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [projectSettings, setProjectSettings] = useState<MakeProjectNotes | null>(null)
   useEffect(() => { void api['make:notes']({ conversationId }).then(setProjectSettings).catch(() => undefined) }, [api, conversationId])
   const [taskLinksOpen, setTaskLinksOpen] = useState(false)
-  /** Обмен с репозиторием проекта: компоненты и стили туда-обратно. */
+  /** Synchronize components and styles with the project repository in both directions. */
   const [projectSyncOpen, setProjectSyncOpen] = useState(false)
-  /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
+  /** Open-file lines changed by the assistant's latest write (roadmap-4, item 9). */
   const [changedLines, setChangedLines] = useState<number[]>([])
-  /** Таблица коллекции моков (roadmap-4 п.29): для mock/*.json с массивом объектов — вид «Таблица» по умолчанию. */
+  /** Mock collection tables (roadmap-4, item 29): use table view by default for mock/*.json arrays of objects. */
   const [mockView, setMockView] = useState<'table' | 'json'>('table')
   const mockTable = useMemo(() => (selectedPath ? mockTableFor(selectedPath, content) : null), [selectedPath, content])
-  /** Сплит «код | превью» и zen-режим (roadmap-4 п.16): доля редактора хранится между сессиями. */
+  /** Code/preview split and zen mode (roadmap-4, item 16): persist the editor's size across sessions. */
   const [split, setSplit] = useState<boolean>(() => { try { return localStorage.getItem(MAKE_SPLIT_KEY) === 'on' } catch { return false } })
   const [splitPct, setSplitPct] = useState<number>(() => { try { const v = Number(localStorage.getItem(MAKE_SPLIT_PCT_KEY)); return v >= 25 && v <= 80 ? v : 55 } catch { return 55 } })
   const [zen, setZen] = useState(false)
-  const toggleSplit = (): void => setSplit((v) => { const next = !v; try { localStorage.setItem(MAKE_SPLIT_KEY, next ? 'on' : 'off') } catch { /* приватный режим */ } return next })
+  const toggleSplit = (): void => setSplit((v) => { const next = !v; try { localStorage.setItem(MAKE_SPLIT_KEY, next ? 'on' : 'off') } catch { /* Private browsing. */ } return next })
   const splitDrag = usePointerDrag()
   const codeRef = useRef<HTMLDivElement | null>(null)
   const beginSplitDrag = (e: React.PointerEvent<HTMLElement>): void => {
@@ -231,7 +230,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         last = Math.min(80, Math.max(25, Math.round(((pt.x - box.left - tree) / Math.max(1, usable)) * 100)))
         setSplitPct(last)
       },
-      onDrop: () => { try { localStorage.setItem(MAKE_SPLIT_PCT_KEY, String(last)) } catch { /* приватный режим */ } },
+      onDrop: () => { try { localStorage.setItem(MAKE_SPLIT_PCT_KEY, String(last)) } catch { /* Private browsing. */ } },
       onCancel: () => undefined
     })
   }
@@ -241,16 +240,17 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [zen])
-  /** Мультивыбор файлов в дереве (roadmap-4 п.10): Ctrl/Cmd-клик — переключить, Shift-клик — диапазон. */
+  /** File tree multiselect (roadmap-4, item 10): Ctrl/Cmd-click toggles one file; Shift-click selects a range. */
   const [picked, setPicked] = useState<MakeSelectionState>(EMPTY_MAKE_SELECTION)
-  /** Содержимое открытого файла на старте хода — база для diff: за ход ассистент может записать файл несколько раз. */
+  /** Open-file content at turn start is the diff baseline because the assistant may rewrite it several times during one turn. */
   const turnBaseRef = useRef<{ path: string | null; content: string }>({ path: null, content: '' })
-  // Чипы «следующий шаг» (roadmap-4 п.8): показываем после завершения хода ассистента, пока пользователь не отправил следующий.
+  // Next-step chips (roadmap-4, item 8): show after the assistant finishes until the user sends
+  // another turn.
   const [nextStepsOpen, setNextStepsOpen] = useState(false)
   const prevTurnRef = useRef(false)
   useEffect(() => { if (prevTurnRef.current && !turnActive) setNextStepsOpen(true); if (turnActive) setNextStepsOpen(false); prevTurnRef.current = turnActive }, [turnActive])
-  // Тесты компонентов (roadmap-4 п.3): *.test.tsx выполняются в скрытом iframe-раннере __tests__,
-  // результаты приходят кадрами vc-make.test / vc-make.tests-done.
+  // Component tests (roadmap-4, item 3): run *.test.tsx in a hidden __tests__ iframe and receive
+  // vc-make.test / vc-make.tests-done messages.
   const [testFiles, setTestFiles] = useState<MakeTestFile[]>([])
   const [runningTests, setRunningTests] = useState<string | null>(null)
   const [testResults, setTestResults] = useState<Record<string, Array<{ name: string; status: 'passed' | 'failed' | 'pending'; ms: number; error?: string }>>>({})
@@ -284,10 +284,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const failedTests = Object.entries(testResults).flatMap(([file, list]) => list.filter((r) => r.status === 'failed').map((r) => ({ file, ...r })))
   const testsPrompt = (): string => `Упали тесты компонентов:\n${failedTests.map((f) => `- ${f.file} › ${f.name}: ${f.error ?? ''}`).join('\n')}\nПрочитай тест и компонент (make_read_file), найди причину — в компоненте или в тесте — и исправь. `
 
-  /** Файл, только что записанный ассистентом — вкладка коротко подсвечивается (roadmap-2 п.10). */
+  /** Briefly highlight the tab of a file just written by the assistant (roadmap-2, item 10). */
   const [flashPath, setFlashPath] = useState<string | null>(null)
-  // Визуальный diff хода (roadmap-2 п.8): «до» снимаем при старте хода, «после» — когда ход кончился и
-  // превью перезагрузилось после правок. Только если файлы менялись; хранится в памяти вкладки.
+  // Visual turn diff (roadmap-2, item 8): capture before the turn and after it finishes and the
+  // edited preview reloads. Only capture turns that changed files, keeping images in tab memory.
   const [turnDiff, setTurnDiff] = useState<{ before: string; after: string } | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
   const turnShotRef = useRef<{ before: string | null; changed: boolean; active: boolean }>({ before: null, changed: false, active: false })
@@ -306,14 +306,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       st.active = false
       if (!st.changed || !st.before) return
       const before = st.before
-      // Даём превью перезагрузиться по make.changed (key={previewRev}) и отрисоваться.
+      // Allow the preview to reload through make.changed with key={previewRev}, then render.
       const t = window.setTimeout(() => { void snapPreview().then((after) => { if (after) { setTurnDiff((prev) => { if (prev) { URL.revokeObjectURL(prev.before); URL.revokeObjectURL(prev.after) } return { before, after } }) } }) }, 1200)
       return () => window.clearTimeout(t)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnActive])
   const dismissDiff = (): void => { setTurnDiff((prev) => { if (prev) { URL.revokeObjectURL(prev.before); URL.revokeObjectURL(prev.after) } return null }); setDiffOpen(false) }
-  // Самопроверка (roadmap-4 п.5): скриншот «после» + исходный запрос уходят ассистенту — он сверяет результат с заданием.
+  // Self-check (roadmap-4, item 5): send the after screenshot and original request to the assistant
+  // for comparison.
   const verifyResult = async (): Promise<void> => {
     if (!turnDiff || !onAttachImage) return
     const blob = await readBrowserBlob(turnDiff.after)
@@ -330,14 +331,17 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     onInsertToChat?.('На скриншотах — превью до и после последней правки: ')
     toast.success('Оба скриншота добавлены во вложения')
   }
-  // PWA в экспорте (п.35): манифест + service worker + иконка, ссылки инъектируются в копию index.html.
+  // PWA export (item 35): inject manifest, service-worker, and icon links into the archived copy of
+  // index.html.
   const [exportPwa, setExportPwa] = useState(false)
-  /** Хостинг для экспорта (roadmap-4 п.36): netlify.toml / vercel.json добавляются в архив. */
+  /** Export hosting configuration (roadmap-4, item 36): add netlify.toml or vercel.json to the archive. */
   const [exportDeploy, setExportDeploy] = useState<MakeDeployTarget | ''>('')
   const exportUrl = (vite: boolean): string => `${REST.makeExport(conversationId)}?${vite ? 'vite=1&' : ''}${exportPwa ? 'pwa=1&' : ''}${exportDeploy ? `deploy=${exportDeploy}` : ''}`.replace(/[?&]$/, '')
-  // Телефон (п.34): дерево файлов заменяет выпадающий список, редактор — лёгкий (см. CodeEditor).
+  // Phone layout (item 34): replace the file tree with a dropdown and use the lightweight editor;
+  // see CodeEditor.
   const isPhone = useMediaQuery(PHONE_EDITOR_QUERY)
-  // Комментарии к элементам (п.32): список грузим один раз при открытии панели, метки шлём в превью на каждый ready.
+  // Element comments (item 32): load the list when the panel opens and send markers whenever the
+  // preview reports ready.
   const [comments, setComments] = useState<MakeComment[] | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const commentsRef = useRef<MakeComment[]>([])
@@ -346,7 +350,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.pins', items: list.map((c) => ({ selector: c.selector, n: open.indexOf(c) + 1, text: c.text, resolved: c.resolved })) }, '*')
   }
   const applyComments = (list: MakeComment[]): void => {
-    // Уведомление владельцу (roadmap-4 п.35): новые комментарии зрителей приходят по make.changed — показываем тост.
+    // Owner notifications (roadmap-4, item 35): show a toast for new viewer comments received
+    // through make.changed.
     const prevPending = new Set((commentsRef.current ?? []).filter((c) => c.status === 'pending').map((c) => c.id))
     const fresh = commentsRef.current ? list.filter((c) => c.status === 'pending' && !prevPending.has(c.id)) : []
     if (fresh.length) toast.info(fresh.length === 1 ? `Новый комментарий зрителя${fresh[0]!.guestName ? ` (${fresh[0]!.guestName})` : ''}: «${fresh[0]!.text.slice(0, 80)}» — на модерации` : `Новых комментариев зрителей: ${fresh.length} — на модерации`)
@@ -361,7 +366,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const commentAction = async (run: () => Promise<{ comments: MakeComment[] }>): Promise<void> => {
     try { applyComments((await run()).comments) } catch (e) { toast.error(describeError(e)) }
   }
-  /** Текст, отредактированный в превью (п.17): ищем старый текст как уникальную подстроку одного файла и записываем новый. */
+  /** Preview text edits (item 17): find the old text as a unique substring in one file, then write the replacement. */
   const applyPreviewTextEdit = async (before: string, after: string): Promise<void> => {
     try {
       const found = (await api['make:search']({ conversationId, query: before.trim().split(/\s+/)[0] ?? before })).matches
@@ -380,10 +385,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       toast.success(`Текст записан в ${hit.path}`)
     } catch (e) { toast.error(describeError(e)) }
   }
-  /** Перестановка секции из превью (п.18): оба фрагмента должны найтись в одном файле ровно по разу. */
+  /** Reorder preview sections (item 18): both fragments must occur exactly once in the same file. */
   const applyPreviewReorder = async (moved: string, target: string, position: 'before' | 'after'): Promise<void> => {
     try {
-      // Обработчик живёт в замыкании эффекта — состояние берём свежее, а не из пропсов рендера.
+      // The handler is captured by an effect; read current state rather than stale render props.
       const files = (await api['make:state']({ conversationId })).files.map((f) => f.path).filter((p) => /\.(html?|tsx|jsx)$/i.test(p))
       const hits: Array<{ path: string; next: string }> = []
       for (const path of files) {
@@ -407,7 +412,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [importing, setImporting] = useState(false)
   const importZipRef = useRef<HTMLInputElement>(null)
   const [diffs, setDiffs] = useState<Record<string, MakeSnapshotDiff | 'loading'>>({})
-  // Diff-вью одного файла: снимок ↔ текущее.
+  // Single-file diff between a snapshot and the current version.
   const [fileDiff, setFileDiff] = useState<{ snapshotId: string; label: string; path: string; original: string; modified: string } | null>(null)
   const openFileDiff = async (snapshotId: string, label: string, path: string): Promise<void> => {
     try {
@@ -455,7 +460,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [checking, setChecking] = useState(false)
   const openAsk = (title: string, label: string, initial: string, submit: string, onSubmit: (value: string) => void): void => { setAskValue(initial); setAsk({ title, label, initial, submit, onSubmit }) }
   const frameRef = useRef<HTMLIFrameElement | null>(null)
-  // Перетаскивание файлов с рабочего стола в дерево — та же загрузка, что и кнопкой.
+  // Dropping desktop files onto the tree uses the same upload flow as the button.
   const [dropActive, setDropActive] = useState(false)
   const onDragOver = (e: DragEvent): void => {
     if (!Array.from(e.dataTransfer.types).includes('Files')) return
@@ -468,9 +473,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     void uploadFiles(e.dataTransfer.files)
   }
   const dirty = content !== savedContent
-  // Presence (roadmap-2 п.14): heartbeat раз в 15 с и при смене файла/грязности; список приходит WS-кадром
-  // make.presence (или ответом heartbeat). Другая вкладка с несохранёнными правками того же файла — мягкая
-  // блокировка: редактор read-only, чтобы две вкладки не затирали друг друга автосохранением.
+  // Presence (roadmap-2, item 14): send heartbeats every 15 seconds and when the current file or
+  // unsaved state changes. Receive tab lists through make.presence or heartbeat responses. If
+  // another tab has unsaved edits to the same file, make this editor read-only to prevent
+  // conflicting autosaves.
   const clientIdRef = useRef(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
   const [presence, setPresence] = useState<MakePresenceClient[]>([])
   const others = presence.filter((c) => c.clientId !== clientIdRef.current)
@@ -502,7 +508,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }, [api, conversationId])
 
   const openFile = useCallback(async (path: string): Promise<void> => {
-    // Бинарник (картинка, шрифт) редактировать нельзя — показываем его просмотр вместо текста.
+    // Show a viewer for binary images and fonts instead of a text editor.
     setTabs((list) => (list.includes(path) ? list : [...list, path]))
     setChangedLines([])
     if (!isMakeTextPath(path)) { setSelectedPath(path); setContent(''); setSavedContent(''); return }
@@ -516,7 +522,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     }
   }, [api, conversationId, toast, loadTests])
 
-  // Cookie-гейт превью — один раз на монтирование панели.
+  // Run the preview cookie gate once per panel mount.
   useEffect(() => {
     if (!ensurePreview) return
     let cancelled = false
@@ -524,7 +530,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     return () => { cancelled = true }
   }, [ensurePreview])
 
-  // Первая загрузка: состояние проекта и index.html в редакторе.
+  // Initial load: fetch project state and open index.html in the editor.
   useEffect(() => {
     let cancelled = false
     void refresh().then((next) => {
@@ -535,19 +541,20 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     return () => { cancelled = true }
   }, [refresh, openFile])
 
-  // Изменения от ассистента/другой вкладки: перезагрузить превью и дерево;
-  // открытый файл обновляем только если пользователь его не правил.
+  // Assistant or other-tab changes refresh the preview and file tree. Refresh the open file only
+  // when it has no user edits.
   useEffect(() => {
     if (!make) return
     return make.onChanged((m) => {
       if (m.conversationId !== conversationId) return
-      // Комментарии из другой вкладки/окна (roadmap-2 п.7): файлы не менялись — только перечитать список.
+      // Comments changed in another tab or window (roadmap-2, item 7): reload only the list because
+      // files did not change.
       if (m.paths.includes(MAKE_COMMENTS_SYNC_PATH)) { void api['make:comments']({ conversationId }).then((r) => applyComments(r.comments)).catch(() => undefined); return }
       if (turnShotRef.current.active) turnShotRef.current.changed = true
       setPreviewRev(m.rev)
       void refresh()
       if (selectedPath && m.paths.includes(selectedPath) && !dirty) {
-        // Inline-diff (roadmap-4 п.9): сравниваем прежнее содержимое с тем, что записал ассистент.
+        // Inline diff (roadmap-4, item 9): compare the previous content with the assistant's write.
         const base = turnBaseRef.current
         const before = base.path === selectedPath ? base.content : savedContent
         void api['make:read']({ conversationId, path: selectedPath }).then((file) => {
@@ -555,9 +562,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           setChangedLines(turnShotRef.current.active ? diffLines(before, file.content) : [])
         }).catch(() => void openFile(selectedPath))
       }
-      // Правки ассистента «на глазах» (roadmap-2 п.10): в режиме «Код» без несохранённых правок открываем
-      // файл, который он только что записал, и подсвечиваем вкладку. MCP пишет файл целиком, поэтому
-      // побайтовый стриминг невозможен — показываем результат каждой записи сразу.
+      // Visible assistant edits (roadmap-2, item 10): in Code mode without unsaved edits, open the
+      // file just written and highlight its tab. MCP writes whole files, so show each completed
+      // write rather than a byte stream.
       const written = m.paths.find((p) => isMakeTextPath(p) && !p.startsWith('.'))
       if (turnShotRef.current.active && written && !dirty && mode === 'code' && written !== selectedPath) {
         void openFile(written)
@@ -567,14 +574,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     })
   }, [make, conversationId, refresh, openFile, selectedPath, dirty, mode, savedContent, api])
 
-  // Сообщения из превью: выбранный элемент (режим «Выбрать элемент»).
+  // Preview messages include the element selected in picker mode.
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       const fromSync = syncFramesRef.current.some((f) => f?.contentWindow === event.source)
       if (event.source !== frameRef.current?.contentWindow && !fromSync) return
       const data = event.data as { type?: string; before?: string; after?: string; moved?: string; target?: string; position?: string; selector?: string; tag?: string; text?: string; html?: string; id?: string; className?: string; styles?: StyleValues } | null
       if (!data || typeof data !== 'object') return
-      // Три ширины рядом (п.21): скролл любого кадра повторяют остальные; эхо гасим окном в 300 мс.
+      // Three side-by-side widths (item 21): mirror scrolling between frames and suppress echoes
+      // for 300 ms.
       if (data.type === 'vc-make.state' && typeof (data as { y?: unknown }).y === 'number') {
         const all = [frameRef.current?.contentWindow, ...syncFramesRef.current.map((f) => f?.contentWindow)].filter(Boolean) as Window[]
         const from = all.find((w) => w === event.source)
@@ -583,7 +591,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           for (const w of all) if (w !== from) w.postMessage({ type: 'vc-make.restore', x: 0, y: (data as { y: number }).y }, '*')
         }
       }
-      // Дополнительные кадры дают только скролл; выбор элемента, текст и прочее — от основного.
+      // Extra frames only contribute scroll state; selection, text edits, and other actions come
+      // from the main frame.
       if (fromSync) { if (data.type === 'vc-make.ready' && event.source) (event.source as Window).postMessage({ type: 'vc-make.env', ...envRef.current, state: null }, '*'); return }
       if (data.type === 'vc-make.state' && event.source === frameRef.current?.contentWindow) {
         const s = data as unknown as { x: number; y: number; hash: string }
@@ -592,7 +601,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       if (data.type === 'vc-make.ready') {
         frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.inspect', enabled: inspect }, '*')
         if (commentsRef.current.length) sendPins()
-        // Превью перезагрузилось (правка ассистента/своя) — вернуть скролл и якорь, чтобы не прыгать наверх.
+        // Restore scroll position and hash after any preview reload to avoid jumping to the top.
         if (pageStateRef.current) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.restore', ...pageStateRef.current }, '*')
         if (envRef.current.scheme !== 'auto' || envRef.current.lang || envRef.current.reducedMotion || envRef.current.slowMs) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', ...envRef.current, state: null }, '*')
       } else if (data.type === 'vc-make.selected' && data.selector) {
@@ -613,11 +622,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }, [inspect, previewRev])
 
   const [formatting, setFormatting] = useState(false)
-  // Inline-команда (п.6, Cmd/Ctrl+I — ⌘K занят палитрой команд): выделенный фрагмент + инструкция → ассистенту,
-  // правку он делает через make_write_file.
+  // Inline command (item 6): Cmd/Ctrl+I sends the selected fragment and instruction to the
+  // assistant, which edits through make_write_file. Cmd+K is reserved for the command palette.
   const [selection, setSelection] = useState<EditorSelection | null>(null)
   const [inlineOpen, setInlineOpen] = useState(false)
-  // Контекст редактора для чата: файл + выделение; при закрытии панели — сброс.
+  // Chat editor context contains the file and selection; clear it when the panel closes.
   useEffect(() => {
     if (!onEditorContext) return
     if (!selectedPath) { onEditorContext(null); return }
@@ -626,7 +635,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       : { path: selectedPath })
   }, [selectedPath, selection, onEditorContext])
   useEffect(() => () => onEditorContext?.(null), [onEditorContext])
-  // Локальная история правок текущего файла (п.7).
+  // Local edit history for the current file (item 7).
   const [historyOpen, setHistoryOpen] = useState(false)
   const localVersions: FileVersion[] = useMemo(() => (selectedPath && historyOpen ? readHistory(conversationId, selectedPath) : []), [conversationId, selectedPath, historyOpen, savedContent])
   const restoreLocal = (v: FileVersion): void => { setContent(v.content); setHistoryOpen(false); toast.info('Версия подставлена в редактор — сохраните, чтобы применить') }
@@ -640,7 +649,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     onAskAssistant(`Файл ${selectedPath}, ${where}:${fragment}Задача: ${inlineText.trim()}. Измени только этот фрагмент (перечитай файл make_read_file и запиши целиком make_write_file), остальное не трогай. `)
     setInlineOpen(false); setInlineText('')
   }
-  /** Prettier по кнопке/при сохранении: синтаксическая ошибка — тост, текст не трогаем. */
+  /** Run Prettier on demand or on save. On syntax errors, show a toast and preserve the text. */
   const formatCurrent = useCallback(async (source: string, path: string, quiet = false): Promise<string> => {
     try {
       const formatted = await formatCode(path, source)
@@ -657,17 +666,19 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     if (!selectedPath || !dirty || saving) return
     setSaving(true)
     try {
-      // «Формат при сохранении» — вручной Cmd+S/кнопка; автосохранение (silent) не переформатирует под руками.
+      // Format only on explicit Cmd+S or button saves; silent autosave must not reformat while the
+      // user types.
       const body = formatOnSave && !silent ? await formatCurrent(content, selectedPath, true) : content
       if (body !== content) setContent(body)
-      // Локальная история правок: запоминаем то, что было до перезаписи (к нему и хочется вернуться).
+      // Local history retains the content before overwriting it, so users can restore that version.
       if (savedContent) pushHistory(conversationId, selectedPath, savedContent)
       const next = await api['make:write']({ conversationId, path: selectedPath, content: body })
       setSavedContent(body)
       setState(next)
       setPreviewRev(next.rev)
       if (!silent) toast.success('Сохранено')
-      // Ошибки компиляции jsx/tsx — маркерами в редакторе; баннер не трогаем, если всё чисто.
+      // Show JSX/TSX compilation issues as editor markers; leave the banner alone when there are no
+      // issues.
       if (/\.(jsx|tsx|ts)$/i.test(selectedPath)) {
         const { issues: found } = await api['make:check']({ conversationId })
         setIssues((prev) => (found.length > 0 ? found : prev === null ? null : found))
@@ -678,7 +689,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       setSaving(false)
     }
   }, [api, conversationId, selectedPath, content, dirty, saving, toast, formatOnSave, formatCurrent, savedContent])
-  // Автосохранение: пауза после последней правки.
+  // Autosave after a pause following the latest edit.
   const saveRef = useRef(save)
   saveRef.current = save
   useEffect(() => {
@@ -698,7 +709,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
   const markers = useMemo(() => (issues ?? []).filter((i) => i.path === selectedPath && i.line).map((i) => ({ line: i.line!, column: i.column, message: i.message, severity: i.severity })), [issues, selectedPath])
 
-  // Ctrl/Cmd+S в редакторе — сохранить; Tab — отступ, а не переход фокуса.
+  // Ctrl/Cmd+S saves in the editor; Tab indents instead of moving focus.
   const createFile = (): void => openAsk('Новый файл', 'Путь файла (например, about.html или css/theme.css)', '', 'Создать', (raw) => void createFileAt(raw))
   const createFileAt = async (raw: string): Promise<void> => {
     const path = normalizeMakePath(raw)
@@ -713,10 +724,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) }
   }
 
-  // Загрузка файлов с диска: текст пишем как текст (его можно править в редакторе),
-  // остальное — бинарно в base64. Картинки складываем в img/, чтобы корень не засорялся.
+  // Disk uploads: write text as editable text and other files as base64 binary data. Put images
+  // under img/ to keep the root tidy.
   const uploadInputRef = useRef<HTMLInputElement>(null)
-  // FileReader, а не Blob.text()/arrayBuffer(): их нет в jsdom, а поведение одно.
+  // Use FileReader because jsdom lacks Blob.text()/arrayBuffer(); behavior is equivalent.
   const readAs = <T extends string | ArrayBuffer>(file: File, mode: 'text' | 'buffer'): Promise<T> => new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result as T)
@@ -750,7 +761,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
 
   const renameFile = (path: string): void => openAsk('Переименовать файл', 'Новый путь файла', path, 'Переименовать', (raw) => void renameFileTo(path, raw))
-  // Перенос файла между папками указателем (мышь/палец): цель — группа папки под курсором или корень дерева.
+  // Move files with mouse or touch: target the folder group under the pointer or the tree root.
   const drag = usePointerDrag()
   const [dragPath, setDragPath] = useState<string | null>(null)
   const [dropDir, setDropDir] = useState<string | null>(null)
@@ -836,7 +847,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) }
   }
 
-  // Адрес и пароль публикации (п.25): slug пустой → снять адрес; пароль пустой → не менять, «Снять пароль» → null.
+  // Publication address and password (item 25): an empty slug removes the address; an empty
+  // password preserves it, while explicit password removal sends null.
   const [publishSlug, setPublishSlug] = useState<string | null>(null)
   const [publishPassword, setPublishPassword] = useState('')
   const publish = async (snapshotId: string | null = null, extra: { slug?: string | null; password?: string | null; allowComments?: boolean } = {}): Promise<void> => {
@@ -851,7 +863,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     ...(publishPassword ? { password: publishPassword } : {})
   })
   const [publishPick, setPublishPick] = useState<string>('')
-  /** Сравнение версий публикации (roadmap-4 п.37): снимок из истории рядом с текущим состоянием + карта различий. */
+  /** Publication version comparison (roadmap-4, item 37): show a historical snapshot beside current content with a difference map. */
   const [versionCompare, setVersionCompare] = useState<string | null>(null)
   const [versionDiff, setVersionDiff] = useState<{ url: string; mismatch: number } | null>(null)
   const versionFrames = useRef<{ a: HTMLIFrameElement | null; b: HTMLIFrameElement | null }>({ a: null, b: null })
@@ -875,7 +887,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     if (!ok) return
     try { setState(await api['make:unpublish']({ conversationId })); toast.success('Публикация снята') } catch (e) { toast.error(describeError(e)) }
   }
-  // Именной доступ (roadmap-3 п.6).
+  // Named access (roadmap-3, item 6).
   const [grantUser, setGrantUser] = useState('')
   const [grantRole, setGrantRole] = useState<'editor' | 'viewer'>('viewer')
   const grant = async (user: string, role: 'editor' | 'viewer' | null): Promise<void> => {
@@ -883,7 +895,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     try { setState(await api['make:shareGrant']({ conversationId, user: user.trim(), role })); toast.success(role ? `Доступ для ${user.trim()}: ${role === 'editor' ? 'редактор' : 'зритель'}` : `Доступ ${user.trim()} убран`) } catch (e) { toast.error(describeError(e)) }
   }
   const copyShareLink = async (text: string): Promise<void> => { toast[(await copyText(text)) ? 'success' : 'error']('Ссылка скопирована') }
-  // Read-only ссылка внутри ChatAI (п.33): создать/отозвать.
+  // Create or revoke a read-only ChatAI link (item 33).
   const toggleShare = async (): Promise<void> => {
     try {
       setState(await (state?.shared ? api['make:unshare']({ conversationId }) : api['make:share']({ conversationId })))
@@ -914,7 +926,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [replacement, setReplacement] = useState('')
   const [replacing, setReplacing] = useState(false)
-  /** Regex-режим и учёт регистра поиска/замены (roadmap-4 п.11); предпросмотр — строки «до → после» без записи. */
+  /** Regex and case-sensitive search/replace (roadmap-4, item 11); preview before/after lines without writing. */
   const [searchRegex, setSearchRegex] = useState(false)
   const [matchCase, setMatchCase] = useState(false)
   const [replacePreview, setReplacePreview] = useState<MakeReplacePreviewLine[] | null>(null)
@@ -948,7 +960,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       setReplacePreview(result.preview ?? [])
     } catch (e) { toast.error(describeError(e)) } finally { setReplacing(false) }
   }
-  /** Автогенерация сториз (roadmap-4 п.23): компоненты без `*.stories.*` и создание файла по пропсам. */
+  /** Automatic story generation (roadmap-4, item 23): find components without story files and generate stories from their props. */
   const orphanComponents = useMemo(() => componentsWithoutStories((state?.files ?? []).map((f) => f.path)), [state])
   const generateStories = async (path: string): Promise<void> => {
     try {
@@ -975,12 +987,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) }
   }, [api, conversationId, toast])
   useEffect(() => { if (mode === 'stories') void loadStories() }, [mode, loadStories, state?.rev])
-  // Визуальные снимки стори (п.16): PNG раннера через html2canvas → сервер; сравнение двух снимков рядом.
+  // Visual story snapshots (item 16): send html2canvas runner PNGs to the server and compare two
+  // snapshots side by side.
   const [shots, setShots] = useState<MakeStoryShot[]>([])
   const [shotsOpen, setShotsOpen] = useState(false)
   const [shooting2, setShooting2] = useState(false)
   const [compare, setCompare] = useState<[string, string] | null>(null)
-  /** Визуальная регрессия (roadmap-4 п.24): карта различий выбранной пары снимков, считается в браузере. */
+  /** Visual regression (roadmap-4, item 24): compute a difference map for the selected snapshot pair in the browser. */
   const [shotDiff, setShotDiff] = useState<{ url: string; mismatch: number } | null>(null)
   useEffect(() => {
     setShotDiff(null)
@@ -998,11 +1011,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         image.data.set(r.diff)
         ctx.putImageData(image, 0, 0)
         if (alive) setShotDiff({ url: canvas.toDataURL('image/png'), mismatch: r.mismatch })
-      } catch { /* нет canvas (jsdom) или снимок не загрузился — без карты различий */ }
+      } catch { /* Omit the difference map when canvas is unavailable in jsdom or an image failed to load. */ }
     })()
     return () => { alive = false }
   }, [compare, conversationId])
-  const loadShots = useCallback(async (): Promise<void> => { try { setShots((await api['make:shots']({ conversationId })).shots) } catch { /* нет снимков */ } }, [api, conversationId])
+  const loadShots = useCallback(async (): Promise<void> => { try { setShots((await api['make:shots']({ conversationId })).shots) } catch { /* No snapshots. */ } }, [api, conversationId])
   useEffect(() => { if (mode === 'stories') void loadShots() }, [mode, loadShots])
   const takeStoryShot = async (): Promise<void> => {
     const doc = storyFrameRef.current?.contentDocument
@@ -1019,7 +1032,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) } finally { setShooting2(false) }
   }
   const storyShots = useMemo(() => (story ? shots.filter((s) => s.file === story.file && s.story === story.name) : []), [shots, story])
-  // Библиотека компонентов (п.17): экспорт текущей стори (компонент + сториз) и вставка в проект.
+  // Component library (item 17): export the current component and its stories, or insert saved
+  // files into the project.
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [library, setLibrary] = useState<MakeLibraryItem[] | null>(null)
   const loadLibrary = async (): Promise<void> => { try { setLibrary((await api['make:library']({})).items) } catch (e) { toast.error(describeError(e)) } }
@@ -1034,7 +1048,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       toast.success(`«${item.name}» сохранён в библиотеку (${item.files.length} файл.)`)
     } catch (e) { toast.error(describeError(e)) }
   }
-  /** Весь дизайн-кит одним элементом (roadmap-2 п.13): компоненты со сториз + файл токенов. */
+  /** Save a complete design kit as one library item (roadmap-2, item 13): components, stories, and tokens. */
   const kitPaths = (): string[] => {
     const paths = (state?.files ?? []).map((f) => f.path)
     const comps = paths.filter((p) => /^src\/components\/.+\.(jsx|tsx)$/i.test(p))
@@ -1065,7 +1079,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     if (!(await confirm({ title: `Удалить «${item.name}» из библиотеки?`, variant: 'danger', confirmLabel: 'Удалить' }))) return
     try { setLibrary((await api['make:libraryRemove']({ slug: item.slug })).items) } catch (e) { toast.error(describeError(e)) }
   }
-  /** Публичная ссылка на стори (нужна публикация) — копируется в буфер. */
+  /** Copy a public story link to the clipboard; requires a publication. */
   const shareStory = async (): Promise<void> => {
     if (!story) return
     if (!state?.published) { toast.info('Публичная ссылка появится после публикации проекта (кнопка «Опубликовать»)'); setPublishOpen(true); return }
@@ -1109,7 +1123,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       setPicked(EMPTY_MAKE_SELECTION)
     })()
   })
-  // «Свежий» проект — только файлы заготовки без правок: показываем стартовые идеи, как главная Figma Make.
+  // A fresh project contains only unmodified starter files; show starting ideas, as on Figma Make's
+  // home screen.
   const isFresh = useMemo(() => {
     const files = state?.files
     if (!files || files.length === 0) return false
@@ -1117,9 +1132,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     return files.every((f) => f.path in MAKE_SCAFFOLD && f.size === enc.encode(MAKE_SCAFFOLD[f.path]!).length)
   }, [state])
   const useStarter = (prompt: string): void => { onInsertToChat?.(prompt); setIdeasOpen(false) }
-  // Скриншот превью (или выбранного элемента) — во вложения чата: визуальный баг проще показать, чем описать.
+  // Attach a preview or selected-element screenshot to chat so visual bugs can be shown directly.
   const [shooting, setShooting] = useState(false)
-  // Доступность превью (п.13): axe внутри iframe, результат — панель под превью.
+  // Preview accessibility (item 13): run axe inside the iframe and display results below it.
   const [a11y, setA11y] = useState<A11yViolation[] | null>(null)
   const [a11yBusy, setA11yBusy] = useState(false)
   const runA11y = async (): Promise<void> => {
@@ -1151,8 +1166,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
   useEffect(() => { setConsoleLines([]); setNetwork([]) }, [previewRev])
   const networkFailed = network.filter((n) => !n.ok).length
-  // Итеративная правка: после перезагрузки превью (правка ассистента или своя) 8 секунд слушаем консоль;
-  // появились ошибки — предлагаем «Исправить» одной кнопкой, текст ошибок уходит ассистенту сразу.
+  // Iterative fixes: listen to the preview console for eight seconds after a reload. If errors
+  // appear, offer a fix action that sends them directly to the assistant.
   const [autofix, setAutofix] = useState<{ rev: number; dismissed: boolean }>({ rev: 0, dismissed: false })
   const watchUntil = useRef(0)
   useEffect(() => { watchUntil.current = Date.now() + 8_000; setAutofix({ rev: previewRev, dismissed: false }) }, [previewRev])
@@ -1212,8 +1227,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const frameWidth = DEVICE_WIDTH[device]
   const previewSrc = `${base}index.html?rev=${previewRev}`
 
-  // Меню «⋯» (ревизия стилей): второстепенные действия убраны из шапки, чтобы она не переносилась
-  // на две-четыре строки — особенно на телефоне. Закрывается по клику вне и по Esc.
+  // Overflow menu: move secondary actions out of the header to prevent wrapping onto several rows,
+  // especially on phones. Close on outside click or Escape.
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {

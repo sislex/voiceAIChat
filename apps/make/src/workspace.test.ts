@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MAKE_BOOTSTRAP_CSS_URL, MAKE_SCAFFOLD } from '@voicechat/shared'
 import { MakeError, MakeWorkspaces, refererHost } from './workspace'
+import { readZip } from './zipRead'
 
 const CONV = 'conv-1'
 
@@ -93,9 +94,9 @@ describe('MakeWorkspaces', () => {
     const ws = await fresh()
     await ws.ensure(CONV)
     const token = (await ws.publish(CONV)).published!.token
-    // Счётчик идёт фоном: маршрут отдачи зовёт его через `void`. Раньше он
-    // усекал файл публикации на месте, и попавший в это окно `publishRaw`
-    // возвращал null — снятие публикации тогда молча не срабатывало.
+    // The serving route invokes the counter in the background with void. It used to truncate the
+    // publication file in place, allowing publishRaw to return null during that window and silently
+    // skip unpublishing.
     const views = Array.from({ length: 40 }, () => ws.countView(CONV, null))
     const reads = Array.from({ length: 40 }, () => ws.publication(CONV))
     await Promise.all(views)
@@ -108,10 +109,9 @@ describe('MakeWorkspaces', () => {
   it('переопубликация не воскрешает старый токен от фонового счётчика', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)
-    // Гонка из гейта: countView (fire-and-forget из маршрута отдачи) читал
-    // состояние ДО unpublish и писал его обратно ПОСЛЕ повторного publish —
-    // publish-файл возвращался к старому токену, а publishedTarget нового
-    // отвечал null (у пользователя — 404 на свежей ссылке).
+    // Race reproduced by the gate: background countView read state before unpublish and wrote it
+    // after a new publish. The publication reverted to its old token, so publishedTarget returned
+    // null for the new link and users saw 404.
     for (let round = 0; round < 15; round += 1) {
       await ws.publish(CONV)
       void ws.countView(CONV, null)
@@ -130,8 +130,7 @@ describe('MakeWorkspaces', () => {
     await writeFile(join((ws as unknown as { dirOf(id: string): string }).dirOf(CONV), '.publish.json'), '{битый', 'utf8')
     await ws.unpublish(CONV)
     expect(await ws.publishedTarget(token)).toBeNull()
-    // И запись индекса тоже уходит: иначе ссылка оживёт от любой следующей
-    // записи файла публикации.
+    // Remove the index entry too, or a later publication-file write could revive the link.
     expect(existsSync(join(root, 'make', '.published', `${token}.json`))).toBe(false)
   })
 
@@ -165,7 +164,7 @@ describe('MakeWorkspaces', () => {
     await expect(ws.read(CONV, 'nope.html')).rejects.toMatchObject({ code: 'not_found' })
     await expect(ws.read(CONV, 'logo.png')).rejects.toMatchObject({ code: 'not_text' })
     await expect(() => ws.dirOf('../x')).toThrow(MakeError)
-    // Ссылка на каталог вне проекта не должна открывать доступ наружу.
+    // A directory symlink outside the project must not expose external files.
     const outside = await mkdtemp(join(tmpdir(), 'vc-outside-'))
     await writeFile(join(outside, 'secret.txt'), 'top')
     await symlink(outside, join(ws.dirOf(CONV), 'link'))
@@ -188,7 +187,7 @@ describe('MakeWorkspaces', () => {
     const restored = await ws.restore(CONV, s1.snapshots[0]!.id)
     expect((await ws.read(CONV, 'index.html')).content).toBe('v1')
     expect(restored.files.map((f) => f.path)).not.toContain('extra.js')
-    // Перед откатом сохранилось текущее состояние.
+    // The current state was saved before restoring the snapshot.
     expect(restored.snapshots.map((s) => s.label)).toContain('Перед восстановлением снимка')
     await expect(ws.restore(CONV, 'missing')).rejects.toMatchObject({ code: 'not_found' })
     const reset = await ws.reset(CONV)
@@ -203,10 +202,16 @@ describe('MakeWorkspaces', () => {
     expect(zip.readUInt32LE(0)).toBe(0x04034b50)
     expect(zip.toString('latin1')).toContain('index.html')
     expect(zip.readUInt32LE(zip.length - 22)).toBe(0x06054b50)
-    // Хостинг (roadmap-4 п.36): конфиг и DEPLOY.md попадают в архив.
+    // Hosting (roadmap-4, item 36): include configuration and DEPLOY.md in the archive.
     expect((await ws.exportZip(CONV, { deploy: 'netlify' })).toString('latin1')).toContain('netlify.toml')
-    expect((await ws.exportZip(CONV, { deploy: 'vercel', vite: true })).toString('latin1')).toContain('vercel.json')
-    // Превью снимка (п.37): файлы снимка читаются буфером, чужой путь — null.
+    const exported = await ws.exportZip(CONV, { deploy: 'vercel', vite: true })
+    expect(exported.toString('latin1')).toContain('vercel.json')
+    const docs = readZip(exported).filter((entry) => /^(README|DEPLOY)\.md$/.test(entry.path))
+    expect(docs.map((entry) => entry.path).sort()).toEqual(['DEPLOY.md', 'README.md'])
+    for (const entry of docs) expect(entry.data.toString('utf8')).not.toMatch(/[\u0400-\u04ff]/u)
+    expect(docs.find((entry) => entry.path === 'README.md')?.data.toString('utf8')).toContain('# Project exported from Make')
+    // Snapshot preview (item 37): return snapshot files as buffers and reject paths outside the
+    // snapshot with null.
     const snap = (await ws.snapshot(CONV, 'v1')).snapshots[0]!
     expect((await ws.snapshotBuffer(CONV, snap.id, 'index.html'))?.data.toString('utf8')).toContain('<!doctype html>')
     expect(await ws.snapshotBuffer(CONV, snap.id, 'nope.html')).toBeNull()
@@ -220,11 +225,12 @@ describe('MakeWorkspaces', () => {
     const token = pub.published!.token
     expect(await ws.publishedTarget(token)).toBe(CONV)
     expect(await ws.publishedTarget('nope')).toBeNull()
-    // Повторная публикация не меняет ссылку.
+    // Republishing preserves the link.
     expect((await ws.publish(CONV)).published?.token).toBe(token)
     await ws.reset(CONV)
     expect((await ws.state(CONV)).published?.token).toBe(token)
-    // Закрепление за снимком: publicFile отдаёт файлы снимка, а не текущие; повторный publish без snapshotId — живая.
+    // Pinned snapshots: publicFile serves the snapshot files; publishing again without snapshotId
+    // switches back to live files.
     await ws.write(CONV, 'index.html', 'live-v1')
     const snap = (await ws.snapshot(CONV, 'релиз 1')).snapshots[0]!
     await ws.write(CONV, 'index.html', 'live-v2')
@@ -263,7 +269,7 @@ describe('MakeWorkspaces', () => {
     expect(shots.filter((s) => s.story === 'Small')).toHaveLength(1)
     expect((await ws.shotImage(CONV, shots[0]!.id))!.equals(png)).toBe(true)
     await expect(ws.addShot(CONV, 'a', 'b', Buffer.from('notpng'))).rejects.toMatchObject({ code: 'invalid_path' })
-    // .shots не считается файлом проекта и переживает reset
+    // .shots is not a project file and survives reset.
     expect((await ws.list(CONV)).some((f) => f.path.includes('.shots'))).toBe(false)
     await ws.reset(CONV)
     expect(await ws.shots(CONV)).toHaveLength(11)
@@ -296,7 +302,7 @@ describe('MakeWorkspaces', () => {
     const real = await ws.replaceAll(CONV, '--(\\w+): #fff', '--$1: white', { regex: true })
     expect(real.files).toBe(1)
     expect((await ws.read(CONV, 'styles.css')).content).toBe(':root { --bg: white; --fg: #000; }')
-    // Без regex `$1` — обычный текст.
+    // Without regex mode, $1 is literal text.
     await ws.replaceAll(CONV, 'white', '$1')
     expect((await ws.read(CONV, 'styles.css')).content).toContain('--bg: $1;')
     await expect(ws.replaceAll(CONV, '(', 'x', { regex: true })).rejects.toThrow(/Неверное выражение/)
@@ -413,7 +419,8 @@ describe('MakeWorkspaces', () => {
     expect(await ws.resolveMock(CONV, 'api/users', 'GET')).toMatchObject({ status: 200, body: [{ id: 1 }] })
     expect(await ws.resolveMock(CONV, 'api/users', 'POST')).toMatchObject({ status: 201, body: { id: 2 } })
     expect((await ws.resolveMock(CONV, 'api/broken', 'GET'))?.status).toBe(500)
-    // Auth-мок (roadmap-4 п.32): логин → cookie, защищённый ресурс — только с ней.
+    // Authentication mock (roadmap-4, item 32): login sets a cookie required by the protected
+    // resource.
     await ws.write(CONV, 'mock/api/login.POST.json', JSON.stringify({ $auth: { users: [{ username: 'anna', password: '1', name: 'Анна' }] } }))
     await ws.write(CONV, 'mock/api/me.json', JSON.stringify({ $auth: { require: true }, $body: { role: 'admin' } }))
     const login = await ws.resolveMock(CONV, 'api/login', 'POST', false, { username: 'anna', password: '1' })
@@ -440,7 +447,7 @@ describe('MakeWorkspaces', () => {
     await ws.snapshot(CONV, 's2'); await ws.snapshot(CONV, 's3')
     await ws.publish(CONV, { snapshotId: s1.id })
     const u = await ws.usage(CONV)
-    expect(u.filesCount).toBe(5) // scaffold (3) + два png
+    expect(u.filesCount).toBe(5) // Three scaffold files plus two PNGs.
     expect(u.snapshotsCount).toBe(3)
     expect(u.snapshotsBytes).toBeGreaterThan(0)
     expect(u.totalBytes).toBe(u.filesBytes + u.snapshotsBytes + u.shotsBytes)
@@ -503,7 +510,8 @@ describe('MakeWorkspaces', () => {
     await ws.publish(CONV)
     await ws.countView(CONV)
     const stats = await ws.adminStats(async (id) => (id === CONV ? 'alice' : 'bob'))
-    // Диск (roadmap-4 п.40): statfs корня данных даёт положительные числа и флаг тревоги по порогу 10 ГБ.
+    // Disk monitoring (roadmap-4, item 40): statfs on the data root returns positive sizes and an
+    // alert below the 10 GB threshold.
     expect(stats.disk!.totalBytes).toBeGreaterThan(0)
     expect(stats.disk!.alert).toBe(stats.disk!.freeBytes < 10 * 1024 ** 3)
     expect(stats.projects).toBe(2)

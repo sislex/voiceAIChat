@@ -5,7 +5,7 @@ import { render } from '../../../ui/src/test/uiRender'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { MakeTaskLinksDialog } from './MakeTaskLinksDialog'
 
-/** Make-проект, привязанный к проекту с одной карточкой. */
+/** Make project linked to a project with one task card. */
 async function scene(api: FakeApi): Promise<{ makeId: string; taskId: string; projectId: string }> {
   const project = await api['projects:create']({ name: 'Piara' })
   const board = await api['board:get']({ id: project.id })
@@ -22,9 +22,9 @@ describe('MakeTaskLinksDialog — «Задачи проекта» в панел�
 
     render(<MakeTaskLinksDialog conversationId={makeId} currentPath="pay.html" api={api} onClose={() => {}} />)
     expect(await screen.findByTestId('make-task-links-empty')).toBeInTheDocument()
-    // Страница подставлена из открытого файла — связывают обычно то, что видно.
-    // Ждём поле, а не берём его сразу: форма и пустое состояние появляются
-    // разными рендерами, и на полном прогоне гейта порядок иногда обратный.
+    // Prefill the page from the open file because users usually link what they see. Wait for the
+    // field: the form and empty state render separately, and their order can vary during the full
+    // gate.
     expect(await screen.findByLabelText('Страница дизайна')).toHaveValue('pay.html')
 
     await userEvent.click(screen.getByRole('button', { name: 'Связать с задачей' }))

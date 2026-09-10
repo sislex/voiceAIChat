@@ -509,7 +509,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'make:importUrl': async ({ conversationId, url, mode }) => {
       if (mode === 'replace') makeFiles(conversationId).clear()
-      makeFiles(conversationId).set('index.html', `<!-- импортировано из ${url} --><h1>imported</h1>`)
+      makeFiles(conversationId).set('index.html', `<!-- imported from ${url} --><h1>imported</h1>`)
       makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1)
       return makeState(conversationId)
     },

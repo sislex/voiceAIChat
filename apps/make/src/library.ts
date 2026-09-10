@@ -1,7 +1,7 @@
-// Личная библиотека компонентов Make (п.17): пользователь сохраняет компонент (файл + сториз +
-// связанные файлы) из одного проекта и вставляет в другой. Хранится вне проектов:
-// `<dataDir>/make-library/<userKey>/<slug>/{meta.json, files/…}`. Без кросс-пользовательского
-// доступа: ключ каталога — base64url логина, как у профилей CLI.
+// Personal Make component library (item 17): users save a component, its stories, and related files
+// from one project and insert them into another. Stored outside projects at
+// <dataDir>/make-library/<userKey>/<slug>/{meta.json, files/...}. Directory keys are
+// base64url-encoded usernames, as with CLI profiles, to isolate users.
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -29,12 +29,12 @@ export class MakeLibrary {
     if (!existsSync(dir)) return []
     const out: MakeLibraryItem[] = []
     for (const slug of await readdir(dir)) {
-      try { out.push(JSON.parse(await readFile(join(dir, slug, 'meta.json'), 'utf8')) as MakeLibraryItem) } catch { /* битый элемент */ }
+      try { out.push(JSON.parse(await readFile(join(dir, slug, 'meta.json'), 'utf8')) as MakeLibraryItem) } catch { /* Corrupt entry. */ }
     }
     return out.sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
-  /** Сохранить набор файлов под именем; повторное сохранение с тем же slug перезаписывает. */
+  /** Save a named set of files; saving the same slug again replaces it. */
   async save(userId: string, name: string, files: Array<{ path: string; data: Buffer }>, sourceConversationId: string): Promise<MakeLibraryItem> {
     const slug = librarySlug(name)
     if (!SLUG_RE.test(slug)) throw new MakeError('invalid_path', 'Некорректное имя компонента')

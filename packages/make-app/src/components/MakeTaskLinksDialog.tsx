@@ -1,9 +1,7 @@
-// Диалог «Задачи проекта» в панели Make — обратная сторона секции «Дизайн» в
-// карточке: какие карточки ссылаются на этот Make-проект и как связать открытую
-// страницу с задачей, не уходя из дизайна.
-//
-// Панель не знает ни проекта, ни прав: сервер сам ограничивает список проектом,
-// к которому привязан Make-чат, и отвечает 404, если доступа нет.
+// Make's project-task dialog is the reverse of a task card's Design section: list cards referencing
+// this Make project and link the open page without leaving the design. The server resolves the
+// project from the Make conversation, restricts the list, and returns 404 without access; the panel
+// does not determine permissions.
 
 import { useCallback, useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
@@ -12,10 +10,10 @@ import { Button, Dialog, EmptyState, IconButton, useToast } from '@voicechat/ui-
 
 interface Props {
   conversationId: string
-  /** Открытый файл — предзаполненная страница связи; пусто — проект целиком. */
+  /** Open file used to prefill the linked page; empty means the entire project. */
   currentPath: string
   api: Pick<RendererApi, 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks'>
-  /** Переход на доску к связанной карточке. */
+  /** Navigate to the linked task card on the board. */
   onOpenTask?: (projectId: string, taskId: string) => void
   onClose: () => void
 }

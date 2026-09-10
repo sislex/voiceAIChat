@@ -1,49 +1,50 @@
-# Make — дорожная карта из 40 улучшений (автономный прогон)
+# Make — 40-improvement roadmap (autonomous run)
 
-Порядок: 19 → 22 → 8 → 3 → 14 → 10 → 26 → 37, затем остальные по номерам.
-Каждый пункт: shared-контракт → код+тесты → гейт → проверка на стенде :8799 в Chrome → KB → коммит → push.
-Релиз/деплой пакетами по 5 пунктов. Отложенное (нужен внешний ресурс) помечено ⏸ с причиной.
+Implementation order: 19 → 22 → 8 → 3 → 14 → 10 → 26 → 37, then the remaining items numerically.
+Each item: shared contract → code and tests → gate → Chrome verification on :8799 → KB → commit → push.
+Release/deploy in batches of five. Items requiring external resources are marked ⏸ with a reason.
+This is a historical progress record; current application boundaries and release commands are documented in the package instructions and KB.
 
-| # | Пункт | Статус |
-|---|-------|--------|
-| 19 | Авто-заметка к снимку «До правок: <запрос>» | ✅ |
-| 22 | Итеративная правка ошибок консоли (кнопка «исправить» после make.changed) | ✅ |
-| 8 | Инспектор → правка стилей на месте, запись в CSS | ✅ |
-| 3 | Типы React в Monaco (extraLibs) | ✅ |
-| 14 | Controls: массивы/объекты, цвет, диапазоны | ✅ |
-| 10 | Скриншот превью → в чат | ✅ |
-| 26 | Публикация конкретного снимка | ✅ |
-| 37 | E2E Playwright для Make | ✅ (вне CI: `npm run e2e:make`) |
-| 1 | Поиск и замена по проекту | ✅ |
-| 2 | Модели всех файлов в Monaco (переход к определению) | ✅ |
-| 4 | Форматирование Prettier | ✅ |
-| 5 | DnD/папки/мультивыбор в дереве | ✅ перенос DnD; мультивыбор — не делаем (нет сценария) |
-| 6 | Inline-команда Cmd+I «исправь выделенное» | ✅ |
-| 7 | Локальная история правок | ✅ |
-| 9 | Сетевые запросы превью | ✅ |
-| 11 | Сохранение scroll/роута превью | ✅ |
-| 12 | Тема/локаль превью | ✅ |
-| 13 | axe в превью | ✅ |
-| 15 | Поделиться стори / галерея | ✅ |
-| 16 | Визуальные снапшоты стори | ✅ клиентский PNG (html2canvas) + сравнение; серверный Playwright — ⏸ нет браузеров в образе |
-| 17 | Библиотека компонентов между проектами | ✅ |
-| 18 | play-тесты стори | ✅ |
-| 20 | План перед правкой по умолчанию для больших запросов | ✅ |
-| 21 | Контекст открытого файла/курсора в промпт | ✅ `meta.editorContext` + `withEditorContext` |
-| 23 | Дизайн-система проекта (tokens.css) | ✅ диалог «Токены» + `@shared/makeTokens` + хинт модели |
-| 24 | Стоимость на проект | ✅ чип в шапке (`summarizeConversationUsage`) |
-| 25 | Публикация с поддоменом/паролем/счётчиком | ✅ адрес `/s/<slug>/`, пароль (cookie), счётчик; поддомен ⏸ (нужен wildcard-DNS) |
-| 27 | Git-экспорт/импорт | ✅ импорт репозитория GitHub по ссылке (ZIP ветки, подкаталог); экспорт — ZIP/Vite; push в git ⏸ (нужен токен пользователя и git в образе) |
-| 28 | Импорт из Figma | ⏸ нужен Figma personal access token и файл-ключ; без REST API Figma импортировать нечего. Пока: «Copy as SVG» → загрузить как ассет |
-| 29 | Мок-API внутри проекта | ✅ `mock/<путь>[.METHOD].json`, конверт `$status/$delay/$headers/$body` |
-| 30 | Квоты и очистка | ✅ квота 64 МБ (`quota` → 413), `GET usage` / `POST cleanup`, диалог «Место» |
-| 31 | Совместная работа (Yjs) | ⏸ нужен y-websocket сервер и модель совместного доступа к чату; сейчас есть live-обновление по `make.changed` и read-only шаринг (п.33) |
-| 32 | Комментарии к элементам превью | ✅ `.comments.json`, панель 💬, метки в превью, «Исправить все» |
-| 33 | Шаринг проекта read-only внутри ChatAI | ✅ share-токен, `#/make-shared/<token>`, `MakeSharedView` |
-| 34 | Мобильный редактор (fallback < 600px) | ✅ textarea-редактор + `<select>` файлов при ≤600px |
-| 35 | PWA в Vite-экспорте | ✅ `?pwa=1`: manifest + sw.js + icon.svg (+ инъекция в index.html), для статики и Vite |
-| 36 | Electron-десктоп | ✅ desktop рендерит тот же UI через `installRemoteBridges` — все `make:*` мосты доступны; отдельного кода не нужно (typecheck:desktop падает на старом фикстуре Settings в `database.test.ts` — не Make) |
-| 38 | Метрики использования в админке | ✅ `GET /api/admin/make/stats`, секция «Make-проекты» в дашборде |
-| 39 | Rate-limit импорта | ✅ `SlidingWindowLimiter`: 10 ZIP / 20 URL за 10 мин → 429 |
-| 40 | Убрать дублирование useConfirm/Dialog | ✅ `components/ui/*` удалены, всё из `@voicechat/ui-kit`; остался `SidebarToggle` |
-| — | Ревизия стилей/шрифтов/отступов Make и мобильная вёрстка | ✅ меню «⋯» в шапке, отступы/шрифты диалогов (`.make-dialog`), мобильная шапка ≤720, токены/комментарии на телефоне |
+| # | Item | Status |
+|---|------|--------|
+| 19 | Automatic pre-edit snapshot note containing the request | ✅ |
+| 22 | Iterative console-error fixes after make.changed | ✅ |
+| 8 | Inspector style editing with persistence to CSS | ✅ |
+| 3 | React types in Monaco through extraLibs | ✅ |
+| 14 | Controls for arrays, objects, colors, and ranges | ✅ |
+| 10 | Attach preview screenshots to chat | ✅ |
+| 26 | Publish a specific snapshot | ✅ |
+| 37 | Make Playwright E2E | ✅ outside CI: `npm run e2e:make` |
+| 1 | Project-wide search and replace | ✅ |
+| 2 | Monaco models for all files, including go-to-definition | ✅ |
+| 4 | Prettier formatting | ✅ |
+| 5 | Tree drag-and-drop, folders, and multiselect | ✅ drag-and-drop; multiselect omitted at this stage because no workflow required it |
+| 6 | Cmd+I inline command to fix a selection | ✅ |
+| 7 | Local edit history | ✅ |
+| 9 | Preview network requests | ✅ |
+| 11 | Preserve preview scroll position and route | ✅ |
+| 12 | Preview theme and locale | ✅ |
+| 13 | axe checks inside previews | ✅ |
+| 15 | Share stories and the gallery | ✅ |
+| 16 | Visual story snapshots | ✅ client PNGs through html2canvas and comparison; server Playwright ⏸ because the image lacks browsers |
+| 17 | Component library across projects | ✅ |
+| 18 | Story play tests | ✅ |
+| 20 | Plan before editing by default for large requests | ✅ |
+| 21 | Include the open file and cursor context in prompts | ✅ `meta.editorContext` and `withEditorContext` |
+| 23 | Project design system in tokens.css | ✅ token dialog, `@shared/makeTokens`, and model guidance |
+| 24 | Per-project cost | ✅ header chip using `summarizeConversationUsage` |
+| 25 | Publications with subdomain, password, and view count | ✅ `/s/<slug>/`, password cookie, and counter; subdomain ⏸ requires wildcard DNS |
+| 27 | Git export/import | ✅ GitHub repository URL import via branch ZIP, including subdirectories; ZIP/Vite export; Git push ⏸ requires a user token and Git in the image |
+| 28 | Figma import | ⏸ requires a Figma personal access token and file key; meanwhile, upload Copy as SVG output as an asset |
+| 29 | Mock API inside a project | ✅ `mock/<path>[.METHOD].json` with `$status/$delay/$headers/$body` envelopes |
+| 30 | Quotas and cleanup | ✅ 64 MB quota (`quota` → 413), `GET usage`, `POST cleanup`, and storage dialog |
+| 31 | Collaboration through Yjs | ⏸ requires a y-websocket server and shared-conversation access model; existing support includes make.changed updates and read-only sharing from item 33 |
+| 32 | Comments on preview elements | ✅ `.comments.json`, comment panel, preview markers, and fix-all action |
+| 33 | Read-only project sharing inside ChatAI | ✅ share token, `#/make-shared/<token>`, and `MakeSharedView` |
+| 34 | Mobile editor fallback | ✅ textarea editor and file dropdown at widths ≤600px |
+| 35 | PWA in Vite exports | ✅ `?pwa=1`: manifest, sw.js, icon.svg, and index.html injection for static and Vite exports |
+| 36 | Electron desktop | ✅ shared UI through `installRemoteBridges`, including all `make:*` bridges; no separate implementation needed. At this stage, desktop typecheck failed on an unrelated Settings fixture in database.test.ts |
+| 38 | Admin usage metrics | ✅ `GET /api/admin/make/stats` and Make projects dashboard section |
+| 39 | Import rate limits | ✅ `SlidingWindowLimiter`: 10 ZIPs or 20 URLs per 10 minutes, returning 429 |
+| 40 | Remove duplicate useConfirm/Dialog implementations | ✅ `components/ui/*` removed in favor of `@voicechat/ui-kit`; SidebarToggle retained |
+| — | Make styling, typography, spacing, and mobile layout review | ✅ overflow menu, dialog spacing/fonts, mobile header at ≤720px, and mobile token/comment panels |

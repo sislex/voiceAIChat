@@ -1,16 +1,10 @@
 import { probeLocalStorybook } from '@voicechat/ui-foundation/lib/browserResources'
-// Режим «Проект» в Make: компоненты реального репозитория, их просмотр в настоящем
-// Storybook проекта и правка прямо в рабочей копии на машине.
-//
-// Почему отдельный компонент, а не пятый режим внутри `MakePane`: у песочницы Make и
-// у рабочей копии разные источники данных (`make:*` против `projects:git*`), разные
-// права и разный жизненный цикл. Общего у них — только раскладка «список слева, кадр
-// справа», и её дешевле повторить, чем ветвить две тысячи строк панели.
-//
-// Кадр стори приходит через прокси `/api/preview`, который доставляет HTTP с порта
-// машины по алиасу `<agentId>.machine.internal`. Из этого следует одно видимое
-// ограничение: WebSocket через прокси не ходит, поэтому HMR не работает и после
-// сохранения файла кадр перезагружается сам.
+// Make Project mode displays real repository components in the project's Storybook and edits files
+// directly in a machine working copy. It is separate from MakePane because repository copies and
+// Make workshops have different data sources, permissions, and lifecycles: projects:git* versus
+// make:*. Reusing the simple list-and-frame layout avoids branching the large workshop panel. The
+// /api/preview proxy reaches the machine port through <agentId>.machine.internal. It does not
+// forward WebSockets, so HMR is unavailable through that path and saving reloads the frame.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dialog, EmptyState, ErrorState, IconButton, Skeleton, StatusPill, useToast, type StatusTone } from '@voicechat/ui-kit'
 import type { RendererApi } from '@shared/ipc'
@@ -33,18 +27,18 @@ export type MakeProjectComponentsApi = Pick<
 export interface MakeProjectComponentsProps {
   projectId: string
   api: MakeProjectComponentsApi
-  /** Cookie-гейт превью: iframe ходит без Bearer, как и в остальных наших кадрах. */
+  /** Preview cookie gate: the iframe cannot send Bearer headers, like the other embedded previews. */
   localAgentId?: string | null
   ensurePreview?: () => Promise<void>
-  /** Открыть заведённую карточку на доске. */
+  /** Open the newly created task card on the board. */
   onOpenTask?: (projectId: string, taskId: string) => void
-  /** Отдать правку ассистенту чата (кнопка «В чат»). */
+  /** Send the edit to the chat assistant. */
   onInsertToChat?: (text: string) => void
 }
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
-/** Подпись рабочей копии: задача понятнее пути, а машина объясняет, где это лежит. */
+/** Working-copy label: the task is clearer than a path, while the machine identifies where it lives. */
 export function workspaceLabel(ref: GitWorkspaceRef): string {
   const base = ref.taskSeq ? `#${ref.taskSeq} ${ref.taskTitle ?? ''}`.trim() : ref.kind === 'project-worktree' ? 'Копия проекта' : ref.path
   return ref.machineName ? `${base} · ${ref.machineName}` : base
@@ -57,7 +51,7 @@ const STATE_LABEL: Record<ProjectStorybookSession['state'], string> = {
   failed: 'Storybook не запустился'
 }
 
-/** Как открыт кадр — короткой подписью рядом со статусом. */
+/** Short connection-mode label beside the preview status. */
 const ACCESS_LABEL: Record<ProjectStorybookAccess['kind'], string> = {
   direct: 'кадр напрямую',
   tunnel: 'кадр через локальный агент',
@@ -88,10 +82,9 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
   const [saving, setSaving] = useState(false)
   const [frameRev, setFrameRev] = useState(0)
   /**
-   * Как открыт кадр. Прокси работает всегда, но каждый модуль Vite идёт до машины
-   * отдельным запросом: на медленном канале кадр не собирается. Поэтому сначала
-   * пробуем прямой адрес (браузер на той же машине), затем туннель локального
-   * агента и только потом прокси.
+   * Preview connection strategy: the proxy works remotely, but separate requests for every Vite
+   * module make slow links costly. Try a direct URL when the browser is on the same machine, then a
+   * local agent tunnel, then the proxy.
    */
   const [access, setAccess] = useState<ProjectStorybookAccess | null>(null)
   const [previewReady, setPreviewReady] = useState(!ensurePreview)
@@ -100,15 +93,15 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
   const [ticketNote, setTicketNote] = useState('')
   const [ticketBusy, setTicketBusy] = useState(false)
   /**
-   * Команда запуска. Сервер её не угадывает: в монорепо `npm run storybook` живёт в
-   * пакете витрины, а не в корне. Запоминаем на проект — команда у команды одна.
+   * Startup command: the server cannot infer the correct monorepo workspace. Persist it per project
+   * because the team shares one command.
    */
   const [command, setCommand] = useState<string>(() => {
     try { return localStorage.getItem(makeStorybookCommandKey(projectId)) ?? '' } catch { return '' }
   })
   const [commandOpen, setCommandOpen] = useState(false)
   const [ticketError, setTicketError] = useState<string | null>(null)
-  /** Пути, изменённые в этой панели: из них собирается коммит тикета. */
+  /** Paths modified in this panel become the ticket's commit contents. */
   const [changed, setChanged] = useState<string[]>([])
   const requestRef = useRef(0)
 
@@ -151,7 +144,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
     try {
       setSession(await api['projects:storybookSession']({ id: projectId, workspace: workspaceId }))
     } catch {
-      // Состояние сессии — не главный экран: молча оставляем прежнее, ошибки покажет действие.
+      // Keep the previous session status on refresh errors; explicit actions will report failures.
     }
   }, [api, projectId, workspaceId])
 
@@ -165,19 +158,19 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
     void loadComponents()
   }, [workspaceId, loadComponents, loadSession])
 
-  // Пока идёт сборка, состояние спрашиваем сами: `running` придёт вместе с готовностью.
+  // Poll while building until the running state confirms readiness.
   usePolling(() => {
     void loadSession().then(() => { if (session?.state === 'starting') void loadComponents() })
   }, { enabled: session?.state === 'starting', intervalMs: 4000 })
 
-  // Как только Storybook поднялся, список перечитывается: у живого индекса настоящие id стори.
+  // Reload the list when Storybook starts because its live index contains the actual story IDs.
   const readyAt = session?.readyAt ?? null
   useEffect(() => { if (readyAt) void loadComponents() }, [readyAt, loadComponents])
 
   /**
-   * Проба прямого адреса: если Storybook слушает на той же машине, где открыт
-   * браузер, кадр берётся напрямую и мост не нужен вовсе. Storybook (Vite) отдаёт
-   * CORS, поэтому ответ читается; чужая машина ответит ошибкой или не ответит.
+   * Probe the direct URL: if Storybook runs on the browser's machine, the frame can bypass the
+   * bridge. Storybook/Vite sends CORS headers, allowing the response to be read; another machine's
+   * address will fail or time out.
    */
   const probeDirect = probeLocalStorybook
 
@@ -198,13 +191,13 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
         opened = result
         if (alive) setAccess(result)
       } catch {
-        // Сервер не ответил — прокси всё равно доступен по прямому адресу машины.
+        // If the server does not respond, the proxy can still use the machine's direct address.
         if (alive) setAccess({ kind: 'proxy', url: `/api/preview?url=${encodeURIComponent(machineOrigin(session.agentId, session.port))}`, tunnelId: null, note: 'Кадр идёт через мост машины.' })
       }
     })()
     return () => {
       alive = false
-      // Туннель живёт, пока открыта вкладка: чужой порт на машине не бросаем.
+      // Keep the tunnel only while the tab is open so remote ports are not left behind.
       if (opened?.tunnelId) void api['projects:storybookCloseTunnel']({ id: projectId, tunnelId: opened.tunnelId, workspace: workspaceId }).catch(() => undefined)
     }
   }, [api, projectId, workspaceId, session?.state, session?.port, session?.agentId, listedStoryIdsKey, probeDirect])
@@ -227,7 +220,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
     setSelected({ path: component.path, storyId: component.stories[0]?.id ?? null })
     setFileError(null)
     if (component.stories.length || !component.path) return
-    // Storybook ещё не поднят: имена стори берём разбором CSF, чтобы список был не пустым.
+    // Before Storybook starts, parse CSF names to populate the list.
     try {
       const parsed = await api['projects:componentStories']({ id: projectId, workspace: workspaceId, path: component.path })
       setListing((prev) => prev && {
@@ -259,7 +252,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
       await api['projects:gitSaveFile']({ id: projectId, workspace: workspaceId, path: file.path, content: file.content })
       setFile((prev) => (prev ? { ...prev, saved: prev.content } : prev))
       setChanged((prev) => (prev.includes(file.path) ? prev : [...prev, file.path]))
-      // HMR через прокси не проходит — перезагружаем кадр сами, иначе правка «не видна».
+      // HMR cannot pass through the proxy; reload the frame after saving so edits become visible.
       setFrameRev((rev) => rev + 1)
       toast.success('Файл сохранён в рабочей копии')
     } catch (error) {
@@ -495,7 +488,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
           title="Команда запуска Storybook"
           onClose={() => setCommandOpen(false)}
           actions={<Button variant="primary" onClick={() => {
-            try { localStorage.setItem(makeStorybookCommandKey(projectId), command.trim()) } catch { /* приватный режим — команда останется на сеанс */ }
+            try { localStorage.setItem(makeStorybookCommandKey(projectId), command.trim()) } catch { /* In private browsing, keep the command for this session only. */ }
             setCommandOpen(false)
           }}>Запомнить</Button>}
         >

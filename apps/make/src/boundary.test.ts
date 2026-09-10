@@ -1,6 +1,7 @@
-// Гейт границы Make ↔ ядро со стороны Make (docs/plans/make-standalone.md). Make — отдельный
-// сервис в будущем и отдельный пакет уже сейчас: он не знает ни слой данных, ни авторизацию, ни
-// реестр машин ядра. Всё, что ему нужно от ядра, — порт `MakeCore`. Тест читает импорты как текст.
+// Make-side boundary check for Make and core (docs/plans/make-standalone.md). Make is already a
+// separate package and can run as a service: it has no knowledge of core's data layer,
+// authentication, or machine registry. It accesses core only through MakeCore. This test inspects
+// imports as text.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -25,7 +26,8 @@ describe('граница Make ↔ ядро (сторона Make)', () => {
       const src = readFileSync(join(srcDir, rel), 'utf8')
       for (const m of src.matchAll(/from '([^']+)'/g)) {
         const spec = m[1]!
-        // Относительный импорт обязан оставаться внутри пакета: `../` из подкаталога — можно, из корня src — нет.
+        // Relative imports must stay inside the package: ../ from a subdirectory is allowed, but
+        // escaping src is not.
         const escapes = spec.startsWith('.') && !resolve(dirname(join(srcDir, rel)), spec).startsWith(srcDir + '/')
         if (escapes || FORBIDDEN.some((f) => spec === f || spec.startsWith(`${f}/`))) offenders.push(`${rel} → ${spec}`)
       }

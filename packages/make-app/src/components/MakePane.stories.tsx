@@ -3,9 +3,9 @@ import { expect, userEvent, within } from '@storybook/test'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { MakePane } from './MakePane'
 
-// Панель инструмента Make: превью проекта (iframe в витрине показывает страницу-заглушку
-// про `srcdoc`-подобный адрес), редактор кода и история снимков. Данные — фейковый
-// мост `createFakeApi` (в памяти), сеть не нужна.
+// Make panel stories: project preview, code editor, and snapshot history. The showcase iframe
+// displays a placeholder for the srcdoc-like URL. An in-memory createFakeApi bridge supplies data
+// without network access.
 
 const api = createFakeApi([])
 const make = { onChanged: () => () => {} }
@@ -20,10 +20,10 @@ const meta: Meta<typeof MakePane> = {
 export default meta
 type Story = StoryObj<typeof MakePane>
 
-/** Режим по умолчанию — превью с пресетами ширины. */
+/** Default preview mode with width presets. */
 export const Preview: Story = {}
 
-/** Режим «Код»: дерево файлов и редактор с открытым index.html. */
+/** Code mode: file tree and editor with index.html open. */
 export const Code: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -32,7 +32,7 @@ export const Code: Story = {
   }
 }
 
-/** Режим «История» без снимков — подсказка, откуда они берутся. */
+/** Empty history mode explains where snapshots come from. */
 export const HistoryEmpty: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -42,12 +42,10 @@ export const HistoryEmpty: Story = {
 }
 
 /**
- * Телефонная ширина превью — пресет, которым пользуется человек за десктопом.
- *
- * Сам переключатель ширин на телефоне скрыт (`.make-devices { display: none }`),
- * поэтому при просмотре витрины с телефона кликать нечего: без проверки
- * сториз рисовала карточку ошибки «Unable to find … Телефон». В jsdom это не
- * видно — там нет раскладки, медиа-запрос не срабатывает и кнопка есть всегда.
+ * The phone-width preset is intended for desktop users. The width switcher is hidden on phones by
+ * .make-devices { display: none }, so the story must not click an absent button. Without the
+ * visibility check, mobile showcase visits displayed an element-not-found error. jsdom cannot
+ * expose this because it has no layout or active media queries.
  */
 export const Mobile: Story = {
   play: async ({ canvasElement }) => {
@@ -58,7 +56,7 @@ export const Mobile: Story = {
   }
 }
 
-/** Бинарный файл в дереве (загруженная картинка) открывается просмотром, а не редактором. */
+/** Opening a binary tree entry, such as an uploaded image, shows a viewer rather than the code editor. */
 export const BinaryFile: Story = {
   play: async ({ canvasElement }) => {
     await api['make:upload']({ conversationId: 'story-make', path: 'img/logo.png', dataBase64: 'iVBORw0KGgo=' })

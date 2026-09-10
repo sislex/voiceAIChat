@@ -1,6 +1,7 @@
-// SSRF-гард импорта по URL: Make ходит только на публичные адреса — ни loopback, ни приватных
-// сетей, ни link-local. Тот же гард держит Web Reader ядра (`apps/server/src/util/publicHost.ts`);
-// копия намеренная: 25 строк без владельца не стоят зависимости между сервисами в обе стороны.
+// SSRF guard for URL imports: Make may access only public addresses, excluding loopback, private
+// networks, and link-local addresses. Core has the same guard at
+// apps/server/src/util/publicHost.ts. The small copy is intentional to avoid coupling the services
+// in both directions.
 
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
@@ -17,7 +18,7 @@ export function isPublicAddress(address: string): boolean {
   return false
 }
 
-/** Литерал IP проверяется сразу, имя — по всем адресам DNS: один приватный адрес в ответе запрещает хост целиком. */
+/** Check literal IPs directly and hostnames against every DNS result: one private address rejects the entire host. */
 export async function assertPublicHost(hostname: string): Promise<void> {
   const literal = hostname.replace(/^\[|\]$/g, '')
   if (isIP(literal)) {

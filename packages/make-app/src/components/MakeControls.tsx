@@ -1,7 +1,6 @@
-// Поля панели Controls (п.14): тип поля выбирается по значению arg и по `argTypes` из CSF
-// (control: 'range' | 'color' | 'select' | 'text' | 'boolean' | 'number' | 'object', min/max/step,
-// options). Массивы и объекты редактируются как JSON с проверкой — невалидный текст не уходит
-// в раннер, а подсвечивается.
+// Controls panel fields (item 14): choose controls from arg values and CSF argTypes, including
+// range, color, select, text, boolean, number, object, min/max/step, and options. Edit arrays and
+// objects as validated JSON; highlight invalid input instead of sending it to the runner.
 import { useEffect, useState } from 'react'
 
 export interface ArgType {
@@ -18,7 +17,7 @@ export interface MakeControlFieldProps {
   base: unknown
   value: unknown
   argType?: ArgType
-  /** Значения того же ключа из других стори (enum-подобные). */
+  /** Values of the same arg from other stories, used as enum-like choices. */
   enumOptions?: string[]
   onChange: (value: unknown) => void
 }
@@ -26,7 +25,7 @@ export interface MakeControlFieldProps {
 const COLOR_RE = /^(#[0-9a-f]{3,8}|rgba?\(|hsla?\()/i
 const READ_ONLY_RE = /^\[(function|element)\]$/
 
-/** Какое поле рисовать: явный control из argTypes важнее эвристики по значению. */
+/** Choose the input control: explicit argTypes controls take precedence over value heuristics. */
 export function controlKind(base: unknown, argType?: ArgType, enumOptions?: string[]): 'boolean' | 'number' | 'range' | 'color' | 'select' | 'text' | 'json' | 'readonly' {
   if (argType?.control === 'range') return 'range'
   if (argType?.control === 'color') return 'color'
@@ -44,7 +43,7 @@ export function controlKind(base: unknown, argType?: ArgType, enumOptions?: stri
   return 'json'
 }
 
-/** rgb()/hsl() → #hex для <input type=color>; уже hex — как есть; иначе чёрный. */
+/** Convert rgb()/hsl() to hex for color inputs; preserve existing hex values and otherwise fall back to black. */
 export function colorToHex(value: string): string {
   if (/^#[0-9a-f]{6}$/i.test(value)) return value
   if (/^#[0-9a-f]{3}$/i.test(value)) return '#' + value.slice(1).split('').map((c) => c + c).join('')

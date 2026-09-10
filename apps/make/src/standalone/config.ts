@@ -1,16 +1,16 @@
-// Конфигурация отдельного процесса Make — только из окружения, как у раннеров.
+// Standalone Make configuration comes only from environment variables, as with runners.
 export interface MakeStandaloneConfig {
   host: string
   port: number
-  /** Корень данных: мастерские в `<dataDir>/make/<conv>` — тот же том, что у ядра (миграции файлов нет). */
+  /** Data root: workshops at <dataDir>/make/<conv> use the existing core data volume, without a file migration. */
   dataDir: string
-  /** Адрес ядра внутри сети compose (`http://voicechat:8787`). */
+  /** Core URL inside the Compose network, such as http://voicechat:8787. */
   coreUrl: string
-  /** Bearer внутреннего API — общий с ядром. */
+  /** Internal API Bearer token shared with core. */
   internalToken: string
-  /** Секрет `/mcp/make?k=` — общий с ядром: им ядро подписывает scope-токены рана. */
+  /** Shared /mcp/make?k= secret used by core to sign run-scope tokens. */
   mcpSecret: string
-  /** Версия для `/v1/health` и админки. */
+  /** Version reported by /v1/health and the admin UI. */
   version: string | null
 }
 

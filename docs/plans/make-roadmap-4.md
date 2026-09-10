@@ -1,72 +1,79 @@
-# Make — roadmap 4 (после roadmap-3)
+# Make — roadmap 4 (after roadmap 3)
 
-Статусы: ✅ сделано · ⏸ ждёт внешнего ресурса · ✗ пропущено (причина в строке).
-Порядок — по номерам внутри групп A→G. Правила прогона те же, что в roadmap-2/3: гейт на пункт, проверка на стенде :8799, KB + коммит, релиз каждые 5 пунктов.
+Statuses: ✅ completed · ⏸ waiting for an external resource · ✗ skipped with a reason.
+Proceed numerically within groups A through G. Historical workflow: gate per item, verification on :8799, KB and commit, release every five items.
 
-## A. Ассистент и качество правок
-| № | Пункт | Статус |
-|---|---|---|
-| 1 | Многофайловые правки одной транзакцией (`make_apply_changes`, откат при ошибке компиляции) | ✅ |
-| 2 | Патчи вместо полной перезаписи (`make_edit_file`: поиск/замена фрагмента) | ✅ |
-| 3 | Автотесты компонентов: `*.test.tsx` в раннере сториз, результаты в панели | ✅ раннер `__tests__` (test/expect/render/click/type), кнопка «Тесты (N)», «Исправить» |
-| 4 | Режим вопросов без правок («Объясни файл/элемент», дешёвый read-only ход) | ✅ кнопка ❓ в шапке: один ход в «Плане» с хинтом «Режим вопроса», режим восстанавливается по завершении |
-| 5 | Самопроверка перед ответом: скриншот превью после правок сверяется с запросом | ✅ кнопка «Сверить с запросом» на полосе «до/после» (скриншот «после» + исходный запрос → ассистент); автоматически внутри хода — ⏸ до серверных скриншотов |
-| 6 | Память проекта `.make/notes.md` в контексте каждого хода | ✅ диалог «Память проекта», `make_remember`, блок в promptContext |
-| 7 | Режимы «дизайнер / разработчик» — два системных хинта, переключатель в шапке | ✅ `MAKE_MODE_HINTS`, выбор в диалоге «Память проекта» (`.make/settings.json`) |
-| 8 | Чипы «следующий шаг» после каждого ответа | ✅ `makeNextSteps` (замечания → a11y → токены → адаптив/тёмная тема/тесты…), полоса «Что дальше» над превью после хода |
+## A. Assistant and edit quality
 
-## B. Редактор и код
-| № | Пункт | Статус |
-|---|---|---|
-| 9 | Inline-diff изменений хода в редакторе | ✅ `changedLines` (LCS по строкам) в shared; Monaco подсвечивает строки, записанные ассистентом за ход; плашка «скрыть» |
-| 10 | Мультивыбор файлов в дереве (Shift-клик) → массовые операции | ✅ Ctrl/Cmd-клик и Shift-диапазон (`@shared/makeSelection`), панель «Выбрано: N» — В папку…/Удалить/Снять |
-| 11 | Поиск и замена по проекту с regex и предпросмотром | ✅ флажки `.*`/`Aa`, `make:replace` с `regex`/`dryRun` → предпросмотр строк до/после, `$1`-подстановки |
-| 12 | Линтер: правила для JSX/TS через esbuild-диагностику + базовый stylelint для CSS | ✅ `lintMakeFile` (no-console/no-var/eqeqeq/img-alt/jsx-key; CSS: !important, дубли, битый hex, пустые правила) → `kind: 'lint'`, `severity: 'warning'`, маркеры Warning в Monaco; транзакцию не откатывает |
-| 13 | Автоимпорт компонентов при вставке из библиотеки | ✅ `insertLibraryFiles` добавляет `import` компонентов кита в точку входа (`pickEntryFile` → src/App.tsx…), `make:libraryInsert` возвращает `autoImported` |
-| 14 | Форматирование CSS/HTML по сохранению (Prettier postcss/html) | ✅ уже было: `prettierParserFor` знает `html`/`css`, флажок «формат при сохранении» (Cmd/Ctrl+S; автосохранение не форматирует намеренно); тесты `formatCode.test.ts` |
-| 15 | Сниппеты `rfc`, `story`, `token` | ✅ `monacoSnippets.ts` + CompletionItemProvider (TS/JS: rfc, story; CSS: token), тела в VS Code snippet-синтаксисе |
-| 16 | Zen-режим редактора и сплит «код | превью» с перетаскиваемой границей | ✅ ◫ «Превью рядом» (iframe справа, граница `role=separator` тянется, доля в localStorage), ⛶ Zen скрывает шапку и дерево, Esc — выход |
+| # | Item | Status |
+|---|------|--------|
+| 1 | Transactional multifile edits with make_apply_changes and rollback on compilation errors | ✅ |
+| 2 | Targeted patches through make_edit_file fragment replacement | ✅ |
+| 3 | Component tests in the story runner with panel results | ✅ `__tests__` runner with test/expect/render/click/type, test-count button, and fix action |
+| 4 | Questions without edits: explain a file or element in a read-only turn | ✅ header question action temporarily enables Plan mode and restores the previous mode afterward |
+| 5 | Compare the post-edit screenshot with the original request | ✅ comparison action on the before/after strip sends the after screenshot and request to the assistant; automatic checks within a turn ⏸ until server screenshots are available |
+| 6 | Project memory in .make/notes.md for every turn | ✅ project memory dialog, make_remember, and promptContext block |
+| 7 | Designer/developer assistant modes | ✅ `MAKE_MODE_HINTS` selected in project memory settings under .make/settings.json |
+| 8 | Next-step chips after assistant responses | ✅ makeNextSteps prioritizes issues, accessibility, tokens, responsive layout, dark theme, and tests in a strip above the preview |
 
-## C. Превью и инспектор
-| № | Пункт | Статус |
-|---|---|---|
-| 17 | Редактирование текста прямо в превью (contenteditable → запись в файл) | ✅ dblclick в инспекторе → contenteditable, Enter/blur → `vc-make.text`; панель ищет старый текст как уникальную подстроку файла (`replaceUniqueText`) и пишет файл; неоднозначность — тост |
-| 18 | Перетаскивание секций в превью с записью порядка в разметку | ✅ Alt+перетаскивание в инспекторе среди соседей → `vc-make.reorder {moved,target,position}`; `reorderMarkup` переносит фрагмент в файле, где оба найдены ровно по разу |
-| 19 | Линейки/размеры элементов при hover | ✅ инспектор рисует бейдж `W × H` и четыре направляющие до краёв родителя с подписями в px |
-| 20 | Эмуляция состояний `:hover/:focus/:active`, reduced-motion, медленная сеть моков | ✅ меню ⋯ превью: «Состояние элемента» (клон правил под `.vc-force-*`), «Reduced motion», «Медленная сеть» (0/1.5/4 с) — всё через `vc-make.env` |
-| 21 | Три ширины рядом с синхронным скроллом | ✅ кнопка ⫼ «Три ширины рядом»: 1200/820/390 в одной полосе, `vc-make.state` любого кадра → `vc-make.restore` остальным (эхо гасится окном 300 мс) |
-| 22 | Консоль превью → «Исправить ошибку» одной кнопкой | ✅ уже было: баннер `showAutofix` после ошибок в консоли в 8 с после правки, кнопка «Исправить» шлёт последние 5 ошибок ассистенту (`askFix`); плюс «В чат» из панели консоли |
+## B. Editor and code
 
-## D. Компоненты и дизайн-система
-| № | Пункт | Статус |
-|---|---|---|
-| 23 | Автогенерация сториз для компонента без них | ✅ группа «Без сториз» во вкладке «Компоненты»: `generateStoriesSource` строит CSF по `XProps` (Default + стори на каждый литерал union-пропса) |
-| 24 | Визуальные регрессии стори: эталон vs текущий (клиентский pixelmatch) | ✅ `lib/pixelDiff.ts` (свой попиксельный diff без зависимостей): в сравнении «до/после» третья карточка — карта различий и % отличающихся пикселей |
-| 25 | Контрастность пар токенов (WCAG) в диалоге токенов | ✅ секция «Контраст (WCAG)»: пары текст/акцент × фон (`contrastPairs`), коэффициент, уровень AA/AA крупный/AAA, пересчёт по черновику |
-| 26 | Импорт токенов из Figma Variables JSON (файл) | ✅ «Импорт из Figma JSON» в диалоге токенов: Figma Variables API, Tokens Studio/W3C, плоская карта (`parseFigmaTokens`) → `setCssToken` |
-| 27 | Тёмная тема одной кнопкой: генерация `[data-theme=dark]` от светлых токенов | ✅ кнопка «Тёмная тема»: `buildDarkThemeBlock` (HSL: фоны темнеют, текст светлеет, акценты мягче), блок заменяется без дублей |
-| 28 | Публичная витрина компонентов с поиском и кодом использования | ✅ `__gallery__` (и публичная `/p|/s/…/__gallery__`): поиск по названиям (`?q=`), у карточки «Код» — import + JSX из стори (`storyUsageSnippets`), кнопка «Скопировать» |
+| # | Item | Status |
+|---|------|--------|
+| 9 | Inline editor diff for a turn's changes | ✅ shared changedLines uses line LCS; Monaco highlights assistant-written lines, with a hide action |
+| 10 | File multiselect and bulk operations | ✅ Ctrl/Cmd toggling and Shift ranges through @shared/makeSelection; move/delete/clear actions for the selection |
+| 11 | Project search/replace with regex and preview | ✅ regex/case flags, make:replace with regex/dryRun, before/after lines, and $1 substitutions |
+| 12 | JSX/TS diagnostics and basic CSS linting | ✅ lintMakeFile covers no-console/no-var/eqeqeq/img-alt/jsx-key and CSS !important, duplicates, invalid hex, and empty rules; warning markers do not roll back transactions |
+| 13 | Automatic component imports when inserting library items | ✅ insertLibraryFiles adds kit imports to the entry point chosen by pickEntryFile; make:libraryInsert returns autoImported |
+| 14 | CSS/HTML formatting on explicit save | ✅ existing prettierParserFor support for html/css; autosave deliberately skips formatting; formatCode.test.ts covers it |
+| 15 | rfc, story, and token snippets | ✅ monacoSnippets.ts and CompletionItemProvider use VS Code snippet syntax |
+| 16 | Editor zen mode and resizable code/preview split | ✅ side preview, draggable role=separator, persisted ratio, zen header/tree hiding, and Escape to exit |
 
-## E. Данные и бэкенд-моки
-| № | Пункт | Статус |
-|---|---|---|
-| 29 | Редактор моков: таблица коллекции без правки JSON | ✅ `MakeMockTable`: для `mock/*.json` с массивом объектов — вид «Таблица» (ячейки, +строка, +колонка, удаление), переключатель «Таблица/JSON», запись через обычное сохранение |
-| 30 | Генерация моков из описания через ассистента | ✅ пункт ⋯ «✦ Мок из описания» (режим «Код»): описание → `makeMockPrompt` (путь `mock/api/<slug>.json`, N записей, формат коллекции, fetch-адрес) → ассистенту |
-| 31 | Валидация форм по JSON-schema в моках (422) | ✅ `$schema` в файле коллекции (`validateJsonSchema` — подмножество: type/required/properties/enum/min*/max*/pattern/format email/items) → 422 `{error:'validation', issues}` на POST/PUT/PATCH; подсказка модели дополнена |
-| 32 | Auth-мок `/api/login` с cookie-сессией | ✅ `$auth` в моках: `users` (POST → user + Set-Cookie `vc_mock_session`), `require` (401 без cookie, `user` в теле), `logout`; `resolveMock` получает cookie запроса; подсказка модели дополнена |
+## C. Preview and inspector
 
-## F. Публикация и совместная работа
-| № | Пункт | Статус |
-|---|---|---|
-| 33 | Кастомный домен публикации (⏸ wildcard-DNS) | ⏸ нужен wildcard-DNS/сертификат на прод-домене и Caddy-правило `*.make.<домен>` — внешнего ресурса нет; готовая часть — `/s/<slug>/`; см. deploy.md |
-| 34 | Комментарии внешних зрителей публикации с модерацией | ✅ флажок «комментарии зрителей» в публикации → виджет 💬 на странице, `POST /p/<token>/__comments__` (лимит 10/10 мин на IP) → `pending`; владелец одобряет в панели, `GET __comments__` отдаёт одобренные |
-| 35 | Уведомления владельцу о новых комментариях | ✅ в приложении: `make.changed` с `.comments.json` → тост «Новый комментарий зрителя…» и счётчик «на модерации» в панели; e-mail — ⏸ (нет SMTP) |
-| 36 | Экспорт для Netlify/Vercel | ✅ селект «Хостинг» в диалоге экспорта → `?deploy=netlify|vercel`: в ZIP добавляются `netlify.toml`/`vercel.json` (статика или сборка Vite) и `DEPLOY.md` с шагами и предупреждением про моки |
-| 37 | Сравнение двух версий публикации (визуальный diff снимков) | ✅ «Сравнить» в истории публикаций: снимок (`__snapshot__/<id>/…` с `<base>`) и текущее состояние рядом, «Карта различий» — html2canvas обоих кадров + `pixelDiff` |
+| # | Item | Status |
+|---|------|--------|
+| 17 | Edit text directly in previews and persist it | ✅ double-click enables contenteditable; Enter/blur sends vc-make.text; replaceUniqueText requires a unique source occurrence and reports ambiguity |
+| 18 | Drag preview sections and persist markup order | ✅ Alt-drag between siblings sends vc-make.reorder with moved/target/position; reorderMarkup requires each fragment exactly once in one file |
+| 19 | Element dimensions and rulers on hover | ✅ width/height badge and four parent-edge guides labeled in pixels |
+| 20 | Emulate hover/focus/active, reduced motion, and slow mock networking | ✅ preview menu clones rules under .vc-force-*, supports reduced motion and 0/1.5/4-second mock delay through vc-make.env |
+| 21 | Three synchronized preview widths | ✅ 1200/820/390 widths in one strip; vc-make.state is forwarded as vc-make.restore with a 300 ms echo-suppression window |
+| 22 | One-click console-error fixes | ✅ existing showAutofix banner listens for eight seconds after edits; askFix sends the latest five errors, with an additional console-to-chat action |
 
-## G. Эксплуатация и платформа
-| № | Пункт | Статус |
-|---|---|---|
-| 38 | Серверные скриншоты Playwright (⏸ браузеры в образе) | ⏸ в образе server нет браузеров Playwright (+~400 МБ); клиентские снимки (html2canvas) покрывают diff/снимки стори; включить — добавить `npx playwright install chromium` в Dockerfile |
-| 39 | Push в GitHub и импорт из Figma (⏸ токены) | ⏸ нет GitHub PAT / Figma-токена в окружении; импорт токенов из Figma-JSON файлом сделан (п.26), экспорт репозитория — ZIP/`makeGit` |
-| 40 | Мониторинг диска прода в админке, алерт < 10 ГБ; fail2ban/SSH-харденинг | ✅ `AdminMakeStats.disk` (statfs корня данных), строка «Диск с данными» в админке с алертом < 10 ГБ, метрики `make_disk_*`; fail2ban/SSH — ⏸ системная правка прод-хоста, нужно явное «да» |
+## D. Components and design systems
+
+| # | Item | Status |
+|---|------|--------|
+| 23 | Generate missing component stories | ✅ no-stories group uses generateStoriesSource and XProps to create Default plus stories for union-literal props |
+| 24 | Visual story regression comparison | ✅ dependency-free lib/pixelDiff.ts adds a difference map and changed-pixel percentage to before/after comparison |
+| 25 | WCAG token contrast | ✅ contrastPairs compares text/accent against backgrounds, reports AA/large-text AA/AAA, and recalculates from drafts |
+| 26 | Import Figma Variables JSON files | ✅ parseFigmaTokens accepts Variables API, Tokens Studio/W3C, and flat maps, then applies setCssToken |
+| 27 | Generate dark theme from light tokens | ✅ buildDarkThemeBlock adjusts HSL backgrounds, text, and accents and replaces the existing block without duplication |
+| 28 | Public component showcase with search and usage code | ✅ __gallery__, including public /p and /s routes, searches by ?q= and exposes import/JSX snippets from storyUsageSnippets with copy actions |
+
+## E. Data and backend mocks
+
+| # | Item | Status |
+|---|------|--------|
+| 29 | Collection table editor | ✅ MakeMockTable supports object arrays in mock/*.json with editable cells, row/column creation, deletion, JSON switching, and normal saves |
+| 30 | Generate mocks from assistant descriptions | ✅ Code-mode menu sends makeMockPrompt with mock/api/<slug>.json, record count, collection format, and fetch URL |
+| 31 | JSON Schema form validation with 422 responses | ✅ collection $schema supports a subset of type/required/properties/enum/min*/max*/pattern/email/items; POST/PUT/PATCH return `{error:'validation', issues}`; model guidance updated |
+| 32 | Cookie-session authentication mock | ✅ $auth supports users, require, and logout; login sets vc_mock_session, protected requests return 401 without it, and resolveMock receives request cookies |
+
+## F. Publishing and collaboration
+
+| # | Item | Status |
+|---|------|--------|
+| 33 | Custom publication domains | ⏸ requires wildcard DNS/certificate and a Caddy rule for *.make.<domain>; /s/<slug>/ is available; see deploy.md |
+| 34 | Moderated external viewer comments | ✅ publication setting enables the widget; POST /p/<token>/__comments__ submits pending comments with a 10-per-10-minute IP limit; owners approve and GET returns approved comments |
+| 35 | Owner notifications for new comments | ✅ make.changed with .comments.json triggers a toast and moderation count; email ⏸ without SMTP |
+| 36 | Netlify/Vercel exports | ✅ export hosting selector adds netlify.toml/vercel.json for static or Vite hosting and DEPLOY.md with steps and mock limitations |
+| 37 | Compare publication versions visually | ✅ historical __snapshot__/<id>/ preview with a base URL beside current state; html2canvas and pixelDiff produce the difference map |
+
+## G. Operations and platform
+
+| # | Item | Status |
+|---|------|--------|
+| 38 | Server-side Playwright screenshots | ⏸ server image lacks browsers, adding roughly 400 MB; client html2canvas covers current comparisons and story snapshots; browser installation would require a Dockerfile change |
+| 39 | GitHub push and Figma import | ⏸ no GitHub PAT or Figma token; Figma JSON token import is implemented in item 26, and repository export uses ZIP/makeGit |
+| 40 | Production disk monitoring and SSH hardening | ✅ AdminMakeStats.disk uses statfs, alerts below 10 GB, and exposes make_disk_* metrics; fail2ban/SSH changes ⏸ require explicit authorization for the production host |

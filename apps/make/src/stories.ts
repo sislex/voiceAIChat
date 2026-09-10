@@ -1,15 +1,15 @@
-// Сториз проекта Make: файлы `*.stories.(jsx|tsx)` в формате CSF. Имена стори берём
-// регуляркой по исходнику (именованные экспорты), а не исполнением — исполняется код
-// только в браузере пользователя. Страница-раннер собирается сервером: import map и
-// стили берём из index.html проекта, чтобы компонент выглядел как в приложении.
+// Make project stories use CSF files named *.stories.(jsx|tsx). Extract named exports from source
+// with a regular expression rather than executing project code on the server. The runner page uses
+// the project's index.html import map and styles so components match the application; project code
+// runs only in the user's browser.
 
 import { MAKE_REACT_IMPORT_MAP, MAKE_STORIES_PAGE, type MakeStoryFile, type MakeTestFile } from '@voicechat/shared'
 import { parseStoryFile } from '@voicechat/shared'
 
-// Разбор сториз — общая утилита; реэкспорт сохраняет прежний адрес для витрины и тестов.
+// Story parsing is shared; re-export it at the existing path for the showcase and tests.
 export { parseStoryFile }
 
-/** Import map и `<link rel="stylesheet">` из index.html проекта — либо React-дефолты. */
+/** Import map and stylesheet links from the project's index.html, falling back to React defaults. */
 export function extractHeadAssets(indexHtml: string | null): { importMap: string; links: string } {
   const mapMatch = indexHtml?.match(/<script[^>]*type=["']importmap["'][^>]*>([\s\S]*?)<\/script>/i)
   const importMap = mapMatch?.[1]?.trim() || JSON.stringify({ imports: MAKE_REACT_IMPORT_MAP })
@@ -19,7 +19,7 @@ export function extractHeadAssets(indexHtml: string | null): { importMap: string
 
 const escapeAttr = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 
-/** HTML раннера: рендерит одну стори `story` из файла `file`, ошибки — на экран, а не только в консоль. */
+/** Runner HTML: render story from file and show errors on the page as well as in the console. */
 export function renderStoriesPage(file: string, story: string, indexHtml: string | null): string {
   const { importMap, links } = extractHeadAssets(indexHtml)
   const modulePath = './' + file.split('/').map(encodeURIComponent).join('/')
@@ -91,7 +91,7 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
 
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
-/** Простые пары `key: 'строка' | число | true/false` из текста объекта args — без вложенных структур. */
+/** Parse simple key/value pairs from args object text: strings, numbers, and booleans, without nested structures. */
 function simpleArgs(text: string | undefined): Record<string, string> {
   const out: Record<string, string> = {}
   if (!text) return out
@@ -111,8 +111,9 @@ function attrsOf(args: Record<string, string>, component: string): string {
 }
 
 /**
- * Код использования для витрины (roadmap-4 п.28): для стрелочных стори берём JSX после стрелки, для объектных
- * (CSF3 `{ args }`) собираем `<X prop="…">` из args default-экспорта и стори; плюс import компонента от корня проекта.
+ * Showcase usage snippets (roadmap-4, item 28): use the JSX body of arrow stories. For CSF3
+ * objects, construct component props from default-export and story args, then add a component
+ * import relative to the project root.
  */
 export function storyUsageSnippets(path: string, source: string): Record<string, string> {
   const out: Record<string, string> = {}
@@ -131,7 +132,7 @@ export function storyUsageSnippets(path: string, source: string): Record<string,
   return out
 }
 
-/** Галерея всех стори проекта: сетка iframe-ов на раннер, поиск по названиям и код использования (п.28). */
+/** Gallery of all project stories: runner iframe grid, name search, and usage snippets (item 28). */
 export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 'Компоненты', usage: Record<string, Record<string, string>> = {}): string {
   const cards = files.flatMap((f) => f.stories.map((name) => {
     const href = `${base}${MAKE_STORIES_PAGE}?file=${encodeURIComponent(f.path)}&story=${encodeURIComponent(name)}`
@@ -178,7 +179,7 @@ export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 
 </html>`
 }
 
-/** Имена тестов из `test('имя', …)` и компонент рядом (`Button.test.tsx` → `Button.tsx`, если есть). */
+/** Test names from test('name', ...) and the neighboring component, such as Button.test.tsx to Button.tsx when present. */
 export function parseTestFile(path: string, source: string, projectPaths: ReadonlySet<string>): MakeTestFile {
   const names: string[] = []
   for (const m of source.matchAll(/\btest\(\s*(['"`])((?:\\.|(?!\1).)+)\1/g)) names.push(m[2]!)
@@ -188,8 +189,9 @@ export function parseTestFile(path: string, source: string, projectPaths: Readon
 }
 
 /**
- * Раннер тестов компонента (roadmap-4 п.3): даёт глобальные `test(name, fn)` и `expect`, хелперы
- * `render/click/type/find`; каждый результат уходит родителю кадром `vc-make.test`, итог — `vc-make.tests-done`.
+ * Component test runner (roadmap-4, item 3): provide global test(name, fn), expect, and
+ * render/click/type/find helpers. Send each result to the parent as vc-make.test and the final
+ * summary as vc-make.tests-done.
  */
 export function renderTestsPage(file: string, indexHtml: string | null): string {
   const { importMap, links } = extractHeadAssets(indexHtml)

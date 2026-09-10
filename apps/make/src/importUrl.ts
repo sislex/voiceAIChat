@@ -1,6 +1,6 @@
-// Импорт страницы по URL в проект Make: HTML → index.html, same-origin стили/скрипты/картинки →
-// файлы проекта с переписанными ссылками. Не «зеркало сайта», а стартовая точка для редизайна:
-// ограничено числом и размером файлов, хосты проверяются тем же SSRF-гардом, что у Web Reader.
+// Import a URL into a Make project: HTML becomes index.html, while same-origin styles, scripts, and
+// images become project files with rewritten links. This is a redesign starting point, with file
+// count and size limits; hosts use the same SSRF guard as Web Reader.
 
 import { assertPublicHost } from './publicHost.js'
 import { githubArchiveUrls, parseGithubUrl } from '@voicechat/shared'
@@ -22,7 +22,7 @@ async function fetchBytes(url: URL, maxBytes: number, fetchImpl: typeof fetch): 
   return { data: buf, type: res.headers.get('content-type') ?? '' }
 }
 
-/** Имя файла в проекте для ресурса: assets/<имя>, при коллизии — с суффиксом. */
+/** Project filename for an asset: assets/<name>, with a suffix on collisions. */
 function assetPath(url: URL, used: Set<string>): string {
   const base = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || 'asset').replace(/[^\w.-]+/g, '-').slice(0, 80) || 'asset'
   let candidate = `assets/${base}`
@@ -32,7 +32,7 @@ function assetPath(url: URL, used: Set<string>): string {
   return candidate
 }
 
-/** Репозиторий GitHub (п.27): ZIP ветки с codeload, общий корень архива снимается, подкаталог из URL — вырезается. */
+/** GitHub repository (item 27): download the branch ZIP from codeload, strip the archive's common root, and select any subdirectory specified in the URL. */
 export async function importFromGithub(rawUrl: string, fetchImpl: typeof fetch = fetch): Promise<ImportedFile[] | null> {
   const gh = parseGithubUrl(rawUrl)
   if (!gh) return null
@@ -79,7 +79,7 @@ export async function importFromUrl(rawUrl: string, fetchImpl: typeof fetch = fe
       const path = assetPath(c.abs, used)
       files.push({ path, data: asset.data })
       mapped.set(c.abs.href, path)
-    } catch { /* недоступный ресурс остаётся абсолютной ссылкой на исходный сайт */ }
+    } catch { /* Keep unavailable assets as absolute links to the original site. */ }
   }
   html = html.replace(ASSET_ATTR, (full, lead: string, q: string, raw: string) => {
     let abs: URL
@@ -87,11 +87,11 @@ export async function importFromUrl(rawUrl: string, fetchImpl: typeof fetch = fe
     const local = mapped.get(abs.href)
     return local ? `${lead}${q}${local}${q}` : abs.origin === url.origin ? `${lead}${q}${abs.href}${q}` : full
   })
-  // Остальные относительные ссылки (<a href>) — в абсолютные, чтобы навигация из превью не ломалась.
+  // Make remaining relative links (<a href>) absolute so preview navigation keeps working.
   html = html.replace(/(<a\b[^>]*?\shref\s*=\s*)(["'])([^"'#][^"']*)\2/gi, (full, lead: string, q: string, raw: string) => {
     try { return `${lead}${q}${new URL(raw, url).href}${q}` } catch { return full }
   })
-  if (!/<base\b/i.test(html)) html = html.replace(/<head([^>]*)>/i, `<head$1>\n  <!-- импортировано из ${url.href} -->`)
+  if (!/<base\b/i.test(html)) html = html.replace(/<head([^>]*)>/i, `<head$1>\n  <!-- imported from ${url.href} -->`)
   files.unshift({ path: 'index.html', data: Buffer.from(html, 'utf8') })
   return files
 }

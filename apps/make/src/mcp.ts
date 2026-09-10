@@ -1,9 +1,8 @@
-// MCP-эндпоинт Make: инструменты ассистента читают и пишут файлы проекта разговора
-// (`mcp__make__*`). Stateless по образцу consoleMcp: свежий сервер на POST, доступ
-// по секрету процесса `k`, разговор — query `conv`, ход — query `turn`. Перед первой
-// правкой в ходе снимается снимок «до правок ассистента» — так у пользователя есть
-// история, к которой можно откатиться (аналог версий Figma Make). После каждой
-// мутации владелец получает `make.changed`, и превью справа перезагружается.
+// Make MCP endpoint: assistant tools read and write the conversation's project files
+// (mcp__make__*). Stateless, like consoleMcp: a fresh server per POST, process secret k for access,
+// conv for the conversation, and turn for the turn. Capture a snapshot before the first edit in
+// each turn so users can restore the previous version, as in Figma Make. Every mutation sends
+// make.changed to the owner and reloads the preview.
 
 import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
@@ -21,13 +20,14 @@ export { MAKE_MCP_PATH }
 export interface MakeMcpDeps {
   workspaces: MakeWorkspaces
   hub: MakeHub
-  /** Владелец разговора (для адресации make.changed) и проверка scope-токенов рана — данные ядра. */
+  /** Conversation ownership for make.changed routing and run-scope validation come from core. */
   core: Pick<MakeCore, 'conversationOwner' | 'conversationProject' | 'isProjectViewer' | 'taskDesigns'>
 }
 
 /**
- * Scope-токен — заявка, а не право: сверяем с актуальными дизайнами задачи (их могли снять),
- * проектом разговора и членством пользователя, от имени которого идёт ран.
+ * A scope token is a claim, not authorization: check the task's current designs, the conversation's
+ * project, and membership of the user running the task. Designs may have been removed since the
+ * token was issued.
  */
 async function authorizeTaskSource(core: MakeMcpDeps['core'], scope: MakeTaskScope, conversationId: string): Promise<boolean> {
   const designs = await core.taskDesigns(scope.userId, scope.projectId, scope.taskId)
@@ -48,7 +48,7 @@ const describeError = (error: unknown): string =>
   error instanceof MakeError ? error.message : error instanceof Error ? error.message : String(error)
 
 export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret: string): void {
-  // Ход → снимок уже сделан: один снимок на ход, а не на каждую запись файла.
+  // Turn already has a snapshot: take one per turn, rather than one per file write.
   const snapshotDone = new Set<string>()
 
   app.register(async (scope) => {
@@ -75,7 +75,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
         const planBlocked = (): ToolResult =>
           text('Отклонено: режим «План» — файлы проекта менять нельзя. Исследуй проект чтением (make_list_files/make_read_file); правки начнутся после одобрения плана.', true)
 
-        /** Снимок «до правок ассистента» один раз за ход; затем — рассылка изменения. */
+        /** Capture the pre-edit snapshot once per assistant turn, then broadcast the change. */
         const beforeMutation = async (): Promise<void> => {
           const key = `${conv}:${turn}`
           if (turn && !snapshotDone.has(key)) {
@@ -138,8 +138,9 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
             await beforeMutation()
             const state = await workspaces.write(conv, args.path, args.content)
             afterMutation([args.path])
-            // Авто-проверка (roadmap-2 п.1): замечания по записанному файлу сразу в ответе инструмента —
-            // модели не нужно помнить про make_check, а ошибка компиляции видна до следующего шага.
+            // Automatic checks (roadmap-2, item 1): return issues for the written file immediately
+            // so the model sees compilation errors before its next step without having to remember
+            // make_check.
             const issues = (await workspaces.check(conv).catch(() => [])).filter((i) => i.path === args.path)
             const tail = issues.length ? `\nЗамечания по файлу (исправь перед завершением):\n${issues.map((i) => `- ${i.message}`).join('\n')}` : ''
             return text(`Записано: ${args.path} (${Buffer.byteLength(args.content, 'utf8')} байт). Файлов в проекте: ${state.files.length}.${tail}`)

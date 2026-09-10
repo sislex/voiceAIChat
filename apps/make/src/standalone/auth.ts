@@ -1,8 +1,8 @@
-// Авторизация в отдельном процессе Make: своей у него нет и не должно быть — одна авторизация на
-// все сервисы. Cookie/Bearer запроса пересылаются ядру (`/internal/whoami`), ответ кладётся в
-// `req.user`, как это делает preHandler ядра. Чтения кэшируются на 30 с по значению токена:
-// открытая панель шлёт десятки запросов в минуту, а отзыв сессии, доехавший за полминуты, для
-// редактора файлов — приемлемо. Мутации в кэш не ходят: у них CSRF-проверка на каждый запрос.
+// Standalone Make shares core authentication. Forward request cookies and Bearer credentials to
+// /internal/whoami and populate req.user as core's preHandler does. Cache reads for 30 seconds by
+// token because an open panel sends dozens of requests per minute; session revocation can take up
+// to that interval to reach the file editor. Mutations bypass the cache and receive a CSRF check on
+// every request.
 
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { INTERNAL_WHOAMI_PATH, type WhoamiRequest, type WhoamiResponse } from '../internal.js'
@@ -44,8 +44,8 @@ export function registerForwardedAuth(app: FastifyInstance, opts: ForwardedAuthO
   app.addHook('preHandler', async (req, reply) => {
     const path = req.url.split('?')[0]!
     if (!path.startsWith('/api/')) return
-    // Превью и обычный API у ядра авторизуются по-разному (preview-cookie действует только под
-    // `/api/preview/make`), поэтому класс пути — часть ключа кэша.
+    // Core authenticates previews and ordinary API requests differently: preview-cookie applies
+    // only under /api/preview/make. Include the path class in the cache key.
     const readable = READ_METHODS.has(req.method)
     const key = readable
       ? `${path.startsWith('/api/preview/') ? 'preview' : 'api'}|${req.headers.authorization ?? ''}|${req.headers.cookie ?? ''}`
