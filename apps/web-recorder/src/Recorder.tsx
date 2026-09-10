@@ -1,7 +1,8 @@
 import { Button, IconButton } from '@voicechat/ui-kit'
+import { createScenarioRunner, type ScenarioProgress } from './scenarioRunner'
 import { normalizeReaderAddress } from './readerAddress'
 import { useEffect, useRef, useState } from 'react'
-import { PREVIEW_ACTION_LIMITS, PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE, type PreviewDomAction } from '@shared/previewActions'
+import { PREVIEW_ACTION_LIMITS, PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, PREVIEW_INSPECTOR_MESSAGE_TYPE, isPreviewInspectorCommand } from '@shared/previewInspector'
 import {
   WEB_RECORDER_CAPABILITIES,
@@ -53,6 +54,9 @@ export function Recorder(): JSX.Element {
   const [inspecting, setInspecting] = useState(false); const [editing, setEditing] = useState(false); const [capturing, setCapturing] = useState(false); const [disposed, setDisposed] = useState(false)
   const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<DiagnosticsStep[] | null>(null)
+  const [scenarioProgress, setScenarioProgress] = useState<ScenarioProgress | null>(null)
+  const scenarioRunner = useRef<ReturnType<typeof createScenarioRunner> | null>(null)
+  const scenarioRunning = scenarioProgress?.status === 'running'
   const [viewport, setViewport] = useState('')
   const [loadState, setLoadState] = useState<'empty' | 'loading' | 'ready' | 'error'>('empty')
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -80,6 +84,8 @@ export function Recorder(): JSX.Element {
   }
   const applyUrl = (next: string | null): void => {
     loadGeneration.current++
+    scenarioRunner.current?.cancel('Открывается другая страница — запуск отменён.')
+    scenarioRunner.current?.setReady(false)
     pageReady.current = false
     setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
     currentUrl.current = next
@@ -89,6 +95,22 @@ export function Recorder(): JSX.Element {
     setSteps(loadScenario(next)); setSecretValues({})
     reply({ kind: 'page-status', status: next ? 'loading' : 'empty', url: next })
   }
+
+  useEffect(() => {
+    let alive = true
+    const runner = createScenarioRunner({
+      newId: browserId,
+      onProgress: progress => { if (alive) setScenarioProgress(progress) },
+      send: (requestId, action) => {
+        const target = frame.current?.contentWindow
+        if (!target) throw new Error('Страница закрыта')
+        target.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId, action }, sameOrigin)
+      }
+    })
+    scenarioRunner.current = runner
+    runner.setReady(pageReady.current)
+    return () => { alive = false; runner.dispose(); if (scenarioRunner.current === runner) scenarioRunner.current = null }
+  }, [])
 
   useEffect(() => {
     const applyUrlRef = applyUrl // замыкание стабильно: все изменяемые данные в ref
@@ -111,6 +133,7 @@ export function Recorder(): JSX.Element {
       if (!ids || message.conversationId !== ids.conversationId || message.registrationId !== ids.registrationId) return
       if (message.kind === 'set-url') { applyUrlRef(message.url); return }
       if (message.kind === 'command') {
+        if (scenarioRunner.current?.isRunning()) { reply({ kind: 'result', requestId: message.requestId, ok: false, error: 'Выполняется сценарий — дождитесь окончания или остановите его.' }); return }
         // viewport исполняет сам Reader (ширина обёртки iframe) — страница не нужна.
         if (message.action.kind === 'viewport') {
           const width = Math.round(message.action.width)
@@ -148,6 +171,8 @@ export function Recorder(): JSX.Element {
         return
       }
       if (message.kind === 'dispose') {
+        scenarioRunner.current?.cancel('Reader отключён — запуск отменён.')
+        scenarioRunner.current?.setReady(false)
         reply({ kind: 'disposed' })
         session.current = null
         pageReady.current = false; setLoadState('empty'); setLoadError(null)
@@ -172,6 +197,7 @@ export function Recorder(): JSX.Element {
           // Это подтверждённая навигация живого iframe: его src менять нельзя.
           setDraft(draft => draft === previous ? next : draft)
         }
+        scenarioRunner.current?.setReady(true)
         pageReady.current = true
         setLoadState('ready'); setLoadError(null)
         reply({ kind: 'page-status', status: 'ready', url: currentUrl.current })
@@ -181,7 +207,7 @@ export function Recorder(): JSX.Element {
         }
         return
       }
-      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { loadGeneration.current++; pageReady.current = false; setLoadState('loading'); setLoadError(null); reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
+      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { loadGeneration.current++; scenarioRunner.current?.setReady(false); pageReady.current = false; setLoadState('loading'); setLoadError(null); reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
       if (message?.type === PREVIEW_ACTION_RESULT_TYPE && typeof message.requestId === 'string') {
         const diagnostic = diagnosticStarts.current.get(message.requestId)
         if (diagnostic) {
@@ -191,7 +217,7 @@ export function Recorder(): JSX.Element {
           reply({ kind: 'diagnostics-progress', ...progress })
         }
         // Локальные шаги сценария не имеют pending на стороне host — не отвечаем.
-        if (message.requestId.startsWith('local-')) return
+        if (message.requestId.startsWith('local-')) { scenarioRunner.current?.receive(message.requestId, { ok: message.ok === true, ...(typeof message.error === 'string' ? { error: message.error } : {}) }); return }
         reply({ kind: 'result', requestId: message.requestId, ok: message.ok === true, ...(message.result !== undefined ? { result: message.result as never } : {}), ...(typeof message.error === 'string' ? { error: message.error } : {}) })
         return
       }
@@ -208,7 +234,7 @@ export function Recorder(): JSX.Element {
         return
       }
       if (message?.type === PREVIEW_INSPECTOR_MESSAGE_TYPE) { reply({ kind: 'element-selected', element: message.payload as never }); return }
-      if (message?.type === RECORD && !diagnosticsMode.current) {
+      if (message?.type === RECORD && !diagnosticsMode.current && !scenarioRunner.current?.isRunning()) {
         const raw = message.step as { kind?: unknown; selector?: unknown; text?: unknown; sensitive?: unknown; submit?: unknown } | undefined
         if (!raw || (raw.kind !== 'click' && raw.kind !== 'type') || typeof raw.selector !== 'string') return
         const sensitive = raw.sensitive === true
@@ -275,6 +301,7 @@ export function Recorder(): JSX.Element {
   }
   const reload = (): void => { if (currentUrl.current) applyUrl(currentUrl.current) }
   const failLoad = (message: string): void => {
+    scenarioRunner.current?.cancel(message); scenarioRunner.current?.setReady(false)
     pageReady.current = false; setLoadState('error'); setLoadError(message)
     reply({ kind: 'page-status', status: 'error', url: currentUrl.current, error: message })
   }
@@ -303,17 +330,13 @@ export function Recorder(): JSX.Element {
     loadTimers.current.add(timer)
   }
   const run = (): void => {
-    if (!frame.current?.contentWindow || !url) return
-    for (const [index, step] of steps.entries()) {
-      // Секретные шаги воспроизводятся значением, введённым перед запуском.
-      const text = step.sensitive ? (secretValues[index] ?? '') : step.text
-      if (step.sensitive && !text) { setError(`Шаг ${index + 1}: введите секретное значение перед запуском (оно не сохраняется).`); return }
-      const action: PreviewDomAction = step.kind === 'click'
-        ? { kind: 'click', selector: step.selector }
-        : { kind: 'type', selector: step.selector, text, ...(step.submit ? { submit: true } : {}) }
-      frame.current.contentWindow.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId: 'local-' + browserId(), action }, sameOrigin)
-    }
+    const runner = scenarioRunner.current
+    if (!runner || runner.isRunning()) return
     setError(null)
+    // Действия воспроизведения не записываются повторно в собственный сценарий.
+    modes.current.recording = false
+    setRecording(false); setInspecting(false); setEditing(false); setCapturing(false)
+    void runner.run(steps, secretValues).then(() => { if (scenarioRunner.current === runner) setSecretValues({}) })
   }
   const historyGo = (delta: -1 | 1): void => {
     try { delta === -1 ? frame.current?.contentWindow?.history.back() : frame.current?.contentWindow?.history.forward() } catch { /* cross-doc сразу после загрузки */ }
@@ -365,14 +388,19 @@ export function Recorder(): JSX.Element {
       <strong>Диагностика: {diagnostics.length} шаг.</strong>
       <ol>{diagnostics.map((step) => <li key={step.requestId} data-status={step.ok ? 'passed' : 'failed'}>{step.ok ? '✓' : '✕'} <code>{step.action}</code> — {step.durationMs} мс</li>)}</ol>
     </section>}
+    {scenarioProgress && <div className="webpreview-run-status" role="status" aria-live="polite" data-status={scenarioProgress.status}>
+      {scenarioProgress.status === 'running' ? 'Выполняется сценарий' : scenarioProgress.status === 'passed' ? 'Сценарий выполнен' : scenarioProgress.status === 'cancelled' ? 'Сценарий остановлен' : 'Ошибка сценария'}: {scenarioProgress.completed} из {scenarioProgress.total}
+      {scenarioProgress.error && <span> — {scenarioProgress.error}</span>}
+    </div>}
     {steps.length > 0 && <section className="webpreview-scenario" aria-label="Сценарий автотеста">
-      <Button variant="secondary" onClick={run}>Запустить</Button>
+      <Button variant="secondary" disabled={scenarioRunning || loadState !== 'ready'} onClick={run}>Запустить</Button>
+      {scenarioRunning && <Button variant="secondary" onClick={() => scenarioRunner.current?.cancel()}>Остановить сценарий</Button>}
       <Button variant="secondary" type="button" onClick={exportPlaywright}>Экспорт в Playwright</Button>
-      <Button variant="secondary" type="button" onClick={() => { setSteps([]); setSecretValues({}) }}>Очистить</Button>
+      <Button variant="secondary" type="button" disabled={scenarioRunning} onClick={() => { setSteps([]); setSecretValues({}); setScenarioProgress(null) }}>Очистить</Button>
       <ol>
-      {steps.map((step, index) => <li key={index}><code>{step.kind}</code><input aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item))} />
-        {step.kind === 'type' && !step.sensitive && <input aria-label={'Значение шага ' + (index + 1)} value={step.text} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
-        {step.kind === 'type' && step.sensitive && <input aria-label={'Секретное значение шага ' + (index + 1)} type="password" value={secretValues[index] ?? ''} placeholder="введите для запуска" onChange={(event) => setSecretValues((all) => ({ ...all, [index]: event.target.value }))} />}
+      {steps.map((step, index) => <li key={index}><code>{step.kind}</code><input disabled={scenarioRunning} aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item))} />
+        {step.kind === 'type' && !step.sensitive && <input disabled={scenarioRunning} aria-label={'Значение шага ' + (index + 1)} value={step.text} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
+        {step.kind === 'type' && step.sensitive && <input disabled={scenarioRunning} aria-label={'Секретное значение шага ' + (index + 1)} type="password" value={secretValues[index] ?? ''} placeholder="введите для запуска" onChange={(event) => setSecretValues((all) => ({ ...all, [index]: event.target.value }))} />}
         {step.submit === true && <em>⏎ submit</em>}
         {step.sensitive && <em>секрет не сохраняется</em>}</li>)}
     </ol></section>}
