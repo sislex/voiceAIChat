@@ -291,18 +291,22 @@ describe('TaskCard подсветка по состоянию рана', () => {
 })
 
 describe('TaskCard: нормализованная ошибка последнего этапа', () => {
-  it('показывает статичную красную рамку, текстовый признак и переход в ленту ошибочного этапа', () => {
+  // @testCase TC-UI-TASK-ERROR-CHAT-DRAFT
+  // @testCase TC-REG-NO-GENERAL-CHAT
+  it('открывает встроенный AI-чат с диагностическим черновиком, а не общий чат', () => {
     const onOpen = vi.fn()
+    const onOpenChat = vi.fn()
     render(<TaskCard {...props({
-      onOpen,
+      onOpen, onOpenChat, ciSummary: mkSummary({ status: 'failed', error: 'Ошибка компиляции', modelActive: false }),
       task: mkTask({ latestRunResult: { id: 'qa-1', kind: 'automated_qa', status: 'blocked', outcome: 'failure', createdAt: 10, finishedAt: 20 } })
     })} />)
     const card = screen.getByTestId('task-card')
     expect(card.className).toContain('jcard--latest-failed')
-    const indicator = screen.getByRole('button', { name: 'Последний этап завершился с ошибкой. Открыть ленту рана' })
+    const indicator = screen.getByRole('button', { name: 'Последний этап завершился с ошибкой. Открыть AI-чат задачи' })
     expect(indicator).toHaveTextContent('Последний этап завершился с ошибкой')
     fireEvent.click(indicator)
-    expect(onOpen).toHaveBeenCalledWith('t1', 'automated_qa')
+    expect(onOpen).toHaveBeenCalledWith('t1', 'chat', 'Найди в чем причина ошибки по задаче: "Ошибка компиляции"')
+    expect(onOpenChat).not.toHaveBeenCalled()
   })
 
   it.each(['active', 'success', 'cancelled', 'skipped'] as const)('не подсвечивает outcome=%s', (outcome) => {

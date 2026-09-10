@@ -1650,6 +1650,29 @@ describe('TaskModal — встроенный AI-чат', () => {
     expect(await screen.findByTestId('task-chat-surface')).toBeInTheDocument()
   })
 
+  // @testCase TC-NEG-NO-AUTO-SEND
+  // @testCase TC-REG-EDIT-DRAFT
+  it('показывает редактируемый диагностический черновик без автоматической отправки', async () => {
+    const originalApi = window.api
+    const originalClaude = window.claude
+    const add = vi.fn()
+    const send = vi.fn()
+    window.api = { ...originalApi, 'tasks:openChat': vi.fn(async () => ({ id: 'chat-1' } as never)), 'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [] })) as never, 'messages:add': add as never }
+    window.claude = { ...originalClaude, send, onDone: () => () => {}, onError: () => () => {} }
+    render(<TaskModal {...props({ initialTab: 'chat', initialChatDraft: 'Найди в чем причина ошибки по задаче: "Ошибка компиляции"' })} />)
+
+    const input = await screen.findByRole('textbox', { name: 'Поле ввода сообщения' })
+    expect(input).toHaveValue('Найди в чем причина ошибки по задаче: "Ошибка компиляции"')
+    expect(add).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Изменённый текст')
+    expect(input).toHaveValue('Изменённый текст')
+    expect(add).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    window.api = originalApi; window.claude = originalClaude
+  })
+
   // @testCase TC-UI-TASK-VOICEBAR
   it('изолирует task-scoped историю, стриминг и повтор', async () => {
     const originalApi = window.api
