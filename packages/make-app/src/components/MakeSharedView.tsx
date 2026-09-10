@@ -1,7 +1,7 @@
 import type { MakeSharedViewProps } from '../panelContract'
-// Read-only просмотр проекта Make по ссылке `#/make-shared/<token>` (п.33): превью, файлы и снимки
-// без права правок. Отдельный лёгкий экран, а не MakePane с флагом — у панели полсотни действий
-// записи, и «спрятать всё» дороже и хрупче, чем показать три вкладки чтения.
+// Read-only Make projects at #/make-shared/<token> (item 33): previews, files, and snapshots
+// without editing. A small separate screen is easier to maintain than disabling MakePane's many
+// write actions.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MakeSharedState } from '@shared/make'
 import { isMakeTextPath, makeStackLabel } from '@shared/make'
@@ -15,7 +15,7 @@ type Tab = 'preview' | 'code' | 'history'
 
 type MakeTreeNode = { kind: 'dir'; name: string; path: string; children: MakeTreeNode[] } | { kind: 'file'; name: string; path: string }
 
-/** Дерево из плоского списка путей: каталоги первыми, всё по алфавиту. */
+/** Build a tree from flat paths: directories first, then alphabetical order. */
 export function buildMakeTree(paths: readonly string[]): MakeTreeNode[] {
   const root: MakeTreeNode[] = []
   for (const full of [...paths].sort()) {
@@ -72,7 +72,8 @@ export function MakeSharedView({ token, api, ensurePreview, onBack }: MakeShared
   }
   useEffect(() => { if (tab === 'code' && !path && state?.files.some((f) => f.path === 'index.html')) void open('index.html') }, [tab, path, state]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Редактор (roadmap-3 п.6) пишет через обычный /api/make/:id/file — сервер пускает по именному гранту.
+  // Editors (roadmap-3, item 6) write through /api/make/:id/file, where the server
+  // checks named grants.
   const save = async (): Promise<void> => {
     if (!state || !path || !canEdit || content === saved) return
     setSaving(true)

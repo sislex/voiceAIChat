@@ -1,6 +1,6 @@
-// «Место» проекта Make (п.30): полоса квоты по составляющим (файлы / снимки / PNG стори) и очистка —
-// оставить N последних снимков, убрать PNG-снимки стори, удалить ассеты без ссылок. Удаление
-// необратимо, поэтому кнопка проходит через useConfirm.
+// Make project storage (item 30): show quota usage by files, snapshots, and story PNGs. Cleanup can
+// retain the latest N snapshots, remove story images, and delete unreferenced assets. Deletion is
+// irreversible, so require useConfirm.
 import { useCallback, useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { MakeProjectState, MakeUsage } from '@shared/make'

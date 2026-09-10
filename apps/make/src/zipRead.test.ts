@@ -17,12 +17,13 @@ describe('zipRead', () => {
   })
 
   it('deflate-запись распаковывается; не-ZIP → понятная ошибка', () => {
-    // Собираем store-архив и подменяем метод/данные одной записи на deflate вручную не нужно:
-    // проверяем распаковщик напрямую через inflate в readZip — соберём архив с методом 8.
+    // Exercise readZip's inflate path with a method-8 archive built from a store archive and
+    // compressed entry data.
     const payload = Buffer.from('body{color:red}')
     const compressed = deflateRawSync(payload)
     const zip = buildStoredZip([{ path: 'a.css', data: compressed }])
-    // Патчим метод сжатия (offset 8 в локальном заголовке и 10 в центральном) и размер распакованного.
+    // Patch the compression method at offset 8 in the local header and 10 in the central header,
+    // plus the uncompressed size.
     zip.writeUInt16LE(8, 8)
     const cd = zip.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]))
     zip.writeUInt16LE(8, cd + 10)

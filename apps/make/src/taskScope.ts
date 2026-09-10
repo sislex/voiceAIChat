@@ -1,2 +1,2 @@
-// Совместимый экспорт; контракт отделён от реализации сервиса.
+// Compatibility export; the contract is separate from the service implementation.
 export * from '@voicechat/make-contracts'

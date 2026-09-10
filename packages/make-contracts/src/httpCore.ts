@@ -1,7 +1,7 @@
-// `MakeCore` для отдельного процесса Make: каждый метод — RPC к ядру (`/internal/make/core`).
-// Горячий путь Make (файлы, превью, снимки) сюда не ходит: ядро нужно на открытии панели,
-// проверке доступа и связи с карточкой. `boardChanged` — без ожидания ответа: живая доска не
-// должна задерживать ответ редактору, а потерянный кадр обновится следующим.
+// Standalone MakeCore implementation: each method calls /internal/make/core. File, preview, and
+// snapshot operations remain local; core is needed for panel context, access checks, and task
+// links. boardChanged runs without awaiting a response so board updates do not delay editor
+// replies; later updates replace any missed frame.
 
 import type { Conversation, FsResult, MakeLinkableTask, MakeTaskLink, ProjectDetail, TaskDesignLink } from '@voicechat/shared'
 import type { MakeCore, MakeMachineFs, MakeTaskDesignArgs } from './core.js'
@@ -11,7 +11,7 @@ export interface HttpMakeCoreOptions {
   coreUrl: string
   token: string
   fetchImpl?: typeof fetch
-  /** Куда писать об ошибке фонового `boardChanged`. */
+  /** Error callback for background boardChanged requests. */
   onError?: (error: unknown) => void
 }
 

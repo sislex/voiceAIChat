@@ -32,13 +32,15 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `apps/agent-tray` | `@voicechat/agent-tray` | Electron-трей вокруг агента (установка, лог, разрешения) | [AGENTS](apps/agent-tray/AGENTS.md) |
 | `apps/desktop` | `@voicechat/desktop` | Тонкая Electron-оболочка web/server + legacy-импорт БД (вне workspaces) | [AGENTS](apps/desktop/AGENTS.md) |
 
-`apps/desktop` и `apps/agent-tray` **намеренно не в** `workspaces`: у них свой
-`node_modules` с Electron, корневой `npm install` их не трогает.
+`apps/desktop`, `apps/agent-tray`, and `apps/login-application` are intentionally
+outside `workspaces`. Each has its own Electron dependencies; install them with
+`npm ci --prefix <app-path>` when selected by the gate. Root `npm install` does
+not install those dependencies.
 
 ## Команды
 
 ```bash
-npm install                  # корневые воркспейсы (desktop/agent-tray — отдельно)
+npm install                  # root workspaces; Electron apps need separate installs
 npm run dev:web              # сервер :8787 + Vite-клиент вместе (scripts/dev-web.sh)
 npm run typecheck            # все воркспейсы; отдельно: typecheck:desktop, typecheck:agent-tray
 npm run test                 # все воркспейсы (vitest run)
@@ -104,9 +106,11 @@ npm run kb:check             # что в базе знаний устарело 
 - **Сервер не компилируется в JS** — запускается `tsx` прямо из исходников, поэтому
   в импортах внутри `apps/server` пишутся расширения `.js` (`./config.js`), хотя
   файлы — `.ts`. В `packages/ui`/`shared` — без расширений, алиас `@shared/*`.
-- **Комментарии и документация — по-русски**, объясняют «почему», а не «что»
-  (см. соседний код). Тесты — `*.test.ts` / `*.dom.test.tsx` рядом с исходником.
-- **Язык общения с пользователем — русский.**
+- **Write all new comments and documentation in English**, explaining why decisions
+  were made. Make code comments and Markdown are maintained in English across
+  `apps/make`, `packages/make-app`, and `packages/make-contracts`. Keep tests next
+  to their source as `*.test.ts` / `*.dom.test.tsx`.
+- **Communicate with the user in English.**
 - **В прод-чекауте не работают.** `target.path` (сейчас `/root/ChatAI`) — это корень
   **данных** прода, git-репозитория там нет. Деплой-чекаут задаёт `VC_REPO_DIR` в
   `/etc/voicechat/production.env`, он лежит внутри данных проекта и стоит на ветке

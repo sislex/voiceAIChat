@@ -1,6 +1,6 @@
-// Дизайн-токены проекта Make (п.23): CSS-переменные из `:root` в tokens.css/styles.css.
-// Точечные правки значений без открытия кода: цвет — пикером, размер/шрифт — текстом.
-// Пишем через тот же make:write, что и редактор, поэтому превью и снимки узнают о правке сами.
+// Make design tokens (item 23): edit :root variables in tokens.css/styles.css with color pickers or
+// text fields. Use the same make:write bridge as the editor so preview refresh and snapshots follow
+// the usual flow.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { MakeProjectState } from '@shared/make'
@@ -15,7 +15,7 @@ interface Props {
   api: Pick<RendererApi, 'make:read' | 'make:write'>
   files: readonly string[]
   onClose: () => void
-  /** Проект после записи — панель обновит состояние и превью. */
+  /** Project state after writing; the panel updates its state and preview. */
   onWritten: (next: MakeProjectState) => void
 }
 
@@ -42,7 +42,7 @@ export function MakeTokensDialog({ conversationId, api, files, onClose, onWritte
   }, [api, conversationId, target, toast])
 
   const tokens: MakeCssToken[] = useMemo(() => parseCssTokens(css ?? ''), [css])
-  /** Контраст пар «текст/акцент × фон» по WCAG (roadmap-4 п.25) — считается по черновику, чтобы видеть эффект правки сразу. */
+  /** WCAG contrast for text/accent against background (roadmap-4, item 25), calculated from the draft for immediate feedback. */
   const pairs = useMemo(() => contrastPairs(tokens.map((t) => ({ name: t.name, value: draft[t.name] ?? t.value }))), [tokens, draft])
   const changed = tokens.filter((t) => draft[t.name] !== undefined && draft[t.name] !== t.value)
 
@@ -56,7 +56,7 @@ export function MakeTokensDialog({ conversationId, api, files, onClose, onWritte
     } catch (e) { toast.error(describeError(e)) } finally { setBusy(false) }
   }
 
-  /** Стартовый tokens.css + <link> в index.html перед первой таблицей стилей, чтобы токены были видны везде. */
+  /** Create starter tokens.css and link it before the first stylesheet in index.html so all styles can use the tokens. */
   const createStarter = async (): Promise<void> => {
     setBusy(true)
     try {
@@ -93,12 +93,12 @@ export function MakeTokensDialog({ conversationId, api, files, onClose, onWritte
     setNewName(''); setNewValue('')
   }
 
-  /** Импорт из Figma (roadmap-4 п.26): JSON Variables / Tokens Studio / плоская карта → setCssToken по каждому. */
+  /** Figma import (roadmap-4, item 26): map Variables, Tokens Studio, or flat JSON values through setCssToken. */
   const importRef = useRef<HTMLInputElement | null>(null)
   const importFigma = async (file: File | undefined): Promise<void> => {
     if (!file) return
     try {
-      // В jsdom у File нет .text() — читаем через FileReader, в браузере это тот же путь.
+      // jsdom File lacks text(), so use FileReader in both tests and browsers.
       const text = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result ?? '')); r.onerror = () => reject(new Error('Не удалось прочитать файл')); r.readAsText(file) })
       const imported = parseFigmaTokens(text)
       if (imported.length === 0) { toast.error('В файле не нашлось токенов: ожидаю Figma Variables JSON, Tokens Studio или карту «--имя: значение»'); return }
@@ -108,7 +108,7 @@ export function MakeTokensDialog({ conversationId, api, files, onClose, onWritte
     } catch (e) { toast.error(e instanceof SyntaxError ? 'Файл не является корректным JSON' : describeError(e)) }
     finally { if (importRef.current) importRef.current.value = '' }
   }
-  /** Тёмная тема одной кнопкой (roadmap-4 п.27): блок [data-theme=dark] из светлых цветовых токенов. */
+  /** One-click dark theme (roadmap-4, item 27): derive a [data-theme=dark] block from light-theme color tokens. */
   const generateDark = async (): Promise<void> => {
     if (!target || css === null) return
     const colors = tokens.filter((t) => t.kind === 'color').map((t) => ({ name: t.name, value: draft[t.name] ?? t.value }))

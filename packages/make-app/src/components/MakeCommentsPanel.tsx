@@ -1,16 +1,16 @@
-// Комментарии к элементам превью (п.32): список с метками-номерами (те же номера рисует инспектор
-// в iframe), форма для выбранного элемента, «решено»/удалить и передача открытых замечаний ассистенту.
+// Preview element comments (item 32): numbered list matching iframe inspector markers, a form for
+// the selected element, resolve/delete actions, and forwarding open issues to the assistant.
 import { useState } from 'react'
 import type { MakeComment } from '@shared/make'
 import { Button, IconButton, EmptyState } from '@voicechat/ui-kit'
 
 export interface MakeCommentsPanelProps {
   comments: MakeComment[]
-  /** Выбранный в превью элемент — к нему привязывается новый комментарий. */
+  /** Selected preview element to attach a new comment to. */
   selected: { selector: string; tag: string; text: string } | null
   onAdd: (text: string) => Promise<void>
   onResolve: (id: string, resolved: boolean) => void
-  /** Одобрить комментарий зрителя (roadmap-4 п.34): из `pending` в общий список и на публикацию. */
+  /** Approve a viewer comment (roadmap-4, item 34), moving it from pending into the main list and publication. */
   onApprove?: (id: string) => void
   onRemove: (id: string) => void
   onHighlight: (selector: string) => void
@@ -18,7 +18,7 @@ export interface MakeCommentsPanelProps {
   onClose: () => void
 }
 
-/** Текст запроса ассистенту по открытым комментариям — нумерация та же, что у меток в превью. */
+/** Assistant request text for open comments, numbered consistently with preview markers. */
 export function commentsPrompt(comments: MakeComment[]): string {
   const open = comments.filter((c) => !c.resolved && c.status !== 'pending')
   const lines = open.map((c, i) => `${i + 1}. ${c.elementLabel || c.selector} (селектор \`${c.selector}\`): ${c.text}`)

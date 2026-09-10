@@ -1,6 +1,5 @@
-// Витрина режима «Проект» в Make. Состояния тут те, что в живом приложении ловятся
-// офлайн-машиной, длинной сборкой Storybook и правами на рабочую копию, — увидеть их
-// иначе можно было бы только на настоящей машине с настоящим репозиторием.
+// Make Project mode showcase: expose offline machines, long Storybook builds, and working-copy
+// permissions without needing a real machine and repository to reproduce them.
 import type { Meta, StoryObj } from '@storybook/react'
 import type { ProjectComponentsListing, ProjectStorybookSession } from '@shared/projectComponents'
 import { makeGitFile, makeGitStatus, makeGitWorkspace } from '@voicechat/ui-foundation/test/fixtures/git'
@@ -40,7 +39,7 @@ const meta: Meta<typeof MakeProjectComponents> = {
 export default meta
 type Story = StoryObj<typeof MakeProjectComponents>
 
-/** Storybook ещё не поднят: список берётся из файлов репозитория. */
+/** Before Storybook starts, obtain the list from repository files. */
 export const Stopped: Story = {
   args: {
     api: api(
@@ -56,17 +55,17 @@ export const Stopped: Story = {
   }
 }
 
-/** Идёт первая сборка: обещать кадр рано, поэтому состояние честно говорит «собирается». */
+/** The first build is still running; report building until a preview is available. */
 export const Starting: Story = {
   args: { api: api(makeStorybookSession({ state: 'starting', readyAt: null, log: 'storybook v8.6.14\nbuilding preview...\n' })) }
 }
 
-/** Рабочее состояние: слева компоненты живого индекса, справа кадр стори. */
+/** Ready state: components from the live index on the left, story frame on the right. */
 export const Running: Story = {
   args: { api: api(makeStorybookSession()) }
 }
 
-/** Процесс упал: показываем причину и отправляем в лог, а не оставляем пустой экран. */
+/** When the process fails, show the reason and a log action instead of leaving a blank screen. */
 export const Failed: Story = {
   args: {
     api: api(makeStorybookSession({
@@ -78,7 +77,7 @@ export const Failed: Story = {
   }
 }
 
-/** Машина офлайн: ни кадра, ни правки — объясняем, почему кнопки недоступны. */
+/** Offline machine: preview and editing are unavailable; explain why controls are disabled. */
 export const MachineOffline: Story = {
   args: {
     api: api(makeStorybookSession({ state: 'stopped' }), makeProjectComponents(), {
@@ -87,7 +86,7 @@ export const MachineOffline: Story = {
   }
 }
 
-/** Копия только для чтения (merge-клон или машина, открытая на чтение). */
+/** Read-only working copy, such as a merge clone or a machine with read-only access. */
 export const ReadOnly: Story = {
   args: {
     api: api(makeStorybookSession({ state: 'stopped' }), makeProjectComponents(), {
@@ -96,14 +95,14 @@ export const ReadOnly: Story = {
   }
 }
 
-/** В репозитории нет сториз: пустота объясняет следующий шаг. */
+/** A repository without stories gets an empty state explaining the next step. */
 export const NoComponents: Story = {
   args: {
     api: api(makeStorybookSession({ state: 'stopped' }), makeProjectComponents({ components: [], source: 'files' }))
   }
 }
 
-/** Список обрезан лимитом вывода машины — это видно, а не теряется молча. */
+/** Show when the machine's output limit truncated the list. */
 export const Truncated: Story = {
   args: { api: api(makeStorybookSession(), makeProjectComponents({ truncated: true } as Partial<ProjectComponentsListing>)) }
 }

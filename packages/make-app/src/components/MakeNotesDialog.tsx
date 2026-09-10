@@ -1,5 +1,5 @@
-// Заметки проекта и режим ассистента (roadmap-4 пп.6–7): что модель должна помнить между ходами
-// и с каким приоритетом работать. Хранится сервером в `.make/`, попадает в контекст каждого хода.
+// Project notes and assistant mode (roadmap-4, items 6-7): persistent guidance and priorities
+// across turns. Stored on the server under .make/ and included in each turn's context.
 import { useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { MakeAssistantMode, MakeProjectNotes, MakeStack, MakeUiKit } from '@shared/make'

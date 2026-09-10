@@ -11,39 +11,39 @@ export interface MakePaneProps {
   | 'projects:gitFile' | 'projects:gitSaveFile' | 'projects:componentTicket'
   | 'projects:storybookOpen' | 'projects:storybookCloseTunnel'>
   make?: RendererMakeBridge
-  /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
+  /** Insert a request about the selected element into the chat composer. */
   onInsertToChat?: (text: string) => void
-  /** Отправить сообщение ассистенту сразу (кнопка «Исправить» в баннере ошибок). */
+  /** Send a message to the assistant immediately from the error banner's fix action. */
   onAskAssistant?: (text: string) => void
-  /** Приложить файл к сообщению чата (скриншот превью). */
+  /** Attach a file, such as a preview screenshot, to a chat message. */
   onAttachImage?: (file: File) => void
-  /** Открытый файл и выделение — хост подмешивает в следующее сообщение чата (п.21). */
+  /** Open file and selection, included by the host in the next chat message (item 21). */
   onEditorContext?: (ctx: EditorContextPayload | null) => void
-  /** Расход беседы проекта — суммарная стоимость в шапке (п.24). */
+  /** Total project conversation cost shown in the header (item 24). */
   usage?: ConversationUsage | null
-  /** Идёт ход ассистента: на старте снимаем «до», по окончании (после правок) — «после» (roadmap-2 п.8). */
+  /** Assistant turn state: capture before at turn start and after once edits finish (roadmap-2, item 8). */
   turnActive?: boolean
-  /** Текст последнего запроса пользователя — для самопроверки «Сверить с запросом» (roadmap-4 п.5). */
+  /** Latest user request for checking the result against the original instruction (roadmap-4, item 5). */
   lastRequest?: string | null
-  /** Режим вопроса (roadmap-4 п.4): следующий ход пойдёт в «План» — только ответ, без правок. */
+  /** Question mode (roadmap-4, item 4): send the next turn in Plan mode for an answer without edits. */
   askOnly?: boolean
   onAskOnlyChange?: (on: boolean) => void
-  /** База превью; по умолчанию — REST.makePreview (тест подменяет). */
+  /** Preview base URL; defaults to REST.makePreview and can be replaced in tests. */
   previewBase?: string
   /**
-   * Cookie-гейт превью: iframe не умеет слать Bearer, поэтому перед первой загрузкой
-   * сервер выпускает preview-cookie (`session:ensurePreview`, как у Web Reader).
+   * Preview cookie gate: iframes cannot send Bearer headers, so the server issues preview-cookie
+   * before the first load via session:ensurePreview, as with Web Reader.
    */
   localAgentId?: string | null
   ensurePreview?: () => Promise<boolean>
-  /** Открыть карточку связанной задачи на доске (диалог «Задачи проекта»). */
+  /** Open the linked task card from the project-task dialog. */
   onOpenTask?: (projectId: string, taskId: string) => void
   /**
-   * Проект чата. Есть проект — появляется вкладка «Проект»: компоненты реального
-   * репозитория из рабочей копии на машине и Storybook проекта.
+   * Conversation project: enables the Project tab with repository components from a machine working
+   * copy and the project's Storybook.
    */
   projectId?: string | null
-  /** Задержка автосохранения; тесты уменьшают. */
+  /** Autosave delay, shortened in tests. */
   autosaveDelayMs?: number
 }
 

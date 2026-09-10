@@ -1,14 +1,15 @@
-// Скриншот превью Make (п.10): same-origin iframe → html2canvas по документу iframe → PNG-файл
-// для вложения в чат. Библиотека грузится лениво: нужна редко, а весит ~200 КБ.
+// Make preview screenshot (item 10): capture the same-origin iframe document with html2canvas and
+// attach the PNG to chat. Load the roughly 200 KB library lazily because screenshots are
+// infrequent.
 export interface ScreenshotTarget {
   doc: Document
-  /** Элемент внутри документа; по умолчанию — вся страница. */
+  /** Target element inside the document; defaults to the whole page. */
   element?: Element | null
-  /** Ширина viewport iframe — чтобы медиа-запросы совпали с тем, что видит пользователь. */
+  /** Iframe viewport width so media queries match what the user sees. */
   width?: number
 }
 
-/** CSS документа для клона: правила читаемых таблиц одним текстом + href тех <link>, что удалось прочитать. */
+/** Clone CSS: combine readable stylesheet rules and record hrefs of successfully read links. */
 export function collectInlineCss(doc: Document): { cssText: string; inlinedHrefs: Set<string> } {
   const parts: string[] = []
   const inlinedHrefs = new Set<string>()
@@ -16,7 +17,7 @@ export function collectInlineCss(doc: Document): { cssText: string; inlinedHrefs
     try {
       parts.push(Array.from(sheet.cssRules).map((r) => r.cssText).join('\n'))
       if (sheet.href) inlinedHrefs.add(sheet.href)
-    } catch { /* кросс-доменная таблица — оставим её <link> в клоне */ }
+    } catch { /* Keep cross-origin stylesheet links in the clone. */ }
   }
   return { cssText: parts.join('\n'), inlinedHrefs }
 }
@@ -24,12 +25,13 @@ export function collectInlineCss(doc: Document): { cssText: string; inlinedHrefs
 export async function captureIframeScreenshot(target: ScreenshotTarget, filename = 'preview.png'): Promise<File> {
   const { default: html2canvas } = await import('html2canvas')
   const el = (target.element ?? target.doc.documentElement) as HTMLElement
-  // html2canvas перезапрашивает <link rel=stylesheet> сам — без preview-cookie превью отдаёт 401, и снимок
-  // выходит «голым». Поэтому правила same-origin таблиц инлайним в клон, а их <link> убираем; кросс-доменные
-  // (Google Fonts и т.п., cssRules недоступны) оставляем — их html2canvas дотянет сам (roadmap-3 п.5).
+  // html2canvas refetches stylesheet links without the preview cookie, causing 401 responses and
+  // unstyled screenshots. Inline readable same-origin rules into the clone and remove their links.
+  // Keep cross-origin links such as Google Fonts, whose cssRules cannot be read, for html2canvas to
+  // load itself (roadmap-3, item 5).
   const { cssText, inlinedHrefs } = collectInlineCss(target.doc)
-  // Дождаться загрузки веб-шрифтов, иначе клон отрисуется запасным шрифтом.
-  try { await (target.doc as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready } catch { /* без FontFaceSet — как есть */ }
+  // Wait for web fonts so the clone does not render with fallback fonts.
+  try { await (target.doc as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready } catch { /* Continue without FontFaceSet. */ }
   const canvas = await html2canvas(el, {
     useCORS: true,
     allowTaint: true,

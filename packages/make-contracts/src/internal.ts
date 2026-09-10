@@ -1,29 +1,27 @@
-// Внутренний протокол «ядро ↔ Make» для режима двух процессов. Оба конца — Fastify, оба
-// закрыты одним Bearer (`VC_INTERNAL_TOKEN`), наружу Caddy эти пути не проксирует.
-//
-// Формат намеренно один: RPC `{ method, args }` поверх порта. Порты `MakeCore` и `MakeService`
-// узкие и уже описаны интерфейсами, поэтому отдельный REST-ресурс на каждый метод не добавил бы
-// ничего, кроме второй копии контракта. Диспетчеры живут здесь же — рядом с портами, которые они
-// обслуживают: список разрешённых методов растёт вместе с интерфейсом, а не в чужом файле.
+// Internal core-to-Make protocol for separate processes. Both Fastify endpoints use the shared
+// VC_INTERNAL_TOKEN Bearer secret, and Caddy does not expose these paths. RPC uses { method, args }
+// over the narrow MakeCore and MakeService interfaces; separate REST resources would duplicate the
+// contract. Dispatchers stay beside the ports so allowlists evolve with their interfaces.
 
 import { RpcError, type RpcRequest } from '@voicechat/shared'
 import type { MakeCore } from './core.js'
 import type { MakeHubEvent } from './hub.js'
 import type { MakeService } from './service.js'
 
-/** У ядра: данные для Make (`MakeCore` по RPC) и приём событий шины Make. */
+/** Core endpoints for MakeCore RPC data and Make hub events. */
 export const INTERNAL_MAKE_CORE_PATH = '/internal/make/core'
 export const INTERNAL_MAKE_EVENTS_PATH = '/internal/make/events'
-// Транспорт RPC и whoami общие для всех соседей ядра — живут в @voicechat/shared, здесь реэкспорт для совместимости.
+// RPC transport and whoami are shared by core's neighboring services in @voicechat/shared; retain
+// compatibility exports here.
 export { INTERNAL_WHOAMI_PATH, RpcError, createRpcClient, type RpcRequest, type RpcResponse, type WhoamiRequest, type WhoamiResponse } from '@voicechat/shared'
-/** У Make: `MakeService` по RPC для ядра и здоровье процесса. */
+/** Make endpoints for MakeService RPC and process health. */
 export const INTERNAL_MAKE_SERVICE_PATH = '/internal/service'
 export const MAKE_HEALTH_PATH = '/v1/health'
 
 
 export type MakeEventsRequest = { events: MakeHubEvent[] }
 
-/** Методы `MakeCore`, доступные по RPC; `machineFs.*` — отдельными именами, `boardChanged` — без ответа. */
+/** MakeCore RPC methods: machineFs operations have distinct names; boardChanged expects no response. */
 export const CORE_RPC_METHODS = [
   'conversation', 'conversationOwner', 'conversationProject', 'isProjectViewer', 'makeConversationIdsOf',
   'taskLinks', 'linkableTasks', 'linkTaskDesign', 'unlinkTaskDesign', 'taskDesigns', 'project', 'userExists',
@@ -31,7 +29,7 @@ export const CORE_RPC_METHODS = [
 ] as const
 export type CoreRpcMethod = (typeof CORE_RPC_METHODS)[number]
 
-/** Диспетчер RPC над реализацией порта (у ядра — `LocalMakeCore`). */
+/** RPC dispatcher around a port implementation, such as LocalMakeCore in core. */
 export function createCoreRpcDispatcher(core: MakeCore): (req: RpcRequest) => Promise<unknown> {
   return async ({ method, args }) => {
     if (!Array.isArray(args) || !(CORE_RPC_METHODS as readonly string[]).includes(method)) throw new RpcError(400, `неизвестный метод ${method}`)
@@ -50,7 +48,7 @@ export function createCoreRpcDispatcher(core: MakeCore): (req: RpcRequest) => Pr
   }
 }
 
-/** Методы `MakeService`, которые ядро зовёт у отдельного процесса Make (остальные считаются у ядра). */
+/** MakeService methods core invokes on standalone Make; remaining methods are computed by core. */
 export const SERVICE_RPC_METHODS = ['promptContext', 'listFiles', 'adminStats', 'metrics', 'sweep'] as const
 export type ServiceRpcMethod = (typeof SERVICE_RPC_METHODS)[number]
 

@@ -1,5 +1,5 @@
-// Публичная поверхность пакета для ядра: порты, сборка модуля и то, что нужно тестам ядра.
-// Всё остальное (мастерские, витрина, импорт) — внутреннее дело Make.
+// Public package surface for core: ports, module composition, and helpers needed by core tests.
+// Workshops, the showcase, and imports are internal to Make.
 export type { MakeCore, MakeMachineFs, MakeTaskDesignArgs } from './core.js'
 export type { MakeService } from './service.js'
 export { createMakeModule, type MakeModule, type MakeModuleOptions } from './module.js'

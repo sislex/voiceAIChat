@@ -1,26 +1,26 @@
-# Make — roadmap 2 (после 40 пунктов)
+# Make — roadmap 2 (after the first 40 items)
 
-Статусы: ✅ сделано · ⏸ ждёт внешнего ресурса · ✗ пропущено (причина в строке).
-Лимиты по умолчанию: rate-limit формы пароля — 10 попыток / 10 мин на IP+токен; фоновая очистка снимков — старше 30 дней, закреплённые в публикации не трогаются.
+Statuses: ✅ completed · ⏸ waiting for an external resource · ✗ skipped with a reason.
+Default limits: publication password forms allow 10 attempts per 10 minutes per IP and token; background cleanup removes snapshots older than 30 days while retaining publication-pinned snapshots.
 
-| № | Пункт | Статус |
-|---|---|---|
-| 1 | Авто-проверка после правок ассистента (compileDiagnostics + check в ответе make_write_file) | ✅ |
-| 2 | Кнопка «Откатить правки этого ответа» на сообщении (снимок «До правок») | ✅ |
-| 3 | Rate-limit формы пароля публикации | ✅ 10 попыток / 10 мин на IP+токен → 429 |
-| 4 | dnd: не стартовать жест до порога — клик по строке дерева доходит до onClick в Playwright | ✅ капчур указателя берётся при старте жеста, E2E снова кликает по-настоящему |
-| 5 | Dialog ui-kit: слот body с отступами вместо .make-dialog | ✅ проп `padded` → `.vc-dialog-body` |
-| 6 | Починить typecheck:desktop (фикстура Settings) | ✅ спред `DEFAULT_SETTINGS` в фикстуре + `vite-worker.d.ts` в include desktop |
-| 7 | Синхронизация комментариев между вкладками (событие make.changed / hub) | ✅ `make.changed` с псевдопутём `.comments.json` |
-| 8 | Визуальный diff «до/после» хода в чате (скриншоты превью) | ✅ полоса «Изменения последнего ответа» над превью + окно сравнения + «В чат» |
-| 9 | Контекст токенов и открытых комментариев в промпт | ✅ `MakeWorkspaces.promptContext` → блок «Контекст проекта Make» в промпте хода |
-| 10 | Стриминг записи файлов ассистентом в редактор | ✅ в режиме «Код» записанный ассистентом файл открывается сразу, вкладка подсвечивается (побайтовый стриминг невозможен: MCP пишет файл целиком) |
-| 11 | История публикаций с откатом | ✅ `MakePublication.history` (до 30 записей), «Вернуть» в диалоге |
-| 12 | Мок-API: persist-режим (POST/PUT/DELETE пишут в mock/*.json) | ✅ коллекции `{"$collection":true,"$body":[…]}` — CRUD по id в превью, на публикации только чтение |
-| 13 | Библиотека: импорт набора компонентов как дизайн-кит с токенами | ✅ «Сохранить весь кит» (компоненты + сториз + токены), вставка сливает токены без затирания |
-| 14 | Presence и блокировка файла при чужом редактировании | ✅ heartbeat `make:presence`, WS `make.presence`, чип 👥 N, read-only при несохранённых правках в другой вкладке |
-| 15 | Квота per-user + предупреждение в админке | ✅ `MAKE_LIMITS.maxUserBytes` 512 МБ, проверка при записи/импорте, ⚠ в дашборде при ≥ 80 % |
-| 16 | Фоновая очистка снимков (30 дней) и PNG стори | ✅ `MakeWorkspaces.sweep` при старте и каждые 6 ч; закреплённый и самый свежий снимок не трогаются |
-| 17 | Метрики Make в /api/health или отдельном /metrics | ✅ `GET /api/admin/make/metrics` (Prometheus text, Bearer админа) |
-| 18 | Экспорт push в GitHub (⏸ токен) | ⏸ нужен токен пользователя (GitHub PAT) и `git` в образе сервера |
-| 19 | Импорт из Figma (⏸ токен) | ⏸ нужен Figma personal access token и ключ файла |
+| # | Item | Status |
+|---|------|--------|
+| 1 | Automatic checks after assistant edits: compileDiagnostics and check results in make_write_file responses | ✅ |
+| 2 | Restore this response's edits from its pre-edit snapshot | ✅ |
+| 3 | Publication password form rate limit | ✅ 10 attempts per 10 minutes per IP and token → 429 |
+| 4 | Start drag gestures only after the movement threshold, preserving real tree-row clicks in Playwright | ✅ capture the pointer when the gesture starts; E2E uses real clicks again |
+| 5 | Padded ui-kit Dialog body instead of .make-dialog | ✅ `padded` prop and `.vc-dialog-body` |
+| 6 | Fix desktop typecheck's Settings fixture | ✅ spread `DEFAULT_SETTINGS` into the fixture and include vite-worker.d.ts in desktop |
+| 7 | Synchronize comments between tabs through make.changed and the hub | ✅ make.changed with the `.comments.json` pseudo-path |
+| 8 | Visual before/after turn diff in chat using preview screenshots | ✅ latest-response changes strip, comparison dialog, and chat attachment |
+| 9 | Add design tokens and open comments to prompt context | ✅ `MakeWorkspaces.promptContext` supplies the Make project context block |
+| 10 | Show assistant file writes in the editor | ✅ Code mode opens each newly written file and highlights its tab; byte streaming is unavailable because MCP writes entire files |
+| 11 | Publication history with rollback | ✅ `MakePublication.history`, up to 30 entries, and restore action |
+| 12 | Persistent mock API: POST/PUT/DELETE write mock/*.json | ✅ `{"$collection":true,"$body":[…]}` supports CRUD by ID in previews; publications remain read-only |
+| 13 | Import a component design kit with tokens | ✅ save components, stories, and tokens together; insertion merges tokens without overwriting existing values |
+| 14 | Presence and file locking when another tab is editing | ✅ make:presence heartbeats, make.presence WS events, tab-count chip, and read-only mode when another tab has unsaved changes |
+| 15 | Per-user quota and admin warning | ✅ `MAKE_LIMITS.maxUserBytes` is 512 MB, checked on writes/imports; dashboard warning at ≥80% |
+| 16 | Background cleanup of old snapshots and story PNGs | ✅ `MakeWorkspaces.sweep` at startup and every six hours; retain pinned and newest snapshots |
+| 17 | Make metrics in health or a dedicated endpoint | ✅ `GET /api/admin/make/metrics`, Prometheus text with admin Bearer authentication |
+| 18 | GitHub push export | ⏸ requires a user GitHub PAT and Git in the server image |
+| 19 | Figma import | ⏸ requires a Figma personal access token and file key |
