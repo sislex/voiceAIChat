@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 369ab366
+checked: 4be6ddac
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -133,6 +133,14 @@ XHTML и CSS прокси переписывает URL ресурсов, ссы�
 запись пользовательских действий через `postMessage`, а на `pagehide` снимает их
 обработчики. UI-поведение и семантика сценариев — в [ui.md](ui.md#веб-превью), путь
 контракта — в `packages/shared/src/protocol.ts`.
+
+Алиасы Web Reader читаются в `reader/module.ts` непосредственно из
+`process.env.VC_BROWSER_HOST_ALIASES` при создании локального модуля. Передача
+похожего поля через `loadConfig({...})` в тесте не меняет эту среду: in-process
+стенд должен явно задать и затем восстановить переменную, как в
+`e2e/webReaderModel.e2e.test.ts`. Созданный Web Reader-разговор имеет scope
+`web-reader`; чтение `/api/conversations/:id` в таком стенде требует
+`?scope=web-reader`, ответ содержит `{conversation, messages}`.
 
 CSS разбирается PostCSS, значения — postcss-value-parser (`previewStyles.ts`):
 переписываются настоящие url(), строковый @import и строковые источники image-set;
