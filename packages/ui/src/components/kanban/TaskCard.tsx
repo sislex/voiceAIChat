@@ -31,7 +31,7 @@ export interface TaskCardProps {
   /** Колонки со смыслом «done» — для прогресса и зачёркивания ключа. */
   doneColumnIds: ReadonlySet<string>
   columnSemanticType?: KanbanColumnSemanticType
-  onOpen: (taskId: string, tab?: TaskModalTab) => void
+  onOpen: (taskId: string, tab?: TaskModalTab, initialChatDraft?: string) => void
   onUpdate: (taskId: string, fields: { flagged?: boolean; autoPilot?: boolean }) => void
   onDelete: (taskId: string) => void
   onMoveTop: (taskId: string) => void
@@ -218,9 +218,13 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         <button
           type="button"
           className="jcard-latest-failure"
-          title="Последний этап завершился с ошибкой. Открыть ленту рана"
-          aria-label="Последний этап завершился с ошибкой. Открыть ленту рана"
-          onClick={(event) => { event.stopPropagation(); props.onOpen(task.id, failureTab) }}
+          title="Последний этап завершился с ошибкой. Открыть AI-чат задачи"
+          aria-label="Последний этап завершился с ошибкой. Открыть AI-чат задачи"
+          onClick={(event) => {
+            event.stopPropagation()
+            const error = ciSummary?.error ?? 'Последний этап завершился с ошибкой'
+            props.onOpen(task.id, 'chat', `Найди в чем причина ошибки по задаче: "${error}"`)
+          }}
         >
           <span aria-hidden="true">⚠</span> Последний этап завершился с ошибкой
         </button>

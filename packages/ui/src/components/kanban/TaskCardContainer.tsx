@@ -181,7 +181,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   // доски (`task-modal`, `task-desc-view`), и привычка пользователей. Дефолт
   // `new` ломал 14 тестов доски и страницы проекта — merge-ран это и поймал.
   const [version, setVersion] = useState<TaskCardVersion>(props.initialVersion ?? 'legacy')
-  const [activeTab, setActiveTab] = useState<TaskCardTab>('overview')
+  const [activeTab, setActiveTab] = useState<TaskCardTab>(props.initialTab === 'chat' ? 'chat' : 'overview')
   const [reworkOpen, setReworkOpen] = useState(false)
   const [draft, setDraft] = useState<TaskReworkDraft>(EMPTY_DRAFT)
   const [cycles, setCycles] = useState<TaskReworkCycleViewModel[]>(props.reworkCycles ?? [])
@@ -219,7 +219,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   const renderPanel = (tab: TaskCardTab): ReactNode => {
     const shared = { projectId: props.task.projectId, taskId: props.task.id }
     const runActive = Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(props.task.activeMergeRunId)
-    if (tab === 'chat') return <TaskChatPanel projectId={props.task.projectId} taskId={props.task.id} onOpenConversationSettings={props.onOpenConversationSettings} />
+    if (tab === 'chat') return <TaskChatPanel projectId={props.task.projectId} taskId={props.task.id} initialDraft={props.initialChatDraft} onOpenConversationSettings={props.onOpenConversationSettings} />
     if (tab === 'preparation') return <TaskPreparationTab
       {...shared} liveRunId={props.task.taskPreparationRunId} liveStatus={props.task.taskPreparationStatus}
       loadRuns={props.loadPreparationRuns} loadRun={props.loadPreparationRun} onStart={props.onStartPreparation}

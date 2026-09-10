@@ -123,6 +123,8 @@ export interface TaskModalProps {
   onStartCi?: (taskId: string) => void | Promise<void>
   onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   initialTab?: TaskModalTab
+  /** Локальный черновик встроенного AI-чата; до явной отправки не сохраняется. */
+  initialChatDraft?: string
   /** Возможности типа проекта: CI/QA/merge-вкладки прячутся вместе с подсистемой. */
   projectFeatures?: ProjectFeatureSet
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
@@ -300,10 +302,10 @@ function ModelWorkDisclosure({
  * Task-scoped adapter for the regular chat surface.  The conversation is never
  * navigated to: only task-bound history from the current project is loaded.
  */
-export function TaskChatPanel({ projectId, taskId, onOpenConversationSettings }: { projectId: string; taskId: string; onOpenConversationSettings?: (conversationId: string, projectId: string) => void }): JSX.Element {
+export function TaskChatPanel({ projectId, taskId, initialDraft, onOpenConversationSettings }: { projectId: string; taskId: string; initialDraft?: string; onOpenConversationSettings?: (conversationId: string, projectId: string) => void }): JSX.Element {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(initialDraft ?? '')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -329,6 +331,7 @@ export function TaskChatPanel({ projectId, taskId, onOpenConversationSettings }:
   }
 
   useEffect(() => { void load() }, [projectId, taskId])
+  useEffect(() => { if (initialDraft !== undefined) setDraft(initialDraft) }, [initialDraft])
   useEffect(() => {
     if (!conversationId) return
     const done = window.claude?.onDone((event) => {
@@ -1249,7 +1252,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </section>}
         {!props.draft && <>
         <section className="task-tab-panel task-chat-tab" data-testid="task-chat-panel" {...panelProps('chat')}>
-          {activeTab === 'chat' && <TaskChatPanel projectId={task.projectId} taskId={task.id} onOpenConversationSettings={props.onOpenConversationSettings} />}
+          {activeTab === 'chat' && <TaskChatPanel projectId={task.projectId} taskId={task.id} initialDraft={props.initialChatDraft} onOpenConversationSettings={props.onOpenConversationSettings} />}
         </section>
         <section className="task-tab-panel" data-testid="task-timeline-panel" {...panelProps('timeline')}>
           <PanelHeading title="Временная шкала" description="Этапы задачи, попытки внутри них и время, потраченное на каждую." />

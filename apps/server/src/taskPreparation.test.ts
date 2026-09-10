@@ -591,7 +591,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('missing_acceptance_criteria')
   })
 
-  // @testCase TC-REG-02
+  // @testCase TC-SCHEMA-SINGLE-JSON
   it('отклоняет служебный текст и несколько JSON-объектов вместо чистого Development Brief', async () => {
     const { project, task } = await taskInBacklog()
     const prefixed = `Подготовка завершена.\\n${compatibleReadiness()}`
@@ -707,6 +707,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
   })
 
+  // @testCase TC-SCHEMA-NORMALIZATION
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())

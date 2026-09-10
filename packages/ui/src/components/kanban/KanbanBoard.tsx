@@ -382,9 +382,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   // Модалка задачи: управляемая пропсами или внутренняя.
   const [internalOpenTask, setInternalOpenTask] = useState<string | null>(null)
   const [openTaskTab, setOpenTaskTab] = useState<TaskModalTab | undefined>(props.initialOpenTaskTab)
+  const [openTaskChatDraft, setOpenTaskChatDraft] = useState<string | undefined>()
   const openTaskId = props.openTaskId !== undefined ? props.openTaskId : internalOpenTask
-  const setOpenTaskId = (taskId: string | null, tab?: TaskModalTab): void => {
+  const setOpenTaskId = (taskId: string | null, tab?: TaskModalTab, initialChatDraft?: string): void => {
     setOpenTaskTab(tab)
+    setOpenTaskChatDraft(initialChatDraft)
     if (props.onOpenTaskChange) props.onOpenTaskChange(taskId, tab)
     else setInternalOpenTask(taskId)
   }
@@ -1846,6 +1848,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onStartCi={props.onStartCi}
           onStartPreparation={props.onStartPreparation}
           initialTab={openTaskTab}
+          initialChatDraft={openTaskChatDraft}
           loadPreparationRuns={props.loadPreparationRuns}
           loadPreparationRun={props.loadPreparationRun}
           loadReworkCycles={props.loadReworkCycles}
