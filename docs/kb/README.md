@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 76 коммит(ов) в areas после сверки: d4bf0c9f fix(reader): use full Chromium in Web Reader conversations (cycle 19/20) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 96 коммит(ов) в areas после сверки: 8b5e9306 Merge main into CHAT-442 (task 4d4c46c9-7065-430c-ad4e-8a3c23111643) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 8 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1331 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1332 коммит(ов) в areas после сверки: 7b2c3283 docs(kb): update after merge 4d4c46c9-7065-430c-ad4e-8a3c23111643 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 8b5e9306 Merge main into CHAT-442 (task 4d4c46c9-7065-430c-ad4e-8a3c23111643) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 29 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 58 коммит(ов) в areas после сверки: 8b5e9306 Merge main into CHAT-442 (task 4d4c46c9-7065-430c-ad4e-8a3c23111643) … |
@@ -39,7 +39,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-10 | ⚠ 18 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 196 коммит(ов) в areas после сверки: 30588c23 fix(reader): open the current project without host aliases (cycle 15/20) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-09 | ⚠ 13 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-10 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 148 коммит(ов) в areas после сверки: 30588c23 fix(reader): open the current project without host aliases (cycle 15/20) … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-10 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -64,7 +64,7 @@
 
 ## Журнал сессий
 
-Всего записей: 724. Последние:
+Всего записей: 726. Последние:
 
 - [2026-09-10-macbook-air-user-task-error-opens-task-chat.md](log/2026-09-10-macbook-air-user-task-error-opens-task-chat.md) — task-error-opens-task-chat
 - [2026-09-10-macbook-air-user-task-chat-composer.md](log/2026-09-10-macbook-air-user-task-chat-composer.md) — task-chat-composer

@@ -19,6 +19,7 @@ import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantComma
 import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { PreviewAction } from '@shared/previewActions'
+import { browserId } from '@shared/browserId'
 import type { ReaderHostRegistration, WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { parseUserAgent } from '@voicechat/sessions-core'
@@ -632,7 +633,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!bridge?.onChanged) return
     return bridge.onChanged((message) => {
       if (message.conversationId !== chat.activeId) return
-      setReaderActions((items) => [...items, { id: globalThis.crypto.randomUUID(), action: message.action, address: message.address, title: message.title }].slice(-20))
+      const item = { id: browserId(), action: message.action, address: message.address, title: message.title }
+      setReaderActions((items) => [...items, item].slice(-20))
       if (message.action.kind !== 'errors') {
         const registration = previewRunnerRef.current
         const sequence = ++readerErrorSequence.current
