@@ -38,6 +38,7 @@ export function createReaderModule(deps: ReaderDeps): void {
   const cookies = new PreviewCookieStore()
   registerPreviewProxy(app, {
     cookies,
+    projectResource: (request) => core.projectResource(request),
     hostAliases: parseHostAliases(process.env.VC_BROWSER_HOST_ALIASES),
     machines: {
       bridge: deps.machines,

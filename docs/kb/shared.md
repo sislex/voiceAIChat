@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-09-10
-checked: 0a0f4423
+checked: 3ff911b2
 areas:
   - packages/shared/src
 ---
@@ -153,3 +153,12 @@ Stream-парсеры принимают строки событий CLI и но
 зависимость). Без явной локали браузер отдаёт `8/28/2026`, где день и месяц не
 различить — поэтому `toLocaleDateString()` без аргументов в интерфейсе не
 используем.
+
+### Текущее приложение в Reader
+
+`previewProject.ts`: `READER_PROJECT_ORIGIN=https://app.internal`, типы
+ReaderProjectRequest/Response и проверки адресов. readerProjectUrl переводит HTTP
+алиас и точный origin текущего приложения в постоянный HTTPS origin, сохраняя
+path/query/hash. isReaderProjectPath исключает служебные RPC/MCP и рекурсию preview.
+Контракт ресурса содержит только method/path/headers/bodyBase64, адрес транспорта
+ему не передаётся. Он одинаков для встроенного Reader и отдельного процесса.

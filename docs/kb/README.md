@@ -14,7 +14,7 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 24 коммит(ов) в areas после сверки: f4474be3 fix(reader): restore project login and isolate cached data (cycle 03/20) … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-08 | ⚠ 3 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: f4474be3 fix(reader): restore project login and isolate cached data (cycle 03/20) |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-09 | ⚠ 8 коммит(ов) в areas после сверки: 150e59f4 fix(reader): preserve browser storage interfaces (cycle 13/20) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-09 | ⚠ 9 коммит(ов) в areas после сверки: 3ff911b2 fix(reader): validate model actions against live controls (cycle 14/20) … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 10 коммит(ов) в areas после сверки: 2f4db9fa fix(reader): improve address and page loading controls (cycle 09/20) … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 146 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 126 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 74 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 88 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-09 | ⚠ 4 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1303 коммит(ов) в areas после сверки: 150e59f4 fix(reader): preserve browser storage interfaces (cycle 13/20) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1304 коммит(ов) в areas после сверки: 3ff911b2 fix(reader): validate model actions against live controls (cycle 14/20) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 50 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 15 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 54 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
@@ -34,14 +34,14 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-08 | ⚠ 10 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 215 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-09 | ⚠ 3 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-09 | ⚠ 11 коммит(ов) в areas после сверки: 150e59f4 fix(reader): preserve browser storage interfaces (cycle 13/20) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-09 | ⚠ 12 коммит(ов) в areas после сверки: 3ff911b2 fix(reader): validate model actions against live controls (cycle 14/20) … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ✓ |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: ad19ca64 fix(reader): preserve and safely edit recorded scenarios (cycle 11/20) |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-10 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 195 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-09 | ⚠ 4 коммит(ов) в areas после сверки: 2f4db9fa fix(reader): improve address and page loading controls (cycle 09/20) … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 147 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-10 | ⚠ 3 коммит(ов) в areas после сверки: 150e59f4 fix(reader): preserve browser storage interfaces (cycle 13/20) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-10 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -64,8 +64,9 @@
 
 ## Журнал сессий
 
-Всего записей: 694. Последние:
+Всего записей: 695. Последние:
 
+- [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-15.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-15.md) — web-reader-cycle-15
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-14.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-14.md) — web-reader-cycle-14
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-13.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-13.md) — web-reader-cycle-13
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-12.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-12.md) — web-reader-cycle-12
@@ -75,7 +76,6 @@
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-08.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-08.md) — web-reader-cycle-08
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-07.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-07.md) — web-reader-cycle-07
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-06.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-06.md) — web-reader-cycle-06
-- [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-05.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-05.md) — web-reader-cycle-05
 
 ## Исторические планы
 

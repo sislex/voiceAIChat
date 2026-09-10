@@ -13,6 +13,6 @@ describe('адресная строка Reader', () => {
     expect(normalizeReaderAddress('#/machines', base).url).toBe('http://project.machine.internal:5173/catalog/page?old=1#/machines')
     expect(normalizeReaderAddress('?new=2', base).url).toBe('http://project.machine.internal:5173/catalog/page?new=2')
   })
-  it('относительный путь без сайта сообщает понятную ошибку', () => expect(normalizeReaderAddress('/settings', null).error).toContain('Сначала'))
+  it('путь без открытого сайта ведёт в текущий проект', () => expect(normalizeReaderAddress('/settings', null).url).toBe('https://app.internal/settings'))
   it.each(['javascript:alert(1)', 'data:text/html,test', 'file:///etc/passwd', 'https://' + 'x'.repeat(5000)])('не исполняет неподдержанный адрес %s', value => expect(normalizeReaderAddress(value, base).error).toBeTruthy())
 })

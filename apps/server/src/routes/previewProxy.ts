@@ -1,3 +1,5 @@
+import { READER_PROJECT_ORIGIN, readerProjectUrl, type ReaderProjectRequest, type ReaderProjectResponse } from '@voicechat/shared'
+import { loadPreviewProject, ProjectPreviewError } from './previewProjectLoader.js'
 import { previewInteractionHelpers } from './previewInteractions.js'
 import { previewStorageScript } from './previewStorage.js'
 import { PreviewCookieStore, responseSetCookies } from './previewCookies.js'
@@ -57,6 +59,7 @@ export interface PreviewMachineBridge {
 }
 
 export interface PreviewProxyDeps {
+  projectResource?: (request: ReaderProjectRequest) => Promise<ReaderProjectResponse>
   /** Изолированный контейнер; тесты могут передать его явно. */
   cookies?: PreviewCookieStore
   /** Разрешённые оператором пары VC_BROWSER_HOST_ALIASES; пользователь их не задаёт. */
@@ -1064,7 +1067,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
     scope.all<{ Querystring: { url?: string }; Body: string | Buffer }>('/api/preview', async (req, reply) => {
       let url: URL
       try {
-        url = new URL(req.query.url ?? '')
+        url = new URL(readerProjectUrl(req.query.url ?? '', req.protocol + '://' + req.headers.host))
         if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error()
       } catch {
         return reply.code(400).send({ error: 'invalid_url', message: 'Разрешены только HTTP и HTTPS адреса' })
@@ -1072,13 +1075,26 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
       try {
         // Самодиагностика не выполняет сетевой запрос: принимается только точный
         // same-origin внутренний маршрут и проходит через тот же rewrite/DOM bridge.
-        if (url.pathname === '/api/preview/diagnostics' && url.host === req.headers.host) {
+        if (url.pathname === '/api/preview/diagnostics' && (url.host === req.headers.host || url.origin === READER_PROJECT_ORIGIN)) {
           const source = Buffer.from(previewDiagnosticsHtml(url.searchParams.get('page') === 'destination'))
           const rewritten = rewritePreviewBody(source, 'text/html; charset=utf-8', url)
           return reply.type('text/html; charset=utf-8').send(rewritten)
         }
         const userId = uid(req)
         const body = (typeof req.body === 'string' || Buffer.isBuffer(req.body)) && req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
+        if (url.origin === READER_PROJECT_ORIGIN) {
+          if (!deps.projectResource) throw new PreviewProxyError(502, 'Текущее приложение недоступно этому Reader')
+          const project = await loadPreviewProject(deps.projectResource, cookies, userId, url, req.method, body, upstreamRequestHeaders(req.headers))
+          const type = headerValue(project.headers, 'content-type') ?? 'application/octet-stream'
+          const rewritten = rewritePreviewBody(project.body, type, project.finalUrl)
+          reply.code(project.status)
+          for (const [name, value] of Object.entries(project.headers)) {
+            if (!DROPPED_RESPONSE_HEADERS.has(name.toLowerCase()) && name.toLowerCase() !== 'location') reply.header(name, value)
+          }
+          reply.header('cache-control', 'private, no-store')
+          reply.header('content-length', String(rewritten.length))
+          return reply.send(rewritten)
+        }
         // Тестовые окружения машин: доставка через компаньон-агента, не сетью.
         const machineAgent = machineAgentIdOf(url.hostname)
         if (machineAgent) {
@@ -1148,7 +1164,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
         reply.header('content-length', String(rewritten.length))
         return reply.send(rewritten)
       } catch (err) {
-        const known = err instanceof PreviewProxyError ? err : new PreviewProxyError(502, 'Сайт недоступен')
+        const known = (err instanceof PreviewProxyError || err instanceof ProjectPreviewError) ? err : new PreviewProxyError(502, 'Сайт недоступен')
         // Документ в iframe отвечать JSON-ом нельзя: пользователь видел сырой
         // `{"error":"preview_unavailable"}` вместо объяснения. Для кадров отдаём
         // страницу с причиной и кнопкой повтора, для fetch/XHR — прежний JSON.

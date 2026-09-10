@@ -1,3 +1,4 @@
+import { READER_PROJECT_ORIGIN } from '@shared/previewProject'
 import { PREVIEW_ACTION_LIMITS } from '@shared/previewActions'
 
 /** Адресная строка принимает привычный ввод; сообщения моста остаются строгими HTTP URL. */
@@ -8,8 +9,7 @@ export function normalizeReaderAddress(value: string, current: string | null): {
   try {
     let url: URL
     if (/^(?:[/?#]|[.]{1,2}\/)/.test(input) && !input.startsWith('//')) {
-      if (!current) return { url: null, error: 'Сначала откройте сайт, затем укажите относительный путь.' }
-      url = new URL(input, current)
+      url = new URL(input, current ?? READER_PROJECT_ORIGIN)
     } else if (/^https?:\/\//i.test(input)) url = new URL(input)
     else {
       const hostPort = /^[^/?#:\s]+:\d{1,5}(?=[/?#]|$)/.test(input)

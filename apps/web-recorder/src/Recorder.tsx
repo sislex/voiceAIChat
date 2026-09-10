@@ -1,3 +1,4 @@
+import { READER_PROJECT_ORIGIN, readerProjectUrl } from '@shared/previewProject'
 import { Button, IconButton } from '@voicechat/ui-kit'
 import { appendWebRecorderStep, normalizeWebRecorderStep } from '@shared/webRecorderScenario'
 import { loadScenario, scenarioKey } from './scenarioStorage'
@@ -80,6 +81,7 @@ export function Recorder(): JSX.Element {
     setRecording(enabled)
   }
   const applyUrl = (next: string | null): void => {
+    if (next) next = readerProjectUrl(next, sameOrigin)
     loadGeneration.current++
     scenarioRunner.current?.cancel('Открывается другая страница — запуск отменён.')
     scenarioRunner.current?.setReady(false)
@@ -381,6 +383,7 @@ export function Recorder(): JSX.Element {
       <details ref={toolsMenu} className="webpreview-tools">
         <summary className="vc-btn vc-btn--secondary" aria-label="Инструменты страницы" data-active={(inspecting || editing || capturing || recording) || undefined}>Инструменты ▾</summary>
         <div className="webpreview-tools__menu" role="group" aria-label="Инструменты страницы">
+          <Button variant="secondary" type="button" onClick={() => { applyUrl(READER_PROJECT_ORIGIN + '/'); toolsMenu.current?.removeAttribute('open') }}>Текущий проект</Button>
           <Button variant="secondary" type="button" disabled={!url} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>⟲ Сессия</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={() => activateMode(inspecting ? null : 'inspect')}>⌖ Выбор элемента</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => activateMode(editing ? null : 'edit')}>✎ Редактировать</Button>
