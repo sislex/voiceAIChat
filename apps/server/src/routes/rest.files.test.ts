@@ -197,7 +197,7 @@ describe('REST: preview proxy', () => {
     const html = '<style>.a{background:url("/bg.png")}</style><div style="background-image:url(img/x.png)">x</div>'
     const result = rewritePreviewBody(Buffer.from(html), 'text/html', new URL('https://site.example/base/')).toString()
     expect(result).toContain('url("/api/preview?url=https%3A%2F%2Fsite.example%2Fbg.png")')
-    expect(result).toContain('url(/api/preview?url=https%3A%2F%2Fsite.example%2Fbase%2Fimg%2Fx.png)')
+    expect(result).toContain('url(&quot;/api/preview?url=https%3A%2F%2Fsite.example%2Fbase%2Fimg%2Fx.png&quot;)')
   })
 
   it('не пропускает наружу cookie и Authorization ChatAI, а Authorization страницы возвращает апстриму', () => {

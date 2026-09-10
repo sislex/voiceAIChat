@@ -1,3 +1,4 @@
+import { rewritePreviewSrcset } from './previewStyles.js'
 import { parse, type DefaultTreeAdapterMap } from 'parse5'
 
 type Element = DefaultTreeAdapterMap['element']
@@ -51,11 +52,8 @@ export function rewritePreviewHtml(source: string, page: URL, transforms: HtmlTr
         const value = item.value.trim().startsWith('#') ? item.value : transforms.url(item.value, base)
         replaceAttribute(el, item.name, value)
       } else if (item.name === 'style') replaceAttribute(el, item.name, transforms.css(item.value, base))
-      else if (item.name === 'srcset') {
-        replaceAttribute(el, item.name, item.value.split(',').map(part => {
-          const [url, ...descriptor] = part.trim().split(/\s+/)
-          return transforms.url(url, base) + (descriptor.length ? ' ' + descriptor.join(' ') : '')
-        }).join(', '))
+      else if (item.name === 'srcset' || item.name === 'imagesrcset') {
+        replaceAttribute(el, item.name, rewritePreviewSrcset(item.value, base, transforms.url))
       } else if (item.name === 'target' && ['_blank', '_parent', '_top'].includes(item.value.toLowerCase())) replaceAttribute(el, item.name, '_self')
       else if (item.name === 'integrity' && (el.tagName === 'script' || el.tagName === 'link')) replaceAttribute(el, item.name, null)
     }

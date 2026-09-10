@@ -1,3 +1,4 @@
+import { rewritePreviewCss } from './previewStyles.js'
 import { previewNavigationScript } from './previewNavigation.js'
 import { lookup } from 'node:dns/promises'
 import type { LookupAddress } from 'node:dns'
@@ -847,7 +848,7 @@ ready();
 
 export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewriteModules = true): Buffer {
   let text = body.toString('utf8')
-  const rewriteCssUrls = (css: string, targetBase = base): string => css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, targetBase) + quote + ')')
+  const rewriteCssUrls = (css: string, targetBase = base): string => rewritePreviewCss(css, targetBase, proxyUrl)
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
     text = rewritePreviewHtml(text, base, {
       url: proxyUrl,
