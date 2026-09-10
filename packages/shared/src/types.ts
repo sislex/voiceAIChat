@@ -207,8 +207,8 @@ export type BrowserSelectorAction =
   | { kind: 'press'; selector: string; key: string }
   | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dy?: number }
   | { kind: 'type'; selector: string; text: string; submit?: boolean }
-  | { kind: 'read'; selector?: string; limit?: number }
-  | { kind: 'find'; text?: string; selector?: string; limit?: number }
+  | { kind: 'read'; selector?: string; limit?: number; offset?: number }
+  | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean }
   | { kind: 'wait'; selector?: string; text?: string; timeoutMs?: number }
   /** Наведение курсора: выпадающие меню и тултипы иначе не открыть. */
   | { kind: 'hover'; selector?: string; text?: string }
@@ -238,6 +238,18 @@ export interface BrowserSelectorResult {
   text?: string
   /** Совпадения для `find`: селектор, видимый текст и признак видимости. */
   matches?: Array<{ selector: string; text: string; visible: boolean }>
+  /** Число символов read или совпадений find до применения лимита. */
+  total?: number
+  offset?: number
+  nextOffset?: number
+  headings?: Array<{ level: number; text: string }>
+  links?: Array<{ text: string; href: string }>
+  buttons?: string[]
+  inputs?: Array<{ selector: string; type: string; name: string; placeholder: string; value: string; label?: string; disabled?: boolean; checked?: boolean }>
+  tables?: Array<{ selector: string; caption: string; rows: string[][]; totalRows: number; totalColumns: number; truncated?: boolean }>
+  frames?: Array<{ selector: string; src: string; title: string; name: string }>
+  /** Структура ограничивается отдельно от порции текста, не ломая JSON ответа. */
+  structureTruncated?: boolean
   /** Описание элемента под точкой (`describe`). */
   element?: BrowserElementDescription
   /**

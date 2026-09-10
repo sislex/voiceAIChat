@@ -653,10 +653,15 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Структурированное содержимое открытой в превью страницы: заголовки, ссылки, кнопки, поля ввода ' +
-            'и текстовая выжимка. selector ограничивает чтение поддеревом.',
-          inputSchema: { selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)') }
+            'и текстовая выжимка. Chromium также описывает таблицы и iframe. selector ограничивает чтение поддеревом. ' +
+            'Для длинного текста повторяй read с offset из nextOffset; structureTruncated означает, что структуру лучше читать по selector.',
+          inputSchema: {
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
+            limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
+            offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
+          }
         },
-        async ({ selector }) => run({ kind: 'read', ...(selector ? { selector } : {}) })
+        async ({ selector, limit, offset }) => run({ kind: 'read', ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}) })
       )
 
       server.registerTool(
@@ -668,10 +673,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: {
             text: z.string().max(L.text).optional().describe('Видимый текст элемента (регистр не важен)'),
             selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
-            limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`)
+            limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
+            visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ text, selector, limit }) => {
+        async ({ text, selector, limit, visibleOnly }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
           }
@@ -679,7 +685,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             kind: 'find',
             ...(text ? { text } : {}),
             ...(selector ? { selector } : {}),
-            ...(typeof limit === 'number' ? { limit } : {})
+            ...(typeof limit === 'number' ? { limit } : {}),
+            ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })
         }
       )

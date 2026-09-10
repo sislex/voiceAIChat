@@ -36,6 +36,11 @@ describe('перевод действий модели для Playwright Reader'
     })
   })
 
+  it('переносит порцию текста и фильтр видимости без потери нулевого offset', () => {
+    expect(planModelAction({ kind: 'read', limit: 100, offset: 0 })).toMatchObject({ command: { action: { kind: 'read', limit: 100, offset: 0 } } })
+    expect(planModelAction({ kind: 'find', selector: 'button', visibleOnly: true })).toMatchObject({ command: { action: { kind: 'find', selector: 'button', visibleOnly: true } } })
+  })
+
   it('прокрутка сохраняет край и контейнер вместо фиксированного шага колеса', () => {
     expect(planModelAction({ kind: 'scroll', to: 'bottom' })).toMatchObject({
       command: { type: 'selector', action: { kind: 'scroll', to: 'bottom' } }

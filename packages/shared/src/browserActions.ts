@@ -60,13 +60,13 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
         command: { type: 'selector', action: { kind: 'type', selector: action.selector, text: action.text, ...(action.submit ? { submit: true } : {}) } }
       }
     case 'read':
-      return { kind: 'command', command: { type: 'selector', action: { kind: 'read', ...(action.selector ? { selector: action.selector } : {}) } } }
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'read', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}), ...(action.offset !== undefined ? { offset: action.offset } : {}) } } }
     case 'find':
       return {
         kind: 'command',
         command: {
           type: 'selector',
-          action: { kind: 'find', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}) }
+          action: { kind: 'find', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}), ...(action.visibleOnly !== undefined ? { visibleOnly: action.visibleOnly } : {}) }
         }
       }
     case 'wait':

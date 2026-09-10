@@ -987,13 +987,236 @@
         }
       },
       "validatedAt": "2026-09-10T01:14:23.319217+00:00",
-      "completedAt": "2026-09-10T01:14:23.319217+00:00"
+      "completedAt": "2026-09-10T01:14:23.319217+00:00",
+      "commit": "c36ed3eb12ae3e4e438a94289eff12dc72e4228b"
     },
     {
       "number": 6,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T01:15:20.933320+00:00",
+      "items": [
+        {
+          "id": "06-01",
+          "title": "Структурированное чтение заголовков, ссылок, кнопок и полей Chromium",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415,
+          "followup": {
+            "startedAt": "2026-09-10T01:34:11.781251+00:00",
+            "endedAt": "2026-09-10T01:35:17.140208+00:00",
+            "durationSeconds": 65,
+            "detail": "Пустой innerText не подменяется исходниками script/style. Регрессия воспроизведена; затем прошли 13/13 проверок чтения. Включает время двух проверок."
+          }
+        },
+        {
+          "id": "06-02",
+          "title": "Постраничное чтение длинного текста через limit и offset",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-03",
+          "title": "Чтение текущего видимого значения input, textarea и select",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-04",
+          "title": "Описание элемента не раскрывает значение поля пароля",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-05",
+          "title": "Кавычки и обратные слеши экранируются в селекторах атрибутов",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-06",
+          "title": "Результат поиска буквального текста пригоден для следующего действия",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-07",
+          "title": "Поиск сообщает общее число совпадений и усечение",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-08",
+          "title": "Поиск только видимых элементов фильтрует до применения лимита",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-09",
+          "title": "Структурированные таблицы с ограничением числа строк и колонок",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-10",
+          "title": "Каталог вложенных iframe для обнаружения превью и форм входа",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T01:05:12.395333+00:00",
+        "items": [
+          "Структурированное чтение заголовков, ссылок, кнопок и полей Chromium",
+          "Постраничное чтение длинного текста через limit и offset",
+          "Чтение текущего видимого значения input, textarea и select",
+          "Описание элемента не раскрывает значение поля пароля",
+          "Кавычки и обратные слеши экранируются в селекторах атрибутов",
+          "Результат поиска буквального текста пригоден для следующего действия",
+          "Поиск сообщает общее число совпадений и усечение",
+          "Поиск только видимых элементов фильтрует до применения лимита",
+          "Структурированные таблицы с ограничением числа строк и колонок",
+          "Каталог вложенных iframe для обнаружения превью и форм входа"
+        ],
+        "evidence": "/tmp/voicechat-reader-cycle-06-baseline.log",
+        "observations": {
+          "passwordDescriptionLeaks": true,
+          "quotedAttributeMatches": 0,
+          "literalFindReplay": "Timeout 5000ms",
+          "readField": "empty",
+          "visibleOnlyIgnored": true,
+          "readStructureMissing": true,
+          "readOffsetIgnored": true
+        },
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T01:06:32.540907+00:00",
+          "endedAt": "2026-09-10T01:15:20.933320+00:00",
+          "detail": "Черновики стенда, регрессий и чтения готовились в /tmp во время полного гейта 05; в checkout перенесены только после его коммита. Интервал пересекается с проверкой 05, не суммировать как последовательное время."
+        }
+      },
+      "validation": {
+        "baseline": {
+          "liveFailed": 10,
+          "log": "/tmp/voicechat-reader-cycle-06-tests-baseline.log"
+        },
+        "focused": {
+          "runnerPassed": 44,
+          "nativeReadingPassed": 13,
+          "mcpPassed": 48,
+          "iframePassed": 33,
+          "sharedPassed": 46,
+          "runnerTypecheckExitCode": 0
+        },
+        "implementationCorrections": [
+          "Удалён остаток старой ветки find после переноса кода.",
+          "Строки-функции заменены сериализуемыми Function из констант: живой Chromium вернул undefined, поскольку строка лишь создаёт функцию. Скорректированы и вызовы evaluate в самом стенде."
+        ],
+        "browserE2E": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-06-e2e.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-06",
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:21:41.596188+00:00",
+          "endedAt": "2026-09-10T01:22:06.171066+00:00",
+          "durationMs": 24575,
+          "passed": 9,
+          "vitestDurationMs": 23780,
+          "visuallyInspected": [
+            "14-model-structured-reading.png"
+          ]
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "buildDurationMs": 35350,
+          "log": "/tmp/voicechat-reader-cycle-06-build.log"
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-06-fast-verified.log",
+          "attempts": [
+            {
+              "exitCode": 2,
+              "startedAt": "2026-09-10T01:22:36.209760+00:00",
+              "endedAt": "2026-09-10T01:23:44.775722+00:00",
+              "durationMs": 68566,
+              "log": "/tmp/voicechat-reader-cycle-06-fast.log",
+              "reason": "После появления необязательного total у Chromium общий диагностический consumer должен проверить тип перед сравнением."
+            },
+            {
+              "exitCode": 2,
+              "startedAt": "2026-09-10T01:24:21.330736+00:00",
+              "endedAt": "2026-09-10T01:26:30.545939+00:00",
+              "durationMs": 129202,
+              "log": "/tmp/voicechat-reader-cycle-06-fast-final.log",
+              "reason": "Новый MCP fake вернул result без обязательного ok селекторного результата; исправлена форма тестового ответа."
+            }
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:27:56.577071+00:00",
+          "endedAt": "2026-09-10T01:37:49.921375+00:00",
+          "durationMs": 593341,
+          "passed": 7320,
+          "skipped": 45,
+          "failed": 0
+        },
+        "external": {
+          "exitCode": 0,
+          "log": "/tmp/voicechat-reader-cycle-06-external.log",
+          "scope": "Чистый профиль; публичные формы входа Gmail и Instagram, включая cookie dialog Instagram. Личные аккаунты не открывались.",
+          "gmailReadMs": 883,
+          "instagramReadMs": 1118,
+          "visuallyInspected": [
+            "external-gmail.png",
+            "external-instagram.png"
+          ]
+        },
+        "emptyDocument": {
+          "baselineFailed": 1,
+          "baselineLog": "/tmp/voicechat-reader-cycle-06-empty-baseline.log",
+          "passed": 13,
+          "log": "/tmp/voicechat-reader-cycle-06-reading-final-13.log",
+          "detail": "Правка внесена до этапа browser-runner текущего быстрого гейта; полный гейт ещё не начинался."
+        },
+        "fullGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-06-gate.log",
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:38:18.779495+00:00",
+          "endedAt": "2026-09-10T01:47:11.925057+00:00",
+          "durationMs": 533136,
+          "passedWorkspaceTests": 7651
+        }
+      },
+      "validatedAt": "2026-09-10T01:48:24.739287+00:00",
+      "completedAt": "2026-09-10T01:48:24.739287+00:00"
     },
     {
       "number": 7,

@@ -1,5 +1,6 @@
 import { BROWSER_UPLOAD_LIMIT_BYTES, type BrowserElementDescription, type BrowserSelectorAction, type BrowserSelectorResult } from '@voicechat/shared'
 import { describeElementScript, scrollToScript } from './describeElement.js'
+import { findElements, readPage, readBounds, type ReadContent } from './pageReading.js'
 
 /**
  * Минимум от Playwright, который нужен селекторным действиям. Узкий тип вместо
@@ -9,6 +10,8 @@ import { describeElementScript, scrollToScript } from './describeElement.js'
 export interface SelectorLocator {
   first(): SelectorLocator
   all(): Promise<SelectorLocator[]>
+  filter(options: { visible: boolean }): SelectorLocator
+  evaluateAll(script: string | ((nodes: unknown[], arg: unknown) => unknown), arg?: unknown): Promise<unknown>
   click(options?: { timeout?: number; button?: 'left' | 'right'; clickCount?: number; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }): Promise<void>
   press(key: string, options?: { timeout?: number }): Promise<void>
   fill(value: string, options?: { timeout?: number }): Promise<void>
@@ -81,12 +84,10 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       return { ok: true }
     }
     if (action.kind === 'read') {
-      const target = action.selector ? page.locator(action.selector).first() : page.locator('body')
-      const text = (await target.innerText({ timeout })).trim()
-      const limit = Math.min(Math.max(action.limit ?? 4000, 100), 20_000)
-      // Обрезка сообщается признаком, а не только многоточием в конце: по
-      // многоточию не отличить усечение от текста, который сам им кончается.
-      return text.length > limit ? { ok: true, text: `${text.slice(0, limit)}…`, truncated: true } : { ok: true, text }
+      const options = readBounds(action.limit, action.offset)
+      const target = page.locator(action.selector || 'body').first()
+      const content = await target.evaluate(readPage, options, { timeout }) as ReadContent
+      return { ok: true, ...content }
     }
     if (action.kind === 'hover') {
       const target = locate(action.selector, action.text)
@@ -143,13 +144,9 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const target = locate(action.selector, action.text)
       if (!target) return { ok: false, error: 'Нужен selector или text' }
       const limit = Math.min(Math.max(action.limit ?? 10, 1), 50)
-      const found = await target.all()
-      const matches = await Promise.all(found.slice(0, limit).map(async (item: SelectorLocator, index: number) => ({
-        selector: action.selector ? `${action.selector} >> nth=${index}` : `text=${action.text ?? ''} >> nth=${index}`,
-        text: (await item.innerText().catch(() => '')).trim().slice(0, 200),
-        visible: await item.isVisible().catch(() => false)
-      })))
-      return { ok: true, matches }
+      const filtered = action.visibleOnly ? target.filter({ visible: true }) : target
+      const result = await filtered.evaluateAll(findElements, limit) as ReadContent
+      return { ok: true, ...result }
     }
     const target = locate(action.selector, action.text)
     if (!target) return { ok: false, error: 'Нужен selector или text' }

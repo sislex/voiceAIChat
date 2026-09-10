@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-09-10
-checked: e4e68958
+checked: c36ed3eb
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -387,6 +387,31 @@ hash-маршруты `#/playwright-reader[/<conversationId>]`, пункт ме�
 уходит в `PreviewActionRelay` (тот пушит его в браузер пользователя, где нужной
 страницы нет). Перевод `PreviewAction` → `BrowserCommand` живёт в
 `packages/shared/src/browserActions.ts` (`planModelAction`) и покрыт тестами.
+
+С 2026-09-10 (цикл проверки 06) Chromium возвращает из `read` структуру
+заголовков, ссылок, кнопок и полей, ограниченные таблицы и каталог iframe.
+`selector` включает сам выбранный узел; чтение input/textarea показывает текущее
+значение, select — выбранную подпись, password — пустую строку. Значение password
+также исключено из `describe`, чтобы оно не попадало в запись сценария.
+Пустой `innerText` не подменяется исходниками script/style из `textContent`.
+Реализация — `apps/browser-runner/src/pageReading.ts`, контракт —
+`BrowserSelectorResult` в shared. Ссылки и адреса iframe восстанавливают публичные
+host aliases так же, как URL страницы. Каталог iframe не означает чтение их DOM.
+
+`read` принимает `limit` (100–20 000, по умолчанию 4000) и `offset`; возвращает
+`total`, `offset`, а при остатке — `truncated` и `nextOffset`. Структурированные
+данные имеют отдельный бюджет 8000 символов JSON и признак `structureTruncated`:
+для подробностей модель ограничивает область селектором. Таблица сообщает общее
+число строк/колонок и усечение; возвращается не больше 20×20 ячеек. Общие параметры
+порций текста поддерживаются также iframe-поверхностью Web Reader.
+
+`find` сообщает `total` до применения лимита и `truncated`. Необязательный
+`visibleOnly` исключает скрытые копии до ограничения числа результатов в обеих
+поверхностях. Chromium строит селектор по фактическому узлу, экранирует атрибуты
+и проверяет уникальность, поэтому найденный текст с `>>` пригоден для следующего
+действия. Скрипты локатора передаются Playwright как функции, собранные из
+констант: строка со стрелочной функцией сама по себе не вызывает эту функцию.
+Живые проверки — `readingActions.test.ts` и E2E `playwrightReader.e2e.test.ts`.
 
 Ложатся напрямую: `open`, `back`, `forward`, `click`, `type`, `read`, `find`,
 `wait`, `scroll`, `press`,

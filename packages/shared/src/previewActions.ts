@@ -65,11 +65,11 @@ export interface PreviewDragPoint {
 /** Действие браузера, запрошенное моделью. `open` выполняет сам UI (без iframe). */
 export type PreviewAction =
   | { kind: 'open'; url: string; diagnostic?: boolean }
-  | { kind: 'find'; text?: string; selector?: string; limit?: number; diagnostic?: boolean }
+  | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; diagnostic?: boolean }
   | { kind: 'type'; selector: string; text: string; submit?: boolean; diagnostic?: boolean }
-  | { kind: 'read'; selector?: string; diagnostic?: boolean }
+  | { kind: 'read'; selector?: string; limit?: number; offset?: number; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   | { kind: 'hover'; selector?: string; text?: string; diagnostic?: boolean }
@@ -153,6 +153,10 @@ export interface PreviewReadResult {
   inputs: { selector: string; type: string; name: string; placeholder: string; value: string }[]
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
+  total?: number
+  offset?: number
+  nextOffset?: number
+  truncated?: boolean
 }
 
 export interface PreviewOpenResult {
@@ -376,6 +380,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.text, L.text) &&
         optBounded(value.selector, L.selector) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
+        (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
         (value.text !== undefined || value.selector !== undefined)
       )
     case 'click':
@@ -391,7 +396,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return bounded(value.selector, L.selector) && bounded(value.text, L.text) &&
         (value.submit === undefined || typeof value.submit === 'boolean')
     case 'read':
-      return optBounded(value.selector, L.selector)
+      return optBounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0))
     case 'styles':
       return bounded(value.selector, L.selector) &&
         (value.properties === undefined || (Array.isArray(value.properties) && value.properties.length <= 32 && value.properties.every((item) => bounded(item, 100))))
@@ -560,8 +567,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     : 'Рядом с чатом у пользователя открыта панель веб-превью. Управляй ею инструментами mcp__browser__*: '
   return (
     opening +
-    'open {url} — открыть сайт в превью; read {selector?} — структурированное содержимое страницы ' +
-    '(заголовки, ссылки, кнопки, поля ввода); find {text|selector, limit?} — найти элементы; ' +
+    'open {url} — открыть сайт в превью; read {selector?, limit?, offset?} — структурированное содержимое страницы ' +
+    '(заголовки, ссылки, кнопки, поля ввода); nextOffset продолжает длинный текст. find {text|selector, limit?, visibleOnly?} — найти элементы; ' +
     'click {selector|text} — клик по элементу; type {selector, text, submit?} — ввести текст в поле. ' +
     'Действия выполняются только на странице, открытой в превью активного чата пользователя. ' +
     'Просьбы «открой сайт …», «нажми …», «что на странице?» выполняй этими инструментами, а не shell-командами. ' +

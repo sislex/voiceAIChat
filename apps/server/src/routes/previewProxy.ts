@@ -296,9 +296,9 @@ const setNativeValue=(el,value)=>{
 };
 const run=(action)=>{
   if(action.kind==='find'){
-    const found=findTargets(action);
+    const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'));
     const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
-    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length}
+    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{})}
   }
   if(action.kind==='click'){
     const found=findTargets(action);
@@ -604,7 +604,8 @@ const run=(action)=>{
       placeholder:i.getAttribute('placeholder')||'',
       value:i.type==='password'?'':String(i.value||'').slice(0,EL_TEXT)
     }));
-    return {page:pageInfo(),headings,links,buttons,inputs,text:textOf(scope).slice(0,SNIPPET)}
+    const text=textOf(scope),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
+    return {page:pageInfo(),headings,links,buttons,inputs,text:text.slice(offset,end),total:text.length,offset,...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };

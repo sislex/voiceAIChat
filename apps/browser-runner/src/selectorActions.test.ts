@@ -9,6 +9,8 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
   const self: SelectorLocator = {
     first: () => self,
     all: async () => [self],
+    filter: () => self,
+    evaluateAll: async () => null,
     click: vi.fn(async () => {}),
     press: vi.fn(async () => {}),
     fill: vi.fn(async () => {}),
@@ -66,25 +68,7 @@ describe('селекторные действия раннера', () => {
     expect(p.keyboard.press).toHaveBeenCalledWith('Enter')
   })
 
-  it('чтение обрезает длинный текст по лимиту, чтобы не раздувать контекст модели', async () => {
-    const long = 'я'.repeat(5000)
-    const result = await runSelectorAction(page(locator({ innerText: async () => long })), { kind: 'read', limit: 100 })
-    expect(result.ok).toBe(true)
-    expect(result.text).toHaveLength(101)
-    expect(result.text?.endsWith('…')).toBe(true)
-    // Признак обрезки — не украшение: по нему проверка сценария отличает
-    // «текста нет» от «до текста не дочитали».
-    expect(result.truncated).toBe(true)
-    const whole = await runSelectorAction(page(locator({ innerText: async () => 'коротко' })), { kind: 'read' })
-    expect(whole.truncated).toBeUndefined()
-  })
-
-  it('поиск возвращает совпадения с текстом и видимостью', async () => {
-    const target = locator({ innerText: async () => '  Кнопка  ' })
-    const result = await runSelectorAction(page(target), { kind: 'find', selector: 'button', limit: 5 })
-    expect(result.ok).toBe(true)
-    expect(result.matches?.[0]).toMatchObject({ text: 'Кнопка', visible: true })
-  })
+  // Чтение и поиск проверяются в readingActions.test.ts на живом DOM.
 
   it('ожидание ждёт видимости и отдаёт ошибку значением, а не исключением', async () => {
     const target = locator({ waitFor: vi.fn(async () => { throw new Error('Timeout 5000ms exceeded\nдетали') }) })

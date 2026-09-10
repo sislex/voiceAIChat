@@ -13,6 +13,7 @@ import { previewOriginTarget } from '../apps/browser-runner/src/security.js'
 import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
 import { startReaderFormsFixture } from '../apps/browser-runner/src/test/readerForms.js'
 import { BROWSER_UPLOAD_LIMIT_BYTES } from '../packages/shared/src/browserLimits'
+import type { BrowserSelectorResult } from '../packages/shared/src/types'
 
 const ROOT = resolve(__dirname, '..')
 const PASSWORD = 'reader-audit-local-test-only'
@@ -252,6 +253,26 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await capture('08-human-recovers-empty-tabs')
   })
 
+
+  it('модель читает структуру, продолжает документ и действует по результату поиска', async () => {
+    await mcp('open', { url: 'http://forms.reader.test/reading' })
+    const read = async (args: Record<string, unknown> = {}) => JSON.parse(await mcp('read', args)) as BrowserSelectorResult
+    const contents = await read()
+    expect(contents.headings).toContainEqual({ level: 1, text: 'Почта' })
+    expect(contents.links).toContainEqual({ text: 'Открыть письмо', href: 'http://forms.reader.test/next' })
+    expect(contents.inputs?.find(input => input.type === 'password')?.value).toBe('')
+    expect(contents.tables?.[0].rows[1]).toEqual(['Команда', 'Привет'])
+    expect(contents.frames).toContainEqual({ selector: '#preview', src: 'http://forms.reader.test/next', title: 'Превью письма', name: 'preview' })
+    await mcp('type', { selector: '#subject', text: 'Письмо от модели' })
+    expect((await read({ selector: '#subject' })).text).toBe('Письмо от модели')
+    expect(await read({ selector: '#long', limit: 100, offset: 5950 })).toMatchObject({ text: '0123456789'.repeat(5), total: 6000, offset: 5950 })
+    const found = JSON.parse(await mcp('find', { text: 'Next >> literal', visibleOnly: true })) as BrowserSelectorResult
+    await mcp('click', { selector: found.matches![0].selector })
+    expect((await read({ selector: '#click-result' })).text).toBe('нажато')
+    expect(JSON.parse(await mcp('find', { selector: '.choice', limit: 1, visibleOnly: true }))).toMatchObject({ total: 2, truncated: true, matches: [{ text: 'Видимо', visible: true }] })
+    await capture('14-model-structured-reading')
+    if (artifacts) await writeFile(join(artifacts, '14-model-read.json'), JSON.stringify(contents, null, 2))
+  })
 
   it('модель получает нужную область и полную страницу с точными метаданными снимка', async () => {
     await mcp('open', { url: 'http://forms.reader.test/capture' })
