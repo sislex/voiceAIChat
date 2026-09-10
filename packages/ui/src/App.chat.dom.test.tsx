@@ -628,16 +628,39 @@ describe('App — настройки разговора привязаны к и
     expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument()
   })
 
-  // @testCase TC-UI-5
-  it('прямой маршрут контекста открывает нужный разговор на вкладке контекста', async () => {
+  // @testCase TC-UI-01
+  it('открывает обе адресуемые вкладки и синхронизирует переходы history/hash', async () => {
+    const { api, gifts } = await seededApi()
+    window.api = api
+    window.location.hash = `#/chat/${gifts}/settings/general`
+    render(<App api={api} delays={SLOW} />)
+
+    expect(await screen.findByRole('dialog', { name: 'Настройки разговора' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Общие' })).toHaveAttribute('aria-selected', 'true')
+    window.location.hash = `/chat/${gifts}/settings/context`
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Контекст' })).toHaveAttribute('aria-selected', 'true'))
+    window.history.back()
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Общие' })).toHaveAttribute('aria-selected', 'true'))
+  })
+
+  // @testCase TC-NEG-01
+  it('не открывает настройки для недоступного чата из прямого settings URL', async () => {
+    const { api } = await seededApi()
+    window.api = api
+    window.location.hash = '#/chat/missing/settings/general'
+    render(<App api={api} delays={SLOW} />)
+    expect(await screen.findByText('Настройки недоступны: разговор удалён или недоступен.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument()
+  })
+
+  it('перенаправляет legacy context URL на канонический settings/context', async () => {
     const { api, gifts } = await seededApi()
     window.api = api
     window.location.hash = `#/chat/${gifts}/context`
     render(<App api={api} delays={SLOW} />)
-
-    expect(await screen.findByRole('dialog', { name: 'Настройки разговора' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Название разговора')).toHaveValue('Идеи для подарка')
-    expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
+    await waitFor(() => expect(window.location.hash).toBe(`#/chat/${gifts}/settings/context`))
+    expect(screen.getByRole('tab', { name: 'Контекст' })).toHaveAttribute('aria-selected', 'true')
   })
 
   // @testCase TC-REG-6
