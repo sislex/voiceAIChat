@@ -1,3 +1,4 @@
+import { BrowserDiagnostics } from './diagnostics.js'
 import { BrowserDownloads } from './downloads.js'
 import { browserDownloadList, type BrowserDownloadResult } from '@voicechat/shared'
 import { BrowserDialogs } from './dialogs.js'
@@ -20,6 +21,7 @@ import { runInspectAction } from './inspectActions.js'
 import { capturePage, type BrowserCapture } from './screenshots.js'
 
 interface Session {
+  diagnostics: BrowserDiagnostics
   downloads: BrowserDownloads
   downloadsPath: string
   dialogs: BrowserDialogs
@@ -47,8 +49,6 @@ interface Session {
   lastActor?: 'user' | 'assistant'
 }
 
-/** Держим последние записи: журнал живой страницы иначе растёт без предела. */
-const LOG_LIMIT = 500
 // Внешняя аналитика и изображения могут грузиться бесконечно; работать с DOM
 // нужно одинаково при переходе, перезагрузке, истории и открытии вкладки.
 const NAVIGATION_OPTIONS = { waitUntil: 'domcontentloaded' as const, timeout: 30_000 }
@@ -150,7 +150,9 @@ export class BrowserSessionManager {
         const stale = path + '/' + entry.name
         if (entry.isDirectory() && /^reader-downloads-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.name) && stale !== downloadsPath) await rm(stale, { recursive: true, force: true })
       }
+      const diagnostics = new BrowserDiagnostics(url => this.publicUrl(url))
       const session: Session = {
+        diagnostics,
         dialogs: new BrowserDialogs(),
         downloads: new BrowserDownloads(url => this.publicUrl(url)),
         downloadsPath,
@@ -162,8 +164,8 @@ export class BrowserSessionManager {
         pages: new Map(),
         pageIds: new WeakMap(),
         openerIds: new Map(),
-        console: [],
-        network: [],
+        console: diagnostics.console,
+        network: diagnostics.network,
         activeTabId: '',
         viewport,
         profileDir: path, profileMode,
@@ -209,23 +211,7 @@ export class BrowserSessionManager {
         })
         page.on('framenavigated', frame => { const origin = httpOrigin(frame.url()); if (origin) session.origins.add(origin) })
         page.on('popup', (popup) => session.openerIds.set(register(popup), id))
-        // Журналы собираются с момента открытия страницы: спросить их задним
-        // числом нельзя, а этапу автотестов нужны именно они.
-        page.on('console', (message) => {
-          session.console.push({ level: message.type(), text: message.text().slice(0, 2000), at: Date.now() })
-          if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
-        })
-        page.on('response', (response) => {
-          session.network.push({
-            method: response.request().method(), url: response.url().slice(0, 500),
-            status: response.status(), ok: response.ok(), at: Date.now()
-          })
-          if (session.network.length > LOG_LIMIT) session.network.splice(0, session.network.length - LOG_LIMIT)
-        })
-        page.on('pageerror', (err) => {
-          session.console.push({ level: 'error', text: String(err.message).slice(0, 2000), at: Date.now() })
-          if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
-        })
+        diagnostics.register(page, id)
         return id
       }
       for (const page of context.pages()) register(page)
@@ -314,6 +300,14 @@ export class BrowserSessionManager {
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
     const command = request.command
+    if (command.type === 'inspect' && (command.action.kind === 'console' || command.action.kind === 'network')) {
+      if (command.frame !== undefined) throw new Error('Журнал не поддерживает frame; используйте frameUrl и source для вложенных документов')
+      const action = command.action
+      if (action.tabId !== undefined && request.tabId !== undefined && action.tabId !== request.tabId) throw new Error('Неоднозначная вкладка журнала')
+      const tabId = action.tabId ?? request.tabId ?? session.activeTabId
+      if (!action.allTabs && tabId && !session.pages.has(tabId) && !session.diagnostics.hasTab(tabId)) throw new Error('stale_tab')
+      return session.diagnostics.read(action, tabId)
+    }
     if (['downloads', 'readDownload', 'cancelDownload', 'deleteDownload'].includes(command.type) && command.frame !== undefined) throw new Error('Скачивания принадлежат вкладке; frame здесь не поддерживается')
     if (command.type === 'downloads') {
       if (command.tabId !== undefined && !session.pages.has(command.tabId) && !session.downloads.list(command.tabId).length) throw new Error('stale_tab')
@@ -328,7 +322,7 @@ export class BrowserSessionManager {
       return boundedBrowserDialogs(session.dialogs.list(command.tabId), session.activeTabId)
     }
     if (command.type === 'handleDialog') { await session.dialogs.handle(command); session.lastActor = request.actor; return this.metadata(session) }
-    if (command.type === 'status' || command.type === 'selectTab' || (command.type === 'inspect' && ['console', 'network'].includes(command.action.kind))) return this.executeCommand(sessionId, request)
+    if (command.type === 'status' || command.type === 'selectTab') return this.executeCommand(sessionId, request)
     const targetId = command.type === 'closeTab' ? command.tabId : request.tabId ?? session.activeTabId
     const page = command.type === 'newTab' ? undefined : session.pages.get(targetId)
     return session.dialogs.run(page, () => this.executeCommand(sessionId, request), command.type === 'closeTab')

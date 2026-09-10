@@ -2967,13 +2967,205 @@
         },
         "gateTests": 7930
       },
-      "endedAt": "2026-09-10T05:55:52.643161+00:00"
+      "endedAt": "2026-09-10T05:55:52.643161+00:00",
+      "commit": "3cdaf23c"
     },
     {
       "number": 15,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T05:57:06.028766+00:00",
+      "items": [
+        {
+          "id": "15-01",
+          "title": "Сетевые сбои без HTTP-ответа видны модели и панели",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-02",
+          "title": "Незавершённые запросы, тип ресурса и длительность отражают реальную загрузку",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-03",
+          "title": "Журналы относятся к выбранной вкладке, общий обзор включается явно",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-04",
+          "title": "Адреса журналов используют публичные алиасы проекта",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-05",
+          "title": "Фильтры консоли правильно находят warn и буквальные подстроки",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-06",
+          "title": "Вложенные данные console и стек исключения доступны для диагностики",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-07",
+          "title": "Большие журналы помещаются в MCP и дочитываются порциями",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-08",
+          "title": "Повторное чтение получает только новые или обновлённые записи по курсору",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-09",
+          "title": "Очистка не удаляет непрочитанные записи других фильтров и вкладок",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-10",
+          "title": "Ошибка получения диагностики не выдаётся за отсутствие ошибок страницы",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T05:45:06.334482+00:00",
+        "candidateItems": [
+          "Сетевые сбои без HTTP-ответа видны модели и панели",
+          "Незавершённые запросы, тип ресурса и длительность отражают реальную загрузку",
+          "Журналы относятся к выбранной вкладке, общий обзор включается явно",
+          "Адреса журналов используют публичные алиасы проекта",
+          "Фильтры консоли правильно находят warn и буквальные подстроки",
+          "Вложенные данные console и стек исключения доступны для диагностики",
+          "Большие журналы помещаются в MCP и дочитываются порциями",
+          "Повторное чтение получает только новые или обновлённые записи по курсору",
+          "Очистка не удаляет непрочитанные записи других фильтров и вкладок",
+          "Ошибка получения диагностики не выдаётся за отсутствие ошибок страницы"
+        ],
+        "draft": "/tmp/voicechat-reader-cycle-15-draft",
+        "baseline": "/tmp/voicechat-reader-cycle-15-baseline.json",
+        "uiBaseline": "/tmp/voicechat-reader-cycle-15-ui-baseline-2.log",
+        "evidence": [
+          "broken request отсутствует, pending показывает только document; timing/resource отсутствуют",
+          "network filter diag.reader.test пуст из-за физических127 URL",
+          "вторая вкладка получает console первой",
+          "Chrome warning не соответствует action.level warn; literal [x] ошибочно обрабатывается regex",
+          "вложенный объект печатается nested:Object; stack исключения отсутствует",
+          "100 записей дают195513 JSON-символов, previewResultJson=null",
+          "clear с level:error стирает и log/warn",
+          "DOM-регрессия реально красная: ok:false из инструмента показан как Страница не жаловалась."
+        ],
+        "notes": [
+          "Подготовка вне checkout во время гейтов14; не меняла код14.",
+          "Первый Vite-пробник не собрался из-за /tmp→/private/tmp; второй реально выполнил1 тест и подтвердил дефект.",
+          "Нативная диагностика: активная вкладка по умолчанию, explicit allTabs/tabId для остальных, source/frameURL полезны без управленияDOM.",
+          "План: sequence/cursor для обновлений, before для предыдущей порции, total/truncated/dropped; возвращать ограниченный полноценный JSON.",
+          "clear удаляет только возвращённые строки; невалидные фильтры/лимиты до мутации.",
+          "Модельный pattern соответствует описаниюMCP; raw inspect сохраняет legacy regex, mapper задаёт regex:false. Учитывать WebReaderfallback для расширенных опций.",
+          "Console structured args читать ограниченно и с deadline, чтобы диалог/renderer не блокировали журналы.",
+          "Извлечение response body, evaluate deadline и запись сценариев — другие циклы, не заявлены здесь."
+        ],
+        "preparedAt": "2026-09-10T05:57:06.028766+00:00"
+      },
+      "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+      "implementationDurationSeconds": 1870,
+      "verification": {
+        "native": "15 Chromium + 12 inspect + 3 pure",
+        "shared": "59 tests incl10 diagnostics",
+        "ui": "92 Reader +8 final diagnostics",
+        "mcp": "111 tests",
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T06:20:21.221910+00:00",
+          "endedAt": "2026-09-10T06:20:53.212748+00:00",
+          "durationMs": 31991
+        },
+        "e2ePassed": 27,
+        "screenshots": [
+          "35-network-diagnostics",
+          "36-project-diagnostics-recovered"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-15",
+        "notes": [
+          "ПервыйE2E:26/27 из-за истории warn предыдущей страницы в тесте; новая вкладка изолирует fixture.",
+          "ВторойE2E:26/27, setTimeout исключение требует polling; stack присутствовал в артефакте.",
+          "E2E3:27/27; после визуальной проверки длинные строки свёрнуты, network сверху, свежие console первыми. E2E4:27/27,31,01с,кадры просмотрены.",
+          "ПослеE2E отдельно проверен флаг сокращения вложенных console args; полныйгейт проверит финальный код.",
+          "Первыйnative:25/26 из-за неверного имени mapper в новом тесте; исправлено. Перваяпроверкатипов выявиланесовпадения bridge/null инеполныйfixture MCP; исправлены.",
+          "Дополнительная проверка боевого tsx обнаружила __name в сериализованном callback: baseline красный, JS-тело через new Function исправлено; durable diagnosticsRuntime запускает tsx+Chromium и проверяет вложенные args. Первый gate:fast exit1 (250,21с) выявил изменение текста отказа frame; сохранена прежняя фраза, targeted frames и runtime зелёные. В промежуточном переносе JS-тела оставшийся generic Set<object> вызвал SyntaxError и был удалён до финальных проверок."
+        ],
+        "runtime": "tsx+Chromium, red→green, durable diagnosticsRuntime",
+        "fastFirstAttempt": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T06:22:13.262209+00:00",
+          "endedAt": "2026-09-10T06:26:23.475786+00:00",
+          "durationMs": 250214
+        },
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T06:28:16.928913+00:00",
+          "endedAt": "2026-09-10T06:33:29.476338+00:00",
+          "durationMs": 312536
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T06:34:09.858655+00:00",
+          "endedAt": "2026-09-10T06:40:45.326822+00:00",
+          "durationMs": 395467
+        },
+        "fastPassed": 7644,
+        "fastSkipped": 45,
+        "fullPassed": 7975
+      },
+      "completedAt": "2026-09-10T06:41:04.538803+00:00"
     },
     {
       "number": 16,

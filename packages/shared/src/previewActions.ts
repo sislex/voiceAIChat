@@ -1,3 +1,4 @@
+import { normalizeBrowserDiagnosticOptions, type BrowserConsoleOptions, type BrowserNetworkOptions } from './browserDiagnostics'
 // Управление открытым сайтом в панели превью и чтение его DOM из хода модели.
 //
 // Три берега одного протокола:
@@ -92,9 +93,9 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Сохранённые правки edit-режима текущей страницы (перенести «как поправил» в код). */
   | { kind: 'edits'; diagnostic?: boolean }
   /** Журнал сетевых запросов страницы (fetch/XHR/beacon): фильтр по подстроке URL. */
-  | { kind: 'network'; filter?: string; clear?: boolean; limit?: number; diagnostic?: boolean }
+  | ({ kind: 'network'; diagnostic?: boolean } & BrowserNetworkOptions)
   /** Журнал console.log/info/warn/error страницы: фильтр по подстроке и уровню. */
-  | { kind: 'console'; pattern?: string; level?: 'log' | 'info' | 'warn' | 'error'; clear?: boolean; limit?: number; diagnostic?: boolean }
+  | ({ kind: 'console'; diagnostic?: boolean } & Omit<BrowserConsoleOptions, 'regex'>)
   /** Выполнить JS в контексте страницы; результат сериализуется JSON (кап evaluateValue). */
   | { kind: 'evaluate'; code: string; diagnostic?: boolean }
   /** Перетаскивание pointer-событиями (или HTML5 DnD у draggable) от from к to. */
@@ -443,12 +444,17 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return true
     case 'network':
       return (
+        validDiagnosticOptions(value) &&
+        (value.state === undefined || ['pending', 'response', 'completed', 'failed'].includes(value.state as string)) &&
+        optBounded(value.resourceType, 100) &&
+        (value.failedOnly === undefined || typeof value.failedOnly === 'boolean') &&
         optBounded(value.filter, 300) &&
         (value.clear === undefined || typeof value.clear === 'boolean') &&
         logLimit(value.limit)
       )
     case 'console':
       return (
+        validDiagnosticOptions(value) &&
         optBounded(value.pattern, 300) &&
         (value.level === undefined || value.level === 'log' || value.level === 'info' || value.level === 'warn' || value.level === 'error') &&
         (value.clear === undefined || typeof value.clear === 'boolean') &&
@@ -479,6 +485,10 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     default:
       return false
   }
+}
+
+function validDiagnosticOptions(value: Record<string, unknown>): boolean {
+  try { normalizeBrowserDiagnosticOptions(value); return true } catch { return false }
 }
 
 function logLimit(value: unknown): boolean {

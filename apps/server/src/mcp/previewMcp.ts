@@ -1,3 +1,4 @@
+import { browserDiagnosticsRequireChromium, normalizeBrowserDiagnosticOptions } from '@voicechat/shared'
 import { BROWSER_DOWNLOAD_MODEL_CHUNK, BROWSER_DOWNLOAD_TEXT_CHUNK, isBrowserDownloadInfo, isBrowserDownloadListResult, isBrowserDownloadReadResult } from '@voicechat/shared'
 import { BROWSER_DIALOG_ANSWER_LIMIT, normalizeBrowserDialogAnswer, isBrowserDialogListResult, isBrowserSessionMetadata } from '@voicechat/shared'
 import { isBrowserSiteDataResetResult, normalizeBrowserSiteDataReset } from '@voicechat/shared'
@@ -239,10 +240,18 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       }
       const run = async (action: PreviewAction): Promise<ReturnType<typeof toolResult>> => {
         if (!entry) return noContext
+        if (action.kind === 'console' || action.kind === 'network') {
+          try { normalizeBrowserDiagnosticOptions(action) } catch (error) { return toolResult({ ok: false, error: String(error) }) }
+        }
         // Playwright Reader исполняет действие на сервере; остальные разговоры —
         // в браузере пользователя, как раньше.
         const direct = await opts.browserExecutor?.(entry.userId, entry.conversationId, action)
+        if (direct?.ok && (action.kind === 'console' || action.kind === 'network') && browserDiagnosticsRequireChromium(action)) {
+          const result = direct.result
+          if (!result || !('cursor' in result) || typeof result.cursor !== 'number' || !(action.kind === 'console' ? 'console' in result && Array.isArray(result.console) : 'network' in result && Array.isArray(result.network))) return toolResult({ ok: false, error: 'Раннер не подтвердил расширенное чтение журнала. Обновите browser-runner.' })
+        }
         if (direct) return toolResult(direct)
+        if ((action.kind === 'console' || action.kind === 'network') && browserDiagnosticsRequireChromium(action)) return toolResult({ ok: false, error: 'Вкладки, курсор и расширенные фильтры журналов доступны только в Playwright Reader или Chromium-проверке.' })
         if (action.frame !== undefined) return toolResult({ ok: false, error: 'frame доступен только в Playwright Reader или Chromium-проверке.' })
         const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
         return toolResult(outcome)
@@ -535,36 +544,25 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         async () => run({ kind: 'forward' })
       )
 
-      server.registerTool(
-        'network',
-        {
-          description:
-            'Журнал сетевых запросов открытой в превью страницы (fetch/XHR/beacon): метод, реальный URL, статус, ' +
-            'длительность. filter — подстрока URL. Проверяй, какие запросы ушли и с какими статусами.',
-          inputSchema: {
-            filter: z.string().max(300).optional().describe('Подстрока URL для фильтрации'),
-            clear: z.boolean().optional().describe('Очистить журнал после чтения'),
-            limit: z.number().positive().max(L.logMax).optional().describe(`Максимум записей (по умолчанию ${L.logDefault})`)
-          }
-        },
-        async ({ filter, clear, limit }) => run({ kind: 'network', ...(filter ? { filter } : {}), ...(clear !== undefined ? { clear } : {}), ...(typeof limit === 'number' ? { limit } : {}) })
-      )
-
-      server.registerTool(
-        'console',
-        {
-          description:
-            'Журнал консоли открытой в превью страницы: console.log/info/warn/error. pattern — подстрока сообщения, ' +
-            'level — только один уровень. Используй для отладки: добавь console.log в код и читай его здесь.',
-          inputSchema: {
-            pattern: z.string().max(300).optional().describe('Подстрока сообщения для фильтрации'),
-            level: z.enum(['log', 'info', 'warn', 'error']).optional().describe('Только этот уровень'),
-            clear: z.boolean().optional().describe('Очистить журнал после чтения'),
-            limit: z.number().positive().max(L.logMax).optional().describe(`Максимум записей (по умолчанию ${L.logDefault})`)
-          }
-        },
-        async ({ pattern, level, clear, limit }) => run({ kind: 'console', ...(pattern ? { pattern } : {}), ...(level ? { level } : {}), ...(clear !== undefined ? { clear } : {}), ...(typeof limit === 'number' ? { limit } : {}) })
-      )
+      const logSchema = {
+        tabId: z.string().min(1).max(200).optional().describe('Вкладка Chromium; по умолчанию активная, включая её историю'),
+        allTabs: z.boolean().optional().describe('Все вкладки Chromium; несовместимо с tabId'),
+        since: z.number().int().nonnegative().optional().describe('Только новые и обновлённые записи после cursor предыдущего ответа Chromium'),
+        before: z.number().int().nonnegative().optional().describe('Продолжить старые записи: nextBefore предыдущего ответа Chromium'),
+        clear: z.boolean().optional().describe('В Chromium удалить только возвращённые записи'),
+        limit: z.number().int().positive().max(L.logMax).optional().describe(`Максимум записей (по умолчанию ${L.logDefault}); truncated/nextBefore сообщают о продолжении`)
+      }
+      server.registerTool('network', {
+        description: 'Журнал сети выбранной вкладки. В Chromium: публичный URL, статус, pending/response/completed/failed, тип ресурса, длительность, причина сбоя и связи перенаправлений. cursor учитывает завершение ранее начатых запросов. filter — подстрока URL. Журнал ограничен; dropped показывает вытеснение.',
+        inputSchema: { ...logSchema, filter: z.string().max(300).optional(),
+          state: z.enum(['pending', 'response', 'completed', 'failed']).optional(),
+          resourceType: z.string().max(100).optional(),
+          failedOnly: z.boolean().optional().describe('Только сетевые сбои и HTTP >= 400') }
+      }, async options => run({ kind: 'network', ...options }))
+      server.registerTool('console', {
+        description: 'Консоль выбранной вкладки: log/info/warn/error. pattern — буквальная подстрока сообщения без учёта регистра. В Chromium доступны вложенные args, stack исключения, источник и курсор. argsPending означает незавершённое чтение объекта; argsUnavailable/argsTruncated — неполные данные. Журнал ограничен; dropped показывает вытеснение.',
+        inputSchema: { ...logSchema, pattern: z.string().max(300).optional(), level: z.enum(['log', 'info', 'warn', 'error']).optional() }
+      }, async options => run({ kind: 'console', ...options }))
 
       server.registerTool('styles', {
         description: 'Вычисленные CSS-свойства элемента. selector принимает целиком результат find/read, включая Shadow DOM; frame выбирает вложенный документ Chromium.',
