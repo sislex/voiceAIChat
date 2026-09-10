@@ -1,3 +1,4 @@
+import { PreviewCookieStore, responseSetCookies } from './previewCookies.js'
 import { rewritePreviewCss } from './previewStyles.js'
 import { previewNavigationScript } from './previewNavigation.js'
 import { lookup } from 'node:dns/promises'
@@ -20,53 +21,11 @@ const MAX_REDIRECTS = 5
 const MAX_BYTES = 5 * 1024 * 1024
 const TIMEOUT_MS = 10_000
 
-type StoredCookie = { name: string; value: string; domain: string; path: string; secure: boolean; expires?: number }
-const cookiesByUser = new Map<string, StoredCookie[]>()
-
-function parseCookie(line: string, url: URL): StoredCookie | null {
-  const [pair, ...attributes] = line.split(';').map((part) => part.trim())
-  const split = pair.indexOf('=')
-  if (split < 1) return null
-  const cookie: StoredCookie = { name: pair.slice(0, split), value: pair.slice(split + 1), domain: url.hostname, path: url.pathname.replace(/\/[^/]*$/, '/') || '/', secure: false }
-  for (const attribute of attributes) {
-    const [key, ...rest] = attribute.split('=')
-    const value = rest.join('=').trim()
-    switch (key.toLowerCase()) {
-      case 'domain': if (value) cookie.domain = value.replace(/^\./, '').toLowerCase(); break
-      case 'path': if (value.startsWith('/')) cookie.path = value; break
-      case 'secure': cookie.secure = true; break
-      case 'max-age': { const seconds = Number(value); if (Number.isFinite(seconds)) cookie.expires = Date.now() + seconds * 1000; break }
-      case 'expires': { const expires = Date.parse(value); if (!Number.isNaN(expires)) cookie.expires = expires; break }
-    }
-  }
-  if (url.hostname !== cookie.domain && !url.hostname.endsWith('.' + cookie.domain)) return null
-  return cookie
-}
-
-export function storeResponseCookies(userId: string, url: URL, setCookie: string | string[] | undefined): void {
-  const lines = setCookie === undefined ? [] : Array.isArray(setCookie) ? setCookie : [setCookie]
-  const cookies = (cookiesByUser.get(userId) ?? []).filter((cookie) => !cookie.expires || cookie.expires > Date.now())
-  for (const line of lines) {
-    const cookie = parseCookie(line, url)
-    if (!cookie) continue
-    const index = cookies.findIndex((item) => item.name === cookie.name && item.domain === cookie.domain && item.path === cookie.path)
-    if (cookie.expires !== undefined && cookie.expires <= Date.now()) { if (index >= 0) cookies.splice(index, 1) }
-    else if (index >= 0) cookies[index] = cookie
-    else cookies.push(cookie)
-  }
-  cookiesByUser.set(userId, cookies)
-}
-
-export function requestCookieHeader(userId: string, url: URL): string | undefined {
-  const cookies = (cookiesByUser.get(userId) ?? []).filter((cookie) => !cookie.expires || cookie.expires > Date.now())
-  cookiesByUser.set(userId, cookies)
-  const value = cookies.filter((cookie) =>
-    (url.protocol === 'https:' || !cookie.secure) &&
-    (url.hostname === cookie.domain || url.hostname.endsWith('.' + cookie.domain)) &&
-    url.pathname.startsWith(cookie.path)
-  ).sort((a, b) => b.path.length - a.path.length).map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
-  return value || undefined
-}
+// Экспорт совместимости для чистых тестов; живые маршруты получают свой контейнер.
+const legacyCookies = new PreviewCookieStore()
+export const storeResponseCookies = legacyCookies.store.bind(legacyCookies)
+export const requestCookieHeader = legacyCookies.header.bind(legacyCookies)
+export const clearPreviewCookies = legacyCookies.clear.bind(legacyCookies)
 
 export class PreviewProxyError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -96,6 +55,8 @@ export interface PreviewMachineBridge {
 }
 
 export interface PreviewProxyDeps {
+  /** Изолированный контейнер; тесты могут передать его явно. */
+  cookies?: PreviewCookieStore
   /** Разрешённые оператором пары VC_BROWSER_HOST_ALIASES; пользователь их не задаёт. */
   hostAliases?: HostAliases
   machines?: {
@@ -904,7 +865,7 @@ export function upstreamRequestHeaders(incoming: NodeJS.Dict<string | string[]>)
   return headers
 }
 
-async function get(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map()): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function get(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map(), cookies: PreviewCookieStore = legacyCookies): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   // Проверяем исходный адрес на каждом редиректе. Только операторский алиас
   // разрешает внутренний транспорт; прямое обращение к его цели остаётся закрытым.
   await assertPublicHost(url.hostname)
@@ -914,7 +875,7 @@ async function get(url: URL, userId: string, method = 'GET', body?: string | Buf
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
     const request = transport(target, {
       method,
-      headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*', ...headers, ...(requestCookieHeader(userId, url) ? { cookie: requestCookieHeader(userId, url) } : {}), ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)) }) },
+      headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*', ...headers, ...(cookies.header(userId, url) ? { cookie: cookies.header(userId, url) } : {}), ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)) }) },
       timeout: TIMEOUT_MS,
       lookup(hostname, options, callback) {
         void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
@@ -929,20 +890,24 @@ async function get(url: URL, userId: string, method = 'GET', body?: string | Buf
           callback(null, result.address, result.family)
         }, (err) => callback(err, options.all ? [] : '', 4))
       }
-    }, (response) => resolve({ response, finalUrl: url }))
+    }, (response) => {
+      // Промежуточный redirect часто устанавливает сессию для следующего запроса.
+      cookies.store(userId, url, responseSetCookies(response.headers))
+      resolve({ response, finalUrl: url })
+    })
     request.once('timeout', () => request.destroy(new PreviewProxyError(504, 'Сайт не ответил вовремя')))
     request.once('error', reject)
     request.end(body)
   })
 }
 
-async function load(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map()): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function load(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map(), cookies: PreviewCookieStore = legacyCookies): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   let current = url
   let currentMethod = method
   let currentBody = body
   let currentHeaders = headers
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-    const result = await get(current, userId, currentMethod, currentBody, currentHeaders, hostAliases)
+    const result = await get(current, userId, currentMethod, currentBody, currentHeaders, hostAliases, cookies)
     const location = result.response.headers.location
     if (!location || ![301, 302, 303, 307, 308].includes(result.response.statusCode ?? 0)) return result
     result.response.resume()
@@ -1005,7 +970,8 @@ async function loadViaMachine(
   url: URL,
   method: string,
   body: string | Buffer | undefined,
-  incomingHeaders: Record<string, string | string[]>
+  incomingHeaders: Record<string, string | string[]>,
+  cookies: PreviewCookieStore
 ): Promise<{ status: number; headers: Record<string, string | string[]>; body: Buffer; finalUrl: URL }> {
   let current = url
   let currentMethod = method
@@ -1018,7 +984,7 @@ async function loadViaMachine(
     if (!deps.bridge.isOnline(agentId)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
     const secure = current.protocol === 'https:'
     const port = current.port ? Number(current.port) : secure ? 443 : 80
-    const cookie = requestCookieHeader(userId, current)
+    const cookie = cookies.header(userId, current)
     let response: AgentHttpResponse
     try {
       response = await deps.bridge.http(agentId, {
@@ -1032,7 +998,7 @@ async function loadViaMachine(
     } catch (err) {
       throw new PreviewProxyError(502, err instanceof Error ? err.message : 'Тестовое окружение недоступно')
     }
-    storeResponseCookies(userId, current, response.headers['set-cookie'])
+    cookies.store(userId, current, responseSetCookies(response.headers))
     const location = headerValue(response.headers, 'location')
     if (location && [301, 302, 303, 307, 308].includes(response.status)) {
       const next = new URL(location, current)
@@ -1049,19 +1015,6 @@ async function loadViaMachine(
     return { status: response.status, headers: response.headers, body: Buffer.from(response.bodyBase64, 'base64'), finalUrl: current }
   }
   throw new PreviewProxyError(502, 'Слишком много перенаправлений')
-}
-
-/** Сколько cookie снято; host сужает сброс до одного сайта (домен + поддомены). */
-export function clearPreviewCookies(userId: string, host?: string): number {
-  const cookies = cookiesByUser.get(userId) ?? []
-  if (!host) {
-    cookiesByUser.delete(userId)
-    return cookies.length
-  }
-  const target = host.toLowerCase()
-  const kept = cookies.filter((cookie) => cookie.domain !== target && !target.endsWith('.' + cookie.domain) && !cookie.domain.endsWith('.' + target))
-  cookiesByUser.set(userId, kept)
-  return cookies.length - kept.length
 }
 
 /**
@@ -1098,11 +1051,13 @@ export function previewErrorPage(message: string): string {
 export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDeps = {}): void {
   // Экземпляры Reader могут иметь разные мосты/права; кэш не переживает их lifecycle.
   const machineCache = new MachineResponseCache()
+  const cookies = deps.cookies ?? new PreviewCookieStore()
+  app.addHook('onClose', async () => { cookies.clearAll() })
   // Сброс сессий окружений: удобно перелогиниться под другим тестовым
   // пользователем. Авторизуется preview-cookie (кнопка «Сессия» в Reader) или Bearer.
   app.post<{ Body: { host?: string } }>('/api/preview/reset-cookies', async (req) => {
     const host = typeof req.body?.host === 'string' && req.body.host.length <= 255 ? req.body.host : undefined
-    return { cleared: clearPreviewCookies(uid(req), host) }
+    return { cleared: cookies.clear(uid(req), host) }
   })
   app.get<{ Querystring: { page?: string } }>('/api/preview/diagnostics', async (req, reply) =>
     reply.type('text/html; charset=utf-8').send(previewDiagnosticsHtml(req.query.page === 'destination'))
@@ -1139,7 +1094,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           if (!deps.machines.bridge.isOnline(machineAgent)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
           if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) machineCache.dropAgent(machineAgent)
           const cacheUrl = url.toString()
-          const cacheAllowed = canReadPreviewCache(req.method, req.headers, Boolean(requestCookieHeader(userId, url)))
+          const cacheAllowed = canReadPreviewCache(req.method, req.headers, Boolean(cookies.header(userId, url)))
           const cached = cacheAllowed ? machineCache.get(machineAgent, cacheUrl, userId) : null
           // Браузер уже держит эту версию — отвечаем 304 и не идём на машину вовсе.
           if (cached && String(req.headers['if-none-match'] ?? '') === cached.etag) {
@@ -1156,7 +1111,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
             reply.header('content-length', String(cached.body.length))
             return reply.send(cached.body)
           }
-          const machine = await loadViaMachine(deps.machines, userId, url, req.method, body, upstreamRequestHeaders(req.headers))
+          const machine = await loadViaMachine(deps.machines, userId, url, req.method, body, upstreamRequestHeaders(req.headers), cookies)
           const machineType = headerValue(machine.headers, 'content-type') ?? 'application/octet-stream'
           // JS у машины переписывается тоже: dev-сервер отдаёт ESM с абсолютными
           // импортами, и без правки они ушли бы на origin ChatAI.
@@ -1184,8 +1139,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           reply.header('content-length', String(machineBody.length))
           return reply.send(machineBody)
         }
-        const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers), deps.hostAliases)
-        storeResponseCookies(userId, finalUrl, response.headers['set-cookie'])
+        const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers), deps.hostAliases, cookies)
         const responseType = response.headers['content-type'] ?? 'application/octet-stream'
         const responseBody = await readLimited(response)
         const rewritten = /text\/(html|css)|application\/xhtml\+xml|javascript|ecmascript/i.test(responseType)

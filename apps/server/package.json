@@ -31,7 +31,8 @@
     "postcss": "8.5.23",
     "postcss-value-parser": "4.2.0",
     "sharp": "^0.34.5",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "tough-cookie": "5.1.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

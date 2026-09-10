@@ -23,7 +23,7 @@ function listTs(dir: string): string[] {
 
 describe('граница Web Reader', () => {
   it('server.ts не собирает ридер сам: прокси превью, MCP «browser» и контекст Chromium — в reader/module.ts', () => {
-    for (const marker of ['registerPreviewProxy(', 'registerPreviewMcp(', 'browserExecutor', 'browserScreenshot', 'clearPreviewCookies']) {
+    for (const marker of ['registerPreviewProxy(', 'registerPreviewMcp(', 'browserExecutor', 'browserScreenshot', 'PreviewCookieStore']) {
       expect(server, `server.ts содержит ${marker}`).not.toContain(marker)
       expect(module, `reader/module.ts не содержит ${marker}`).toContain(marker)
     }
