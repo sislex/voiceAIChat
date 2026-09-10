@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 544ecfc5
+checked: 150e59f4
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -187,6 +187,15 @@ redirect сохраняются до следующего запроса. HTTP r
 более строгий upstream no-store сохраняется до браузера. Мутации очищают старые
 ресурсы машины. HTTP-регрессии — `previewCache.integration.test.ts`, браузерные —
 `e2e/webReaderCache.e2e.test.ts`.
+
+DOM-действия click/type/set используют `previewInteractions.ts`: выбирается
+единственная видимая цель, а неоднозначность возвращает кандидатов вместо первого
+случайного элемента. Учитываются disabled/fieldset, aria-disabled/inert, readonly,
+maxlength, нетекстовые input и отключённые option/optgroup. Ввод проходит отменяемый
+beforeinput и InputEvent; неверное число/дата не стирает прежнее значение. Click
+воспроизводит pointer/mouse-последовательность и фокус. Set проверяет фактическое
+состояние checkbox после отменяемого click; radio нельзя снять как checkbox.
+Проверки: `previewInteractions.test.ts`, `webReaderInteractions.e2e.test.ts`.
 
 Контекст хранилищ (`previewStorage.ts`) сохраняет интерфейс Storage: свойства,
 присваивание/delete, Object.keys/JSON, prototype/instanceof, стабильные методы,

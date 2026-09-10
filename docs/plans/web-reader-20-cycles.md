@@ -380,3 +380,28 @@ ready в App DOM; следующие (03:32:49–03:35:22, 153,626 с;
 | 08 | indexedDB.databases не перечисляет чужие базы | Chromium |
 | 09 | IDBDatabase.name и deleteDatabase используют исходное имя | Chromium |
 | 10 | SecurityError getter не ломает загрузку остальных мостов | unit + Chromium |
+
+## Цикл 14 — точные действия модели с формами
+
+Статус: готов. Коммит 13: `150e59f4`.
+73 unit/regression, typecheck и 31 Chromium — код 0. Fast
+05:10:01.634–05:13:14.626 (192,992 с), полный gate
+05:13:14.627–05:19:50.138 (395,512 с) — оба код 0.
+Подготовка 04:32–04:41 вне дерева: 73 unit/regression, typecheck и 10 Chromium — код 0.
+Первый браузерный стенд выявил кодировку без charset; в этом цикле fixture явно
+объявляет UTF-8, а исправление самого текстового транспорта оставлено следующему
+циклу. Исправление типа MessageEventSource касалось только теста.
+Применение 05:08:49; время относится к общей группе действий.
+
+| № | Исправление | Проверка |
+|---|---|---|
+| 01 | Поиск по тексту пропускает скрытые дубликаты и scripts | unit + Chromium |
+| 02 | Неоднозначный селектор возвращает отказ и кандидатов | unit + Chromium |
+| 03 | Disabled/fieldset/aria-disabled/inert не получают ложный успех | unit + Chromium |
+| 04 | Click отправляет pointer/mouse-события и устанавливает фокус | unit + Chromium |
+| 05 | Type/set не изменяют readonly | unit + Chromium |
+| 06 | Type не подменяет value у checkbox/radio/file/нетекстовых input | unit + Chromium |
+| 07 | beforeinput может отменить ввод; input несёт data/inputType | unit + Chromium |
+| 08 | maxlength и неверный тип значения проверяются до изменения | unit + Chromium |
+| 09 | Select отклоняет missing/disabled option и optgroup | unit + Chromium |
+| 10 | Set проверяет фактический checked и не снимает radio кликом | unit + Chromium |

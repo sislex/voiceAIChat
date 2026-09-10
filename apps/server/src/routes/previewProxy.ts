@@ -1,3 +1,4 @@
+import { previewInteractionHelpers } from './previewInteractions.js'
 import { previewStorageScript } from './previewStorage.js'
 import { PreviewCookieStore, responseSetCookies } from './previewCookies.js'
 import { rewritePreviewCss } from './previewStyles.js'
@@ -233,6 +234,7 @@ const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],i
 const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};
 const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url);target.hash=location.hash;url=target.toString()}catch{}return {url,title:document.title||''}};
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
+${previewInteractionHelpers()}
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:textOf(el).slice(0,EL_TEXT)};
   const href=el.localName==='a'&&el.getAttribute('href');if(href)d.href=unproxy(href);
@@ -246,7 +248,7 @@ const byText=(text)=>{
   if(!q)return[];
   const all=[];
   for(const el of document.querySelectorAll('body *')){
-    if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}')continue;
+    if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}'||!actionVisible(el))continue;
     const t=textOf(el);
     if(!t||t.length>300||!t.toLowerCase().includes(q))continue;
     all.push(el)
@@ -270,39 +272,35 @@ const run=(action)=>{
     return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length}
   }
   if(action.kind==='click'){
-    const found=findTargets(action);
-    if(!found.length)throw new Error('Элемент не найден: '+(action.selector||action.text));
-    const el=clickTarget(found[0]);
+    const el=chooseTarget(action,true);actionable(el);
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
-    const info=describe(el);
-    const mods=Array.isArray(action.modifiers)?action.modifiers:[];
-    const fancy=action.button==='right'||action.dblclick===true||mods.length>0;
-    if(!fancy){typeof el.click==='function'?el.click():el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return {page:pageInfo(),clicked:info}}
-    // el.click() не передаёт кнопку и модификаторы — полный событийный путь.
-    const r=el.getBoundingClientRect();
-    const base={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,shiftKey:mods.includes('shift'),ctrlKey:mods.includes('ctrl'),altKey:mods.includes('alt'),metaKey:mods.includes('meta'),button:action.button==='right'?2:0};
-    el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerdown',Object.assign({pointerId:1,isPrimary:true},base)));
-    el.dispatchEvent(new MouseEvent('mousedown',base));
-    el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerup',Object.assign({pointerId:1,isPrimary:true},base)));
-    el.dispatchEvent(new MouseEvent('mouseup',base));
-    if(action.button==='right'){el.dispatchEvent(new MouseEvent('contextmenu',base))}
-    else{
-      el.dispatchEvent(new MouseEvent('click',base));
-      if(action.dblclick){el.dispatchEvent(new MouseEvent('click',Object.assign({detail:2},base)));el.dispatchEvent(new MouseEvent('dblclick',Object.assign({detail:2},base)))}
+    const info=describe(el),mods=Array.isArray(action.modifiers)?action.modifiers:[];
+    const r=el.getBoundingClientRect(),right=action.button==='right';
+    const base={bubbles:true,cancelable:true,composed:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,shiftKey:mods.includes('shift'),ctrlKey:mods.includes('ctrl'),altKey:mods.includes('alt'),metaKey:mods.includes('meta'),button:right?2:0};
+    const count=action.dblclick&&!right?2:1;
+    for(let index=1;index<=count;index++){
+      const down=el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerdown',Object.assign({pointerId:1,isPrimary:true,buttons:right?2:1,detail:index},base)));
+      const mouse=down&&el.dispatchEvent(new MouseEvent('mousedown',Object.assign({buttons:right?2:1,detail:index},base)));
+      if(mouse)el.focus&&el.focus({preventScroll:true});
+      el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerup',Object.assign({pointerId:1,isPrimary:true,buttons:0,detail:index},base)));
+      if(down)el.dispatchEvent(new MouseEvent('mouseup',Object.assign({buttons:0,detail:index},base)));
+      el.dispatchEvent(new MouseEvent(right?'contextmenu':'click',Object.assign({buttons:0,detail:index},base)))
     }
+    if(count===2)el.dispatchEvent(new MouseEvent('dblclick',Object.assign({buttons:0,detail:2},base)));
     return {page:pageInfo(),clicked:info}
   }
   if(action.kind==='type'){
-    const found=bySelector(action.selector);
-    if(!found.length)throw new Error('Поле не найдено: '+action.selector);
-    const el=found[0];
+    const el=chooseTarget(action);actionable(el,true);
     const editable=el.isContentEditable;
     if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+action.selector);
+    validateInput(el,action.text);
+    const option=el.localName==='select'?selectOption(el,action.text):null;
     el.focus&&el.focus();
+    if(!el.dispatchEvent(inputEvent('beforeinput',action.text,true)))throw new Error('Страница отклонила ввод');
     if(editable){el.textContent=action.text}
-    else if(el.localName==='select'){el.value=action.text}
+    else if(option){el.value=option.value}
     else setNativeValue(el,action.text);
-    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(inputEvent('input',action.text));
     el.dispatchEvent(new Event('change',{bubbles:true}));
     let submitted=false;
     if(action.submit){
@@ -432,15 +430,10 @@ const run=(action)=>{
     })
   }
   if(action.kind==='set'){
-    const found=bySelector(action.selector);
-    if(!found.length)throw new Error('Элемент не найден: '+action.selector);
-    const el=found[0];
+    const el=chooseTarget(action);actionable(el);
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
     if(el.localName==='select'){
-      const options=[...el.options];
-      const wanted=String(action.value??'');
-      const target=options.find((o)=>o.value===wanted)||options.find((o)=>textOf(o).toLowerCase()===wanted.toLowerCase());
-      if(!target)throw new Error('Опция не найдена: '+wanted);
+      const target=selectOption(el,action.value??'');
       el.value=target.value;
       el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
       return {page:pageInfo(),set:describe(el),value:el.value}
@@ -448,10 +441,13 @@ const run=(action)=>{
     if(el.localName==='input'&&(el.type==='checkbox'||el.type==='radio')){
       const want=action.checked!==undefined?action.checked:true;
       // Нативный клик сам обновляет checked и шлёт input/change/click.
+      if(el.type==='radio'&&el.checked&&!want)throw new Error('Radio нельзя снять кликом — выберите другую опцию группы');
       if(el.checked!==want)el.click();
+      if(el.checked!==want)throw new Error('Страница отклонила изменение переключателя');
       return {page:pageInfo(),set:describe(el),value:String(el.checked)}
     }
     if(el.localName==='input'||el.localName==='textarea'){
+      actionable(el,true);validateInput(el,String(action.value??''));
       setNativeValue(el,String(action.value??''));
       el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
       return {page:pageInfo(),set:describe(el),value:String(el.value).slice(0,EL_TEXT)}
