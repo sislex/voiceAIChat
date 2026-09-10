@@ -1,7 +1,7 @@
 import { applicationRuntimeMetadata } from '@voicechat/shared'
 import Fastify from 'fastify'
 import { createRpcDispatcher, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, PLAYWRIGHT_READER_RPC_BODY_LIMIT, PLAYWRIGHT_READER_SERVICE_METHODS, RpcError, type RpcRequest } from '@voicechat/shared'
-import { createBrowserRunnerClient, type BrowserRunnerClient } from '@voicechat/browser-runner/client'
+import { createBrowserRunnerClient, type BrowserRunnerClient } from '@voicechat/browser-contracts/client'
 import type { PlaywrightReaderCore } from '../core.js'
 import { createPlaywrightReaderModule } from '../module.js'
 import { registerForwardedAuth } from './auth.js'

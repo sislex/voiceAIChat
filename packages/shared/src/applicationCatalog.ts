@@ -2,6 +2,7 @@
 // версионируются внутри выпуска, а не выводятся из npm-зависимостей исходников.
 import {
   APPLICATION_ID_RE,
+  compareApplicationVersions,
   type ApplicationReleaseManifest,
 } from "./applicationRelease";
 export interface ApplicationDefinition {
@@ -12,6 +13,7 @@ export interface ApplicationDefinition {
   buildDependencies: string[];
   runtimeDependencies: string[];
   optionalRuntimeDependencies?: string[];
+  minimumDependencyApis?: Record<string, string>;
   browserPaths: string[];
   e2eFiles: string[];
   contractPaths: string[];
@@ -55,6 +57,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     optionalRuntimeDependencies: [
       "make",
       "image-studio",
+      "web-reader",
       "playwright-reader",
       "browser-runner",
       "llm-runner",
@@ -75,8 +78,11 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       "shared",
       "sessions-core",
       "make-contracts",
+      "web-reader-contracts",
+      "playwright-reader-contracts",
       "make",
       "image-studio",
+      "web-reader",
       "playwright-reader",
       "browser-runner",
       "llm-runner",
@@ -140,7 +146,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       services: ["playwright-reader"],
       entrypoint: "apps/playwright-reader/src/standalone/index.ts",
       healthPath: "/v1/health",
-      buildDependencies: ["shared", "browser-runner"],
+      buildDependencies: ["shared", "browser-contracts", "playwright-reader-contracts"],
       contractPaths: [
         "apps/playwright-reader/src/core.ts",
         "apps/playwright-reader/src/service.ts",
@@ -163,6 +169,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     entrypoint: "apps/browser-runner/src/index.ts",
     healthPath: "/v1/health",
     dataPaths: ["browser-profiles"],
+    buildDependencies: ["shared", "browser-contracts"],
     contractPaths: [
       "apps/browser-runner/src/client.ts",
       "apps/browser-runner/src/server.ts",
@@ -235,9 +242,21 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     ],
     kind: "frontend",
   }),
-  definition("web-recorder", "Веб-рекордер", "apps/web-recorder", {
-    kind: "frontend",
-    buildDependencies: ["shared", "ui-kit", "web"],
+  definition("web-reader", "Web Reader", "apps/web-reader", {
+    paths: ["apps/web-reader", "apps/web-recorder"],
+    workspaces: ["@voicechat/web-reader", "@voicechat/web-recorder"],
+    runtimeDependencies: ["core", "playwright-reader"],
+    minimumDependencyApis: { core: "1.1.0" },
+    buildDependencies: ["shared", "browser-contracts", "web-reader-contracts", "playwright-reader-contracts", "ui-kit"],
+    browserPaths: ["apps/web-reader/src", "apps/web-recorder/src"],
+    e2eFiles: ["e2e/webReaderCache.e2e.test.ts", "e2e/webReaderCookies.e2e.test.ts", "e2e/webReaderEncoding.e2e.test.ts", "e2e/webReaderForms.e2e.test.ts", "e2e/webReaderHost.e2e.test.ts", "e2e/webReaderHtml.e2e.test.ts", "e2e/webReaderHttp.e2e.test.ts", "e2e/webReaderInteractions.e2e.test.ts", "e2e/webReaderKeyboard.e2e.test.ts", "e2e/webReaderModel.e2e.test.ts", "e2e/webReaderModules.e2e.test.ts", "e2e/webReaderNative.e2e.test.ts", "e2e/webReaderNavigation.e2e.test.ts", "e2e/webReaderOwnProject.e2e.test.ts", "e2e/webReaderProject.e2e.test.ts", "e2e/webReaderReading.e2e.test.ts", "e2e/webReaderResources.e2e.test.ts", "e2e/webReaderScenario.e2e.test.ts", "e2e/webReaderScenarioStorage.e2e.test.ts", "e2e/webReaderStorage.e2e.test.ts", "e2e/webReaderStyles.e2e.test.ts", "e2e/webReaderUi.e2e.test.ts"],
+    services: ["web-reader"],
+    entrypoint: "apps/web-reader/src/standalone/index.ts",
+    healthPath: "/v1/health",
+    configuration: ["VC_CORE_URL", "VC_INTERNAL_TOKEN", "VC_MCP_SECRET", "VC_PLAYWRIGHT_READER_URL", "VC_BROWSER_HOST_ALIASES"],
+    contractPaths: ["apps/web-reader/src/index.ts", "apps/web-reader/src/standalone", "apps/web-reader/src/mcp/previewMcp.ts"],
+    contractChecks: [{ workspace: "@voicechat/server", files: ["src/readerBridge", "src/playwrightReaderBridge"] }],
+    isolation: { tests: true, build: true, deploy: true },
   }),
   ...(
     [
@@ -254,7 +273,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
         "playwright-reader-app",
         "playwright-reader",
       ],
-      ["web-reader-ui", "Web Reader UI", "web-reader-app", "core"],
+      ["web-reader-ui", "Web Reader UI", "web-reader-app", "web-reader"],
     ] as const
   ).map(([id, name, pkg, backend]) =>
     definition(id, name, `packages/${pkg}`, {
@@ -316,6 +335,9 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       "operations-app",
       "admin-app",
       "make-contracts",
+      "browser-contracts",
+      "web-reader-contracts",
+      "playwright-reader-contracts",
     ] as const
   ).map((id) =>
     definition(id, id, `packages/${id}`, {
@@ -325,7 +347,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
           ? ["sessions-core"]
           : id === "sessions-core" || id === "ui-kit" || id === "app-shell"
             ? []
-            : id === "make-contracts"
+            : id.endsWith("-contracts")
               ? ["shared"]
               : id === "sessions-app"
                 ? ["sessions-core", "ui-kit"]
@@ -420,6 +442,9 @@ export function validateCatalogArtifact(
       !requirement.maxApiVersionExclusive
     )
       throw new Error(`Нужен обязательный диапазон версии и API ${dependency}`);
+    const minimum = app.minimumDependencyApis?.[dependency];
+    if (minimum && compareApplicationVersions(requirement.minApiVersion, minimum) < 0)
+      throw new Error(`${app.id} требует API ${dependency} не ниже ${minimum}`);
   }
   for (const dependency of app.optionalRuntimeDependencies ?? []) {
     const requirement = manifest.requires.find(

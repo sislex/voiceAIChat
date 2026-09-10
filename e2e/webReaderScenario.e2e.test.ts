@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
+import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
 let app: FastifyInstance, browser: Browser, page: Page, base: string
 let unavailable = false
 const site = 'http://scenario-cycle.machine.internal:5173'

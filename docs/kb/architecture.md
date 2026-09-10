@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-09-09
-checked: c8fcb5e8
+updated: 2026-09-10
+checked: 83b7e546
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -33,7 +33,20 @@ Fastify-процесс или модуль ядра. REST `/api/browser/*` и и
 
 Reader implementations разделены на workspace-пакеты `packages/web-reader-app` и `packages/playwright-reader-app`; каждый владеет маршрутом, conversation read model, browser surface, store и lifecycle. Их core не импортирует host, другой Reader или chat store: Chat передаётся через `ReaderChatPort`, browser/runtime effects — через `WebReaderHostPort`, `WebRecorderPort`, `PreviewRelayPort`, `PlaywrightReaderHostPort` и `BrowserSessionPort`. Разрешённая product-зависимость Reader → публичный `@voicechat/chat-app` нужна только для `SplitChatWorkspace`; architecture gates запрещают обратную связь и cross-Reader imports.
 
-`packages/ui/src/moduleRegistry.ts` содержит parser/builders и отдельные dynamic imports обоих Reader, что создаёт границы lazy chunks. Однако это пока только переходный composition path: registry загружает React surface, но не собирает Reader ports/store, а browser/desktop продолжают запускать legacy `App.tsx` с прежней Reader-логикой. Поэтому host-only-adapters состояние ещё не достигнуто полностью и не должно считаться текущим фактом.
+Рабочий host загружает панели через `applicationHost.tsx`: собственные IIFE/CSS,
+манифест, версия и SRI. Реализации панелей не входят в основной web bundle.
+`moduleRegistry.ts` сохраняет переходные Reader surfaces; оркестрация разговоров
+и общие эффекты ещё находятся в `App.tsx`. Отдельный выпуск панели не означает
+полного переноса всех host-адаптеров в новый store.
+
+Web Reader API отделён в `apps/web-reader`, iframe в `apps/web-recorder` входит
+в его образ и выпуск. Прокси ядра сохраняет origin под `/web-recorder/`.
+`ReaderCore` и HTTP-клиент находятся в `packages/web-reader-contracts`, порты
+Playwright — в `packages/playwright-reader-contracts`, клиент Chromium — в
+`packages/browser-contracts`. API Reader не имеют общей БД и не импортируют
+реализацию браузерного раннера. Релизы `web-reader`, `web-reader-ui`,
+`playwright-reader`, `playwright-reader-ui` и `browser-runner` независимы;
+диапазоны совместимости проверяются перед deploy.
 
 ```
 браузер / Electron-renderer

@@ -11,7 +11,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { chromium, type Browser, type Page } from 'playwright'
 import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { previewOriginTarget } from '../apps/browser-runner/src/security.js'
-import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
+import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { startReaderFramesFixture } from '../apps/browser-runner/src/test/readerFrames.js'
 import { startReaderDownloadsFixture } from '../apps/browser-runner/src/test/readerDownloads.js'
 import { startReaderDialogsFixture } from '../apps/browser-runner/src/test/readerDialogs.js'

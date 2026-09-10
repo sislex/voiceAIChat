@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { registerServiceProxy } from '../makeBridge/proxy.js'
 
 /** Всё, что регистрируют `routes/previewProxy.ts` и `mcp/previewMcp.ts`; полноту держит `proxy.test.ts`. */
-export const READER_PROXY_PREFIXES = ['/api/preview', '/mcp/preview'] as const
+export const READER_PROXY_PREFIXES = ['/api/preview', '/mcp/preview', '/web-recorder'] as const
 
 export function registerReaderProxy(app: FastifyInstance, opts: { readerUrl: string; fetchImpl?: typeof fetch; timeoutMs?: number }): void {
   // Прокси превью отдаёт страницы и ресурсы до 5 МБ, формы уходят сырым телом; запас — на обёртку.

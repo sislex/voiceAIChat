@@ -9,38 +9,38 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 91 коммит(ов) в areas после сверки: 83c0b320 fix(reader): исправить падение истории действий по HTTP … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-09 | ⚠ 20 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 28 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-10 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-10 | ⚠ 16 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-09 | ⚠ 18 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 24 коммит(ов) в areas после сверки: 83c0b320 fix(reader): исправить падение истории действий по HTTP … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ✓ |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 141 коммит(ов) в areas после сверки: 83c0b320 fix(reader): исправить падение истории действий по HTTP … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 304 коммит(ов) в areas после сверки: 83c0b320 fix(reader): исправить падение истории действий по HTTP … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 197 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 76 коммит(ов) в areas после сверки: d4bf0c9f fix(reader): use full Chromium in Web Reader conversations (cycle 19/20) … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 96 коммит(ов) в areas после сверки: 8b5e9306 Merge main into CHAT-442 (task 4d4c46c9-7065-430c-ad4e-8a3c23111643) … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 92 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ✓ |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 29 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-10 | ⚠ 17 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-10 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 25 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 142 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 305 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 198 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 77 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 97 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1333 коммит(ов) в areas после сверки: 83c0b320 fix(reader): исправить падение истории действий по HTTP … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 8b5e9306 Merge main into CHAT-442 (task 4d4c46c9-7065-430c-ad4e-8a3c23111643) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1334 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 61 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ✓ |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 58 коммит(ов) в areas после сверки: 8b5e9306 Merge main into CHAT-442 (task 4d4c46c9-7065-430c-ad4e-8a3c23111643) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 102 коммит(ов) в areas после сверки: 83c0b320 fix(reader): исправить падение истории действий по HTTP … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 314 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 18 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-10 | ⚠ 8 коммит(ов) в areas после сверки: 83c0b320 fix(reader): исправить падение истории действий по HTTP … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ✓ |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 221 коммит(ов) в areas после сверки: 83c0b320 fix(reader): исправить падение истории действий по HTTP … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-10 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ⚠ 20 коммит(ов) в areas после сверки: 8b5e9306 Merge main into CHAT-442 (task 4d4c46c9-7065-430c-ad4e-8a3c23111643) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-10 | ⚠ 18 коммит(ов) в areas после сверки: ec51e9ef merge(reader): совместить изменения Playwright и Web Reader … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 196 коммит(ов) в areas после сверки: 30588c23 fix(reader): open the current project without host aliases (cycle 15/20) … |
-| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 59 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 103 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 315 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 19 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-10 | ⚠ 9 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 222 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-10 | ⚠ 19 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 197 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
+| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-10 | ✓ |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 148 коммит(ов) в areas после сверки: 30588c23 fix(reader): open the current project without host aliases (cycle 15/20) … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 149 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-10 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
@@ -56,10 +56,13 @@
 - [apps/playwright-reader](../../apps/playwright-reader/AGENTS.md)
 - [apps/server](../../apps/server/AGENTS.md)
 - [apps/web](../../apps/web/AGENTS.md)
+- [apps/web-reader](../../apps/web-reader/AGENTS.md)
+- [packages/browser-contracts](../../packages/browser-contracts/AGENTS.md)
 - [packages/image-studio-app](../../packages/image-studio-app/AGENTS.md)
 - [packages/make-app](../../packages/make-app/AGENTS.md)
 - [packages/make-contracts](../../packages/make-contracts/AGENTS.md)
 - [packages/playwright-reader-app](../../packages/playwright-reader-app/AGENTS.md)
+- [packages/playwright-reader-contracts](../../packages/playwright-reader-contracts/AGENTS.md)
 - [packages/projects-app](../../packages/projects-app/AGENTS.md)
 - [packages/sessions-app](../../packages/sessions-app/AGENTS.md)
 - [packages/sessions-core](../../packages/sessions-core/AGENTS.md)
@@ -67,10 +70,11 @@
 - [packages/ui](../../packages/ui/AGENTS.md)
 - [packages/ui-foundation](../../packages/ui-foundation/AGENTS.md)
 - [packages/web-reader-app](../../packages/web-reader-app/AGENTS.md)
+- [packages/web-reader-contracts](../../packages/web-reader-contracts/AGENTS.md)
 
 ## Журнал сессий
 
-Всего записей: 728. Последние:
+Всего записей: 729. Последние:
 
 - [2026-09-10-macbook-air-user-task-error-opens-task-chat.md](log/2026-09-10-macbook-air-user-task-error-opens-task-chat.md) — task-error-opens-task-chat
 - [2026-09-10-macbook-air-user-task-chat-composer.md](log/2026-09-10-macbook-air-user-task-chat-composer.md) — task-chat-composer

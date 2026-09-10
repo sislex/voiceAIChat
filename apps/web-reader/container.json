@@ -1,0 +1,6 @@
+{
+  "runtime": [
+    "RUN npm run -w @voicechat/web-recorder build"
+  ],
+  "schemaVersion": 1
+}

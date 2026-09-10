@@ -8,7 +8,7 @@ import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
 import type { LlmClient } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
-import { PreviewActionRelay } from './mcp/previewMcp.js'
+import { PreviewActionRelay } from '@voicechat/web-reader-contracts'
 import { AuthStatusState } from './auth/statusState.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.

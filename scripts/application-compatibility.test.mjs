@@ -92,3 +92,11 @@ test('стенд использует только заданные digest и с
   assert.equal(compose.services.voicechat.build, undefined)
   assert.equal(compose.services.voicechat.volumes, undefined)
 })
+
+test('матрица Web Reader включает remote-прокси и адрес Playwright API', () => {
+  const compose=compatibilityCompose(release('web-reader','1.0.0'), [release('core','1.0.0'),release('playwright-reader','1.0.0')])
+  assert.equal(compose.services.voicechat.environment.VC_READER_MODE,'remote')
+  assert.equal(compose.services.voicechat.environment.VC_READER_URL,'http://web-reader:8080')
+  assert.equal(compose.services['web-reader'].environment.VC_PLAYWRIGHT_READER_URL,'http://playwright-reader:8080')
+  assert.equal(compose.services['web-reader'].environment.VC_DB_URL,undefined)
+})

@@ -2,6 +2,10 @@
 // обнаруживает неверный token, CORE_URL или оставшийся embedded-режим ядра.
 import { applicationRuntimeMatches } from '../packages/shared/src/applicationRelease.ts'
 const contracts = {
+  'web-reader': {
+    core: { path: '/internal/reader/core', body: { method: 'context', args: [{ userId: '__release_probe__', conversationId: '__release_probe__' }] } },
+    'playwright-reader': { path: '/internal/playwright-reader/service', body: { method: 'control', args: ['__release_probe__', '__release_probe__', {type: 'status'}] } }
+  },
   make: {
     core: {
       path: '/internal/make/core',
@@ -33,11 +37,13 @@ const contracts = {
 }
 const urlEnv = {
   core: 'VC_CORE_URL',
+  'playwright-reader': 'VC_PLAYWRIGHT_READER_URL',
   'browser-runner': 'VC_BROWSER_RUNNER_URL',
   'llm-runner': 'VC_LLM_RUNNER_URL'
 }
 const tokenEnv = {
   core: 'VC_INTERNAL_TOKEN',
+  'playwright-reader': 'VC_INTERNAL_TOKEN',
   'browser-runner': 'VC_BROWSER_RUNNER_TOKEN',
   'llm-runner': 'VC_LLM_RUNNER_TOKEN'
 }
@@ -69,13 +75,13 @@ export function applicationLinkChecks(environment) {
   // deploy не изменит пользовательский путь, который остался embedded.
   const core = installed.get('core')
   if (core)
-    for (const id of ['make', 'image-studio', 'playwright-reader']) {
+    for (const id of ['make', 'image-studio', 'playwright-reader', 'web-reader']) {
       const dependency = installed.get(id)
       if (dependency)
         checks.push({
           service: core.artifacts[0].service,
-          urlEnv: `VC_${id.toUpperCase().replaceAll('-', '_')}_URL`,
-          modeEnv: `VC_${id.toUpperCase().replaceAll('-', '_')}_MODE`,
+          urlEnv: `VC_${(id === 'web-reader' ? 'reader' : id).toUpperCase().replaceAll('-', '_')}_URL`,
+          modeEnv: `VC_${(id === 'web-reader' ? 'reader' : id).toUpperCase().replaceAll('-', '_')}_MODE`,
           dependency,
           healthPath: '/v1/health'
         })

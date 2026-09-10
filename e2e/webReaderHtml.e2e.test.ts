@@ -6,7 +6,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import fastify, { type FastifyInstance } from 'fastify'
 import { chromium, type Browser, type Page } from 'playwright'
-import { registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
+import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
 
 let app: FastifyInstance
 let browser: Browser

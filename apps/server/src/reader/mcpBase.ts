@@ -3,7 +3,7 @@
 // на ядро и процесс канбана: оба выдают ходам `previewMcpBaseUrl`, и расходиться им нельзя.
 import type { ServerConfig } from '../config.js'
 import { buildPublicMcpUrl } from '../mcp/publicBase.js'
-import { PREVIEW_MCP_PATH } from '../mcp/previewMcp.js'
+import { PREVIEW_MCP_PATH } from '@voicechat/web-reader-contracts'
 
 export function previewMcpBaseUrlOf(config: Pick<ServerConfig, 'port' | 'mcpPublicBase' | 'readerMode' | 'readerUrl' | 'readerMcpPublicBase'>, mcpSecret: string): string {
   if (config.readerMode === 'remote') {

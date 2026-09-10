@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { registerPreviewProxy } from '../routes/previewProxy.js'
-import { registerPreviewMcp } from '../mcp/previewMcp.js'
+import { registerPreviewProxy } from './routes/previewProxy.js'
+import { registerPreviewMcp } from './mcp/previewMcp.js'
 import { createReaderModule, type ReaderDeps } from './module.js'
 
-vi.mock('../routes/previewProxy.js', () => ({ registerPreviewProxy: vi.fn() }))
-vi.mock('../mcp/previewMcp.js', () => ({ registerPreviewMcp: vi.fn() }))
+vi.mock('./routes/previewProxy.js', () => ({ registerPreviewProxy: vi.fn() }))
+vi.mock('./mcp/previewMcp.js', () => ({ registerPreviewMcp: vi.fn() }))
 
 describe('сессии сайтов Web Reader', () => {
   it('MCP сбрасывает контейнер собственного HTTP-прокси, сохраняя соседний Reader', async () => {

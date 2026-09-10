@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-09-10
-checked: 8c54ade4
+checked: 83b7e546
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -86,16 +86,26 @@ Host-side установка сохраняет физический production 
 
 Каталог `packages/shared/src/applicationCatalog.ts` разделяет владение исходниками,
 сборочные зависимости, runtime-требования и адресные контрактные проверки.
-Независимые единицы: Make, Image Studio, Playwright Reader API, browser-runner,
+Независимые единицы: Make, Image Studio, Web Reader API с iframe-рекордером, Playwright Reader API, browser-runner,
 LLM/STT/TTS runners и четыре UI-панели (`make-ui`, `image-studio-ui`,
 `playwright-reader-ui`, `web-reader-ui`). `llm-runner` владеет сразу двумя сервисами
 `runner-work`/`runner-personal`: они обновляются согласованно одним артефактом.
 
 Готовность тестов, сборки и deploy — разные флаги каталога. Ядро, общий web,
-desktop/agent/tray и ещё встроенные проекты/машины/админка/Web Reader API остаются
+desktop/agent/tray и ещё встроенные проекты/машины/админка остаются
 в общем потоке. Automation Runner имеет отдельную сборку и durable queue, но его
 `src/index.ts` всё ещё использует `executor_adapter_not_configured`; компонентный
 deploy поэтому закрыт. Разделение этих модулей не имитируется отдельным тегом.
+
+Web Reader выпускается как `web-reader`: образ включает только `apps/web-reader`,
+`apps/web-recorder`, контракты и UI kit. Зависимость от ядра требует API >=1.1.0
+(новые методы контекста и машин); каталог запрещает занизить этот минимум в
+манифесте. Пример диапазонов — `docs/examples/application-releases/web-reader.requires.json`.
+`web-reader-ui` требует `core` и `web-reader`. Playwright API использует
+`browser-contracts` и `playwright-reader-contracts`, поэтому его образ не содержит
+Chromium. `application-links.mjs` проверяет связи Web Reader→core/Playwright и
+обратный remote-маршрут ядра через `VC_READER_URL`. Оператор обновляет ядро до
+поддерживаемого API один раз перед первым отдельным Web Reader.
 
 ### Проверки и артефакты
 

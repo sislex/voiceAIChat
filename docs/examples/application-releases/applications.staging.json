@@ -64,6 +64,10 @@
     "web-reader-ui": {
       "port": 8080,
       "path": "/v1/health"
+    },
+    "web-reader": {
+      "port": 8080,
+      "path": "/v1/health"
     }
   }
 }
