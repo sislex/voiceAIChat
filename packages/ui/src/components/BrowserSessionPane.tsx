@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
 import type { AutomatedQaScenario } from '@shared/qa'
 import { scenarioLabel } from '@shared/qa'
-import { runScenarioStep, scenarioProblems, stepHint } from '@shared/scenarioStep'
+import { runScenarioStep, scenarioCommandError, scenarioProblems, stepHint } from '@shared/scenarioStep'
 import { Button, EmptyState, IconButton } from '@voicechat/ui-kit'
 
 // Панель Playwright Reader: живой изолированный Chromium разговора. В отличие от
@@ -272,6 +272,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         const retry = (err as { retryable?: unknown })?.retryable
         setRetryable(retry === true || code === 'timeout' || code === 'not_ready')
       }
+      return { ok: false, error: err instanceof Error ? err.message : 'Команда не выполнена' }
     } finally {
       if (generation === alive.current) setBusy(false)
     }
@@ -439,7 +440,10 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     // и «ок» стоит у шага, который в этот раз не выполнялся.
     setStepResults({})
     try {
-      if (scenario.startUrl) await run({ type: 'navigate', url: scenario.startUrl })
+      if (scenario.startUrl) {
+        const error = scenarioCommandError(await run({ type: 'navigate', url: scenario.startUrl }))
+        if (error) { setMessage(`Стартовый адрес не открылся: ${error}`); return }
+      }
       // Прогон до выбранного шага: длинный сценарий иначе отлаживается целиком.
       // Шаг-переход в сценарий не попадает (он уезжает в startUrl), и `findIndex`
       // по его id давал −1 — то есть «весь сценарий» вместо «только переход».
@@ -569,10 +573,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             const found = (savedScenarios ?? [])[Number(event.target.value)]
             if (!found) return
             setScenarioName(found.name ?? '')
-            setSteps([
-              ...(found.startUrl ? recordNavigate([], found.startUrl) : []),
-              ...found.steps.map((step) => ({ ...step, stability: 'testid' as const }))
-            ])
+            setSteps(loadScenario(found))
             setStepResults({})
           }}>
             <option value="">выбрать…</option>

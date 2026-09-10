@@ -22,6 +22,13 @@ export interface RecordedStep extends AutomatedQaScenarioStep {
 /** Человеческое название шага: по тексту элемента, иначе по тегу и селектору. */
 export type ClickKind = 'left' | 'right' | 'double'
 
+function nextStepId(steps: Pick<RecordedStep, 'id'>[]): string {
+  const taken = new Set(steps.map(step => step.id))
+  let index = steps.length + 1
+  while (taken.has(`step-${index}`)) index++
+  return `step-${index}`
+}
+
 const CLICK_VERB: Record<ClickKind, string> = { left: 'Нажать', right: 'Нажать правой кнопкой', double: 'Двойной клик' }
 
 export function stepTitle(element: BrowserElementDescription, kind: 'click' | 'type', click: ClickKind = 'left'): string {
@@ -31,7 +38,7 @@ export function stepTitle(element: BrowserElementDescription, kind: 'click' | 't
 
 export function recordClick(steps: RecordedStep[], element: BrowserElementDescription, click: ClickKind = 'left'): RecordedStep[] {
   return [...steps, {
-    id: `step-${steps.length + 1}`,
+    id: nextStepId(steps),
     title: stepTitle(element, 'click', click),
     action: {
       kind: 'click',
@@ -52,7 +59,7 @@ export function recordClick(steps: RecordedStep[], element: BrowserElementDescri
  */
 export function recordScroll(steps: RecordedStep[], deltaY: number): RecordedStep[] {
   const last = steps.at(-1)
-  if (last && last.action.kind === 'scroll' && typeof last.action.dy === 'number') {
+  if (last && !last.expectText && !last.expectAbsentText && last.action.kind === 'scroll' && !last.action.selector && last.action.frame === undefined && typeof last.action.dy === 'number') {
     const merged = last.action.dy + deltaY
     // Прокрутил вниз и обратно — шаг схлопнулся в ноль: такое действие ничего не
     // делает, а в сценарии выглядит осмысленным. Убираем его целиком.
@@ -63,7 +70,7 @@ export function recordScroll(steps: RecordedStep[], deltaY: number): RecordedSte
   }
   if (deltaY === 0) return steps
   return [...steps, {
-    id: `step-${steps.length + 1}`,
+    id: nextStepId(steps),
     title: `Прокрутить на ${deltaY} px`,
     action: { kind: 'scroll', dy: deltaY },
     stability: 'id'
@@ -109,7 +116,9 @@ export function expectOnStep(steps: RecordedStep[], id: string, text: string, ab
 
 /** Убрать шаг: промах мышью не должен стоить всей записи. */
 export function removeStep(steps: RecordedStep[], id: string): RecordedStep[] {
-  return steps.filter((step) => step.id !== id).map((step, index) => ({ ...step, id: `step-${index + 1}` }))
+  // Результаты прогона и выбранное ожидание ссылаются на id: удаление соседа
+  // не должно переносить их на другой шаг.
+  return steps.filter((step) => step.id !== id)
 }
 
 /** Есть ли в сценарии хоть одна проверка — иначе прогон ничего не докажет. */
@@ -133,7 +142,7 @@ export function brokenSteps(steps: RecordedStep[]): RecordedStep[] {
 
 export function recordType(steps: RecordedStep[], element: BrowserElementDescription, text: string): RecordedStep[] {
   return [...steps, {
-    id: `step-${steps.length + 1}`,
+    id: nextStepId(steps),
     title: stepTitle(element, 'type'),
     action: { kind: 'type', selector: element.selector, text, ...(element.frame ? { frame: [...element.frame] } : {}) },
     stability: element.stability,
@@ -143,7 +152,7 @@ export function recordType(steps: RecordedStep[], element: BrowserElementDescrip
 
 export function recordNavigate(steps: RecordedStep[], url: string): RecordedStep[] {
   return [...steps, {
-    id: `step-${steps.length + 1}`,
+    id: nextStepId(steps),
     title: `Открыть ${url}`,
     action: { kind: 'open', url },
     stability: 'id'
@@ -159,7 +168,13 @@ export function toScenario(steps: RecordedStep[], currentUrl: string): Automated
   const first = steps[0]
   const opensFirst = first?.action.kind === 'open' && first.action.frame === undefined
   const startUrl = opensFirst && first.action.kind === 'open' ? first.action.url : currentUrl
-  const rest = opensFirst ? steps.slice(1) : steps
+  // Первое ожидание тоже проверка. Навигация уже выполнена через startUrl,
+  // поэтому оставляем её проверку отдельным ожиданием загрузки документа.
+  const rest = opensFirst
+    ? first.expectText || first.expectAbsentText
+      ? [{ ...first, action: { kind: 'wait' as const, loadState: 'domcontentloaded' as const } }, ...steps.slice(1)]
+      : steps.slice(1)
+    : steps
   return {
     startUrl,
     // Идентификатор сохраняется, а не назначается заново: перенумерация здесь
@@ -206,4 +221,16 @@ export function placeScenario(
   const at = current.findIndex((item) => (item.name ?? '').trim() === name)
   const normalized = { ...scenario, name }
   return at >= 0 ? current.map((item, index) => (index === at ? normalized : item)) : [...current, normalized]
+}
+
+/** Загрузка сохраняет id шагов и подбирает свободный id стартовому переходу. */
+export function loadScenario(scenario: AutomatedQaScenario): RecordedStep[] {
+  const steps: RecordedStep[] = []
+  for (const step of scenario.steps) {
+    const id = step.id && !steps.some(item => item.id === step.id) ? step.id : nextStepId([...steps, ...scenario.steps])
+    steps.push({ ...step, id, stability: 'testid' })
+  }
+  if (!scenario.startUrl) return steps
+  const initial = recordNavigate(steps, scenario.startUrl).at(-1)!
+  return [initial, ...steps]
 }

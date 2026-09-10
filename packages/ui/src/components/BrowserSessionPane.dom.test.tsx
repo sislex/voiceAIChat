@@ -732,3 +732,37 @@ describe('честные предупреждения и прогон до ша�
     expect(clicks).toHaveLength(1)
   })
 })
+
+describe('достоверность прогона записи (цикл проверки 10)', () => {
+  it('ошибка стартового перехода останавливает прогон до кликов', async () => {
+    const actions: string[] = []
+    const browser = fakeBrowser({ command: vi.fn(async (_id, request) => {
+      const command = request.command
+      actions.push(command.type === 'selector' ? command.action.kind : command.type)
+      if (command.type === 'navigate') throw new Error('Адрес недоступен')
+      return { ok: true }
+    }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} savedScenarios={[{ name: 'Вход', startUrl: 'https://project.test', steps: [{ id: 'step-1', title: 'Нажать', action: { kind: 'click', selector: '#button' }, expectText: 'Готово' }] }]} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    expect(await screen.findByText('Стартовый адрес не открылся: Адрес недоступен')).toBeInTheDocument()
+    expect(actions).not.toContain('click')
+    expect(screen.queryAllByText(/прогон: ок/)).toHaveLength(0)
+  })
+
+  it('первое ожидание на переходе действительно выполняется в панели', async () => {
+    const browser = fakeBrowser({ command: vi.fn(async (_id, request) => {
+      if (request.command.type === 'selector' && request.command.action.kind === 'read') return { ok: true, text: 'Готово' }
+      return meta()
+    }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Готово' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'selector', action: { kind: 'read', limit: 20_000 } } })))
+    expect(await screen.findByText('прогон: ок')).toBeInTheDocument()
+  })
+})
