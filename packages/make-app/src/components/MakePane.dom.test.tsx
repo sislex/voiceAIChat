@@ -98,7 +98,7 @@ describe('MakePane', () => {
     await userEvent.click(await screen.findByRole('button', { name: '💬' }))
     const panel = screen.getByTestId('make-comments')
     expect(within(panel).getByLabelText('Текст комментария')).toBeDisabled()
-    // Выбор элемента приходит из iframe сообщением инспектора.
+    // The iframe inspector sends the selected element in a message.
     const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
     window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.selected', selector: 'h1', tag: 'h1', text: 'Привет', html: '<h1>Привет</h1>' }, source: frame.contentWindow }))
     await waitFor(() => expect(within(panel).getByLabelText('Текст комментария')).toBeEnabled())
@@ -533,7 +533,7 @@ describe('MakePane', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Импорт проекта' }))
     const imp = await screen.findByTestId('make-import')
     await userEvent.type(within(imp).getByLabelText('Адрес страницы'), 'https://example.com/{Enter}')
-    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toContain('импортировано из https://example.com/'))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toContain('imported from https://example.com/'))
     await waitFor(() => expect(screen.queryByTestId('make-import')).not.toBeInTheDocument())
   })
 
@@ -563,7 +563,8 @@ describe('MakePane', () => {
     const { emit } = renderPane({ onAskAssistant })
     const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
     emit({ conversationId: CONV, rev: 5, paths: ['app.js'] })
-    // Превью пересоздаётся (key=rev) — ждём новый iframe, иначе source не совпадёт с frameRef.
+    // The preview is recreated with key=rev; wait for the new iframe so the message source matches
+    // frameRef.
     await waitFor(() => expect(screen.getByTitle('Превью проекта')).not.toBe(frame))
     const frame2 = screen.getByTitle('Превью проекта') as HTMLIFrameElement
     fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.console', level: 'error', text: 'ReferenceError: foo is not defined', at: Date.now() }, source: frame2.contentWindow }))
@@ -822,7 +823,7 @@ describe('MakePane: мультивыбор файлов в дереве (roadmap
     fireEvent.click(files[1]!, { ctrlKey: true })
     const bulk = await screen.findByTestId('make-bulk')
     expect(bulk.textContent).toContain('Выбрано: 2')
-    // Shift-клик добирает диапазон от якоря (files[1]) до files[2].
+    // Shift-click extends the selection from the anchor at files[1] through files[2].
     fireEvent.click(files[2]!, { shiftKey: true })
     expect(screen.getByTestId('make-bulk').textContent).toContain('Выбрано: 3')
     const before = (await api['make:state']({ conversationId: CONV })).files.length
@@ -950,7 +951,8 @@ describe('MakePane: три ширины рядом (roadmap-4 п.21)', () => {
     const tablet = screen.getByTitle('Превью 820px') as HTMLIFrameElement
     const phone = screen.getByTitle('Превью 390px') as HTMLIFrameElement
     expect(main.style.width).toBe('1200px')
-    // source у MessageEvent должен быть настоящим Window — берём окна jsdom-кадров и подменяем им postMessage.
+    // MessageEvent.source must be a real Window; use jsdom iframe windows and replace their
+    // postMessage methods.
     const posts = { main: vi.fn(), tablet: vi.fn(), phone: vi.fn() }
     Object.defineProperty(main.contentWindow!, 'postMessage', { value: posts.main, configurable: true })
     Object.defineProperty(tablet.contentWindow!, 'postMessage', { value: posts.tablet, configurable: true })
@@ -959,7 +961,7 @@ describe('MakePane: три ширины рядом (roadmap-4 п.21)', () => {
     expect(posts.main).toHaveBeenCalledWith({ type: 'vc-make.restore', x: 0, y: 240 }, '*')
     expect(posts.phone).toHaveBeenCalledWith({ type: 'vc-make.restore', x: 0, y: 240 }, '*')
     expect(posts.tablet).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'vc-make.restore' }), '*')
-    // Ответный state от телефона в окне 300 мс — эхо, не пересылается.
+    // A state response from the phone within 300 ms is an echo and must not be forwarded.
     window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.state', x: 0, y: 240, hash: '' }, source: phone.contentWindow }))
     expect(posts.tablet).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'vc-make.restore' }), '*')
   })
@@ -1029,14 +1031,14 @@ describe('MakePane: комментарии зрителей и модераци�
     expect(within(panel).queryByRole('button', { name: 'Исправить все' })).toBeNull()
     await userEvent.click(within(panel).getByRole('button', { name: 'Одобрить' }))
     await waitFor(() => expect(within(panel).queryByTestId('make-comments-pending')).toBeNull())
-    // Новый комментарий зрителя приходит по make.changed → тост владельцу (п.35).
+    // A new viewer comment arrives through make.changed and triggers an owner toast (item 35).
     await api['make:commentAdd']({ conversationId: CONV, selector: 'body', elementLabel: 'страница', text: 'Ещё одно замечание' })
     const fresh = (await api['make:comments']({ conversationId: CONV })).comments[0]!
     await api['make:commentUpdate']({ conversationId: CONV, commentId: fresh.id, status: 'pending' })
     emit({ conversationId: CONV, rev: 0, paths: ['.comments.json'] })
     await waitFor(() => expect(screen.getAllByText(/Новый комментарий зрителя/).length).toBeGreaterThan(0))
     expect(screen.getAllByText(/Ещё одно замечание/).length).toBeGreaterThan(0)
-    // Флажок в публикации.
+    // Publication checkbox.
     await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }))
     const dlg = await screen.findByTestId('make-publish')
     await userEvent.click(within(dlg).getByRole('button', { name: 'Опубликовать' }))
@@ -1085,7 +1087,7 @@ describe('MakePane: экспорт под хостинг и сравнение �
     renderPane({ projectId: 'p1' })
     await screen.findByTitle('Превью проекта')
     await userEvent.click(screen.getByRole('tab', { name: 'Репозиторий' }))
-    // Панель компонентов грузит рабочие копии сама — достаточно её опознать по селекту.
+    // The component panel loads its own working copies; identify it by its selector.
     expect(await screen.findByLabelText('Рабочая копия проекта')).toBeTruthy()
   })
 })

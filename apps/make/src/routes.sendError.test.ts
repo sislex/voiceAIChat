@@ -1,7 +1,6 @@
-// Отображение ошибок Make в HTTP-статусы. Таблицей по всем кодам `MakeErrorCode`,
-// потому что это единственная точка, через которую проходят все маршруты Make:
-// одна опечатка здесь меняет контракт сразу полусотни эндпоинтов, а через сами
-// маршруты каждый код пришлось бы проверять по отдельности.
+// Map Make errors to HTTP statuses, covering every MakeErrorCode. All Make routes pass through this
+// point, so one typo changes the contract of roughly fifty endpoints. Testing each code through
+// individual routes would duplicate the same check.
 
 import { describe, expect, it } from 'vitest'
 import type { FastifyReply } from 'fastify'
@@ -19,8 +18,8 @@ function fakeReply() {
 }
 
 describe('sendError', () => {
-  // Полный список кодов из MakeErrorCode: если в тип добавят новый, а сюда нет —
-  // проверка ниже про полноту таблицы это поймает.
+  // Complete MakeErrorCode list: the completeness assertion below catches new codes missing from
+  // this table.
   const table: Array<[MakeErrorCode, number]> = [
     ['not_found', 404],
     ['too_large', 413],
@@ -39,23 +38,23 @@ describe('sendError', () => {
   })
 
   it('в теле ответа есть и человеческое сообщение, и машинный код', () => {
-    // Клиент разбирает `code`, человек читает `error` — нужны оба.
+    // Clients inspect code and humans read error; both fields are required.
     const { reply, sent } = fakeReply()
     sendError(reply, new MakeError('invalid_path', 'путь вне проекта'))
     expect(sent[0].body).toEqual({ error: 'путь вне проекта', code: 'invalid_path' })
   })
 
   it('таблица покрывает все коды MakeErrorCode', () => {
-    // Список берётся из типа вручную; тест держит его в синхроне с кодом
-    // через перечисление, использованное в самом отображении.
+    // The type's codes are listed manually; the test keeps them aligned with the enumeration used
+    // by the mapping.
     const covered = new Set(table.map(([code]) => code))
     const declared: MakeErrorCode[] = ['invalid_id', 'invalid_path', 'not_found', 'too_large', 'too_many_files', 'not_text', 'exists', 'quota']
     expect(declared.filter((code) => !covered.has(code))).toEqual([])
   })
 
   it('неизвестная ошибка пробрасывается наверх, а не превращается в 400', () => {
-    // Иначе сбой БД или бага в коде стали бы «неверный запрос», и причина
-    // потерялась бы: до обработчика Fastify (500) она обязана дойти.
+    // Database failures and programming errors must reach Fastify's 500 handler instead of being
+    // mislabeled as invalid requests and losing their cause.
     const { reply, sent } = fakeReply()
     const boom = new Error('соединение с БД потеряно')
     expect(() => sendError(reply, boom)).toThrow(boom)

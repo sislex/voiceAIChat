@@ -23,14 +23,14 @@ describe('MakeTokensDialog', () => {
 
   it('правит значение токена на месте, добавляет и удаляет токены', async () => {
     const api = createFakeApi([])
-    await api['make:write']({ conversationId: CONV, path: 'styles.css', content: `/* база */\n:root {\n  --accent: #4f7cff;\n  --gap: 8px;\n}\n.a { color: var(--accent) }\n` })
+    await api['make:write']({ conversationId: CONV, path: 'styles.css', content: `/* base styles */\n:root {\n  --accent: #4f7cff;\n  --gap: 8px;\n}\n.a { color: var(--accent) }\n` })
     const onWritten = vi.fn()
     render(<MakeTokensDialog conversationId={CONV} api={api} files={['index.html', 'styles.css']} onClose={() => {}} onWritten={onWritten} />)
     const gap = await screen.findByLabelText('Значение --gap')
     await userEvent.clear(gap)
     await userEvent.type(gap, '12px')
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить (1)' }))
-    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toBe(`/* база */\n:root {\n  --accent: #4f7cff;\n  --gap: 12px;\n}\n.a { color: var(--accent) }\n`))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toBe(`/* base styles */\n:root {\n  --accent: #4f7cff;\n  --gap: 12px;\n}\n.a { color: var(--accent) }\n`))
 
     await userEvent.type(screen.getByLabelText('Имя нового токена'), 'radius')
     await userEvent.type(screen.getByLabelText('Значение нового токена'), '10px')

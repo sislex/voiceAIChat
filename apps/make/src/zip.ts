@@ -1,11 +1,10 @@
-// Минимальный ZIP-писатель (метод «store», без сжатия) — чтобы отдать проект Make
-// одним файлом без внешних зависимостей. Формат: локальные заголовки + данные,
-// затем центральный каталог и End of Central Directory. Файлы проекта маленькие и
-// в основном текстовые, поэтому отсутствие deflate не критично; зато формат
-// читается любым архиватором и браузером.
+// Minimal ZIP writer using the uncompressed store method to export a Make project without external
+// dependencies. Emit local headers and data, followed by the central directory and End of Central
+// Directory. Project files are small and mostly text, so omitting deflate is acceptable while
+// keeping broad archive and browser compatibility.
 
 export interface ZipEntry {
-  /** Путь внутри архива с `/` в качестве разделителя. */
+  /** Archive path with forward-slash separators. */
   path: string
   data: Buffer
   mtime?: Date
@@ -27,7 +26,7 @@ export function crc32(data: Buffer): number {
   return (crc ^ 0xffffffff) >>> 0
 }
 
-/** Время/дата MS-DOS (2-секундная точность, годы с 1980). */
+/** MS-DOS time and date: two-second precision, with years starting at 1980. */
 function dosDateTime(date: Date): { time: number; date: number } {
   const year = Math.max(1980, date.getFullYear())
   const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2)
@@ -45,8 +44,8 @@ export function buildStoredZip(entries: ZipEntry[]): Buffer {
     const { time, date } = dosDateTime(entry.mtime ?? new Date())
     const local = Buffer.alloc(30)
     local.writeUInt32LE(0x04034b50, 0)
-    local.writeUInt16LE(20, 4) // версия для извлечения
-    local.writeUInt16LE(0x0800, 6) // флаг: имена в UTF-8
+    local.writeUInt16LE(20, 4) // Version required for extraction.
+    local.writeUInt16LE(0x0800, 6) // UTF-8 filename flag.
     local.writeUInt16LE(0, 8) // store
     local.writeUInt16LE(time, 10)
     local.writeUInt16LE(date, 12)
@@ -59,7 +58,7 @@ export function buildStoredZip(entries: ZipEntry[]): Buffer {
 
     const central = Buffer.alloc(46)
     central.writeUInt32LE(0x02014b50, 0)
-    central.writeUInt16LE(20, 4) // версия создателя
+    central.writeUInt16LE(20, 4) // Creator version.
     central.writeUInt16LE(20, 6)
     central.writeUInt16LE(0x0800, 8)
     central.writeUInt16LE(0, 10)

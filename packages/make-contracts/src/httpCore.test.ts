@@ -1,6 +1,6 @@
-// RPC-порт к ядру: клиент `HttpMakeCore` ↔ диспетчер `createCoreRpcDispatcher` над фейковым
-// `MakeCore`. Транспорт — `app.inject()` через подставной fetch: проверяем сериализацию аргументов,
-// null-результаты, ошибки ядра и белый список методов, не поднимая сетевой порт.
+// Core RPC tests connect HttpMakeCore to createCoreRpcDispatcher over a fake MakeCore. A
+// substituted fetch uses app.inject() to check argument serialization, null results, core errors,
+// and the method allowlist without opening a network port.
 import Fastify from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MakeCore } from './core.js'
@@ -69,7 +69,7 @@ describe('HttpMakeCore ↔ RPC ядра', () => {
     expect(await s.client.taskDesigns('ann', 'p1', 'none')).toBeNull()
     expect(await s.client.project('ann', 'p1')).toBeNull()
     expect(await s.client.userExists('ann')).toBe(true)
-    // Необязательный `path` не превращается в null на проводе.
+    // An omitted optional path must not become null on the wire.
     await s.client.taskLinks('c1')
     await s.client.taskLinks('c1', 'index.html')
     expect(calls.filter(([m]) => m === 'taskLinks').map(([, a]) => a)).toEqual([['c1', undefined], ['c1', 'index.html']])

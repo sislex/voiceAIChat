@@ -1,23 +1,23 @@
-// Порт «что ядру нужно от Make». Обратная сторона `core.ts`: ход модели берёт контекст
-// проекта в промпт и id снимка «до правок», CI и подготовка задачи — scope-токены на дизайны,
-// роуты канбана — список файлов для проверки путей, админка — расход диска. Ядро знает Make
-// только через этот интерфейс; сборка реализации — `make/module.ts`.
+// Port describing what core needs from Make, complementing core.ts. Model turns need project
+// context and pre-edit snapshot IDs; CI and task preparation need design-scope tokens; kanban
+// routes need file lists for path validation; administration needs disk usage. Core accesses Make
+// through this interface, with implementation composition in make/module.ts.
 
 import type { AdminMakeStats, LlmMakeSource, MakeFileInfo, ServerMessage } from '@voicechat/shared'
 import type { TaskMakeSourcesArgs } from './taskScope.js'
 
 export interface MakeService {
-  /** Дизайн-токены и открытые комментарии проекта — блок промпта Make-чата; пустая строка, если нечего сказать. */
+  /** Design tokens and open project comments for the Make chat prompt; empty when no context is available. */
   promptContext(conversationId: string): Promise<string>
-  /** Снимок «До правок ассистента», сделанный в этом ходе, — для `meta.makeSnapshotId`. */
+  /** Pre-edit assistant snapshot created during this turn, used as meta.makeSnapshotId. */
   turnSnapshot(turn: string): string | undefined
   listFiles(conversationId: string): Promise<MakeFileInfo[]>
-  /** Make-источники рана задачи: URL MCP с scope-токеном на каждый дизайн; пусто, если MCP Make не настроен. */
+  /** Make design sources for a task run: MCP URLs with scope tokens, or an empty list when Make MCP is not configured. */
   taskSources(args: TaskMakeSourcesArgs): LlmMakeSource[]
   adminStats(): Promise<AdminMakeStats>
-  /** Те же цифры в формате Prometheus. */
+  /** The same metrics in Prometheus format. */
   metrics(): Promise<string>
   sweep(): Promise<{ projects: number; snapshots: number; shots: number }>
-  /** Кадры `make.changed` / `make.presence` пользователя — подписка WS-сессии. */
+  /** Subscribe a user's WS session to make.changed and make.presence frames. */
   subscribe(userId: string, sink: (m: ServerMessage) => void): () => void
 }

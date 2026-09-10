@@ -18,7 +18,7 @@ const meta: Meta<typeof MakeNotesDialog> = {
 export default meta
 type Story = StoryObj<typeof MakeNotesDialog>
 
-/** Загруженные настройки проекта со всеми вариантами stack и независимым Bootstrap UI Kit. */
+/** Loaded project settings covering every stack option and the independent Bootstrap UI Kit. */
 export const Default: Story = {}
 // @testCase TC-UI-01
 export const StackMenu: Story = {

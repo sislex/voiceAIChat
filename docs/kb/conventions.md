@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-09-10
-checked: 8c54ade4
+updated: 2026-09-11
+checked: c28239cd
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -26,9 +26,12 @@ areas:
 
 ## Код
 
-- **Комментарии и документация — по-русски.** Комментарий объясняет «почему» и
-  подводные камни, а не пересказывает код. У файла — короткая шапка с назначением.
-  Смотри на соседние файлы: плотность комментариев там осознанная, держи такую же.
+- **Write new comments and documentation in English.** Explain decisions and
+  pitfalls rather than restating the code. Keep file introductions brief and
+  follow the surrounding comment density. Effective 2026-09-11, Make maintains
+  English comments and Markdown in `apps/make`, `packages/make-app`, and
+  `packages/make-contracts`, including generated comments, exported Markdown,
+  and its dedicated plans. The user also requests English communication.
 - TypeScript strict везде; в `packages/ui` дополнительно `noUnusedLocals`,
   `noUnusedParameters`, `noImplicitOverride`.
 - **Импорты**: в `apps/server` и `apps/llm-runner` — с расширением `.js`
@@ -79,6 +82,13 @@ npm run test                           # все воркспейсы
 Полный гейт репозитория — `npm run verify`: typecheck + test всех воркспейсов,
 сборка, плюс desktop и agent-tray (у них свой `node_modules`). Перед пушем удобнее
 гонять его, чем собирать команды руками.
+
+A fresh worktree needs separate installs for all three non-workspace Electron
+apps before a gate that selects them: `npm ci --prefix apps/desktop`,
+`npm ci --prefix apps/agent-tray`, and `npm ci --prefix apps/login-application`.
+The root `npm ci` does not install their Electron or electron-vite dependencies.
+Use `gate:fast -- --dry-run` and the application catalog to check the full selected
+set; shared-code changes can select these consumers even during Make work.
 
 ## Покрытие: пороги по каталогам, когда пакет считать целиком бессмысленно
 
@@ -192,10 +202,10 @@ appendCiLog(...)` без ожидания — это тысячи записей
 
 ## Коммиты
 
-Conventional Commits с областью в скобках и **русским описанием**:
-`feat(agent): установка агента на Android (Termux)`, `fix(ui): иконка «Свернуть»`,
-`docs(console): отметить прогресс`. Один коммит — один осмысленный шаг; правки
-базы знаний идут тем же коммитом, что и код, который они описывают.
+Use Conventional Commits with a scope and an **English description**:
+`feat(agent): support Android installation with Termux`,
+`fix(ui): correct the collapse icon`, `docs(console): record progress`.
+Keep one coherent change per commit and include its knowledge-base updates.
 
 Ветка по умолчанию — `main`, работа ведётся прямо в ней. Коммит и push делаются
 **только по просьбе пользователя**.

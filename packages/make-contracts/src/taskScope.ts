@@ -1,9 +1,8 @@
-// Полномочия рана задачи на чтение дизайнов из Make (scope-токен). Ран CI и подготовка
-// задачи получают URL `/mcp/make?…&scope=<token>`; по нему инструменты make_* отдают только
-// list/read и только выбранные файлы. Токен — подписанный HMAC документ с TTL, а не запись в
-// памяти процесса: выдаёт его ядро (ходы, CI), проверяет Make, и завтра это разные процессы.
-// Содержимое токена — заявка, а не право: при использовании Make сверяет его с актуальными
-// task_designs, проектом разговора и членством (см. `mcp/makeMcp.ts`).
+// Task-run design-read capabilities for Make. CI and task preparation receive
+// /mcp/make?...&scope=<token> URLs allowing make_* tools to list and read only selected files.
+// Tokens are HMAC-signed documents with a TTL, issued by core and verified by Make without shared
+// process memory. Their claims still require checking against current task_designs, the
+// conversation's project, and user membership; see mcp/makeMcp.ts.
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { taskMakeSources, type LlmMakeSource, type TaskDesignLink } from '@voicechat/shared'
@@ -33,7 +32,7 @@ export function signTaskScope(secret: string, entry: Omit<MakeTaskScope, 'expire
   return `${payload}.${sign(secret, payload)}`
 }
 
-/** null — подпись не сходится, документ битый или срок вышел. */
+/** Return null for a signature mismatch, corrupt document, or expired token. */
 export function verifyTaskScope(secret: string, token: string, now = Date.now()): MakeTaskScope | null {
   const dot = token.lastIndexOf('.')
   if (dot <= 0) return null
@@ -55,7 +54,7 @@ export interface TaskMakeSourcesArgs {
   taskId: string
 }
 
-/** Make-источники для запроса к LLM: один scope-токен на все дизайны задачи, свой `conv` у каждого. */
+/** Make sources for an LLM request: one scope token covers all task designs, with a separate conv value in each URL. */
 export function buildTaskMakeSources(args: TaskMakeSourcesArgs & { baseUrl?: string; secret?: string; now?: number }): LlmMakeSource[] {
   if (!args.baseUrl || !args.secret) return []
   const sources = taskMakeSources(args.designs)

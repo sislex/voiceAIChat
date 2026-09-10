@@ -1,17 +1,15 @@
-// Порт «что Make нужно от ядра». Make не владеет ни одной таблицей — его состояние лежит в
-// файлах мастерской, — но ему нужно знать, чей разговор, к какому проекту он привязан, кто
-// участник, какие карточки канбана связаны с дизайном и есть ли у проекта машина с
-// репозиторием. Всё это — данные чата, канбана и машин; Make получает их только через этот
-// интерфейс. Сегодня реализация — `makeBridge/localCore.ts` поверх `db.*` в том же процессе,
-// завтра — HTTP к ядру из отдельного сервиса (`docs/plans/make-standalone.md`).
+// Port describing what Make needs from core. Make owns workshop files, not database tables, but
+// needs conversation ownership, project membership, linked kanban cards, and repository machine
+// information. Access these only through MakeCore. Core's makeBridge/localCore.ts implements it
+// over db.*, while standalone Make uses HTTP; see docs/plans/make-standalone.md.
 
 import type { Conversation, FsResult, MakeLinkableTask, MakeTaskLink, ProjectDetail, TaskDesignLink } from '@voicechat/shared'
 
-/** Файловая система машины проекта — только чтение: Make копирует файлы к себе, но в общую копию проекта не пишет. */
+/** Read-only project machine filesystem: Make copies files into its workshop without writing to the shared project copy. */
 export interface MakeMachineFs {
   list(agentId: string, path: string): Promise<FsResult>
   read(agentId: string, path: string): Promise<FsResult>
-  /** Асинхронно намеренно: в отдельном процессе Make статус машины знает только ядро. */
+  /** Asynchronous by design: only core knows machine availability when Make runs separately. */
   isOnline(agentId: string): Promise<boolean>
 }
 
@@ -24,24 +22,24 @@ export interface MakeTaskDesignArgs {
 }
 
 export interface MakeCore {
-  /** Разговор глазами пользователя: null — чужой или несуществующий (для клиента они неотличимы). */
+  /** Conversation as visible to the user; null represents both inaccessible and nonexistent conversations. */
   conversation(userId: string, id: string): Promise<Conversation | null>
   conversationOwner(id: string): Promise<string | null>
-  /** Проект, к которому привязан Make-разговор; null — личный проект без канбана. */
+  /** Project linked to the Make conversation; null means a personal project without kanban. */
   conversationProject(id: string): Promise<string | null>
-  /** Участник проекта разговора видит его Make-проект: карточка задачи ссылается на дизайн. */
+  /** Conversation project members can view its Make design through task-card links. */
   isProjectViewer(userId: string, conversationId: string): Promise<boolean>
-  /** Все Make-разговоры владельца — для квоты на пользователя. */
+  /** All Make conversations owned by the user for per-user quotas. */
   makeConversationIdsOf(owner: string): Promise<string[]>
   taskLinks(conversationId: string, path?: string): Promise<MakeTaskLink[]>
   linkableTasks(userId: string, conversationId: string): Promise<MakeLinkableTask[]>
   linkTaskDesign(userId: string, projectId: string, taskId: string, args: MakeTaskDesignArgs): Promise<void>
   unlinkTaskDesign(userId: string, projectId: string, taskId: string, linkId: string): Promise<void>
-  /** Дизайны задачи для проверки scope-токена рана; null — задачи нет или она недоступна пользователю. */
+  /** Task designs used to validate run-scope tokens; null means the task is absent or inaccessible to the user. */
   taskDesigns(userId: string, projectId: string, taskId: string): Promise<TaskDesignLink[] | null>
   project(userId: string, id: string): Promise<ProjectDetail | null>
   userExists(name: string): Promise<boolean>
-  /** Живая доска: связь «дизайн ↔ карточка» меняет карточку у всех, кто смотрит проект. */
+  /** Live board update: design-to-card links change the card for everyone viewing the project. */
   boardChanged(projectId: string): void
   machineFs: MakeMachineFs | null
 }

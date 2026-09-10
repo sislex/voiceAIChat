@@ -1,5 +1,5 @@
-// Режим «Проект» в Make: проверяем сценарий целиком через мост-фейк — выбор копии,
-// запуск Storybook, кадр стори, правку файла и заведение тикета.
+// Make Project mode: exercise working-copy selection, Storybook startup, story preview, file
+// editing, and ticket creation through a fake bridge.
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -133,7 +133,7 @@ describe('способ открытия кадра', () => {
 
     const frame = await screen.findByTitle('Стори компонента')
     expect(frame.getAttribute('src')).toContain('http://127.0.0.1:6006/iframe.html')
-    // Прямой путь найден сам — сервер об открытии не спрашиваем.
+    // The direct URL was discovered locally, so do not ask the server to open it.
     expect(open).not.toHaveBeenCalled()
     expect(await screen.findByText('кадр напрямую')).toBeTruthy()
     fetchSpy.mockRestore()

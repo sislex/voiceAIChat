@@ -5,29 +5,24 @@ import { fileURLToPath } from 'node:url'
 
 const abs = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
-// Пакет общего UI (React). Тесты — jsdom + Testing Library. Контракт/логика — @shared.
+// React UI tests use jsdom and Testing Library; shared contracts and logic live in @shared.
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: [{ find: /^@shared\//, replacement: abs('../shared/src/') }]
   },
   test: {
-    // По умолчанию node: из 154 файлов пакета треть — чистая логика, и jsdom им
-    // не нужен. Метрики прогона показывали 88 с на создание окружения и 33 с на
-    // setup из ~364 с всей работы, то есть треть уходила в накладные расходы
-    // на файл. Конвенция имён в пакете уже разделяла эти два вида тестов
-    // (`*.dom.test.tsx` против `*.test.ts`) — конфиг просто ей не следовал.
-    // Файлам, которым jsdom нужен вопреки имени, ставится докблок
-    // `// @vitest-environment jsdom` в самом файле.
+    // Default to Node for pure logic tests. In the original 154-file UI package, environment
+    // creation and setup consumed about a third of the roughly 364-second run. File naming already
+    // distinguishes *.dom.test.tsx from *.test.ts, so only DOM tests need jsdom. Files requiring
+    // jsdom despite their names can use // @vitest-environment jsdom.
     environment: 'node',
     environmentMatchGlobs: [['src/**/*.dom.test.{ts,tsx}', 'jsdom']],
     globals: true,
     setupFiles: ['@voicechat/ui-foundation/test/setup'],
-    // 60 с, как у server. Двадцати не хватало не тестам, а машине: в
-    // релизном regression dom-тест, который локально идёт 0,4 с, упирался в
-    // лимит на 21-й секунде — воркспейсы гоняются параллельно и голодают по
-    // CPU (release/0.1.226 и 0.1.227 упали именно так, на разных тестах).
-    // Настоящее зависание 60 с всё равно поймают.
+    // Use a 60-second timeout, matching server. Parallel workspace runs can starve DOM tests of
+    // CPU: tests taking 0.4 seconds locally exceeded the old 20-second limit in releases 0.1.226
+    // and 0.1.227. Sixty seconds still catches actual hangs.
     testTimeout: 60_000,
     include: ['src/**/*.test.{ts,tsx}'],
 

@@ -1,6 +1,6 @@
-// Минимальный ZIP-читатель для импорта проекта: центральный каталог → записи, методы
-// «store» (0) и «deflate» (8, через zlib). Служебное (каталоги, скрытые файлы, __MACOSX)
-// пропускаем; общую верхнюю папку архива срезаем — так `project/index.html` ложится в корень.
+// Minimal project ZIP reader: read central-directory entries and support store (0) and deflate (8,
+// through zlib). Skip directories, hidden files, and __MACOSX entries. Strip the archive's shared
+// top-level directory so project/index.html becomes a root file.
 
 import { inflateRawSync } from 'node:zlib'
 
@@ -9,7 +9,7 @@ export interface ZipReadEntry { path: string; data: Buffer }
 export class ZipReadError extends Error {}
 
 export function readZip(buffer: Buffer, limits = { maxEntries: 400, maxEntryBytes: 2 * 1024 * 1024 }): ZipReadEntry[] {
-  // End of Central Directory ищем с конца (комментарий архива может быть непустым).
+  // Search backward for End of Central Directory because the archive may have a comment.
   let eocd = -1
   for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 22 - 65_535); i--) {
     if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break }
@@ -46,7 +46,7 @@ export function readZip(buffer: Buffer, limits = { maxEntries: 400, maxEntryByte
   return stripCommonRoot(entries)
 }
 
-/** `project/index.html`, `project/css/a.css` → без общей папки. */
+/** Strip the common directory from paths such as project/index.html and project/css/a.css. */
 export function stripCommonRoot(entries: ZipReadEntry[]): ZipReadEntry[] {
   if (entries.length === 0) return entries
   const firstSegments = entries.map((e) => e.path.split('/'))

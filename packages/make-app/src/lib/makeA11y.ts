@@ -1,13 +1,14 @@
-// Проверка доступности превью Make (п.13): axe-core инжектируется в same-origin iframe как текст
-// (Vite `?raw`, лениво — 570 КБ), запускается внутри документа превью, наружу отдаём компактный список
-// нарушений. Тот же axe, что в jsdom-тестах пакета, поэтому вердикты совпадают с нашими гейтами.
+// Make preview accessibility (item 13): lazily inject axe-core as text into the same-origin iframe
+// via Vite ?raw, avoiding its roughly 570 KB cost until needed. Run it in the preview document and
+// return compact violations. Using the same axe version as package tests keeps results aligned with
+// the gates.
 export interface A11yViolation {
   id: string
   impact: 'minor' | 'moderate' | 'serious' | 'critical'
   help: string
   helpUrl: string
   nodes: number
-  /** Селектор первого затронутого узла — для «показать в превью». */
+  /** Selector of the first affected node for locating it in the preview. */
   target: string
 }
 
