@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-10
-checked: f4474be3
+checked: e1a9c40c
 areas:
   - packages/admin-app/src
   - packages/app-shell
@@ -2255,6 +2255,18 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 Reader hash-маршрут служит источником истины и для монтирования поверхности. Пока асинхронный `selectConversation` не привёл `chat.activeId` к ID из `#/web-reader/:id` или `#/playwright-reader/:id` и выбранный разговор не подтверждён соответствующим типизированным списком, `AppBody` показывает статус «Открываем выбранный Reader-разговор…» и не монтирует старые `ChatColumn`, композер, divider и `WebReaderHost`. Это закрывает гонку, при которой пользователь уже видел новый Reader URL, но успевал отправить сообщение и MCP-ход в предыдущий активный чат. DOM-регрессия задерживает ответ `conversations:get`, проверяет отсутствие интерактивного композера/host-а до согласования и затем подтверждает, что отправленная реплика получает ID Reader-разговора.
 
 Править цепочку нужно в `createReaderHostBridge` (`packages/web-reader-app/src/hostBridge.ts`) и `WebReaderFrame`: это единственная панель, которая монтируется на маршрутах `#/web-reader` и `#/playwright-reader` и регистрирует host через `onRegisterHost`. Прежние `PreviewPane`/`WebPreview` и `WebReaderHost` из `App.tsx` удалены вместе со своими тестами (`WebPreview.dom.test.tsx`); host-логика покрыта `packages/web-reader-app/src/hostBridge.test.ts` и `WebReaderFrame.dom.test.tsx`, Reader-сторона — `apps/web-recorder/src/Recorder.dom.test.tsx`. Живые формулировки ошибок перечислены в `hostBridge.ts` и в `PreviewActionRelay`.
+
+Host-мост не переносит старую очередь на новую явно открытую страницу: следующий
+open, внешний setUrl и ручной save-url отменяют прежние pending. Закрытие адреса
+завершает ожидания сразу. Промежуточный empty от reset open сохраняет loading;
+микрозадача старого open проверяет поколение навигации и регистрацию перед отправкой.
+Viewport исполняет shell без требования page-ready, в том числе на пустой или
+ошибочной странице. Handle регистрации фиксирует свой ID и после ротации больше
+не вызывает run/диагностику. Ready другого разговора отвергается. Ошибка транспорта
+возвращается как результат команды, disposed от shell закрывает регистрацию host.
+Запрошенные host-ом инспектор и запись восстанавливаются после reload shell.
+Регрессии: `hostBridge.test.ts` и десять сквозных сценариев настоящего Recorder
+в `e2e/webReaderHost.e2e.test.ts`.
 
 У рекордера есть собственный гейт готовности (`apps/web-recorder/src/Recorder.tsx`): `command`, пришедшая до `page-ready`, сразу получает отказ «Страница ещё загружается.» — очередь держит только host, рекордер команды не буферизует. Reader принимает host-сообщения только после `init` со своими ID (кроме самого `init`), а `dispose` отвечает `disposed` и переводит панель в состояние «отключена». `set-url` сбрасывает флаг готовности и немедленно отвечает `page-status` (`loading` для адреса, `empty` для `null`). Reader также поддерживает `inspector-state` (пересылает тумблер инспектора внутрь и показывает его в тулбаре) и в режиме диагностики отправляет `diagnostics-progress` по каждой diagnostic-команде и `diagnostics-complete` при `diagnostics-start {active:false}`, показывая прогресс собственной панелью; шаги диагностики не попадают в запись сценария. Ошибку загрузки рекордер определяет по `onLoad` внутреннего iframe без пришедшего ready: он читает same-origin `contentDocument` и, если тело — структурированный ответ прокси `{ error: 'preview_unavailable', message }`, отдаёт host-у именно `message`; иначе сообщает, что сайт вернул страницу без инъецированного моста (HTML без внедрённого скрипта). `onError` iframe даёт отдельную сетевую ошибку. Так host различает недоступный сайт и молчащий мост, не смешивая их с таймаутом.
 
