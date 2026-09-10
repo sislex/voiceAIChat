@@ -220,9 +220,11 @@ describe('App — действия модели в веб-превью (мост
     let frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
     const first = await handshakeReader(frame)
     bridge.emit({ conversationId: chat.id, requestId: 'pw-open', action: { kind: 'open', url: 'https://shop.example/' } })
-    await waitFor(() => expect(api._state.conversations.find((item) => item.id === chat.id)?.previewUrl).toBe('https://shop.example/'))
+    await waitFor(() => expect(first.post.mock.calls.some(([message]) => (message as { kind?: string; url?: string }).kind === 'set-url' && (message as { url?: string }).url === 'https://shop.example/')).toBe(true))
+    expect(api._state.conversations.find((item) => item.id === chat.id)?.previewUrl ?? null).toBeNull()
     fromReader(frame, { ...first.ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
     await waitFor(() => expect(bridge.results).toContainEqual(expect.objectContaining({ conversationId: chat.id, requestId: 'pw-open', ok: true, result: { url: 'https://shop.example/' } })))
+    expect(api._state.conversations.find((item) => item.id === chat.id)?.previewUrl).toBe('https://shop.example/')
 
     view.unmount()
     bridge = installPreviewBridge()

@@ -125,9 +125,9 @@ export class PreviewActionRelay {
     if (!entry || entry.userId !== userId || (conversationId !== undefined && entry.conversationId !== conversationId)) return
     const error = typeof outcome.error === 'string' ? outcome.error.slice(0, 2_000) : undefined
     if (outcome.ok) {
-      const result = outcome.result as { url?: unknown; title?: unknown; navigated?: unknown } | undefined
-      const address = typeof result?.url === 'string' ? result.url : entry.action.kind === 'open' ? entry.action.url : null
-      const title = typeof result?.title === 'string' ? result.title : null
+      const result = outcome.result as { url?: unknown; title?: unknown; navigated?: unknown; page?: { url?: unknown; title?: unknown } } | undefined
+      const address = typeof result?.url === 'string' ? result.url : typeof result?.page?.url === 'string' ? result.page.url : entry.action.kind === 'open' ? entry.action.url : null
+      const title = typeof result?.title === 'string' ? result.title : typeof result?.page?.title === 'string' ? result.page.title : null
       const changed: ServerMessage = {
         t: 'reader.changed', conversationId: entry.conversationId, address, title,
         navigated: entry.action.kind === 'open' || entry.action.kind === 'back' || entry.action.kind === 'forward' || result?.navigated === true,
