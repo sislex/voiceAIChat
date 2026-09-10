@@ -27,6 +27,7 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     check: vi.fn(async () => {}),
     uncheck: vi.fn(async () => {}),
     dragTo: vi.fn(async () => {}),
+    scrollIntoViewIfNeeded: vi.fn(async () => {}),
     ariaSnapshot: async () => '- button "Создать"',
     evaluate: async () => null,
     setInputFiles: vi.fn(async () => {}),
@@ -191,7 +192,7 @@ describe('описание элемента и прокрутка (круг 12)'
 
   it('scrollTo сообщает, что элемента нет, а не молчит', async () => {
     expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => true) }), { kind: 'scrollTo', selector: '#a' })).toEqual({ ok: true })
-    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => false) }), { kind: 'scrollTo', selector: '#нет' }))
+    expect(await runSelectorAction(page(locator({ scrollIntoViewIfNeeded: async () => { throw new Error('Элемент #нет не найден') } })), { kind: 'scrollTo', selector: '#нет' }))
       .toEqual({ ok: false, error: 'Элемент #нет не найден' })
   })
 })
