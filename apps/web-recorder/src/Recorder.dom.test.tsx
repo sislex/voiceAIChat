@@ -236,7 +236,7 @@ describe('Recorder submit-шаги', () => {
     expect(step).toMatchObject({ step: { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true } })
   })
 
-  it('воспроизведение submit-шага отправляет type-действие с submit', () => {
+  it('воспроизведение submit-шага отправляет type-действие с submit', async () => {
     render(<Recorder />)
     fromHost(init)
     fireEvent.change(screen.getByPlaceholderText('https://example.com'), { target: { value: 'http://example.test' } })
@@ -244,14 +244,16 @@ describe('Recorder submit-шаги', () => {
     const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
     const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#q', text: 'ноутбук', submit: true } })
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE })
     fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await waitFor(() => expect(inner.mock.calls.some(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toBe(true))
     const action = inner.mock.calls.map(([message]) => message as { type?: string; action?: { kind?: string; submit?: boolean; sensitive?: unknown } }).find((message) => message.type === PREVIEW_ACTION_COMMAND_TYPE)!
     expect(action.action).toEqual({ kind: 'type', selector: '#q', text: 'ноутбук', submit: true })
   })
 })
 
 describe('Recorder scenario', () => {
-  it('запускает каждый шаг с уникальным локальным requestId без randomUUID', () => {
+  it('запускает каждый шаг с уникальным локальным requestId без randomUUID', async () => {
     let byte = 0
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => { bytes.fill(++byte); return bytes } })
     render(<Recorder />)
@@ -265,7 +267,12 @@ describe('Recorder scenario', () => {
     ]) {
       fromPage({ type: 'voicechat.preview.record.v1', step })
     }
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE })
     fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await waitFor(() => expect(postMessage.mock.calls.some(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toBe(true))
+    const first = postMessage.mock.calls.find(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)![0]
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: first.requestId, ok: true })
+    await waitFor(() => expect(postMessage.mock.calls.filter(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toHaveLength(2))
     const commands = postMessage.mock.calls
       .map(([message]) => message as { type?: string; requestId?: string })
       .filter((message) => message.type === PREVIEW_ACTION_COMMAND_TYPE)
@@ -409,6 +416,57 @@ describe('Reader: инструменты и viewport', () => {
     const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
     expect(frame.style.width).toBe('1024px'); expect(frame.style.minWidth).toBe('1024px'); expect(frame.style.maxWidth).toBe('')
     expect(frame.parentElement?.className).toBe('webpreview-viewport')
+  })
+})
+
+
+describe('Recorder управляемое воспроизведение', () => {
+  const seed = () => {
+    localStorage.setItem('voicechat.reader.scenario.v1:https://shop.example/', JSON.stringify([
+      { kind: 'click', selector: '#one', text: '', sensitive: false },
+      { kind: 'type', selector: '#two', text: '', sensitive: true }
+    ]))
+    render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+    return vi.spyOn((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).contentWindow as Window, 'postMessage')
+  }
+  it('проверяет последний секрет до выполнения первого шага', async () => {
+    const inner = seed(); fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await screen.findByText(/Шаг 2: введите секретное/)
+    expect(inner.mock.calls.filter(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toHaveLength(0)
+  })
+  it('блокирует повторный запуск и редактирование, но даёт остановить', async () => {
+    const inner = seed(); fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await waitFor(() => expect(inner.mock.calls.some(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toBe(true))
+    expect((screen.getByRole('button', { name: 'Запустить' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Остановить сценарий' }))
+    await screen.findByText(/Сценарий остановлен/)
+    expect((screen.getByLabelText('Секретное значение шага 2') as HTMLInputElement).value).toBe('')
+  })
+  it('показывает ошибку шага и не отправляет следующий', async () => {
+    const inner = seed(); fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await waitFor(() => expect(inner.mock.calls.some(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toBe(true))
+    const command = inner.mock.calls.find(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)![0]
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: command.requestId, ok: false, error: 'missing' })
+    await screen.findByText(/Шаг 1: missing/)
+    expect(inner.mock.calls.filter(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toHaveLength(1)
+  })
+  it('отмена при set-url не ждёт таймаута', async () => {
+    seed(); fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    fromHost({ type, ...ids, kind: 'set-url', url: null })
+    await screen.findByText(/Открывается другая страница/)
+  })
+  it('воспроизведение не записывает само себя и не смешивает команды модели', async () => {
+    const host = vi.spyOn(window, 'postMessage'); seed()
+    fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#self', text: '', sensitive: false } })
+    expect(screen.queryByLabelText('Селектор шага 3')).toBeNull()
+    fromHost({ type, ...ids, kind: 'command', requestId: 'model-during-run', action: { kind: 'click', selector: '#other' } })
+    expect(sent(host)).toContainEqual(expect.objectContaining({ kind: 'result', requestId: 'model-during-run', ok: false }))
   })
 })
 
