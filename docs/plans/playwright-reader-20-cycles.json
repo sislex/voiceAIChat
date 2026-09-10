@@ -1216,13 +1216,211 @@
         }
       },
       "validatedAt": "2026-09-10T01:48:24.739287+00:00",
-      "completedAt": "2026-09-10T01:48:24.739287+00:00"
+      "completedAt": "2026-09-10T01:48:24.739287+00:00",
+      "commit": "f93ee2ca2223244c0ca4e61d4d210d506e268511"
     },
     {
       "number": 7,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T01:48:51.435861+00:00",
+      "items": [
+        {
+          "id": "07-01",
+          "title": "Ожидание нужного текста внутри заданного элемента",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-02",
+          "title": "Ожидание появления, видимости, скрытия или удаления элемента",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-03",
+          "title": "Ожидание доступности кнопки или поля (enabled)",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-04",
+          "title": "Ожидание возможности редактировать поле (editable)",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-05",
+          "title": "Ожидание состояния флажка (checked)",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-06",
+          "title": "Ожидание текущего значения контрола (value)",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-07",
+          "title": "Ожидание числа элементов, включая ноль",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-08",
+          "title": "Ожидание URL после редиректа или маршрута SPA",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-09",
+          "title": "Ожидание готовности документа или полной загрузки",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-10",
+          "title": "Ожидание условия JavaScript приложения",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T01:26:06.433129+00:00",
+        "items": [
+          "Ожидание нужного текста внутри заданного элемента",
+          "Ожидание появления, видимости, скрытия или удаления элемента",
+          "Ожидание доступности кнопки или поля (enabled)",
+          "Ожидание возможности редактировать поле (editable)",
+          "Ожидание состояния флажка (checked)",
+          "Ожидание текущего значения контрола (value)",
+          "Ожидание числа элементов, включая ноль",
+          "Ожидание URL после редиректа или маршрута SPA",
+          "Ожидание готовности документа или полной загрузки",
+          "Ожидание условия JavaScript приложения"
+        ],
+        "evidence": "/tmp/voicechat-reader-cycle-07-baseline.log",
+        "observations": {
+          "firstSevenReturnSuccessWhileConditionsFalse": true,
+          "urlLoadPredicateRequireIrrelevantSelector": true
+        },
+        "implementationNotes": [
+          "Использовать общий дедлайн для сочетаний условий; проверять таймаут и восстановление.",
+          "Новый расширенный wait доступен Chromium, явно отказывать при fallback в iframe; прежний wait iframe сохраняется.",
+          "URL проверять с восстановлением публичного host alias.",
+          "Новые функции не считаются готовыми до реального MCP/E2E и полного гейта."
+        ],
+        "prototype": {
+          "log": "/tmp/voicechat-reader-cycle-07-prototype-final.log",
+          "detail": "Черновой исполнитель проверен в Chromium вне checkout: ложные условия не проходят, URL/load/true predicate проходят, async predicate явно отклоняется. После пробы уточнены общий текст таймаута и count без неявного требования видимости."
+        },
+        "rejected": [
+          {
+            "hypothesis": "30-секундная задержка живых тестов вызвана закрытием HTTP стенда",
+            "observation": "Не воспроизведено: site.close 1 мс, browser.close 26 мс. Фикс не выполнялся.",
+            "log": "/tmp/voicechat-reader-fixture-close-timing.log"
+          }
+        ],
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T01:29:37.838391+00:00",
+          "endedAt": "2026-09-10T01:48:51.435861+00:00",
+          "detail": "Черновики готовились и проверялись вне checkout во время гейтов 06; интервал пересекается с проверкой 06."
+        }
+      },
+      "validation": {
+        "baseline": {
+          "nativeFailed": 11,
+          "log": "/tmp/voicechat-reader-cycle-07-native-baseline.log"
+        },
+        "focused": {
+          "runnerPassed": 35,
+          "nativeWaitingPassed": 11,
+          "nativeWaitingDurationMs": 5580,
+          "sharedPassedBeforeMapperAddition": 50,
+          "mcpPassed": 61,
+          "typecheckAllExitCode": 0,
+          "serverTypecheckExitCode": 0
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 48710,
+          "log": "/tmp/voicechat-reader-cycle-07-build.log"
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:56:45.159308+00:00",
+          "endedAt": "2026-09-10T01:57:00.163648+00:00",
+          "durationMs": 15004,
+          "status": "passed",
+          "passed": 10,
+          "vitestDurationMs": 14520,
+          "log": "/tmp/voicechat-reader-cycle-07-e2e-final.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-07",
+          "initialAttempt": {
+            "exitCode": 1,
+            "startedAt": "2026-09-10T01:54:21.993084+00:00",
+            "endedAt": "2026-09-10T01:54:41.817009+00:00",
+            "durationMs": 19824,
+            "log": "/tmp/voicechat-reader-cycle-07-e2e.log",
+            "reason": "Все новые ожидания прошли, служебный evaluate изменения DOM отклонён политикой приложения; в стенд добавлена кнопка очистки, E2E нажимает её обычным click."
+          },
+          "visuallyInspected": [
+            "15-model-waits-for-ready-page.png"
+          ]
+        },
+        "fastGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:59:18.489603+00:00",
+          "endedAt": "2026-09-10T02:07:05.436506+00:00",
+          "durationMs": 466944,
+          "status": "passed",
+          "passed": 7349,
+          "skipped": 45,
+          "log": "/tmp/voicechat-reader-cycle-07-fast.log"
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:07:48.435055+00:00",
+          "endedAt": "2026-09-10T02:16:47.768969+00:00",
+          "durationMs": 539330,
+          "status": "passed",
+          "passed": 7680,
+          "webBuild": true,
+          "storybookBuild": true,
+          "log": "/tmp/voicechat-reader-cycle-07-gate.log"
+        }
+      },
+      "endedAt": "2026-09-10T02:17:25.863104+00:00"
     },
     {
       "number": 8,

@@ -285,7 +285,7 @@ export class BrowserSessionManager {
       else if (action.type === 'keyDown') await page.keyboard.down(action.key)
       else await page.keyboard.up(action.key)
     } else if (command.type === 'selector') {
-      const result = await runSelectorAction(page, command.action)
+      const result = await runSelectorAction(page, command.action, raw => this.publicUrl(raw))
       if (result.links) result.links = result.links.map(link => ({ ...link, href: this.publicUrl(link.href) }))
       if (result.frames) result.frames = result.frames.map(frame => ({ ...frame, src: frame.src ? this.publicUrl(frame.src) : '' }))
       return { ...result, page: { url: this.publicUrl(page.url()), title: await page.title().catch(() => '') } }

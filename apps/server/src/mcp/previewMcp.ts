@@ -18,6 +18,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
   PREVIEW_ACTION_LIMITS,
+  isBrowserWaitOptions,
+  browserWaitRequiresChromium,
   isHttpUrl,
   previewResultJson,
   type PreviewAction,
@@ -412,19 +414,42 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'wait',
         {
           description:
-            'Дождаться появления элемента на открытой в превью странице (асинхронные SPA): CSS-селектор или видимый текст, ' +
-            'таймаут до 8000 мс (по умолчанию 5000). Возвращает найденный элемент и время ожидания.',
+            'Дождаться готовности страницы. selector вместе с text ждёт текст внутри элемента. ' +
+            'В Chromium доступны state, enabled, editable, checked, value, count, URL, loadState и predicate. ' +
+            'Условия делят один таймаут до 30000 мс (по умолчанию 5000). Ответ сообщает время ожидания. ' +
+            'load не ждёт будущие запросы SPA: для них используй содержимое или predicate.',
           inputSchema: {
-            selector: z.string().max(L.selector).optional().describe('CSS-селектор ожидаемого элемента'),
-            text: z.string().max(L.text).optional().describe('Видимый текст ожидаемого элемента'),
-            timeoutMs: z.number().positive().max(8_000).optional().describe('Таймаут ожидания, мс')
+            selector: z.string().max(L.selector).optional().describe('Селектор ожидаемого элемента'),
+            text: z.string().max(L.text).optional().describe('Текст элемента или текст внутри selector'),
+            state: z.enum(['attached', 'detached', 'visible', 'hidden']).optional().describe('Состояние элемента; по умолчанию visible, при count проверяется наличие узлов'),
+            enabled: z.boolean().optional().describe('Элемент должен быть доступен или отключён'),
+            editable: z.boolean().optional().describe('Поле должно разрешать или запрещать редактирование'),
+            checked: z.boolean().optional().describe('Ожидаемое состояние флажка'),
+            value: z.string().max(L.text).optional().describe('Точное значение input/textarea/select, в том числе пустое'),
+            count: z.number().int().min(0).max(100000).optional().describe('Число совпадений селектора, включая скрытые'),
+            url: z.string().max(L.url).optional().describe('Публичный URL или шаблон с *'),
+            loadState: z.enum(['domcontentloaded', 'load']).optional().describe('Готовность DOM или завершение загрузки документа'),
+            predicate: z.string().max(L.evaluateCode).optional().describe('Синхронное JS-выражение или функция без аргументов, дающая truthy'),
+            timeoutMs: z.number().positive().max(30000).optional().describe('Общий таймаут ожидания, мс')
           }
         },
-        async ({ selector, text, timeoutMs }) => {
-          if (!selector && !text) {
-            return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+        async (options) => {
+          if (!isBrowserWaitOptions(options)) return { content: [{ type: 'text', text: 'Укажи selector/text или url/loadState/predicate и совместимые условия ожидания.' }], isError: true }
+          const action = { kind: 'wait' as const, ...options }
+          if (browserWaitRequiresChromium(options)) {
+            if (!entry) return noContext
+            if (options.predicate) {
+              // Повторяющееся условие не должно обходить project gate evaluate.
+              const verdict = await opts.context?.gateEvaluate?.(entry, options.predicate, false)
+              req.log.info({ event: 'reader.wait-predicate', userId: entry.userId, conversationId: entry.conversationId, allowed: verdict?.allowed ?? true, reason: verdict?.reason }, 'reader predicate gate')
+              if (verdict && !verdict.allowed) return toolResult({ ok: false, error: verdict.needsConfirmation
+                ? 'Условие wait требует изменения страницы, хранилища или сети. Выполни действие отдельным инструментом и затем ожидай состояние.'
+                : `Условие wait отклонено политикой проекта: ${verdict.reason ?? ''}` })
+            }
+            const direct = await opts.browserExecutor?.(entry.userId, entry.conversationId, action)
+            return toolResult(direct ?? { ok: false, error: 'Расширенные условия wait доступны только в Playwright Reader или Chromium-проверке.' })
           }
-          return run({ kind: 'wait', ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(typeof timeoutMs === 'number' ? { timeoutMs } : {}) })
+          return run(action)
         }
       )
 

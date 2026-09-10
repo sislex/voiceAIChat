@@ -69,14 +69,10 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
           action: { kind: 'find', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}), ...(action.visibleOnly !== undefined ? { visibleOnly: action.visibleOnly } : {}) }
         }
       }
-    case 'wait':
-      return {
-        kind: 'command',
-        command: {
-          type: 'selector',
-          action: { kind: 'wait', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(typeof action.timeoutMs === 'number' ? { timeoutMs: action.timeoutMs } : {}) }
-        }
-      }
+    case 'wait': {
+      const { diagnostic: _diagnostic, ...wait } = action
+      return { kind: 'command', command: { type: 'selector', action: wait } }
+    }
     case 'scroll': {
       // Контейнер и край страницы нельзя выразить фиксированным шагом колеса.
       return { kind: 'command', command: { type: 'selector', action: { kind: 'scroll', ...(action.selector ? { selector: action.selector } : {}), ...(action.to ? { to: action.to } : {}), ...(action.dy !== undefined ? { dy: action.dy } : {}) } } }

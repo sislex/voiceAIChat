@@ -9,6 +9,11 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
   const self: SelectorLocator = {
     first: () => self,
     all: async () => [self],
+    count: async () => 1,
+    isEnabled: async () => true,
+    isEditable: async () => true,
+    isChecked: async () => false,
+    inputValue: async () => '',
     filter: () => self,
     evaluateAll: async () => null,
     click: vi.fn(async () => {}),
@@ -34,6 +39,9 @@ function page(target: SelectorLocator, over: Partial<SelectorPage> = {}): Select
   return {
     locator: vi.fn(() => target),
     getByText: vi.fn(() => target),
+    waitForURL: async () => {},
+    waitForLoadState: async () => {},
+    waitForFunction: async () => ({ dispose: async () => {} }),
     keyboard: { press: vi.fn(async () => {}) },
     evaluate: vi.fn(async () => null),
     ...over

@@ -274,6 +274,24 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     if (artifacts) await writeFile(join(artifacts, '14-model-read.json'), JSON.stringify(contents, null, 2))
   })
 
+  it('модель ждёт реальную готовность SPA и формы через MCP', async () => {
+    await mcp('open', { url: 'http://forms.reader.test/waiting' })
+    await mcp('click', { selector: '#begin' })
+    const ready = JSON.parse(await mcp('wait', { selector: '#status', text: 'Готово', url: 'http://forms.reader.test/waiting#ready', predicate: 'window.appReady', timeoutMs: 3000 })) as BrowserSelectorResult
+    expect(ready).toMatchObject({ ok: true, waitedMs: expect.any(Number), page: { url: 'http://forms.reader.test/waiting#ready' } })
+    for (const options of [
+      { selector: '#spinner', state: 'hidden' }, { selector: '#spinner', state: 'attached' },
+      { selector: '#send', enabled: true }, { selector: '#field', editable: true, value: 'готово' },
+      { selector: '#check', checked: true }, { selector: '.row', count: 2 }, { loadState: 'load' }
+    ]) expect(JSON.parse(await mcp('wait', options))).toMatchObject({ ok: true })
+    await mcp('type', { selector: '#field', text: 'Поле дождалось готовности' })
+    expect(JSON.parse(await mcp('read', { selector: '#field' }))).toMatchObject({ text: 'Поле дождалось готовности' })
+    await mcp('click', { selector: '#clear' })
+    expect(JSON.parse(await mcp('wait', { selector: '#spinner', state: 'detached' }))).toMatchObject({ ok: true })
+    expect(JSON.parse(await mcp('wait', { selector: '.row', count: 0 }))).toMatchObject({ ok: true })
+    await capture('15-model-waits-for-ready-page')
+  })
+
   it('модель получает нужную область и полную страницу с точными метаданными снимка', async () => {
     await mcp('open', { url: 'http://forms.reader.test/capture' })
     const shot = async (args: Record<string, unknown>, name: string) => {

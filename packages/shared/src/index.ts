@@ -3,6 +3,7 @@
 
 export * from './types'
 export * from './browserLimits'
+export * from './browserWaiting'
 export * from './protocol'
 export * from './stateMachine'
 export * from './sentences'
