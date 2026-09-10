@@ -286,6 +286,8 @@ export class BrowserSessionManager {
       else await page.keyboard.up(action.key)
     } else if (command.type === 'selector') {
       const result = await runSelectorAction(page, command.action)
+      if (result.links) result.links = result.links.map(link => ({ ...link, href: this.publicUrl(link.href) }))
+      if (result.frames) result.frames = result.frames.map(frame => ({ ...frame, src: frame.src ? this.publicUrl(frame.src) : '' }))
       return { ...result, page: { url: this.publicUrl(page.url()), title: await page.title().catch(() => '') } }
     } else if (command.type === 'inspect') {
       return runInspectAction({ console: session.console, network: session.network }, page, command.action)

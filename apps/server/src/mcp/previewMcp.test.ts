@@ -152,6 +152,16 @@ describe('previewMcp — инструменты browser', () => {
   })
 
   it.each([
+    ['read', { selector: 'main', limit: 100, offset: 4000 }],
+    ['find', { selector: 'button', limit: 1, visibleOnly: true }]
+  ])('%s передаёт параметры чтения и поиска в Chromium', async (name, args) => {
+    const execute = vi.fn(async () => ({ ok: true, result: { ok: true, text: 'Прочитано' } }))
+    await makeApp(undefined, { browserExecutor: execute })
+    expect((await call(name as string, args as Record<string, unknown>)).isError).not.toBe(true)
+    expect(execute).toHaveBeenCalledWith(U, CONV, { kind: name, ...args as Record<string, unknown> })
+  })
+
+  it.each([
     ['tabs', {}, { type: 'status' }],
     ['new-tab', { url: 'https://example.com/' }, { type: 'newTab', url: 'https://example.com/' }],
     ['select-tab', { tabId: 't2' }, { type: 'selectTab', tabId: 't2' }],

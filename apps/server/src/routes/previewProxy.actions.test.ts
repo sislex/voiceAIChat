@@ -100,6 +100,21 @@ describe('контекст браузера веб-превью', () => {
 })
 
 describe('скрипт превью: DOM-действия', () => {
+  it('общие параметры read и find не теряются в iframe-поверхности', async () => {
+    const scope = document.createElement('section')
+    scope.id = 'reader-pagination'
+    scope.textContent = '0123456789'.repeat(30)
+    document.body.append(scope)
+    const res = await act({ kind: 'read', selector: '#reader-pagination', limit: 100, offset: 250 })
+    expect(res.result).toMatchObject({ text: '0123456789'.repeat(5), total: 300, offset: 250 })
+    const hidden = document.createElement('button'), shown = document.createElement('button')
+    hidden.className = shown.className = 'reader-choice'
+    hidden.style.display = 'none'; hidden.textContent = 'Скрытая копия'; shown.textContent = 'Видимая кнопка'
+    document.body.append(hidden, shown)
+    const found = await act({ kind: 'find', selector: '.reader-choice', visibleOnly: true, limit: 1 })
+    expect(found.result).toMatchObject({ total: 1, elements: [{ text: 'Видимая кнопка' }] })
+  })
+
   it('read отдаёт заголовки, ссылки без прокси-обёртки, кнопки и поля', async () => {
     const res = await act({ kind: 'read' })
     expect(res.ok).toBe(true)

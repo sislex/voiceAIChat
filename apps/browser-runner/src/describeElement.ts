@@ -39,10 +39,10 @@ export function describeElementScript(x: number, y: number): string {
     const role = node.getAttribute('role')
     let selector = ''
     let stability = 'path'
-    if (testid) { selector = '[data-testid="' + testid + '"]'; stability = 'testid' }
+    if (testid) { selector = '[data-testid="' + esc(testid) + '"]'; stability = 'testid' }
     else if (node.id) { selector = '#' + esc(node.id); stability = 'id' }
-    else if (label) { selector = node.tagName.toLowerCase() + '[aria-label="' + label + '"]'; stability = 'label' }
-    else if (role) { selector = node.tagName.toLowerCase() + '[role="' + role + '"]'; stability = 'role' }
+    else if (label) { selector = node.tagName.toLowerCase() + '[aria-label="' + esc(label) + '"]'; stability = 'label' }
+    else if (role) { selector = node.tagName.toLowerCase() + '[role="' + esc(role) + '"]'; stability = 'role' }
     else {
       const parts = []
       let current = node
@@ -70,7 +70,7 @@ export function describeElementScript(x: number, y: number): string {
       stability,
       matches,
       tag: node.tagName.toLowerCase(),
-      text: (node.innerText || node.value || node.getAttribute('placeholder') || '').trim().slice(0, 120),
+      text: (node.type === 'password' ? '' : (node.innerText || node.value || node.getAttribute('placeholder') || '')).trim().slice(0, 120),
       rect: { x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) }
     }
   })()`
