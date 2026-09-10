@@ -1,3 +1,4 @@
+import { decodePreviewText, decodePreviewResponse, isPreviewText, previewContentType, previewRedirect, PreviewResponseError } from './previewResponse.js'
 import { previewKeyboardHelpers } from './previewKeyboard.js'
 import { previewReadingHelpers } from './previewReading.js'
 import { previewResourceScript } from './previewResources.js'
@@ -755,7 +756,8 @@ ready();
 }
 
 export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewriteModules = true): Buffer {
-  let text = body.toString('utf8')
+  if (!isPreviewText(type)) return body
+  let text = decodePreviewText(body, type)
   const rewriteCssUrls = (css: string, targetBase = base): string => rewritePreviewCss(css, targetBase, proxyUrl)
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
     text = rewritePreviewHtml(text, base, {
@@ -859,13 +861,8 @@ async function load(url: URL, userId: string, method = 'GET', body?: string | Bu
     if (!location || ![301, 302, 303, 307, 308].includes(result.response.statusCode ?? 0)) return result
     result.response.resume()
     if (redirects === MAX_REDIRECTS) throw new PreviewProxyError(502, 'Слишком много перенаправлений')
-    if ([301, 302, 303].includes(result.response.statusCode ?? 0) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
-      currentMethod = 'GET'
-      currentBody = undefined
-      currentHeaders = { ...currentHeaders }
-      delete currentHeaders['content-type']
-    }
-    current = new URL(location, current)
+    const next = previewRedirect(current, location, result.response.statusCode!, currentMethod, currentBody, currentHeaders)
+    current = next.url; currentMethod = next.method; currentBody = next.body; currentHeaders = next.headers
     if (current.protocol !== 'http:' && current.protocol !== 'https:') throw new PreviewProxyError(400, 'Разрешены только HTTP и HTTPS')
   }
   throw new PreviewProxyError(502, 'Не удалось загрузить сайт')
@@ -923,7 +920,7 @@ async function loadViaMachine(
   let current = url
   let currentMethod = method
   let currentBody = body
-  const headers = { ...incomingHeaders }
+  let headers = { ...incomingHeaders }
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
     const agentId = machineAgentIdOf(current.hostname)
     if (!agentId) throw new PreviewProxyError(502, 'Тестовое окружение перенаправило наружу — открой внешний адрес напрямую')
@@ -949,14 +946,11 @@ async function loadViaMachine(
     const location = headerValue(response.headers, 'location')
     if (location && [301, 302, 303, 307, 308].includes(response.status)) {
       const next = new URL(location, current)
-      // Окружение знает себя как 127.0.0.1/localhost — возвращаем редирект на мост той же машины.
+      // Сначала возвращаем логический host: локальный redirect не меняет origin сайта.
       if (next.hostname === '127.0.0.1' || next.hostname === 'localhost') next.hostname = agentId + MACHINE_PREVIEW_SUFFIX
-      if ([301, 302, 303].includes(response.status) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
-        currentMethod = 'GET'
-        currentBody = undefined
-        delete headers['content-type']
-      }
-      current = next
+      const redirect = previewRedirect(current, next.toString(), response.status, currentMethod, currentBody, headers)
+      currentMethod = redirect.method; currentBody = redirect.body; headers = redirect.headers
+      current = redirect.url
       continue
     }
     return { status: response.status, headers: response.headers, body: Buffer.from(response.bodyBase64, 'base64'), finalUrl: current }
@@ -977,7 +971,7 @@ async function loadViaMachine(
 /** Минута в браузере: столько же живёт серверная запись, дольше держать опасно. */
 const MACHINE_CACHE_CONTROL = 'private, no-cache'
 
-const DROPPED_RESPONSE_HEADERS = new Set(['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'etag', 'last-modified'])
+const DROPPED_RESPONSE_HEADERS = new Set(['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'content-encoding', 'etag', 'last-modified'])
 
 /** Человеческая страница вместо JSON-ошибки: она открывается прямо в кадре. */
 export function previewErrorPage(message: string): string {
@@ -1036,11 +1030,13 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           if (!deps.projectResource) throw new PreviewProxyError(502, 'Текущее приложение недоступно этому Reader')
           const project = await loadPreviewProject(deps.projectResource, cookies, userId, url, req.method, body, upstreamRequestHeaders(req.headers))
           const type = headerValue(project.headers, 'content-type') ?? 'application/octet-stream'
-          const rewritten = rewritePreviewBody(project.body, type, project.finalUrl)
+          const decoded = await decodePreviewResponse(project.body, headerValue(project.headers, 'content-encoding'))
+          const rewritten = rewritePreviewBody(decoded, type, project.finalUrl)
           reply.code(project.status)
           for (const [name, value] of Object.entries(project.headers)) {
             if (!DROPPED_RESPONSE_HEADERS.has(name.toLowerCase()) && name.toLowerCase() !== 'location') reply.header(name, value)
           }
+          reply.header('content-type', previewContentType(type))
           reply.header('cache-control', 'private, no-store')
           reply.header('content-length', String(rewritten.length))
           return reply.send(rewritten)
@@ -1075,15 +1071,14 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           const machineType = headerValue(machine.headers, 'content-type') ?? 'application/octet-stream'
           // JS у машины переписывается тоже: dev-сервер отдаёт ESM с абсолютными
           // импортами, и без правки они ушли бы на origin ChatAI.
-          const machineBody = /text\/(html|css)|application\/xhtml\+xml|javascript|ecmascript/i.test(machineType)
-            ? rewritePreviewBody(machine.body, machineType, machine.finalUrl)
-            : machine.body
+          const decoded = await decodePreviewResponse(machine.body, headerValue(machine.headers, 'content-encoding'))
+          const machineBody = rewritePreviewBody(decoded, machineType, machine.finalUrl)
           const headers: Record<string, string | string[]> = {}
           for (const [name, value] of Object.entries(machine.headers)) {
             if (value === undefined || DROPPED_RESPONSE_HEADERS.has(name.toLowerCase()) || name.toLowerCase() === 'location') continue
             headers[name] = value
           }
-          headers['content-type'] = machineType
+          headers['content-type'] = previewContentType(machineType)
           // Браузер перепроверяет права даже пока серверная статика свежая.
           // no-store апстрима строже: не ослабляем его до обычного revalidation.
           headers['cache-control'] = /no-store/i.test(headerValue(machine.headers, 'cache-control') ?? '') ? 'private, no-store' : MACHINE_CACHE_CONTROL
@@ -1101,20 +1096,18 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
         }
         const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers), deps.hostAliases, cookies)
         const responseType = response.headers['content-type'] ?? 'application/octet-stream'
-        const responseBody = await readLimited(response)
-        const rewritten = /text\/(html|css)|application\/xhtml\+xml|javascript|ecmascript/i.test(responseType)
-          ? rewritePreviewBody(responseBody, responseType, finalUrl)
-          : responseBody
+        const responseBody = await decodePreviewResponse(await readLimited(response), response.headers['content-encoding'])
+        const rewritten = rewritePreviewBody(responseBody, responseType, finalUrl)
         reply.code(response.statusCode ?? 502)
         for (const [name, value] of Object.entries(response.headers)) {
           if (value === undefined || DROPPED_RESPONSE_HEADERS.has(name.toLowerCase())) continue
           reply.header(name, value)
         }
-        reply.header('content-type', responseType)
+        reply.header('content-type', previewContentType(responseType))
         reply.header('content-length', String(rewritten.length))
         return reply.send(rewritten)
       } catch (err) {
-        const known = (err instanceof PreviewProxyError || err instanceof ProjectPreviewError) ? err : new PreviewProxyError(502, 'Сайт недоступен')
+        const known = (err instanceof PreviewProxyError || err instanceof ProjectPreviewError || err instanceof PreviewResponseError) ? err : new PreviewProxyError(502, 'Сайт недоступен')
         // Документ в iframe отвечать JSON-ом нельзя: пользователь видел сырой
         // `{"error":"preview_unavailable"}` вместо объяснения. Для кадров отдаём
         // страницу с причиной и кнопкой повтора, для fetch/XHR — прежний JSON.

@@ -1,3 +1,4 @@
+import { previewRedirect } from './previewResponse.js'
 import { READER_PROJECT_ORIGIN, isReaderProjectPath, readerProjectUrl } from '@voicechat/shared'
 import type { ReaderProjectRequest, ReaderProjectResponse } from '@voicechat/shared'
 import { PreviewCookieStore, responseSetCookies } from './previewCookies.js'
@@ -22,13 +23,8 @@ export async function loadPreviewProject(
       const location = Array.isArray(locationEntry) ? locationEntry[0] : locationEntry
       if (![301,302,303,307,308].includes(response.status) || !location) return { ...response, body: Buffer.from(response.bodyBase64, 'base64'), finalUrl: current }
       if (i === 5) throw new ProjectPreviewError(502, 'Слишком много перенаправлений приложения')
-      const next = new URL(readerProjectUrl(new URL(location, current).toString()))
-      if (!next.hash && !location.includes('#')) next.hash = current.hash
-      current = next
-      if (response.status === 303 && verb !== 'HEAD' || (response.status === 301 || response.status === 302) && verb === 'POST') {
-        verb = 'GET'; payload = undefined; outgoing = { ...outgoing }
-        for (const name of ['content-type','content-length','content-encoding']) delete outgoing[name]
-      }
+      const next = previewRedirect(current, readerProjectUrl(new URL(location, current).toString()), response.status, verb, payload, outgoing)
+      current = new URL(readerProjectUrl(next.url.toString())); verb = next.method; payload = next.body; outgoing = next.headers
     }
     throw new ProjectPreviewError(502, 'Слишком много перенаправлений приложения')
   }

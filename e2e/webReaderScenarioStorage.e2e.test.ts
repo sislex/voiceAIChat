@@ -60,7 +60,20 @@ describe('Reader: сохранение и редактирование сцен�
     expect(await shell().getByLabel('Селектор шага 1').count()).toBe(0)
   })
   it('склеивает посимвольный ввод в один шаг', async () => {
-    await openScenario([]); await shell().locator('summary').click(); await shell().getByRole('button', { name: 'Записать сценарий' }).click()
+    await openScenario([])
+    // postMessage доставляется асинхронно: склейку ввода проверяем после включения
+    // записи на странице, иначе CDP успевает набрать всё слово до смены режима.
+    await content().locator('body').evaluate(() => {
+      Reflect.set(window, '__readerRecordingReady', false)
+      const ready = (event: MessageEvent) => {
+        if (event.source !== parent || event.origin !== location.origin || event.data?.type !== 'voicechat.preview.record.v1' || event.data.enabled !== true) return
+        Reflect.set(window, '__readerRecordingReady', true)
+        removeEventListener('message', ready)
+      }
+      addEventListener('message', ready)
+    })
+    await shell().locator('summary').click(); await shell().getByRole('button', { name: 'Записать сценарий' }).click()
+    await expect.poll(() => content().locator('body').evaluate(() => Reflect.get(window, '__readerRecordingReady'))).toBe(true)
     await content().locator('#name').pressSequentially('Анна')
     await expect.poll(() => shell().getByLabel('Значение шага 1').inputValue()).toBe('Анна')
     expect(await shell().getByLabel('Селектор шага 2').count()).toBe(0)
