@@ -1,3 +1,4 @@
+import { applicationRuntimeMetadata } from '@voicechat/shared'
 import Fastify from 'fastify'
 import { createRpcDispatcher, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, PLAYWRIGHT_READER_RPC_BODY_LIMIT, PLAYWRIGHT_READER_SERVICE_METHODS, RpcError, type RpcRequest } from '@voicechat/shared'
 import { createBrowserRunnerClient, type BrowserRunnerClient } from '@voicechat/browser-runner/client'
@@ -41,6 +42,6 @@ export async function buildPlaywrightReaderServer(opts: {
       return reply.code(error instanceof RpcError ? error.status : 500).send({ error: error instanceof Error ? error.message : String(error) })
     }
   })
-  app.get('/v1/health', async () => ({ ok: true, service: 'playwright-reader', version: config.version, runnerConfigured: Boolean(runner) }))
+  app.get('/v1/health', async () => ({ application: applicationRuntimeMetadata('playwright-reader', process.env), ok: true, service: 'playwright-reader', version: config.version, runnerConfigured: Boolean(runner) }))
   return { app, reader }
 }

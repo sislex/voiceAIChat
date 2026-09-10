@@ -4,7 +4,7 @@
 // авто-возвратом в read-only по таймеру. Выполнение — через window.ci.consoleExec.
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { CiLogLine } from '@shared/ci'
-import { copyText } from '../../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { Button } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { AnsiText } from './AnsiText'

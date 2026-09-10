@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MachineUtilityHeader, policyBadges } from './MachineUtilityHeader'
-import { makeAgent, makeOfflineAgent, makePolicy } from '../test/fixtures'
+import { makeAgent, makeOfflineAgent, makePolicy } from '../test/fixtures/index'
 
 describe('MachineUtilityHeader — машина видна всегда', () => {
   it('единственную машину называет и без селектора: имя, «в сети» и версия агента', () => {

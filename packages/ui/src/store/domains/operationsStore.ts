@@ -14,12 +14,12 @@ import type { CcItem, CcProject, CcSession } from '@shared/cc'
 import type { CxItem, CxProject, CxSession } from '@shared/codexSessions'
 import type { SessionUsage } from '@shared/types'
 import type { MachineStorage } from '@shared/projects'
-import type { LoadStatus } from '../../lib/loadState'
+import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import type { DownloadPort, OperationsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 
 /** Сколько команд консоли помним по одной машине (дальше вытесняются старые). */
-import type { UtilityKind } from '../../components/machine'
+import type { UtilityKind } from '@voicechat/ui-foundation/components/machine'
 
 const CONSOLE_HISTORY_MAX = 100
 /** Потолок роста транскрипта наблюдателя. */

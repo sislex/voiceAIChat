@@ -1,4 +1,4 @@
-import type { PtySessionSnapshot, PtySessionStore, PtySessionTab } from '../components/machine'
+import type { PtySessionSnapshot, PtySessionStore, PtySessionTab } from '@voicechat/ui-foundation/components/machine'
 
 /**
  * Список открытых вкладок терминала. Хранится вне React: утилиту закрывают и

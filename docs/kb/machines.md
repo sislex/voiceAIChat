@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-09-08
-checked: a7e8e5b4
+updated: 2026-09-10
+checked: 8c54ade4
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -607,7 +607,7 @@ CI-рана) модель видит остальные машины проек�
 - **История ↑/↓** — набранные команды по машине. Живёт в сторе
   (`AppState.consoleHistory`, `pushConsoleCommand`, кап 100 на машину, подряд
   повторённая не дублируется), а `MachineConsole` получает её контрактом
-  `ConsoleHistoryStore` (`packages/ui/src/components/machine.ts`) пропом
+  `ConsoleHistoryStore` (`packages/ui-foundation/src/components/machine.ts`) пропом
   `historyStore` — от `App.tsx` через `MachineUtility`/`ChatColumn`. В самом
   компоненте историю держать нельзя: утилиту закрывают и открывают заново, и
   локальный стейт умирает вместе с окном. Без пропа консоль помнит команды только
@@ -730,7 +730,7 @@ git-процесса встречаются на `index.lock`, и вторая �
 новых сообщений в протоколе агента для них не понадобилось, поэтому
 `AGENT_VERSION` не бампался.
 
-`MachineOps` (`packages/ui/src/components/machine.ts`) — контракт этих операций
+`MachineOps` (`packages/ui-foundation/src/components/machine.ts`) — контракт этих операций
 для самодостаточных виджетов; объект собирается в `App.tsx` заново на каждый
 рендер, так что в зависимостях эффектов держи конкретную функцию (`ops.read`),
 а не сам объект.

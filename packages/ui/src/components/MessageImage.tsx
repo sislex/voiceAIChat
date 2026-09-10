@@ -13,11 +13,11 @@ import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { MessageAttachment } from '@shared/types'
 import { ImageRetouchEditor } from './ImageRetouchEditor'
-import { copyImage } from '../lib/clipboard'
+import { copyImage } from '@voicechat/ui-foundation/lib/clipboard'
 import { Dots } from './animations'
 import { IconButton } from '@voicechat/ui-kit'
-import { ToolFrame, type ToolFrameControl } from './ToolFrame'
-import type { MachineOps, UtilityVariant } from './machine'
+import { ToolFrame, type ToolFrameControl } from '@voicechat/ui-foundation/components/ToolFrame'
+import type { MachineOps, UtilityVariant } from '@voicechat/ui-foundation/components/machine'
 
 export interface MessageImageProps {
   image: ImageRef

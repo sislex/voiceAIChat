@@ -14,7 +14,7 @@ import type { UploadInfo } from '@shared/ipc'
 import { imageBlock } from '@shared/images'
 import { toolBlock } from '@shared/tools'
 import { formatQuestionsBlock } from '@shared/questions'
-import type { LiveSegment } from '../../lib/view'
+import type { LiveSegment } from '@voicechat/ui-foundation/lib/view'
 
 /** Единая точка отсчёта времени: фикстуры не зависят от «сейчас». */
 export const T0 = 1_700_000_000_000

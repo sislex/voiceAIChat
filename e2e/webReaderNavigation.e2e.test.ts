@@ -2,7 +2,7 @@ import fastify, { type FastifyInstance } from 'fastify'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import { registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
-import type { PreviewDomAction, PreviewActionResultMessage } from '../packages/shared/src/previewActions'
+import type { PreviewDomAction, PreviewActionResultMessage } from '@voicechat/shared/previewActions'
 
 let app: FastifyInstance
 let browser: Browser

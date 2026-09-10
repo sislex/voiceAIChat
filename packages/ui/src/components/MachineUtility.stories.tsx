@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import { MachineUtility } from './MachineUtility'
-import { createFakePty, makeAgent, makeFsEntries, makeMachineOps, makeOfflineAgent, makePolicy } from '../test/fixtures'
+import { createFakePty, makeAgent, makeFsEntries, makeMachineOps, makeOfflineAgent, makePolicy } from '../test/fixtures/index'
 
 const agents = [makeAgent({ id: 'm1', name: 'MacBook' }), makeOfflineAgent({ id: 'm2', name: 'Домашний ПК' })]
 

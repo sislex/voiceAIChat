@@ -14,7 +14,7 @@ import type {
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { AGENT_VERSION } from '@shared/version'
 import type { RendererPtyBridge } from '@shared/ipc'
-import type { MachineOps } from '../../components/machine'
+import type { MachineOps } from '@voicechat/ui-foundation/components/machine'
 import { T0 } from './chat'
 
 const GB = 1024 ** 3

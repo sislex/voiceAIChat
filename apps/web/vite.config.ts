@@ -66,6 +66,7 @@ export default defineConfig({
       '/web-recorder/': { target: `http://127.0.0.1:${RECORDER_PORT}`, changeOrigin: true, ws: true },
       // Host не переписываем: previewProxy сверяет host диагностической страницы
       // с Host запроса — с changeOrigin=true самодиагностика в dev получала SSRF-отказ.
+      '/applications/': { target: `http://127.0.0.1:${API_PORT}` },
       '/api': { target: `http://127.0.0.1:${API_PORT}` },
       '/ws': { target: `ws://127.0.0.1:${API_PORT}`, ws: true },
       // Компаньон-агент подключается по /agent — в dev проксируем на бэкенд,

@@ -499,6 +499,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (!res.ok) throw new Error(`GET ${REST.project(id)} → ${res.status}`)
       return res.json()
     },
+    'releases:applicationCatalog': ({ projectId }) => req(REST.projectApplicationCatalog(projectId)),
+    'releases:applicationOverview': ({ projectId, environment }) => req(REST.projectApplicationEnvironment(projectId, environment)),
+    'releases:applicationPrepare': ({ projectId, ...body }) => req(REST.projectApplicationReleases(projectId), { method: 'POST', body: JSON.stringify(body) }),
+    'releases:applicationObserve': ({ projectId, environment, expectedRevision }) => req(REST.projectApplicationEnvironment(projectId, environment) + '/observe', { method: 'POST', body: JSON.stringify({ expectedRevision }) }),
+    'releases:applicationDeploy': ({ projectId, environment, input }) => req(REST.projectApplicationEnvironment(projectId, environment) + '/deploy', { method: 'POST', body: JSON.stringify(input) }),
+    'releases:applicationReconcile': ({ projectId, environment }) => req(REST.projectApplicationEnvironment(projectId, environment) + '/reconcile', { method: 'POST' }),
     'releases:branches': ({ projectId }) => req(REST.projectReleaseBranches(projectId)),
     'releases:machines': ({ projectId }) => req(REST.projectReleaseMachines(projectId)),
     'releases:createBranch': ({ projectId, branch, baseBranch, agentId }) =>

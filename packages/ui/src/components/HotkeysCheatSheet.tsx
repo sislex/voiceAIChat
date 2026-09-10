@@ -9,9 +9,9 @@
 // применимого сейчас (иначе «удерживайте пробел» пропадал бы во время записи —
 // ровно тогда, когда подсказка и нужна).
 
-import { COMMAND_SECTIONS, SECTION_TITLES, type Command, type CommandSection } from '../lib/commands'
+import { COMMAND_SECTIONS, SECTION_TITLES, type Command, type CommandSection } from '@voicechat/ui-foundation/runtime'
 import { formatCombo, isApplePlatform } from '../lib/hotkeys'
-import { useCommandRegistry } from '../lib/useCommands'
+import { useCommandRegistry } from '@voicechat/ui-foundation/runtime'
 import { Dialog } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 

@@ -506,6 +506,12 @@ export interface IpcInvokeMap {
   /** Отправка на утверждение администратором. */
   'projectTypes:publish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
   'projectTypes:unpublish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
+  'releases:applicationCatalog': { arg: { projectId: string }; result: import('./applicationCatalog').ApplicationDefinition[] }
+  'releases:applicationOverview': { arg: { projectId: string; environment: import('./applicationDeployment').ApplicationEnvironmentName }; result: import('./applicationDeployment').ApplicationReleaseOverview }
+  'releases:applicationPrepare': { arg: { projectId: string; input: import('./applicationDeployment').ApplicationReleaseInput; agentId?: string }; result: import('./applicationDeployment').ApplicationReleaseRecord }
+  'releases:applicationObserve': { arg: { projectId: string; environment: import('./applicationDeployment').ApplicationEnvironmentName; expectedRevision: number }; result: import('./applicationDeployment').ApplicationReleaseOverview }
+  'releases:applicationDeploy': { arg: { projectId: string; environment: import('./applicationDeployment').ApplicationEnvironmentName; input: import('./applicationDeployment').ApplicationDeployInput }; result: import('./applicationDeployment').ApplicationDeploymentRecord }
+  'releases:applicationReconcile': { arg: { projectId: string; environment: import('./applicationDeployment').ApplicationEnvironmentName }; result: import('./applicationDeployment').ApplicationReleaseOverview }
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
   'releases:machines': { arg: { projectId: string }; result: import('./release').ReleaseMachineCatalog }
   'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string }; result: import('./release').ProjectRelease }
@@ -1455,6 +1461,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:deriveType',
   'projectTypes:publish',
   'projectTypes:unpublish',
+  'releases:applicationCatalog', 'releases:applicationOverview', 'releases:applicationPrepare', 'releases:applicationObserve', 'releases:applicationDeploy', 'releases:applicationReconcile',
   'releases:branches',
   'releases:machines',
   'releases:createBranch',

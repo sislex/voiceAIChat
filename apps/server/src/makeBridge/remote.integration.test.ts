@@ -72,7 +72,7 @@ describe('ядро (remote) + отдельный процесс Make', () => {
     expect(((await viaCore.json()) as { conversationId: string }).conversationId).toBe(convId)
     expect((await fetch(`${coreUrl}/api/make/${convId}`)).status).toBe(401)
     expect((await fetch(`${coreUrl}/api/make/unknown`, { headers: auth })).status).toBe(404)
-    expect(await (await fetch(`${makeUrl}${MAKE_HEALTH_PATH}`)).json()).toEqual({ ok: true, service: 'make', version: 'test' })
+    expect(await (await fetch(`${makeUrl}${MAKE_HEALTH_PATH}`)).json()).toMatchObject({ ok: true, service: 'make', version: 'test', application: { applicationId: 'make', version: null } })
     expect((await fetch(`${coreUrl}${INTERNAL_WHOAMI_PATH}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401)
     expect((await fetch(`${makeUrl}/internal/service`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401)
   })

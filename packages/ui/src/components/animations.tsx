@@ -1,4 +1,4 @@
-import { ACCENT } from '../lib/view'
+import { ACCENT } from '@voicechat/ui-foundation/lib/view'
 
 /** Анимированная волна из 28 столбиков (режим записи). */
 export function WaveBars(): JSX.Element {

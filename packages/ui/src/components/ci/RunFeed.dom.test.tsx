@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
+import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { RunFeed, type RunFeedCache } from './RunFeed'
-import { listCommands, resetCommands } from '../../lib/commands'
-import { createFakeCi } from '../../test/fakeApi'
+import { listCommands, resetCommands } from '@voicechat/ui-foundation/runtime'
+import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { KbRunUsageReport } from '@shared/kb'
 import {
   NOW,
@@ -15,7 +15,7 @@ import {
   makeLogLine as mkLog,
   makeRun as mkRun,
   makeStep as mkStep
-} from '../../test/fixtures'
+} from '../../test/fixtures/index'
 
 // Ран, шаги, лог и пауза — общие фикстуры: те же сценарии показывают сториз
 // CI/RunFeed, поэтому расхождение с протоколом ловится один раз в одном месте.

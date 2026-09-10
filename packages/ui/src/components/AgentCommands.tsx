@@ -13,7 +13,7 @@ import {
   type AgentOs
 } from '@shared/agentInstall'
 import { Button } from '@voicechat/ui-kit'
-import { copyText } from '../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 
 export interface AgentCommandsProps {
   /** Имя созданной машины — для заголовка. */

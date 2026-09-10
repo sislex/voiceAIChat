@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { FileExplorer } from './FileExplorer'
 import type { AgentInfo } from '@shared/agentProtocol'
-import type { MachineOps } from './machine'
+import type { MachineOps } from '@voicechat/ui-foundation/components/machine'
 
 const policy = (allowWrite: boolean) => ({
   allowedDirs: [],

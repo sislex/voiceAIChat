@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { expect, userEvent, waitFor, within } from '@storybook/test'
 import { CiTaskSettings } from './CiTaskSettings'
 import { withBridges, type BridgeSetup } from '../../test/storyBridges'
-import { makeCommands, makeLlmConfig } from '../../test/fixtures'
+import { makeCommands, makeLlmConfig } from '../../test/fixtures/index'
 
 /** Общая часть засева: справочник команд у всех сториз одинаковый. */
 const seedCommands: BridgeSetup = ({ ci }) => {

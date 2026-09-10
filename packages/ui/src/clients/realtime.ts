@@ -4,7 +4,7 @@
 // адресует кадры владельцу AppRuntime. Хранилища о мостах по-прежнему не знают.
 
 import type { Message } from '@shared/types'
-import { MESSAGE_META_UPDATE_KEY, SETTINGS_UPDATE_KEY } from '../store/contracts'
+import { MESSAGE_META_UPDATE_KEY, SETTINGS_UPDATE_KEY } from '@voicechat/ui-foundation/persistence'
 import type { RealtimeConnect } from '../runtime/appRuntime'
 
 export const createBrowserRealtime = (): RealtimeConnect => (handlers) => {

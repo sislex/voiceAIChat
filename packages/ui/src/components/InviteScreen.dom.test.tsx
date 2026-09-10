@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import { InviteScreen } from './InviteScreen'
-import { expectNoViolations } from '../test/a11y'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import type { ProjectInvitationPreview } from '@shared/projects'
 
 const preview: ProjectInvitationPreview = {

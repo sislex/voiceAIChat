@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MachineConsole } from './MachineConsole'
-import type { ConsoleHistoryStore } from './machine'
+import type { ConsoleHistoryStore } from '@voicechat/ui-foundation/components/machine'
 import type { AgentInfo } from '@shared/agentProtocol'
 
 const agent: AgentInfo = {

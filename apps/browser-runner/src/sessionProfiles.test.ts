@@ -10,6 +10,10 @@ import { BrowserSessionManager } from './sessionManager.js'
 import { profilePath } from './security.js'
 import { startReaderProfileFixture } from './test/readerProfile.js'
 
+// Эти сценарии перезапускают persistent Chromium несколько раз; 5 с не хватает
+// при общем гейте и работающем Docker. Лимит ограничен только этим набором.
+vi.setConfig({ testTimeout: 15_000 })
+
 let site: Awaited<ReturnType<typeof startReaderProfileFixture>>, root = '', manager: BrowserSessionManager, meta: BrowserSessionMetadata, sequence = 0
 const contexts: BrowserContext[] = []
 const ROOT = 'http://profile.reader.test/', OTHER = 'http://other-profile.reader.test/'

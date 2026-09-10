@@ -1,9 +1,13 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const FRONTEND = [
+  { name: '@voicechat/ui-foundation', dir: 'packages/ui-foundation', layer: 'shared' },
+  { name: '@voicechat/make-app', dir: 'packages/make-app', layer: 'product', independent: 'make-ui', stylesheet: 'panel.css' },
+  { name: '@voicechat/image-studio-app', dir: 'packages/image-studio-app', layer: 'product', independent: 'image-studio-ui', stylesheet: 'panel.css' },
   { name: '@voicechat/ui-kit', dir: 'packages/ui-kit', layer: 'shared' },
   // Модуль сессий переносим целиком: он лежит слоем «shared», потому что его
   // берут и хост-приложение, и админка, а собственного маршрута у него нет.
@@ -37,20 +41,52 @@ function imports(source) {
 function fail(message, detail) { const error = new Error(message); error.detail = detail; throw error }
 const packageOf = (specifier) => specifier.match(/^(@voicechat\/[^/]+)/)?.[1] ?? null
 
+// Публичный subpath — часть объявленного контракта; произвольный /src — нет.
+function publicImport(root, item, specifier) {
+  if (specifier === item.name) return true
+  const path = join(root, item.dir, 'package.json')
+  if (!existsSync(path)) return false
+  const subpath = '.' + specifier.slice(item.name.length)
+  return Object.keys(JSON.parse(readFileSync(path, 'utf8')).exports ?? {}).some(key => {
+    const [prefix, suffix] = key.split('*')
+    return suffix === undefined ? key === subpath : subpath.startsWith(prefix) && subpath.endsWith(suffix) && !subpath.includes('/src/')
+  })
+}
+function exportExists(root, target) {
+  if (!target.includes('*')) return existsSync(join(root, target))
+  const [prefix, suffix] = join(root, target).split('*')
+  return files(join(root, 'src')).some(path => path.startsWith(prefix) && path.endsWith(suffix))
+}
+function leaksTransport(source) {
+  const parsed = ts.createSourceFile('panel.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  let leaked = imports(source).includes('electron')
+  const inspect = node => {
+    if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && /^(?:(?:window|globalThis)\.)?(?:fetch|WebSocket|EventSource)$/.test(node.expression.getText(parsed))) leaked = true
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const owner = node.expression.getText(parsed)
+      const name = ts.isPropertyAccessExpression(node) ? node.name.text : ts.isStringLiteral(node.argumentExpression) ? node.argumentExpression.text : ''
+      if (owner === 'window' && /^(api|audio|stt|claude|tts|cc|codex|agents|session|fs|pty|featurePreview)$/.test(name)) leaked = true
+    }
+    ts.forEachChild(node, inspect)
+  }
+  inspect(parsed)
+  return leaked
+}
+
 export function checkArchitecture({ root = ROOT, packages = FRONTEND } = {}) {
   const edges = new Map(packages.map((item) => [item.name, new Set()]))
   for (const item of packages) for (const file of files(join(root, item.dir, 'src'))) {
-    if (/\.(?:test|stories)\.[tj]sx?$/.test(file)) continue
+    if (/\.(?:test|stories)\.[tj]sx?$/.test(file) || relative(join(root, item.dir, 'src'), file).startsWith('test/')) continue
     const source = readFileSync(file, 'utf8')
     for (const specifier of imports(source)) {
       const dependency = packageOf(specifier)
       if (!dependency || !edges.has(dependency)) continue
-      if (specifier !== dependency && specifier !== `${dependency}/styles.css` && !(dependency === '@voicechat/ui' && specifier === '@voicechat/ui/app.css')) fail('deep workspace import', `${relative(root, file)} -> ${specifier}`)
+      if (!publicImport(root, packages.find(pkg => pkg.name === dependency), specifier)) fail('deep workspace import', `${relative(root, file)} -> ${specifier}`)
       edges.get(item.name).add(dependency)
       if (item.layer === 'product' && (dependency === '@voicechat/app-shell' || dependency === '@voicechat/ui' || dependency === '@voicechat/web' || (PRODUCT_NAMES.has(dependency) && !(dependency === '@voicechat/chat-app' && /reader-app$/.test(item.name))))) fail('product boundary violation', `${relative(root, file)} -> ${specifier}`)
       if (item.layer === 'shell' && (PRODUCT_NAMES.has(dependency) || dependency === '@voicechat/ui')) fail('shell boundary violation', `${relative(root, file)} -> ${specifier}`)
     }
-    if (item.layer === 'product' && /\b(fetch|WebSocket|EventSource)\b|from\s*['"]electron['"]|\bwindow\s*\./.test(source)) fail('transport or platform leak', relative(root, file))
+    if (item.layer === 'product' && leaksTransport(source)) fail('transport or platform leak', relative(root, file))
   }
   const visiting = new Set(), visited = new Set()
   const visit = (name, trail = []) => {
@@ -68,7 +104,7 @@ export function checkExports({ root = ROOT, packages = FRONTEND.filter((item) =>
     const json = JSON.parse(readFileSync(join(root, item.dir, 'package.json'), 'utf8'))
     if (!json.exports?.['.']) fail('missing public root export', item.name)
     if (!json.exports?.['./styles.css']) fail('missing stable styles export', item.name)
-    for (const target of Object.values(json.exports)) if (typeof target === 'string' && !existsSync(join(root, item.dir, target))) fail('export target missing', `${item.name}: ${target}`)
+    for (const target of Object.values(json.exports)) if (typeof target === 'string' && !exportExists(join(root, item.dir), target)) fail('export target missing', `${item.name}: ${target}`)
   }
   return { packages: packages.length }
 }
@@ -92,12 +128,12 @@ export function checkStories({ root = ROOT, matrix = STORY_MATRIX } = {}) {
   return { modules: Object.keys(matrix).length, stories: Object.values(matrix).flat().length }
 }
 export function checkCss({ root = ROOT } = {}) {
-  const styles = FRONTEND.filter((item) => ['product', 'shell'].includes(item.layer)).map((item) => [item, join(root, item.dir, 'src/styles.css')])
+  const styles = FRONTEND.filter((item) => ['product', 'shell'].includes(item.layer)).map((item) => [item, join(root, item.dir, 'src', item.stylesheet ?? 'styles.css')])
   const keyframes = new Map()
   for (const [item, path] of styles) {
     if (!existsSync(path)) fail('missing isolated module stylesheet', item.name)
     const source = readFileSync(path, 'utf8')
-    for (const specifier of imports(source)) if (specifier.startsWith('@voicechat/') && specifier !== '@voicechat/ui-kit/styles.css') fail('cross-module stylesheet import', `${item.name} -> ${specifier}`)
+    for (const specifier of imports(source)) if (specifier.startsWith('@voicechat/') && !['@voicechat/ui-kit/styles.css', '@voicechat/ui-foundation/styles.css'].includes(specifier)) fail('cross-module stylesheet import', `${item.name} -> ${specifier}`)
     for (const match of source.matchAll(/@keyframes\s+([\w-]+)/g)) {
       if (keyframes.has(match[1])) fail('duplicate keyframe', `${match[1]} in ${keyframes.get(match[1])} and ${item.name}`)
       keyframes.set(match[1], item.name)
@@ -110,10 +146,12 @@ export function checkCss({ root = ROOT } = {}) {
 }
 export function checkLazyRegistry({ root = ROOT } = {}) {
   const source = readFileSync(join(root, 'packages/ui/src/moduleRegistry.ts'), 'utf8')
-  for (const name of PRODUCT_NAMES) if (!source.includes(`import('${name}')`)) fail('missing lazy module import', name)
+  for (const name of FRONTEND.filter(item => item.layer === 'product' && !item.independent).map(item => item.name)) if (!source.includes(`import('${name}')`)) fail('missing lazy module import', name)
   const adminDynamic = source.indexOf("import('@voicechat/admin-app')"), adminGate = source.indexOf("['admin']")
   if (adminDynamic < 0 || adminGate < adminDynamic) fail('Admin role gate must be declared with lazy loader', 'admin')
-  return { lazyProducts: PRODUCT_NAMES.size }
+  const app = readFileSync(join(root, 'packages/ui/src/App.tsx'), 'utf8')
+  for (const id of ['make-ui', 'image-studio-ui', 'playwright-reader-ui', 'web-reader-ui']) if (!new RegExp(`createApplicationPanel(?:<[^>]+>)?\\(['\"]${id}['\"]`).test(app)) fail('missing independent application loader', id)
+  return { lazyProducts: PRODUCT_NAMES.size, independentProducts: 4 }
 }
 export function redact(value) { return String(value).replace(SECRET, '[REDACTED]') }
 export function writeReport(results, { root = ROOT } = {}) {

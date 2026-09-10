@@ -27,7 +27,7 @@ describe('граница Make ↔ ядро (сторона ядра)', () => {
     const offenders: string[] = []
     for (const rel of coreFiles) {
       const src = readFileSync(join(srcDir, rel), 'utf8')
-      for (const m of src.matchAll(/^import\s+(type\s+)?\{[^}]*\}\s*from '@voicechat\/make[^']*'/gm)) {
+      for (const m of src.matchAll(/^import\s+(type\s+)?\{[^}]*\}\s*from '@voicechat\/make(?:\/[^']*)?'/gm)) {
         if (!m[1]) offenders.push(`${rel}: ${m[0].slice(0, 80)}`)
       }
     }

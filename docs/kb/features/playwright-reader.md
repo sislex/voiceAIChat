@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-09-10
-checked: 9724b402
+checked: 8c54ade4
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -15,7 +15,7 @@ areas:
   - packages/shared/src/ipc.ts
   - packages/playwright-reader-app
   - packages/ui/src/App.tsx
-  - packages/ui/src/components/BrowserSessionPane.tsx
+  - packages/playwright-reader-app/src/components/BrowserSessionPane.tsx
   - packages/ui/src/remote
   - packages/ui/src/store/domains/chatStore.ts
   - apps/server/src/db/database.ts
@@ -1212,7 +1212,7 @@ Listener внешнего AbortSignal после успешного запрос
 его шагом значило бы открывать страницу дважды. `stability` в сценарий не
 уезжает — он нужен только при записи.
 
-Логика вынесена в `packages/ui/src/lib/scenarioRecorder.ts` и проверяется без
+Логика вынесена в `packages/playwright-reader-app/src/lib/scenarioRecorder.ts` и проверяется без
 DOM; генератор селектора — в настоящем Chromium (`describeElement.test.ts`), а
 не заглушками: заглушка проверила бы наши представления о DOM, а не сам DOM.
 Первым же прогоном тест нашёл дефект — клик мимо содержимого попадает в `html`,

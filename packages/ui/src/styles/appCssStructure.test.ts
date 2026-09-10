@@ -49,7 +49,7 @@ describe('структура app.css', () => {
   it('базовые правила экранов лежат на верхнем уровне, а не внутри медиазапроса', () => {
     const selectors = new Set(topLevelSelectors())
     // По одному якорю на крупный блок: если блок «утонет» в @media, якорь пропадёт.
-    for (const anchor of ['.mpc', '.mpc-body', '.make-pane', '.chat-split', '.kanban-board']) {
+    for (const anchor of ['.chat-split', '.kanban-board', '.mhead']) {
       expect(selectors.has(anchor), `${anchor} обязан быть правилом верхнего уровня`).toBe(true)
     }
   })

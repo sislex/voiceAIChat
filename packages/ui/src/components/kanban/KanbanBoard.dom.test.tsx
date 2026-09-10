@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { MOBILE_QUERY } from '../../lib/mediaQuery'
-import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
+import { MOBILE_QUERY } from '@voicechat/ui-foundation/lib/mediaQuery'
+import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, fireEvent, screen, within, waitFor, cleanup } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
@@ -9,9 +9,9 @@ import type { Board, Task } from '@shared/projects'
 import { DEFAULT_BOARD_VIEW } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import type { GenerateParams } from '../prompt-builder/PromptBuilder'
-import { DRAG_HOLD_MS } from '../../lib/dnd'
-import { listCommands, resetCommands } from '../../lib/commands'
-import { createFakeCi } from '../../test/fakeApi'
+import { DRAG_HOLD_MS } from '@voicechat/ui-foundation/lib/dnd'
+import { listCommands, resetCommands } from '@voicechat/ui-foundation/runtime'
+import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 
 const task = (over: Partial<Task>): Task => ({
   id: 't', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, title: 'T', description: '',

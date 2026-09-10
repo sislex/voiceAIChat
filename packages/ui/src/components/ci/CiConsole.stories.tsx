@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import { CiConsole } from './CiConsole'
 import { withBridges } from '../../test/storyBridges'
-import { makeAnsiLog, makeLogSheet } from '../../test/fixtures'
+import { makeAnsiLog, makeLogSheet } from '../../test/fixtures/index'
 
 const meta: Meta<typeof CiConsole> = {
   title: 'CI/CiConsole',

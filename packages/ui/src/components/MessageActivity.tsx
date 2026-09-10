@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ClaudeLogEntry, VoiceState } from '@shared/types'
-import { ACTIVITY_KIND_LABEL, activityLocation, activityStatus, pluralActions } from '../lib/view'
+import { ACTIVITY_KIND_LABEL, activityLocation, activityStatus, pluralActions } from '@voicechat/ui-foundation/lib/view'
 import { Dots } from './animations'
 
 export interface MessageActivityProps {

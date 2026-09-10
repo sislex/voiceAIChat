@@ -28,7 +28,7 @@ import {
   makeUsage,
   makeUserMessage,
   makeOfflineAgent
-} from '../test/fixtures'
+} from '../test/fixtures/index'
 
 const noop = (): void => {}
 

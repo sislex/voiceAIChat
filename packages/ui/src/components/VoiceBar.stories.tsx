@@ -6,7 +6,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import type { PermissionMode, VoiceState } from '@shared/types'
 import { VoiceBar } from './VoiceBar'
-import { makeUpload } from '../test/fixtures'
+import { makeUpload } from '../test/fixtures/index'
 
 const noop = (): void => {}
 

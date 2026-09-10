@@ -56,9 +56,9 @@ import { ciLlmLabel, ciStageLabel, ciStatusLabel, ciTone, fmtDuration } from '..
 import { canStartCiRun, canStartParallelCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport, type TaskImprovement, type ImprovementSource, type ImprovementStatus } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
-import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
+import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { useAutoGrow } from '../../lib/autoGrow'
-import { usePolling } from '../../lib/usePolling'
+import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 
 export interface TaskUpdateFields {
   title?: string

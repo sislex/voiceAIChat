@@ -2,10 +2,10 @@ import { describe, it, expect, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
-import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { ProjectNotFoundPage, ProjectPage, ProjectsEmptyPage, type ProjectSection } from './ProjectPage'
 import { ReleaseCenter } from './releases/ReleaseCenter'
-import { createFakeApi } from '../test/fakeApi'
+import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { ProjectRelease, ProjectReleaseSummary, ReleaseMachine } from '@voicechat/shared'
 
 function renderPage(section: ProjectSection = 'board'): { onSectionChange: (s: ProjectSection) => void } {

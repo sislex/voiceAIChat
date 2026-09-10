@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ProjectTypesSettings } from './ProjectTypesSettings'
 import type { ProjectTypeNode } from '@shared/projectTypes'
-import type { LoadStatus } from '../lib/loadState'
+import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import { Dialog, ErrorState } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'

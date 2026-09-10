@@ -12,9 +12,9 @@ test('frontend build gate installs standalone Desktop dependencies before build'
 
 test('current frontend satisfies static quality gates', () => {
   const result = runStatic()
-  assert.equal(result.architecture.packages, 12)
+  assert.equal(result.architecture.packages, 15)
   assert.equal(result.stories.modules, 9)
-  assert.equal(result.lazyLoading.lazyProducts, 6)
+  assert.equal(result.lazyLoading.lazyProducts, 8)
 })
 test('architecture gate rejects deep imports', () => {
   const root = mkdtempSync(join(tmpdir(), 'frontend-gate-'))

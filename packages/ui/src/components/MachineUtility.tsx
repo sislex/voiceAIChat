@@ -5,7 +5,7 @@ import { EmptyState } from '@voicechat/ui-kit'
 import { FileExplorer } from './FileExplorer'
 import { MachineConsole } from './MachineConsole'
 import { MachineTerminal } from './MachineTerminal'
-import type { ConsoleHistoryStore, MachineOps, SwitchUtility, UtilityVariant } from './machine'
+import type { ConsoleHistoryStore, MachineOps, SwitchUtility, UtilityVariant } from '@voicechat/ui-foundation/components/machine'
 import { GitTargetPane } from './git/GitTargetPane'
 
 export interface MachineUtilityProps {

@@ -15,7 +15,7 @@ import type {
   RendererPtyBridge
 } from '@shared/ipc'
 import type { AgentInfo } from '@shared/agentProtocol'
-import { createFakeApi, createFakeCi, type FakeApi, type FakeCi } from './fakeApi'
+import { createFakeApi, createFakeCi, type FakeApi, type FakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import { createFakePty, makeMachineOps, PLOT_SVG_BASE64 } from './fixtures/machines'
 
 /** Набор мостов, доступных сториз: те же формы, что в web и desktop. */

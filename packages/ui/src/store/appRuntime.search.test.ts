@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTestStore, type TestStore } from '../test/appHarness'
-import { createFakeApi, type FakeApi } from '../test/fakeApi'
+import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { MessageSearchHit, MessageSearchResult } from '@shared/types'
 
 const DEBOUNCE = 250

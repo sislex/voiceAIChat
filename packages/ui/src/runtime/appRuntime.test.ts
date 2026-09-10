@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAppRuntime } from './appRuntime'
 import { buildTestClients } from '../test/appHarness'
-import { createFakeApi, type FakeApi } from '../test/fakeApi'
+import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { SessionUser } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { StoreDiagnostics } from '../store/devtools'

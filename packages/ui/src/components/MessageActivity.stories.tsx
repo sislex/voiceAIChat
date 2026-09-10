@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, userEvent, within } from '@storybook/test'
 import { MessageActivity } from './MessageActivity'
-import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures'
+import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures/index'
 
 const meta: Meta<typeof MessageActivity> = {
   title: 'Chat/MessageActivity',

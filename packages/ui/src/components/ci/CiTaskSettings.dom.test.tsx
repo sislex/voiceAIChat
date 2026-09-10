@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { CiTaskSettings } from './CiTaskSettings'
-import { createFakeCi } from '../../test/fakeApi'
+import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 
 describe('CiTaskSettings', () => {
   beforeEach(() => { window.ci = createFakeCi() })

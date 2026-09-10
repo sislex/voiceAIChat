@@ -13,8 +13,8 @@
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
-import { kanbanFilterKey } from '../../store/contracts'
+import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
+import { kanbanFilterKey } from '@voicechat/ui-foundation/persistence'
 import type { ProjectFeatureSet } from '@shared/projectTypes'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Board, BoardView, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
@@ -38,8 +38,8 @@ import { useConfirm } from '@voicechat/ui-kit'
 import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
-import { loadView, type LoadStatus } from '../../lib/loadState'
-import { useCommandSource } from '../../lib/useCommands'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
+import { useCommandSource } from '@voicechat/ui-foundation/runtime'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { DotsIcon, GripIcon } from '../icons'
 import {
@@ -49,7 +49,7 @@ import {
   pointInRect,
   usePointerDrag,
   type DragPoint
-} from '../../lib/dnd'
+} from '@voicechat/ui-foundation/lib/dnd'
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
 

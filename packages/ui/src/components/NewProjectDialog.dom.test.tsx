@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import { NewProjectDialog, typeCascadeLevels } from './NewProjectDialog'
 import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, type ProjectTypeNode } from '@shared/projectTypes'
-import { expectNoViolations } from '../test/a11y'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 
 const builtin = (): ProjectTypeNode[] =>
   BUILTIN_PROJECT_TYPES.map((node) => ({

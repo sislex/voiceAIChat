@@ -10,7 +10,7 @@ import {
   MD_KITCHEN_SINK,
   T0,
   TEXT_WITH_ACTIVITY
-} from '../test/fixtures'
+} from '../test/fixtures/index'
 
 const meta: Meta<typeof MessageTimeline> = {
   title: 'Chat/MessageTimeline',

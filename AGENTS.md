@@ -13,7 +13,11 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | Путь | Пакет | Что это | Детали |
 |---|---|---|---|
 | `packages/shared` | `@voicechat/shared` | Типы, контракт REST/WS, чистая логика (без зависимостей) | [AGENTS](packages/shared/AGENTS.md) |
-| `packages/ui` | `@voicechat/ui` | Весь React-UI и стор; транспорт-нейтрален (мосты `window.*`) | [AGENTS](packages/ui/AGENTS.md) |
+| `packages/ui` | `@voicechat/ui` | Общая оболочка, чат, стор и host API; продуктовые панели загружаются отдельно | [AGENTS](packages/ui/AGENTS.md) |
+| `packages/ui-foundation` | `@voicechat/ui-foundation` | Общие редакторы, окна, предпочтения и runtime-порты UI | [AGENTS](packages/ui-foundation/AGENTS.md) |
+| `packages/make-app` | `@voicechat/make-app` | Самостоятельный артефакт Make UI | [AGENTS](packages/make-app/AGENTS.md) |
+| `packages/image-studio-app` | `@voicechat/image-studio-app` | Самостоятельный артефакт Image Studio UI | [AGENTS](packages/image-studio-app/AGENTS.md) |
+| `packages/playwright-reader-app` / `packages/web-reader-app` | Reader UI | Самостоятельные панели Chromium/iframe | [UI KB](docs/kb/ui.md#независимые-артефакты-продуктовых-панелей) |
 | `packages/sessions-core` | `@voicechat/sessions-core` | Переносимое ядро «сессий и устройств»: разбор устройства, политики, порт хранилища с контрактом | [README](packages/sessions-core/README.md) |
 | `packages/sessions-app` | `@voicechat/sessions-app` | UI-модуль «Сессии и устройства» (окно аккаунта + панель в админке) | [AGENTS](packages/sessions-app/AGENTS.md) |
 | `apps/server` | `@voicechat/server` | Fastify: REST + WS, SQLite, Whisper, Piper, claude/codex CLI, реестр машин | [AGENTS](apps/server/AGENTS.md) |
@@ -37,8 +41,10 @@ npm install                  # корневые воркспейсы (desktop/ag
 npm run dev:web              # сервер :8787 + Vite-клиент вместе (scripts/dev-web.sh)
 npm run typecheck            # все воркспейсы; отдельно: typecheck:desktop, typecheck:agent-tray
 npm run test                 # все воркспейсы (vitest run)
-npm run gate:fast            # гейт шага: только затронутое + related-тесты
-npm run gate                 # полный гейт перед коммитом/PR
+npm run gate:fast            # гейт шага: приложения по диффу от HEAD
+npm run gate                 # приложения по диффу ветки перед коммитом/PR
+npm run gate:app -- make     # полный гейт выбранного приложения
+npm run gate:all             # полный гейт монорепозитория
 npm run test:coverage        # покрытие shared/server/ui с порогами-трещоткой
 npm run -w @voicechat/ui test        # тесты одного пакета — так быстрее
 npm run docker               # docker compose up --build -d → http://localhost:8787
@@ -66,15 +72,18 @@ npm run kb:check             # что в базе знаний устарело 
 `test` затронутых пакетов. Где менялся UI/сборка — плюс `build`. Тесты пишутся
 в том же шаге, что и код, а не «потом».
 
-**На шаге разработки — `npm run gate:fast`.** Он смотрит дифф рабочего дерева от
-`HEAD`, берёт затронутые пакеты и их потребителей по графу зависимостей и гоняет
-`vitest related` вместо полных наборов; сборки web/витрины — только если правился
-сам клиент или сториз. Правка одного компонента `packages/ui` проходит за ~30 с
-против ~3,5 мин у полного гейта.
+**На шаге разработки — `npm run gate:fast`** (дифф от `HEAD`), перед коммитом
+и PR — **`npm run gate`** / `gate:changed` (дифф от merge-base с `origin/main`).
+Планировщик `scripts/application-gate.mjs` читает каталог приложений shared:
+внутренняя правка отделённого приложения запускает его typecheck и полный test,
+публичный контракт добавляет адресные проверки мостов. UI/браузерные изменения
+добавляют сборку и принадлежащие приложению E2E. Причины выбора печатаются.
 
-**Перед коммитом и PR — `npm run gate`** (typecheck + test + сборка web + витрина,
-сцеплены `&&`). `gate:fast` узкий по построению: он не заменяет полный гейт, а
-экономит круги внутри шага.
+`npm run gate:app -- make` — явный полный гейт приложения, в том числе его
+контрактные и браузерные проверки. `npm run gate:all` — общий гейт; он включается
+автоматически при неизвестном влиянии root/config/lock diff. `npm run affected-check`
+оставлен как совместимое имя нового планировщика для сохранённых CI-команд.
+Не заменяй изолированный гейт всех тестов приложения на `vitest related`.
 
 Не собирай гейт из кусков руками: конструкция вида
 `npm run typecheck | grep error; echo "ok"` печатает «ok» всегда — `echo`
@@ -88,7 +97,7 @@ npm run kb:check             # что в базе знаний устарело 
   добавляется сначала там (`protocol.ts`, `agentProtocol.ts`, `ipc.ts`, `types.ts`),
   потом на сервере и в UI. Списки `CLIENT_MESSAGE_TYPES` / `SERVER_MESSAGE_TYPES`
   проверяются тестами контракта — пополняй их.
-- **UI один на всех.** Фича в `packages/ui` появляется и в web, и в desktop. Прямых
+- **UI один на всех.** Общий host из `packages/ui` и отдельные панели работают и в web, и в desktop. Прямых
   обращений к транспорту в компонентах нет: только `window.api/audio/stt/claude/tts/
   cc/codex/agents/session/fs/pty` (формы — в `@shared/ipc`).
 - **Сервер не компилируется в JS** — запускается `tsx` прямо из исходников, поэтому

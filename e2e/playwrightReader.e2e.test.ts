@@ -18,9 +18,7 @@ import { startReaderDialogsFixture } from '../apps/browser-runner/src/test/reade
 import { startReaderInputFixture } from '../apps/browser-runner/src/test/readerInput.js'
 import { startReaderProfileFixture } from '../apps/browser-runner/src/test/readerProfile.js'
 import { startReaderFormsFixture } from '../apps/browser-runner/src/test/readerForms.js'
-import { BROWSER_UPLOAD_LIMIT_BYTES } from '../packages/shared/src/browserLimits'
-import { runScenarioStep, type ScenarioSend } from '../packages/shared/src/scenarioStep'
-import type { BrowserSelectorResult } from '../packages/shared/src/types'
+import { BROWSER_UPLOAD_LIMIT_BYTES, runScenarioStep, type ScenarioSend, type BrowserSelectorResult } from '@voicechat/shared'
 
 const ROOT = resolve(__dirname, '..')
 const PASSWORD = 'reader-audit-local-test-only'
@@ -190,7 +188,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     const address = page.getByRole('textbox', { name: 'Адрес страницы', exact: true })
     await address.fill(`${base}/#/chat/${chats.chat}`)
     await page.getByRole('button', { name: 'Открыть', exact: true }).click()
-    await expect.poll(() => mcp('read')).toContain('Пользователь')
+    // Здесь загружается весь web-host внутри Chromium, включая холодный запуск JS.
+    await expect.poll(() => mcp('read'), { timeout: 15_000 }).toContain('Пользователь')
     const frame = page.locator('img[alt="Кадр Chromium"]')
     await expect.poll(() => frame.getAttribute('src')).toMatch(/^data:image\/jpeg;base64,/)
     await expect.poll(() => frame.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)

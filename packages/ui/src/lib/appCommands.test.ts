@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest'
 import { buildAppCommands, buildHotkeyBindings, type AppCommandDeps } from './appCommands'
-import { searchCommands, type Command } from './commands'
+import { searchCommands, type Command } from '@voicechat/ui-foundation/runtime'
 
 function deps(patch: Partial<AppCommandDeps> = {}): AppCommandDeps {
   return {

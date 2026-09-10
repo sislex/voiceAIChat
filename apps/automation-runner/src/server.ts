@@ -1,3 +1,4 @@
+import { applicationRuntimeMetadata } from '@voicechat/shared'
 import Fastify,{type FastifyInstance} from 'fastify'
 import {
   AUTOMATION_JOB_STATES,AUTOMATION_JOB_TYPES,AUTOMATION_PROTOCOL_VERSION,AUTOMATION_RUNNER,
@@ -56,7 +57,7 @@ export async function buildAutomationRunner(opts:BuildAutomationRunnerOptions):P
   }))
   app.get(AUTOMATION_RUNNER.health,async()=>{
     const [machineExecution,llmRunner]=await Promise.all([opts.machine.available(),opts.llm.available()])
-    return {ok:machineExecution&&llmRunner,protocolVersion:AUTOMATION_PROTOCOL_VERSION,...opts.store.counts(),dependencies:{machineExecution,llmRunner}}
+    return {application: applicationRuntimeMetadata('automation-runner', process.env), ok:machineExecution&&llmRunner,protocolVersion:AUTOMATION_PROTOCOL_VERSION,...opts.store.counts(),dependencies:{machineExecution,llmRunner}}
   })
   app.addHook('onReady',async()=>queue.start())
   app.addHook('onClose',async()=>{await queue.close();opts.store.close()})

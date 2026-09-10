@@ -10,7 +10,7 @@ import type { ServerFileInfo, TurnTarget } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { MachineUtility } from './MachineUtility'
 import { MessageImage } from './MessageImage'
-import type { ConsoleHistoryStore, MachineOps, SwitchUtility } from './machine'
+import type { ConsoleHistoryStore, MachineOps, SwitchUtility } from '@voicechat/ui-foundation/components/machine'
 import {
   chipClass,
   engineLabel,
@@ -20,7 +20,7 @@ import {
   formatElapsed,
   speakerName,
   type LiveSegment
-} from '../lib/view'
+} from '@voicechat/ui-foundation/lib/view'
 import { Dots } from './animations'
 import { QuestionsForm } from './QuestionsForm'
 import { Button } from '@voicechat/ui-kit'
@@ -34,7 +34,7 @@ import {
   TIMELINE_MODE_LABEL,
   type TimelineMode
 } from './MessageTimeline'
-import { copyText } from '../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
 import { useDismissibleMenu } from '../lib/useDismissibleMenu'
 

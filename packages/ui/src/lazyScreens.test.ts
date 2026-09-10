@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import ts from 'typescript'
 
 const app = readFileSync(fileURLToPath(new URL('./App.tsx', import.meta.url)), 'utf8')
 
@@ -19,18 +20,15 @@ const app = readFileSync(fileURLToPath(new URL('./App.tsx', import.meta.url)), '
 const LAZY: Array<readonly [string, string]> = [
   ['ProjectPage', './components/ProjectPage'],
   ['ProjectBoard', './components/ProjectBoard'],
-  ['WebReaderFrame', '@voicechat/web-reader-app'],
   ['MachineStatus', './components/MachineStatus'],
   ['MachineUtility', './components/MachineUtility'],
   ['KnowledgeBase', './components/KnowledgeBase'],
-  ['MakePane', './components/MakePane'],
   ['SettingsModal', './components/SettingsModal'],
   ['AccountPage', './components/AccountPage'],
   ['UsersAdmin', '@voicechat/admin-app'],
   ['SessionsDialogHost', './components/SessionsDialogHost'],
   ['TaskModal', './components/kanban/TaskModal'],
   ['ProjectSettings', './components/ProjectSettings'],
-  ['BrowserSessionPane', './components/BrowserSessionPane']
 ]
 
 describe('тяжёлые экраны не возвращаются в главный чанк', () => {
@@ -78,4 +76,24 @@ describe('пакеты ленивых экранов не тянутся ста�
     const statics = [...app.matchAll(new RegExp(`^import (?!type )[^']*from '${specifier}'`, 'gm'))]
     expect(statics.map((match) => match[0]), `${pkg} тянется статически`).toEqual([])
   })
+})
+
+it.each([['MakePane', 'make-ui'], ['MakeSharedView', 'make-ui'], ['ImageStudioPane', 'image-studio-ui'], ['BrowserSessionPane', 'playwright-reader-ui'], ['WebReaderFrame', 'web-reader-ui']])('%s приходит из независимого артефакта %s', (name, id) => {
+  expect(app).toMatch(new RegExp(`const ${name} = createApplicationPanel(?:<[^>]+>)?\\(['"]${id}['"]`))
+  expect(app).not.toMatch(new RegExp(`^import (?!type )[^\\n]*\\b${name}\\b[^\\n]* from`, 'm'))
+})
+
+it('host не встраивает runtime приложений через вспомогательный импорт', () => {
+  const source = ts.createSourceFile('App.tsx', app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const packages = ['make-app', 'image-studio-app', 'playwright-reader-app', 'web-reader-app']
+  const imports: string[] = []
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
+    const specifier = statement.moduleSpecifier.text
+    if (!packages.some(pkg => specifier === `@voicechat/${pkg}` || specifier.startsWith(`@voicechat/${pkg}/`))) continue
+    const clause = statement.importClause
+    const typesOnly = clause?.isTypeOnly || (!clause?.name && clause?.namedBindings && ts.isNamedImports(clause.namedBindings) && clause.namedBindings.elements.every(item => item.isTypeOnly))
+    if (!typesOnly) imports.push(specifier)
+  }
+  expect(imports).toEqual([])
 })

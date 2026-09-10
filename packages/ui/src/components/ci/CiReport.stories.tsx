@@ -4,7 +4,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import { CiReport } from './CiReport'
 import { EMPTY_CI_USAGE_TOTALS } from '@shared/ci'
-import { makeRunReport, makeTaskReport, makeUsageTotals } from '../../test/fixtures'
+import { makeRunReport, makeTaskReport, makeUsageTotals } from '../../test/fixtures/index'
 
 const meta: Meta<typeof CiReport> = {
   title: 'CI/CiReport',

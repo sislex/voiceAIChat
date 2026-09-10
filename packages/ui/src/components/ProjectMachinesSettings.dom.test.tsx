@@ -3,7 +3,7 @@ import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ProjectMachine } from '@shared/projects'
 import { render } from '../test/uiRender'
-import { makeAgent } from '../test/fixtures'
+import { makeAgent } from '../test/fixtures/index'
 import { ProjectMachinesSettings, machineReadiness } from './ProjectMachinesSettings'
 
 const own: ProjectMachine = { agentId: 'a1', name: 'Mac', owner: 'alice', ownership: 'mine', online: true, sharedWithProject: true, isMyDefault: true, canUse: true, load: 0, path: '/old', reposRoot: '/repos', sshHost: 'mac.local', sshUser: 'alice' }

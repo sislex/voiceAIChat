@@ -6,7 +6,7 @@ import {
   makePolicy as policy,
   makeTelemetry as telemetry,
   makeWindowsDegradedAgent
-} from '../test/fixtures'
+} from '../test/fixtures/index'
 import { AGENT_VERSION } from '@shared/version'
 
 describe('MachineStatus', () => {
