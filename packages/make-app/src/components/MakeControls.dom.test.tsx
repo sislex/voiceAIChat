@@ -25,7 +25,7 @@ describe('MakeControls', () => {
     const onJson = vi.fn()
     render(<MakeControlField name="items" base={['a']} value={['a']} onChange={onJson} />)
     const ta = screen.getByLabelText('items') as HTMLTextAreaElement
-    // fireEvent вместо userEvent.type: у user-event `[`/`{` — спецсимволы клавиатурной разметки.
+    // Use fireEvent instead of userEvent.type because user-event treats [ and { as keyboard markup.
     fireEvent.change(ta, { target: { value: '["a", "b"' } })
     expect(screen.getByRole('alert')).toHaveTextContent('JSON')
     expect(onJson).not.toHaveBeenCalledWith(['a', 'b'])

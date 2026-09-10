@@ -26,13 +26,14 @@ let workspaces: MakeWorkspaces
 let hub: MakeHub
 let events: ServerMessage[]
 
-/** Токен рана на дизайн этого разговора: подписан тем же секретом, что и MCP. */
+/** Run token for this conversation's design, signed with the MCP secret. */
 const scopeToken = (mode: 'whole_project' | 'files' = 'whole_project', paths: string[] = [], opts: { ttlMs?: number; now?: number } = {}): string =>
   signTaskScope(SECRET, { userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: mode === 'files' ? 'Макет оплаты' : 'Макет', mode, paths }] }, opts)
 
 /**
- * Ядро глазами MCP: владелец разговора и данные для проверки scope. `allowed` — у задачи
- * есть дизайн ровно на этот разговор с теми же mode/paths; иначе дизайн снят.
+ * Core as seen by MCP: conversation ownership and scope validation data. allowed means the task has
+ * a design for exactly this conversation with matching mode/paths; otherwise the design has been
+ * removed.
  */
 function fakeCore(owner: string | null, allowed: { mode: 'whole_project' | 'files'; paths: string[] } | null): MakeMcpDeps['core'] {
   return {
@@ -81,13 +82,13 @@ describe('makeMcp', () => {
     await rpc(call('make_write_file', { path: 'app.js', content: 'x' }))
     const state = await workspaces.state(CONV)
     expect(state.snapshots.map((s) => s.label)).toEqual(['До правок ассистента'])
-    // Ход → снимок (roadmap-2 п.2): turns.ts кладёт этот id в meta ответа.
+    // Turn-to-snapshot mapping (roadmap-2, item 2): turns.ts stores this ID in response metadata.
     expect(hub.turnSnapshot('t1')).toBe(state.snapshots[0]!.id)
     expect(hub.turnSnapshot('nope')).toBeUndefined()
     expect(events.filter((e) => e.t === 'make.changed')).toHaveLength(2)
     expect(events[0]).toMatchObject({ t: 'make.changed', conversationId: CONV, paths: ['index.html'] })
 
-    // Новый ход — новый снимок; с note подпись содержит запрос пользователя.
+    // A new turn gets a new snapshot; with note, the label includes the user's request.
     await rpc(call('make_write_file', { path: 'index.html', content: '<h1>b</h1>' }), `?k=${SECRET}&conv=${CONV}&turn=t2&note=${encodeURIComponent('сделай тёмную тему')}`)
     const snaps = await workspaces.snapshots(CONV)
     expect(snaps).toHaveLength(2)
@@ -119,16 +120,16 @@ describe('makeMcp', () => {
     const mutation = (await rpc(call('make_write_file', { path: 'x', content: 'x' }), query)).json()
     expect(JSON.stringify(mutation)).toMatch(/not found/i)
 
-    // Истёк: тот же документ, но выписанный 101 мс «в прошлом».
+    // Expired: the same document, issued 101 ms in the past.
     const expired = scopeToken('whole_project', [], { ttlMs: 100, now: Date.now() - 101 })
     expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(expired)}`)).statusCode).toBe(403)
-    // Подделка: чужой секрет или правленый payload.
+    // Tampering: a different secret or a modified payload.
     const forged = signTaskScope('other', { userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: 'Макет', mode: 'whole_project', paths: [] }] })
     expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(forged)}`)).statusCode).toBe(403)
     const tampered = `${Buffer.from(JSON.stringify({ userId: 'eve', projectId: 'p1', taskId: 't1', sources: [], expiresAt: Date.now() + 1e6 })).toString('base64url')}.${token.split('.')[1]}`
     expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(tampered)}`)).statusCode).toBe(403)
     await app.close()
-    // Дизайн с задачи сняли — токен ещё жив, но ядро его не подтверждает.
+    // The task's design was removed: the token is still valid, but core no longer authorizes it.
     await setup('ann', null)
     expect((await rpc(INIT, query)).statusCode).toBe(403)
   })

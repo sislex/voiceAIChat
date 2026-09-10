@@ -1,4 +1,4 @@
-// Чистая логика дерева файлов Make: куда переедет файл при переносе в папку.
+// Pure Make file-tree logic: resolve the destination when moving a file into a folder.
 export function moveTargetPath(path: string, dir: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1)
   return dir ? `${dir}/${name}` : name

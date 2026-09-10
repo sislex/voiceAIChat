@@ -1,13 +1,10 @@
-// Диалог «Из проекта» в панели Make: компоненты и стили копируются из рабочей
-// директории машины проекта в мастерскую и правятся здесь (ассистент, превью).
-// Обратной кнопки нет — Make в репозиторий не пишет: общая копия проекта
-// принадлежит git-потоку, и файл, положенный туда мимо коммита, оставлял её
-// dirty. Дизайн доходит до кода через связь с карточкой задачи. Связь помнит
-// хеш на момент копирования и показывает, где содержимое разошлось: правили в
-// мастерской или файл в проекте ушёл вперёд и его стоит забрать заново.
-//
-// Панель не знает ни машины, ни путей проекта: сервер сам находит машину
-// проекта и отвечает словами (409), если её нет или она offline.
+// The Make project-import dialog copies components and styles from the project machine's working
+// directory into the workshop for assistant edits and previews. Repository writes belong to the Git
+// workflow; direct writes would leave the shared copy dirty. Designs reach application code through
+// task-card links. Each file link records its original hash to show whether the workshop or
+// repository version has changed and needs importing again. The panel does not resolve machines or
+// paths itself: the server finds the project machine and returns a readable 409 when it is missing
+// or offline.
 
 import { useCallback, useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
@@ -20,7 +17,7 @@ interface Props {
   onClose: () => void
 }
 
-/** Статус связи словами пользователя, а не кодом контракта. */
+/** Describe link status in user-facing terms rather than exposing contract codes. */
 const STATUS_TEXT: Record<MakeProjectLinkStatus, string> = {
   same: 'совпадает с проектом',
   edited_in_make: 'изменён в Make',
@@ -50,8 +47,8 @@ export function MakeProjectSyncDialog({ conversationId, api, onClose }: Props): 
       setLinks(nextLinks)
       setDir(path)
     } catch (cause) {
-      // Машины нет или offline: это не поломка диалога, а состояние проекта —
-      // показываем словами сервера и даём повторить.
+      // A missing or offline machine is a project state, not a broken dialog. Show the server's
+      // explanation and offer retry.
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }, [api, conversationId])

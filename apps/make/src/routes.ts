@@ -1,9 +1,8 @@
-// REST инструмента Make: состояние проекта разговора, чтение/запись/удаление/
-// переименование файлов, снимки и откат, сброс к заготовке — для редактора кода в
-// панели. Плюс отдача файлов проекта для iframe-превью и ZIP-экспорт под
-// `/api/preview/make/…`: там же, где прокси Web Reader, действует preview-cookie
-// (iframe и ссылка «Скачать» не умеют слать Bearer). Все маршруты проверяют, что
-// разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
+// Make REST API: conversation project state, file CRUD, snapshots, restore, and template reset for
+// the code editor. Project files for iframe previews and ZIP exports are served under
+// /api/preview/make/... with preview-cookie authentication, as with Web Reader, because iframes and
+// download links cannot send Bearer headers. Routes check conversation access and notify the owner
+// through make.changed.
 
 import { createHash } from 'node:crypto'
 import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectNotes, MakeProjectPullResult } from '@voicechat/shared'
@@ -20,30 +19,31 @@ import type { MakeLibrary } from './library.js'
 import type { MakeHub } from './hub.js'
 
 export interface MakeRoutesDeps {
-  /** Всё, что Make знает о чате, канбане и машинах, — через этот порт (см. make/core.ts). */
+  /** All chat, kanban, and machine knowledge comes through this port; see make/core.ts. */
   core: MakeCore
   workspaces: MakeWorkspaces
   hub: MakeHub
   library: MakeLibrary
-  /** Ограничители импорта — подменяются в тестах. */
+  /** Import limits can be replaced in tests. */
   importLimiter?: SlidingWindowLimiter
   importUrlLimiter?: SlidingWindowLimiter
   passwordLimiter?: SlidingWindowLimiter
 }
 
-/** Скрипт «выбрать элемент» для превью: по сообщению родителя подсвечивает элементы и отдаёт выбранный. */
-/** Код использования для витрины (п.28): читаем исходники сториз проекта; ошибки чтения — просто без кода. */
+/** Preview element picker: parent messages enable highlighting and return the selected element. */
+/** Showcase usage code (item 28): read the project's story sources; omit the snippet on read errors. */
 async function galleryUsage(workspaces: MakeWorkspaces, conversationId: string): Promise<Record<string, Record<string, string>>> {
   const out: Record<string, Record<string, string>> = {}
   for (const f of await workspaces.stories(conversationId).catch(() => [])) {
-    // read(), а не publicFile(): последний отдаёт транспилированный JS, а сниппеты нужны из исходного JSX.
+    // Use read(), since publicFile() returns transpiled JavaScript and snippets need the original
+    // JSX.
     const src = await workspaces.read(conversationId, f.path).catch(() => null)
     if (src) out[f.path] = storyUsageSnippets(f.path, src.content)
   }
   return out
 }
 
-/** Плавающая кнопка «Комментарий» на странице публикации (п.34): имя + текст → POST __comments__, без window.prompt. */
+/** Floating comment button on published pages (item 34): submit name and text to __comments__ without window.prompt. */
 function guestCommentsWidget(base: string): string {
   return `<div data-vc-guest-comments style="position:fixed;right:16px;bottom:16px;z-index:2147483000;font:14px/1.4 system-ui,sans-serif">
 <button type="button" data-vc-gc-open style="border:0;border-radius:24px;padding:10px 16px;background:#4f7cff;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:pointer">💬 Комментарий</button>
@@ -144,13 +144,10 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
 </script>`
 
 /**
- * Единственное место, где ошибка Make превращается в HTTP-статус: через него
- * проходят все ~50 маршрутов файла. Экспортируется ради таблицы в
- * `make.sendError.test.ts` — ошибка в этом отображении меняет контракт сразу
- * всего Make API, а через маршруты каждый код проверять пришлось бы полсотни раз.
- *
- * Не-`MakeError` намеренно пробрасывается наверх: неизвестный сбой обязан
- * дойти до обработчика Fastify и стать 500, а не молча превратиться в 400.
+ * The single Make-error-to-HTTP-status mapping used by roughly fifty routes. Exported for the table
+ * in make.sendError.test.ts: a mapping error affects the entire Make API, while testing every code
+ * through individual routes would duplicate checks. Non-MakeError failures deliberately propagate
+ * to Fastify's 500 handler instead of silently becoming 400 responses.
  */
 export function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof MakeError) {
@@ -162,11 +159,11 @@ export function sendError(reply: FastifyReply, error: unknown): FastifyReply {
 
 export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): void {
   const { core, workspaces, hub, library } = deps
-  // `req.user` ставит preHandler авторизации хоста (ядро или standalone-процесс Make); тип берём
-  // структурно, чтобы не аугментировать FastifyRequest вторым, отличным от ядра, объявлением.
+  // The host's authentication preHandler, in core or standalone Make, sets req.user. Read its type
+  // structurally to avoid a second FastifyRequest augmentation conflicting with core's declaration.
   const uid = (req: unknown): string => (req as { user?: { name: string } | null }).user?.name ?? ''
 
-  /** Разговор пользователя вида Make, иначе 404 (чужой и несуществующий неотличимы). */
+  /** Return the user's Make conversation, or 404; inaccessible and missing conversations are indistinguishable. */
   const own = async (userId: string, id: string, reply: FastifyReply): Promise<boolean> => {
     const conversation = await core.conversation(userId, id)
     if (!conversation || conversation.assistantKind !== 'make') {
@@ -175,9 +172,10 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     }
     return true
   }  /**
-   * Доступ участника по именному гранту (roadmap-3 п.6): владелец — всё; редактор — файлы, снимки, комментарии;
-   * зритель — только чтение. Публикация, шаринг, очистка и удаление остаются за владельцем (`own`).
-   */
+      * Named grants (roadmap-3, item 6): owners have full access; editors can modify files,
+      * snapshots, and comments; viewers can only read. Publishing, sharing, clearing, and deletion
+      * remain owner-only (own).
+      */
   const access = async (userId: string, id: string, reply: FastifyReply, level: 'editor' | 'viewer'): Promise<boolean> => {
     const mine = await core.conversation(userId, id)
     if (mine && mine.assistantKind === 'make') return true
@@ -185,8 +183,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (owner) {
       const role = await workspaces.shareRole(id, userId)
       if (role === 'editor' || (role === 'viewer' && level === 'viewer')) return true
-      // Make-проект, привязанный к проекту, читают все его участники: карточка
-      // задачи ссылается на дизайн, и он обязан открываться у всей команды.
+      // Every project member can read its linked Make project: task cards refer to the design, so
+      // it must open for the whole team.
       if (level === 'viewer' && await core.isProjectViewer(userId, id)) return true
     }
     void reply.code(404).send({ error: 'conversation not found' })
@@ -217,7 +215,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
-  // Загрузка бинарника из панели (картинка, шрифт): base64 раздувает на треть — лимит тела с запасом.
+  // Binary panel uploads, such as images and fonts, expand by one third in base64; allow extra body
+  // size.
   app.post<{ Params: { id: string }; Body: { path?: string; dataBase64?: string } }>('/api/make/:id/upload', { bodyLimit: 4 * 1024 * 1024 }, async (req, reply) => {
     const userId = uid(req)
     if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
@@ -297,11 +296,12 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
-  // Импорт ZIP: base64 в JSON — архив до ~8 МБ (лимит тела с запасом на base64).
-  // Rate-limit импорта (п.39): 10 ZIP и 20 URL на пользователя за 10 минут; 429 + Retry-After.
+  // ZIP import: base64 in JSON supports archives up to about 8 MB, with encoding overhead included
+  // in the body limit. Import rate limits (item 39): 10 ZIPs and 20 URLs per user per 10 minutes;
+  // return 429 with Retry-After.
   const importLimiter = deps.importLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
   const passwordLimiter = deps.passwordLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
-  // Комментарии зрителей (roadmap-4 п.34): не больше 10 за 10 минут с одного IP на публикацию.
+  // Viewer comments (roadmap-4, item 34): at most 10 per publication and IP address in 10 minutes.
   const guestCommentLimiter = new SlidingWindowLimiter(10, 10 * 60_000)
   const importUrlLimiter = deps.importUrlLimiter ?? new SlidingWindowLimiter(20, 10 * 60_000)
   const limited = (limiter: SlidingWindowLimiter, userId: string, reply: FastifyReply): boolean => {
@@ -361,22 +361,20 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password, allowComments: typeof req.body?.allowComments === 'boolean' ? req.body.allowComments : undefined }) } catch (error) { return sendError(reply, error) }
   })
 
-  // --- Обмен с репозиторием проекта -------------------------------------
-  // Компоненты и стили копируются из рабочей директории машины проекта в
-  // мастерскую (pull), правятся здесь и возвращаются обратно (push). Связь
-  // хранит хеш на момент копирования: по нему считаются статусы, а push без
-  // force отклоняется, если файл в проекте уже изменился, — иначе Make молча
-  // перезаписал бы чужую работу в репозитории.
+  // Project repository synchronization. Copy components and styles from the project machine's
+  // working directory into the workshop (pull), edit them here, then send them back (push). Each
+  // link retains the hash at copy time for status comparison. Unless force is set, reject pushes
+  // when the repository file has changed to avoid overwriting someone else's work.
   const sha256 = (data: Buffer): string => createHash('sha256').update(data).digest('hex')
 
-  /** Относительный путь внутри проекта: без `..`, ведущих слэшей и пустоты. */
+  /** Relative project path: nonempty, with no .. segments or leading slashes. */
   const safeRelPath = (raw: string): string | null => {
     const path = raw.trim().replace(/\\/g, '/').replace(/^\.\//, '')
     if (!path || path.startsWith('/') || path.includes('..') || path.includes('\0')) return null
     return path
   }
 
-  /** Машина проекта Make-чата: агент, корень и доступность. Ошибка — словами. */
+  /** Resolve the Make conversation's project machine: agent, root directory, and availability. Return readable errors. */
   const projectMachine = async (userId: string, conversationId: string): Promise<{ agentId: string; root: string } | { error: string }> => {
     const conversation = await core.conversation(userId, conversationId)
     if (!conversation?.projectId) return { error: 'Чат не привязан к проекту — копировать не из чего.' }
@@ -390,7 +388,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     return { agentId: machine.agentId, root: machine.path.replace(/\/+$/, '') }
   }
 
-  /** Статусы связей: хеш мастерской и хеш машины против хеша на момент копирования. */
+  /** Link statuses compare workshop and machine hashes with the hash recorded at copy time. */
   const linkInfos = async (conversationId: string, machine: { agentId: string; root: string }): Promise<MakeProjectLinkInfo[]> => {
     const links = await workspaces.projectLinks(conversationId)
     const out: MakeProjectLinkInfo[] = []
@@ -428,8 +426,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     try {
       const result = await core.machineFs!.list(machine.agentId, rel ? `${machine.root}/${rel}` : machine.root)
       const entries: MakeProjectFileEntry[] = (result.entries ?? [])
-        // Служебные каталоги репозитория в Make не носят: скрытое и node_modules
-        // — не компоненты, а листинг с ними нечитаем.
+        // Exclude repository infrastructure from Make: hidden entries and node_modules are not
+        // components and would clutter the listing.
         .filter((entry) => !entry.name.startsWith('.') && entry.name !== 'node_modules')
         .filter((entry) => entry.kind === 'dir' || entry.kind === 'file')
         .map((entry) => ({ name: entry.name, path: rel ? `${rel}/${entry.name}` : entry.name, kind: entry.kind as 'dir' | 'file', size: entry.size }))
@@ -469,7 +467,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
         if (result.dataBase64 === undefined) return reply.code(404).send({ error: `«${path}» — не файл или не читается` })
         files.push({ path, data: Buffer.from(result.dataBase64, 'base64') })
       }
-      // merge: копирование добавляет и обновляет, не трогая остальной проект.
+      // Merge imports add or update files while preserving the rest of the project.
       const state = await workspaces.importFiles(req.params.id, files, 'merge')
       const now = Date.now()
       const links = await workspaces.projectLinks(req.params.id)
@@ -484,9 +482,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     }
   })
 
-  // --- Связи с задачами проекта (дизайн ↔ карточка) --------------------
-  // Обратное направление к `/api/projects/:id/tasks/:taskId/designs`: панель Make
-  // показывает, какие карточки ссылаются на открытую страницу, и связывает новую.
+  // Project task links (design to card). The reverse of /api/projects/:id/tasks/:taskId/designs:
+  // the Make panel shows cards linked to the open page and can attach a new one.
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/task-links', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     const path = typeof req.query.path === 'string' ? req.query.path : undefined
@@ -520,7 +517,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     return await core.taskLinks(req.params.id)
   })
 
-  // Read-only ссылка внутри ChatAI (п.33): владелец создаёт/отзывает, любой вошедший читает по токену.
+  // Read-only links inside ChatAI (item 33): owners create or revoke them; any signed-in user can
+  // read using the token.
   app.post<{ Params: { id: string } }>('/api/make/:id/share', async (req, reply) => {
     if (!await own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.createShare(req.params.id) } catch (error) { return sendError(reply, error) }
@@ -586,7 +584,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       .send(await previewBody(conversationId, file))
   })
 
-  // Presence вкладок (roadmap-2 п.14): heartbeat от каждой вкладки; ответ и WS-кадр — всем сокетам владельца.
+  // Tab presence (roadmap-2, item 14): each tab sends heartbeats; responses and WS events reach all
+  // of the owner's sockets.
   app.post<{ Params: { id: string }; Body: { clientId?: string; path?: string | null; editing?: boolean; leave?: boolean } | undefined }>('/api/make/:id/presence', async (req, reply) => {
     const userId = uid(req)
     if (!(await access(userId, req.params.id, reply, 'viewer'))) return reply
@@ -597,7 +596,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     return { clients }
   })
 
-  // Комментарии к элементам превью (п.32).
+  // Comments attached to preview elements (item 32).
   app.get<{ Params: { id: string } }>('/api/make/:id/comments', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     try { await workspaces.ensure(req.params.id); return { comments: await workspaces.comments(req.params.id) } } catch (error) { return sendError(reply, error) }
@@ -683,7 +682,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
-  // ---- Личная библиотека компонентов (п.17) ----
+  // Personal component library (item 17).
   app.get('/api/make/library', async (req) => ({ items: await library.list(uid(req)) }))
 
   app.delete<{ Params: { slug: string } }>('/api/make/library/:slug', async (req) => {
@@ -757,16 +756,16 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     try { await workspaces.ensure(req.params.id); return { files: await workspaces.stories(req.params.id) } } catch (error) { return sendError(reply, error) }
   })
 
-  /** Тело файла для отдачи: JSX/TS — через esbuild, остальное как есть. */
+  /** Response file content: transpile JSX/TS with esbuild and serve other files unchanged. */
   const previewBody = async (conversationId: string, file: { path: string; data: Buffer }): Promise<Buffer | string> => {
     if (!isMakeTranspiledPath(file.path)) return file.data
     const paths = new Set((await workspaces.list(conversationId)).map((f) => f.path))
     return transpileForPreview(conversationId, file.path, file.data.toString('utf8'), workspaces.rev(conversationId), (p) => paths.has(p))
   }
 
-  // ---- Публикация: /p/<token>/… — вне /api, без авторизации; знание ссылки = доступ ----
-
-  // Форма пароля публикации: POST сюда же (`__auth__`) с urlencoded-телом; cookie на 30 дней.
+  // Publications at /p/<token>/... are outside /api and require no account authentication; the link
+  // grants access. The publication password form posts URL-encoded data to __auth__ and issues a
+  // 30-day cookie.
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
     app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
       try { done(null, Object.fromEntries(new URLSearchParams(String(body)))) } catch (e) { done(e as Error, undefined) }
@@ -781,14 +780,14 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
 <body><form method="post" action="${action}"><h1>Проект защищён паролем</h1>${limited ? `<p class="err">Слишком много попыток — подождите ${limited} с.</p>` : wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" aria-label="Пароль проекта" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
 
-  /** Ответ мок-API (п.29): JSON, статус и заголовки из конверта, искусственная задержка — как у настоящего бэкенда. */
+  /** Mock API response (item 29): JSON, status, and headers come from the envelope; an artificial delay simulates a backend. */
   const sendMock = async (reply: FastifyReply, mock: MockResponse): Promise<unknown> => {
     if (mock.delayMs > 0) await new Promise((r) => setTimeout(r, mock.delayMs))
     reply.code(mock.status).header('content-type', 'application/json; charset=utf-8').header('cache-control', 'no-store').header('x-vc-mock', '1')
     for (const [k, v] of Object.entries(mock.headers)) reply.header(k, v)
     return reply.send(mock.body === null ? '' : JSON.stringify(mock.body))
   }
-  // Не-GET запросы превью — только моки: файлов такими методами не отдаём.
+  // Non-GET preview requests are only for mocks; they never serve files.
   app.route<{ Params: { id: string; '*': string } }>({
     method: ['POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/preview/make/:id/*',
     handler: async (req, reply) => {
@@ -799,12 +798,13 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     }
   })
 
-  /** Отдача файла публикации по токену: общий код для /p/<token>/ и /s/<slug>/. */
+  /** Serve a publication file by token: shared implementation for /p/<token>/ and /s/<slug>/. */
   const servePublic = async (token: string, rawPath: string, base: string, req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const conversationId = await workspaces.publishedTarget(token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
     const raw = rawPath || 'index.html'
-    // Пароль (п.25): без верной cookie — форма для HTML-запросов, 401 для остального.
+    // Password protection (item 25): without a valid cookie, show a form for HTML requests and
+    // return 401 for other requests.
     const gate = await workspaces.publicGate(conversationId)
     if (gate && cookieValue(req, gateCookieName(token)) !== gate) {
       const wantsHtml = raw === 'index.html' || raw.endsWith('/') || raw.endsWith('.html') || raw === MAKE_STORIES_PAGE || raw === MAKE_GALLERY_PAGE
@@ -813,7 +813,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       return reply.code(401).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
         .send(passwordPage(`${base}__auth__?next=${encodeURIComponent(raw)}`, q.wrong === '1'))
     }
-    // Комментарии зрителей (roadmap-4 п.34): GET — одобренные, POST — в модерацию; только если владелец включил.
+    // Viewer comments (roadmap-4, item 34): GET returns approved comments and POST submits for
+    // moderation, only when enabled by the owner.
     if (raw === MAKE_PUBLIC_COMMENTS_PAGE) {
       const pub = await workspaces.publication(conversationId)
       if (!pub?.allowComments) return reply.code(404).send({ error: 'Комментарии зрителей выключены' })
@@ -829,7 +830,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
         return reply.code(201).send({ ok: true, id: item.id, pending: true })
       } catch (error) { return sendError(reply, error) }
     }
-    // Публичные сториз и галерея (п.15): те же страницы, что в превью, но без входа; файлы — с публикации.
+    // Public stories and gallery (item 15): the preview pages without sign-in, using published
+    // files.
     if (raw === MAKE_STORIES_PAGE || raw === MAKE_GALLERY_PAGE) {
       const headers = (r: FastifyReply): FastifyReply => r.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
@@ -850,7 +852,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     let body: Buffer | string = isMakeTranspiledPath(file.path)
       ? await transpileForPreview(file.cacheKey, file.path, file.data.toString('utf8'), file.rev, () => true)
       : file.data
-    // Виджет комментариев зрителей (roadmap-4 п.34) — только на HTML публикации с включёнными комментариями.
+    // Viewer comment widget (roadmap-4, item 34): inject only into published HTML with comments
+    // enabled.
     if (path === 'index.html' && (await workspaces.publication(conversationId))?.allowComments) {
       const html = body.toString('utf8')
       body = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${guestCommentsWidget(base)}</body>`) : html + guestCommentsWidget(base)
@@ -869,7 +872,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const body = (req.body ?? {}) as { password?: string }
     const q = req.query as { next?: string }
     const next = (q.next ?? 'index.html').replace(/^\/+/, '')
-    // Перебор пароля (roadmap-2 п.3): 10 попыток за 10 минут на IP+токен; сверх — 429 с той же формой и обратным отсчётом.
+    // Password guessing protection (roadmap-2, item 3): 10 attempts per 10 minutes per IP and
+    // token; return 429 with the same form and a countdown after the limit.
     const verdict = passwordLimiter.hit(`${req.ip}:${token}`)
     if (!verdict.ok) return reply.code(429).header('retry-after', String(verdict.retryAfterSec)).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').send(passwordPage(`${base}__auth__?next=${encodeURIComponent(next)}`, false, verdict.retryAfterSec))
     if (!(await workspaces.verifyPublicPassword(conversationId, body.password ?? ''))) return reply.redirect(`${base}${next}?wrong=1`)
@@ -881,10 +885,10 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.get<{ Params: { token: string; '*': string } }>(`${MAKE_PUBLIC_PREFIX}:token/*`, async (req, reply) =>
     servePublic(req.params.token, req.params['*'], `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/`, req, reply))
-  /** Не-GET на публикации: `__auth__` — форма пароля, остальное — моки (после проверки пропуска). */
+  /** Non-GET publication requests: __auth__ handles the password form; other paths are mocks after access validation. */
   const publicMutation = async (token: string, rawPath: string, base: string, req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     if (rawPath === '__auth__') return authPublic(token, base, req, reply)
-    // POST комментария зрителя (п.34) — тот же обработчик, что и GET списка.
+    // Viewer comment POST (item 34) uses the same handler as the comment-list GET.
     if (rawPath === MAKE_PUBLIC_COMMENTS_PAGE) return servePublic(token, rawPath, base, req, reply)
     const conversationId = await workspaces.publishedTarget(token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
@@ -901,7 +905,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token/`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
 
-  // Адрес по slug (п.25): /s/<slug>/… — то же содержимое, токен наружу не уходит.
+  // Slug URLs (item 25): /s/<slug>/... serves the same content without exposing the token.
   const slugBase = (slug: string): string => `${MAKE_SLUG_PREFIX}${encodeURIComponent(slug)}/`
   app.get<{ Params: { slug: string; '*': string } }>(`${MAKE_SLUG_PREFIX}:slug/*`, async (req, reply) => {
     const token = await workspaces.slugToken(req.params.slug)
@@ -919,7 +923,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.get<{ Params: { slug: string } }>(`${MAKE_SLUG_PREFIX}:slug`, async (req, reply) => reply.redirect(`${slugBase(req.params.slug)}index.html`))
   app.get<{ Params: { slug: string } }>(`${MAKE_SLUG_PREFIX}:slug/`, async (req, reply) => reply.redirect(`${slugBase(req.params.slug)}index.html`))
 
-  // ---- Превью и экспорт (cookie-аутентификация, см. users/auth.ts) ----------
+  // Preview and export use cookie authentication; see users/auth.ts.
 
   app.get<{ Params: { id: string }; Querystring: { vite?: string; pwa?: string; deploy?: string } }>('/api/preview/make/:id/export.zip', async (req, reply) => {
     if (!await own(uid(req), req.params.id, reply)) return reply
@@ -936,11 +940,12 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.get<{ Params: { id: string; '*': string } }>('/api/preview/make/:id/*', async (req, reply) => {
-    // Превью читают и те, кому проект открыт на чтение: связанный с карточкой дизайн смотрит вся команда.
+    // Read access also grants preview access so the whole team can view a design linked to a task.
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     await workspaces.ensure(req.params.id)
     const raw = req.params['*'] || 'index.html'
-    // Превью снимка (roadmap-4 п.37): `__snapshot__/<id>/<файл>` — файлы версии, транспиляция с отдельным ключом кэша.
+    // Snapshot preview (roadmap-4, item 37): __snapshot__/<id>/<file> serves versioned files with a
+    // separate transpilation cache key.
     if (raw.startsWith(`${MAKE_SNAPSHOT_PREVIEW}/`)) {
       const [snapshotId, ...rest] = raw.slice(MAKE_SNAPSHOT_PREVIEW.length + 1).split('/')
       const snapPath = rest.join('/') || 'index.html'
@@ -993,7 +998,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       .header('content-type', mime)
       .header('cache-control', 'no-store')
       .header('x-content-type-options', 'nosniff')
-      // Превью изолировано: только свои ресурсы и inline-код, без навигации родителя.
+      // Isolate the preview: allow its own resources and inline code, but prevent parent
+      // navigation.
       .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
     if (mime.startsWith('text/html')) {
       const html = file.data.toString('utf8')

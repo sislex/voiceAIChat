@@ -1,6 +1,6 @@
-// Табличный редактор коллекции моков (roadmap-4 п.29): вместо правки JSON руками — строки и колонки.
-// Компонент чистый относительно транспорта: получает текст файла и отдаёт новый текст через onChange,
-// сохранение делает MakePane той же кнопкой/автосохранением, что и для кода.
+// Mock collection table editor (roadmap-4, item 29). The component receives file text and emits
+// updated text through onChange; MakePane handles saving with the same manual and automatic
+// controls as the code editor.
 import { useMemo, useState } from 'react'
 import { Button, IconButton } from '@voicechat/ui-kit'
 import { mockJsonToTable, newMockRow, serializeMockJson, tableToMockJson, type MockTable } from '@shared/mockTable'
@@ -12,7 +12,7 @@ interface Props {
   readOnly?: boolean
 }
 
-/** Можно ли показать файл таблицей: JSON с массивом объектов в `$body` или сам массив. */
+/** Whether the file supports table view: an array of objects, directly or under $body. */
 export function mockTableFor(path: string, value: string): MockTable | null {
   if (!/^mock\/.*\.json$/i.test(path)) return null
   try { return mockJsonToTable(JSON.parse(value)) } catch { return null }

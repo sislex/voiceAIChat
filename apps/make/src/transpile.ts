@@ -1,7 +1,6 @@
-// Транспиляция JSX/TSX/TS проекта Make при отдаче превью. Сборки у проектов нет — React
-// приходит из esm.sh через import map в index.html, а файлы .jsx браузер сам не поймёт,
-// поэтому сервер прогоняет их через esbuild (уже зависимость сервера) в ESM. Кэш по
-// (разговор, путь, rev): один и тот же файл в рамках ревизии не компилируется дважды.
+// Transpile Make project JSX/TSX/TS when serving previews. Projects have no build step: index.html
+// imports React from esm.sh, but browsers cannot parse JSX. Use esbuild to produce ESM and cache by
+// conversation, path, and revision so a file is compiled only once per revision.
 
 import { transform } from 'esbuild'
 import { isMakeTranspiledPath } from '@voicechat/shared'
@@ -9,12 +8,12 @@ import { isMakeTranspiledPath } from '@voicechat/shared'
 const cache = new Map<string, { rev: number; code: string }>()
 const CACHE_LIMIT = 500
 
-/** Есть ли файл в проекте — чтобы дописать расширение к импорту `./App`. */
+/** Check project file existence when resolving an extensionless import such as ./App. */
 export type FileExists = (path: string) => boolean
 
 const RESOLVE_EXTENSIONS = ['.jsx', '.tsx', '.ts', '.js', '/index.jsx', '/index.tsx', '/index.js']
 
-/** Относительные импорты без расширения дополняем существующим файлом: браузер расширения не подбирает. */
+/** Resolve extensionless relative imports to existing files because browsers do not infer extensions. */
 export function rewriteRelativeImports(code: string, fromPath: string, exists: FileExists): string {
   const dir = fromPath.includes('/') ? fromPath.slice(0, fromPath.lastIndexOf('/')) : ''
   const resolve = (spec: string): string => {
@@ -36,7 +35,7 @@ function normalizeJoin(dir: string, spec: string): string {
   return parts.join('/')
 }
 
-/** Ошибки компиляции файла (для make_check и маркеров редактора); пустой массив — файл собирается. */
+/** Compilation issues for make_check and editor markers; an empty array means the file compiles. */
 export async function compileDiagnostics(path: string, source: string): Promise<Array<{ line: number; column: number; message: string }>> {
   const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
   try {
@@ -66,7 +65,8 @@ export async function transpileForPreview(conversationId: string, path: string, 
     })
     code = rewriteRelativeImports(result.code, path, exists)
   } catch (error) {
-    // Ошибку показываем в консоли превью человеческим текстом вместо 500: страница остаётся живой.
+    // Report readable compilation errors in the preview console instead of returning 500, keeping
+    // the page alive.
     const message = error instanceof Error ? error.message : String(error)
     code = `throw new Error(${JSON.stringify(`Ошибка компиляции ${path}: ${message}`)})\n`
   }

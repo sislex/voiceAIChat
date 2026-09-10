@@ -1,5 +1,6 @@
-// Пересылка авторизации в ядро: заголовки уходят как есть, вердикт ядра становится статусом ответа,
-// чтения кэшируются по токену и классу пути, мутации — нет; недоступное ядро — 503, а не 401.
+// Forward authentication to core: preserve headers and use core's verdict as the response status.
+// Cache reads by token and path class, never mutations. Unavailable core returns 503 rather than
+// 401.
 import Fastify, { type FastifyInstance } from 'fastify'
 import { afterEach, describe, expect, it } from 'vitest'
 import { INTERNAL_WHOAMI_PATH, type WhoamiRequest, type WhoamiResponse } from '../internal.js'
@@ -60,21 +61,22 @@ describe('registerForwardedAuth', () => {
     await app.inject({ method: 'GET', url: '/api/make/x', headers: h })
     await app.inject({ method: 'GET', url: '/api/make/x?other=1', headers: h })
     expect(seen).toHaveLength(1)
-    // Превью — другой класс пути (у ядра там действует preview-cookie): свой ключ.
+    // Previews use a different path class because core accepts preview-cookie there; give them a
+    // separate cache key.
     await app.inject({ method: 'GET', url: '/api/preview/make/x/index.html', headers: h })
     expect(seen).toHaveLength(2)
-    // Другой токен — другой ключ.
+    // A different token gets a different cache key.
     await app.inject({ method: 'GET', url: '/api/make/x', headers: { authorization: 'Bearer other' } })
     expect(seen).toHaveLength(3)
-    // Мутации — без кэша.
+    // Never cache mutations.
     await app.inject({ method: 'PUT', url: '/api/make/x', headers: h })
     await app.inject({ method: 'PUT', url: '/api/make/x', headers: h })
     expect(seen).toHaveLength(5)
-    // Срок кэша вышел — спрашиваем снова.
+    // Ask core again after the cache entry expires.
     now += 30_001
     await app.inject({ method: 'GET', url: '/api/make/x', headers: h })
     expect(seen).toHaveLength(6)
-    // Отказ не кэшируется: следующий запрос снова идёт в ядро.
+    // Do not cache denials: the next request must ask core again.
     verdict = () => ({ ok: false, status: 401, error: 'unauthorized' })
     await app.inject({ method: 'GET', url: '/api/make/x', headers: { authorization: 'Bearer bad' } })
     await app.inject({ method: 'GET', url: '/api/make/x', headers: { authorization: 'Bearer bad' } })

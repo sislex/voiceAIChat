@@ -26,7 +26,7 @@ describe('importFromUrl', () => {
     expect(index).toContain('src="assets/logo.png"')
     expect(index).toContain('src="https://cdn.other/x.js"')
     expect(index).toContain('href="https://site.test/page/about"')
-    expect(index).toContain('импортировано из https://site.test/page/')
+    expect(index).toContain('imported from https://site.test/page/')
   })
 
   it('не-HTML и не-http отклоняются', async () => {

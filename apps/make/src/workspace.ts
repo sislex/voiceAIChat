@@ -1,9 +1,8 @@
-// Рабочие папки проектов Make: `<dataDir>/make/<conversationId>/` — статические
-// файлы проекта плюс служебный `.snapshots/` с ревизиями. Единственная точка
-// доступа к диску для REST-маршрутов и MCP-инструментов ассистента: здесь же
-// валидация путей (никаких `..`, скрытых сегментов, символических ссылок наружу)
-// и лимиты. Номер изменения `rev` живёт в памяти процесса: он нужен только чтобы
-// открытые панели перезагрузили превью, а не как долговечная версия.
+// Make project working directories at <dataDir>/make/<conversationId>/ contain static project files
+// and .snapshots/ revisions. This is the single disk-access boundary for REST routes and assistant
+// MCP tools, enforcing quotas and rejecting parent traversal, hidden segments, and symlinks
+// escaping the project. rev is an in-memory refresh counter for open previews, not a durable
+// version.
 
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -32,20 +31,20 @@ export class MakeError extends Error {
 }
 
 const SNAPSHOTS_DIR = '.snapshots'
-/** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
+/** Project publication file in its root and the shared token-to-conversation index. */
 const PUBLISH_FILE = '.publish.json'
 const COMMENTS_FILE = '.comments.json'
-/** Связи файлов мастерской с файлами репозитория проекта (project-pull/push). */
+/** Links between workshop files and project repository files for project pull/push. */
 const PROJECT_LINKS_FILE = '.project-links.json'
 
-/** Хост реферера для аналитики публикаций; пустой/невалидный/прямой заход → null. */
+/** Referrer host for publication analytics; empty, invalid, or direct requests return null. */
 export function refererHost(referer?: string | null): string | null {
   if (!referer) return null
   try { const h = new URL(referer).hostname.toLowerCase(); return h && h !== 'localhost' ? h : null } catch { return null }
 }
 const SHARE_FILE = '.share.json'
 const NOTES_DIR = '.make'
-/** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
+/** Contents of .publish.json; passwordHash has the form <salt>:<sha256(salt:password)>. */
 interface PublishRaw { token: string; allowComments?: boolean; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[]; days?: Record<string, number>; referers?: Record<string, number> }
 const SHOTS_DIR = '.shots'
 const SHOTS_PER_STORY = 10
@@ -55,9 +54,9 @@ const ID_RE = /^[A-Za-z0-9_-]{1,80}$/
 interface SnapshotMeta { id: string; createdAt: number; label: string; files: number }
 
 /**
- * Путь файла проекта, на который указывает ссылка из файла в каталоге `dir`:
- * `.`/`..` сворачиваются, абсолютный `/x` — от корня. null — ссылка выходит за
- * корень проекта или битая; undefined — пустая после нормализации (не проверяем).
+ * Resolve a project file link relative to dir. Normalize . and .. segments and treat /x as relative
+ * to the project root. Return null for invalid links or paths escaping the root, and undefined for
+ * normalized empty links that need no check.
  */
 function resolveRelativeRef(dir: string, value: string): string | null | undefined {
   const raw = value.startsWith('/') ? value.slice(1) : dir ? `${dir}/${value}` : value
@@ -76,13 +75,13 @@ export class MakeWorkspaces {
 
   constructor(private readonly rootDir: string, private readonly limits: { maxUserBytes: number } = { maxUserBytes: MAKE_LIMITS.maxUserBytes }) {}
 
-  /** Все проекты владельца данного разговора (для квоты на пользователя); null — владелец неизвестен. */
+  /** All projects owned by this conversation's owner for per-user quotas; null means the owner is unknown. */
   private projectsOfOwner: ((conversationId: string) => Promise<string[] | null>) | null = null
   private readonly userBytesCache = new Map<string, { bytes: number; at: number }>()
 
   setProjectsOfOwner(fn: (conversationId: string) => Promise<string[] | null>): void { this.projectsOfOwner = fn }
 
-  /** Сумма байт всех проектов владельца; кэш 60 с — обход каталогов на каждую запись слишком дорог. */
+  /** Total bytes across the owner's projects, cached for 60 seconds because traversing directories on every write is too expensive. */
   async ownerBytes(conversationId: string): Promise<{ bytes: number; projects: number } | null> {
     const ids = await this.projectsOfOwner?.(conversationId)
     if (!ids) return null
@@ -90,7 +89,7 @@ export class MakeWorkspaces {
     const hit = this.userBytesCache.get(key)
     if (hit && Date.now() - hit.at < 60_000) return { bytes: hit.bytes, projects: ids.length }
     let bytes = 0
-    for (const id of ids) { try { bytes += (await this.usage(id)).totalBytes } catch { /* пропущенный проект не считаем */ } }
+    for (const id of ids) { try { bytes += (await this.usage(id)).totalBytes } catch { /* Do not count skipped projects. */ } }
     this.userBytesCache.set(key, { bytes, at: Date.now() })
     return { bytes, projects: ids.length }
   }
@@ -104,20 +103,20 @@ export class MakeWorkspaces {
     this.userBytesCache.clear()
   }
 
-  /** Корень проекта разговора; id проверяется, чтобы имя каталога нельзя было подделать. */
+  /** Conversation project root; validate the ID to prevent forged directory names. */
   dirOf(conversationId: string): string {
     if (!ID_RE.test(conversationId)) throw new MakeError('invalid_id', 'Некорректный id разговора')
     return join(this.rootDir, 'make', conversationId)
   }
 
-  /** Абсолютный путь файла внутри проекта или ошибка; символические ссылки наружу отвергаются. */
+  /** Resolve an absolute path inside the project or throw; reject symlinks escaping the project. */
   private async resolveFile(conversationId: string, rawPath: string): Promise<{ path: string; abs: string }> {
     const path = normalizeMakePath(rawPath)
     if (!path) throw new MakeError('invalid_path', `Недопустимый путь файла: «${rawPath}»`)
     const root = resolve(this.dirOf(conversationId))
     const abs = resolve(root, ...path.split('/'))
     if (abs !== root && !abs.startsWith(root + sep)) throw new MakeError('invalid_path', 'Путь выходит за пределы проекта')
-    // Каждый существующий сегмент не должен быть ссылкой: иначе `a/b` мог бы указывать наружу.
+    // No existing path segment may be a symlink, or a/b could resolve outside the project.
     let cursor = root
     for (const part of path.split('/')) {
       cursor = join(cursor, part)
@@ -142,7 +141,7 @@ export class MakeWorkspaces {
     return next
   }
 
-  /** Создаёт проект-заготовку, если папки ещё нет или она пуста. */
+  /** Create a starter project if its directory is missing or empty. */
   async ensure(conversationId: string): Promise<void> {
     const dir = this.dirOf(conversationId)
     await mkdir(join(dir, SNAPSHOTS_DIR), { recursive: true })
@@ -182,7 +181,7 @@ export class MakeWorkspaces {
     return { path, size: st.size, updatedAt: Math.round(st.mtimeMs), content }
   }
 
-  /** Байты любого файла (для отдачи превью); null — нет такого файла. */
+  /** Read any file as bytes for previews; return null when it does not exist. */
   async readBuffer(conversationId: string, rawPath: string): Promise<{ path: string; data: Buffer } | null> {
     const { path, abs } = await this.resolveFile(conversationId, rawPath)
     try {
@@ -198,7 +197,7 @@ export class MakeWorkspaces {
     return this.writeBuffer(conversationId, rawPath, Buffer.from(content, 'utf8'))
   }
 
-  /** Бинарная запись (картинки, шрифты из загрузки пользователя) — те же лимиты, что у текста. */
+  /** Write binary uploads, such as images and fonts, with the same limits as text files. */
   async writeBuffer(conversationId: string, rawPath: string, content: Buffer): Promise<MakeProjectState> {
     const { path, abs } = await this.resolveFile(conversationId, rawPath)
     if (content.byteLength > MAKE_LIMITS.maxFileBytes) {
@@ -208,7 +207,8 @@ export class MakeWorkspaces {
     if (!files.some((f) => f.path === path) && files.length >= MAKE_LIMITS.maxFiles) {
       throw new MakeError('too_many_files', `В проекте уже ${MAKE_LIMITS.maxFiles} файлов`)
     }
-    // Квота проекта (п.30): считаем со снимками и PNG стори — именно они незаметно съедают место.
+    // Project quota (item 30) includes snapshots and story PNGs, which can quietly consume disk
+    // space.
     const prev = files.find((f) => f.path === path)?.size ?? 0
     const usage = await this.usage(conversationId)
     if (usage.totalBytes - prev + content.byteLength > MAKE_LIMITS.maxProjectBytes) {
@@ -248,7 +248,7 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Удаляет опустевшие каталоги вверх до корня проекта (сам корень не трогает). */
+  /** Remove empty ancestor directories up to, but excluding, the project root. */
   private async pruneEmptyDirs(conversationId: string, dir: string): Promise<void> {
     const root = resolve(this.dirOf(conversationId))
     let cursor = resolve(dir)
@@ -269,12 +269,13 @@ export class MakeWorkspaces {
       try {
         const meta = JSON.parse(await readFile(join(dir, id, 'meta.json'), 'utf8')) as SnapshotMeta
         out.push({ id: meta.id, createdAt: meta.createdAt, label: meta.label, files: meta.files })
-      } catch { /* битый снимок пропускаем */ }
+      } catch { /* Skip corrupt snapshots. */ }
     }
     return out.sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  // ---- Память проекта и режим ассистента (roadmap-4 пп.6–7): .make/notes.md + .make/settings.json ----
+  // Project memory and assistant mode (roadmap-4, items 6-7): .make/notes.md and
+  // .make/settings.json.
 
   async notes(conversationId: string): Promise<MakeProjectNotes> {
     const dir = join(this.dirOf(conversationId), NOTES_DIR)
@@ -287,7 +288,7 @@ export class MakeWorkspaces {
       if (s.mode === 'designer' || s.mode === 'developer') mode = s.mode
       stack = normalizeMakeStack(s.stack)
       uiKit = normalizeMakeUiKit(s.uiKit)
-    } catch { /* безопасные дефолты для отсутствующих и повреждённых настроек */ }
+    } catch { /* Safe defaults for missing or corrupt settings. */ }
     return { notes, mode, stack, uiKit }
   }
 
@@ -306,14 +307,14 @@ export class MakeWorkspaces {
     return next
   }
 
-  /** Дописать строку в заметки (инструмент make_remember): дата + текст. */
+  /** Append a dated note through the make_remember tool. */
   async appendNote(conversationId: string, line: string): Promise<MakeProjectNotes> {
     const cur = await this.notes(conversationId)
     const stamp = new Date().toISOString().slice(0, 10)
     return this.setNotes(conversationId, { notes: `${cur.notes.trimEnd()}${cur.notes.trim() ? '\n' : ''}- ${stamp}: ${line.trim().slice(0, 500)}\n` })
   }
 
-  // ---- Тесты компонентов (roadmap-4 п.3) --------------------------------------
+  // Component tests (roadmap-4, item 3).
 
   async tests(conversationId: string): Promise<MakeTestFile[]> {
     const files = await this.list(conversationId)
@@ -327,12 +328,12 @@ export class MakeWorkspaces {
     return out.sort((a, b) => a.path.localeCompare(b.path))
   }
 
-  // ---- Транзакционные правки и патчи (roadmap-4 пп.1–2) -------------------------
+  // Transactional edits and patches (roadmap-4, items 1-2).
 
   /**
-   * Несколько файлов одной операцией: если после записи проверка находит ошибку компиляции в любом из них,
-   * все записанные файлы возвращаются к прежнему содержимому (удалённые — восстанавливаются), и наружу
-   * уходит список ошибок. Так модель не оставляет проект в полусобранном состоянии.
+   * Write several files as one operation. If post-write checks find a compilation error in any of
+   * them, restore every written or deleted file and return the issues, preventing the model from
+   * leaving a partially working project.
    */
   async applyChanges(conversationId: string, files: Array<{ path: string; content: string }>, deletes: string[] = []): Promise<{ state: MakeProjectState; issues: MakeCheckIssue[]; rolledBack: boolean }> {
     const previous = new Map<string, string | null>()
@@ -344,19 +345,19 @@ export class MakeWorkspaces {
     for (const f of files) await remember(f.path)
     for (const d of deletes) await remember(d)
     for (const f of files) await this.write(conversationId, f.path, f.content)
-    for (const d of deletes) { try { await this.delete(conversationId, d) } catch { /* уже нет */ } }
+    for (const d of deletes) { try { await this.delete(conversationId, d) } catch { /* Already absent. */ } }
     const touched = new Set(files.map((f) => f.path))
     const issues = (await this.check(conversationId).catch(() => [] as MakeCheckIssue[])).filter((i) => touched.has(i.path))
     const fatal = issues.some((i) => i.kind === 'compile-error')
     if (fatal) {
       for (const [path, content] of previous) {
-        if (content === null) { try { await this.delete(conversationId, path) } catch { /* не было */ } } else await this.write(conversationId, path, content)
+        if (content === null) { try { await this.delete(conversationId, path) } catch { /* Did not exist. */ } } else await this.write(conversationId, path, content)
       }
     }
     return { state: await this.state(conversationId), issues, rolledBack: fatal }
   }
 
-  /** Точечная правка: заменить фрагмент `find` на `replace`; без `all` фрагмент должен встречаться ровно один раз. */
+  /** Targeted edit: replace find with replace; unless all is set, find must occur exactly once. */
   async editFile(conversationId: string, path: string, find: string, replace: string, all = false): Promise<{ state: MakeProjectState; replaced: number }> {
     if (!find) throw new MakeError('invalid_path', 'Пустой фрагмент для поиска')
     const cur = await this.readBuffer(conversationId, path)
@@ -369,11 +370,11 @@ export class MakeWorkspaces {
     return { state: await this.write(conversationId, path, next), replaced: all ? count : 1 }
   }
 
-  // ---- Вставка из библиотеки / дизайн-кита (roadmap-2 п.13) -----------------
+  // Insert from a component library or design kit (roadmap-2, item 13).
 
   /**
-   * Файлы компонентов копируются как при merge-импорте; файл токенов (`tokens.css`/`styles.css`) не затирает
-   * проектный — в его `:root` добавляются только отсутствующие переменные, чтобы кит не сломал текущую палитру.
+   * Copy component files as in a merge import. For tokens.css or styles.css, add only missing :root
+   * variables to preserve the project's existing palette.
    */
   async insertLibraryFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>): Promise<{ state: MakeProjectState; mergedTokens: number; autoImported: string[] }> {
     const existing = new Set((await this.list(conversationId)).map((f) => f.path))
@@ -391,7 +392,8 @@ export class MakeWorkspaces {
       for (const t of incoming) if (!have.has(t.name)) { css = setCssToken(css, t.name, t.value); mergedTokens += 1 }
       if (mergedTokens) state = await this.write(conversationId, tf.path, css)
     }
-    // Автоимпорт (roadmap-4 п.13): компоненты кита подключаем в точку входа, иначе они лежат «мёртвым» файлом.
+    // Automatic imports (roadmap-4, item 13): connect kit components to the entry point so they are
+    // usable rather than merely copied files.
     const autoImported: string[] = []
     const entry = pickEntryFile(state.files.map((f) => f.path))
     if (entry) {
@@ -414,9 +416,9 @@ export class MakeWorkspaces {
     return { state, mergedTokens, autoImported }
   }
 
-  // ---- Контекст для промпта (roadmap-2 п.9) ----------------------------------
+  // Prompt context (roadmap-2, item 9).
 
-  /** Токены `:root` и открытые комментарии одним текстовым блоком; пусто — если нечего сказать. */
+  /** Combine :root tokens and open comments into one text block; return an empty string when there is no context. */
   async promptContext(conversationId: string): Promise<string> {
     const files = await this.list(conversationId).catch(() => [] as MakeFileInfo[])
     const tokensPath = pickTokensFile(files.map((f) => f.path))
@@ -436,11 +438,11 @@ export class MakeWorkspaces {
     return parts.length ? `## Контекст проекта Make\n${parts.join('\n')}` : ''
   }
 
-  // ---- Фоновая очистка (roadmap-2 п.16) ----------------------------------------
+  // Background cleanup (roadmap-2, item 16).
 
   /**
-   * Снимки старше `maxAgeMs` и PNG-снимки стори того же возраста удаляются по всем проектам;
-   * закреплённый в публикации снимок и самый свежий снимок проекта не трогаем никогда.
+   * Delete snapshots and story PNGs older than maxAgeMs across projects. Always retain the snapshot
+   * pinned by a publication and each project's newest snapshot.
    */
   async sweep(maxAgeMs = 30 * 86_400_000, now = Date.now()): Promise<{ projects: number; snapshots: number; shots: number }> {
     const root = join(this.rootDir, 'make')
@@ -464,16 +466,16 @@ export class MakeWorkspaces {
           for (const s of shots) if (!keep.includes(s)) { await rm(join(root, id, SHOTS_DIR, `${s.id}.png`), { force: true }); out.shots += 1 }
           await writeFile(join(root, id, SHOTS_DIR, 'meta.json'), JSON.stringify(keep), 'utf8').catch(() => undefined)
         }
-      } catch { /* битый проект пропускаем */ }
+      } catch { /* Skip corrupt projects. */ }
     }
     this.userBytesCache.clear()
     return out
   }
 
-  // ---- Метрики для админки (п.38) -----------------------------------------
+  // Admin metrics (item 38).
 
-  /** Обход всех проектов на диске; владелец — из БД через колбэк (каталог знает только id разговора). */
-  /** Свободное место на разделе с данными (roadmap-4 п.40): statfs корня данных, порог тревоги — 10 ГБ. */
+  /** Traverse all projects on disk; resolve owners through a database callback because directories only encode conversation IDs. */
+  /** Free space on the data volume (roadmap-4, item 40): statfs on the data root with a 10 GB alert threshold. */
   async diskStats(): Promise<AdminDiskStats | null> {
     try {
       const st = await statfs(this.rootDir)
@@ -499,7 +501,7 @@ export class MakeWorkspaces {
         if (pub) { totals.published += 1; totals.views += pub.views ?? 0 }
         if (shared) totals.shared += 1
         projects.push({ conversationId: id, owner: await ownerOf(id), filesCount: files.length, bytes: filesBytes + snapshotsBytes + shotsBytes, snapshots: snapshots.length, published: Boolean(pub), shared: Boolean(shared), views: pub?.views ?? 0, updatedAt: files.reduce((m, f) => Math.max(m, f.updatedAt), 0) })
-      } catch { /* битый каталог — пропускаем */ }
+      } catch { /* Skip corrupt directories. */ }
     }
     const byUserMap = new Map<string, AdminMakeUserStat>()
     for (const p of projects) {
@@ -516,7 +518,7 @@ export class MakeWorkspaces {
     }
   }
 
-  // ---- Read-only ссылка внутри ChatAI (п.33): .share.json + индекс share-<token> → разговор ----
+  // Read-only ChatAI links (item 33): .share.json and a share-<token>-to-conversation index.
 
   async share(conversationId: string): Promise<MakeShare | null> {
     try {
@@ -526,7 +528,7 @@ export class MakeWorkspaces {
     } catch { return null }
   }
 
-  /** Создаёт ссылку (повторный вызов возвращает ту же). */
+  /** Create a link, returning the same link on subsequent calls. */
   async createShare(conversationId: string): Promise<MakeProjectState> {
     if (!(await this.share(conversationId))) {
       const token = randomUUID().replace(/-/g, '')
@@ -538,7 +540,7 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Именной доступ (roadmap-3 п.6): role null — убрать; ссылка создаётся, если её ещё нет. */
+  /** Named access (roadmap-3, item 6): null role revokes access; create the link if it does not exist. */
   async setShareGrant(conversationId: string, user: string, role: MakeShareRole | null): Promise<MakeProjectState> {
     const name = user.trim()
     if (!/^[\w.@-]{1,64}$/.test(name)) throw new MakeError('invalid_path', 'Некорректное имя пользователя')
@@ -550,7 +552,7 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Роль пользователя по именному доступу; null — доступа нет. */
+  /** User role from a named grant; null means no access. */
   async shareRole(conversationId: string, user: string): Promise<MakeShareRole | null> {
     const cur = await this.share(conversationId)
     return cur?.grants?.find((g) => g.user === user)?.role ?? null
@@ -565,7 +567,7 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Разговор по share-токену; null — ссылка отозвана или неверна. */
+  /** Resolve a share token to a conversation; null means invalid or revoked. */
   async sharedTarget(token: string): Promise<string | null> {
     if (!ID_RE.test(token)) return null
     try {
@@ -576,7 +578,7 @@ export class MakeWorkspaces {
     } catch { return null }
   }
 
-  // ---- Комментарии к элементам превью (п.32): .comments.json, переживает reset как .publish.json ----
+  // Preview element comments (item 32): .comments.json survives reset, like .publish.json.
 
   async comments(conversationId: string): Promise<MakeComment[]> {
     try {
@@ -590,7 +592,7 @@ export class MakeWorkspaces {
     return list
   }
 
-  // ---- Связи с репозиторием проекта: .project-links.json, живёт как комментарии ----
+  // Project repository links in .project-links.json have the same lifetime as comments.
 
   async projectLinks(conversationId: string): Promise<MakeProjectLink[]> {
     try {
@@ -623,13 +625,13 @@ export class MakeWorkspaces {
     return this.saveComments(conversationId, list)
   }
 
-  /** Комментарии для зрителей публикации (roadmap-4 п.34): только одобренные, без селекторов и логинов. */
+  /** Comments visible to publication viewers (roadmap-4, item 34): approved only, with no selectors or usernames. */
   async publicComments(conversationId: string): Promise<MakePublicComment[]> {
     return (await this.comments(conversationId)).filter((c) => c.status !== 'pending' && !c.resolved)
       .map((c) => ({ id: c.id, elementLabel: c.elementLabel, text: c.text, createdAt: c.createdAt, ...(c.guestName ? { guestName: c.guestName } : {}) }))
   }
 
-  /** Комментарий зрителя: попадает в модерацию (`pending`), автор — `guest`; публикация должна разрешать комментарии. */
+  /** Viewer comments enter moderation as pending with guest authorship; the publication must allow comments. */
   async addGuestComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; guestName: string }): Promise<MakeComment> {
     const raw = await this.publishRaw(conversationId)
     if (!raw?.allowComments) throw new MakeError('invalid_path', 'Комментарии зрителей выключены')
@@ -643,7 +645,7 @@ export class MakeWorkspaces {
     return this.saveComments(conversationId, list.filter((c) => c.id !== commentId))
   }
 
-  // ---- Квота и очистка (п.30) ---------------------------------------------
+  // Quota and cleanup (item 30).
 
   private async dirBytes(dir: string): Promise<number> {
     let total = 0
@@ -657,7 +659,7 @@ export class MakeWorkspaces {
     return total
   }
 
-  /** Занятое место по составляющим и список бинарных файлов, на которые никто не ссылается. */
+  /** Disk usage by category and a list of unreferenced binary files. */
   async usage(conversationId: string): Promise<MakeUsage> {
     const root = this.dirOf(conversationId)
     const files = await this.list(conversationId)
@@ -666,7 +668,7 @@ export class MakeWorkspaces {
     const [snapshotsBytes, shotsBytes, shots] = await Promise.all([
       this.dirBytes(join(root, SNAPSHOTS_DIR)), this.dirBytes(join(root, SHOTS_DIR)), this.shots(conversationId)
     ])
-    // Неиспользуемые ассеты: бинарник, имя которого не встречается ни в одном текстовом файле.
+    // Unused assets are binaries whose filenames appear in no text file.
     const texts: string[] = []
     for (const f of files) {
       if (!isMakeTextPath(f.path) || f.size > 512 * 1024) continue
@@ -683,7 +685,7 @@ export class MakeWorkspaces {
     }
   }
 
-  /** Очистка по выбранным пунктам; возвращает, сколько освободили. Закреплённый в публикации снимок не удаляется. */
+  /** Clean selected categories and return bytes freed. Never delete the snapshot pinned by a publication. */
   async cleanup(conversationId: string, options: MakeCleanupOptions): Promise<MakeCleanupResult> {
     const root = this.dirOf(conversationId)
     const before = await this.usage(conversationId)
@@ -704,14 +706,14 @@ export class MakeWorkspaces {
     }
     if (options.unusedAssets) {
       for (const asset of before.unusedAssets) {
-        try { await this.delete(conversationId, asset.path); removed.assets += 1 } catch { /* уже удалён */ }
+        try { await this.delete(conversationId, asset.path); removed.assets += 1 } catch { /* Already deleted. */ }
       }
     }
     const usage = await this.usage(conversationId)
     return { freedBytes: Math.max(0, before.totalBytes - usage.totalBytes), removed, usage, state: await this.state(conversationId) }
   }
 
-  /** Снимок текущих файлов; старые снимки сверх лимита удаляются. */
+  /** Snapshot the current files and remove older snapshots exceeding the retention limit. */
   async snapshot(conversationId: string, label: string): Promise<MakeProjectState> {
     const files = await this.list(conversationId)
     const id = `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`
@@ -732,7 +734,7 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Возвращает проект к снимку; текущее состояние перед этим сохраняется отдельным снимком. */
+  /** Restore a project snapshot, first saving the current state as another snapshot. */
   async restore(conversationId: string, snapshotId: string): Promise<MakeProjectState> {
     if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
     const src = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files')
@@ -744,7 +746,7 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Сравнение снимка с текущими файлами — что добавилось, пропало и изменилось. */
+  /** Compare a snapshot with current files to identify additions, removals, and changes. */
   async snapshotDiff(conversationId: string, snapshotId: string): Promise<MakeSnapshotDiff> {
     if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
     const snapRoot = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files')
@@ -772,7 +774,7 @@ export class MakeWorkspaces {
     return { snapshotId, files }
   }
 
-  /** Текст файла из снимка (для сравнения с текущим). */
+  /** Read snapshot file text for comparison with the current version. */
   async snapshotFile(conversationId: string, snapshotId: string, rawPath: string): Promise<MakeFileContent> {
     if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
     const path = normalizeMakePath(rawPath)
@@ -784,7 +786,7 @@ export class MakeWorkspaces {
     return { path, size: data.byteLength, updatedAt: (await stat(src)).mtimeMs, content: data.toString('utf8') }
   }
 
-  /** Любой файл снимка как буфер (roadmap-4 п.37: превью версии публикации) — `null`, если нет. */
+  /** Read any snapshot file as a buffer for publication-version previews (roadmap-4, item 37); return null when absent. */
   async snapshotBuffer(conversationId: string, snapshotId: string, rawPath: string): Promise<{ path: string; data: Buffer } | null> {
     if (!ID_RE.test(snapshotId)) return null
     const path = normalizeMakePath(rawPath)
@@ -794,7 +796,7 @@ export class MakeWorkspaces {
     return { path, data: await readFile(src) }
   }
 
-  /** Вернуть один файл из снимка, остальное не трогая. */
+  /** Restore a single file from a snapshot while preserving the rest of the project. */
   async restoreFile(conversationId: string, snapshotId: string, rawPath: string): Promise<MakeProjectState> {
     if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
     const { path, abs } = await this.resolveFile(conversationId, rawPath)
@@ -806,9 +808,10 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Импорт набора файлов (ZIP или страница по URL); перед этим — снимок. */
+  /** Import files from a ZIP archive or URL after taking a snapshot. */
   async importFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>, mode: MakeImportMode): Promise<MakeProjectState> {
-    // Квота пользователя (roadmap-2 п.15): импорт может принести сотни файлов — считаем сумму до записи.
+    // Per-user quota (roadmap-2, item 15): imports may contain hundreds of files, so calculate the
+    // total before writing.
     await this.assertUserQuota(conversationId, files.reduce((n, f) => n + f.data.byteLength, 0))
     await this.ensure(conversationId)
     const accepted: Array<{ path: string; data: Buffer }> = []
@@ -831,7 +834,7 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Стартовая заготовка вместо всех файлов (снимки остаются). */
+  /** Replace all project files with the starter template, preserving snapshots. */
   async reset(conversationId: string): Promise<MakeProjectState> {
     await this.snapshot(conversationId, 'Перед сбросом проекта')
     await this.clearFiles(conversationId)
@@ -850,7 +853,7 @@ export class MakeWorkspaces {
     }
   }
 
-  /** Поиск по содержимому текстовых файлов: без регистра, до `limit` совпадений, строки обрезаны. */
+  /** Search text file contents case-insensitively, returning at most limit matches with truncated lines. */
   async search(conversationId: string, query: string, limit = 200, options: MakeSearchOptions = {}): Promise<MakeSearchMatch[]> {
     if (!query.trim()) return []
     const re = this.searchRegex(query, options)
@@ -870,16 +873,16 @@ export class MakeWorkspaces {
     return matches
   }
 
-  /** Невалидный regex пользователя — ошибка запроса, а не 500. */
+  /** Invalid user regular expressions are request errors, not server errors. */
   private searchRegex(query: string, options: MakeSearchOptions): RegExp {
     try { return buildMakeSearchRegex(query, options) } catch (e) { throw new MakeError('invalid_path', `Неверное выражение: ${(e as Error).message}`) }
   }
 
-  /** Замена во всех текстовых файлах: подстрока или regex (`$1`-подстановки); перед правкой — снимок. `dryRun` — только предпросмотр. */
+  /** Replace text across files using literal matches or regex capture substitutions such as $1. Take a snapshot before editing; dryRun only previews the result. */
   async replaceAll(conversationId: string, query: string, replacement: string, options: MakeSearchOptions & { dryRun?: boolean } = {}): Promise<{ files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] }> {
     if (!query) throw new MakeError('invalid_path', 'Пустая строка поиска')
     const re = this.searchRegex(query, options)
-    // Без regex подстановки `$1` в замене — обычный текст, поэтому подставляем через функцию.
+    // Without regex mode, $1 must remain literal replacement text; use a replacement function.
     const substitute = options.regex ? replacement : (): string => replacement
     let files = 0, replacements = 0
     const touched: Array<{ path: string; next: string }> = []
@@ -904,7 +907,7 @@ export class MakeWorkspaces {
     return { files, replacements, state: await this.state(conversationId) }
   }
 
-  /** Визуальные снимки стори: PNG в `.shots/<id>.png` + `meta.json`; на стори — не больше SHOTS_PER_STORY. */
+  /** Visual story snapshots: PNGs in .shots/<id>.png with meta.json, limited to SHOTS_PER_STORY per story. */
   async shots(conversationId: string): Promise<MakeStoryShot[]> {
     try {
       const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), SHOTS_DIR, 'meta.json'), 'utf8')) as MakeStoryShot[]
@@ -920,7 +923,7 @@ export class MakeWorkspaces {
     const id = `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`
     await writeFile(join(dir, `${id}.png`), png)
     const list = [{ id, file, story, at: Date.now(), rev: this.rev(conversationId) }, ...(await this.shots(conversationId))]
-    // Лимит на стори: старые снимки той же стори удаляем вместе с файлами.
+    // Enforce the per-story limit by deleting older snapshots and their files.
     const keep: MakeStoryShot[] = []
     const perStory = new Map<string, number>()
     for (const s of list) {
@@ -939,7 +942,7 @@ export class MakeWorkspaces {
     try { return await readFile(join(this.dirOf(conversationId), SHOTS_DIR, `${shotId}.png`)) } catch { return null }
   }
 
-  /** Файлы сториз проекта с именами стори. */
+  /** Project story files with their exported story names. */
   async stories(conversationId: string): Promise<MakeStoryFile[]> {
     const result: MakeStoryFile[] = []
     for (const file of await this.list(conversationId)) {
@@ -955,25 +958,20 @@ export class MakeWorkspaces {
     return { conversationId, files, snapshots, rev: this.rev(conversationId), published, shared }
   }
 
-  // ---- Публикация: непубличная ссылка /p/<token>/ без авторизации -------------
+  // Publications use unlisted /p/<token>/ links without account authentication.
 
-  /** Сырой файл публикации — с хэшем пароля; наружу (в MakePublication) хэш не уходит. */
+  /** Raw publication file includes the password hash; MakePublication never exposes it. */
   /**
-   * Запись файла публикации через временный файл и `rename`.
-   *
-   * Обычный `writeFile` усекает файл и только потом пишет, а счётчик просмотров
-   * идёт фоном (`void countView(...)` в маршруте отдачи). Читатель, попавший в
-   * это окно, получал пустой или обрезанный JSON — и `publishRaw` отвечал
-   * `null`. Хуже всего это било по снятию публикации: `unpublish` на `null`
-   * ничего не удалял и возвращал успех, а ссылка оставалась живой. В гейте это
-   * же окно давало плавающий провал теста `/p/<token>/` после снятия.
+   * Write publication state through a temporary file and rename. Ordinary writeFile truncates
+   * before writing, while view counting runs in the background. Concurrent readers could see empty
+   * or partial JSON and make publishRaw return null. Unpublish would then report success without
+   * removing anything, leaving the link active. This race also caused intermittent post-unpublish
+   * /p/<token>/ test failures.
    */
   /**
-   * Мутации файла публикации — последовательно на разговор. Гонка была живой:
-   * фоновый `countView` (fire-and-forget из маршрута отдачи) читал состояние
-   * ДО `unpublish` и записывал его обратно ПОСЛЕ повторного `publish` —
-   * воскресал старый токен, и `publishedTarget` нового отвечал 404. В гейте
-   * это плавающе роняло тест `/p/<token>/` после переопубликации.
+   * Serialize publication mutations per conversation. Background countView could read state before
+   * unpublish and write it after republishing, reviving the old token and making the new
+   * publishedTarget return 404. This caused intermittent /p/<token>/ failures after republishing.
    */
   private publishChains = new Map<string, Promise<unknown>>()
 
@@ -1016,10 +1014,10 @@ export class MakeWorkspaces {
     }
   }
 
-  /** Публикует проект (повторный вызов возвращает ту же ссылку). */
+  /** Publish a project, returning the same link on subsequent calls. */
   /**
-   * Опубликовать: токен создаётся один раз и не меняется; `snapshotId` закрепляет публикацию за снимком
-   * (ссылка отдаёт его файлы, пока публикацию не обновят), null — «живая» публикация текущих файлов.
+   * Create the publication token once and preserve it. snapshotId pins the published files to that
+   * snapshot until the publication is updated; null serves the current project files live.
    */
   async publish(conversationId: string, options: { snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean } = {}): Promise<MakeProjectState> {
     return this.withPublishLock(conversationId, () => this.publishInner(conversationId, options))
@@ -1040,7 +1038,8 @@ export class MakeWorkspaces {
       if (!snap) throw new MakeError('not_found', 'Снимок не найден')
       snapshotId = snap.id; snapshotLabel = snap.label
     }
-    // Slug (п.25): undefined — не трогать, null — снять, строка — проверить и занять (индекс slug→token, чужой занятый — конфликт).
+    // Slug (item 25): undefined preserves it, null removes it, and a string is validated and
+    // claimed in the slug-to-token index. A slug owned by another publication is a conflict.
     let slug = existing?.slug ?? null
     if (options.slug !== undefined) {
       const next = options.slug ? options.slug.trim().toLowerCase() : null
@@ -1057,7 +1056,8 @@ export class MakeWorkspaces {
         slug = next
       }
     }
-    // Пароль: undefined — оставить, null — снять, строка — новый хэш с солью. Сам пароль не хранится.
+    // Password: undefined preserves it, null removes it, and a string creates a new salted hash.
+    // Never store the password itself.
     let passwordHash = existing?.passwordHash ?? null
     if (options.password !== undefined) {
       if (options.password === null || options.password === '') passwordHash = null
@@ -1067,7 +1067,8 @@ export class MakeWorkspaces {
         passwordHash = `${salt}:${createHash('sha256').update(`${salt}:${options.password}`).digest('hex')}`
       }
     }
-    // История (roadmap-2 п.11): новая запись только когда меняется, что именно отдаётся (снимок/живая); слуг и пароль историю не трогают.
+    // History (roadmap-2, item 11): add an entry only when the served version changes between
+    // snapshots or live files. Slug and password changes do not affect history.
     const history = [...(existing?.history ?? [])]
     const last = history[history.length - 1]
     if (!existing || !last || last.snapshotId !== snapshotId) history.push({ at: Date.now(), snapshotId, snapshotLabel })
@@ -1076,13 +1077,13 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** Токен публикации по slug; null — адрес свободен или снят. */
+  /** Publication token for a slug; null means the address is available or has been removed. */
   async slugToken(slug: string): Promise<string | null> {
     if (!isValidMakeSlug(slug)) return null
     try {
       const raw = JSON.parse(await readFile(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `slug-${slug}.json`), 'utf8')) as { token?: string }
       if (!raw.token) return null
-      // Индекс мог остаться от снятой публикации — сверяем с самой публикацией.
+      // The index may outlive an unpublished project, so verify the publication itself.
       const conversationId = await this.publishedTarget(raw.token)
       if (!conversationId) return null
       const pub = await this.publishRaw(conversationId)
@@ -1091,9 +1092,9 @@ export class MakeWorkspaces {
   }
 
   /**
-   * Пропуск по паролю: `null` — публикация без пароля; иначе подпись, которую сервер кладёт в cookie
-   * после верного пароля и сравнивает при каждом запросе. Подпись зависит от хэша: смена пароля
-   * автоматически разлогинивает всех.
+   * Password access signature: null means no password. Otherwise, the server sets this signature in
+   * a cookie after a correct password and checks it on every request. It depends on the password
+   * hash, so changing the password revokes all existing cookies.
    */
   async publicGate(conversationId: string): Promise<string | null> {
     const raw = await this.publishRaw(conversationId)
@@ -1108,7 +1109,7 @@ export class MakeWorkspaces {
     return createHash('sha256').update(`${salt}:${password}`).digest('hex') === hash
   }
 
-  /** Счётчик просмотров: +1 на открытие index.html публикации. Гонки терпимы — это статистика, не биллинг. */
+  /** Increment the view counter when a publication's index.html opens. Races are tolerable because this is analytics, not billing. */
   async countView(conversationId: string, referer?: string | null, now = Date.now()): Promise<void> {
     return this.withPublishLock(conversationId, () => this.countViewInner(conversationId, referer, now))
   }
@@ -1117,7 +1118,8 @@ export class MakeWorkspaces {
     const raw = await this.publishRaw(conversationId)
     if (!raw) return
     raw.views = (raw.views ?? 0) + 1
-    // Аналитика (roadmap-3 п.3): день в UTC и хост реферера; свои же адреса публикации не считаем.
+    // Analytics (roadmap-3, item 3): UTC day and referrer host; exclude the publication's own
+    // addresses.
     const day = new Date(now).toISOString().slice(0, 10)
     const days = raw.days ?? {}
     days[day] = (days[day] ?? 0) + 1
@@ -1132,12 +1134,14 @@ export class MakeWorkspaces {
   }
 
   /**
-   * Мок-API (п.29): для отсутствующего файла ищет `mock/<путь>[.<METHOD>].json`; `publicMode` — файлы с публикации
-   * (закреплённый снимок), иначе текущие. Возвращает разобранный ответ или null, если мока нет / JSON битый.
+   * Mock API (item 29): when a file is missing, look for mock/<path>[.<METHOD>].json. publicMode
+   * uses published files, including pinned snapshots; otherwise use current files. Return the
+   * parsed response, or null for missing mocks and invalid JSON.
    */
   async resolveMock(conversationId: string, rawPath: string, method: string, publicMode = false, body: unknown = undefined, cookieHeader: string | undefined = undefined): Promise<MockResponse | null> {
-    // Persist-коллекция (roadmap-2 п.12): `mock/<база>.json` с `$collection` — CRUD по id с записью в файл.
-    // На публикации коллекция только читается: анонимные посетители не должны менять файлы проекта.
+    // Persistent collections (roadmap-2, item 12): mock/<base>.json with $collection supports CRUD
+    // by ID with file persistence. Publications expose collections as read-only so anonymous
+    // visitors cannot modify project files.
     for (const { file: colPath, id } of collectionCandidates(rawPath)) {
       const colFile = publicMode ? await this.publicFile(conversationId, colPath).catch(() => null) : await this.readBuffer(conversationId, colPath).catch(() => null)
       if (!colFile) continue
@@ -1156,13 +1160,14 @@ export class MakeWorkspaces {
       if (!file) continue
       let json: unknown
       try { json = JSON.parse(file.data.toString('utf8')) } catch { return { status: 500, body: { error: `Мок ${candidate}: невалидный JSON` }, headers: {}, delayMs: 0 } }
-      // Auth-мок (roadmap-4 п.32): логин ставит cookie сессии, защищённые ресурсы требуют её.
+      // Authentication mock (roadmap-4, item 32): login sets a session cookie required by protected
+      // resources.
       return isAuthMock(json) ? applyAuthMock(json, method, body, cookieHeader) : unwrapMockEnvelope(json)
     }
     return null
   }
 
-  /** Файл для публичной ссылки: из закреплённого снимка или текущий. Возвращает и «ключ ревизии» для кэша транспиляции. */
+  /** Public-link file from the pinned snapshot or current project, plus a revision key for transpilation caching. */
   async publicFile(conversationId: string, rawPath: string): Promise<{ path: string; data: Buffer; cacheKey: string; rev: number } | null> {
     const pub = await this.publication(conversationId)
     if (pub?.snapshotId) {
@@ -1190,27 +1195,27 @@ export class MakeWorkspaces {
       await rm(join(indexDir, `${existing.token}.json`), { force: true })
       if (existing.slug) await rm(join(indexDir, `slug-${existing.slug}.json`), { force: true })
     } else {
-      // Файл публикации нечитаем — токена нет, но снять публикацию человек уже
-      // попросил. Ссылки ищем обходом индекса: оставить их живыми хуже, чем
-      // прочитать десяток мелких файлов.
+      // If publication state is unreadable, its token is unknown, but the user still requested
+      // unpublishing. Scan the index for links rather than leaving them active; reading a few small
+      // files is acceptable.
       for (const name of await readdir(indexDir).catch(() => [] as string[])) {
         const target = await readFile(join(indexDir, name), 'utf8').then((text) => (JSON.parse(text) as { conversationId?: string }).conversationId).catch(() => null)
         if (target === conversationId) await rm(join(indexDir, name), { force: true })
       }
     }
-    // Сам файл публикации удаляется в любом исходе: нечитаемый файл — не повод
-    // оставить проект опубликованным.
+    // Always remove the publication file: unreadable state is not a reason to leave the project
+    // published.
     await rm(join(this.dirOf(conversationId), PUBLISH_FILE), { force: true })
     return this.state(conversationId)
   }
 
-  /** Разговор, опубликованный под токеном; null — ссылка недействительна или снята. */
+  /** Conversation published under a token; null means the link is invalid or unpublished. */
   async publishedTarget(token: string): Promise<string | null> {
     if (!ID_RE.test(token)) return null
     try {
       const raw = JSON.parse(await readFile(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `${token}.json`), 'utf8')) as { conversationId?: string }
       if (!raw.conversationId) return null
-      // Индекс мог остаться от удалённого проекта — сверяем с файлом публикации.
+      // The index may outlive a deleted project, so verify its publication file.
       const current = await this.publication(raw.conversationId)
       return current?.token === token ? raw.conversationId : null
     } catch {
@@ -1218,12 +1223,12 @@ export class MakeWorkspaces {
     }
   }
 
-  // ---- Статическая проверка проекта ----------------------------------------
+  // Static project checks.
 
   /**
-   * Ищет типовые ошибки, из-за которых превью «молча» ломается: нет index.html,
-   * ссылки href/src на несуществующие файлы проекта, пустые файлы, внешние скрипты
-   * не по https. Не парсер HTML — регулярки по атрибутам, этого хватает для статики.
+   * Find common causes of silently broken previews: missing index.html, href/src links to missing
+   * project files, empty files, and external scripts using non-HTTPS URLs. Attribute regular
+   * expressions are sufficient for these static checks; this is not an HTML parser.
    */
   async check(conversationId: string): Promise<MakeCheckIssue[]> {
     const files = await this.list(conversationId)
@@ -1263,21 +1268,21 @@ export class MakeWorkspaces {
       for (const m of text.matchAll(/url\(\s*["']?([^"')]+?)["']?\s*\)/gi)) refs.add(m[1]!)
       for (const ref of refs) {
         const value = ref.trim()
-        // Якоря (#top) и ссылки на SVG-элементы (url(#shadow)) — не файлы.
+        // Anchors such as #top and SVG references such as url(#shadow) are not files.
         if (!value || value.startsWith('#') || value.startsWith('data:') || value.startsWith('mailto:') || value.startsWith('tel:') || value.startsWith('javascript:') || value.startsWith('//')) continue
         if (/^https?:/i.test(value)) {
           if (/^http:/i.test(value) && /\.js$/i.test(value)) issues.push({ path: file.path, kind: 'external-script', message: `Внешний скрипт не по https: ${value}` })
           continue
         }
         const target = resolveRelativeRef(dir, value)
-        if (target === undefined) continue // не файл проекта (например, «..» выше корня разрешается как отсутствующий)
+        if (target === undefined) continue // Not a project file; for example, .. above the root resolves as missing.
         if (target === null || !paths.has(target)) issues.push({ path: file.path, kind: 'missing-file', message: `Ссылка на отсутствующий файл: ${value}` })
       }
     }
     return issues
   }
 
-  /** Заменяет файлы проекта шаблоном (текущее состояние — в снимок). */
+  /** Replace project files with a template after snapshotting the current state. */
   async applyTemplate(conversationId: string, templateId: string): Promise<MakeProjectState> {
     const template = MAKE_TEMPLATES.find((t) => t.id === templateId)
     if (!template) throw new MakeError('not_found', `Шаблон «${templateId}» не найден`)
@@ -1295,7 +1300,7 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
-  /** ZIP всех файлов проекта (без снимков) — «Скачать код». */
+  /** ZIP all project files, excluding snapshots, for code downloads. */
   async exportZip(conversationId: string, options: { vite?: boolean; pwa?: boolean; deploy?: MakeDeployTarget | null } = {}): Promise<Buffer> {
     const files = await this.list(conversationId)
     const entries: Array<{ path: string; data: Buffer; mtime?: Date }> = []
@@ -1303,14 +1308,16 @@ export class MakeWorkspaces {
       const data = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')))
       entries.push({ path: file.path, data, mtime: new Date(file.updatedAt) })
     }
-    // Хостинг (roadmap-4 п.36): конфиг Netlify/Vercel рядом с файлами — статика как есть или сборка Vite.
+    // Hosting (roadmap-4, item 36): add Netlify/Vercel configuration alongside files for either
+    // plain static hosting or a Vite build.
     if (options.deploy) {
       for (const [path, text] of Object.entries(deployConfigFiles(options.deploy, { vite: Boolean(options.vite), hasMocks: files.some((f) => f.path.startsWith('mock/')) }))) {
         if (!files.some((f) => f.path === path)) entries.push({ path, data: Buffer.from(text, 'utf8') })
       }
     }
     if (options.pwa) {
-      // PWA (п.35): манифест + SW + иконка, ссылки — в копию index.html внутри архива (проект не трогаем).
+      // PWA (item 35): add a manifest, service worker, and icon, modifying only the archived copy
+      // of index.html.
       const index = entries.find((e) => e.path === 'index.html')
       const css = entries.find((e) => /\.css$/i.test(e.path))
       const meta = detectPwaMeta(index ? index.data.toString('utf8') : null, css ? css.data.toString('utf8') : null)
@@ -1319,8 +1326,9 @@ export class MakeWorkspaces {
       if (index) index.data = Buffer.from(injectPwaIntoHtml(index.data.toString('utf8'), pwa), 'utf8')
     }
     if (options.vite) {
-      // «Настоящий проект»: package.json + vite.config, чтобы `npm i && npm run dev` работал локально.
-      // Import map на esm.sh Vite не мешает: он переписывает bare-импорты до того, как браузер применит карту.
+      // Export a runnable project with package.json and vite.config so npm i && npm run dev works
+      // locally. The esm.sh import map does not interfere with Vite, which rewrites bare imports
+      // before the browser applies it.
       const paths = new Set(files.map((f) => f.path))
       const react = files.some((f) => /\.(jsx|tsx)$/i.test(f.path))
       const ts = files.some((f) => /\.tsx?$/i.test(f.path))
@@ -1337,12 +1345,12 @@ export class MakeWorkspaces {
         : "import { defineConfig } from 'vite'\n\nexport default defineConfig({})\n")
       if (ts) add('tsconfig.json', JSON.stringify({ compilerOptions: { target: 'ES2020', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, allowImportingTsExtensions: true, noEmit: true, skipLibCheck: true }, include: ['src'] }, null, 2) + '\n')
       add('.gitignore', 'node_modules\ndist\n')
-      add('README.md', '# Проект из Make\n\n```bash\nnpm install\nnpm run dev\n```\n\nСобрано в инструменте Make: статический сайт' + (react ? ' на React (JSX транспилируется Vite)' : '') + '.\n')
+      add('README.md', '# Project exported from Make\n\n```bash\nnpm install\nnpm run dev\n```\n\nCreated with Make: a static website' + (react ? ' built with React (JSX is transpiled by Vite)' : '') + '.\n')
     }
     return buildStoredZip(entries)
   }
 
-  /** Короткий отпечаток содержимого — для ETag превью. */
+  /** Short content fingerprint for preview ETags. */
   static etag(data: Buffer): string {
     return `"${createHash('sha1').update(data).digest('hex').slice(0, 16)}"`
   }

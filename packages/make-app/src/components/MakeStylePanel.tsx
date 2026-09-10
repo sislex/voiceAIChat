@@ -1,6 +1,6 @@
-// Панель стилей выбранного элемента превью (п.8 дорожной карты): правки применяются в iframe
-// мгновенно (inline через postMessage), а «Записать в CSS» дописывает правило в таблицу стилей
-// проекта — так «point-and-edit» из Figma Make остаётся в файлах, а не только на экране.
+// Selected preview element styles (roadmap item 8): apply changes immediately in the iframe through
+// postMessage, then append a project stylesheet rule when saved. This persists point-and-edit
+// changes in project files.
 import { useEffect, useState } from 'react'
 import { Button } from '@voicechat/ui-kit'
 
@@ -9,29 +9,30 @@ export type StyleProp = typeof STYLE_PROPS[number]
 export type StyleValues = Partial<Record<StyleProp, string>>
 
 export interface MakeStylePanelProps {
-  /** Селектор из инспектора — стартовое значение для правила. */
+  /** Inspector selector used as the initial CSS rule selector. */
   selector: string
-  /** id/классы элемента — для короткого селектора по умолчанию. */
+  /** Element ID and classes for a short default selector. */
   id?: string
   className?: string
-  /** Вычисленные стили элемента (из превью). */
+  /** Computed element styles received from the preview. */
   computed: StyleValues
   onPreview: (values: StyleValues) => void
   onWrite: (selector: string, values: StyleValues) => Promise<void>
   onReset: () => void
 }
 
-/** Короткий CSS-селектор: #id → .первый-класс → селектор инспектора. */
+/** Short CSS selector: #id, then the first class, then the inspector's selector. */
 export function shortSelector(selector: string, id?: string, className?: string): string {
   if (id) return `#${id}`
   const cls = (className ?? '').trim().split(/\s+/).filter(Boolean)[0]
   if (cls) return `.${cls}`
-  // Без id и классов: последние два звена пути без :nth-of-type — `section.card > h2` читается и не липнет к позиции.
+  // Without IDs or classes, use the final two path segments without :nth-of-type so selectors such
+  // as section.card > h2 stay readable and position-independent.
   const parts = selector.split(' > ').map((p) => p.replace(/:nth-of-type\(\d+\)/g, ''))
   return parts.slice(-2).join(' > ')
 }
 
-/** rgb(a) из getComputedStyle → #hex для <input type=color>; прозрачное — пусто. */
+/** Convert getComputedStyle rgb(a) values to hex for color inputs; transparent values become empty. */
 export function toHex(value: string | undefined): string {
   if (!value) return ''
   const m = value.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)

@@ -1,19 +1,17 @@
-// Шина событий Make: изменения файлов проекта (REST-редактор пользователя или
-// MCP-инструменты ассистента) уходят WS-кадром `make.changed` всем сокетам
-// владельца разговора — панель перезагружает превью и дерево файлов. Сессия
-// подписывается по имени пользователя (как relay превью), а владельца разговора
-// для MCP-вызова (там есть только `conv`) даёт `ownerOf` из БД.
+// Make event hub: REST editor and assistant MCP file changes reach the conversation owner's sockets
+// as make.changed so panels refresh previews and file trees. Sessions subscribe by username; MCP
+// has only conv, so ownerOf resolves ownership from the database.
 
 import type { MakePresenceClient, ServerMessage } from '@voicechat/shared'
 
-/** Вкладка без heartbeat дольше этого считается закрытой (heartbeat — раз в 15 с). */
+/** Treat tabs without a heartbeat for this long as closed; heartbeats arrive every 15 seconds. */
 export const PRESENCE_TTL_MS = 45_000
 
 type Sink = (m: ServerMessage) => void
 
 /**
- * Событие шины в переносимом виде: отдельный процесс Make отправляет их ядру, и ядро
- * воспроизводит их на своей шине (`apply`) — сокеты пользователей живут у ядра.
+ * Portable hub events: standalone Make sends them to core, which replays them with apply because
+ * core owns user sockets.
  */
 export type MakeHubEvent =
   | { kind: 'changed'; userId: string; conversationId: string; rev: number; paths: string[] }
@@ -22,14 +20,14 @@ export type MakeHubEvent =
 
 export class MakeHub {
   private readonly sinks = new Map<string, Set<Sink>>()
-  /** Снимок «До правок» по id хода (roadmap-2 п.2): ход кладёт его в meta ответа, чат показывает «Откатить правки». */
+  /** Pre-edit snapshot keyed by turn ID (roadmap-2, item 2): the turn adds it to response metadata so chat can offer restoration. */
   private readonly turnSnapshots = new Map<string, string>()
   private listener: ((event: MakeHubEvent) => void) | null = null
 
-  /** Ретранслятор событий (в standalone-процессе — HTTP к ядру); `apply` его не зовёт, чтобы не зациклиться. */
+  /** Event relay, using HTTP to core in standalone mode. apply bypasses it to prevent loops. */
   setListener(listener: ((event: MakeHubEvent) => void) | null): void { this.listener = listener }
 
-  /** Воспроизвести событие, пришедшее из другого процесса. */
+  /** Replay an event received from another process. */
   apply(event: MakeHubEvent): void {
     if (event.kind === 'changed') this.emitChanged(event.userId, event.conversationId, event.rev, event.paths)
     else if (event.kind === 'presence') this.emitPresence(event.userId, event.conversationId, event.clients)
@@ -50,7 +48,7 @@ export class MakeHub {
     return this.turnSnapshots.get(turn)
   }
 
-  /** Presence (roadmap-2 п.14): живые вкладки по разговору; запись живёт PRESENCE_TTL_MS с последнего heartbeat. */
+  /** Presence (roadmap-2, item 14): active tabs per conversation, retained for PRESENCE_TTL_MS after their latest heartbeat. */
   private readonly presence = new Map<string, Map<string, MakePresenceClient>>()
 
   heartbeat(conversationId: string, client: MakePresenceClient, leave = false): MakePresenceClient[] {

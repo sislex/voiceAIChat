@@ -1,5 +1,5 @@
-// Проверка MakeCore и пользовательского пути через два опубликованных образа.
-// Данные создаются внутри одноразовой площадки матрицы; внешний аккаунт не нужен.
+// Verify MakeCore and the user workflow across two published images. Test data lives in an
+// ephemeral compatibility environment; no external account is required.
 import assert from 'node:assert/strict'
 export async function verifyCompatibility({urls,token}) {
   const core=urls.voicechat,make=urls.make
@@ -40,7 +40,7 @@ export async function verifyCompatibility({urls,token}) {
   const source='<html><head><title>Make compatibility</title></head><body>Independent Make</body></html>'
   await request(make,`/api/make/${conversationId}/file`,{method:'PUT',auth,body:{path:'index.html',content:source}})
   assert.equal((await request(make,`/api/make/${conversationId}/file?path=index.html`,{auth})).content,source)
-  // Тот же файл читается и через HTTP-мост старого ядра, без его пересборки.
+  // Read the same file through the older core's HTTP bridge without rebuilding core.
   assert.equal((await request(core,`/api/make/${conversationId}/file?path=index.html`,{auth})).content,source)
   await request(make,`/api/make/${conversationId}/snapshots`,{method:'POST',auth,body:{label:'Compatibility'}})
   const snapshots=await request(make,`/api/make/${conversationId}/snapshots`,{auth})

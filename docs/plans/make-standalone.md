@@ -1,194 +1,208 @@
-# Make как отдельное приложение — карта связей и план выделения
+# Make as a separate application: dependencies and extraction plan
 
-Живая реализация сегодня: `apps/server/src/routes/make.ts` (REST + превью + публикация),
-`apps/server/src/make/*` (мастерские, снимки, витрина, импорт, библиотека, шина событий),
-`apps/server/src/mcp/makeMcp.ts` (инструменты `mcp__make__*` для ассистента), UI —
-`packages/ui/src/components/Make*.tsx` поверх мостов `window.api['make:*']` и
-`window.make.onChanged/onPresence`.
+This document records the original extraction plan and its September 7, 2026
+progress. Paths and proposed endpoints below describe that stage. Current Make
+code lives in `apps/make`, its UI in `packages/make-app`, and its ports in
+`packages/make-contracts`. The independent release implementation is documented
+in [application-independent-releases.md](application-independent-releases.md).
 
-## Зачем
+Original implementation: `apps/server/src/routes/make.ts` for REST, previews,
+and publications; `apps/server/src/make/*` for workshops, snapshots, showcases,
+imports, libraries, and events; `apps/server/src/mcp/makeMcp.ts` for assistant
+`mcp__make__*` tools. UI components lived in `packages/ui/src/components/Make*.tsx`
+over `window.api['make:*']` and `window.make.onChanged/onPresence` bridges.
 
-Цель — менять Make и релизить **только Make**, не пересобирая чат, канбан и авторизацию.
-Слой данных к этому уже готов (`docs/plans/db-repositories.md`): у таблиц есть владельцы,
-сервер ходит в данные через асинхронные порты. Make — лучший первый кандидат на выделение:
+## Purpose
 
-- **у него нет таблиц.** Состояние Make — файлы в `<dataDir>/make/<conversationId>`
-  (мастерская, снимки, заметки, комментарии, гранты доступа, ссылки на задачи, PNG сториз);
-- **связь с ядром узкая и уже перечислима**: 10 методов БД трёх доменов (см. карту ниже),
-  файловый мост машины только на чтение, живая доска, WS-кадры двух типов;
-- **у него отдельный вход для модели** — MCP-эндпоинт `/mcp/make`, который исполнитель LLM
-  зовёт по HTTP; куда указывает URL, ему безразлично.
+Allow Make to change and release independently of chat, kanban, and authentication.
+The data layer already has table ownership and asynchronous ports, described in
+`docs/plans/db-repositories.md`. Make is a suitable first extraction because:
 
-Что **не** является целью этого плана: перенос UI Make в отдельный бандл (Make-панель
-остаётся в `packages/ui` и приезжает вместе с web-клиентом ядра — контракт мостов не
-меняется) и API-ключи для ассистента (отдельный план, когда чат сам станет сервисом).
+- **It owns no tables.** Its state is files at `<dataDir>/make/<conversationId>`:
+  workshop files, snapshots, notes, comments, access grants, task links, and
+  story PNGs.
+- **Its core dependency is narrow:** the database methods listed below,
+  read-only machine filesystem access, board notifications, and two WS frame types.
+- **It has a separate model entry point:** the LLM runner accesses `/mcp/make`
+  over HTTP and does not depend on where that URL is hosted.
 
-## Инвентарь (2026-09-07)
+The original plan excluded a separate UI bundle and assistant API keys. The UI
+was initially kept in the shared host without changing bridge contracts. A later
+release-boundary change extracted the Make panel; assistant API keys remain a
+separate concern.
 
-Серверный код Make — 4 417 строк без тестов:
+## Inventory as of September 7, 2026
 
-| Файл | Строк | Что делает |
+Make backend code totaled 4,417 lines excluding tests.
+
+| File | Lines | Responsibility |
 |---|---|---|
-| `make/workspace.ts` | 1 349 | мастерские: файлы, снимки, заметки, гранты, комментарии, связи с задачами, квоты, sweep, `promptContext`, `adminStats` |
-| `routes/make.ts` | 1 020 | ~30 REST-путей `/api/make/**`, превью `/api/preview/make/:id/*`, `/api/preview/make-shared/:token/*`, публикация `/p/<token>/`, `/s/<slug>/` |
-| `mcp/makeMcp.ts` | 275 | MCP-инструменты `make_*`, `MakeTaskScopeBroker` (токены доступа CI-рана к дизайнам задачи), `buildTaskMakeSources` |
-| `make/stories.ts`, `transpile.ts`, `zip*.ts`, `importUrl.ts`, `library.ts`, `hub.ts`, `rateLimit.ts`, `metrics.ts` | 773 | витрина/тесты, транспиляция TSX, импорт zip/URL, библиотека компонентов, шина `make.changed`/`make.presence`, ограничители, метрики |
+| make/workspace.ts | 1,349 | Files, snapshots, notes, grants, comments, task links, quotas, sweep, promptContext, and adminStats |
+| routes/make.ts | 1,020 | About 30 REST paths, Make and shared previews, /p/<token>/ publications, and /s/<slug>/ |
+| mcp/makeMcp.ts | 275 | make_* tools, MakeTaskScopeBroker, and buildTaskMakeSources |
+| make/stories.ts, transpile.ts, zip*.ts, importUrl.ts, library.ts, hub.ts, rateLimit.ts, metrics.ts | 773 | Showcase/tests, TSX transpilation, imports, component library, events, limits, and metrics |
 
-Контракт (`packages/shared`): REST-пути `make*` в `protocol.ts`, мосты `make:*` в `ipc.ts`,
-WS-кадры `make.changed`, `make.presence` (сервер → клиент). UI: 12 компонентов `Make*`,
-монтируется `App.tsx`. E2E: `e2e/make.e2e.test.ts` (Playwright, TC-14).
+The shared contract included `make*` REST paths in `protocol.ts`, `make:*`
+bridges in `ipc.ts`, and server-to-client `make.changed` / `make.presence` frames.
+Twelve Make UI components were mounted by `App.tsx`.
+Browser coverage was `e2e/make.e2e.test.ts` using Playwright, TC-14.
 
-## Карта связей «Make ↔ ядро»
+## Make and core dependency map
 
-### Make читает у ядра (через `db.*`, 10 методов)
+### Data Make reads from core
 
-| Домен | Метод | Зачем Make |
+| Domain | Methods | Purpose |
 |---|---|---|
-| `chat` | `getConversation`, `conversationOwner` | чей разговор, Make ли это (`assistantKind === 'make'`), проект разговора |
-| `chat` | `makeConversationProject`, `isMakeProjectViewer` | доступ участника проекта к чужому Make-разговору |
-| `chat` | `listConversations(owner, { includeCompleted })` | квота «все Make-проекты владельца» (`setProjectsOfOwner`) |
-| `tasks` | `makeTaskLinks`, `linkTaskDesign`, `unlinkTaskDesign`, `makeLinkableTasks` | связь «дизайн ↔ карточка канбана» (таблица `task_designs` принадлежит `tasks`) |
-| `tasks` | `getCiTask` | проверка scope-токена CI-рана (`authorizeTaskSource`) |
-| `projects` | `getProject` | название проекта в панели «Компоненты проекта» |
-| `identity` | `getUser` | имя автора комментария |
+| chat | getConversation, conversationOwner | Ownership, assistantKind === 'make', and conversation project |
+| chat | makeConversationProject, isMakeProjectViewer | Project-member access to another user's Make conversation |
+| chat | listConversations(owner, { includeCompleted }) | All owner projects for quotas through setProjectsOfOwner |
+| tasks | makeTaskLinks, linkTaskDesign, unlinkTaskDesign, makeLinkableTasks | Design-to-card links; tasks owns task_designs |
+| tasks | getCiTask | Validate run-scope tokens through authorizeTaskSource |
+| projects | getProject | Project name in the project-components panel |
+| identity | getUser | Comment author name |
 
-Плюс не-БД зависимости: `machineFs.list/read/isOnline` (репозиторий проекта на машине, только
-чтение), `boardChanged(projectId)` (живая доска после связывания с задачей), `mcpSecret`
-(секрет процесса для `/mcp/make`).
+Other dependencies: `machineFs.list/read/isOnline` for read-only repository
+access, `boardChanged(projectId)` after task linking, and `mcpSecret` for
+`/mcp/make`.
 
-### Ядро читает у Make
+### Data core reads from Make
 
-| Кто | Что | Зачем |
+| Consumer | Interface | Purpose |
 |---|---|---|
-| `turns.ts` | `makeContext(conversationId)` → `workspaces.promptContext` | дизайн-токены и открытые комментарии в промпт хода |
-| `turns.ts` | `hub.turnSnapshot(turn)` | `meta.makeSnapshotId` — «Откатить правки» в чате |
-| `turns.ts`, `ci/modelHooks.ts`, `server.ts` (подготовка задачи) | `buildTaskMakeSources` + `MakeTaskScopeBroker.issue` | URL `/mcp/make?scope=…` для рана CI, который читает дизайны задачи |
-| `routes/projects.ts` | `makeWorkspaces.list(conversationId)` | проверить, что пути `makeSources` цикла доработки существуют |
-| `routes/admin.ts` | `makeWorkspaces.adminStats` | расход диска Make по пользователям |
-| `server.ts` | `makeSweep` таймер | чистка снимков и PNG старше 30 дней |
-| `session.ts`/`ws.ts` | `hub.subscribe(userId, sink)` | доставка `make.changed`/`make.presence` в сокеты пользователя |
-| `users/auth.ts`, `routes/invitations.ts`, `routes/imageStudio.ts` | `SlidingWindowLimiter` | общая утилита — **не** связь с Make, переезжает в ядро |
-| `routes/projectComponents.ts` | `parseStoryFile` | разбор сториз репозитория — общая утилита |
-| `routes/admin.ts` | `formatMakeMetrics` | форматирование метрик |
+| turns.ts | makeContext → workspaces.promptContext | Design tokens and open comments in prompts |
+| turns.ts | hub.turnSnapshot(turn) | meta.makeSnapshotId for restoring assistant edits |
+| turns.ts, ci/modelHooks.ts, task preparation in server.ts | buildTaskMakeSources and MakeTaskScopeBroker.issue | Scoped MCP URLs for task-design reads |
+| routes/projects.ts | makeWorkspaces.list | Validate rework-cycle makeSources paths |
+| routes/admin.ts | makeWorkspaces.adminStats | Per-user disk usage |
+| server.ts | makeSweep timer | Remove snapshots and PNGs older than 30 days |
+| session.ts / ws.ts | hub.subscribe(userId, sink) | Deliver Make change and presence frames |
+| users/auth.ts, routes/invitations.ts, routes/imageStudio.ts | SlidingWindowLimiter | Shared utility, not a true Make dependency |
+| routes/projectComponents.ts | parseStoryFile | Shared repository story parser |
+| routes/admin.ts | formatMakeMetrics | Metric formatting |
 
-Обратные зависимости — по сути четыре: контекст промпта, снимок хода, scope-токены рана и
-проверка путей. Всё остальное — общие утилиты, которые просто лежат в `make/` по
-историческим причинам.
+The main reverse dependencies are prompt context, turn snapshots, run-scope
+tokens, and path validation. Other consumers mostly used shared utilities that
+happened to live in make/ for historical reasons.
 
-## Целевая форма
+## Proposed topology
 
+```text
+browser --HTTPS--> Caddy --+-- Make routes --> make:8788
+                          +-- other routes --> voicechat:8787
+LLM runner --> make:8788/mcp/make (VC_MAKE_MCP_PUBLIC_BASE)
+make --> voicechat:8787/internal/* (VC_INTERNAL_TOKEN)
+voicechat --> make:8788/internal/* (the same token)
 ```
-браузер ──https──▶ Caddy ──┬─ /api/make/*, /api/preview/make*/*, /p/*, /s/*, /mcp/make ─▶ make:8788
-                           └─ всё остальное ────────────────────────────────────────────▶ voicechat:8787
-исполнитель LLM ──▶ make:8788/mcp/make (VC_MAKE_MCP_PUBLIC_BASE)
-make ──▶ voicechat:8787/internal/*  (Bearer VC_INTERNAL_TOKEN): whoami, разговоры, задачи, WS-push
-voicechat ──▶ make:8788/internal/*  (тот же токен): promptContext, turnSnapshot, list, adminStats
-```
 
-- **Один origin.** Path-routing в Caddy, поэтому cookie сессии `vc_session`/`vc_csrf`
-  и same-origin превью в iframe работают без изменений; фронт не знает, что серверов два.
-- **Одна авторизация.** Make не читает `sessions` (таблица `identity`) и не знает
-  `sessionSecret`: cookie/Bearer запроса пересылается в ядро `GET /internal/whoami`, ответ
-  `{ userId, role, sid }` кэшируется 30 с по значению токена. Отзыв сессии в ядре доезжает
-  до Make за ≤ 30 с — приемлемо для редактора файлов, не приемлемо было бы для платежей.
-- **Одни данные.** Файлы Make остаются на том же томе `/data` (`VC_MAKE_DIR=/data/make`),
-  сервис Make монтирует тот же volume — миграции данных нет. Ядро в `make/` больше не пишет.
-- **Порт `MakeCore`** — узкий интерфейс на 10 методов из карты выше, две реализации:
-  `LocalMakeCore` (в процессе ядра, через `db.*`) и `HttpMakeCore` (в отдельном процессе,
-  через `/internal/*`). Аналогично `MakeService` для ядра: `LocalMakeService` (объекты в
-  процессе) и `HttpMakeService`.
-- **Scope-токены рана** становятся stateless: HMAC(`VC_INTERNAL_TOKEN`) над содержимым +
-  TTL, вместо `Map` в памяти одного процесса — иначе токен, выданный ядром, не проверить
-  в Make.
-- **Живые кадры** `make.changed`/`make.presence`: Make шлёт их в ядро
-  `POST /internal/ws/push { userId, message }`, ядро раздаёт своими сокетами. Контракт WS не
-  меняется; собственный SSE у Make — отложенный пункт.
-- **Режим встраивания сохраняется**: `VC_MAKE_MODE=embedded` (по умолчанию — dev,
-  desktop, тесты) монтирует Make в процесс ядра теми же `Local*` реализациями;
-  `VC_MAKE_MODE=remote` + `VC_MAKE_URL` — отдельный сервис. Прод переключается без
-  пересборки образа ядра.
+Make routes include `/api/make/*`, `/api/preview/make*/*`, `/p/*`, `/s/*`, and
+`/mcp/make`. Core supplies authentication, conversations, tasks, and user-socket
+notifications; Make supplies promptContext, turnSnapshot, list, and adminStats.
 
-## Круги
+- **One origin:** Caddy path routing preserves `vc_session` / `vc_csrf` cookies
+  and same-origin iframe previews without exposing the split to the frontend.
+- **One authentication authority:** Make does not read identity's sessions table
+  or know sessionSecret. It forwards cookies/Bearer credentials to core's
+  `/internal/whoami` and caches read authorization for 30 seconds. Mutations are
+  checked individually. Session revocation can take up to 30 seconds to affect
+  cached reads.
+- **Existing data:** retain the same Make files on the mounted data volume;
+  core stops writing workshop files directly. The original topology used
+  `/data` and referred to `VC_MAKE_DIR=/data/make`; the standalone configuration
+  now uses `VC_DATA_DIR` as its root.
+- **MakeCore and MakeService ports:** local implementations use in-process
+  objects and db.*; remote implementations use internal HTTP RPC.
+- **Stateless run-scope tokens:** replace process-local Maps with HMAC documents
+  and TTLs so core can issue tokens that Make verifies. The proposal mentioned
+  VC_INTERNAL_TOKEN; the implementation signs them with the shared VC_MCP_SECRET.
+- **Live frames:** Make sends events to core, which owns user sockets. The
+  proposal used `/internal/ws/push`; implementation batches them through
+  `/internal/make/events`. The external WS contract stays stable. Make-owned SSE
+  is deferred.
+- **Embedded mode:** `VC_MAKE_MODE=embedded` supports development, desktop, and
+  tests. `remote` with `VC_MAKE_URL` selects the standalone service. Switching
+  mode does not itself require rebuilding the core image.
 
-Каждый круг — свой коммит, гейт `npm run gate` зелёный по коду возврата, схема данных не
-меняется ни в одном.
+## Implementation rounds
 
-### Круг 1 — граница внутри монолита ☑ (2026-09-07)
+The original workflow required one commit per round, a successful `npm run gate`
+exit code, and no data-schema changes.
 
-1. ☑ Общие утилиты уехали из `make/`: `SlidingWindowLimiter` → `util/rateLimit.ts`, `parseStoryFile` →
-   `util/storyParse.ts`, SSRF-гард `assertPublicHost` → `util/publicHost.ts` (раньше Make импортировал его
-   из `routes/previewProxy.ts`); `formatMakeMetrics` остался у Make, admin получает строку через `service.metrics()`.
-2. ☑ Порт `MakeCore` (`apps/server/src/make/core.ts`): `conversation`, `conversationOwner`,
-   `conversationProject`, `isProjectViewer`, `makeConversationIdsOf(owner)`, `taskLinks`,
-   `linkTaskDesign`, `unlinkTaskDesign`, `linkableTasks`, `ciTaskDesigns`, `project`, `userName`,
-   `boardChanged`, `machineFs`. `LocalMakeCore(db, agentRegistry, boardHub)`.
-   `routes/make.ts` и `mcp/makeMcp.ts` принимают `core: MakeCore` вместо `db: VoiceChatDb`.
-   Сборка — `make/module.ts` (`createMakeModule`), в `server.ts` Make создаётся одной конструкцией.
-3. ☑ Порт `MakeService` (`apps/server/src/make/service.ts`) для ядра: `promptContext`,
-   `turnSnapshot`, `listFiles`, `adminStats`, `issueTaskScope`, `sweep`. `turns.ts`,
-   `ci/modelHooks.ts`, `routes/projects.ts`, `routes/admin.ts`, `server.ts` — через него.
-4. ☑ Scope-токены — HMAC с TTL (`make/taskScope.ts`), брокер в памяти удалён.
-5. ☑ Гейт `make/boundary.test.ts`: `make/**`, `routes/make.ts`, `mcp/makeMcp.ts` не импортируют
-   `db/`, `users/`, `agents/`, `turns` — только `make/core.ts`, `@voicechat/shared`, свои файлы;
-   ядро (кроме `server.ts` и `make/*`) не импортирует `make/workspace.ts`/`hub.ts` напрямую.
-6. ☑ `makeMcp.test.ts` — на фейковом `core` (без БД); `make.projectSync.test.ts` — через `LocalMakeCore`
-   (ему нужны настоящие проекты и машины).
+### Round 1 — boundary inside the monolith ☑ (2026-09-07)
 
-### Круг 2 — пакет `apps/make` и внутренний API ☑ (2026-09-07)
+1. ☑ Move shared utilities out of make/: SlidingWindowLimiter to util/rateLimit.ts,
+   parseStoryFile to util/storyParse.ts, and assertPublicHost to util/publicHost.ts.
+   Keep formatMakeMetrics with Make, exposed through service.metrics().
+2. ☑ Introduce MakeCore with conversation, conversationOwner, conversationProject,
+   isProjectViewer, makeConversationIdsOf, taskLinks, linkTaskDesign,
+   unlinkTaskDesign, linkableTasks, ciTaskDesigns, project, userName, boardChanged,
+   and machineFs. LocalMakeCore receives db, agentRegistry, and boardHub. Routes
+   and MCP accept MakeCore instead of VoiceChatDb; createMakeModule composes Make.
+3. ☑ Introduce MakeService for promptContext, turnSnapshot, listFiles, adminStats,
+   issueTaskScope, and sweep. Migrate turns, CI hooks, project/admin routes, and
+   server composition to the port.
+4. ☑ Replace the in-memory scope-token broker with HMAC and TTL tokens.
+5. ☑ Add boundary checks preventing Make from importing db, users, agents, or
+   turns. Core cannot import workshop/hub implementation outside composition.
+6. ☑ Run MCP tests over a fake core; keep project-sync integration on LocalMakeCore
+   because it needs real projects and machines.
 
-1. ☑ `apps/make` (`@voicechat/make`): код `make/*`, `routes/make.ts`, `mcp/makeMcp.ts` переехал физически
-   (`src/*.ts`, плоско); `src/standalone/server.ts` — `buildMakeServer({ config })`: пересылка авторизации,
-   `createMakeModule` с `HttpMakeCore`, `/internal/service`, `/v1/health`; `standalone/index.ts` — listen + sweep.
-   Ядро импортирует `@voicechat/make`; `SlidingWindowLimiter` и `parseStoryFile` — в `@voicechat/shared`.
-2. ☑ В ядре `/internal/*` под `Bearer VC_INTERNAL_TOKEN` (`routes/internal.ts`; вместо REST на каждый метод —
-   RPC `{ method, args }` над портом: `/internal/make/core`, `/internal/make/events`, `/internal/whoami`). Было задумано: (только из сети compose, Caddy
-   наружу не проксирует): `GET /internal/whoami` (пересланные cookie/Bearer → `{ userId, role, sid }`),
-   `GET /internal/make/conversations/:id`, `…/project`, `…/viewer/:userId`, `GET /internal/make/users/:id/make-conversations`,
-   `GET|POST|DELETE /internal/make/task-links…`, `GET /internal/make/projects/:id`,
-   `GET /internal/make/ci-task/:projectId/:taskId`, `POST /internal/board-changed`,
-   `POST /internal/ws/push`, `GET /internal/machine-fs/:agentId/{list,read,online}`.
-3. ☑ `HttpMakeCore` (`apps/make/src/standalone/httpCore.ts`), `createRemoteMake` в ядре (`makeBridge/remote.ts`);
-   выбор по `VC_MAKE_MODE`; `authenticate` вынесен из preHandler `users/auth.ts` и возвращается из `registerAuth`.
-4. ☑ Авторизация в `apps/make`: preHandler на `/api/*` — кэш `whoami` 30 с (только чтения, ключ — токен +
-   класс пути); `/p/*`, `/s/*`, `/mcp/make` — как раньше (по ссылке / по секрету).
-5. ☑ Контрактный тест `makeBridge/core.contract.test.ts` (local vs http поверх `app.inject()`) плюс
-   интеграция `makeBridge/remote.integration.test.ts`: ядро в `remote` и процесс Make на двух портах —
-   Bearer и cookie+CSRF через `whoami`, 404 роутов Make у ядра, MCP у Make, внутренние пути без токена — 401.
+### Round 2 — apps/make package and internal API ☑ (2026-09-07)
 
-### Круг 3 — образ, compose, Caddy ☑ (2026-09-07)
+1. ☑ Physically move Make implementation into `apps/make/src`. Add
+   buildMakeServer, forwarded authentication, HttpMakeCore, internal service RPC,
+   health, listening, and sweep. Move SlidingWindowLimiter and parseStoryFile to
+   shared.
+2. ☑ Protect core's internal routes with VC_INTERNAL_TOKEN. Use method/args RPC
+   at `/internal/make/core`, `/internal/make/events`, and `/internal/whoami`
+   instead of the proposed per-method conversation/project/viewer/task-link/
+   machine-filesystem REST resources and separate board/WS push endpoints.
+   Caddy does not expose internal routes.
+3. ☑ Add HttpMakeCore and core's createRemoteMake, selecting by VC_MAKE_MODE.
+   Extract authenticate from the users/auth.ts preHandler and return it through
+   registerAuth.
+4. ☑ Forward `/api/*` authorization, caching reads by token and path class for
+   30 seconds. Public links and MCP retain link/secret-based access.
+5. ☑ Add local-versus-HTTP MakeCore contract tests over app.inject() and a
+   two-process remote integration test covering Bearer, cookie/CSRF, route
+   ownership, MCP, and rejection of internal requests without tokens.
 
-1. ☑ `Dockerfile`: стадия `make-runtime` (без whisper/web-сборки), `docker-compose.yml`:
-   сервис `make` (`PORT=8788`, `VC_INTERNAL_TOKEN`, `VC_CORE_URL=http://voicechat:8787`,
-   `VC_MAKE_DIR=/data/make`, тот же том данных, healthcheck `/v1/health`), у `voicechat` —
-   `VC_MAKE_MODE=remote`, `VC_MAKE_URL=http://make:8788`, исполнителям — `VC_MAKE_MCP_PUBLIC_BASE`.
-2. ☑ `Caddyfile`: `@make path …` → `reverse_proxy make:8788`, `/internal/*` → 404, остальное → `voicechat:8787`
-   (оба виртуальных хоста; тест `infra.caddy.test.ts`). Плюс не из плана: **прокси путей Make в самом ядре**
-   (`makeBridge/proxy.ts`) — на прод ходят портом 8787 мимо Caddy, и без него Make там просто пропал бы.
-3. ☑ Локальная проверка на копии прод-БД: `embedded` — круг 1; `remote` — ядро + процесс Make двумя `tsx`
-   на разных портах, панель Make через прокси ядра (см. журнал). Полный `docker compose up` локально не
-   гонялся (сборка whisper/Playwright-образов слишком тяжёлая) — проверка образа `make-runtime` на проде.
-4. ☑ KB: `deploy.md` (сервис, переменные, что проксируется куда), `server-internals.md`
-   (порты `MakeCore`/`MakeService`, `/internal/*`), `architecture.md`, `ui.md` §Make (сервер
-   другой, контракт тот же), `apps/make/AGENTS.md`, журнал.
+### Round 3 — image, Compose, and Caddy ☑ (2026-09-07)
 
-### Круг 4 — независимый релиз ☐
+1. ☑ Add the make-runtime Docker target and Make Compose service at port 8788
+   with core URL, shared secrets, existing data, and /v1/health. Configure core's
+   remote mode/URL and the runner-visible MCP base URL.
+2. ☑ Route Make paths to make:8788 in both Caddy hosts, hide internal paths,
+   and keep other traffic on voicechat:8787. Also add core's makeBridge/proxy.ts:
+   production traffic entering directly on port 8787 must still reach Make.
+3. ☑ Verify embedded mode and two-process remote mode on a local production-data
+   copy, including the panel through core's proxy. The full local Compose build
+   was not run at this stage because Whisper/Playwright images were expensive;
+   the historical round checked make-runtime in production instead.
+4. ☑ Update deploy, server-internals, architecture, UI, package instructions, and
+   the session journal.
 
-1. ☐ Release Center умеет собирать/перекатывать один сервис (`docker compose up -d --build make`)
-   — сейчас поток релиза пересобирает всё; здесь нужен отдельный «профиль» релиза.
-2. ☐ Версия Make в `/v1/health` и в админке рядом с версией ядра.
-3. ☐ Отложено: собственный SSE `/api/make/events` вместо push через ядро; UI-бандл Make
-   отдельным Vite-входом; API-ключи ассистента.
+### Round 4 — independent releases (original follow-up checklist)
 
-## Риски и решения
+The original remaining work below was subsequently continued in
+[application-independent-releases.md](application-independent-releases.md).
+These checkboxes preserve the state of this extraction plan.
 
-- **Двойной hop на каждый REST-запрос Make** (whoami + собственно данные). Кэш whoami по
-  токену на 30 с снимает первый; lookup'ы разговора/проекта — редкие (открытие панели, связь
-  с задачей), горячий путь (файлы, превью, снимки) в ядро не ходит вовсе.
-- **`/internal/*` наружу.** Только сеть compose + Bearer; Caddy эти пути не знает; в
-  `isPublic` их нет — при попадании снаружи 401 от общего preHandler ядра.
-- **Отзыв сессии.** Окно ≤ 30 с; при `logout` ядро может дополнительно звать
-  `POST make/internal/session-revoked` — добавим, если понадобится.
-- **Порядок доставки `make.changed`.** Сейчас `hub.changed` синхронный внутри процесса;
-  через HTTP кадр приедет позже ответа REST. Панель уже обрабатывает `rev` монотонно
-  (перезагружает дерево, если `rev` новее) — проверить тестом в круге 2.
-- **Desktop (Electron).** Работает в `embedded` — ничего не меняется.
+1. ☐ Add a Release Center flow for building and replacing one service; the
+   initial idea used `docker compose up -d --build make` instead of the full
+   release flow. The later implementation installs immutable prepared artifacts.
+2. ☐ Show Make's version in health and administration alongside core's version.
+3. ☐ Deferred: Make-owned SSE, a separate UI entry point, and assistant API keys.
+   The UI entry point was later implemented in `packages/make-app`.
+
+## Risks and decisions
+
+- **Two HTTP hops per authenticated request:** read authorization caching removes
+  the repeated whoami hop. Conversation/project lookups are occasional; files,
+  previews, and snapshots remain local to Make.
+- **Internal API exposure:** internal endpoints require Bearer authentication
+  and are hidden by Caddy; they are not listed as public core routes.
+- **Session revocation:** cached reads have a window of at most 30 seconds.
+  An explicit session-revoked callback can be added if required.
+- **Event ordering:** remote make.changed may arrive after the REST response.
+  The panel processes revision changes monotonically; round 2 verifies this.
+- **Desktop:** embedded mode preserves the existing integration.

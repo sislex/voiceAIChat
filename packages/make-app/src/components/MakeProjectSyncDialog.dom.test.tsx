@@ -4,7 +4,7 @@ import { render } from '../../../ui/src/test/uiRender'
 import { MakeProjectSyncDialog } from './MakeProjectSyncDialog'
 import type { MakeProjectLinkInfo } from '@shared/make'
 
-/** Мосты диалога: «диск машины» и связи в замыкании, как ведёт себя сервер. */
+/** Dialog bridges keep machine files and links in closures, matching server behavior. */
 function makeApi(initialLinks: MakeProjectLinkInfo[] = []) {
   const links: MakeProjectLinkInfo[] = [...initialLinks]
   const pull = vi.fn(async ({ paths }: { paths: string[] }) => {
@@ -31,10 +31,10 @@ describe('MakeProjectSyncDialog', () => {
     const { api, pull } = makeApi()
     render(<MakeProjectSyncDialog conversationId="c1" api={api as never} onClose={vi.fn()} />)
 
-    // Корень: каталог src и файл theme.css.
+    // Root contains the src directory and theme.css.
     const files = await screen.findByTestId('make-sync-files')
     fireEvent.click(within(files).getByRole('checkbox', { name: 'theme.css' }))
-    // Заход в каталог и выбор компонента.
+    // Enter the directory and select a component.
     fireEvent.click(within(files).getByRole('button', { name: '📁 src' }))
     fireEvent.click(await within(files).findByRole('checkbox', { name: 'Button.jsx' }))
 
@@ -53,7 +53,7 @@ describe('MakeProjectSyncDialog', () => {
 
     const linksList = await screen.findByTestId('make-sync-links')
     expect(linksList.textContent).toContain('конфликт')
-    // Обратной записи у Make нет: общая копия проекта принадлежит git-потоку.
+    // Make cannot write back to the shared project copy, which belongs to the Git workflow.
     expect(within(linksList).queryByRole('button', { name: 'Вернуть' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Вернуть всё/ })).toBeNull()
   })
