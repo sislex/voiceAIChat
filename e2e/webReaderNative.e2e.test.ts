@@ -84,6 +84,18 @@ describe('Web Reader: единый разговор в полном Chromium', (
     await start(); await mcp('open', { url: target }); expect(await mcp('read')).toMatchObject({ text: expect.stringContaining('Native Reader QA') })
     await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы' }).inputValue(), { timeout: 6000 }).toBe(target)
   })
+  it('model audits the native document through MCP while the user owns control', async () => {
+    await start(); await mcp('open', { url: target })
+    await page.getByRole('button', { name: 'Взять управление', exact: true }).click()
+    await page.getByText('Управление у вас.', { exact: false }).waitFor()
+    try {
+      const result = await mcp('audit', { rules: ['document-language-missing'] })
+      expect(result).toMatchObject({ ok: true, page: { url: target }, audit: { surface: 'chromium', total: 1, findings: [expect.objectContaining({ id: 'document-language-missing' })] } })
+      expect((await mcp('audit', { group: 'layout', mode: 'list', limit: 30 })).audit.rules).toHaveLength(30)
+      expect((await command({ type: 'status' })).control).toBe('user')
+      await expect.poll(() => page.getByRole('button', { name: 'Вернуть управление модели' }).isVisible()).toBe(true)
+    } finally { await page.getByRole('button', { name: 'Вернуть управление модели' }).click() }
+  })
   it('ввод модели виден пользователю и обычным browser-командам', async () => {
     await start(); await mcp('open', { url: target }); await mcp('type', { selector: '#name', text: 'Привет от модели' })
     expect(await command({ type: 'selector', action: { kind: 'read', selector: 'output' } })).toMatchObject({ text: 'Привет от модели' })

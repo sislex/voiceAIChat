@@ -8,6 +8,7 @@ import type { BrowserProfileMode, BrowserSiteDataResetOptions } from './browserP
 import type { BrowserFrameContext, BrowserFrameTarget } from './browserFrames'
 import type { BrowserWaitOptions } from './browserWaiting'
 import type { PreviewElementPayload } from './previewInspector'
+import type { PreviewAuditOptions, PreviewAuditResult } from './previewAudit'
 
 /** Состояния голосового пайплайна. */
 export type VoiceState = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking'
@@ -302,6 +303,7 @@ export interface BrowserElementDescription {
  * текст, но не знает об ошибках страницы и упавших запросах.
  */
 export type BrowserInspectAction =
+  | ({ kind: 'audit' } & PreviewAuditOptions)
   | ({ kind: 'console' } & BrowserConsoleOptions)
   | ({ kind: 'network' } & BrowserNetworkOptions)
   | { kind: 'styles'; selector: string; properties?: string[] }
@@ -344,6 +346,7 @@ export interface BrowserInspectResult extends BrowserLogSummary, BrowserEvaluati
   console?: BrowserConsoleEntry[]
   network?: BrowserNetworkEntry[]
   styles?: Record<string, string>
+  audit?: PreviewAuditResult['audit']
   error?: string
 }
 

@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import type { PreviewActionResultMessage, PreviewAuditOptions, PreviewAuditResult } from '@voicechat/shared'
 import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
 import { markupAuditFixtures } from '../apps/web-reader/src/routes/audit/markup.fixtures.js'
+import { layoutAuditFixtures } from '@voicechat/browser-contracts/audit'
 
 let app: FastifyInstance, browser: Browser, page: Page, base: string, source = ''
 async function open(html: string) {
@@ -41,17 +42,17 @@ describe('Web Reader markup audit in Chromium', () => {
   })
   afterAll(async () => { await browser?.close(); await app?.close() })
 
-  for (const fixture of markupAuditFixtures) {
+  for (const fixture of [...markupAuditFixtures.map(f => ({ ...f, group: 'markup' })), ...layoutAuditFixtures.map(f => ({ ...f, group: 'layout' }))]) {
     it(`detects ${fixture.rule}`, async () => {
       await open(fixture.broken)
-      const report = await audit({ rules: [fixture.rule] })
+      const report = await audit({ group: fixture.group, rules: [fixture.rule] })
       expect(report.checkedRules).toBe(1)
       expect(report.findings.length).toBeGreaterThan(0)
       expect(report.findings.every(f => f.id === fixture.rule && f.selector && f.evidence)).toBe(true)
     })
     it(`clears ${fixture.rule} after repair`, async () => {
       await open(fixture.fixed)
-      expect((await audit({ rules: [fixture.rule] })).findings).toEqual([])
+      expect((await audit({ group: fixture.group, rules: [fixture.rule] })).findings).toEqual([])
     })
   }
   it('discovers all 30 rules and paginates findings without losing their total', async () => {
@@ -73,6 +74,21 @@ describe('Web Reader markup audit in Chromium', () => {
     expect((await audit({ selector: '#clean', rules: ['button-name-missing'] })).total).toBe(0)
     await expect(audit({ selector: 'section' })).rejects.toThrow('exactly one')
     await expect(audit({ rules: ['made-up-rule'] })).rejects.toThrow('Unknown')
+  })
+  it('identifies each duplicate-ID sibling with an unambiguous selector', async () => {
+    await open('<!doctype html><body><button id="same">One</button><button id="same">Two</button></body>')
+    const report = await audit({ rules: ['duplicate-id'] })
+    expect(new Set(report.findings.map(f => f.selector)).size).toBe(2)
+    for (const finding of report.findings) expect(await page.frameLocator('iframe').locator(finding.selector).count()).toBe(1)
+  })
+  it('discovers 30 layout checks and captures visible clipping evidence', async () => {
+    await open('<!doctype html><html lang="en"><head><title>Layout audit evidence</title><style>body{font:18px system-ui;background:#edf2f8;padding:32px}main{background:white;border-radius:16px;padding:32px;max-width:760px}.card{width:240px;height:100px;overflow:hidden;border:2px solid #b45309;padding:12px}.wide{width:440px;background:#fef3c7;padding:16px}.fixed{margin-top:20px;width:440px;max-width:100%;border:2px solid #15803d;padding:16px}</style></head><body><main><h1>Layout audit: visible evidence</h1><h2>Clipped content</h2><div class="card" id="clipped"><div class="wide">This content extends beyond the card edge.</div></div><h2>Repaired container</h2><div class="fixed">This content fits within its container.</div></main></body></html>')
+    expect((await audit({ group: 'layout', mode: 'list', limit: 30 })).rules).toHaveLength(30)
+    expect((await audit({ group: 'layout', rules: ['clipped-horizontal-content'] })).findings.map(f=>f.selector)).toContain('#clipped')
+    if (process.env.VC_VISUAL_ARTIFACTS) {
+      await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
+      await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'cycle-02-layout.png'), fullPage: true })
+    }
   })
   it('reports incomplete scans and keeps returned payload bounded', async () => {
     await open('<!doctype html><body>' + '<button></button>'.repeat(3100) + '</body>')

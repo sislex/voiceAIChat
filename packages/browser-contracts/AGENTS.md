@@ -7,3 +7,8 @@ REST/WS остаются в `@voicechat/shared`; Node-транспорт и се
 Изменение публичного контракта проверяет его потребителей через каталог
 `packages/shared/src/applicationCatalog.ts`. Для внутренней проверки:
 `npm run -w @voicechat/browser-contracts typecheck` и `npm run -w @voicechat/browser-contracts test`.
+
+The `./audit` export contains pure generators for trusted DOM audit programs.
+Both proxy Reader and native browser-runner execute the same checks; this package
+does not execute DOM code or start a browser. Keep new audit groups here to avoid
+different findings between engines. Wire fixtures into both browser suites.

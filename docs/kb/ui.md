@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 17dd72ff
+checked: cf8e2df1
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2450,11 +2450,13 @@ DOM Recorder и `e2e/webReaderScenarioStorage.e2e.test.ts`.
 
 ### Model-facing Web Reader audits
 
-The `audit` MCP tool inspects the live proxy document without modifying it.
+The `audit` MCP tool inspects the live proxy or native Chromium document without modifying it.
 `packages/shared/src/previewAudit.ts` defines bounded options and evidence; the
 `audit` action travels through the existing Reader relay and recorder bridge.
-`apps/web-reader/src/routes/audit/runtime.ts` executes registered checks, and
-`markup.ts` supplies 30 markup checks. Use `mode: list` to discover rule IDs;
+Pure program generators in `packages/browser-contracts/src/audit/` execute 30
+markup checks and 30 layout checks. Web Reader retains stable re-export paths;
+browser-runner executes the same checks through built-in `inspect/audit`, separate
+from model-supplied `evaluate` code and its policy. Use `mode: list` to discover rule IDs;
 `mode: run` is the default. `group` defaults to `markup`, `rules` narrows checks,
 and `selector` must resolve to one element. Document-only checks explicitly report
 when the chosen scope excludes them.
@@ -2463,9 +2465,19 @@ Reports distinguish observed failures from heuristic candidates, include selecto
 and evidence, and expose `nextOffset`, scan counts, truncation and limitations.
 The scan is capped at 3,000 elements and 500 findings, with at most 30 results per
 response and a further serialized-size budget. Audit evidence does not read input
-values. The current surface is the rewritten proxy document; child frames and
-shadow roots are not covered, and an empty report is not a whole-page QA pass.
-Chromium Reader does not silently fall back to proxy auditing.
+values. The reported `surface` distinguishes the rewritten proxy document from
+native Chromium. Child frames and shadow roots are not covered, and an empty
+report is not a whole-page QA pass. Chromium Reader does not silently fall back to
+proxy auditing; an older runner must return an explicit audit report or an error.
+Native audits preserve human control and `lastActor`, and restore logical page URLs
+from operator host aliases. Duplicate-ID findings use selectors that distinguish
+sibling nodes even when their IDs are equal.
+
+The `layout` group inspects clipping and overflow, zero-size controls, fixed/sticky
+positioning, collapsed containers, grid/flex geometry, overlapping siblings and
+ineffective CSS properties. Its findings are heuristic candidates; intentional
+clipping, overlaps and scroll locks need application-specific review. Styles and
+rectangles are cached for one scan; overlap checks inspect up to 100 direct children.
 
 External-site probes on 2026-09-11 demonstrated why bridge readiness and empty
 error logs are insufficient: Google showed consent, Facebook an error document,
@@ -2474,8 +2486,8 @@ All had an attached Reader bridge and no observed JS exception. These are local
 public-page observations, not an authenticated compatibility guarantee. Original
 browser-origin flows use the existing `previewEngine: chromium` path described in
 [the native Reader section](features/playwright-reader.md#полный-chromium-внутри-web-reader-2026-09-10).
-The new audit command currently targets proxy mode; native audit parity remains
-separate work. Switching engines does not copy cookies between their sessions.
+Both engines support the audit command. Switching engines does not copy cookies
+between their sessions.
 
 A same-day probe through the actual `BrowserSessionManager` rendered Google's
 consent page and the Facebook/Instagram login forms behind cookie dialogs in fresh
@@ -2486,8 +2498,11 @@ rendered state, network evidence and console errors rather than use one success 
 
 The checks cover document metadata, IDs and references, names and labels,
 landmarks, headings, nested controls, details, tables, lists and focus order.
-`e2e/webReaderAudit.e2e.test.ts` verifies a broken/repaired document pair for each
-rule in real Chromium, plus scope, pagination, limits and sensitive-value exclusion.
+`e2e/webReaderAudit.e2e.test.ts` and browser-runner's `nativeAudit.test.ts` verify a
+broken/repaired document pair for each rule on both surfaces, plus scope, pagination,
+limits and sensitive-value exclusion. `webReaderNative.e2e.test.ts` verifies the
+complete App/MCP/runner path on a page that denies iframe embedding, including
+auditing while the user owns control.
 `VC_VISUAL_ARTIFACTS` saves the visual fixture. The 30-cycle implementation plan is
 `docs/plans/web-reader-model-qa-30-cycles.md`; planned cycles are not completed work.
 

@@ -1,4 +1,5 @@
 import { readBrowserDiagnostics } from './diagnosticReading.js'
+import { nativeAuditExpression } from '@voicechat/browser-contracts/audit'
 import type { BrowserConsoleEntry, BrowserInspectAction, BrowserInspectResult, BrowserNetworkEntry } from '@voicechat/shared'
 
 /**
@@ -24,6 +25,11 @@ export interface InspectPage {
 export async function runInspectAction(logs: InspectLogs, page: InspectPage, action: Exclude<BrowserInspectAction, { kind: 'evaluate' }>): Promise<BrowserInspectResult> {
   if (action.kind === 'console' || action.kind === 'network') return readBrowserDiagnostics(logs, action)
   try {
+    if (action.kind === 'audit') {
+      const result = await page.evaluate(nativeAuditExpression(action)) as Pick<BrowserInspectResult, 'page' | 'audit'>
+      if (result?.audit?.version !== 1 || result.audit.surface !== 'chromium') return { ok: false, error: 'Chromium did not return an audit report.' }
+      return { ok: true, ...result }
+    }
     // Тело исполняется в браузере, а у пакета нет библиотеки DOM (это Node-сервис),
     // поэтому нужные глобальные объявляются здесь узкими типами.
     const styles = await page.locator(action.selector).first().evaluate((node, argument) => {
@@ -41,6 +47,6 @@ export async function runInspectAction(logs: InspectLogs, page: InspectPage, act
     if (!styles) return { ok: false, error: `Узел ${action.selector} не найден` }
     return { ok: true, styles }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message.split('\n')[0] : 'Стили не прочитались' }
+    return { ok: false, error: err instanceof Error ? err.message.split('\n')[0] : 'Page inspection failed.' }
   }
 }

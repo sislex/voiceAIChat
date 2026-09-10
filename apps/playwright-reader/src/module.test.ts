@@ -19,6 +19,13 @@ function fixture(target: BrowserModelTarget | null = { sessionId: 'c', conversat
 }
 
 describe('действия модели через приложение', () => {
+  it('requires an explicit native audit report from the runner', async () => {
+    const { service, runner } = fixture()
+    expect(await service.execute('ann', 'c', { kind: 'audit' })).toMatchObject({ ok: false, error: expect.stringContaining('does not support native audits') })
+    const result = { ok: true, page: { url: 'https://example.com/', title: 'Audit' }, audit: { version: 1 as const, group: 'layout', groups: ['markup', 'layout'], mode: 'list' as const, surface: 'chromium' as const, scope: 'document', findings: [], rules: [], total: 0, checkedRules: 0, scannedElements: 0, truncated: false, elapsedMs: 0, limitations: [] } }
+    vi.mocked(runner.command).mockResolvedValueOnce(result)
+    expect(await service.execute('ann', 'c', { kind: 'audit', group: 'layout', mode: 'list' })).toEqual({ ok: true, result })
+  })
   it('диалоги маршрутизируются в авторизованную сессию и сохраняют ошибку открытого диалога', async () => {
     const { service, runner } = fixture()
     await service.control('ann', 'c', { type: 'dialogs', tabId: 't' })

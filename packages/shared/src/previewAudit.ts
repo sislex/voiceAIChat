@@ -28,7 +28,7 @@ export interface PreviewAuditResult {
     group: string
     groups: string[]
     mode: 'list' | 'run'
-    surface: 'proxy'
+    surface: 'proxy' | 'chromium'
     scope: string
     findings: PreviewAuditFinding[]
     rules: PreviewAuditRule[]

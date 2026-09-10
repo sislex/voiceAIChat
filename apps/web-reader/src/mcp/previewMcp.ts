@@ -120,7 +120,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       }
       const L = PREVIEW_ACTION_LIMITS
       server.registerTool('audit', {
-        description: 'Inspect proxy Web Reader for QA issues. Returns rule IDs, selectors, severity, evidence, coverage limits and nextOffset. Use mode:list to discover checks, mode:run to inspect. Heuristic findings require visual confirmation. Default group: markup. This tool does not modify the page.',
+        description: 'Inspect the current Web Reader document in proxy or native Chromium mode for QA issues. Returns rule IDs, selectors, severity, evidence, coverage limits and nextOffset. Use mode:list to discover checks, mode:run to inspect. Groups: markup, layout. Heuristic findings require visual confirmation. Default group: markup. This tool does not modify the page.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
         inputSchema: {
           group: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/).optional(),
           selector: z.string().trim().min(1).max(1000).optional(),

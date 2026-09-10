@@ -172,7 +172,7 @@ const uniqueSelector=(el)=>{
   const parts=[];let node=el;
   while(node&&node.nodeType===1&&parts.length<ARRAY_LIMIT){
     let s=part(node);
-    if(!node.id&&node.parentElement){const same=[...node.parentElement.children].filter(x=>x.localName===node.localName);if(same.length>1)s+=':nth-of-type('+(same.indexOf(node)+1)+')'}
+    if(node.parentElement){const same=[...node.parentElement.children].filter(x=>x.localName===node.localName);if(same.length>1)s+=':nth-of-type('+(same.indexOf(node)+1)+')'}
     parts.unshift(s);const candidate=parts.join(' > ');
     try{if(document.querySelectorAll(candidate).length===1)return candidate}catch{}
     node=node.parentElement
