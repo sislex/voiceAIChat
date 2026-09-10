@@ -119,6 +119,17 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         return toolResult(outcome)
       }
       const L = PREVIEW_ACTION_LIMITS
+      server.registerTool('audit', {
+        description: 'Inspect proxy Web Reader for QA issues. Returns rule IDs, selectors, severity, evidence, coverage limits and nextOffset. Use mode:list to discover checks, mode:run to inspect. Heuristic findings require visual confirmation. Default group: markup. This tool does not modify the page.',
+        inputSchema: {
+          group: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/).optional(),
+          selector: z.string().trim().min(1).max(1000).optional(),
+          rules: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,79}$/)).min(1).max(30).refine(ids => new Set(ids).size === ids.length).optional(),
+          mode: z.enum(['list', 'run']).optional(),
+          offset: z.number().int().min(0).max(500).optional(),
+          limit: z.number().int().min(1).max(30).optional()
+        }
+      }, async options => run({ kind: 'audit', ...options }))
       const frameSchema = z.union([z.string().trim().min(1).max(L.selector), z.array(z.string().trim().min(1).max(L.selector)).min(1).max(8)]).optional().describe('Селектор iframe или цепочка вложенных iframe из frames. Только Chromium; без параметра — верхняя страница.')
       // Одинаковое разрешение машины для open и new-tab: доступ берётся из хода.
       const resolveUrl = async (url: string): Promise<{ url: string } | { error: string }> => {

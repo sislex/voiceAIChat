@@ -148,7 +148,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'cancel-download', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'audit', 'back', 'cancel-download', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
   })
 
   it.each([
@@ -165,6 +165,16 @@ describe('previewMcp — инструменты browser', () => {
     await makeApp(undefined, { browserExecutor: execute })
     expect((await call(name as string, { ...args, frame: ['#preview', '#child'] })).isError).not.toBe(true)
     expect(execute).toHaveBeenCalledWith(U, CONV, { kind: name, ...args, frame: ['#preview', '#child'] })
+  })
+
+  it('audit forwards bounded options and rejects duplicate rule IDs', async () => {
+    await makeApp()
+    const observed: Array<Extract<ServerMessage, { t: 'preview.action' }>['action']> = []
+    client = message => { observed.push(message.action); relay.resolve(U, message.requestId, { ok: true, result: { url: 'https://example.test' } }) }
+    await call('audit', { group: 'markup', rules: ['duplicate-id'], limit: 10 })
+    expect(observed).toEqual([{ kind: 'audit', group: 'markup', rules: ['duplicate-id'], limit: 10 }])
+    expect((await call('audit', { rules: ['duplicate-id', 'duplicate-id'] })).isError).toBe(true)
+    expect(observed).toHaveLength(1)
   })
 
   it('frame не уходит в relay Web Reader и неверная цепочка не выполняется', async () => {

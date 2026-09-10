@@ -1,4 +1,5 @@
 import { BROWSER_EVALUATE_CODE_LIMIT, normalizeBrowserEvaluateOptions, type BrowserEvaluateOptions } from './browserEvaluation'
+import { isPreviewAuditOptions, type PreviewAuditOptions, type PreviewAuditResult } from './previewAudit'
 import { normalizeBrowserDiagnosticOptions, type BrowserConsoleOptions, type BrowserNetworkOptions } from './browserDiagnostics'
 // Управление открытым сайтом в панели превью и чтение его DOM из хода модели.
 //
@@ -68,6 +69,7 @@ export interface PreviewDragPoint {
 
 /** Действие браузера, запрошенное моделью. `open` выполняет сам UI (без iframe). */
 export type PreviewAction = BrowserFrameTarget & (
+  | ({ kind: 'audit'; diagnostic?: boolean } & PreviewAuditOptions)
   | { kind: 'open'; url: string; diagnostic?: boolean }
   | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
@@ -337,6 +339,7 @@ export interface PreviewEditsResult {
 }
 
 export type PreviewActionResult =
+  | PreviewAuditResult
   | PreviewOpenResult
   | PreviewFindResult
   | PreviewClickResult
@@ -448,6 +451,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (['x', 'y', 'width', 'height'] as const).every((key) => typeof rect[key] === 'number' && Number.isFinite(rect[key] as number) && Math.abs(rect[key] as number) <= 100_000) &&
         (rect.width as number) > 0 && (rect.height as number) > 0
     }
+    case 'audit':
+      return value.frame === undefined && isPreviewAuditOptions(value)
     case 'errors':
       return value.clear === undefined || typeof value.clear === 'boolean'
     case 'wait':
@@ -627,6 +632,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'upload {selector, name, base64, mimeType?} — загрузить файл в input type=file; ' +
     'viewport {width} — ширина превью в px (0 — адаптив) для проверки мобильной вёрстки; ' +
     'a11y {selector?} — дерево доступности (роли и имена, как их видит скринридер). ' +
+    'In proxy Web Reader, audit {group?, selector?, rules?, mode?, limit?, offset?} reports bounded QA findings with selectors and evidence. ' +
+    'Use mode:list to discover checks, then mode:run (default); follow nextOffset and read limitations. Default group: markup. ' +
+    'Heuristic findings need visual confirmation; no findings never proves the whole application bug-free. ' +
     'Тестовое окружение, запущенное на машине этого разговора (dev-сервер репозитория, feature-preview), открывай ' +
     'Текущее приложение открывай по https://app.internal/ (путь и #/маршрут сохраняются); вход выполняется внутри страницы. Dev-сервер машины — ' +
     'адресом http://machine.internal:<порт>/ — прокси доставит запрос на 127.0.0.1:<порт> машины разговора; ' +
