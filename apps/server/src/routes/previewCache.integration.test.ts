@@ -1,15 +1,16 @@
 import fastify from 'fastify'
 import { describe, expect, it } from 'vitest'
-import { clearPreviewCookies, registerPreviewProxy, storeResponseCookies } from './previewProxy.js'
+import { registerPreviewProxy } from './previewProxy.js'
+import { PreviewCookieStore } from './previewCookies.js'
 
 const target = new URL('http://cache-cycle.machine.internal:5173/asset.css')
 async function fixture() {
   const state = { allowed: true, online: true, calls: 0, body: 'first', type: 'text/css', headers: {} as Record<string, string> }
-  const app = fastify()
+  const app = fastify(), cookies = new PreviewCookieStore()
   app.addHook('onRequest', async req => {
     ;(req as unknown as { user: { name: string; role: string } }).user = { name: String(req.headers['x-test-user'] ?? 'cache-alice'), role: 'user' }
   })
-  registerPreviewProxy(app, { machines: { canUse: async () => state.allowed, bridge: {
+  registerPreviewProxy(app, { cookies, machines: { canUse: async () => state.allowed, bridge: {
     isOnline: () => state.online,
     http: async () => {
       state.calls++
@@ -18,10 +19,10 @@ async function fixture() {
   } } })
   const url = '/api/preview?url=' + encodeURIComponent(target.href)
   return {
-    state, app,
+    state, app, cookies,
     get: (headers: Record<string, string> = {}) => app.inject({ method: 'GET', url, headers }),
     mutate: () => app.inject({ method: 'POST', url }),
-    close: async () => { await app.close(); clearPreviewCookies('cache-alice'); clearPreviewCookies('cache-bob') }
+    close: async () => { await app.close() }
   }
 }
 
@@ -75,7 +76,7 @@ describe('Web Reader: кэш ресурсов с проверкой доступ
     try {
       await f.get(); f.state.body = 'private'
       expect((await f.get({ 'x-preview-authorization': 'Bearer fixture' })).body).toBe('private')
-      storeResponseCookies('cache-alice', target, 'session=fixture; Path=/')
+      f.cookies.store('cache-alice', target, 'session=fixture; Path=/')
       f.state.body = 'cookie'
       expect((await f.get()).body).toBe('cookie')
     } finally { await f.close() }

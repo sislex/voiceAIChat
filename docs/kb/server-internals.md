@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 4be6ddac
+checked: ad19ca64
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -167,6 +167,17 @@ HTML разбирается `parse5` в `routes/previewHtml.ts`, правятс�
 поэтому HTML-строки внутри JavaScript её не сбивают. Регрессии:
 `previewHtml.test.ts`, реальные переходы/ресурсы Chromium —
 `e2e/webReaderHtml.e2e.test.ts` (порт выбирается автоматически, без данных прода).
+
+Cookies сайтов хранит `PreviewCookieStore` (`previewCookies.ts`, tough-cookie 5.1.2):
+отдельный CookieJar пользователя в экземпляре Reader. Host-only, граница Path,
+default-path, приоритет Max-Age над Expires, Secure и префиксы __Host-/__Secure-
+повторяют правила браузера. Общие Domain `machine.internal`/`internal` не принимаются:
+разные окружения машин не должны делить сессии. Повреждённые и больше 4096 символов
+Set-Cookie пропускаются отдельно, регистр имени заголовка не важен. Cookies каждого
+redirect сохраняются до следующего запроса. HTTP reset и MCP clearCookies используют
+один контейнер модуля; закрытие сервера очищает его. Глобальные функции сохранены
+только для старых чистых тестов, рабочие маршруты их не используют. Регрессии:
+`previewCookies.test.ts`, `reader/module.cookies.test.ts`, `webReaderCookies.e2e.test.ts`.
 
 Кэш ресурсов машины принадлежит экземпляру `registerPreviewProxy`, ключ включает
 машину, пользователя и URL. Доступ и online проверяются до чтения/304; браузер
