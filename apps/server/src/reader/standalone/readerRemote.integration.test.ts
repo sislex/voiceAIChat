@@ -104,6 +104,16 @@ async function callTool(base: string, turn: string, name: string, args: Record<s
 }
 
 describe('ядро (reader remote) + отдельный процесс Web Reader', () => {
+  it('app.internal возвращает ресурсы ядра через RPC, сохраняя отдельную авторизацию страницы', async () => {
+    const preview = (path: string) => fetch(`${coreUrl}/api/preview?url=${encodeURIComponent('https://app.internal' + path)}`, { headers: annAuth })
+    const health = await preview('/api/health')
+    expect(health.status).toBe(200)
+    expect(await health.json()).toMatchObject({ ok: true })
+    expect((await preview('/api/conversations')).status).toBe(401)
+    expect((await preview('/internal/reader/core')).status).toBe(403)
+    expect((await preview('/api/preview?url=https://app.internal/')).status).toBe(403)
+  })
+
   it('здоровье; внутренний RPC ядра без токена закрыт; превью без сессии — 401 у ядра и у ридера', async () => {
     expect(await (await fetch(`${readerUrl}${READER_HEALTH_PATH}`)).json()).toEqual({ ok: true, service: 'reader', version: 'test', engine: db.engine })
     expect((await fetch(`${coreUrl}${INTERNAL_READER_CORE_PATH}`, { method: 'POST', headers: json, body: '{}' })).status).toBe(401)

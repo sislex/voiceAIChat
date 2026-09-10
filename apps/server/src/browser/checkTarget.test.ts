@@ -7,7 +7,7 @@ const check = (mode: CiBrowserCheck['mode']): CiBrowserCheck => ({ ...DEFAULT_CI
 describe('выбор цели браузерного действия', () => {
   it('разговор Playwright Reader остаётся при своей сессии', () => {
     expect(browserCheckTarget({ conversationId: 'conv-1', taskId: null, playwrightReader: true, check: check('off') }))
-      .toEqual({ sessionId: 'conv-1', conversationKey: 'conv-1' })
+      .toEqual({ sessionId: 'conv-1', conversationKey: 'conv-1', profileMode: 'persistent' })
   })
 
   it('задача с режимом chromium получает сессию по задаче, а не по разговору', () => {

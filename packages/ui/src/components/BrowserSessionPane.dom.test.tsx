@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { BrowserSessionMetadata } from '@shared/types'
 import { BrowserSessionPane } from './BrowserSessionPane'
+import { expectNoCriticalViolations } from '../test/a11y'
 
 const meta = (over: Partial<BrowserSessionMetadata> = {}): BrowserSessionMetadata => ({
   id: 'c1', conversationId: 'c1', incarnation: 'inc-1', state: 'ready', activeTabId: 't1', tabs: [],
@@ -25,11 +26,29 @@ function fakeBrowser(over: Partial<RendererBrowserBridge> = {}): RendererBrowser
 afterEach(cleanup)
 
 describe('BrowserSessionPane', () => {
+  it('после закрытия всех вкладок позволяет человеку создать новую', async () => {
+    const empty = meta({ activeTabId: null, tabs: [], currentUrl: null })
+    const browser = fakeBrowser({ start: vi.fn(async () => empty) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const create = await screen.findByLabelText('Новая вкладка')
+    await expectNoCriticalViolations()
+    expect((screen.getByLabelText('Назад') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(create)
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'newTab' } })))
+  })
+  it('адрес в пустой панели открывает новую вкладку вместо stale_tab', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ activeTabId: null, currentUrl: null, tabs: [] })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByText('Все вкладки закрыты')
+    fireEvent.change(screen.getByLabelText('Адрес страницы'), { target: { value: 'example.com' } })
+    fireEvent.keyDown(screen.getByLabelText('Адрес страницы'), { key: 'Enter' })
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'newTab', url: 'https://example.com' } })))
+  })
   it('стартует сессию, показывает кадр и адрес открытой страницы', async () => {
     const browser = fakeBrowser()
     render(<BrowserSessionPane conversationId="c1" browser={browser} />)
     await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
-    expect(browser.start).toHaveBeenCalledWith('c1', { width: 1280, height: 800, deviceScaleFactor: 1 })
+    expect(browser.start).toHaveBeenCalledWith('c1')
     expect((screen.getByLabelText('Адрес страницы') as HTMLInputElement).value).toBe('https://a.b')
   })
 
@@ -96,9 +115,12 @@ describe('BrowserSessionPane', () => {
     await waitFor(() => expect(browser.command).toHaveBeenCalled())
     const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
     expect(calls[0][1].command.action).toMatchObject({ type: 'click', button: 'right', clickCount: 1 })
-    fireEvent.doubleClick(frame, { clientX: 10, clientY: 10 })
-    await waitFor(() => expect(calls.length).toBeGreaterThan(1))
-    expect(calls[calls.length - 1][1].command.action).toMatchObject({ button: 'left', clickCount: 2 })
+    // Настоящий dblclick предваряется двумя click с detail 1 и 2.
+    fireEvent.click(frame, { detail: 1, clientX: 10, clientY: 10 })
+    fireEvent.click(frame, { detail: 2, clientX: 10, clientY: 10 })
+    fireEvent.doubleClick(frame, { detail: 2, clientX: 10, clientY: 10 })
+    await waitFor(() => expect(calls.length).toBe(3))
+    expect(calls[calls.length - 1][1].command.action).toMatchObject({ button: 'left', detail: 2 })
   })
 
   it('переключатель размера окна шлёт resize', async () => {
@@ -236,16 +258,38 @@ describe('Playwright Reader как инструмент автотестов (к
     })))
   })
 
-  it('выбранный размер окна переживает перезапуск сессии', async () => {
-    const browser = fakeBrowser()
+  it('восстановленный нестандартный размер переживает перезапуск панели', async () => {
+    const viewport = { width: 1111, height: 777, deviceScaleFactor: 1 }
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ viewport })) })
     render(<BrowserSessionPane conversationId="c1" browser={browser} />)
-    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Телефон' }))
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByRole('button', { name: 'Телефон' })).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Перезапустить' }))
-    // Раньше перезапуск всегда стартовал с десктопного вьюпорта, и проверка
-    // мобильной вёрстки сбрасывалась на каждом «Перезапустить».
-    await waitFor(() => expect(browser.start).toHaveBeenLastCalledWith('c1', expect.objectContaining({ width: 390 })))
+    await waitFor(() => expect(browser.start).toHaveBeenLastCalledWith('c1', viewport))
   })
+
+  it('размер телефона отражает метаданные сохранённого профиля', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ viewport: { width: 390, height: 844, deviceScaleFactor: 1 } })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByRole('button', { name: 'Телефон' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it.each([
+    [{ ok: true, clearedCookies: 3, clearedOrigins: ['https://a.b'] }, true, null],
+    [{ ok: false, error: 'Хранилище занято' }, false, 'Хранилище занято'],
+    [meta(), false, 'Раннер не подтвердил очистку данных сайта']
+  ])('очистка перезагружает страницу только после подтверждения: %j', async (reply, reload, error) => {
+    const command = vi.fn(async (_id: string, req: { command: { type: string } }) => req.command.type === 'clearSiteData' ? reply : meta())
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Очистить сессию сайта' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'clearSiteData' } })))
+    if (error) expect(await screen.findByText(error)).toBeInTheDocument()
+    else await waitFor(() => expect(command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'reload' } })))
+    expect(command.mock.calls.some(([, req]) => req.command.type === 'reload')).toBe(reload)
+  })
+
 })
 
 describe('запись сценария автотеста (круг 12)', () => {
@@ -535,7 +579,9 @@ describe('запись как черновик, который правят (к�
     const frame = await start(bridge())
     fireEvent.contextMenu(frame, { clientX: 50, clientY: 30 })
     expect(await screen.findByDisplayValue('Нажать правой кнопкой «Создать»')).toBeInTheDocument()
-    fireEvent.doubleClick(frame, { clientX: 50, clientY: 30 })
+    fireEvent.click(frame, { detail: 1, clientX: 50, clientY: 30 })
+    fireEvent.click(frame, { detail: 2, clientX: 50, clientY: 30 })
+    fireEvent.doubleClick(frame, { detail: 2, clientX: 50, clientY: 30 })
     expect(await screen.findByDisplayValue('Двойной клик «Создать»')).toBeInTheDocument()
   })
 
@@ -712,4 +758,61 @@ describe('честные предупреждения и прогон до ша�
       .filter(([, req]) => (req as { command: { type: string; action?: { kind?: string } } }).command.action?.kind === 'click')
     expect(clicks).toHaveLength(1)
   })
+})
+
+describe('достоверность прогона записи (цикл проверки 10)', () => {
+  it('ошибка стартового перехода останавливает прогон до кликов', async () => {
+    const actions: string[] = []
+    const browser = fakeBrowser({ command: vi.fn(async (_id, request) => {
+      const command = request.command
+      actions.push(command.type === 'selector' ? command.action.kind : command.type)
+      if (command.type === 'navigate') throw new Error('Адрес недоступен')
+      return { ok: true }
+    }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} savedScenarios={[{ name: 'Вход', startUrl: 'https://project.test', steps: [{ id: 'step-1', title: 'Нажать', action: { kind: 'click', selector: '#button' }, expectText: 'Готово' }] }]} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    expect(await screen.findByText('Стартовый адрес не открылся: Адрес недоступен')).toBeInTheDocument()
+    expect(actions).not.toContain('click')
+    expect(screen.queryAllByText(/прогон: ок/)).toHaveLength(0)
+  })
+
+  it('первое ожидание на переходе действительно выполняется в панели', async () => {
+    const browser = fakeBrowser({ command: vi.fn(async (_id, request) => {
+      if (request.command.type === 'selector' && request.command.action.kind === 'read') return { ok: true, text: 'Готово' }
+      return meta()
+    }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Готово' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'selector', action: { kind: 'read', limit: 20_000 } } })))
+    expect(await screen.findByText('прогон: ок')).toBeInTheDocument()
+  })
+})
+
+it('передаёт управление человеку и возвращает модели отдельными командами', async () => {
+  const browser = fakeBrowser({ command: vi.fn(async (_id, req) => meta({ control: req.command.type === 'control' ? req.command.owner : 'shared' })) })
+  render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Взять управление' }))
+  expect(await screen.findByText(/Управление у вас/)).toBeInTheDocument()
+  expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'control', owner: 'user' } }))
+  fireEvent.click(screen.getByRole('button', { name: 'Вернуть управление модели' }))
+  await waitFor(() => expect(screen.queryByText(/Управление у вас/)).not.toBeInTheDocument())
+})
+
+it('отмена ожидающих команд не скрывает ещё выполняющийся запрос', async () => {
+  let finish!: (value: BrowserSessionMetadata) => void
+  const browser = fakeBrowser({ command: vi.fn((_id, req) => req.command.type === 'reload' ? new Promise<BrowserSessionMetadata>(resolve => { finish = resolve }) : Promise.resolve(meta())) })
+  render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+  await screen.findByAltText('Кадр Chromium')
+  fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Отменить ожидающие команды' }))
+  await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'cancel' } })))
+  expect(screen.getByText('Выполняется…')).toBeInTheDocument()
+  finish(meta())
+  await waitFor(() => expect(screen.queryByText('Выполняется…')).not.toBeInTheDocument())
 })

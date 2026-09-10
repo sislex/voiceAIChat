@@ -9,7 +9,7 @@ describe('isCacheableMachineResponse', () => {
   it('кэширует статику dev-сервера', () => {
     expect(isCacheableMachineResponse('GET', 200, 'text/javascript', 1000)).toBe(true)
     expect(isCacheableMachineResponse('GET', 200, 'text/css', 1000)).toBe(true)
-    expect(isCacheableMachineResponse('GET', 200, 'application/json; charset=utf-8', 1000)).toBe(true)
+    expect(isCacheableMachineResponse('GET', 200, 'application/json; charset=utf-8', 1000)).toBe(false)
     expect(isCacheableMachineResponse('GET', 200, 'image/svg+xml', 1000)).toBe(true)
   })
 

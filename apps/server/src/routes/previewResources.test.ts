@@ -1,0 +1,12 @@
+import { JSDOM } from 'jsdom'
+import { describe,expect,it } from 'vitest'
+import { previewContextScript } from './previewProxy.js'
+const origin='https://page.example.com',base=origin+'/dir/page'
+function fixture(){const dom=new JSDOM('<!doctype html><body><div id="root"></div></body>',{url:'http://reader.test/api/preview?url='+encodeURIComponent(base),runScripts:'dangerously'});dom.window.eval(previewContextScript(base).replace(/^<script>|<\/script>$/g,''));return dom}
+describe('ресурсы, созданные JavaScript после загрузки',()=>{
+ it.each([['img','src'],['script','src'],['link','href'],['iframe','src'],['video','poster'],['source','src']])('%s.%s отправляет URL в proxy и возвращает адрес сайта', (tag,property)=>{const dom=fixture();try{const el=dom.window.document.createElement(tag);Reflect.set(el,property,'/asset');expect(Reflect.get(el,property)).toBe(origin+'/asset');expect(el.outerHTML).toContain('/api/preview?url=')}finally{dom.window.close()}})
+ it('setAttribute обрабатывает ресурс и не трогает data-src',()=>{const dom=fixture();try{const el=dom.window.document.createElement('img');el.setAttribute('src','/asset');el.setAttribute('data-src','/original');expect(el.getAttribute('src')).toBe(origin+'/asset');expect(el.getAttribute('data-src')).toBe('/original');expect(el.outerHTML).toContain('/api/preview?url=')}finally{dom.window.close()}})
+ it('srcset сохраняет data URL и переписывает настоящие кандидаты',()=>{const dom=fixture();try{const el=dom.window.document.createElement('img');el.srcset='data:image/png;base64,AA== 1x, /large.png 2x';expect(el.srcset).toBe('data:image/png;base64,AA== 1x, '+origin+'/large.png 2x');expect(el.outerHTML).toContain('/api/preview?url=')}finally{dom.window.close()}})
+ it('innerHTML и insertAdjacentHTML переписываются синхронно',()=>{const dom=fixture();try{const root=dom.window.document.querySelector('#root')!;root.innerHTML='<img src="/one"><template><img src="/two"></template>';root.insertAdjacentHTML('beforeend','<iframe src="/three"></iframe>');expect(root.innerHTML.match(/\/api\/preview\?url=/g)).toHaveLength(3)}finally{dom.window.close()}})
+ it('URL документа и baseURI представляют исходную страницу',()=>{const dom=fixture();try{expect(dom.window.document.URL).toBe(base);expect(dom.window.document.documentURI).toBe(base);expect(dom.window.document.baseURI).toBe(base);dom.window.history.pushState({},'','/next');expect(dom.window.document.URL).toBe(origin+'/next')}finally{dom.window.close()}})
+})

@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { machinePreviewUrl, planModelAction, PREVIEW_RUN_COOKIE } from '@voicechat/shared'
+import { machinePreviewUrl, planModelAction } from '@voicechat/shared'
 import type { BrowserRunnerClient } from '@voicechat/browser-runner/client'
 import type { PlaywrightReaderCore } from './core.js'
 import type { PlaywrightReaderService } from './service.js'
 import { registerBrowserRoutes } from './routes.js'
+import { previewSessionCookies } from './sessionAccess.js'
 
 export interface PlaywrightReaderOptions {
   core: PlaywrightReaderCore
@@ -23,11 +24,26 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
     if (!runner) throw new Error('Browser Runner не настроен на этом сервере')
     const session = await runner.start({
       ...target, userKey: userId,
-      cookies: [{ name: PREVIEW_RUN_COOKIE, value: await core.issuePreviewRunKey(userId), url: `${runnerFacingBase.replace(/\/+$/, '')}/api/preview` }]
+      cookies: await previewSessionCookies(core, userId, runnerFacingBase)
     })
     return { target, session }
   }
   const service: PlaywrightReaderService = {
+    async control(userId, conversationId, command) {
+      try {
+        const active = await start(userId, conversationId)
+        if (!active) return null
+        const result = await runner!.command(active.target.sessionId, {
+          requestId: randomUUID(), incarnation: active.session.incarnation, actor: 'assistant',
+          command: command.type === 'newTab' && command.url
+            ? { ...command, url: machinePreviewUrl(runnerFacingBase, command.url) } : command
+        })
+        if ('ok' in result && !result.ok) return { ok: false, error: result.error ?? 'Команда Chromium не выполнена' }
+        return { ok: true, result }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Команда Chromium не выполнена' }
+      }
+    },
     async execute(userId, conversationId, action) {
       try {
         const active = await start(userId, conversationId)
@@ -51,14 +67,13 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
         const { target, session } = active
         const shot = await runner!.screenshot(target.sessionId, {
           requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant',
-          command: { type: 'screenshot', format: 'png', ...(args.selector ? { selector: args.selector } : {}) }
+          command: { type: 'screenshot', ...args, format: 'png', scale: 'css' }
         })
         await core.logBrowserShot(userId, conversationId, shot.buffer.toString('base64'))
         return {
           ok: true,
           result: {
-            page: { url: session.currentUrl ?? '', title: session.title ?? '' },
-            rect: { x: 0, y: 0, width: session.viewport.width, height: session.viewport.height },
+            ...shot.metadata,
             dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`
           }
         }
@@ -67,5 +82,5 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
       }
     }
   }
-  return { service, register: (app) => registerBrowserRoutes(app, { core, runner }) }
+  return { service, register: (app) => registerBrowserRoutes(app, { core, runner, runnerFacingBase }) }
 }

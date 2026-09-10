@@ -4,6 +4,7 @@
 //
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
+import { BrowserCommandQueue } from './commandQueue.js'
 import { BrowserSessionManager, nextActiveTab } from './sessionManager.js'
 
 /** Подставляем внутренности вместо запуска настоящего Chromium. */
@@ -13,7 +14,7 @@ function managerWith(sessions: Array<{ id: string; lastUsedAt: number }>): { man
   const map = (manager as unknown as { sessions: Map<string, Promise<unknown>> }).sessions
   for (const item of sessions) {
     map.set(item.id, Promise.resolve({
-      id: item.id, lastUsedAt: item.lastUsedAt, profileDir: `/tmp/vc-browser-profiles-test/${item.id}`,
+      queue: new BrowserCommandQueue(), id: item.id, lastUsedAt: item.lastUsedAt, profileDir: `/tmp/vc-browser-profiles-test/${item.id}`,
       context: { close: vi.fn(async () => { closed.push(item.id) }) }
     }))
   }
@@ -57,6 +58,11 @@ describe('отметка обращения', () => {
 })
 
 describe('nextActiveTab', () => {
+  it('возвращает в живой opener; закрытый opener не воскресает', () => {
+    expect(nextActiveTab(['first', 'parent'], 'popup', 'popup', 'parent')).toBe('parent')
+    expect(nextActiveTab(['first'], 'popup', 'popup', 'parent')).toBe('first')
+    expect(nextActiveTab(['first', 'parent'], 'first', 'popup', 'parent')).toBe('first')
+  })
   it('закрытая вкладка не остаётся активной — иначе каждая команда падает stale_tab', () => {
     expect(nextActiveTab(['b', 'c'], 'a', 'a')).toBe('b')
   })

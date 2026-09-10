@@ -9,7 +9,7 @@ REST `/api/browser/:id/{start,command,screenshot}`, остановка сесс�
   ключ к прокси машины и запись кадра проверки. Локальная реализация —
   `apps/server/src/playwrightReaderBridge/localCore.ts`, HTTP — `src/standalone/httpCore.ts`.
   Своей БД, пользовательской авторизации и файлового тома у приложения нет.
-- `PlaywrightReaderService` (`src/service.ts`) — `execute`/`screenshot`; сборка —
+- `PlaywrightReaderService` (`src/service.ts`) — `execute`/`screenshot`/`control`; сборка —
   `createPlaywrightReaderModule`. MCP `/mcp/preview` у Web Reader вызывает этот порт.
   Ответ команды находится в `result`; `null` означает обычную панель, ошибка Chromium
   возвращается явно и не запускает relay в iframe пользователя.
@@ -37,3 +37,9 @@ Caddy отправляет `/api/browser/*` напрямую, ядро такж�
 `npm run gate:fast`. Unit-тесты рядом с исходниками; проверки ядра и приложений на
 реальных HTTP-портах — `apps/server/src/playwrightReaderBridge/remote.integration.test.ts`.
 Реальный Chromium в этих тестах не запускается.
+
+Web Reader с `previewEngine: chromium` использует тот же порт и сессию. Проверяй
+`isChromiumReaderConversation`, а не только assistantKind. Start выпускает cookie
+preview; app.internal/machine.internal проходят через runnerFacingBase. Screenshot
+добавляет логический page.url/title из метаданных кадра (для старого раннера —
+через status), а состояние управления — через status, не меняющий lastActor.

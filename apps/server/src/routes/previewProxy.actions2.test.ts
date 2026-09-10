@@ -268,3 +268,12 @@ describe('a11y: дерево доступности', () => {
     expect(a11y.total).toBeGreaterThan(2)
   })
 })
+
+it('горизонтальный scroll общего MCP работает и в Web Reader', async () => {
+  const result = await act({ kind: 'scroll', selector: '#card', dx: 250 })
+  expect(result.ok).toBe(true)
+  expect(document.querySelector('#card')!.scrollLeft).toBe(250)
+  expect(document.querySelector('#card')!.scrollTop).toBe(0)
+  const next = await act({ kind: 'scroll', selector: '#card', dx: -50, dy: 40 })
+  expect(next.result).toMatchObject({ scrolled: { left: 200, top: 40 } })
+})

@@ -1297,10 +1297,18 @@ export async function registerRest(
     }
   )
 
-  app.post<{ Params: { id: string }; Body: { previewUrl?: string | null } }>(
+  app.post<{ Params: { id: string }; Body: { previewUrl?: string | null; previewEngine?: 'proxy' | 'chromium' } }>(
     '/api/conversations/:id/preview-url',
     async (req, reply) => {
       const raw = req.body?.previewUrl
+      const previewEngine = req.body?.previewEngine
+      if (previewEngine !== undefined && previewEngine !== 'proxy' && previewEngine !== 'chromium') return reply.code(400).send({ error: 'invalid previewEngine' })
+      if (raw !== undefined && raw !== null && typeof raw !== 'string') return reply.code(400).send({ error: 'previewUrl must be a string or null' })
+      if (previewEngine !== undefined) {
+        const current = await db.chat.getConversation(uid(req), req.params.id)
+        if (!current) return reply.code(404).send({ error: 'not found' })
+        if (current.assistantKind !== 'web-recorder') return reply.code(403).send({ error: 'Browser engine belongs to a Web Reader conversation' })
+      }
       let previewUrl: string | null = null
       if (raw) {
         try {
@@ -1311,7 +1319,7 @@ export async function registerRest(
           return reply.code(400).send({ error: 'previewUrl must be an http/https URL' })
         }
       }
-      const conversation = await db.chat.setConversationPreviewUrl(uid(req), req.params.id, previewUrl)
+      const conversation = await db.chat.setConversationPreviewUrl(uid(req), req.params.id, previewUrl, previewEngine)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       return conversation
     }

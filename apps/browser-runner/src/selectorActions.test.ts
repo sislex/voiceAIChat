@@ -9,7 +9,15 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
   const self: SelectorLocator = {
     first: () => self,
     all: async () => [self],
+    count: async () => (await self.all()).length,
+    isEnabled: async () => true,
+    isEditable: async () => true,
+    isChecked: async () => false,
+    inputValue: async () => '',
+    filter: () => self,
+    evaluateAll: async () => null,
     click: vi.fn(async () => {}),
+    press: vi.fn(async () => {}),
     fill: vi.fn(async () => {}),
     innerText: async () => 'Текст узла',
     isVisible: async () => true,
@@ -19,6 +27,7 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     check: vi.fn(async () => {}),
     uncheck: vi.fn(async () => {}),
     dragTo: vi.fn(async () => {}),
+    scrollIntoViewIfNeeded: vi.fn(async () => {}),
     ariaSnapshot: async () => '- button "Создать"',
     evaluate: async () => null,
     setInputFiles: vi.fn(async () => {}),
@@ -31,6 +40,9 @@ function page(target: SelectorLocator, over: Partial<SelectorPage> = {}): Select
   return {
     locator: vi.fn(() => target),
     getByText: vi.fn(() => target),
+    waitForURL: async () => {},
+    waitForLoadState: async () => {},
+    waitForFunction: async () => ({ dispose: async () => {} }),
     keyboard: { press: vi.fn(async () => {}) },
     evaluate: vi.fn(async () => null),
     ...over
@@ -65,25 +77,7 @@ describe('селекторные действия раннера', () => {
     expect(p.keyboard.press).toHaveBeenCalledWith('Enter')
   })
 
-  it('чтение обрезает длинный текст по лимиту, чтобы не раздувать контекст модели', async () => {
-    const long = 'я'.repeat(5000)
-    const result = await runSelectorAction(page(locator({ innerText: async () => long })), { kind: 'read', limit: 100 })
-    expect(result.ok).toBe(true)
-    expect(result.text).toHaveLength(101)
-    expect(result.text?.endsWith('…')).toBe(true)
-    // Признак обрезки — не украшение: по нему проверка сценария отличает
-    // «текста нет» от «до текста не дочитали».
-    expect(result.truncated).toBe(true)
-    const whole = await runSelectorAction(page(locator({ innerText: async () => 'коротко' })), { kind: 'read' })
-    expect(whole.truncated).toBeUndefined()
-  })
-
-  it('поиск возвращает совпадения с текстом и видимостью', async () => {
-    const target = locator({ innerText: async () => '  Кнопка  ' })
-    const result = await runSelectorAction(page(target), { kind: 'find', selector: 'button', limit: 5 })
-    expect(result.ok).toBe(true)
-    expect(result.matches?.[0]).toMatchObject({ text: 'Кнопка', visible: true })
-  })
+  // Чтение и поиск проверяются в readingActions.test.ts на живом DOM.
 
   it('ожидание ждёт видимости и отдаёт ошибку значением, а не исключением', async () => {
     const target = locator({ waitFor: vi.fn(async () => { throw new Error('Timeout 5000ms exceeded\nдетали') }) })
@@ -155,11 +149,24 @@ describe('загрузка файла (круг 10)', () => {
     )
   })
 
-  it('без типа подставляется нейтральный, пустое содержимое отклоняется', async () => {
+  it('без типа подставляется нейтральный, пустой файл поддерживается', async () => {
     const target = locator()
     await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a.bin', base64: 'AA==' })
     expect(target.setInputFiles).toHaveBeenCalledWith(expect.objectContaining({ mimeType: 'application/octet-stream' }), expect.anything())
-    expect(await runSelectorAction(page(locator()), { kind: 'upload', selector: '#f', name: 'a', base64: '' })).toEqual({ ok: false, error: 'Пустое содержимое файла' })
+    expect(await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a', base64: '' })).toEqual({ ok: true })
+    expect(target.setInputFiles).toHaveBeenLastCalledWith(expect.objectContaining({ buffer: Buffer.alloc(0) }), expect.anything())
+  })
+
+  it.each(['YWJj$', 'A', 'AB==', 'YWJj=', 'Y=Q='])('битый base64 %s отклоняется до выбора файла', async (base64) => {
+    const target = locator()
+    expect(await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a', base64 })).toMatchObject({ ok: false, error: expect.stringMatching(/base64/) })
+    expect(target.setInputFiles).not.toHaveBeenCalled()
+  })
+
+  it('принимает форматирование переносами строк и корректный base64 без padding', async () => {
+    const target = locator()
+    for (const base64 of ['aG\nk=', 'aGk']) expect(await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a', base64 })).toMatchObject({ ok: true })
+    expect(target.setInputFiles).toHaveBeenLastCalledWith(expect.objectContaining({ buffer: Buffer.from('hi') }), expect.anything())
   })
 
   it('слишком большой файл отклоняется до обращения к странице', async () => {
@@ -185,7 +192,29 @@ describe('описание элемента и прокрутка (круг 12)'
 
   it('scrollTo сообщает, что элемента нет, а не молчит', async () => {
     expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => true) }), { kind: 'scrollTo', selector: '#a' })).toEqual({ ok: true })
-    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => false) }), { kind: 'scrollTo', selector: '#нет' }))
+    expect(await runSelectorAction(page(locator({ evaluate: async () => { throw new Error('Элемент #нет не найден') } })), { kind: 'scrollTo', selector: '#нет' }))
       .toEqual({ ok: false, error: 'Элемент #нет не найден' })
+  })
+})
+
+describe('однозначные цели', () => {
+  it('не нажимает ни одну из двух видимых кнопок', async () => {
+    const a = locator(), b = locator()
+    const result = await runSelectorAction(page(locator({ all: async () => [a, b] })), { kind: 'click', selector: 'button' })
+    expect(result.error).toContain('несколько')
+    expect(a.click).not.toHaveBeenCalled()
+    expect(b.click).not.toHaveBeenCalled()
+  })
+  it('пропускает скрытую копию поля', async () => {
+    const hidden = locator({ isVisible: async () => false }), visible = locator()
+    expect(await runSelectorAction(page(locator({ all: async () => [hidden, visible], filter: () => visible })), { kind: 'type', selector: 'input', text: 'ok' })).toEqual({ ok: true })
+    expect(hidden.fill).not.toHaveBeenCalled()
+    expect(visible.fill).toHaveBeenCalledWith('ok', expect.anything())
+  })
+  it('скрытый file input допустим, неоднозначный upload запрещён', async () => {
+    const a = locator({ isVisible: async () => false }), b = locator()
+    const action = { kind: 'upload' as const, selector: 'input', name: 'a', base64: 'YQ==' }
+    expect(await runSelectorAction(page(a), action)).toEqual({ ok: true })
+    expect((await runSelectorAction(page(locator({ all: async () => [a, b] })), action)).error).toContain('несколько')
   })
 })

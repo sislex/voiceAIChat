@@ -25,11 +25,13 @@ function makeRunner(overrides: Partial<BrowserRunnerClient> = {}): BrowserRunner
 async function makeApp(opts: {
   conv?: Conversation | null
   runner?: BrowserRunnerClient | undefined
+  previewKey?: () => string
 } = {}) {
   const app = fastify()
   app.addHook('onRequest', async (req) => { (req as unknown as { user: { name: string; role: string } }).user = { name: 'admin', role: 'admin' } })
   registerBrowserRoutes(app, {
-    core: { conversation: async () => opts.conv === undefined ? conversation() : opts.conv } as never,
+    runnerFacingBase: 'http://core:8787/',
+    core: { conversation: async () => opts.conv === undefined ? conversation() : opts.conv, issuePreviewRunKey: opts.previewKey ?? (() => 'preview-key') } as never,
     ...(opts.runner !== undefined ? { runner: opts.runner } : {})
   })
   await app.ready()
@@ -43,8 +45,30 @@ describe('registerBrowserRoutes', () => {
     const res = await app.inject({ method: 'POST', url: '/api/browser/c1/start', payload: { viewport: { width: 1000, height: 700, deviceScaleFactor: 1 } } })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ incarnation: 'inc' })
-    expect(runner.start).toHaveBeenCalledWith({ sessionId: 'c1', userKey: 'admin', conversationKey: 'c1', viewport: { width: 1000, height: 700, deviceScaleFactor: 1 } })
+    expect(runner.start).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'c1', userKey: 'admin', conversationKey: 'c1', profileMode: 'persistent', viewport: { width: 1000, height: 700, deviceScaleFactor: 1 } }))
     await app.close()
+  })
+
+  it('ручной запуск обновляет cookie прокси тем же ключом, что команды модели', async () => {
+    const runner = makeRunner()
+    const previewKey = vi.fn(() => 'fresh-preview-key')
+    const app = await makeApp({ runner, previewKey })
+    try {
+      expect((await app.inject({ method: 'POST', url: '/api/browser/c1/start', payload: {} })).statusCode).toBe(200)
+      expect(previewKey).toHaveBeenCalledWith('admin')
+      expect(runner.start).toHaveBeenCalledWith(expect.objectContaining({ cookies: [{ name: 'vc_preview_run', value: 'fresh-preview-key', url: 'http://core:8787/api/preview' }] }))
+    } finally { await app.close() }
+  })
+
+  it.each(['navigate', 'newTab'] as const)('ручная %s доставляет страницу машины через прокси', async type => {
+    const runner = makeRunner()
+    const app = await makeApp({ runner })
+    try {
+      const target = 'http://dev.machine.internal:5173/app?q=1#/project'
+      const response = await app.inject({ method: 'POST', url: '/api/browser/c1/command', payload: { incarnation: 'inc', command: { type, url: target } } })
+      expect(response.statusCode).toBe(200)
+      expect(runner.command).toHaveBeenCalledWith('c1', expect.objectContaining({ actor: 'user', command: { type, url: `http://core:8787/api/preview?url=${encodeURIComponent(target)}` } }))
+    } finally { await app.close() }
   })
 
   it('command проксирует команду с incarnation, actor=user и сгенерированным requestId', async () => {
@@ -73,6 +97,17 @@ describe('registerBrowserRoutes', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json().dataUrl).toBe('data:image/jpeg;base64,' + Buffer.from([1, 2, 3]).toString('base64'))
     await app.close()
+  })
+
+  it('REST сохраняет область, масштаб и ограничение ожидания снимка', async () => {
+    const runner = makeRunner()
+    const app = await makeApp({ runner })
+    const options = { rect: { x: 40, y: 900, width: 160, height: 90 }, scale: 'css', animations: 'disabled', timeoutMs: 500 }
+    try {
+      const response = await app.inject({ method: 'POST', url: '/api/browser/c1/screenshot', payload: { incarnation: 'inc', ...options } })
+      expect(response.statusCode).toBe(200)
+      expect(runner.screenshot).toHaveBeenCalledWith('c1', expect.objectContaining({ actor: 'user', command: { type: 'screenshot', ...options } }))
+    } finally { await app.close() }
   })
 
   it('чужой/несуществующий разговор — 404, не Playwright Reader — 403', async () => {

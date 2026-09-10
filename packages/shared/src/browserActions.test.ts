@@ -36,13 +36,24 @@ describe('перевод действий модели для Playwright Reader'
     })
   })
 
-  it('прокрутка к краям переводится в крупный шаг колеса', () => {
+  it('переносит порцию текста и фильтр видимости без потери нулевого offset', () => {
+    expect(planModelAction({ kind: 'read', limit: 100, offset: 0 })).toMatchObject({ command: { action: { kind: 'read', limit: 100, offset: 0 } } })
+    expect(planModelAction({ kind: 'find', selector: 'button', visibleOnly: true })).toMatchObject({ command: { action: { kind: 'find', selector: 'button', visibleOnly: true } } })
+  })
+
+  it('все условия wait переходят в команду, diagnostic остаётся у хоста', () => {
+    const conditions = { selector: '#input', text: 'Готово', enabled: true, editable: true, checked: false, value: '', count: 1, url: '**/ready', loadState: 'load' as const, predicate: 'window.appReady', timeoutMs: 30000 }
+    expect(planModelAction({ kind: 'wait', ...conditions, diagnostic: true })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'wait', ...conditions } } })
+  })
+
+  it('прокрутка сохраняет край и контейнер вместо фиксированного шага колеса', () => {
     expect(planModelAction({ kind: 'scroll', to: 'bottom' })).toMatchObject({
-      command: { type: 'input', action: { type: 'wheel', deltaY: 10_000 } }
+      command: { type: 'selector', action: { kind: 'scroll', to: 'bottom' } }
     })
     expect(planModelAction({ kind: 'scroll', to: 'top' })).toMatchObject({
-      command: { action: { deltaY: -10_000 } }
+      command: { action: { to: 'top' } }
     })
+    expect(planModelAction({ kind: 'scroll', selector: '#pane', dy: 400 })).toMatchObject({ command: { action: { selector: '#pane', dy: 400 } } })
   })
 
   it('неподдерживаемое действие отклоняется с объяснением, а не выполняется не тем', () => {
@@ -96,12 +107,11 @@ describe('действия, добавленные кругом 9', () => {
     expect(planModelAction({ kind: 'viewport', width: 0 })).toMatchObject({ command: { type: 'resize', viewport: { width: 1280 } } })
   })
 
-  it('drag по селекторам работает, по координатам — честный отказ', () => {
+  it('drag сохраняет как селекторы, так и пару координат', () => {
     expect(planModelAction({ kind: 'drag', from: { selector: '.card' }, to: { selector: '.column' } }))
       .toMatchObject({ command: { type: 'selector', action: { kind: 'drag', from: '.card', to: '.column' } } })
     const byPoint = planModelAction({ kind: 'drag', from: { x: 10, y: 10 }, to: { x: 20, y: 20 } })
-    expect(byPoint.kind).toBe('unsupported')
-    expect(byPoint.kind === 'unsupported' && byPoint.reason).toContain('селекторами')
+    expect(byPoint).toMatchObject({ kind: 'command', command: { type: 'input', action: { type: 'drag', from: { x: 10, y: 10 }, to: { x: 20, y: 20 } } } })
   })
 
   it('единственное неподдержанное действие объясняется по существу', () => {
@@ -115,4 +125,23 @@ describe('действия, добавленные кругом 9', () => {
     expect(planModelAction({ kind: 'upload', selector: '#file', name: 'a.png', mimeType: 'image/png', base64: 'AA==' }))
       .toMatchObject({ command: { type: 'selector', action: { kind: 'upload', selector: '#file', name: 'a.png', mimeType: 'image/png' } } })
   })
+})
+
+
+it('сохраняет frame для навигации, DOM, ожидания и осмотра', () => {
+  for (const action of [
+    { kind: 'open' as const, url: 'https://child.test/' },
+    { kind: 'read' as const }, { kind: 'wait' as const, predicate: 'window.ready' },
+    { kind: 'evaluate' as const, code: 'location.href' }, { kind: 'styles' as const, selector: '#item' }
+  ]) {
+    const plan = planModelAction({ ...action, frame: ['#preview', '#child'] })
+    expect(plan).toMatchObject({ kind: 'command', command: { frame: ['#preview', '#child'] } })
+  }
+})
+
+it('frame не превращает координаты или общий фокус в действие по родительской странице', () => {
+  for (const action of [
+    { kind: 'press' as const, key: 'Enter' }, { kind: 'back' as const }, { kind: 'console' as const },
+    { kind: 'drag' as const, from: { x: 1, y: 2 }, to: { x: 3, y: 4 } }
+  ]) expect(planModelAction({ ...action, frame: '#preview' })).toMatchObject({ kind: 'unsupported' })
 })

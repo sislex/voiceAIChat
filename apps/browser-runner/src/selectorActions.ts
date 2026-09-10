@@ -1,29 +1,36 @@
-import type { BrowserElementDescription, BrowserSelectorAction, BrowserSelectorResult } from '@voicechat/shared'
-import { describeElementScript, scrollToScript } from './describeElement.js'
+import { BROWSER_UPLOAD_LIMIT_BYTES, isBrowserWaitOptions, type BrowserElementDescription, type BrowserSelectorAction, type BrowserSelectorResult } from '@voicechat/shared'
+import { describeElementScript } from './describeElement.js'
+import { findElements, readPage, readBounds, type ReadContent } from './pageReading.js'
+import { readElementTargets } from './elementTargets.js'
+import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js'
 
 /**
  * Минимум от Playwright, который нужен селекторным действиям. Узкий тип вместо
  * `Page` — чтобы логику можно было проверить без Chromium: тесты подставляют
  * фейковые локаторы.
  */
-export interface SelectorLocator {
+export interface SelectorLocator extends WaitLocator {
   first(): SelectorLocator
   all(): Promise<SelectorLocator[]>
-  click(options?: { timeout?: number; button?: 'left' | 'right'; clickCount?: number }): Promise<void>
+  filter(options: { visible?: boolean; hasText?: string }): SelectorLocator
+  evaluateAll(script: string | ((nodes: unknown[], arg: unknown) => unknown), arg?: unknown): Promise<unknown>
+  click(options?: { timeout?: number; button?: 'left' | 'right'; clickCount?: number; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }): Promise<void>
+  press(key: string, options?: { timeout?: number }): Promise<void>
   fill(value: string, options?: { timeout?: number }): Promise<void>
   innerText(options?: { timeout?: number }): Promise<string>
   isVisible(): Promise<boolean>
-  waitFor(options?: { state?: 'visible'; timeout?: number }): Promise<void>
+  waitFor(options?: { state?: 'attached' | 'detached' | 'visible' | 'hidden'; timeout?: number }): Promise<void>
   hover(options?: { timeout?: number }): Promise<void>
   selectOption(value: string, options?: { timeout?: number }): Promise<unknown>
   check(options?: { timeout?: number }): Promise<void>
   uncheck(options?: { timeout?: number }): Promise<void>
   dragTo(target: SelectorLocator, options?: { timeout?: number }): Promise<void>
+  scrollIntoViewIfNeeded(options?: { timeout?: number }): Promise<void>
   ariaSnapshot(options?: { timeout?: number }): Promise<string>
-  evaluate(fn: string): Promise<unknown>
+  evaluate(fn: string | ((node: unknown, arg: unknown) => unknown), arg?: unknown, options?: { timeout?: number }): Promise<unknown>
   setInputFiles(files: { name: string; mimeType: string; buffer: Buffer }, options?: { timeout?: number }): Promise<void>
 }
-export interface SelectorPage {
+export interface SelectorPage extends WaitPage {
   locator(selector: string): SelectorLocator
   getByText(text: string, options?: { exact?: boolean }): SelectorLocator
   keyboard: { press(key: string): Promise<void> }
@@ -38,41 +45,94 @@ export interface SelectorPage {
  * не исключением: модель должна увидеть причину, а не «команда не выполнена».
  */
 /** Потолок загрузки: содержимое едет в JSON, base64 раздувает его на треть. */
-const UPLOAD_LIMIT_BYTES = 8 * 1024 * 1024
+const UPLOAD_LIMIT_BYTES = BROWSER_UPLOAD_LIMIT_BYTES
 
-export async function runSelectorAction(page: SelectorPage, action: BrowserSelectorAction): Promise<BrowserSelectorResult> {
+/** Отказываем при неоднозначности: порядок DOM не выражает намерение модели. */
+export async function uniqueTarget(target: SelectorLocator, timeout: number, hiddenAllowed = false): Promise<SelectorLocator> {
+  const deadline = Date.now() + timeout
+  const strict = hiddenAllowed ? target : target.filter({ visible: true })
+  do {
+    const count = await strict.count()
+    if (count > 1) throw new Error(`Найдено несколько доступных элементов (${count}). Уточните селектор через find.`)
+    if (count === 1) {
+      // Копия DOM с тем же атрибутом не является исходным найденным узлом.
+      const valid = await strict.evaluate(node => {
+        const element = node as { getAttribute(name: string): string | null }
+        const ref = element.getAttribute('data-voicechat-reader-ref')
+        const state = (globalThis as unknown as { __voicechatReaderReferences?: { nodes: WeakMap<object, string> } }).__voicechatReaderReferences
+        return !ref || state?.nodes.get(element) === ref
+      })
+      if (valid === false) throw new Error('stale_element_ref: Найдите элемент заново через find')
+      return strict
+    }
+    if (Date.now() >= deadline) break
+    await new Promise(resolve => setTimeout(resolve, Math.min(40, Math.max(0, deadline - Date.now()))))
+  } while (Date.now() <= deadline)
+  throw new Error(hiddenAllowed ? 'Элемент не найден' : 'Доступный элемент не найден')
+}
+
+export async function runSelectorAction(page: SelectorPage, action: BrowserSelectorAction, publicUrl: (raw: string) => string = raw => raw): Promise<BrowserSelectorResult> {
   const timeout = 'timeoutMs' in action && typeof action.timeoutMs === 'number' ? Math.min(Math.max(action.timeoutMs, 100), 30_000) : 5_000
   const locate = (selector?: string, text?: string): SelectorLocator | null =>
-    selector ? page.locator(selector) : text ? page.getByText(text, { exact: false }) : null
+    selector ? (text ? page.locator(selector).filter({ hasText: text }) : page.locator(selector)) : text ? page.getByText(text, { exact: false }) : null
   try {
+    if (action.kind === 'wait') {
+      if (!isBrowserWaitOptions(action)) return { ok: false, error: 'Некорректные или несовместимые условия ожидания' }
+      const started = performance.now()
+      if ((action.selector || action.text) && action.count === undefined && (action.state === undefined || action.state === 'visible')) {
+        await uniqueTarget(locate(action.selector, action.text)!, timeout)
+      }
+      const result = await waitForConditions(page, { ...action, timeoutMs: Math.max(1, Math.ceil(timeout - (performance.now() - started))) }, publicUrl)
+      return { ...result, waitedMs: Math.round(performance.now() - started) }
+    }
     if (action.kind === 'click') {
       const target = locate(action.selector, action.text)
       if (!target) return { ok: false, error: 'Нужен selector или text' }
-      await target.first().click({ timeout, button: action.button ?? 'left', clickCount: action.clickCount ?? 1 })
+      await (await uniqueTarget(target, timeout)).click({ timeout, button: action.button ?? 'left', clickCount: action.clickCount ?? 1, ...(action.modifiers ? { modifiers: action.modifiers } : {}) })
       return { ok: true }
     }
+    if (action.kind === 'press') {
+      await (await uniqueTarget(page.locator(action.selector), timeout)).press(action.key, { timeout })
+      return { ok: true }
+    }
+    if (action.kind === 'scroll') {
+      // document.scrollingElement и вложенный контейнер имеют разные позиции.
+      // Ждём два кадра, чтобы scroll-событие уже увидели обработчики страницы.
+      const target = await uniqueTarget(page.locator(action.selector || 'body'), timeout)
+      const scrolled = await target.evaluate((element, value) => {
+        const scope = globalThis as unknown as {
+          document: { body: unknown; documentElement: unknown; scrollingElement: unknown }
+          requestAnimationFrame(callback: () => void): void
+        }
+        const node = (element === scope.document.body || element === scope.document.documentElement ? scope.document.scrollingElement : element) as {
+          scrollTop: number; scrollLeft: number; scrollHeight: number; scrollWidth: number; clientWidth: number; clientHeight: number; scrollTo(options: { top: number; left: number; behavior: string }): void
+        }
+        const options = value as { to?: 'top' | 'bottom'; dy: number; dx: number }
+        const top = options.to === 'top' ? 0 : options.to === 'bottom' ? node.scrollHeight : node.scrollTop + options.dy
+        node.scrollTo({ top, left: node.scrollLeft + options.dx, behavior: 'instant' })
+        return new Promise(resolve => scope.requestAnimationFrame(() => scope.requestAnimationFrame(() => resolve({ top: node.scrollTop, left: node.scrollLeft, maxTop: Math.max(0, node.scrollHeight - node.clientHeight), maxLeft: Math.max(0, node.scrollWidth - node.clientWidth) }))))
+      }, { to: action.to, dy: action.dy ?? (action.dx === undefined ? 400 : 0), dx: action.dx ?? 0 }, { timeout })
+      return { ok: true, scrolled: scrolled as BrowserSelectorResult['scrolled'] }
+    }
     if (action.kind === 'type') {
-      await page.locator(action.selector).first().fill(action.text, { timeout })
+      await (await uniqueTarget(page.locator(action.selector), timeout)).fill(action.text, { timeout })
       if (action.submit) await page.keyboard.press('Enter')
       return { ok: true }
     }
     if (action.kind === 'read') {
-      const target = action.selector ? page.locator(action.selector).first() : page.locator('body')
-      const text = (await target.innerText({ timeout })).trim()
-      const limit = Math.min(Math.max(action.limit ?? 4000, 100), 20_000)
-      // Обрезка сообщается признаком, а не только многоточием в конце: по
-      // многоточию не отличить усечение от текста, который сам им кончается.
-      return text.length > limit ? { ok: true, text: `${text.slice(0, limit)}…`, truncated: true } : { ok: true, text }
+      const options = readBounds(action.limit, action.offset)
+      const target = await uniqueTarget(page.locator(action.selector || 'body'), timeout)
+      return await readElementTargets(page, async () => ({ ok: true, ...await target.evaluate(readPage, options, { timeout }) as ReadContent }))
     }
     if (action.kind === 'hover') {
       const target = locate(action.selector, action.text)
       if (!target) return { ok: false, error: 'Нужен selector или text' }
-      await target.first().hover({ timeout })
+      await (await uniqueTarget(target, timeout)).hover({ timeout })
       return { ok: true }
     }
     if (action.kind === 'set') {
       // Три разных контрола под одним действием: `type` не берёт ни один из них.
-      const target = page.locator(action.selector).first()
+      const target = await uniqueTarget(page.locator(action.selector), timeout)
       if (typeof action.checked === 'boolean') {
         await (action.checked ? target.check({ timeout }) : target.uncheck({ timeout }))
         return { ok: true }
@@ -84,28 +144,36 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       catch { await target.fill(action.value, { timeout }); return { ok: true } }
     }
     if (action.kind === 'drag') {
-      await page.locator(action.from).first().dragTo(page.locator(action.to).first(), { timeout })
+      await (await uniqueTarget(page.locator(action.from), timeout)).dragTo(await uniqueTarget(page.locator(action.to), timeout), { timeout })
       return { ok: true }
     }
     if (action.kind === 'upload') {
       // Файл приходит base64 и уходит в память Playwright: писать его на диск
       // раннера незачем, а вот ограничить размер — обязательно.
-      const buffer = Buffer.from(action.base64, 'base64')
-      if (!buffer.length) return { ok: false, error: 'Пустое содержимое файла' }
+      const encoded = action.base64.replace(/\s/g, '')
+      // Buffer.from пропускает мусор; без проверки модель загружала другой файл
+      // и получала ok. Проверяем до выделения памяти, пустой файл допустим.
+      if (encoded.length > Math.ceil(UPLOAD_LIMIT_BYTES / 3) * 4) return { ok: false, error: 'Файл больше 8 МБ' }
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 === 1 || (encoded.includes('=') && encoded.length % 4 !== 0)) return { ok: false, error: 'Некорректное содержимое base64' }
+      const buffer = Buffer.from(encoded, 'base64')
+      if (buffer.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) return { ok: false, error: 'Некорректное содержимое base64' }
       if (buffer.length > UPLOAD_LIMIT_BYTES) return { ok: false, error: `Файл больше ${Math.round(UPLOAD_LIMIT_BYTES / 1024 / 1024)} МБ` }
-      await page.locator(action.selector).first().setInputFiles({ name: action.name, mimeType: action.mimeType || 'application/octet-stream', buffer }, { timeout })
+      await (await uniqueTarget(page.locator(action.selector), timeout, true)).setInputFiles({ name: action.name, mimeType: action.mimeType || 'application/octet-stream', buffer }, { timeout })
       return { ok: true }
     }
     if (action.kind === 'describe') {
-      const found = await page.evaluate(describeElementScript(action.x, action.y)) as BrowserElementDescription | null
-      return found ? { ok: true, element: found } : { ok: false, error: 'В этой точке нет элемента' }
+      return await readElementTargets(page, async () => {
+        const found = await page.evaluate(describeElementScript(action.x, action.y)) as BrowserElementDescription | null
+        return found ? { ok: true, element: found } : { ok: false, error: 'В этой точке нет элемента' }
+      })
     }
     if (action.kind === 'scrollTo') {
-      const reached = await page.evaluate(scrollToScript(action.selector))
-      return reached ? { ok: true } : { ok: false, error: `Элемент ${action.selector} не найден` }
+      const target = await uniqueTarget(page.locator(action.selector), timeout)
+      await target.evaluate(node => (node as { scrollIntoView(options: { block: string; inline: string; behavior: string }): void }).scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))
+      return { ok: true }
     }
     if (action.kind === 'a11y') {
-      const target = action.selector ? page.locator(action.selector).first() : page.locator('body')
+      const target = await uniqueTarget(page.locator(action.selector || 'body'), timeout)
       const snapshot = await target.ariaSnapshot({ timeout })
       const limit = Math.min(Math.max(action.limit ?? 4000, 100), 20_000)
       return snapshot.length > limit ? { ok: true, text: `${snapshot.slice(0, limit)}…`, truncated: true } : { ok: true, text: snapshot }
@@ -114,18 +182,10 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const target = locate(action.selector, action.text)
       if (!target) return { ok: false, error: 'Нужен selector или text' }
       const limit = Math.min(Math.max(action.limit ?? 10, 1), 50)
-      const found = await target.all()
-      const matches = await Promise.all(found.slice(0, limit).map(async (item: SelectorLocator, index: number) => ({
-        selector: action.selector ? `${action.selector} >> nth=${index}` : `text=${action.text ?? ''} >> nth=${index}`,
-        text: (await item.innerText().catch(() => '')).trim().slice(0, 200),
-        visible: await item.isVisible().catch(() => false)
-      })))
-      return { ok: true, matches }
+      const filtered = action.visibleOnly !== false ? target.filter({ visible: true }) : target
+      return await readElementTargets(page, async () => ({ ok: true, ...await filtered.evaluateAll(findElements, limit) as ReadContent }))
     }
-    const target = locate(action.selector, action.text)
-    if (!target) return { ok: false, error: 'Нужен selector или text' }
-    await target.first().waitFor({ state: 'visible', timeout })
-    return { ok: true }
+    return { ok: false, error: 'Неизвестное селекторное действие' }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message.split('\n')[0] : 'Действие не выполнено' }
   }

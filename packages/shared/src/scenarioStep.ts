@@ -8,7 +8,9 @@
 // у сервера это HTTP к раннеру, у пробы тот же HTTP, у панели мост `window`.
 
 import type { AutomatedQaScenarioStep } from './qa'
-import type { BrowserCommand, BrowserSelectorResult } from './types'
+import { isBrowserSessionMetadata, type BrowserCommand } from './types'
+import { isPreviewAction } from './previewActions'
+import { readScenarioText, type ScenarioText } from './scenarioReading'
 import { planModelAction } from './browserActions'
 
 export interface ScenarioStepOutcome {
@@ -71,63 +73,65 @@ export function stepHint(detail: string): string {
 
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000
 const DEFAULT_POLL_MS = 250
-/**
- * Сколько текста страницы читать под проверку. Раннер по умолчанию отдаёт 4000
- * символов — этого хватает модели, которой текст идёт в контекст, но не
- * проверке: измерено на собственной странице настроек (5807 символов), где
- * ожидаемый текст стоял на позиции 4488 и шаг проваливался словами «на странице
- * нет ожидаемого текста». Ложный провал этапа возвращает задачу в разработку
- * из-за дефекта, которого нет. Берём потолок раннера.
- */
-const EXPECT_READ_LIMIT = 20_000
+/** Команда обязана подтвердить действие: отсутствие ответа не означает успех. */
+export function scenarioCommandError(response: unknown): string | null {
+  if (!response || typeof response !== 'object') return 'Раннер не подтвердил выполнение действия'
+  const result = response as { ok?: unknown; error?: unknown }
+  if (result.ok === false) return firstLine(result.error) || 'Действие не выполнено'
+  if (isBrowserSessionMetadata(response)) {
+    return response.state === 'ready' ? null : response.error?.message || 'Сессия Chromium не готова'
+  }
+  return result.ok === true ? null : 'Раннер не подтвердил выполнение действия'
+}
 
 export async function runScenarioStep(
   step: AutomatedQaScenarioStep,
   send: ScenarioSend,
   options: ScenarioStepOptions = {}
 ): Promise<ScenarioStepOutcome> {
+  if (!isPreviewAction(step.action)) return { ok: false, detail: 'Некорректное действие сценария', unsupported: true, unverifiable: true, failure: 'action' }
   const plan = planModelAction(step.action)
   if (plan.kind === 'unsupported') return { ok: false, detail: plan.reason, unsupported: true, unverifiable: true, failure: 'action' }
   let response: unknown
   try { response = await send(plan.command) } catch (error) { return { ok: false, detail: firstLine(error), failure: 'action' } }
-  const selector = response as BrowserSelectorResult | null
-  if (selector && typeof selector === 'object' && 'ok' in selector && selector.ok === false) {
-    return { ok: false, detail: selector.error ?? 'Действие не выполнено', failure: 'action' }
-  }
+  const actionError = scenarioCommandError(response)
+  if (actionError) return { ok: false, detail: actionError, failure: 'action' }
   if (!step.expectText && !step.expectAbsentText) return { ok: true, detail: '' }
 
   const now = options.now ?? Date.now
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
-  const deadline = now() + (options.expectTimeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS)
-  let pageText = ''
-  let truncated = false
+  const timeout = options.expectTimeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS
+  const poll = options.pollMs ?? DEFAULT_POLL_MS
+  if (!Number.isFinite(timeout) || timeout < 0 || !Number.isFinite(poll) || poll <= 0) {
+    return { ok: false, detail: 'Неверное время ожидания сценария', failure: 'expectation', unverifiable: true }
+  }
+  const deadline = now() + timeout
+  let snapshot: ScenarioText = { text: '', complete: false }
+  let missing = false, present = false
   for (;;) {
     try {
-      const read = await send({ type: 'selector', action: { kind: 'read', limit: EXPECT_READ_LIMIT } }) as BrowserSelectorResult
-      pageText = typeof read?.text === 'string' ? read.text : ''
-      truncated = read?.truncated === true
+      snapshot = await readScenarioText(send, { expectText: step.expectText, expectAbsentText: step.expectAbsentText, frame: step.action.frame })
     } catch (error) {
-      return { ok: false, detail: `Текст страницы не прочитан: ${firstLine(error)}`, failure: 'expectation' }
+      return { ok: false, detail: `Текст страницы не прочитан: ${firstLine(error)}`, failure: 'expectation', unverifiable: true }
     }
-    const missing = step.expectText ? !pageText.includes(step.expectText) : false
-    const present = step.expectAbsentText ? pageText.includes(step.expectAbsentText) : false
-    if (!missing && !present) return { ok: true, detail: '' }
-    if (now() >= deadline) {
-      // Показываем, что на странице всё-таки есть: «нет текста X» без этого не
-      // объясняет, куда смотреть.
-      const seen = pageText.trim().slice(0, 200)
-      // Обрезанное чтение не даёт права утверждать, что текста нет: до него
-      // просто не дочитали. Обратная проверка («текста быть не должно») от
-      // обрезки не страдает — найденное найдено.
-      const what = missing
-        ? truncated
-          ? `Текст страницы прочитан не целиком (первые ${EXPECT_READ_LIMIT} символов), ожидаемого текста «${step.expectText}» в этой части нет`
-          : `На странице нет ожидаемого текста «${step.expectText}»`
-        : `На странице найден недопустимый текст «${step.expectAbsentText}»`
-      return { ok: false, detail: seen ? `${what}. Видно: ${seen}` : what, failure: 'expectation', ...(missing && truncated ? { unverifiable: true } : {}) }
-    }
-    await sleep(options.pollMs ?? DEFAULT_POLL_MS)
+    missing = Boolean(step.expectText && !snapshot.text.includes(step.expectText))
+    present = Boolean(step.expectAbsentText && snapshot.text.includes(step.expectAbsentText))
+    if (!missing && !present && (!step.expectAbsentText || snapshot.complete)) return { ok: true, detail: '' }
+    const remaining = deadline - now()
+    if (remaining <= 0) break
+    await sleep(Math.min(poll, remaining))
+    // Сон до самого предела не даёт разрешения на ещё одно чтение за ним.
+    if (now() >= deadline) break
   }
+  const incomplete = !snapshot.complete && !present
+  const what = present
+    ? `На странице найден недопустимый текст «${step.expectAbsentText}»`
+    : incomplete
+      ? `Текст страницы прочитан не целиком: ${snapshot.reason || 'продолжение недоступно'}. Проверку ${missing ? `наличия «${step.expectText}»` : `отсутствия «${step.expectAbsentText}»`} подтвердить нельзя`
+      : `На странице нет ожидаемого текста «${step.expectText}»`
+  const seen = snapshot.text.trim().slice(0, 200)
+  return { ok: false, detail: seen ? `${what}. Видно: ${seen}` : what, failure: 'expectation', ...(incomplete ? { unverifiable: true } : {}) }
+
 }
 
 /**
@@ -141,6 +145,7 @@ export function scenarioProblems(scenario: { startUrl: string; steps: AutomatedQ
   if (!scenario.steps.length) problems.push('В сценарии нет ни одного шага')
   scenario.steps.forEach((step, index) => {
     const position = `Шаг ${index + 1} («${step.title}»)`
+    if (!isPreviewAction(step.action)) { problems.push(`${position}: некорректное действие`); return }
     const plan = planModelAction(step.action)
     if (plan.kind === 'unsupported') { problems.push(`${position}: ${plan.reason}`); return }
     const selector = 'selector' in step.action ? step.action.selector : undefined

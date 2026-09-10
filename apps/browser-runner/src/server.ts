@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
-import type { BrowserCommandRequest } from '@voicechat/shared'
+import { BROWSER_COMMAND_BODY_LIMIT, BROWSER_SCREENSHOT_HEADER, type BrowserCommandRequest } from '@voicechat/shared'
 import { registerRunnerAuth, type HostAliases } from './security.js'
 import { BrowserSessionManager, type StartSessionRequest } from './sessionManager.js'
 
@@ -86,10 +86,15 @@ export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Pr
     try { return await sessions.start(request.body) }
     catch (error) { return reply.code(503).send({ error: 'start_failed', message: error instanceof Error ? error.message : 'unknown error' }) }
   })
-  app.post<{ Params: { id: string }; Body: BrowserCommandRequest }>('/v1/sessions/:id/commands', async (request, reply) => {
+  app.post<{ Params: { id: string }; Body: BrowserCommandRequest }>('/v1/sessions/:id/commands', { bodyLimit: BROWSER_COMMAND_BODY_LIMIT }, async (request, reply) => {
     try {
       const result = await sessions.command(request.params.id, request.body)
-      if (Buffer.isBuffer(result)) return reply.type('image/png').send(result)
+      if ('buffer' in result) {
+        const metadata = Buffer.from(JSON.stringify(result.metadata)).toString('base64url')
+        // Огромный title/URL не должен ломать доставку самого изображения.
+        if (metadata.length <= 8192) reply.header(BROWSER_SCREENSHOT_HEADER, metadata)
+        return reply.type(result.mimeType).send(result.buffer)
+      }
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : 'internal'
