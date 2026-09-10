@@ -2448,6 +2448,49 @@ scenarioUrl многостраничного сценария. Legacy origin+pat
 `webRecorderScenario.test.ts`, `scenarioStorage.test.ts`, `playwrightExport.test.ts`,
 DOM Recorder и `e2e/webReaderScenarioStorage.e2e.test.ts`.
 
+### Model-facing Web Reader audits
+
+The `audit` MCP tool inspects the live proxy document without modifying it.
+`packages/shared/src/previewAudit.ts` defines bounded options and evidence; the
+`audit` action travels through the existing Reader relay and recorder bridge.
+`apps/web-reader/src/routes/audit/runtime.ts` executes registered checks, and
+`markup.ts` supplies 30 markup checks. Use `mode: list` to discover rule IDs;
+`mode: run` is the default. `group` defaults to `markup`, `rules` narrows checks,
+and `selector` must resolve to one element. Document-only checks explicitly report
+when the chosen scope excludes them.
+
+Reports distinguish observed failures from heuristic candidates, include selectors
+and evidence, and expose `nextOffset`, scan counts, truncation and limitations.
+The scan is capped at 3,000 elements and 500 findings, with at most 30 results per
+response and a further serialized-size budget. Audit evidence does not read input
+values. The current surface is the rewritten proxy document; child frames and
+shadow roots are not covered, and an empty report is not a whole-page QA pass.
+Chromium Reader does not silently fall back to proxy auditing.
+
+External-site probes on 2026-09-11 demonstrated why bridge readiness and empty
+error logs are insufficient: Google showed consent, Facebook an error document,
+and Instagram changed from its splash screen to page-unavailable with consent.
+All had an attached Reader bridge and no observed JS exception. These are local
+public-page observations, not an authenticated compatibility guarantee. Original
+browser-origin flows use the existing `previewEngine: chromium` path described in
+[the native Reader section](features/playwright-reader.md#полный-chromium-внутри-web-reader-2026-09-10).
+The new audit command currently targets proxy mode; native audit parity remains
+separate work. Switching engines does not copy cookies between their sessions.
+
+A same-day probe through the actual `BrowserSessionManager` rendered Google's
+consent page and the Facebook/Instagram login forms behind cookie dialogs in fresh
+Chromium sessions. Screenshots confirmed those states. Both Meta sites logged a
+Credential Management service error despite rendering usable controls. No login or
+consent choice was attempted. These observations show why diagnosis must combine
+rendered state, network evidence and console errors rather than use one success flag.
+
+The checks cover document metadata, IDs and references, names and labels,
+landmarks, headings, nested controls, details, tables, lists and focus order.
+`e2e/webReaderAudit.e2e.test.ts` verifies a broken/repaired document pair for each
+rule in real Chromium, plus scope, pagination, limits and sensitive-value exclusion.
+`VC_VISUAL_ARTIFACTS` saves the visual fixture. The 30-cycle implementation plan is
+`docs/plans/web-reader-model-qa-30-cycles.md`; planned cycles are not completed work.
+
 ### Edit-режим: правки страницы в браузере клиента
 
 Кнопка «✎ Редактировать» в тулбаре Reader включает edit-режим инъецированного скрипта сообщением `voicechat.preview.edit.v1` (канал Reader ↔ страница; host-контракт не участвует). При наведении элемент подсвечивается тем же overlay, что у инспектора; клик выбирает элемент и рисует под ним тёмную панель в духе Figma Make (`[data-voicechat-inspector="edit-panel"]`): шрифт (select), размер −/+, жирный, курсив, выравнивание, «✎» — contenteditable-редактирование текста, «⟲» — сброс правок элемента к исходным inline-стилям и тексту, «🗑» — удаление (`display:none !important`), «✕» — закрыть. Esc закрывает панель, повторный Esc выключает режим и сообщает Reader-у `enabled:false`. Инспектор и edit-режим взаимоисключаются.
