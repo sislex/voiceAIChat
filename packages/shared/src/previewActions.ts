@@ -11,6 +11,7 @@
 // без DOM и сети, чтобы обе стороны (сервер и UI) проверяли одно и то же.
 
 import type { BrowserActionOutcome } from './playwrightReader'
+import { BROWSER_UPLOAD_LIMIT_BYTES } from './browserLimits'
 
 export const PREVIEW_ACTION_COMMAND_TYPE = 'voicechat.preview.action.v1' as const
 export const PREVIEW_ACTION_RESULT_TYPE = 'voicechat.preview.action-result.v1' as const
@@ -41,8 +42,8 @@ export const PREVIEW_ACTION_LIMITS = {
   /** Код evaluate и сериализованное значение его результата. */
   evaluateCode: 4_000,
   evaluateValue: 8_000,
-  /** Файл upload: base64-содержимое (~1 МБ бинарных данных). */
-  uploadBase64: 1_500_000,
+  /** Файл upload: до 8 МиБ бинарных данных с учётом увеличения в base64. */
+  uploadBase64: Math.ceil(BROWSER_UPLOAD_LIMIT_BYTES / 3) * 4,
   /** Журналы network/console: сколько записей отдаётся за раз. */
   logDefault: 50,
   logMax: 100,
@@ -462,7 +463,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         bounded(value.selector, L.selector) &&
         bounded(value.name, 255) && value.name.length > 0 &&
         optBounded(value.mimeType, 100) &&
-        bounded(value.base64, L.uploadBase64) && value.base64.length > 0
+        bounded(value.base64, L.uploadBase64)
       )
     case 'viewport':
       return typeof value.width === 'number' && Number.isFinite(value.width) && value.width >= 0 && value.width <= 10_000

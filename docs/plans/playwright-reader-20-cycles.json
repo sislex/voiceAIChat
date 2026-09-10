@@ -217,7 +217,7 @@
     },
     {
       "number": 2,
-      "status": "validated",
+      "status": "complete",
       "startedAt": "2026-09-09T23:00:28.469392+00:00",
       "items": [
         {
@@ -383,13 +383,190 @@
           "durationMs": 577651
         }
       },
-      "validatedAt": "2026-09-09T23:21:09.144400+00:00"
+      "validatedAt": "2026-09-09T23:21:09.144400+00:00",
+      "commit": "0c0437f7ef760fd04de9b32cfbd5fd7901efcf59",
+      "completedAt": "2026-09-09T23:23:24.358846+00:00"
     },
     {
       "number": 3,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "in_progress",
+      "startedAt": "2026-09-09T23:23:24.358846+00:00",
+      "items": [
+        {
+          "id": "03-01",
+          "title": "Модификаторы клика модели доходят до элемента",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-02",
+          "title": "Нажатие клавиши адресуется указанному селектору",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-03",
+          "title": "Прокрутка модели работает внутри указанного контейнера",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-04",
+          "title": "Переход к краю прокрутки достигает конца длинной страницы",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-05",
+          "title": "Изменение ширины моделью сохраняет высоту текущего окна",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-06",
+          "title": "Модель выполняет перетаскивание по координатам",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-07",
+          "title": "Ответ селекторного действия сообщает текущую страницу",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-08",
+          "title": "Загрузка пустого файла поддерживается по всему пути",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-09",
+          "title": "Повреждённый base64 отклоняется без тихой порчи файла",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-10",
+          "title": "Заявленные 8 МБ загрузки проходят MCP и HTTP раннера",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        }
+      ],
+      "rejectedHypotheses": [
+        "Выбор option по подписи уже работает в установленном Playwright; базовый живой тест прошёл.",
+        "Установка range и события input/change уже работают; базовый живой тест прошёл."
+      ],
+      "validation": {
+        "baseline": {
+          "initialFailed": 8,
+          "initialPassed": 2,
+          "replacementFailed": 2,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-03-baseline.log",
+            "/tmp/voicechat-reader-cycle-03-extra-baseline.log"
+          ]
+        },
+        "focusedRunner": {
+          "passed": 38,
+          "liveForms": 12,
+          "durationMs": 3980,
+          "log": "/tmp/voicechat-reader-cycle-03-forms-final.log"
+        },
+        "focusedShared": {
+          "passed": 46,
+          "durationMs": 572,
+          "log": "/tmp/voicechat-reader-cycle-03-shared.log"
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 16130
+        },
+        "browserE2E": {
+          "initialPassed": 6,
+          "initialDurationMs": 11790,
+          "initialLog": "/tmp/voicechat-reader-cycle-03-e2e.log",
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-03-e2e-verified.log",
+          "exitCode": 0,
+          "passed": 6,
+          "durationMs": 53100,
+          "actionsMs": 10190,
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-03",
+          "previousBuiltRun": {
+            "exitCode": 0,
+            "durationMs": 79320,
+            "log": "/tmp/voicechat-reader-cycle-03-e2e-final.log"
+          },
+          "harnessNote": "Chromium раннера закрывается до ядра. Улучшение времени не заявляется: длительность стенда меняется под параллельной нагрузкой."
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-03-fast-verified.log",
+          "previousAttempt": {
+            "exitCode": 1,
+            "reason": "scenarioStep.test.ts ожидал старый wheel вместо исправленного selector scroll."
+          },
+          "exitCode": 0,
+          "failedTest": "предельные 8 МБ через HTTP раннера",
+          "reason": "Таймаут 30 с в общем прогоне, отдельный и E2E проходили; причина проверяется.",
+          "previousFinalAttempt": {
+            "status": "failed",
+            "log": "/tmp/voicechat-reader-cycle-03-fast-final.log",
+            "exitCode": 1,
+            "failedTest": "предельные 8 МБ через HTTP раннера",
+            "reason": "Таймаут 30 с в общем прогоне, отдельный и E2E проходили; причина проверяется."
+          },
+          "passed": 7269,
+          "failed": 0,
+          "skipped": 45,
+          "durationMs": 506500,
+          "concurrency": "--jobs 1, Vitest forks/threads min 1 max 2"
+        },
+        "fullGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-03-gate.log",
+          "exitCode": 0,
+          "passedWorkspaceTests": 7600,
+          "exitEvidence": "Завершение PTY 45333: chunk 32a1a7, exit_code 0; сохранённый результат инструмента этой сессии."
+        },
+        "isolatedUpload": {
+          "exitCode": 0,
+          "testDurationMs": 2858,
+          "log": "/tmp/voicechat-reader-cycle-03-upload-isolated.log"
+        }
+      },
+      "validatedAt": "2026-09-10T00:02:16.493126+00:00"
     },
     {
       "number": 4,
@@ -559,6 +736,24 @@
       "cycle": 2,
       "phase": "implementation-complete",
       "detail": "Состояние и кадры синхронизированы; 9 регрессий UI и 2 раннера воспроизведены на предыдущей реализации. Визуально подтверждены актуальный URL Make, автор-модель, отсутствие ложного offOrigin и предупреждение при потере кадров."
+    },
+    {
+      "at": "2026-09-09T23:28:20.109611+00:00",
+      "cycle": 3,
+      "phase": "baseline",
+      "detail": "8/10 первоначальных живых проверок упали. Два работавших поведения исключены из счёта улучшений; добавлены сохранение высоты viewport и drag по координатам."
+    },
+    {
+      "at": "2026-09-09T23:43:18.525676+00:00",
+      "cycle": 3,
+      "phase": "gate-failure",
+      "detail": "Повторный gate:fast: 7268 passed, 1 failed (30-секундный таймаут живого теста upload). Параллельно шёл полный гейт; дальнейшие гейты запускаются последовательно с меньшим числом воркеров, без изменения состава проверок."
+    },
+    {
+      "at": "2026-09-10T00:02:16.493126+00:00",
+      "cycle": 3,
+      "phase": "validation-complete",
+      "detail": "Полный gate exit 0 (7600 тестов, web, Storybook). Последовательный fast gate exit 0 (7269 passed, 45 skipped, 0 failed), 506500 мс. Таймаут 8 МиБ не повторился; без ослабления теста. Связь с нагрузкой наблюдается, точная причина таймаута не установлена."
     }
   ],
   "backlogEvidence": [

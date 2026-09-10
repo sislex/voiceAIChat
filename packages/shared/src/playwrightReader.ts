@@ -2,12 +2,13 @@
 // а ядро и отдельный процесс обмениваются только этими RPC и результатами действий.
 import type { BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata } from './types'
 import type { PreviewActionResult } from './previewActions'
+import { BROWSER_COMMAND_BODY_LIMIT } from './browserLimits'
 
 export const INTERNAL_PLAYWRIGHT_READER_CORE_PATH = '/internal/playwright-reader/core'
 export const INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH = '/internal/playwright-reader/service'
 export const PLAYWRIGHT_READER_CORE_METHODS = ['conversation', 'modelTarget', 'issuePreviewRunKey', 'logBrowserShot'] as const
 export const PLAYWRIGHT_READER_SERVICE_METHODS = ['execute', 'screenshot'] as const
-export const PLAYWRIGHT_READER_RPC_BODY_LIMIT = 16 * 1024 * 1024
+export const PLAYWRIGHT_READER_RPC_BODY_LIMIT = BROWSER_COMMAND_BODY_LIMIT
 
 export interface BrowserActionOutcome {
   ok: boolean

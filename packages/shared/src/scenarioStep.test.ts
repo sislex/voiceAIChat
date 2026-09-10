@@ -34,7 +34,7 @@ describe('runScenarioStep', () => {
     const sent: unknown[] = []
     const send = vi.fn(async (command: unknown) => { sent.push(command); return { ok: true } })
     expect(await runScenarioStep(step({ action: { kind: 'scroll', dy: 400 } }), send)).toEqual({ ok: true, detail: '' })
-    expect(sent[0]).toMatchObject({ type: 'input', action: { type: 'wheel', deltaY: 400 } })
+    expect(sent[0]).toMatchObject({ type: 'selector', action: { kind: 'scroll', dy: 400 } })
   })
 
   it('неисполнимое действие отличается от провала проверки', async () => {

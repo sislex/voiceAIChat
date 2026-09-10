@@ -2,6 +2,7 @@
 // переиспользуемые desktop/server/web.
 
 export * from './types'
+export * from './browserLimits'
 export * from './protocol'
 export * from './stateMachine'
 export * from './sentences'

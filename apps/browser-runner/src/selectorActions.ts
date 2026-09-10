@@ -1,4 +1,4 @@
-import type { BrowserElementDescription, BrowserSelectorAction, BrowserSelectorResult } from '@voicechat/shared'
+import { BROWSER_UPLOAD_LIMIT_BYTES, type BrowserElementDescription, type BrowserSelectorAction, type BrowserSelectorResult } from '@voicechat/shared'
 import { describeElementScript, scrollToScript } from './describeElement.js'
 
 /**
@@ -9,7 +9,8 @@ import { describeElementScript, scrollToScript } from './describeElement.js'
 export interface SelectorLocator {
   first(): SelectorLocator
   all(): Promise<SelectorLocator[]>
-  click(options?: { timeout?: number; button?: 'left' | 'right'; clickCount?: number }): Promise<void>
+  click(options?: { timeout?: number; button?: 'left' | 'right'; clickCount?: number; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }): Promise<void>
+  press(key: string, options?: { timeout?: number }): Promise<void>
   fill(value: string, options?: { timeout?: number }): Promise<void>
   innerText(options?: { timeout?: number }): Promise<string>
   isVisible(): Promise<boolean>
@@ -20,7 +21,7 @@ export interface SelectorLocator {
   uncheck(options?: { timeout?: number }): Promise<void>
   dragTo(target: SelectorLocator, options?: { timeout?: number }): Promise<void>
   ariaSnapshot(options?: { timeout?: number }): Promise<string>
-  evaluate(fn: string): Promise<unknown>
+  evaluate(fn: string | ((node: unknown, arg: unknown) => unknown), arg?: unknown, options?: { timeout?: number }): Promise<unknown>
   setInputFiles(files: { name: string; mimeType: string; buffer: Buffer }, options?: { timeout?: number }): Promise<void>
 }
 export interface SelectorPage {
@@ -38,7 +39,7 @@ export interface SelectorPage {
  * не исключением: модель должна увидеть причину, а не «команда не выполнена».
  */
 /** Потолок загрузки: содержимое едет в JSON, base64 раздувает его на треть. */
-const UPLOAD_LIMIT_BYTES = 8 * 1024 * 1024
+const UPLOAD_LIMIT_BYTES = BROWSER_UPLOAD_LIMIT_BYTES
 
 export async function runSelectorAction(page: SelectorPage, action: BrowserSelectorAction): Promise<BrowserSelectorResult> {
   const timeout = 'timeoutMs' in action && typeof action.timeoutMs === 'number' ? Math.min(Math.max(action.timeoutMs, 100), 30_000) : 5_000
@@ -48,7 +49,30 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
     if (action.kind === 'click') {
       const target = locate(action.selector, action.text)
       if (!target) return { ok: false, error: 'Нужен selector или text' }
-      await target.first().click({ timeout, button: action.button ?? 'left', clickCount: action.clickCount ?? 1 })
+      await target.first().click({ timeout, button: action.button ?? 'left', clickCount: action.clickCount ?? 1, ...(action.modifiers ? { modifiers: action.modifiers } : {}) })
+      return { ok: true }
+    }
+    if (action.kind === 'press') {
+      await page.locator(action.selector).first().press(action.key, { timeout })
+      return { ok: true }
+    }
+    if (action.kind === 'scroll') {
+      // document.scrollingElement и вложенный контейнер имеют разные позиции.
+      // Ждём два кадра, чтобы scroll-событие уже увидели обработчики страницы.
+      const target = page.locator(action.selector || 'body').first()
+      await target.evaluate((element, value) => {
+        const scope = globalThis as unknown as {
+          document: { body: unknown; documentElement: unknown; scrollingElement: unknown }
+          requestAnimationFrame(callback: () => void): void
+        }
+        const node = (element === scope.document.body || element === scope.document.documentElement ? scope.document.scrollingElement : element) as {
+          scrollTop: number; scrollHeight: number; scrollTo(options: { top: number; behavior: string }): void
+        }
+        const options = value as { to?: 'top' | 'bottom'; dy: number }
+        const top = options.to === 'top' ? 0 : options.to === 'bottom' ? node.scrollHeight : node.scrollTop + options.dy
+        node.scrollTo({ top, behavior: 'instant' })
+        return new Promise<void>(resolve => scope.requestAnimationFrame(() => scope.requestAnimationFrame(resolve)))
+      }, { to: action.to, dy: action.dy ?? 400 }, { timeout })
       return { ok: true }
     }
     if (action.kind === 'type') {
@@ -90,8 +114,13 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
     if (action.kind === 'upload') {
       // Файл приходит base64 и уходит в память Playwright: писать его на диск
       // раннера незачем, а вот ограничить размер — обязательно.
-      const buffer = Buffer.from(action.base64, 'base64')
-      if (!buffer.length) return { ok: false, error: 'Пустое содержимое файла' }
+      const encoded = action.base64.replace(/\s/g, '')
+      // Buffer.from пропускает мусор; без проверки модель загружала другой файл
+      // и получала ok. Проверяем до выделения памяти, пустой файл допустим.
+      if (encoded.length > Math.ceil(UPLOAD_LIMIT_BYTES / 3) * 4) return { ok: false, error: 'Файл больше 8 МБ' }
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 === 1 || (encoded.includes('=') && encoded.length % 4 !== 0)) return { ok: false, error: 'Некорректное содержимое base64' }
+      const buffer = Buffer.from(encoded, 'base64')
+      if (buffer.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) return { ok: false, error: 'Некорректное содержимое base64' }
       if (buffer.length > UPLOAD_LIMIT_BYTES) return { ok: false, error: `Файл больше ${Math.round(UPLOAD_LIMIT_BYTES / 1024 / 1024)} МБ` }
       await page.locator(action.selector).first().setInputFiles({ name: action.name, mimeType: action.mimeType || 'application/octet-stream', buffer }, { timeout })
       return { ok: true }
