@@ -4708,6 +4708,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    `.toolpage > .jboard-wrap` после появления рамки перестал срабатывать — обёртка
    теряла ограничение высоты, и вертикальный скролл колонок не включался. */
 .jboard-wrap { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.jboard-wrap[data-stale] .kanban-board { opacity: .88; }
+.jboard-stale { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px 12px; margin: 8px 12px 0; padding: 9px 10px; border: 1px solid var(--ci-progress); border-radius: var(--radius-medium); background: var(--ci-progress-bg); color: var(--text); }
+.jboard-stale-mark { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: var(--ci-progress); color: var(--surface); font-weight: 800; }
+.jboard-stale-copy { display: grid; gap: 2px; min-width: 0; font-size: 12px; }
+.jboard-stale-copy > span { overflow: hidden; color: var(--text-dim); text-overflow: ellipsis; white-space: nowrap; }
+.jboard-stale time { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 
 /* Панель фильтров */
 .jboard-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px 4px; flex: none; }
@@ -5197,6 +5203,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    тапы от 44px и 16px в полях ввода (меньше — iOS зумит страницу при фокусе).
    Граница 720px совпадает с MOBILE_QUERY в lib/mediaQuery.ts — правь вместе. */
 @media (max-width: 720px) {
+  .jboard-stale { grid-template-columns: auto minmax(0, 1fr); }
+  .jboard-stale time { grid-column: 2; }
+  .jboard-stale .vc-btn { grid-column: 1 / -1; width: 100%; }
   .jboard-density-control { width: 100%; }
   .jboard-density-control .jquick { flex: 1 1 0; min-height: 40px; }
   /* Ручка захвата на телефоне видна всегда (ховера нет) и размером под палец:

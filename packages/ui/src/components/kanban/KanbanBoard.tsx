@@ -11,7 +11,7 @@
 // стрелки — выбрать место, Enter — положить, Esc — отмена; каждый шаг
 // проговаривается в aria-live. Колонка = статус.
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { kanbanFilterKey } from '@voicechat/ui-foundation/persistence'
@@ -367,6 +367,7 @@ function ActiveFilterChip({ label, onRemove }: { label: string; onRemove: () => 
 }
 
 export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
+  const staleMessageId = useId()
   // Телефонная раскладка: тот же порог, что у карточки задачи (720px).
   const compact = useMediaQuery(MOBILE_QUERY)
   const { loading, members } = props
@@ -2084,19 +2085,28 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         />
       )}
       {view.state === 'data' && board && (
-        <div className="jboard-wrap" aria-busy={view.refreshing}>
+        <div
+          className="jboard-wrap"
+          aria-busy={view.refreshing}
+          aria-describedby={view.staleError ? staleMessageId : undefined}
+          data-stale={view.staleError || undefined}
+        >
           {/* Перенос с клавиатуры не видно фокусом — его проговаривает эта область. */}
           <div className="vc-sr-only" role="status" aria-live="polite" data-testid="kanban-live">
             {announce}
           </div>
           {view.staleError && (
-            <ErrorState
-              compact
-              className="jboard-error"
-              message="Последнее действие не сохранилось"
-              detail={props.error}
-              {...(props.onRetry ? { onRetry: props.onRetry } : {})}
-            />
+            <section id={staleMessageId} className="jboard-stale" role="alert" aria-live="assertive" data-testid="board-stale-warning">
+              <span className="jboard-stale-mark" aria-hidden="true">!</span>
+              <span className="jboard-stale-copy">
+                <strong>Показаны сохранённые данные</strong>
+                <span>Не удалось обновить доску: {props.error}</span>
+              </span>
+              <time dateTime={new Date(snapshotUpdatedAt).toISOString()} title={snapshotUpdated.label}>
+                Последний снимок: {snapshotUpdated.short}
+              </time>
+              {props.onRetry && <Button variant="secondary" size="sm" onClick={props.onRetry}>Повторить загрузку</Button>}
+            </section>
           )}
           <FilterShell mobile={compact} count={activeFilterCount}>
             <span className="jsearch-wrap">
