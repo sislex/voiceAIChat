@@ -1331,6 +1331,22 @@ describe('KanbanBoard — состояния загрузки, пустоты и
     expect(onRetry).toHaveBeenCalledTimes(1)
   })
 
+  it('ошибка поверх снимка объясняет stale-состояние, связывает его с доской и повторяет загрузку', async () => {
+    const onRetry = vi.fn()
+    renderBoard({ error: 'TIMEOUT', onRetry })
+    const warning = screen.getByTestId('board-stale-warning')
+    const wrap = screen.getByTestId('kanban-board').closest('.jboard-wrap')!
+    expect(warning).toHaveAttribute('role', 'alert')
+    expect(warning).toHaveTextContent('Показаны сохранённые данные')
+    expect(warning).toHaveTextContent('Не удалось обновить доску: TIMEOUT')
+    expect(warning).toHaveTextContent('Последний снимок:')
+    expect(wrap).toHaveAttribute('data-stale', 'true')
+    expect(wrap).toHaveAttribute('aria-describedby', warning.id)
+    expect(screen.getByTestId('task-card')).toBeInTheDocument()
+    await userEvent.click(within(warning).getByRole('button', { name: 'Повторить загрузку' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
   it('доска без колонок объясняет, что такое колонка', () => {
     renderBoard({ board: { columns: [], tasks: [] } })
     expect(screen.getByText('Колонок пока нет — создайте первую')).toBeInTheDocument()

@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 0ebaed5f
+checked: da728e21
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1031,6 +1031,14 @@ caption, and the same fresh/recent/stale states as cards. Client-side filtering
 does not change the snapshot timestamp. During a background reload the existing
 board remains visible with `aria-busy="true"`, the timestamp becomes a polite
 `Обновляется…` status, and a reduced-motion-safe dot indicates activity.
+
+When a reload or mutation fails while a snapshot is already available, the UI
+keeps the board usable and marks its wrapper with `data-stale`. An assertive,
+responsive warning explains that saved data is being shown, includes the error
+detail and last snapshot age, and offers an explicit reload action. The board
+references that warning through `aria-describedby`, allowing both assistive
+technology and browser automation to distinguish stale data from a fatal empty
+state. A successful replacement snapshot removes the marker with the error.
 
 ### Visible board summary (2026-09-11)
 
