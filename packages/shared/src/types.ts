@@ -1,3 +1,4 @@
+import type { PreviewAccessibilityOptions, PreviewAccessibilityResult } from './previewAccessibility'
 import type { BrowserEvaluateOptions, BrowserEvaluationSummary } from './browserEvaluation'
 import type { BrowserConsoleOptions, BrowserDiagnosticValue, BrowserLogContext, BrowserLogSummary, BrowserNetworkOptions, BrowserNetworkState } from './browserDiagnostics'
 import type { BrowserDownloadCommand, BrowserDownloadInfo } from './browserDownloads'
@@ -306,6 +307,7 @@ export interface BrowserElementDescription {
 export type BrowserInspectAction =
   | ({ kind: 'audit' } & PreviewAuditOptions)
   | ({ kind: 'probe' } & PreviewProbeOptions)
+  | ({ kind: 'accessibility' } & PreviewAccessibilityOptions)
   | ({ kind: 'console' } & BrowserConsoleOptions)
   | ({ kind: 'network' } & BrowserNetworkOptions)
   | { kind: 'styles'; selector: string; properties?: string[] }
@@ -350,6 +352,7 @@ export interface BrowserInspectResult extends BrowserLogSummary, BrowserEvaluati
   styles?: Record<string, string>
   audit?: PreviewAuditResult['audit']
   probe?: PreviewProbeResult['probe']
+  accessibility?: PreviewAccessibilityResult['accessibility']
   error?: string
 }
 

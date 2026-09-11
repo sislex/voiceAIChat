@@ -282,6 +282,7 @@ const setNativeValue=(el,value)=>{
 };
 const run=(action)=>{
   if(action.kind==='audit')return runAudit(action);
+  if(action.kind==='accessibility')throw new Error('Native accessibility requires Chromium mode.');
   if(action.kind==='probe')return runProbe(action);
   if(action.kind==='find'){
     const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'));

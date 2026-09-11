@@ -45,14 +45,14 @@ are written before implementation, after inspecting the relevant capabilities.
 
 | Cycle | Area | Completed | Commit |
 | --- | --- | --- | --- |
-| 01 | Markup audit and evidence contract | 30/30 | `cf8e2df1` |
-| 02 | Layout and clipping, with native audit integration | 30/30 | `3df0eaa8` |
-| 03 | Typography and text rendering | 30/30 | `0a0274e6` |
-| 04 | Color and contrast | 30/30 | `b16b2d46` |
-| 05 | Interactive control states | 30/30 | `20814f73` |
-| 06 | Forms and validation | 30/30 | `844753d9` |
-| 07 | Focus and keyboard navigation | 30/30 | this commit |
-| 08 | ARIA widgets and state relationships | 0/30 | pending |
+| 01 | Markup audit and evidence contract | 30/30 | `4bc85964` |
+| 02 | Layout and clipping, with native audit integration | 30/30 | `2046cf0a` |
+| 03 | Typography and text rendering | 30/30 | `c4f3ea90` |
+| 04 | Color and contrast | 30/30 | `7cd3a78a` |
+| 05 | Interactive control states | 30/30 | `f573dcd0` |
+| 06 | Forms and validation | 30/30 | `9e7bce0e` |
+| 07 | Focus and keyboard navigation | 30/30 | `42d682a5` |
+| 08 | Native accessibility evidence and naming confidence | 30/30 | pending |
 | 09 | Images and responsive assets | 0/30 | pending |
 | 10 | Audio, video and canvas | 0/30 | pending |
 | 11 | Animation observation | 0/30 | pending |
@@ -423,3 +423,60 @@ and exercised real Tab navigation. `gate:fast` passed in 168.11 s and pre-commit
 `gate` in 548.33 s, both exit 0; the latter passed 767 browser tests. Public native
 focus audits completed on Google/Facebook/Instagram, reporting heuristic candidates
 without truncation. This commit completes 210 of 900 planned improvements.
+
+## Cycle 08: native accessibility evidence
+
+Research found that the existing a11y output is Playwright DOM-derived and can
+differ from Chromium AX. Add a bounded native-only `accessibility {selector}`
+tool, preserving existing a11y behavior while identifying its source. Proxy mode
+returns an explicit Chromium requirement.
+
+Proposed 30 capabilities:
+1. Browser-computed role, including fallback role handling.
+2. Browser-computed name, including CSS-generated text.
+3. Name source precedence, superseded/invalid source metadata.
+4. Browser-computed description.
+5. Ignored status and browser reasons.
+6. Native focusable state.
+7. Current focused state.
+8. Native/ARIA disabled state as exposed by Chromium.
+9. Editable state.
+10. Readonly state.
+11. Required state.
+12. Invalid state.
+13. Autocomplete mode.
+14. Popup kind.
+15. Hierarchical level.
+16. Multiple-selection state.
+17. Orientation.
+18. Multiline state.
+19. Minimum range.
+20. Maximum range.
+21. Checked/unchecked/mixed state.
+22. Expanded state.
+23. Modal state.
+24. Pressed state.
+25. Selected state.
+26. Live-region politeness.
+27. Atomic announcements.
+28. Relevant live-region changes.
+29. Related controls/labels/descriptions/active-descendant selectors.
+30. Calibrated DOM naming findings: heuristic source and native verification path,
+    including the known generated-name disagreement. Do not call DOM approximations
+    observed missing browser names.
+
+Verify all native states with real CDP-backed Chromium, not Playwright snapshots
+as a substitute oracle. Add privacy, limits, stale identity, cleanup, live-state,
+human ownership, full App/MCP and proxy-rejection tests, browser screenshots and
+both gates.
+
+Cycle 08 verification: 34 direct CDP Chromium tests, 23 shared contract tests,
+845 Browser Runner tests, 1,057 shared tests, 415 Web Reader tests, 512 proxy
+audit E2E tests and 17 full App/native E2E tests passed. The native report was
+also exercised without mutation on public Google, Facebook and Instagram pages;
+Google and Facebook exposed controls hidden by consent overlays as ignored with
+`ariaHiddenSubtree`, while Instagram exposed a visible password-reset link with
+its browser-computed role and name. Reader and control screenshots were inspected
+at 1440x1000. The quiet `gate:fast` retry passed in 879.91 s with 760 selected
+E2E tests, and pre-commit `gate` passed in 763.06 s with 769 selected E2E tests.
+Both exited 0. This cycle completes 240 of 900 planned improvements.

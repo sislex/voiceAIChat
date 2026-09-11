@@ -25,6 +25,7 @@ export interface InspectPage {
 
 export async function runInspectAction(logs: InspectLogs, page: InspectPage, action: Exclude<BrowserInspectAction, { kind: 'evaluate' }>): Promise<BrowserInspectResult> {
   if (action.kind === 'console' || action.kind === 'network') return readBrowserDiagnostics(logs, action)
+  if (action.kind === 'accessibility') return { ok: false, error: 'Native accessibility requires the top-level Chromium page context.' }
   try {
     if (action.kind === 'probe') {
       const result = await page.evaluate(nativeProbeExpression(action))

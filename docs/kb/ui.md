@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 844753d9
+checked: 0f9a7adf
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2474,19 +2474,43 @@ Native audits preserve human control and `lastActor`, and restore logical page U
 from operator host aliases. Duplicate-ID findings use selectors that distinguish
 sibling nodes even when their IDs are equal.
 
-Naming checks currently use the reader's DOM naming helper, not the complete
+Naming checks use the reader's DOM naming helper, not the complete
 browser accessible-name algorithm. A Playwright ARIA snapshot of an empty button with
 `::before{content:"Save"}` reported name "Save" while `button-name-missing`
-still reported a candidate. Inspect additional accessibility evidence before
-confirming a naming defect; the accessibility cycle must correct this mismatch
-and its confidence classification.
+still reported a candidate. The button/link/heading rules therefore classify an
+empty DOM approximation as heuristic and direct the model to native accessibility
+evidence instead of presenting it as a confirmed browser-name defect.
 
 The current native Reader `a11y` action uses Playwright `locator.ariaSnapshot`,
 which computes an injected DOM snapshot; it is not Chromium's CDP Accessibility
 API. Direct CDP verification found a difference for a button containing
 `<img alt="" title="Save">`: Playwright reports name Save, while Chromium reports
 an empty button name. Treat snapshot source as material to naming conclusions.
-Direct browser AX evidence is planned for cycle 08 and is not exposed yet.
+The native-only `accessibility {selector}` tool reads one exact standard CSS target through
+Chromium's CDP Accessibility tree. It returns the browser-computed role, name,
+description, ignored status/reasons, name-source precedence, selected state
+properties and bounded selectors for related nodes. The result identifies its
+source as `chromium-accessibility`; proxy mode returns an immediate Chromium
+requirement instead of fabricating a DOM approximation or waiting for relay.
+Frame and shadow-root traversal are outside this action.
+
+The native boundary whitelists a fixed property set, stores at most 40 properties
+and omits control values, value text, raw source-attribute values and CDP identifiers.
+Name and description remain
+application text because they are the intended evidence. Limits are 12 name sources,
+16 ignored reasons and 24 related-node records, with a 26,000-character total budget.
+Related selectors must be complete and unique; long or ambiguous selectors are
+omitted and the report is marked truncated. Missing properties remain absent rather
+than being coerced to false. Each call uses a short-lived CDP session, verifies the
+target identity after reading and times out after five seconds.
+
+Native accessibility is observational: it is allowed while the user owns the
+Chromium session and preserves `lastActor`. It does not click, focus, scroll, read
+selection or copy live control values. Real Chromium tests cover 29 native evidence
+capabilities plus DOM/native naming calibration. Public read-only runs on Google,
+Facebook and Instagram confirmed consent overlays: hidden underlying controls were
+reported as ignored with `ariaHiddenSubtree`, while Instagram's visible password-reset
+link exposed its native link role/name. No consent or login action was performed.
 
 The `layout` group inspects clipping and overflow, zero-size controls, fixed/sticky
 positioning, collapsed containers, grid/flex geometry, overlapping siblings and
