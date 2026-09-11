@@ -7,8 +7,8 @@ written before implementation. Existing audit work is preserved.
 | Cycle | Focus | State | PR |
 | --- | --- | --- | --- |
 | 01 | Store lifecycle and asynchronous failures | Merged, 10/10 | #141 |
-| 02 | Host bridge command lifecycle | Implemented, 10/10 | |
-| 03 | Host frame navigation and save recovery | Planned | |
+| 02 | Host bridge command lifecycle | Merged, 10/10 | #143 |
+| 03 | Host frame navigation and save recovery | Implemented, 10/10 | |
 | 04 | Assistant action history usability | Planned | |
 | 05 | Address entry and navigation feedback | Planned | |
 | 06 | Recorder scenario editing | Planned | |
@@ -42,3 +42,16 @@ written before implementation. Existing audit work is preserved.
 8. Restore active diagnostics after reboot.
 9. Do not advertise registration after mode restoration fails.
 10. Keep unchanged approved URLs from restarting loading.
+
+## Cycle 03 proposal
+
+1. Catch synchronous preview preparation errors.
+2. Bound host preview preparation.
+3. Bound model preview preparation.
+4. Cancel preparation on unmount.
+5. Prevent stale model opens from saving over newer navigation.
+6. Show pending address saves.
+7. Suppress superseded save errors.
+8. Clear retry state when a new save succeeds.
+9. Reset save errors between conversations.
+10. Make the unprepared iframe inert and remove its tab stop.
