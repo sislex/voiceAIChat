@@ -39,7 +39,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 198 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-12 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 25 коммит(ов) в areas после сверки: 679cb84f feat(kanban): copy task permalinks … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-11, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 786. Последние:
+Всего записей: 787. Последние:
 
+- [2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md](log/2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md) — release-task-modal-test-timeout
 - [2026-09-12-alexeys-macbook-air-2-kanban-visible-export.md](log/2026-09-12-alexeys-macbook-air-2-kanban-visible-export.md) — kanban-visible-export
 - [2026-09-12-alexeys-macbook-air-2-kanban-task-permalinks.md](log/2026-09-12-alexeys-macbook-air-2-kanban-task-permalinks.md) — kanban-task-permalinks
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md) — web-reader-ten-cycle-10
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-06.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-06.md) — web-reader-ten-cycle-06
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-05.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-05.md) — web-reader-ten-cycle-05
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-04.md) — web-reader-ten-cycle-04
-- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-03.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-03.md) — web-reader-ten-cycle-03
 
 ## Исторические планы
 

@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-11
-checked: 55104903
+updated: 2026-09-12
+checked: d27bc46c
 areas:
   - package.json
   - scripts
@@ -497,22 +497,20 @@ Electron main/preload код тестируется без запуска реа
 уникальность каталога даёт файловая система (`mkdtempSync`), а `afterEach` его
 удаляет — иначе каталоги копятся в `tmpdir` каждым прогоном.
 
-**`findBy*` ждёт ленивый чанк дольше секунды.** У Testing Library
-`asyncUtilTimeout` по умолчанию 1 с, а половина экранов приложения грузится
-лениво (`Suspense` + dynamic import). На полном прогоне пакета и особенно в
-release-gate (где параллельно идут другие наборы) чанк успевает не всегда:
-`App.projects.dom.test.tsx` видел fallback «Загрузка настроек проекта…» вместо
-`project-settings` и падал, хотя изолированно тот же тест проходит за ~900 мс —
-из-за этого падал шаг Regression у релиза. В `packages/ui/src/test/setup.ts`
-стоит `configure({ asyncUtilTimeout: 5000 })`: это ожидание загрузки, а не
-ожидание починки — сломанный экран не появится и за минуту, а класс флейков,
-зависящих от загрузки машины, уходит. Свой таймаут в отдельном `findBy` заводить
-не нужно; `testTimeout` пакета остаётся 20 с. Отдельные ожидания, зависящие
-от очереди сообщений и повторного рендера (мост Web Reader: команда доезжает до
-iframe через очередь и новый рендер панели), получают явный `{ timeout: 10_000 }`
-в своём `waitFor` — общего запаса им не хватало именно на полном прогоне гейта,
-где пакеты идут параллельно. Признак такого флейка: тест падает в гейте, но
-проходит и одним файлом, и полным набором пакета.
+**`findBy*` must allow for a cold lazy chunk.** Testing Library defaults to a
+one-second async timeout, while many application screens use `Suspense` and
+dynamic imports. Full package runs and release regression execute other suites
+in parallel, so the first lazy import can be much slower than an isolated test.
+`App.projects.dom.test.tsx` previously timed out on the project settings chunk;
+release `0.1.299` later timed out on the first TaskModal chunk after five seconds,
+although the whole `App.dom.test.tsx` file passed in isolation. The shared setup
+in `packages/ui-foundation/src/test/setup.ts` therefore configures
+`asyncUtilTimeout: 10_000`. This only bounds asynchronous loading: successful
+queries still return immediately, while the package-level 60-second test timeout
+remains the outer guard for hangs. Do not add per-query `findBy` timeouts for
+ordinary lazy screens. Multi-render queue assertions may keep an explicit
+10-second `waitFor` to document that dependency. The characteristic signal is a
+release-gate failure that passes both as a focused test and as its complete file.
 
 **Код возврата гейта читается у самого гейта, а не у последней команды строки.**
 `npm run gate > log 2>&1; echo "RC=$?"; grep …` — здесь фоновая задача сообщает
