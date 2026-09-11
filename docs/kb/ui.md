@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 29928089
+checked: 8a3cf2a5
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -112,6 +112,12 @@ Web Reader сохраняет iframe `/api/preview?url=...`; URL разгово�
 Прокси переписывает HTML-ссылки и CSS URL относительно исходного публичного адреса. Для машинных preview и сайтов, доставленных через операторский host alias, он также переписывает статические и динамические ESM-спецификаторы в `/api/preview?url=...`: без этого относительные chunks разрешались относительно `/api/preview` и приложение оставалось пустым. Публичный URL и его hash при этом сохраняются; источники поведения — `apps/web-reader/src/routes/previewProxy.ts` и `packages/web-reader-app/src/WebReaderFrame.tsx`.
 
 ### Живые действия и безопасность Web Reader
+
+The standalone Web Reader store separates list refreshes from conversation activation.
+Activation owns its recorder subscription and ignores stale callbacks and action results,
+including a switch away and back to the same conversation. Lookup and recorder failures
+become recoverable UI errors; explicit conversation URLs bypass project fallback lookup.
+
 
 После успешного `preview.result` серверный `PreviewActionRelay` публикует `reader.changed` с разговором, адресом, заголовком, признаком навигации и исходным `PreviewAction` (контракт — `packages/shared/src/protocol.ts`, реализация — `apps/web-reader/src/mcp/previewMcp.ts`). Remote-мост передаёт кадр в `App`: только активный разговор добавляет подтверждённый шаг в ограниченную последними 20 элементами ленту, а навигационный кадр обновляет ленту без перемонтирования Reader: переход уже выполнен в живом документе, повторный mount терял DOM/ввод и делал лишний запрос. `WebReaderFrame` переводит действия в понятные подписи и позволяет повторить шаг через ту же актуальную host-регистрацию.
 
