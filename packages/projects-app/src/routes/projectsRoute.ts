@@ -22,7 +22,7 @@ export type ProjectsRoute =
   /** Stable child route for a task-card tab. */
   | { kind: 'task-tab'; projectId: string; taskId: string; tab: TaskRouteTab }
 
-export const TASK_ROUTE_TABS = ['general', 'chat', 'preparation', 'settings', 'timeline', 'activity', 'improvements', 'component_qa', 'integration_tests', 'automated_qa', 'qa', 'code', 'merge', 'feed'] as const
+export const TASK_ROUTE_TABS = ['general', 'chat', 'preparation', 'settings', 'progress', 'timeline', 'activity', 'improvements', 'component_qa', 'integration_tests', 'automated_qa', 'qa', 'code', 'merge', 'feed'] as const
 export type TaskRouteTab = (typeof TASK_ROUTE_TABS)[number]
 export function isTaskRouteTab(value: string | undefined): value is TaskRouteTab {
   return (TASK_ROUTE_TABS as readonly string[]).includes(value ?? '')

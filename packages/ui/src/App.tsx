@@ -8,7 +8,7 @@ import { runReaderModelRequest, readReaderErrors } from './webReaderModelRequest
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
-import { buildProjectsRoute, parseProjectsRoute } from '@voicechat/projects-app'
+import { buildProjectsRoute, isTaskRouteTab, parseProjectsRoute } from '@voicechat/projects-app'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
 import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import type { RendererApi } from '@shared/ipc'
@@ -357,6 +357,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Проектный parser владеет deep links карточки, подготовки и связанного чата.
   const routeTaskId = projectsRoute && 'taskId' in projectsRoute ? projectsRoute.taskId : null
   const routeTaskTab = projectsRoute?.kind === 'task-tab' ? projectsRoute.tab : undefined
+  // Парсер отвергает неизвестный child-сегмент, но карточка должна остаться
+  // доступной: нормализуем именно task URL на каноническое «Общее».
+  const invalidTaskTabRoute = segments[0] === 'projects' && segments[2] === 'task' && segments.length === 5 && Boolean(segments[1] && segments[3]) && !isTaskRouteTab(segments[4])
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
   // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
   // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
@@ -1519,6 +1522,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // снимок доски, её вид и состояния карточек — это лишние запросы, а подписка
   // на board.changed при работающем ране перечитывает доску каждые пару секунд.
   const routeNeedsBoard = !(routeReleases || routeSettings || routeCode)
+  useEffect(() => {
+    if (!invalidTaskTabRoute) return
+    navigate(`/projects/${encodeURIComponent(segments[1]! )}/task/${encodeURIComponent(segments[3]! )}/general`, { replace: true })
+  }, [invalidTaskTabRoute, navigate, segments])
   useEffect(() => {
     if (!authed || !inProjects) return
     if (routeProjectId) {
