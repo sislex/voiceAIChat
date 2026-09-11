@@ -391,6 +391,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     else setInternalOpenTask(taskId)
   }
   const composerRef = useRef<HTMLInputElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const boardScrollRef = useRef(new Map<string, { left: number; top: number }>())
   const colMenuRef = useRef<HTMLSpanElement | null>(null)
@@ -399,6 +400,18 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   useDismissibleMenu(Boolean(colMenu), colMenuRef, () => setColMenu(null))
   useDismissibleMenu(Boolean(openAssigneeFilter), assigneeFilterRef, () => setOpenAssigneeFilter(null))
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent): void => {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      event.preventDefault()
+      searchRef.current?.focus()
+      searchRef.current?.select()
+    }
+    document.addEventListener('keydown', focusSearch)
+    return () => document.removeEventListener('keydown', focusSearch)
+  }, [])
   useEffect(() => {
     if (!automationInfoColumn) return
     automationInfoCloseRef.current?.focus()
@@ -651,7 +664,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const matches = (t: Task): boolean => {
     const q = search.trim().toLowerCase()
-    if (q && !t.title.toLowerCase().includes(q) && !issueKey(props.projectName, t).toLowerCase().includes(q)) return false
+    const searchable = [
+      t.title,
+      issueKey(props.projectName, t),
+      t.description,
+      t.acceptanceCriteria,
+      t.assignee ?? '',
+      ...t.labels
+    ]
+    if (q && !searchable.some((value) => value.toLowerCase().includes(q))) return false
     if (assignees.size > 0 && !assignees.has(t.assignee ?? '')) return false
     if (types.size > 0 && !types.has(t.type)) return false
     if (priorities.size > 0 && !priorities.has(t.priority)) return false
@@ -685,6 +706,32 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         return (t.assignee ?? '') === lane.id
       })
       .sort((a, b) => compareTasksInColumn(a, b, board?.columns.find((c) => c.id === columnId)?.semanticType ?? 'custom'))
+
+  const visibleTaskCount = columns.reduce((count, column) => count + tasksOf(column.id).length, 0)
+  const displayedTaskTotal = columns.reduce(
+    (count, column) => count + allTasks.filter((task) => task.columnId === column.id).length,
+    0
+  )
+
+  const navigateBoard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget) return
+    const surface = event.currentTarget
+    const firstColumn = surface.querySelector<HTMLElement>('[data-column-id]')
+    const step = (firstColumn?.getBoundingClientRect().width || 272) + 8
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      surface.scrollLeft += event.key === 'ArrowRight' ? step : -step
+      setAnnounce(event.key === 'ArrowRight' ? 'Доска прокручена вправо.' : 'Доска прокручена влево.')
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      surface.scrollLeft = 0
+      setAnnounce('Показано начало доски.')
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      surface.scrollLeft = surface.scrollWidth
+      setAnnounce('Показан конец доски.')
+    }
+  }
 
   // Перенос колонки moving перед target.
   const reorderTo = (targetId: string, moving: string): void => {
@@ -1531,14 +1578,47 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             />
           )}
           <FilterShell mobile={compact} count={activeFilterCount}>
-            <input
-              className="login-input jsearch"
-              type="search"
-              placeholder="Поиск на доске"
-              aria-label="Поиск на доске"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <span className="jsearch-wrap">
+              <input
+                ref={searchRef}
+                className="login-input jsearch"
+                type="search"
+                placeholder="Поиск на доске"
+                aria-label="Поиск на доске"
+                aria-keyshortcuts="/"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && search) {
+                    event.preventDefault()
+                    setSearch('')
+                  }
+                }}
+              />
+              {search && (
+                <IconButton
+                  className="jsearch-clear"
+                  size="sm"
+                  aria-label="Очистить поиск на доске"
+                  title="Очистить поиск"
+                  onClick={() => {
+                    setSearch('')
+                    searchRef.current?.focus()
+                  }}
+                >
+                  <span aria-hidden="true">×</span>
+                </IconButton>
+              )}
+            </span>
+            <span
+              className="jboard-result-count"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              data-testid="board-result-count"
+            >
+              Показано {visibleTaskCount} из {displayedTaskTotal}
+            </span>
             <span className="javatars" role="group" aria-label="Фильтр по исполнителям">
               {members.map((m) => (
                 <button
@@ -1667,8 +1747,30 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             />
           )}
 
+          {filtersActive && displayedTaskTotal > 0 && visibleTaskCount === 0 && (
+            <EmptyState
+              compact
+              className="kanban-filter-empty"
+              testId="kanban-filter-empty"
+              icon="⌕"
+              title="По выбранным фильтрам задач не найдено"
+              description="Измените запрос или сбросьте фильтры, чтобы снова увидеть задачи."
+              actionLabel="Сбросить все фильтры"
+              onAction={resetFilters}
+            />
+          )}
+
           {swimlane === 'none' ? (
-            <div className="kanban-board jboard" data-testid="kanban-board" ref={boardRef}>
+            <div
+              className="kanban-board jboard"
+              data-testid="kanban-board"
+              ref={boardRef}
+              role="region"
+              aria-label={`Канбан-доска проекта «${props.projectName}». Стрелки влево и вправо прокручивают колонки, Home и End переходят к краям.`}
+              aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+              tabIndex={0}
+              onKeyDown={navigateBoard}
+            >
               {columns.map((col) => (
                 <section
                   key={col.id}
@@ -1727,7 +1829,16 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               {addColumnBox}
             </div>
           ) : (
-            <div className="kanban-board jboard jboard--lanes" data-testid="kanban-board" ref={boardRef}>
+            <div
+              className="kanban-board jboard jboard--lanes"
+              data-testid="kanban-board"
+              ref={boardRef}
+              role="region"
+              aria-label={`Канбан-доска проекта «${props.projectName}». Стрелки влево и вправо прокручивают колонки, Home и End переходят к краям.`}
+              aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+              tabIndex={0}
+              onKeyDown={navigateBoard}
+            >
               <div className="jlane-heads">
                 {columns.map((col) => (
                   <section
