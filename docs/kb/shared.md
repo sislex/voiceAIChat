@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-09-11
-checked: fd5c951d
+checked: 29171e8f
 areas:
   - packages/shared/src
 ---
@@ -39,9 +39,11 @@ areas:
 | `pcm.ts`, `format.ts`, `export.ts` | PCM/WAV-утилиты, форматирование и экспорт разговора. |
 
 `projects.ts` owns the persisted `BoardView` contract and its defensive
-`sanitizeBoardView` boundary. Quick overdue and completed slices are explicit
-boolean fields with false defaults, so server-stored views remain compatible
-with clients and records created before those filters existed.
+`sanitizeBoardView` boundary. The `dueWindow` enum accepts `all`, `overdue`,
+`today`, `week`, and `none`; `overdueOnly` remains as a compatibility field for
+older clients and stored records. Quick completed slices remain explicit boolean
+fields with false defaults. Unknown enum and non-boolean values are discarded at
+the boundary.
 
 `normalizeWebRecorderStep` отбрасывает повреждённые поля и принудительно стирает
 текст sensitive-шага. `parseWebRecorderScenario` принимает до 1 МБ JSON и первые

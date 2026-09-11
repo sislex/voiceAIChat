@@ -30,9 +30,9 @@ describe('QA workflow semantics', () => {
 
 describe('board view filters', () => {
   it('defaults and sanitizes the persisted due and completed slices', () => {
-    expect(DEFAULT_BOARD_VIEW).toMatchObject({ overdueOnly: false, completedOnly: false })
-    expect(sanitizeBoardView({ overdueOnly: true, completedOnly: true })).toEqual({ overdueOnly: true, completedOnly: true })
-    expect(sanitizeBoardView({ overdueOnly: 'yes', completedOnly: 1 })).toEqual({})
+    expect(DEFAULT_BOARD_VIEW).toMatchObject({ overdueOnly: false, dueWindow: 'all', completedOnly: false })
+    expect(sanitizeBoardView({ overdueOnly: true, dueWindow: 'week', completedOnly: true })).toEqual({ overdueOnly: true, dueWindow: 'week', completedOnly: true })
+    expect(sanitizeBoardView({ overdueOnly: 'yes', dueWindow: 'quarter', completedOnly: 1 })).toEqual({})
   })
 })
 

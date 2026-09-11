@@ -345,7 +345,7 @@ describe('KanbanBoard (изолированный)', () => {
     await userEvent.click(overdue)
     expect(overdue).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getAllByTestId('task-card')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Удалить фильтр: Просрочено' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Срок: просрочено' })).toBeInTheDocument()
     await userEvent.click(overdue)
 
     const unassigned = within(summary).getByRole('button', { name: 'Без исполнителя: 1 задача' })
@@ -369,6 +369,58 @@ describe('KanbanBoard (изолированный)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Сбросить все' }))
     expect(screen.getAllByTestId('kanban-column')).toHaveLength(2)
     expect(within(summary).getByRole('button', { name: 'Завершено: 1 задача' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('фильтрует взаимоисключающие интервалы срока и сохраняет их в виде доски', async () => {
+    const start = new Date()
+    const at = (offset: number): number => new Date(start.getFullYear(), start.getMonth(), start.getDate() + offset, 12).getTime()
+    const columns = [
+      board.columns[0]!,
+      { ...board.columns[0]!, id: 'done', name: 'Готово', semanticType: 'done' as const, position: 2048 }
+    ]
+    const onViewChange = vi.fn()
+    renderBoard({
+      currentUserId: 'due-user',
+      view: { ...DEFAULT_BOARD_VIEW },
+      onViewChange,
+      board: {
+        columns,
+        tasks: [
+          task({ id: 'late', title: 'Вчера', dueDate: at(-1) }),
+          task({ id: 'today', title: 'Сегодня срок', dueDate: at(0) }),
+          task({ id: 'soon', title: 'Через шесть', dueDate: at(6) }),
+          task({ id: 'later', title: 'Через семь', dueDate: at(7) }),
+          task({ id: 'none', title: 'Срок не задан', dueDate: null }),
+          task({ id: 'done-late', title: 'Готовая просроченная', columnId: 'done', dueDate: at(-1) })
+        ]
+      }
+    })
+    const select = screen.getByRole('combobox', { name: 'Срок задач' })
+
+    await userEvent.selectOptions(select, 'overdue')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByText('Вчера')).toBeInTheDocument()
+    expect(screen.queryByText('Готовая просроченная')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Срок: просрочено' })).toBeInTheDocument()
+
+    await userEvent.selectOptions(select, 'today')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByText('Сегодня срок')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Срок: сегодня' })).toBeInTheDocument()
+
+    await userEvent.selectOptions(select, 'week')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(2)
+    expect(screen.getByText('Через шесть')).toBeInTheDocument()
+    expect(screen.queryByText('Через семь')).not.toBeInTheDocument()
+
+    await userEvent.selectOptions(select, 'none')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByText('Срок не задан')).toBeInTheDocument()
+    expect(screen.getByTestId('board-result-count')).toHaveTextContent('Показано 1 из 6')
+    await waitFor(() => expect(onViewChange).toHaveBeenLastCalledWith(expect.objectContaining({ dueWindow: 'none', overdueOnly: false })))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить фильтр: Срок: не указан' }))
+    expect(select).toHaveValue('all')
   })
 
   it('фокусирует поиск по /, очищает его по Escape и отдельной кнопкой', async () => {
