@@ -50,6 +50,45 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
 }
 
 describe('KanbanBoard (изолированный)', () => {
+  it('показывает и копирует диагностический снимок текущего представления', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderBoard()
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'A')
+    const opener = screen.getByTestId('open-board-diagnostics')
+    await userEvent.click(opener)
+
+    const dialog = screen.getByRole('dialog', { name: 'Диагностика доски проекта «P1»' })
+    const diagnostics = within(dialog).getByTestId('board-diagnostics')
+    expect(diagnostics).toHaveAttribute('data-snapshot-state', 'current')
+    expect(diagnostics).toHaveAttribute('data-snapshot-age', 'stale')
+    expect(diagnostics).toHaveAttribute('data-visible-tasks', '1')
+    expect(diagnostics).toHaveAttribute('data-displayed-columns', '1')
+    expect(dialog).toHaveTextContent('1 видно · 1 в показанных колонках · 1 загружено')
+    expect(dialog).toHaveTextContent('1 показано · 2 всего')
+    expect(dialog).toHaveTextContent('Активные фильтры 1')
+    expect(dialog).toHaveTextContent('Поиск: A')
+    const rows = within(dialog).getAllByRole('row')
+    expect(rows).toHaveLength(2)
+    expect(rows[1]).toHaveTextContent('To Do')
+    await expectNoViolations(dialog)
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Копировать отчёт' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    const report = String(writeText.mock.calls[0]?.[0])
+    expect(report).toContain('# P1 — диагностика канбана')
+    expect(report).toContain('Свежесть снимка: давний')
+    expect(report).toContain('Задачи: загружено 1; в показанных колонках 1; видно 1')
+    expect(report).toContain('Колонки: всего 2; показано 1; скрыто 1; свёрнуто 0')
+    expect(report).toContain('Фильтры (1): Поиск: A')
+    expect(report).toContain('- To Do: видно 1 из 1; WIP-лимит не задан')
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Отчёт скопирован')
+
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Диагностика доски/ })).not.toBeInTheDocument())
+    await waitFor(() => expect(opener).toHaveFocus())
+  })
+
   it('строит абсолютную кодированную ссылку и показывает результат копирования карточки', async () => {
     expect(taskPermalink(
       { projectId: 'project / один', id: 'task / два' },

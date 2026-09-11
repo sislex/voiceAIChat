@@ -4724,6 +4724,39 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jboard-copy-list { white-space: nowrap; }
 .jboard-copy-feedback { max-width: min(280px, 60vw); overflow: hidden; color: var(--ci-success); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .jboard-copy-feedback[data-error] { color: var(--danger); }
+.jboard-diagnostics { display: grid; gap: 18px; }
+.jboard-diagnostics section { display: grid; gap: 8px; }
+.jboard-diagnostics h3 { margin: 0; font-size: 13px; }
+.jboard-diagnostics h3 > span { display: inline-grid; min-width: 20px; min-height: 20px; margin-left: 4px; place-items: center; border-radius: 999px; background: var(--surface-soft); color: var(--text-dim); font-size: 10px; }
+.jboard-diagnostics-state { grid-template-columns: 1fr auto; align-items: center; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); background: var(--surface-soft); }
+.jboard-diagnostics-state strong { font-size: 13px; }
+.jboard-diagnostics-state time,
+.jboard-diagnostics-state span { color: var(--text-dim); font-size: 11px; }
+.jboard-diagnostics-state span { grid-column: 1 / -1; }
+.jboard-diagnostics-state--current strong { color: var(--ci-success); }
+.jboard-diagnostics-state--refreshing strong { color: var(--accent); }
+.jboard-diagnostics-state--stale strong { color: var(--ci-progress); }
+.jboard-diagnostics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.jboard-diagnostics-grid > div { min-width: 0; padding: 8px 10px; border-radius: var(--radius-medium); background: var(--surface-soft); }
+.jboard-diagnostics-grid dt { color: var(--text-dim); font-size: 10px; }
+.jboard-diagnostics-grid dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
+.jboard-diagnostics-grid--compact { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.jboard-diagnostics-filters { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.jboard-diagnostics-filters li { padding: 4px 7px; border: 1px solid var(--border-soft); border-radius: 999px; background: var(--surface-soft); font-size: 11px; }
+.jboard-diagnostics-empty { margin: 0; color: var(--text-dim); font-size: 12px; }
+.jboard-diagnostics-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); }
+.jboard-diagnostics table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.jboard-diagnostics th,
+.jboard-diagnostics td { padding: 7px 9px; border-bottom: 1px solid var(--border-soft); text-align: left; }
+.jboard-diagnostics thead th { color: var(--text-dim); font-size: 10px; text-transform: uppercase; }
+.jboard-diagnostics tbody tr:last-child > * { border-bottom: 0; }
+.jboard-diagnostics-copy-status { margin-right: auto; color: var(--ci-success); font-size: 11px; }
+.jboard-diagnostics-copy-status[data-error] { color: var(--danger); }
+@media (max-width: 720px) {
+  .jboard-diagnostics-grid,
+  .jboard-diagnostics-grid--compact { grid-template-columns: 1fr; }
+  .jboard-diagnostics-state { grid-template-columns: 1fr; }
+}
 .jboard-snapshot { display: inline-flex; align-items: center; min-height: 24px; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .jboard-snapshot::before { width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; content: ''; }
 .jboard-snapshot--fresh { color: var(--ci-success); }
