@@ -283,7 +283,7 @@ function FilterShell({ mobile, count, children }: { mobile: boolean; count: numb
   )
 }
 
-interface FilterOption { value: string; label: string }
+interface FilterOption { value: string; label: string; leading?: ReactNode; meta?: string }
 
 /** Searchable multi-select with bulk operations over the currently visible options. */
 function FilterDropdown({ label, selected, options, onChange }: {
@@ -338,7 +338,10 @@ function FilterDropdown({ label, selected, options, onChange }: {
         <div className="jfilter-options">
           {visible.map((option) => (
             <label key={option.value}>
-              <input type="checkbox" checked={selected.has(option.value)} onChange={() => toggleOption(option.value)} /> {option.label}
+              <input type="checkbox" checked={selected.has(option.value)} onChange={() => toggleOption(option.value)} />
+              {option.leading && <span className="jfilter-option-leading" aria-hidden="true">{option.leading}</span>}
+              <span className="jfilter-option-label">{option.label}</span>
+              {option.meta && <span className="jfilter-option-meta">{option.meta}</span>}
             </label>
           ))}
           {visible.length === 0 && <p className="jfilter-empty">Нет подходящих вариантов</p>}
@@ -2142,6 +2145,25 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 <span className="javatar javatar--none">?</span>
               </button>
             </span>
+            <FilterDropdown
+              label="Исполнители"
+              selected={assignees}
+              options={[
+                ...members.map((member) => ({
+                  value: member.username,
+                  label: member.username,
+                  leading: <Avatar username={member.username} size={20} />,
+                  meta: `${allTasks.filter((task) => columns.some((column) => column.id === task.columnId) && task.assignee === member.username).length}`
+                })),
+                {
+                  value: '',
+                  label: 'Не назначено',
+                  leading: <span className="javatar javatar--none jfilter-option-avatar">?</span>,
+                  meta: `${allTasks.filter((task) => columns.some((column) => column.id === task.columnId) && task.assignee == null).length}`
+                }
+              ]}
+              onChange={setAssignees}
+            />
             {currentUserId && (
               <label className={`jquick jquick-checkbox${onlyMine ? ' on' : ''}`}>
                 <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
