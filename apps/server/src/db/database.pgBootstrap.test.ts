@@ -27,4 +27,42 @@ describe.skipIf(!URL)('старт нескольких процессов на �
       await Promise.all(dbs.map((db) => db.close()))
     }
   }, 120_000)
+
+  it('adds columns to an existing schema and backfills their task-level value', async () => {
+    const upgradeSchema = `u_${randomUUID().replace(/-/g, '').slice(0, 12)}`
+    const first = new VoiceChatDb(':memory:', { postgres: { url: URL!, schema: upgradeSchema } })
+    let projectId = ''
+    let taskId = ''
+    try {
+      await first.ready
+      await first.identity.createUser('upgrade-owner', 'pw', 'admin')
+      const project = await first.projects.createProject('upgrade-owner', { name: 'Upgrade' })
+      projectId = project.id
+      await first.projects.updateProject('upgrade-owner', projectId, { autoPilotRequiresManualQa: true })
+      const board = (await first.tasks.getBoard('upgrade-owner', projectId))!
+      const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
+      const task = await first.tasks.createTask('upgrade-owner', projectId, { columnId: backlog.id, title: 'Existing task' })
+      taskId = task!.id
+    } finally {
+      await first.close()
+    }
+
+    const admin = new pg.Client({ connectionString: URL! })
+    await admin.connect()
+    await admin.query(`SET search_path TO ${upgradeSchema}`)
+    await admin.query(`ALTER TABLE tasks DROP COLUMN auto_pilot_requires_manual_qa`)
+    await admin.end()
+
+    const upgraded = new VoiceChatDb(':memory:', { postgres: { url: URL!, schema: upgradeSchema } })
+    try {
+      await upgraded.ready
+      expect((await upgraded.tasks.getTaskDetail('upgrade-owner', projectId, taskId))?.autoPilotRequiresManualQa).toBe(true)
+    } finally {
+      await upgraded.close()
+      const cleanup = new pg.Client({ connectionString: URL! })
+      await cleanup.connect()
+      await cleanup.query(`DROP SCHEMA IF EXISTS ${upgradeSchema} CASCADE`)
+      await cleanup.end()
+    }
+  }, 120_000)
 })
