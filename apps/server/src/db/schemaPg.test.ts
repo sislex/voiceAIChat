@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { describe, expect, it } from 'vitest'
 import { TABLE_OWNER } from './ownership.js'
-import { PG_SCHEMA, postgresSchemaFrom } from './schemaPg.js'
+import { PG_SCHEMA, postgresColumnUpgradePlan, postgresSchemaFrom } from './schemaPg.js'
 
 const URL = process.env.VC_TEST_DB_URL
 
@@ -37,6 +37,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_a ON a(b_id) WHERE score > 0;`)
     expect(out.indexes).toEqual([`CREATE UNIQUE INDEX IF NOT EXISTS idx_a ON a(b_id) WHERE score > 0;`])
     expect(out.foreignKeys).toHaveLength(2)
     expect(out.foreignKeys[0]).toContain('ALTER TABLE a ADD CONSTRAINT fk_a_b_id FOREIGN KEY (b_id) REFERENCES b (id) ON DELETE CASCADE')
+  })
+
+  it('plans missing columns before schema objects that can reference them', () => {
+    const out = postgresSchemaFrom(`CREATE TABLE IF NOT EXISTS a (
+  id TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_a_enabled ON a(enabled);`)
+    const plan = postgresColumnUpgradePlan(out.columns, [
+      { table_name: 'a', column_name: 'id' },
+      { table_name: 'a', column_name: 'rowid' }
+    ])
+    expect([...plan.keys]).toEqual(['a.enabled'])
+    expect(plan.sql).toBe('ALTER TABLE a ADD COLUMN IF NOT EXISTS enabled BIGINT NOT NULL DEFAULT 0;')
+    expect(out.afterColumnsSql).toContain('CREATE INDEX IF NOT EXISTS idx_a_enabled ON a(enabled)')
+  })
+
+  it('includes the task manual-QA flag in additive PostgreSQL upgrades', () => {
+    const existing = PG_SCHEMA.columns
+      .filter((column) => !(column.table === 'tasks' && column.name === 'auto_pilot_requires_manual_qa'))
+      .map((column) => ({ table_name: column.table, column_name: column.name }))
+    const plan = postgresColumnUpgradePlan(PG_SCHEMA.columns, existing)
+    expect([...plan.keys]).toEqual(['tasks.auto_pilot_requires_manual_qa'])
+    expect(plan.sql).toContain('auto_pilot_requires_manual_qa BIGINT NOT NULL DEFAULT 0')
   })
 
   it.skipIf(!URL)('применяется к настоящему Postgres дважды без ошибок', async () => {

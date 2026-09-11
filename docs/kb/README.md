@@ -13,7 +13,7 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 4 коммит(ов) в areas после сверки: ac340e14 feat(web-reader): expose native accessibility evidence … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 30 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-10 | ⚠ 21 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-11 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: ac340e14 feat(web-reader): expose native accessibility evidence … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 28 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 3 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 79 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 99 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 10 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1348 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1349 коммит(ов) в areas после сверки: a7b7d1bb docs(kb): update after merge a74c4736-5ce6-44ea-91d7-072a6b40fc9b … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 5 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause |
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 744. Последние:
+Всего записей: 745. Последние:
 
 - [2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md) — web-reader-rebase-main
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md) — web-reader-qa-cycle-08
