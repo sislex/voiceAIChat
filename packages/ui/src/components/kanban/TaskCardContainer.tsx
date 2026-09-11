@@ -182,6 +182,15 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   // `new` ломал 14 тестов доски и страницы проекта — merge-ран это и поймал.
   const [version, setVersion] = useState<TaskCardVersion>(props.initialVersion ?? 'legacy')
   const [activeTab, setActiveTab] = useState<TaskCardTab>(props.initialTab === 'chat' ? 'chat' : 'overview')
+  useEffect(() => {
+    if (props.initialTab === 'chat') setActiveTab('chat')
+    else if (props.initialTab === 'preparation') setActiveTab('preparation')
+    else if (props.initialTab === 'settings') setActiveTab('settings')
+    else if (props.initialTab === 'progress') setActiveTab('progress')
+    else if (props.initialTab === 'component_qa' || props.initialTab === 'integration_tests' || props.initialTab === 'automated_qa' || props.initialTab === 'merge' || props.initialTab === 'feed') setActiveTab(props.initialTab)
+    else if (props.initialTab === 'qa') setActiveTab('manual_qa')
+    else setActiveTab('overview')
+  }, [props.initialTab, props.task.id])
   const [reworkOpen, setReworkOpen] = useState(false)
   const [draft, setDraft] = useState<TaskReworkDraft>(EMPTY_DRAFT)
   const [cycles, setCycles] = useState<TaskReworkCycleViewModel[]>(props.reworkCycles ?? [])
@@ -263,7 +272,10 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
     onVersionChange={setVersion}
     callbacks={{
       onClose: props.onClose,
-      onChangeTab: setActiveTab,
+      onChangeTab: (tab) => {
+        setActiveTab(tab)
+        props.onTabChange?.(tab === 'overview' || tab === 'reworks' || tab === 'manual_qa' ? 'general' : tab)
+      },
       onOpenRun: (id) => props.onOpenCiRun?.(id),
       onOpenMake: (id) => props.onOpenMake?.(id),
       onStartRework: () => { setError(null); setReworkOpen(true); void loadMakeSources() },

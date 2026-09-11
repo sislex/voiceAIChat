@@ -1848,6 +1848,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onStartCi={props.onStartCi}
           onStartPreparation={props.onStartPreparation}
           initialTab={openTaskTab}
+          onTabChange={(tab) => props.onOpenTaskChange?.(openTask.id, tab)}
           initialChatDraft={openTaskChatDraft}
           loadPreparationRuns={props.loadPreparationRuns}
           loadPreparationRun={props.loadPreparationRun}

@@ -11,11 +11,12 @@ const routes: ProjectsRoute[] = [
   { kind: 'code', projectId: 'p1', workspaceId: 'ws:ws 1' },
   { kind: 'assistant', projectId: 'p1' },
   { kind: 'task', projectId: 'p1', taskId: 't/1' },
-  { kind: 'task-preparation', projectId: 'p1', taskId: 't1' },
-  { kind: 'task-chat', projectId: 'p1', taskId: 't1', conversationId: 'c1' }
+  { kind: 'task-tab', projectId: 'p1', taskId: 't1', tab: 'preparation' },
+  { kind: 'task-tab', projectId: 'p1', taskId: 't1', tab: 'chat' }
 ]
 describe('projects route', () => {
   it.each(routes)('round-trips $kind', (route) => expect(parseProjectsRoute(buildProjectsRoute(route))).toEqual(route))
+  // @testCase TC-1
   it('accepts hashes and rejects non-project and excess routes', () => {
     expect(parseProjectsRoute('#/projects/p1/task/t1')).toEqual({ kind: 'task', projectId: 'p1', taskId: 't1' })
     expect(parseProjectsRoute('/chat/c1')).toBeNull()

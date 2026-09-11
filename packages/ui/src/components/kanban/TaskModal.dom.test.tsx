@@ -1638,10 +1638,13 @@ describe('TaskModal — создание чата задачи', () => {
   })
 })
 
+// @testCase TC-3
+// @testCase TC-6
 describe('TaskModal — встроенный AI-чат', () => {
   const message = (id: string, role: 'u1' | 'ai', text: string) => ({ id, conversationId: 'chat-1', role, text, time: '10:00', createdAt: 1 }) as never
 
   // @testCase TC-UI-CHAT-LEGACY
+  // @testCase TC-2
   it('открывает AI-чат только вкладкой и не показывает прежние входы', async () => {
     render(<TaskModal {...props({ onOpenChat: vi.fn() })} />)
     expect(screen.getByRole('tab', { name: 'AI-чат' })).toBeInTheDocument()
@@ -1735,6 +1738,7 @@ describe('TaskModal — встроенный AI-чат', () => {
   })
 
   // @testCase TC-UI-TASK-CHAT-SETTINGS
+  // @testCase TC-4
   it('открывает настройки связанного task-разговора', async () => {
     const originalApi = window.api
     const onOpenConversationSettings = vi.fn()

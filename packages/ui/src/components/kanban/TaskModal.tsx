@@ -100,7 +100,7 @@ const RUN_OUTCOME_LABEL: Record<TaskRunResult['outcome'], string> = {
   skipped: 'пропущен'
 }
 
-export type TaskModalTab = 'chat' | 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'code' | 'merge' | 'feed' | 'improvements'
+export type TaskModalTab = 'general' | 'timeline' | 'activity' | 'settings' | 'progress' | 'chat' | 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'code' | 'merge' | 'feed' | 'improvements'
 
 export interface TaskModalProps {
   task: Task
@@ -123,6 +123,8 @@ export interface TaskModalProps {
   onStartCi?: (taskId: string) => void | Promise<void>
   onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   initialTab?: TaskModalTab
+  /** Synchronizes a user-selected tab with its task child route. */
+  onTabChange?: (tab: TaskModalTab) => void
   /** Локальный черновик встроенного AI-чата; до явной отправки не сохраняется. */
   initialChatDraft?: string
   /** Возможности типа проекта: CI/QA/merge-вкладки прячутся вместе с подсистемой. */
@@ -456,6 +458,7 @@ export function TaskChatPanel({ projectId, taskId, initialDraft, onOpenConversat
         voiceInputEnabled={Boolean(window.audio)}
       />}
     />
+    {!loading && !error && messages.length === 0 && <p className="task-chat-empty" data-testid="task-chat-empty">Задайте вопрос или опишите следующий шаг по задаче.</p>}
     {error && <Button size="sm" onClick={() => { if (retryDraft) void send(); else void load() }}>Повторить</Button>}
   </section>
 }
@@ -784,6 +787,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     ...(features.ci ? [{ id: 'feed' as const, label: 'Лента рана' }] : [])
   ]
   const tabIds = tabItems.map((item) => item.id)
+  // URL never grants access to a hidden or stage-inapplicable panel.
+  useEffect(() => {
+    if (!tabIds.includes(activeTab)) { setActiveTab('general'); return }
+    props.onTabChange?.(activeTab)
+  }, [activeTab, tabIds.join('|')]) // tab ids are derived from the task and feature access
   /** Общие атрибуты панели вкладки: роль, связь с кнопкой и скрытие. */
   // Настройки выполнения монтируются при первом заходе на вкладку и остаются.
   const [settingsMounted, setSettingsMounted] = useState(activeTab === 'settings')

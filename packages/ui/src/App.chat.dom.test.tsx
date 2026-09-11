@@ -646,6 +646,7 @@ describe('App — настройки разговора привязаны к и
   })
 
   // @testCase TC-NEG-01
+  // @testCase TC-5
   it('не открывает настройки для недоступного чата из прямого settings URL', async () => {
     const { api } = await seededApi()
     window.api = api

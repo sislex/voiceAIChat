@@ -199,6 +199,8 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
     return true
   }
 
+  // @testCase TC-7
+  // @testCase TC-8
   const parseTaskPreparation = (text: string): DevelopmentReadiness => {
     const raw = text.trim()
     if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')
@@ -269,7 +271,13 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
     }
     if (root.schemaVersion === 2) {
       requireString(root, 'goal')
+      // A non-empty scalar is an unambiguous one-item list; objects and empty
+      // strings remain invalid so recovery never invents requirements.
+      const normalizeStringList = (input: Record<string, unknown>, key: string): void => {
+        if (typeof input[key] === 'string' && input[key].trim()) input[key] = [input[key]]
+      }
       for (const key of ['scope', 'outOfScope', 'businessRules', 'errorsAndEdgeCases', 'uiStates', 'contractChanges', 'dataChanges', 'constraints', 'contradictions']) {
+        normalizeStringList(root, key)
         const items = requireArray(root, key)
         root[key] = items.map((item) => {
           const objectItem = record(item)

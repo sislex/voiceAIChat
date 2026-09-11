@@ -309,8 +309,9 @@ function initialChatIdFromPath(path: string, segments: string[]): string | null 
   if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader' || segments[0] === 'make') {
     return segments[1] ?? null
   }
-  const route = parseProjectsRoute(path)
-  return route?.kind === 'task-chat' ? route.conversationId : null
+  void path
+  void segments
+  return null
 }
 
 /**
@@ -355,7 +356,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const routeCodeWorkspace = projectsRoute?.kind === 'code' ? projectsRoute.workspaceId ?? null : null
   // Проектный parser владеет deep links карточки, подготовки и связанного чата.
   const routeTaskId = projectsRoute && 'taskId' in projectsRoute ? projectsRoute.taskId : null
-  const routeTaskChatId = projectsRoute?.kind === 'task-chat' ? projectsRoute.conversationId : null
+  const routeTaskTab = projectsRoute?.kind === 'task-tab' ? projectsRoute.tab : undefined
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
   // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
   // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
@@ -392,7 +393,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
   const chatRoute = parseChatRoute(path)
-  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'settings' || chatRoute?.kind === 'legacy-context' ? chatRoute.conversationId : routeTaskChatId
+  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'settings' || chatRoute?.kind === 'legacy-context' ? chatRoute.conversationId : null
   const legacyReaderRoute = segments[0] === 'web-recorder'
   const inReader = segments[0] === 'web-reader' || legacyReaderRoute
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
@@ -413,7 +414,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Sidebar. Reader-режимы по-прежнему изолированы от оболочки навигации.
   const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
   const sidebarAvailable = !inSplit || splitSidebarMode !== null
-  const inTaskChat = routeTaskChatId !== null
+  const inTaskChat = false
   const inChat = (!inProjects && !onUtilityPage && !inSplit && !globalSettingsRoute) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
   // Каждый домен — своя подписка: обновление аудио или админских данных не
@@ -2963,8 +2964,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             <ProjectBoard
                 projectFeatures={projectFeatures}
               initialOpenTaskId={routeTaskId}
-              initialOpenTaskTab={segments[4] === 'preparation' ? 'preparation' : undefined}
-              onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}${tab ? `/${tab}` : ''}` : `/projects/${routeProjectId}`)}
+              initialOpenTaskTab={routeTaskTab}
+              onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}/${tab ?? 'general'}` : `/projects/${routeProjectId}`)}
               projectName={routeProjectName}
               scrollScopeId={routeProjectId!}
               board={projects.board}
@@ -2991,7 +2992,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onUpdateTask={(taskId, fields) => void projectsActions.updateTask(taskId, fields)}
               onMoveTask={(taskId, columnId, afterId, beforeId) => projectsActions.moveTask(taskId, columnId, afterId, beforeId)}
               onDeleteTask={(taskId) => void projectsActions.deleteTask(taskId)}
-              onOpenChat={(taskId) => void projectsActions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
+              // Task chat always remains a task-card surface; the panel opens its linked conversation itself.
+              onOpenChat={(taskId) => navigate(`/projects/${routeProjectId}/task/${taskId}/chat`)}
               onOpenMake={(conversationId) => navigate(`/make/${conversationId}`)}
               onEnsureChat={(taskId) => void projectsActions.ensureTaskChat(taskId)}
               onOpenConversationSettings={(conversationId, projectId) => void openConversationSettings(conversationId, projectId)}
