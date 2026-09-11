@@ -4772,6 +4772,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jfilter-bulk button { min-height: 28px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font-size: 11px; cursor: pointer; }
 .jfilter-bulk button:disabled { opacity: .45; cursor: default; }
 .jfilter-options { display: grid; gap: 2px; min-height: 0; overflow: auto; }
+.jfilter-option-leading { display: inline-flex; flex: 0 0 auto; }
+.jfilter-option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.jfilter-option-meta { min-width: 22px; margin-left: auto; padding: 1px 5px; border-radius: 9px; background: var(--surface-hover); color: var(--text-dim); font-size: 11px; text-align: center; }
+.jfilter-option-avatar { width: 20px; height: 20px; font-size: 10px; }
 .jfilter-empty { margin: 8px 4px; color: var(--text-dim); font-size: 12px; }
 .jfilter-menu label { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 6px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .jfilter-menu label:hover { background: var(--surface-hover); }

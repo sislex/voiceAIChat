@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 62cad05c
+checked: 993d120b
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -975,6 +975,17 @@ checkbox. The option list scrolls independently inside a viewport-bounded menu,
 including on phones. DOM tests cover partial bulk changes, preservation, empty
 results, focus, and Escape; built Chromium verifies the eight-label story and
 real responsive geometry.
+
+The same component also provides a detailed `Исполнители` facet next to the
+quick avatar buttons. It lists readable usernames, decorative avatars, complete
+task counts for the displayed columns, and a separate unassigned option. Avatar
+initials are hidden from the checkbox accessible name, which remains
+`username count`. Search and bulk actions operate on people while the active
+selection stays synchronized in both directions with the quick avatar buttons.
+The summary count and existing active-filter chips use the same `assignees`
+state. DOM and built-Chromium tests cover counts, decoration semantics, search,
+bulk selection, quick-button synchronization, result filtering, and mobile
+menu width.
 
 ### Compact task-card metadata (2026-09-11)
 

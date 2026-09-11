@@ -50,6 +50,35 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
 }
 
 describe('KanbanBoard (изолированный)', () => {
+  it('показывает исполнителей с аватарами и полными счётчиками и синхронизирует быстрый выбор', async () => {
+    const assigneeBoard: Board = {
+      ...board,
+      tasks: [
+        task({ id: 'a1', assignee: 'alice', title: 'Alice one' }),
+        task({ id: 'a2', assignee: 'alice', title: 'Alice two' }),
+        task({ id: 'b1', assignee: 'bob', title: 'Bob one' }),
+        task({ id: 'free', assignee: null, title: 'Free' })
+      ]
+    }
+    renderBoard({ board: assigneeBoard, members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    await userEvent.click(screen.getByText('Исполнители'))
+    const search = screen.getByRole('searchbox', { name: 'Поиск в фильтре «Исполнители»' })
+    await waitFor(() => expect(search).toHaveFocus())
+    const menu = search.closest<HTMLElement>('.jfilter-menu')!
+    expect(within(menu).getByRole('checkbox', { name: 'alice 2' })).not.toBeChecked()
+    expect(within(menu).getByRole('checkbox', { name: 'bob 1' })).not.toBeChecked()
+    expect(within(menu).getByRole('checkbox', { name: 'Не назначено 1' })).not.toBeChecked()
+    expect(menu.querySelectorAll('.vc-avatar')).toHaveLength(2)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Фильтр: alice' }))
+    expect(within(menu).getByRole('checkbox', { name: 'alice 2' })).toBeChecked()
+    await userEvent.clear(search)
+    await userEvent.type(search, 'bob')
+    await userEvent.click(within(menu).getByRole('button', { name: 'Выбрать найденные' }))
+    expect(screen.getByRole('button', { name: 'Фильтр: bob' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Исполнители').closest('summary')).toHaveTextContent('2')
+  })
+
   it('ищет варианты фильтра и массово меняет только найденные значения', async () => {
     const labelBoard: Board = {
       ...board,

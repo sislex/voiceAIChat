@@ -110,6 +110,12 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.jfilter-options')).toMatch(/overflow:\s*auto/)
   })
 
+  it('подробный фильтр исполнителей не обрезает счётчик и умеет сокращать имя', () => {
+    expect(rule('.jfilter-option-label')).toMatch(/text-overflow:\s*ellipsis/)
+    expect(rule('.jfilter-option-meta')).toMatch(/margin-left:\s*auto/)
+    expect(rule('.jfilter-option-avatar')).toMatch(/width:\s*20px/)
+  })
+
   it('обёртка панелей не переносит строки — иначе вкладка не скроллится', () => {
     // Панель объявлена `flex: 1 1 100%`. С `flex-wrap: wrap` каждая уходит на
     // свою строку, высота строки считается по содержимому, и `overflow: auto`
