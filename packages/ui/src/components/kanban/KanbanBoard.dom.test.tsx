@@ -244,6 +244,12 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
   })
 
+  it('передаёт активный поиск карточке для подсветки найденного текста', async () => {
+    renderBoard({ board: { ...board, tasks: [task({ title: 'Alpha alpha' })] } })
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'ALPHA')
+    expect(screen.getByTestId('task-card').querySelectorAll('mark.jcard-search-hit')).toHaveLength(2)
+  })
+
   it('общая поверхность колонок не включает панель фильтров', () => {
     renderBoard()
     const surface = screen.getByTestId('kanban-board')
