@@ -77,7 +77,7 @@ describe('стили открытой карточки задачи', () => {
     // Карточка на доске и шапка колонки.
     'jcard-epic', 'jcard-epic-dot', 'jcard-flag', 'jcard-due', 'jcard-pts',
     'jcard-updated', 'jcard-updated--fresh', 'jcard-updated--stale',
-    'jcard-stage-actions', 'jcard-progress', 'jcard-progress-bar', 'jcard-progress-fill',
+    'jcard-stage-actions', 'jcard-menu-label', 'jcard-progress', 'jcard-progress-bar', 'jcard-progress-fill',
     'jcard-progress-text', 'jcard-progress--empty', 'jcard-progress--complete',
     'jboard-snapshot', 'jboard-snapshot--fresh', 'jboard-snapshot--stale',
     'jboard-stale', 'jboard-stale-mark', 'jboard-stale-copy', 'jboard-filters-shell',

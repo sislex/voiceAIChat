@@ -681,6 +681,28 @@ describe('TaskCard — содержимое по стадиям', () => {
 })
 
 describe('TaskCard — переход между этапами', () => {
+  it('меню перечисляет все другие колонки по порядку и помечает скрытые', async () => {
+    const move = vi.fn()
+    render(<TaskCard {...props({
+      moveColumns: [
+        { id: 'c0', name: 'Backlog' },
+        { id: 'c1', name: 'Current' },
+        { id: 'c2', name: 'Archive', hidden: true }
+      ],
+      onMoveToColumn: move
+    })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «Задача A»' }))
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByText('Переместить в колонку')).toBeInTheDocument()
+    const destinations = within(menu).getAllByRole('menuitem', { name: /В колонку/ })
+    expect(destinations.map((item) => item.textContent)).toEqual(['В колонку «Backlog»', 'В колонку «Archive» · скрытая'])
+    expect(within(menu).queryByRole('menuitem', { name: /Current/ })).not.toBeInTheDocument()
+
+    await userEvent.click(destinations[1]!)
+    expect(move).toHaveBeenCalledWith('t1', 'c1', 'c2')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
   it('показывает disabled-состояния первой, средней и последней колонок', () => {
     const move = vi.fn()
     const { rerender } = render(<TaskCard {...props({ previousColumn: null, nextColumn: { id: 'c2', name: 'Development' }, onMoveToColumn: move })} />)

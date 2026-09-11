@@ -4962,11 +4962,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* ⋯-меню карточки и колонки: проявляется по ховеру карточки, вид — .vc-btn ghost. */
 .jcard-reveal { opacity: 0; }
 .jcard:hover .jcard-reveal, .jcard-reveal[aria-expanded='true'], .jcol-head .jcard-reveal { opacity: 1; }
-.jcard-menu { position: absolute; top: 100%; right: 0; z-index: 50; min-width: 170px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow-md); padding: 4px; display: flex; flex-direction: column; }
+.jcard-menu { position: absolute; top: 100%; right: 0; z-index: 50; min-width: 170px; max-height: min(70vh, 440px); overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow-md); padding: 4px; display: flex; flex-direction: column; }
 /* Иконка и подпись — по центру строки: svg выравнивается по базовой линии и
    без flex висел бы выше текста. */
 .jcard-menu > button { display: flex; align-items: center; gap: 8px; border: none; background: none; color: inherit; text-align: left; font-size: 13px; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
 .jcard-menu > button:hover { background: var(--surface-hover); }
+.jcard-menu-label { margin: 5px 6px 2px; padding-top: 5px; border-top: 1px solid var(--border-soft); color: var(--text-dim); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .jcard-menu-danger { color: var(--danger); }
 .jwip-input { margin: 4px 8px; width: 120px; font-size: 13px; }
 .jcard-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
