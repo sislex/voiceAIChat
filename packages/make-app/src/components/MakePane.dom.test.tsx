@@ -720,7 +720,7 @@ describe('MakePane', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Проверить доступность' }))
     const panel = await screen.findByTestId('make-a11y')
     expect(panel).toHaveTextContent('1 нарушений')
-    expect(within(panel).getByText('Images must have alternate text')).toBeInTheDocument()
+    expect(within(panel).getByText('Изображения должны иметь альтернативный текст')).toBeInTheDocument()
     await userEvent.click(within(panel).getByRole('button', { name: 'Исправить' }))
     expect(onAskAssistant).toHaveBeenCalledWith(expect.stringContaining('image-alt'))
   })

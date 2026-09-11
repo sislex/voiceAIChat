@@ -50,8 +50,10 @@ export const MAKE_SNIPPETS: MakeSnippet[] = [
 ]
 
 /** Сниппеты для языка — то, что провайдер отдаёт Monaco. */
-export function snippetsFor(language: string): MakeSnippet[] {
-  return MAKE_SNIPPETS.filter((s) => s.languages.includes(language))
+export function snippetsFor(language: string, translate?: (text: string) => string): MakeSnippet[] {
+  return MAKE_SNIPPETS.filter((s) => s.languages.includes(language)).map((snippet) => translate
+    ? { ...snippet, label: translate(snippet.label), detail: translate(snippet.detail) }
+    : snippet)
 }
 
 /** Слово перед курсором — префикс, по которому фильтруются сниппеты (Monaco делает fuzzy сам, нам нужен range). */

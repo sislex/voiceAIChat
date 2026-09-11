@@ -1,3 +1,4 @@
+import { mt, useMakeLocale } from '../i18n'
 // Controls panel fields (item 14): choose controls from arg values and CSF argTypes, including
 // range, color, select, text, boolean, number, object, min/max/step, and options. Edit arrays and
 // objects as validated JSON; highlight invalid input instead of sending it to the runner.
@@ -53,6 +54,7 @@ export function colorToHex(value: string): string {
 }
 
 export function MakeControlField({ name, base, value, argType, enumOptions, onChange }: MakeControlFieldProps): JSX.Element {
+  useMakeLocale()
   const id = `make-arg-${name}`
   const kind = controlKind(base, argType, enumOptions)
   const label = <span title={argType?.description}>{name}</span>
@@ -92,6 +94,7 @@ export function MakeControlField({ name, base, value, argType, enumOptions, onCh
 }
 
 function JsonField({ id, label, value, onChange }: { id: string; label: JSX.Element; value: unknown; onChange: (v: unknown) => void }): JSX.Element {
+  useMakeLocale()
   const [text, setText] = useState(() => JSON.stringify(value, null, 2))
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { setText(JSON.stringify(value, null, 2)); setError(null) }, [value])
@@ -101,9 +104,9 @@ function JsonField({ id, label, value, onChange }: { id: string; label: JSX.Elem
         <textarea id={id} value={text} rows={Math.min(8, Math.max(2, text.split('\n').length))} spellCheck={false} aria-invalid={error !== null}
           onChange={(e) => {
             setText(e.target.value)
-            try { onChange(JSON.parse(e.target.value)); setError(null) } catch (err) { setError(err instanceof Error ? err.message : 'Невалидный JSON') }
+            try { onChange(JSON.parse(e.target.value)); setError(null) } catch { setError('invalid') }
           }} />
-        {error && <small className="make-control-error" role="alert">JSON: {error}</small>}
+        {error && <small className="make-control-error" role="alert">{mt('invalidJsonHint')}</small>}
       </span>
     </label>
   )

@@ -14,6 +14,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Button } from './Button'
 import { Dialog } from './Dialog'
+import { useLocaleSource, type UiLocaleSource } from './localeSource'
 
 /** Что спрашиваем. Ровно этот объект принимает confirm() из useConfirm. */
 export interface ConfirmRequest {
@@ -23,6 +24,11 @@ export interface ConfirmRequest {
   message?: ReactNode
   confirmLabel?: string
   cancelLabel?: string
+  /** Localized close label and content language supplied by independent panels. */
+  localeSource?: UiLocaleSource
+  closeLabel?: string
+  lang?: string
+  requireTextLabel?: string
   /** danger — красная кнопка подтверждения (удаление, откат). */
   variant?: 'danger' | 'default'
   /** Необратимая операция: подтверждение включается после ввода этого текста. */
@@ -39,11 +45,17 @@ export function ConfirmDialog({
   message,
   confirmLabel = 'Продолжить',
   cancelLabel = 'Отмена',
+  closeLabel,
+  localeSource,
+  lang,
+  requireTextLabel,
   variant = 'default',
   requireText,
   onConfirm,
   onCancel
 }: ConfirmDialogProps): JSX.Element {
+  const localized = useLocaleSource(localeSource, lang)
+  const t = localized.translate
   const [typed, setTyped] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -58,8 +70,10 @@ export function ConfirmDialog({
     <Dialog
       size="sm"
       testId="confirm-dialog"
-      title={title}
+      title={t(title)}
       onClose={onCancel}
+      closeLabel={closeLabel ? t(closeLabel) : undefined}
+      lang={localized.lang}
       // Фокус — на безопасном элементе. Поле подтверждения тоже безопасно и
       // сразу принимает набор, поэтому в режиме requireText оно первое.
       initialFocusRef={requireText ? inputRef : cancelRef}
@@ -67,20 +81,20 @@ export function ConfirmDialog({
       footer={
         <>
           <Button ref={cancelRef} onClick={onCancel}>
-            {cancelLabel}
+            {t(cancelLabel)}
           </Button>
           <Button variant={variant === 'danger' ? 'danger' : 'primary'} disabled={!armed} onClick={confirm}>
-            {confirmLabel}
+            {t(confirmLabel)}
           </Button>
         </>
       }
     >
       <div className="mdbody vc-confirm-body">
-        {message && <p className="vc-confirm-text">{message}</p>}
+        {message && <p className="vc-confirm-text">{typeof message === 'string' ? t(message) : message}</p>}
         {requireText && (
           <label className="vc-confirm-field">
             <span>
-              Для подтверждения введите «{requireText}»
+              {requireTextLabel ? t(requireTextLabel) : <>Для подтверждения введите «{requireText}»</>}
             </span>
             <input
               ref={inputRef}

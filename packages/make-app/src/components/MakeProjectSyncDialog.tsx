@@ -1,3 +1,5 @@
+import { Dialog, ErrorState, useToast } from '../i18n/ui'
+import { mt, useMakeLocale } from '../i18n'
 // The Make project-import dialog copies components and styles from the project machine's working
 // directory into the workshop for assistant edits and previews. Repository writes belong to the Git
 // workflow; direct writes would leave the shared copy dirty. Designs reach application code through
@@ -9,7 +11,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus } from '@shared/make'
-import { Button, Dialog, EmptyState, ErrorState, useToast } from '@voicechat/ui-kit'
+import { Button, EmptyState } from '@voicechat/ui-kit'
 
 interface Props {
   conversationId: string
@@ -19,15 +21,16 @@ interface Props {
 
 /** Describe link status in user-facing terms rather than exposing contract codes. */
 const STATUS_TEXT: Record<MakeProjectLinkStatus, string> = {
-  same: 'совпадает с проектом',
-  edited_in_make: 'изменён в Make',
-  changed_in_project: 'изменён в проекте — заберите заново',
-  both: 'конфликт: изменён и здесь, и в проекте',
-  missing_in_project: 'в проекте больше нет',
-  missing_in_make: 'в мастерской больше нет'
+  get same() { return mt("matchesProject") },
+  get edited_in_make() { return mt("changedInMake") },
+  get changed_in_project() { return mt("changedInProjectPullAgain") },
+  get both() { return mt("conflictChangedHereAndInProject") },
+  get missing_in_project() { return mt("noLongerInProject") },
+  get missing_in_make() { return mt("noLongerInWorkshop") }
 }
 
 export function MakeProjectSyncDialog({ conversationId, api, onClose }: Props): JSX.Element {
+  useMakeLocale()
   const toast = useToast()
   const [dir, setDir] = useState('')
   const [entries, setEntries] = useState<MakeProjectFileEntry[]>([])
@@ -62,7 +65,7 @@ export function MakeProjectSyncDialog({ conversationId, api, onClose }: Props): 
       const result = await api['make:projectPull']({ conversationId, paths: selected })
       setLinks(result.links)
       setSelected([])
-      toast.success(`Скопировано файлов: ${result.links.length ? selected.length : 0}`)
+      toast.success(mt("filesCopiedValue", { p0: result.links.length ? selected.length : 0 }))
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -74,14 +77,14 @@ export function MakeProjectSyncDialog({ conversationId, api, onClose }: Props): 
     setSelected((prev) => checked ? [...prev, path] : prev.filter((item) => item !== path))
   const parent = dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : ''
 
-  return <Dialog title="Компоненты из проекта" size="lg" padded onClose={onClose} testId="make-project-sync">
+  return <Dialog title={mt("componentsFromProject_ac8316")} size="lg" padded onClose={onClose} testId="make-project-sync">
     {error
       ? <ErrorState message={error} onRetry={() => void load(dir)} />
       : <div className="make-sync">
-          <section aria-label="Файлы проекта на машине">
-            <h3>Файлы проекта{dir ? ` · ${dir}` : ''}</h3>
+          <section aria-label={mt("projectFilesOnMachine")}>
+            <h3>{mt("projectFiles")}{dir ? ` · ${dir}` : ''}</h3>
             <div className="make-sync-list" role="list" data-testid="make-sync-files">
-              {dir && <div role="listitem"><button type="button" className="make-sync-dir" onClick={() => void load(parent)}>← Назад</button></div>}
+              {dir && <div role="listitem"><button type="button" className="make-sync-dir" onClick={() => void load(parent)}>{mt("back")}</button></div>}
               {entries.map((entry) => <div role="listitem" key={entry.path}>
                 {entry.kind === 'dir'
                   ? <button type="button" className="make-sync-dir" onClick={() => void load(entry.path)}>📁 {entry.name}</button>
@@ -91,15 +94,15 @@ export function MakeProjectSyncDialog({ conversationId, api, onClose }: Props): 
                     </label>}
               </div>)}
             </div>
-            {entries.length === 0 && <EmptyState title="Каталог пуст" description="Выберите другой каталог проекта." />}
+            {entries.length === 0 && <EmptyState title={mt("directoryIsEmpty")} description={mt("selectAnotherProjectDirectory")} />}
             <div className="make-sync-actions">
-              <Button size="sm" disabled={busy || selected.length === 0} loading={busy} onClick={() => void pull()}>Скопировать в Make ({selected.length})</Button>
+              <Button size="sm" disabled={busy || selected.length === 0} loading={busy} onClick={() => void pull()}>{mt("copyToMake")}{selected.length})</Button>
             </div>
           </section>
-          <section aria-label="Связанные с проектом файлы">
-            <h3>Связанные файлы</h3>
+          <section aria-label={mt("filesLinkedToProject")}>
+            <h3>{mt("linkedFiles")}</h3>
             {links.length === 0
-              ? <EmptyState title="Пока ничего не скопировано" description="Отметьте файлы слева и скопируйте их в Make — правки останутся в мастерской." />
+              ? <EmptyState title={mt("noFilesCopiedYet")} description={mt("selectFilesOnTheLeftAndCopyThemInto")} />
               : <div className="make-sync-list" role="list" data-testid="make-sync-links">
                   {links.map((link) => <div role="listitem" key={link.path} className="make-sync-link">
                     <span className="make-sync-path">{link.path}</span>

@@ -1,3 +1,5 @@
+import type { MakeLocale } from '@voicechat/make-contracts/localization'
+import { publicText, publicLanguageSelect } from './publicLocale.js'
 // Make project stories use CSF files named *.stories.(jsx|tsx). Extract named exports from source
 // with a regular expression rather than executing project code on the server. The runner page uses
 // the project's index.html import map and styles so components match the application; project code
@@ -20,11 +22,11 @@ export function extractHeadAssets(indexHtml: string | null): { importMap: string
 const escapeAttr = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 
 /** Runner HTML: render story from file and show errors on the page as well as in the console. */
-export function renderStoriesPage(file: string, story: string, indexHtml: string | null): string {
+export function renderStoriesPage(file: string, story: string, indexHtml: string | null, locale: MakeLocale = 'ru'): string {
   const { importMap, links } = extractHeadAssets(indexHtml)
   const modulePath = './' + file.split('/').map(encodeURIComponent).join('/')
   return `<!doctype html>
-<html lang="ru">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -51,12 +53,12 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
       const meta = mod.default ?? {};
       const names = Object.keys(mod).filter((k) => k !== 'default');
       const name = storyName && mod[storyName] ? storyName : names[0];
-      if (!name) throw new Error('В файле нет именованных экспортов-стори');
+      if (!name) throw new Error(${JSON.stringify(publicText(locale, 'noStoryExports'))});
       const story = mod[name];
       const args = { ...(meta.args ?? {}), ...(story.args ?? {}) };
       const render = story.render ?? meta.render;
       const component = story.component ?? meta.component;
-      if (!render && !component) throw new Error('У стори «' + name + '» нет component или render');
+      if (!render && !component) throw new Error(${JSON.stringify(publicText(locale, 'noRender'))}.replace('{p0}', name));
       const root = createRoot(document.getElementById('root'));
       // Панель controls родителя присылает переопределения args; функции в args сериализовать нельзя — отдаём метку.
       const draw = (overrides) => { const merged = { ...args, ...overrides }; root.render(render ? render(merged) : React.createElement(component, merged)); };
@@ -133,19 +135,19 @@ export function storyUsageSnippets(path: string, source: string): Record<string,
 }
 
 /** Gallery of all project stories: runner iframe grid, name search, and usage snippets (item 28). */
-export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 'Компоненты', usage: Record<string, Record<string, string>> = {}): string {
+export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 'Компоненты', usage: Record<string, Record<string, string>> = {}, locale: MakeLocale = 'ru'): string {
   const cards = files.flatMap((f) => f.stories.map((name) => {
-    const href = `${base}${MAKE_STORIES_PAGE}?file=${encodeURIComponent(f.path)}&story=${encodeURIComponent(name)}`
+    const href = `${base}${MAKE_STORIES_PAGE}?file=${encodeURIComponent(f.path)}&story=${encodeURIComponent(name)}&makeLocale=${locale}`
     const code = usage[f.path]?.[name]
-    const codeBlock = code ? `<details class="code"><summary>Код</summary><pre>${escapeHtml(code)}</pre><button type="button" class="copy" data-code="${escapeHtml(code)}">Скопировать</button></details>` : ''
-    return `<figure class="card" data-search="${escapeHtml(`${f.title} ${name} ${f.path}`.toLowerCase())}"><iframe loading="lazy" title="${escapeHtml(f.title)} / ${escapeHtml(name)}" src="${href}"></iframe><figcaption><b>${escapeHtml(f.title)}</b> · ${escapeHtml(name)} <a href="${href}" target="_blank" rel="noreferrer">открыть</a></figcaption>${codeBlock}</figure>`
+    const codeBlock = code ? `<details class="code"><summary>${publicText(locale, 'code')}</summary><pre>${escapeHtml(code)}</pre><button type="button" class="copy" data-code="${escapeHtml(code)}">${publicText(locale, 'copy')}</button></details>` : ''
+    return `<figure class="card" data-search="${escapeHtml(`${f.title} ${name} ${f.path}`.toLowerCase())}"><iframe loading="lazy" title="${escapeHtml(f.title)} / ${escapeHtml(name)}" src="${href}"></iframe><figcaption><b>${escapeHtml(f.title)}</b> · ${escapeHtml(name)} <a href="${href}" target="_blank" rel="noreferrer">${publicText(locale, 'open')}</a></figcaption>${codeBlock}</figure>`
   }))
   return `<!doctype html>
-<html lang="ru">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml(title === 'Компоненты' ? publicText(locale, 'components') : title)}</title>
   <style>
     body { margin: 0; padding: 24px; font: 14px/1.5 system-ui, sans-serif; background: #f6f7fb; color: #1a1d23; }
     h1 { margin: 0 0 16px; font-size: 20px; }
@@ -165,14 +167,14 @@ export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 
   </style>
 </head>
 <body>
-  <div class="head"><h1 style="margin:0">${escapeHtml(title)}</h1>${cards.length ? '<input class="search" type="search" placeholder="Поиск компонента или стори…" aria-label="Поиск по витрине">' : ''}<span class="count"></span></div>
-  ${cards.length ? `<div class="grid">${cards.join('')}</div>` : '<p class="empty">В проекте пока нет сториз (*.stories.jsx/tsx).</p>'}
+  <div class="head"><h1 style="margin:0">${escapeHtml(title === 'Компоненты' ? publicText(locale, 'components') : title)}</h1>${publicLanguageSelect(locale)}${cards.length ? `<input class="search" type="search" placeholder="${publicText(locale, 'searchPlaceholder')}" aria-label="${publicText(locale, 'searchLabel')}">` : ''}<span class="count"></span></div>
+  ${cards.length ? `<div class="grid">${cards.join('')}</div>` : `<p class="empty">${publicText(locale, 'noStories')}</p>`}
   <script>
     (function(){
       var q = document.querySelector('.search'), cards = Array.prototype.slice.call(document.querySelectorAll('.card')), count = document.querySelector('.count');
-      function apply(){ var v = (q && q.value || '').trim().toLowerCase(); var shown = 0; cards.forEach(function(c){ var hit = !v || (c.getAttribute('data-search') || '').indexOf(v) >= 0; c.hidden = !hit; if (hit) shown++; }); if (count) count.textContent = v ? shown + ' из ' + cards.length : ''; }
+      function apply(){ var v = (q && q.value || '').trim().toLowerCase(); var shown = 0; cards.forEach(function(c){ var hit = !v || (c.getAttribute('data-search') || '').indexOf(v) >= 0; c.hidden = !hit; if (hit) shown++; }); if (count) count.textContent = v ? shown + ${JSON.stringify(publicText(locale, 'of'))} + cards.length : ''; }
       if (q) { q.addEventListener('input', apply); var initial = new URLSearchParams(location.search).get('q'); if (initial) { q.value = initial; apply(); } }
-      document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('.copy'); if (!b) return; var code = b.getAttribute('data-code') || ''; (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(function(){ b.textContent = 'Скопировано'; setTimeout(function(){ b.textContent = 'Скопировать'; }, 1500); }, function(){ b.textContent = 'Выделите и скопируйте'; }); });
+      document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('.copy'); if (!b) return; var code = b.getAttribute('data-code') || ''; (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(function(){ b.textContent = ${JSON.stringify(publicText(locale, 'copied'))}; setTimeout(function(){ b.textContent = ${JSON.stringify(publicText(locale, 'copy'))}; }, 1500); }, function(){ b.textContent = ${JSON.stringify(publicText(locale, 'copyManually'))}; }); });
     })();
   </script>
 </body>
@@ -193,14 +195,14 @@ export function parseTestFile(path: string, source: string, projectPaths: Readon
  * render/click/type/find helpers. Send each result to the parent as vc-make.test and the final
  * summary as vc-make.tests-done.
  */
-export function renderTestsPage(file: string, indexHtml: string | null): string {
+export function renderTestsPage(file: string, indexHtml: string | null, locale: MakeLocale = 'ru'): string {
   const { importMap, links } = extractHeadAssets(indexHtml)
   const modulePath = './' + file.split('/').map(encodeURIComponent).join('/')
   return `<!doctype html>
-<html lang="ru">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
-  <title>Tests · ${escapeAttr(file)}</title>
+  <title>${publicText(locale, 'tests')} · ${escapeAttr(file)}</title>
   ${links}
   <style>body{margin:0;padding:16px;font:13px/1.5 ui-monospace,monospace;background:var(--bg,#fff)} #root{min-height:40px} .vc-t{padding:2px 0} .vc-t.ok{color:#067647} .vc-t.fail{color:#b42318;white-space:pre-wrap}</style>
   <script type="importmap">${importMap}</script>
@@ -215,16 +217,18 @@ export function renderTestsPage(file: string, indexHtml: string | null): string 
     window.test = (name, fn) => { tests.push({ name, fn }); };
     const fmt = (v) => { try { return typeof v === 'string' ? JSON.stringify(v) : JSON.stringify(v) ?? String(v); } catch (e) { return String(v); } };
     const textOf = (el) => (el && el.textContent != null ? el.textContent : String(el));
+    const message = (template, ...values) => template.replace(/\\{p(\\d+)\\}/g, (_, index) => String(values[Number(index)] ?? ''));
+    const assertion = (value, operator, expected = '') => message(${JSON.stringify(publicText(locale, 'assertion'))}, fmt(value), operator, expected);
     window.expect = (actual) => ({
-      toBe: (e) => { if (actual !== e) throw new Error('expected ' + fmt(actual) + ' toBe ' + fmt(e)); },
-      toEqual: (e) => { if (JSON.stringify(actual) !== JSON.stringify(e)) throw new Error('expected ' + fmt(actual) + ' toEqual ' + fmt(e)); },
-      toBeTruthy: () => { if (!actual) throw new Error('expected ' + fmt(actual) + ' toBeTruthy'); },
-      toBeFalsy: () => { if (actual) throw new Error('expected ' + fmt(actual) + ' toBeFalsy'); },
-      toBeNull: () => { if (actual !== null) throw new Error('expected ' + fmt(actual) + ' toBeNull'); },
-      toContain: (e) => { const s = typeof actual === 'string' ? actual : textOf(actual); if (!(Array.isArray(actual) ? actual.includes(e) : s.includes(e))) throw new Error('expected ' + fmt(s) + ' toContain ' + fmt(e)); },
-      toHaveTextContent: (e) => { const s = textOf(actual); if (!s.includes(e)) throw new Error('expected text ' + fmt(s) + ' to contain ' + fmt(e)); },
-      toHaveClass: (c) => { if (!actual || !actual.classList || !actual.classList.contains(c)) throw new Error('expected element to have class ' + c); },
-      toBeGreaterThan: (e) => { if (!(actual > e)) throw new Error('expected ' + fmt(actual) + ' > ' + fmt(e)); }
+      toBe: (e) => { if (actual !== e) throw new Error(assertion(actual, 'toBe', fmt(e))); },
+      toEqual: (e) => { if (JSON.stringify(actual) !== JSON.stringify(e)) throw new Error(assertion(actual, 'toEqual', fmt(e))); },
+      toBeTruthy: () => { if (!actual) throw new Error(assertion(actual, 'toBeTruthy')); },
+      toBeFalsy: () => { if (actual) throw new Error(assertion(actual, 'toBeFalsy')); },
+      toBeNull: () => { if (actual !== null) throw new Error(assertion(actual, 'toBeNull')); },
+      toContain: (e) => { const s = typeof actual === 'string' ? actual : textOf(actual); if (!(Array.isArray(actual) ? actual.includes(e) : s.includes(e))) throw new Error(assertion(s, 'toContain', fmt(e))); },
+      toHaveTextContent: (e) => { const s = textOf(actual); if (!s.includes(e)) throw new Error(message(${JSON.stringify(publicText(locale, 'textAssertion'))}, fmt(s), fmt(e))); },
+      toHaveClass: (c) => { if (!actual || !actual.classList || !actual.classList.contains(c)) throw new Error(message(${JSON.stringify(publicText(locale, 'classAssertion'))}, c)); },
+      toBeGreaterThan: (e) => { if (!(actual > e)) throw new Error(assertion(actual, '>', fmt(e))); }
     });
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     try {
@@ -234,12 +238,12 @@ export function renderTestsPage(file: string, indexHtml: string | null): string 
         React,
         render: async (element) => { const host = document.getElementById('root'); if (root) root.unmount(); host.replaceChildren(); root = createRoot(host); root.render(element); await sleep(30); return host; },
         find: (selectorOrText) => { const host = document.getElementById('root'); return host.querySelector(selectorOrText) || [...host.querySelectorAll('*')].find((el) => el.children.length === 0 && (el.textContent || '').trim() === selectorOrText) || null; },
-        click: async (el) => { if (!el) throw new Error('click: элемент не найден'); el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); await sleep(20); },
-        type: async (el, text) => { if (!el) throw new Error('type: элемент не найден'); el.focus(); const setter = Object.getOwnPropertyDescriptor(el.__proto__, 'value')?.set; if (setter) setter.call(el, text); else el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })); await sleep(20); },
+        click: async (el) => { if (!el) throw new Error(${JSON.stringify(publicText(locale, 'clickMissing'))}); el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); await sleep(20); },
+        type: async (el, text) => { if (!el) throw new Error(${JSON.stringify(publicText(locale, 'typeMissing'))}); el.focus(); const setter = Object.getOwnPropertyDescriptor(el.__proto__, 'value')?.set; if (setter) setter.call(el, text); else el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })); await sleep(20); },
         sleep
       };
       await import(file);
-      if (tests.length === 0) throw new Error('В файле нет вызовов test(name, fn)');
+      if (tests.length === 0) throw new Error(${JSON.stringify(publicText(locale, 'noTests'))});
       let passed = 0, failed = 0;
       for (const { name, fn } of tests) {
         const started = performance.now();

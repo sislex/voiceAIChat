@@ -1,3 +1,4 @@
+import { mt, useMakeLocale } from '../i18n'
 // Mock collection table editor (roadmap-4, item 29). The component receives file text and emits
 // updated text through onChange; MakePane handles saving with the same manual and automatic
 // controls as the code editor.
@@ -19,9 +20,10 @@ export function mockTableFor(path: string, value: string): MockTable | null {
 }
 
 export function MakeMockTable({ path, value, onChange, readOnly }: Props): JSX.Element {
+  useMakeLocale()
   const table = useMemo(() => mockTableFor(path, value), [path, value])
   const [newColumn, setNewColumn] = useState('')
-  if (!table) return <p className="make-mock-table-empty">Файл не похож на коллекцию: нужен JSON с массивом объектов в <code>$body</code>.</p>
+  if (!table) return <p className="make-mock-table-empty">{mt("thisFileIsNotACollectionExpectedJsonWith")}{' '}<code>$body</code>.</p>
   const commit = (next: MockTable): void => onChange(serializeMockJson(tableToMockJson(next)))
   const setCell = (row: number, col: string, text: string): void => {
     const rows = table.rows.map((r, i) => (i === row ? { ...r, [col]: text } : r))
@@ -42,30 +44,30 @@ export function MakeMockTable({ path, value, onChange, readOnly }: Props): JSX.E
         <thead>
           <tr>
             {table.columns.map((c) => (
-              <th key={c}><span>{c}</span>{!readOnly && c !== 'id' && <IconButton size="sm" aria-label={`Удалить колонку ${c}`} title="Удалить колонку" onClick={() => removeColumn(c)}>✕</IconButton>}</th>
+              <th key={c}><span>{c}</span>{!readOnly && c !== 'id' && <IconButton size="sm" aria-label={mt("deleteColumnValue", { p0: c })} title={mt("deleteColumn")} onClick={() => removeColumn(c)}>✕</IconButton>}</th>
             ))}
-            {!readOnly && <th className="make-mock-table-actions" aria-label="Действия" />}
+            {!readOnly && <th className="make-mock-table-actions" aria-label={mt("actions")} />}
           </tr>
         </thead>
         <tbody>
           {table.rows.map((r, i) => (
             <tr key={i}>
               {table.columns.map((c) => (
-                <td key={c}><input aria-label={`${c} строки ${i + 1}`} value={r[c] ?? ''} readOnly={readOnly} onChange={(e) => setCell(i, c, e.target.value)} /></td>
+                <td key={c}><input aria-label={mt("valueInRowValue", { p0: c, p1: i + 1 })} value={r[c] ?? ''} readOnly={readOnly} onChange={(e) => setCell(i, c, e.target.value)} /></td>
               ))}
-              {!readOnly && <td className="make-mock-table-actions"><IconButton size="sm" aria-label={`Удалить строку ${i + 1}`} title="Удалить строку" onClick={() => removeRow(i)}>✕</IconButton></td>}
+              {!readOnly && <td className="make-mock-table-actions"><IconButton size="sm" aria-label={mt("deleteRowValue", { p0: i + 1 })} title={mt("deleteRow")} onClick={() => removeRow(i)}>✕</IconButton></td>}
             </tr>
           ))}
         </tbody>
       </table>
       {!readOnly && (
         <div className="make-mock-table-foot">
-          <Button size="sm" variant="secondary" onClick={addRow}>+ Строка</Button>
+          <Button size="sm" variant="secondary" onClick={addRow}>{mt("row")}</Button>
           <form className="make-mock-table-col" onSubmit={(e) => { e.preventDefault(); addColumn() }}>
-            <input aria-label="Имя новой колонки" placeholder="новая колонка" value={newColumn} onChange={(e) => setNewColumn(e.target.value)} />
-            <Button size="sm" variant="ghost" type="submit" disabled={!newColumn.trim()}>+ Колонка</Button>
+            <input aria-label={mt("newColumnName")} placeholder={mt("newColumn")} value={newColumn} onChange={(e) => setNewColumn(e.target.value)} />
+            <Button size="sm" variant="ghost" type="submit" disabled={!newColumn.trim()}>{mt("column")}</Button>
           </form>
-          <span className="make-mock-table-hint">Числа, true/false, null и JSON-объекты в ячейках восстанавливаются при записи; пустая ячейка — поле не пишется.</span>
+          <span className="make-mock-table-hint">{mt("numbersTrueFalseNullAndJsonObjectsRetainTheir")}</span>
         </div>
       )}
     </div>

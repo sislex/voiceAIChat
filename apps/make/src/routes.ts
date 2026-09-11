@@ -1,3 +1,5 @@
+import type { MakeLocale } from '@voicechat/make-contracts/localization'
+import { publicText, publicLanguageSelect } from './publicLocale.js'
 // Make REST API: conversation project state, file CRUD, snapshots, restore, and template reset for
 // the code editor. Project files for iframe previews and ZIP exports are served under
 // /api/preview/make/... with preview-cookie authentication, as with Web Reader, because iframes and
@@ -15,6 +17,7 @@ import { readZip, ZipReadError } from './zipRead.js'
 import { importFromUrl, ImportUrlError } from './importUrl.js'
 import type { MakeCore } from './core.js'
 import { MakeError, MakeWorkspaces } from './workspace.js'
+import { registerMakeLocalization, requestMakeLocale } from './localization.js'
 import type { MakeLibrary } from './library.js'
 import type { MakeHub } from './hub.js'
 
@@ -44,17 +47,18 @@ async function galleryUsage(workspaces: MakeWorkspaces, conversationId: string):
 }
 
 /** Floating comment button on published pages (item 34): submit name and text to __comments__ without window.prompt. */
-function guestCommentsWidget(base: string): string {
-  return `<div data-vc-guest-comments style="position:fixed;right:16px;bottom:16px;z-index:2147483000;font:14px/1.4 system-ui,sans-serif">
-<button type="button" data-vc-gc-open style="border:0;border-radius:24px;padding:10px 16px;background:#4f7cff;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:pointer">💬 Комментарий</button>
+function guestCommentsWidget(base: string, locale: MakeLocale): string {
+  const t = (key: Parameters<typeof publicText>[1]): string => publicText(locale, key)
+  return `<style>[data-vc-guest-comments] [hidden]{display:none!important}</style><div data-vc-guest-comments lang="${locale}" style="position:fixed;right:16px;bottom:16px;z-index:2147483000;font:14px/1.4 system-ui,sans-serif">
+<button type="button" data-vc-gc-open style="border:0;border-radius:24px;padding:10px 16px;background:#4f7cff;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:pointer">${t('comment')}</button>
 <form data-vc-gc-form hidden style="width:280px;background:#fff;color:#1a1d23;border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);display:grid;gap:8px">
-<strong>Комментарий автору</strong>
-<input name="name" placeholder="Ваше имя (необязательно)" maxlength="60" style="padding:6px 8px;border:1px solid #d5d8e0;border-radius:6px;font:inherit">
-<textarea name="text" required rows="3" maxlength="2000" placeholder="Что поправить или что понравилось?" style="padding:6px 8px;border:1px solid #d5d8e0;border-radius:6px;font:inherit"></textarea>
-<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-vc-gc-cancel style="border:1px solid #d5d8e0;background:#fff;border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer">Отмена</button><button type="submit" style="border:0;background:#4f7cff;color:#fff;border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer">Отправить</button></div>
+<strong>${t('commentTitle')}</strong>${publicLanguageSelect(locale)}
+<input name="name" placeholder="${t('name')}" maxlength="60" style="padding:6px 8px;border:1px solid #d5d8e0;border-radius:6px;font:inherit">
+<textarea name="text" required rows="3" maxlength="2000" placeholder="${t('feedback')}" style="padding:6px 8px;border:1px solid #d5d8e0;border-radius:6px;font:inherit"></textarea>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-vc-gc-cancel style="border:1px solid #d5d8e0;background:#fff;border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer">${t('cancel')}</button><button type="submit" style="border:0;background:#4f7cff;color:#fff;border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer">${t('send')}</button></div>
 <small data-vc-gc-status style="color:#666"></small>
 </form></div>
-<script>(function(){var root=document.querySelector('[data-vc-guest-comments]');if(!root)return;var open=root.querySelector('[data-vc-gc-open]'),form=root.querySelector('[data-vc-gc-form]'),status=root.querySelector('[data-vc-gc-status]');open.addEventListener('click',function(){form.hidden=false;open.hidden=true;form.querySelector('textarea').focus()});root.querySelector('[data-vc-gc-cancel]').addEventListener('click',function(){form.hidden=true;open.hidden=false});form.addEventListener('submit',function(e){e.preventDefault();var fd=new FormData(form);status.textContent='Отправляю…';fetch(${JSON.stringify(base)}+'__comments__',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({name:fd.get('name'),text:fd.get('text'),elementLabel:document.title||'страница'})}).then(function(r){if(!r.ok)throw new Error(r.status===429?'Слишком много сообщений, попробуйте позже':'Не удалось отправить');status.textContent='Спасибо! Комментарий появится после проверки автором.';form.querySelector('textarea').value='';setTimeout(function(){form.hidden=true;open.hidden=false;status.textContent=''},2500)}).catch(function(err){status.textContent=err.message})})})();</script>`
+<script>(function(){var root=document.querySelector('[data-vc-guest-comments]');if(!root)return;var open=root.querySelector('[data-vc-gc-open]'),form=root.querySelector('[data-vc-gc-form]'),status=root.querySelector('[data-vc-gc-status]');open.addEventListener('click',function(){form.hidden=false;open.hidden=true;form.querySelector('textarea').focus()});root.querySelector('[data-vc-gc-cancel]').addEventListener('click',function(){form.hidden=true;open.hidden=false});form.addEventListener('submit',function(e){e.preventDefault();var fd=new FormData(form);status.textContent=${JSON.stringify(t('sending'))};fetch(${JSON.stringify(base)}+'__comments__',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({name:fd.get('name'),text:fd.get('text'),elementLabel:document.title||${JSON.stringify(t('page'))}})}).then(function(r){if(!r.ok)throw new Error(r.status===429?${JSON.stringify(t('tooManyComments'))}:${JSON.stringify(t('sendFailed'))});status.textContent=${JSON.stringify(t('thanks'))};form.querySelector('textarea').value='';setTimeout(function(){form.hidden=true;open.hidden=false;status.textContent=''},2500)}).catch(function(err){status.textContent=err.message===${JSON.stringify(t('tooManyComments'))}?err.message:${JSON.stringify(t('sendFailed'))}})})})();</script>`
 }
 
 export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
@@ -158,6 +162,7 @@ export function sendError(reply: FastifyReply, error: unknown): FastifyReply {
 }
 
 export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): void {
+  registerMakeLocalization(app)
   const { core, workspaces, hub, library } = deps
   // The host's authentication preHandler, in core or standalone Make, sets req.user. Read its type
   // structurally to avoid a second FastifyRequest augmentation conflicting with core's declaration.
@@ -566,11 +571,11 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const raw = req.params['*'] || 'index.html'
     const base = `/api/preview/make-shared/${encodeURIComponent(req.params.token)}/`
     const csp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'"
-    if (raw === MAKE_GALLERY_PAGE) return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', csp).send(renderGalleryPage(await workspaces.stories(conversationId), base, 'Компоненты', await galleryUsage(workspaces, conversationId)))
+    if (raw === MAKE_GALLERY_PAGE) return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', csp).send(renderGalleryPage(await workspaces.stories(conversationId), base, 'Компоненты', await galleryUsage(workspaces, conversationId), requestMakeLocale(req)))
     if (raw === MAKE_STORIES_PAGE) {
       const q = req.query as { file?: string; story?: string }
       const index = await workspaces.readBuffer(conversationId, 'index.html').catch(() => null)
-      return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', csp).send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null))
+      return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', csp).send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null, requestMakeLocale(req)))
     }
     const path = raw.endsWith('/') ? `${raw}index.html` : raw
     let file
@@ -776,9 +781,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const m = (req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(`${name}=`))
     return m ? decodeURIComponent(m.slice(name.length + 1)) : null
   }
-  const passwordPage = (action: string, wrong: boolean, limited = 0): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
+  const passwordPage = (action: string, wrong: boolean, limited = 0, locale: MakeLocale = 'ru'): string => `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${publicText(locale, 'passwordAccess')}</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
-<body><form method="post" action="${action}"><h1>Проект защищён паролем</h1>${limited ? `<p class="err">Слишком много попыток — подождите ${limited} с.</p>` : wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" aria-label="Пароль проекта" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
+<body><form method="post" action="${action}&amp;makeLocale=${locale}">${publicLanguageSelect(locale)}<h1>${publicText(locale, 'passwordProtected')}</h1>${limited ? `<p class="err">${publicText(locale, 'tooManyAttempts', { p0: limited })}</p>` : wrong ? `<p class="err">${publicText(locale, 'wrongPassword')}</p>` : ''}<input type="password" name="password" aria-label="${publicText(locale, 'projectPassword')}" placeholder="${publicText(locale, 'password')}" autofocus required autocomplete="current-password"><button type="submit">${publicText(locale, 'open')}</button></form></body></html>`
 
   /** Mock API response (item 29): JSON, status, and headers come from the envelope; an artificial delay simulates a backend. */
   const sendMock = async (reply: FastifyReply, mock: MockResponse): Promise<unknown> => {
@@ -811,7 +816,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       if (!wantsHtml) return reply.code(401).type('text/plain; charset=utf-8').send('Публикация защищена паролем')
       const q = req.query as { wrong?: string }
       return reply.code(401).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
-        .send(passwordPage(`${base}__auth__?next=${encodeURIComponent(raw)}`, q.wrong === '1'))
+        .send(passwordPage(`${base}__auth__?next=${encodeURIComponent(raw)}`, q.wrong === '1', 0, requestMakeLocale(req)))
     }
     // Viewer comments (roadmap-4, item 34): GET returns approved comments and POST submits for
     // moderation, only when enabled by the owner.
@@ -835,10 +840,10 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (raw === MAKE_STORIES_PAGE || raw === MAKE_GALLERY_PAGE) {
       const headers = (r: FastifyReply): FastifyReply => r.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
-      if (raw === MAKE_GALLERY_PAGE) return headers(reply).send(renderGalleryPage(await workspaces.stories(conversationId), base, 'Компоненты', await galleryUsage(workspaces, conversationId)))
+      if (raw === MAKE_GALLERY_PAGE) return headers(reply).send(renderGalleryPage(await workspaces.stories(conversationId), base, 'Компоненты', await galleryUsage(workspaces, conversationId), requestMakeLocale(req)))
       const q = req.query as { file?: string; story?: string }
       const index = await workspaces.publicFile(conversationId, 'index.html').catch(() => null)
-      return headers(reply).send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null))
+      return headers(reply).send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null, requestMakeLocale(req)))
     }
     const path = raw.endsWith('/') ? `${raw}index.html` : raw
     let file
@@ -856,7 +861,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     // enabled.
     if (path === 'index.html' && (await workspaces.publication(conversationId))?.allowComments) {
       const html = body.toString('utf8')
-      body = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${guestCommentsWidget(base)}</body>`) : html + guestCommentsWidget(base)
+      body = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${guestCommentsWidget(base, requestMakeLocale(req))}</body>`) : html + guestCommentsWidget(base, requestMakeLocale(req))
     }
     return reply
       .header('content-type', makeMimeType(file.path))
@@ -870,17 +875,18 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const conversationId = await workspaces.publishedTarget(token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
     const body = (req.body ?? {}) as { password?: string }
-    const q = req.query as { next?: string }
+    const q = req.query as { next?: string; makeLocale?: string }
+    const localeQuery = q.makeLocale === 'en' || q.makeLocale === 'ru' ? `makeLocale=${q.makeLocale}` : ''
     const next = (q.next ?? 'index.html').replace(/^\/+/, '')
     // Password guessing protection (roadmap-2, item 3): 10 attempts per 10 minutes per IP and
     // token; return 429 with the same form and a countdown after the limit.
     const verdict = passwordLimiter.hit(`${req.ip}:${token}`)
-    if (!verdict.ok) return reply.code(429).header('retry-after', String(verdict.retryAfterSec)).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').send(passwordPage(`${base}__auth__?next=${encodeURIComponent(next)}`, false, verdict.retryAfterSec))
-    if (!(await workspaces.verifyPublicPassword(conversationId, body.password ?? ''))) return reply.redirect(`${base}${next}?wrong=1`)
+    if (!verdict.ok) return reply.code(429).header('retry-after', String(verdict.retryAfterSec)).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').send(passwordPage(`${base}__auth__?next=${encodeURIComponent(next)}`, false, verdict.retryAfterSec, requestMakeLocale(req)))
+    if (!(await workspaces.verifyPublicPassword(conversationId, body.password ?? ''))) return reply.redirect(`${base}${next}?wrong=1${localeQuery ? '&' + localeQuery : ''}`)
     const gate = await workspaces.publicGate(conversationId)
     return reply
       .header('set-cookie', `${gateCookieName(token)}=${gate ?? ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`)
-      .redirect(`${base}${next}`)
+      .redirect(`${base}${next}${localeQuery ? '?' + localeQuery : ''}`)
   }
 
   app.get<{ Params: { token: string; '*': string } }>(`${MAKE_PUBLIC_PREFIX}:token/*`, async (req, reply) =>
@@ -967,14 +973,14 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       const files = await workspaces.stories(req.params.id)
       return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
-        .send(renderGalleryPage(files, `/api/preview/make/${encodeURIComponent(req.params.id)}/`, 'Компоненты', await galleryUsage(workspaces, req.params.id)))
+        .send(renderGalleryPage(files, `/api/preview/make/${encodeURIComponent(req.params.id)}/`, 'Компоненты', await galleryUsage(workspaces, req.params.id), requestMakeLocale(req)))
     }
     if (raw === MAKE_TESTS_PAGE) {
       const q = req.query as { file?: string }
       const index = await workspaces.readBuffer(req.params.id, 'index.html').catch(() => null)
       return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
-        .send(renderTestsPage(q.file ?? '', index ? index.data.toString('utf8') : null))
+        .send(renderTestsPage(q.file ?? '', index ? index.data.toString('utf8') : null, requestMakeLocale(req)))
     }
     if (raw === MAKE_STORIES_PAGE) {
       const q = req.query as { file?: string; story?: string }
@@ -983,7 +989,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
         .header('content-type', 'text/html; charset=utf-8')
         .header('cache-control', 'no-store')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
-        .send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null))
+        .send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null, requestMakeLocale(req)))
     }
     const path = raw.endsWith('/') ? `${raw}index.html` : raw
     let file
