@@ -50,6 +50,38 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
 }
 
 describe('KanbanBoard (изолированный)', () => {
+  it('переключает плотность, раскрывает состояние и сохраняет выбор по пользователю и проекту', async () => {
+    localStorage.clear()
+    renderBoard({ currentUserId: 'density-user' })
+    const boardSurface = screen.getByTestId('kanban-board')
+    const comfortable = screen.getByRole('button', { name: 'Обычная плотность' })
+    const compactButton = screen.getByRole('button', { name: 'Компактная плотность' })
+    expect(screen.getByRole('group', { name: 'Плотность доски' })).toBeInTheDocument()
+    expect(comfortable).toHaveAttribute('aria-pressed', 'true')
+    expect(compactButton).toHaveAttribute('aria-pressed', 'false')
+    expect(boardSurface).toHaveAttribute('data-density', 'comfortable')
+
+    await userEvent.click(compactButton)
+    expect(comfortable).toHaveAttribute('aria-pressed', 'false')
+    expect(compactButton).toHaveAttribute('aria-pressed', 'true')
+    expect(boardSurface).toHaveClass('jboard--density-compact')
+    await waitFor(() => expect(localStorage.getItem('voicechat.kanban.density.v1.density-user.p1')).toBe('compact'))
+
+    cleanup()
+    renderBoard({ currentUserId: 'density-user' })
+    await waitFor(() => expect(screen.getByTestId('kanban-board')).toHaveAttribute('data-density', 'compact'))
+    cleanup()
+    renderBoard({ currentUserId: 'another-user' })
+    expect(screen.getByTestId('kanban-board')).toHaveAttribute('data-density', 'comfortable')
+  })
+
+  it('игнорирует повреждённую сохранённую плотность', async () => {
+    localStorage.clear()
+    localStorage.setItem('voicechat.kanban.density.v1.density-user.p1', 'tiny')
+    renderBoard({ currentUserId: 'density-user' })
+    await waitFor(() => expect(screen.getByTestId('kanban-board')).toHaveAttribute('data-density', 'comfortable'))
+  })
+
   it('ошибка показывается баннером role=alert; без board — только баннер', () => {
     renderBoard({ board: null, error: 'Сервер недоступен' })
     expect(screen.getByRole('alert')).toHaveTextContent('Сервер недоступен')
