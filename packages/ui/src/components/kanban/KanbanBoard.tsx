@@ -27,7 +27,7 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
-import { type TaskModalTab, type TaskUpdateFields } from './TaskModal'
+import { type TaskModalProps, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, epicColor, issueKey } from './kanbanMeta'
@@ -188,7 +188,7 @@ export interface KanbanBoardProps {
   openTaskId?: string | null
   onOpenTaskChange?: (taskId: string | null, tab?: TaskModalTab) => void
   initialOpenTaskTab?: TaskModalTab
-  onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
+  onSelectedFieldChange?: TaskModalProps['onSelectedFieldChange']
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
   /**

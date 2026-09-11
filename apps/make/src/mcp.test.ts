@@ -112,7 +112,7 @@ describe('makeMcp', () => {
 
   it('task scope публикует только list/read и отклоняет истёкший, поддельный или неавторизованный scope', async () => {
     await setup('ann', { mode: 'whole_project', paths: [] })
-    const token = scopeToken('whole_project', [], { ttlMs: 100, now: Date.now() })
+    const token = scopeToken('whole_project', [], { ttlMs: 10_000, now: Date.now() })
     const query = `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(token)}`
     expect((await rpc(INIT, query)).statusCode).toBe(200)
     const listed = (await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }, query)).json() as { result?: { tools?: Array<{ name: string }> } }

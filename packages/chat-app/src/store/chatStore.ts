@@ -993,7 +993,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     persisted?: Message
   ): Promise<void> {
     const text = fullText.trim()
-    setState({ streamingReply: '' })
+    setState({ streamingReply: '', preparingReply: false })
     if (!text) {
       if (voice.state() === 'thinking') voice.dispatch('reset') // пустой ответ → idle
       return
@@ -1411,7 +1411,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     const remaining = Object.values(pendingSubmits)
     const patch: Partial<ChatState> = {
       pendingSubmits,
-      pendingSubmit: remaining[remaining.length - 1] ?? null
+      pendingSubmit: remaining[remaining.length - 1] ?? null,
+      // Ошибка/отмена этой обычной операции не должна оставить её карточку.
+      ...(pending.queueOnly ? {} : { preparingReply: false })
     }
     if (restoreDraft && !state.draft && pending.text) patch.draft = pending.text
     if (restoreDraft && state.attachments.length === 0 && pending.attachments.length > 0) {
@@ -1463,7 +1465,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
     const patch: Partial<ChatState> = {
       pendingSubmits: { ...state.pendingSubmits, [operationId]: pendingSubmit },
-      pendingSubmit
+      pendingSubmit,
+      // Карточка ответа появляется в том же синхронном захвате операции, до
+      // первого await (создание/сохранение сообщения и запуск сети).
+      ...(!queueOnly ? { preparingReply: true } : {})
     }
     if (queueOnly && state.activeId) {
       const items = state.queuedTurns[state.activeId] ?? []
@@ -2035,6 +2040,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         if (!t || voice.state() !== 'idle' || !getState().activeId) return
         setError(null)
         const execTarget = activeConversationExecTarget()
+        // Доотправка — отдельный ход: резервируем его карточку до сохранения.
+        setState({ preparingReply: true })
         await persistMessage('u1', t, undefined, undefined, execTarget)
         await refreshConversations()
         if (!voice.dispatch('submit_text')) return // idle → thinking
@@ -2059,6 +2066,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           'acceptEdits'
         )
         const execTarget = activeConversationExecTarget()
+        // Повтор исходной реплики после принятия плана тоже начинает новый ход.
+        setState({ preparingReply: true })
         await persistMessage('u1', source.text, undefined, undefined, execTarget)
         await refreshConversations()
         if (!voice.dispatch('submit_text')) return
@@ -2084,22 +2093,33 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         // WS сохраняет порядок: cancel обрабатывается раньше новой отправки.
         const v = voice.state()
         if (v === 'thinking' || v === 'speaking') cancelRequest()
+        // Редактирование сразу запускает заменяющий ход, поэтому не ждём
+        // удаления/повторного сохранения, чтобы зарезервировать AI-карточку.
+        setState({ preparingReply: true })
         const messageExecTarget = source.execTarget ?? null
-        const removed = getState().messages.slice(idx)
-        for (const m of removed) {
-          await client['messages:delete']({ conversationId: activeId, messageId: m.id })
+        try {
+          const removed = getState().messages.slice(idx)
+          for (const m of removed) {
+            await client['messages:delete']({ conversationId: activeId, messageId: m.id })
+          }
+          replaceCachedMessages(activeId, getState().messages.slice(0, idx))
+          setError(null)
+          const sourceAttachments = source.attachments ?? []
+          await persistMessage(role, text, undefined, source.meta, messageExecTarget, sourceAttachments)
+          await refreshConversations()
+          if (!voice.dispatch('submit_text')) {
+            setState({ preparingReply: false })
+            return
+          }
+          beginReply(
+            [{ speakerId: 1, text }],
+            sourceAttachments.flatMap((item) => (item.uploadId ? [item.uploadId] : [])),
+            messageExecTarget
+          )
+        } catch (error) {
+          setState({ preparingReply: false })
+          throw error
         }
-        replaceCachedMessages(activeId, getState().messages.slice(0, idx))
-        setError(null)
-        const sourceAttachments = source.attachments ?? []
-        await persistMessage(role, text, undefined, source.meta, messageExecTarget, sourceAttachments)
-        await refreshConversations()
-        if (!voice.dispatch('submit_text')) return // idle → thinking
-        beginReply(
-          [{ speakerId: 1, text }],
-          sourceAttachments.flatMap((item) => (item.uploadId ? [item.uploadId] : [])),
-          messageExecTarget
-        )
       },
       async updateTaskLaunchStatus(messageId, proposalId, status, result) {
         const activeId = getState().activeId

@@ -6,6 +6,10 @@ import { describe, it, expect } from 'vitest'
 import { planModelAction } from './browserActions'
 
 describe('перевод действий модели для Playwright Reader', () => {
+  it('routes built-in audits without evaluate code or host-only diagnostic flags', () => {
+    expect(planModelAction({ kind: 'audit', group: 'layout', rules: ['overflowing-grid'], offset: 0, diagnostic: true })).toEqual({ kind: 'command', command: { type: 'inspect', action: { kind: 'audit', group: 'layout', rules: ['overflowing-grid'], offset: 0 } } })
+    expect(planModelAction({ kind: 'audit', frame: '#child' }).kind).toBe('unsupported')
+  })
   it('открытие адреса становится навигацией', () => {
     expect(planModelAction({ kind: 'open', url: 'https://a.b' })).toEqual({
       kind: 'command', command: { type: 'navigate', url: 'https://a.b' }

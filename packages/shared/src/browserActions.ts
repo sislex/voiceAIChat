@@ -101,6 +101,12 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
       const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
       return { kind: 'command', command: { type: 'inspect', action: { kind: 'network', ...options } } }
     }
+    case 'accessibility':
+    case 'audit':
+    case 'probe': {
+      const { frame: _frame, diagnostic: _diagnostic, ...options } = action
+      return { kind: 'command', command: { type: 'inspect', action: options } }
+    }
     case 'styles':
       return {
         kind: 'command',

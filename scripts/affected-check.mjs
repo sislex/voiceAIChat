@@ -20,7 +20,7 @@ import { pathToFileURL } from 'node:url'
  */
 export const PACKAGES = [
   { id: 'ui-foundation', path: 'packages/ui-foundation', workspace: '@voicechat/ui-foundation', dependsOn: ['shared', 'ui-kit'] },
-  { id: 'make-app', path: 'packages/make-app', workspace: '@voicechat/make-app', dependsOn: ['shared', 'ui-kit', 'ui-foundation'] },
+  { id: 'make-app', path: 'packages/make-app', workspace: '@voicechat/make-app', dependsOn: ['shared', 'ui-kit', 'ui-foundation', 'make-contracts'] },
   { id: 'image-studio-app', path: 'packages/image-studio-app', workspace: '@voicechat/image-studio-app', dependsOn: ['shared', 'ui-kit', 'ui-foundation'] },
   { id: 'make-contracts', path: 'packages/make-contracts', workspace: '@voicechat/make-contracts', dependsOn: ['shared'] },
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared', dependsOn: ['sessions-core'] },
@@ -64,6 +64,28 @@ export const PACKAGES = [
 
 const workspacePackages = PACKAGES.filter((pkg) => pkg.workspace)
 const byId = new Map(PACKAGES.map((pkg) => [pkg.id, pkg]))
+
+/** Check manifest edges before trusting the explicit graph, which also includes aliases. */
+export function validatePackageDependencies(repository, packages = PACKAGES) {
+  const idByWorkspace = new Map(packages.filter((pkg) => pkg.workspace).map((pkg) => [pkg.workspace, pkg.id]))
+  const missing = []
+  for (const pkg of packages) {
+    const manifest = JSON.parse(readFileSync(join(repository, pkg.path, 'package.json'), 'utf8'))
+    const declared = Object.keys({
+      ...manifest.dependencies,
+      ...manifest.devDependencies,
+      ...manifest.peerDependencies,
+      ...manifest.optionalDependencies
+    })
+    for (const dependency of declared) {
+      const id = idByWorkspace.get(dependency)
+      if (id && !pkg.dependsOn.includes(id)) missing.push(`${pkg.id} -> ${id}`)
+    }
+  }
+  if (missing.length) {
+    throw new Error(`Missing workspace dependencies in scripts/affected-check.mjs: ${missing.join(', ')}`)
+  }
+}
 
 /** Транзитивное замыкание «кто ломается, если правишь этот пакет». */
 export function consumersOf(id) {

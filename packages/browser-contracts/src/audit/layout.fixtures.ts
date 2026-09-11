@@ -1,0 +1,35 @@
+const document = (body: string, css = '') => `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Layout fixture</title><style>body{margin:8px;font:16px Arial}*{box-sizing:border-box}${css}</style></head><body><main>${body}</main></body></html>`
+const pair = (rule: string, broken: string, fixed: string, css = '') => ({ rule, broken: document(broken, css), fixed: document(fixed, css) })
+const image = '<img alt="Fixture" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2220%22 height=%2220%22/%3E"'
+export const layoutAuditFixtures = [
+  pair('document-horizontal-overflow', '<div style="width:3000px">Wide</div>', '<div>Fits</div>'),
+  { rule: 'horizontal-scroll-locked', broken: document('<div style="width:3000px">Wide</div>', 'html{overflow-x:hidden}'), fixed: document('<div style="width:3000px">Wide</div>') },
+  { rule: 'vertical-scroll-locked', broken: document('<div style="height:3000px">Tall</div>', 'html{overflow-y:hidden}'), fixed: document('<div style="height:3000px">Tall</div>') },
+  pair('clipped-horizontal-content', '<div style="width:80px;overflow:hidden"><div style="width:200px">Wide</div></div>', '<div style="width:80px;overflow:auto"><div style="width:200px">Wide</div></div>'),
+  pair('clipped-vertical-content', '<div style="height:30px;overflow:hidden"><div style="height:200px">Tall</div></div>', '<div style="height:30px;overflow:auto"><div style="height:200px">Tall</div></div>'),
+  pair('zero-width-control', '<button style="width:0;padding:0;border:0;overflow:hidden">Save</button>', '<button>Save</button>'),
+  pair('zero-height-control', '<button style="height:0;padding:0;border:0;overflow:hidden">Save</button>', '<button>Save</button>'),
+  pair('offscreen-fixed-element', '<div style="position:fixed;left:-200px;width:100px;height:80px">Panel</div>', '<div style="position:fixed;left:20px;width:100px;height:80px">Panel</div>'),
+  pair('oversized-fixed-element', '<div style="position:fixed;width:3000px;height:40px">Panel</div>', '<div style="position:fixed;width:100px;height:40px">Panel</div>'),
+  pair('sticky-without-inset', '<div style="position:sticky">Toolbar</div>', '<div style="position:sticky;top:0">Toolbar</div>'),
+  pair('sticky-scroll-trap', '<section style="height:30px;overflow:hidden"><div style="position:sticky;top:0">Toolbar</div><div style="height:200px"></div></section>', '<section style="height:30px;overflow:auto"><div style="position:sticky;top:0">Toolbar</div><div style="height:200px"></div></section>'),
+  pair('collapsed-float-container', '<section><div style="float:left;width:100px;height:80px">Float</div></section>', '<section style="display:flow-root"><div style="float:left;width:100px;height:80px">Float</div></section>'),
+  pair('collapsed-positioned-container', '<section style="position:relative"><div style="position:absolute;width:100px;height:80px">Absolute</div></section>', '<section style="position:relative;min-height:80px"><div style="position:absolute;width:100px;height:80px">Absolute</div></section>'),
+  pair('overflowing-flex-row', '<div style="display:flex;width:100px"><div style="width:200px;flex-shrink:0">Wide</div></div>', '<div style="display:flex;width:100px"><div style="width:60px;flex-shrink:0">Fits</div></div>'),
+  pair('overflowing-grid', '<div style="display:grid;width:100px;grid-template-columns:200px"><div>Wide</div></div>', '<div style="display:grid;width:100px;grid-template-columns:1fr"><div>Fits</div></div>'),
+  pair('zero-width-grid-item', '<div style="display:grid;grid-template-columns:0px"><div>Content</div></div>', '<div style="display:grid;grid-template-columns:100px"><div>Content</div></div>'),
+  pair('image-wider-than-container', '<div style="width:100px">'+image+' style="width:200px"></div>', '<div style="width:100px">'+image+' style="width:200px;max-width:100%"></div>'),
+  pair('table-wider-than-container', '<div style="width:100px"><table style="table-layout:fixed;width:200px"><tr><td>Cell</td></tr></table></div>', '<div style="width:100px"><table style="table-layout:fixed;width:100%"><tr><td>Cell</td></tr></table></div>'),
+  pair('pre-wider-than-container', '<div style="width:100px"><pre style="width:200px">Code</pre></div>', '<div style="width:100px"><pre style="width:100%">Code</pre></div>'),
+  pair('absolute-outside-container', '<div style="position:relative;width:100px;height:80px"><div style="position:absolute;left:90px;width:50px;height:30px">Badge</div></div>', '<div style="position:relative;width:100px;height:80px"><div style="position:absolute;left:0;width:50px;height:30px">Badge</div></div>'),
+  pair('negative-inline-start-content', '<div style="margin-left:-80px;width:100px;height:30px">Lost</div>', '<div style="width:100px;height:30px">Found</div>'),
+  pair('overlapping-flex-items', '<div style="display:flex"><div style="width:60px;height:30px">One</div><div style="width:60px;height:30px;margin-left:-30px">Two</div></div>', '<div style="display:flex"><div style="width:60px;height:30px">One</div><div style="width:60px;height:30px">Two</div></div>'),
+  pair('overlapping-grid-items', '<div style="display:grid"><div style="grid-area:1/1">One</div><div style="grid-area:1/1">Two</div></div>', '<div style="display:grid"><div style="grid-area:1/1">One</div><div style="grid-area:2/1">Two</div></div>'),
+  pair('ineffective-z-index', '<div style="z-index:2">Layer</div>', '<div style="position:relative;z-index:2">Layer</div>'),
+  pair('ineffective-align-self', '<section><div style="align-self:center">Aligned</div></section>', '<section style="display:flex"><div style="align-self:center">Aligned</div></section>'),
+  pair('ineffective-order', '<section><div style="order:2">Ordered</div></section>', '<section style="display:flex"><div style="order:2">Ordered</div></section>'),
+  pair('ineffective-vertical-align', '<div style="vertical-align:middle">Aligned</div>', '<div style="display:inline-block;vertical-align:middle">Aligned</div>'),
+  pair('hidden-attribute-overridden', '<div hidden style="display:block">Unexpected</div>', '<div hidden>Hidden</div>'),
+  pair('display-contents-control', '<button style="display:contents">Save</button>', '<button>Save</button>'),
+  pair('multicolumn-content-clipping', '<section style="column-count:2;width:160px;height:25px;overflow:hidden">'+ '<p>Column text</p>'.repeat(12) + '</section>', '<section style="column-count:2;width:160px;overflow:visible">'+ '<p>Column text</p>'.repeat(12) + '</section>')
+]
