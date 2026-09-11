@@ -4946,6 +4946,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    отнял бы у пальца скролл колонки. Карточку целиком берут удержанием. */
 .jcard-grip, .jcol-grip { flex: 0 0 auto; align-self: flex-start; touch-action: none; cursor: grab;
   color: var(--text-dim); font-size: 13px; line-height: 1.2; user-select: none; }
+.jcol-grip { display: inline-flex; align-items: center; justify-content: center; padding: 1px; border: 0; border-radius: 3px; background: transparent; }
+.jcol-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .jcard-grip { opacity: 0; }
 .jcard:hover .jcard-grip, .jcard:focus-within .jcard-grip, .jcard--grabbed .jcard-grip { opacity: 1; }
 /* Плейсхолдер места вставки: ровно та высота, что была у карточки. */

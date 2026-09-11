@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: ac340e14 feat(web-reader): expose native accessibility evidence … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 56 коммит(ов) в areas после сверки: 69b1f61a feat(kanban): keep mobile filters in reach … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 57 коммит(ов) в areas после сверки: 6f026934 feat(kanban): expose pointer drag progress … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 148 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 311 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
@@ -23,8 +23,8 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 82 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 105 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1388 коммит(ов) в areas после сверки: 69b1f61a feat(kanban): keep mobile filters in reach … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 29 коммит(ов) в areas после сверки: 69b1f61a feat(kanban): keep mobile filters in reach … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1389 коммит(ов) в areas после сверки: 6f026934 feat(kanban): expose pointer drag progress … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 30 коммит(ов) в areas после сверки: 6f026934 feat(kanban): expose pointer drag progress … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 31 коммит(ов) в areas после сверки: 69b1f61a feat(kanban): keep mobile filters in reach … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 12 коммит(ов) в areas после сверки: 0ebaed5f feat(kanban): show task update freshness … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-11 | ✓ |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 20 коммит(ов) в areas после сверки: 69b1f61a feat(kanban): keep mobile filters in reach … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 21 коммит(ов) в areas после сверки: 6f026934 feat(kanban): expose pointer drag progress … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-11, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 782. Последние:
+Всего записей: 783. Последние:
 
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md) — web-reader-ten-cycle-10
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-09.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-09.md) — web-reader-ten-cycle-09

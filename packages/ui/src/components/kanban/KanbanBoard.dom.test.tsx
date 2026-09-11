@@ -1598,6 +1598,25 @@ describe('KanbanBoard — перенос указателем', () => {
     expect(props.onReorderColumns).toHaveBeenCalledWith(['c2', 'c1'])
   })
 
+  it('клавиатура: Alt+стрелки переставляют колонку, объявляют позицию и сохраняют фокус', async () => {
+    const props = renderBoard({ board: dndBoard })
+    const first = screen.getByRole('button', { name: 'Переместить колонку «To Do»' })
+    const second = screen.getByRole('button', { name: 'Переместить колонку «In Progress»' })
+    expect(second).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowLeft Alt+ArrowRight')
+    second.focus()
+    fireEvent.keyDown(second, { key: 'ArrowLeft', altKey: true })
+    expect(props.onReorderColumns).toHaveBeenCalledWith(['c2', 'c1'])
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «In Progress» перемещена на позицию 1 из 2.')
+    await waitFor(() => expect(second).toHaveFocus())
+
+    vi.mocked(props.onReorderColumns).mockClear()
+    fireEvent.keyDown(first, { key: 'ArrowLeft', altKey: true })
+    expect(props.onReorderColumns).not.toHaveBeenCalled()
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «To Do» уже первая.')
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    expect(props.onReorderColumns).not.toHaveBeenCalled()
+  })
+
   it('перенос колонки автоскроллит только горизонтальную ось доски', () => {
     vi.useFakeTimers()
     try {

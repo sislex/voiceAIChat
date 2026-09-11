@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 69b1f61a
+checked: 6f026934
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1459,6 +1459,12 @@ DOM-узлы доски, колонок и карточек сохраняют �
   Взятая карточка остаётся на месте (иначе слетел бы фокус) и подсвечивается
   `.jcard--grabbed`. Каждый шаг проговаривается в `aria-live`
   («Задача X, колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
+- **Column keyboard ordering.** Each column grip is a named button with
+  `Alt+ArrowLeft` and `Alt+ArrowRight` shortcuts. A move jumps to the adjacent
+  displayed column while producing the complete persisted order, including
+  hidden columns. The live region announces the resulting visible position or
+  an edge boundary, and focus remains on the same grip. Plain arrow keys keep
+  their board-navigation behavior and do not reorder columns.
 - **Тач в Chrome:** после долгого тапа мало отменить `pointermove` — он для тача
   не `cancelable`; гасить надо `touchmove` (`passive: false`), иначе браузер уводит
   жест в скролл и присылает `pointercancel` вместо переноса.
