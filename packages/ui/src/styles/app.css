@@ -6229,6 +6229,26 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcol-empty {
   color: var(--text-dim);
 }
+.jcol-empty--empty,
+.jcol-empty--filtered {
+  align-self: stretch;
+  margin: 4px 0;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-medium);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+.jcol-empty--filtered { border-color: var(--accent); background: var(--accent-soft); }
+.jcol-empty-icon { font-size: 18px; line-height: 1; }
+.jcol-empty-badge { padding: 2px 7px; border-radius: 999px; background: var(--ci-neutral-bg); color: var(--text-dim); font-size: 10px; font-weight: 700; }
+.jcol-empty--filtered .jcol-empty-badge { background: var(--surface); color: var(--accent); }
+.jcol-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.jcol-empty-actions:empty { display: none; }
+@media (max-width: 560px) {
+  .jcol-empty--empty,
+  .jcol-empty--filtered { padding: 12px 8px; }
+  .jcol-empty-actions { width: 100%; }
+  .jcol-empty-actions .vc-btn { flex: 1 1 auto; min-height: 40px; }
+}
 /* Состояния ленты CI-рана (RunFeed). */
 .ci-steps--skel {
   padding: 8px 0;

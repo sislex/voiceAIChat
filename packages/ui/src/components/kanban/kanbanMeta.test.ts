@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { avatarColor, avatarContrast, columnRegionLabel, duePresentation, dueState, epicColor, initials, issueKey, projectKey, wipPresentation } from './kanbanMeta'
+import { avatarColor, avatarContrast, columnRegionLabel, duePresentation, dueState, emptyColumnPresentation, epicColor, initials, issueKey, projectKey, wipPresentation } from './kanbanMeta'
 
 describe('kanbanMeta', () => {
   it('projectKey: латиница из инициалов слов, кириллица транслитерируется', () => {
@@ -38,6 +38,25 @@ describe('kanbanMeta', () => {
       state: 'ok', short: 'Через 5 дней', days: 5
     })
     expect(duePresentation(new Date(2026, 8, 16, 9).getTime(), now).label).toContain('16.09.2026')
+  })
+
+  it('emptyColumnPresentation различает настоящую пустоту и источник фильтрации', () => {
+    expect(emptyColumnPresentation({ columnName: 'Бэклог', total: 0, visible: 0, globallyMatching: 0, globalFiltersActive: false, localFilterActive: false })).toEqual({
+      state: 'empty',
+      title: '«Бэклог» пока пуста',
+      description: 'Создайте первую задачу или перетащите сюда карточку из другой колонки.',
+      badge: 'Готова к работе',
+      hiddenCount: 0,
+      localFilterHidesMatches: false
+    })
+    expect(emptyColumnPresentation({ columnName: 'Готово', total: 5, visible: 0, globallyMatching: 0, globalFiltersActive: true, localFilterActive: true })).toMatchObject({
+      state: 'filtered', badge: 'Скрыто 5 задач', hiddenCount: 5, localFilterHidesMatches: false
+    })
+    expect(emptyColumnPresentation({ columnName: 'В работе', total: 2, visible: 0, globallyMatching: 1, globalFiltersActive: true, localFilterActive: true })).toMatchObject({
+      description: expect.stringContaining('Фильтры доски и исполнителей колонки'),
+      localFilterHidesMatches: true
+    })
+    expect(emptyColumnPresentation({ columnName: 'В работе', total: 1, visible: 1, globallyMatching: 1, globalFiltersActive: false, localFilterActive: false })).toBeNull()
   })
 
   it('имя колонки для скринридера: название, счёт и признак «скрыта»', () => {
