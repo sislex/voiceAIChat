@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { avatarColor, avatarContrast, columnRegionLabel, dueState, epicColor, initials, issueKey, projectKey } from './kanbanMeta'
+import { avatarColor, avatarContrast, columnRegionLabel, duePresentation, dueState, epicColor, initials, issueKey, projectKey } from './kanbanMeta'
 
 describe('kanbanMeta', () => {
   it('projectKey: латиница из инициалов слов, кириллица транслитерируется', () => {
@@ -21,6 +21,23 @@ describe('kanbanMeta', () => {
     expect(dueState(now - 2 * day, now)).toBe('overdue')
     expect(dueState(now + day / 2, now)).toBe('soon')
     expect(dueState(now + 10 * day, now)).toBe('ok')
+  })
+
+  it('duePresentation различает просрочку, сегодня, завтра и оставшиеся дни', () => {
+    const now = new Date(2026, 8, 11, 12).getTime()
+    expect(duePresentation(new Date(2026, 8, 8, 9).getTime(), now)).toMatchObject({
+      state: 'overdue', short: 'Просрочено 3 дня', days: -3
+    })
+    expect(duePresentation(new Date(2026, 8, 11, 23).getTime(), now)).toMatchObject({
+      state: 'soon', short: 'Сегодня', days: 0
+    })
+    expect(duePresentation(new Date(2026, 8, 12, 9).getTime(), now)).toMatchObject({
+      state: 'soon', short: 'Завтра', days: 1
+    })
+    expect(duePresentation(new Date(2026, 8, 16, 9).getTime(), now)).toMatchObject({
+      state: 'ok', short: 'Через 5 дней', days: 5
+    })
+    expect(duePresentation(new Date(2026, 8, 16, 9).getTime(), now).label).toContain('16.09.2026')
   })
 
   it('имя колонки для скринридера: название, счёт и признак «скрыта»', () => {

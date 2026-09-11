@@ -4898,6 +4898,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard-epic { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
 .jcard-epic-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
 .jcard-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; background: var(--ci-neutral-bg); color: var(--text); border-radius: 3px; padding: 1px 6px; }
+.jcard-labels { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.jcard-label--more { font-weight: 600; }
 .jcard-progress { display: flex; align-items: center; gap: 6px; }
 .jcard-progress-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--ci-neutral-bg); overflow: hidden; }
 .jcard-progress-fill { display: block; height: 100%; background: var(--ci-success); }
@@ -4915,10 +4917,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jtype { flex: 0 0 auto; display: block; }
 .jcard-key { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
 .jcard-key--done { text-decoration: line-through; }
-.jcard-due { font-size: 11px; border-radius: 3px; padding: 1px 5px; background: var(--ci-neutral-bg); }
+.jcard-due { font-size: 11px; border-radius: 3px; padding: 1px 5px; background: var(--ci-neutral-bg); white-space: nowrap; }
 .jcard-due--overdue { background: var(--ci-removed-bg); color: var(--ci-removed); }
 .jcard-due--soon { background: var(--ci-progress-bg); color: var(--ci-progress); }
 .jcard-pts { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; border-radius: 9px; font-size: 11px; font-weight: 600; background: rgba(9, 30, 66, 0.13); padding: 0 5px; }
+.jcard-assignee { display: inline-flex; }
 .jprio { flex: 0 0 auto; }
 
 /* Навыки задачи (чипы) — по образцу меток, но в «зелёном» акценте Jira */
