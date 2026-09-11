@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 342365c6
+checked: 3d7b62a7
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1114,6 +1114,15 @@ stable project id. Hydration accepts only string identifiers and removes ids
 that no longer exist in the board snapshot. DOM tests cover focus, semantics,
 bulk commands, persistence, stale-id cleanup, and swimlanes. Chromium verifies
 the built Storybook at desktop and mobile widths, including reload restoration.
+
+Swimlane rows have equivalent bulk and per-row controls. Their headers keep the
+complete task count and show `visible из total` while any board or per-column
+filter is active. A row toggle controls a stable content element and retains
+focus across collapse/expansion. Collapsed row ids are stored per swimlane mode
+under `voicechat.kanban.collapsed-lanes.v1.<user>.<project>`; assignee and epic
+choices cannot overwrite one another, and ids absent from the current lane set
+are removed. The grid content uses an explicit `[hidden]` rule so author styles
+cannot accidentally expose a collapsed row.
 
 ### Меню колонки
 
