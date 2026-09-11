@@ -374,6 +374,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [completedOnly, setCompletedOnly] = useState(false)
   const [density, setDensity] = useState<BoardDensity>('comfortable')
   const [densityHydrated, setDensityHydrated] = useState(false)
+  const [collapsedColumns, setCollapsedColumns] = useState<ReadonlySet<string>>(new Set())
+  const [collapsedColumnsHydrated, setCollapsedColumnsHydrated] = useState(false)
   const [swimlane, setSwimlane] = useState<Swimlane>(props.defaultSwimlane ?? 'none')
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
@@ -533,6 +535,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     return currentUserId && projectId ? kanbanFilterKey(currentUserId, projectId) : null
   }, [allTasks, board, currentUserId, props.projectName])
   const densityStorageKey = filterStorageKey?.replace('voicechat.kanban.filters.v3.', 'voicechat.kanban.density.v1.') ?? null
+  const collapsedColumnsStorageKey = filterStorageKey?.replace('voicechat.kanban.filters.v3.', 'voicechat.kanban.collapsed-columns.v1.') ?? null
   useEffect(() => {
     setDensityHydrated(false)
     setDensity('comfortable')
@@ -550,6 +553,23 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     if (!densityHydrated || !densityStorageKey) return
     try { localStorage.setItem(densityStorageKey, density) } catch { /* Browser preferences may be unavailable. */ }
   }, [density, densityHydrated, densityStorageKey])
+  useEffect(() => {
+    setCollapsedColumnsHydrated(false)
+    setCollapsedColumns(new Set())
+    if (!collapsedColumnsStorageKey) {
+      setCollapsedColumnsHydrated(true)
+      return
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem(collapsedColumnsStorageKey) ?? '[]') as unknown
+      if (Array.isArray(saved)) setCollapsedColumns(new Set(saved.filter((id): id is string => typeof id === 'string')))
+    } catch { /* Browser preferences may be unavailable or damaged. */ }
+    setCollapsedColumnsHydrated(true)
+  }, [collapsedColumnsStorageKey])
+  useEffect(() => {
+    if (!collapsedColumnsHydrated || !collapsedColumnsStorageKey) return
+    try { localStorage.setItem(collapsedColumnsStorageKey, JSON.stringify([...collapsedColumns])) } catch { /* Browser preferences may be unavailable. */ }
+  }, [collapsedColumns, collapsedColumnsHydrated, collapsedColumnsStorageKey])
   useEffect(() => {
     setFiltersHydrated(false)
     // Сначала очищаем предыдущий контекст: состояние другого пользователя,
@@ -677,6 +697,13 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     .filter((c) => showHidden || !c.hidden)
     .filter((c) => !completedOnly || c.semanticType === 'done')
   const columnIdsKey = columns.map((column) => column.id).join('\u001f')
+  useEffect(() => {
+    const allowed = new Set((board?.columns ?? []).map((column) => column.id))
+    setCollapsedColumns((current) => {
+      const next = new Set([...current].filter((id) => allowed.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [board])
   useEffect(() => {
     setActiveColumnId((current) => columns.some((column) => column.id === current) ? current : columns[0]?.id ?? null)
   }, [columnIdsKey])
@@ -1255,12 +1282,50 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     )
   }
 
-  const columnHead = (col: KanbanColumn): JSX.Element => {
+  const toggleColumnCollapsed = (columnId: string, restoreFocus = false): void => {
+    setCollapsedColumns((current) => toggle(current, columnId))
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        const header = Array.from(boardRef.current?.querySelectorAll<HTMLElement>('[data-column-nav-target]') ?? [])
+          .find((element) => element.dataset.columnNavTarget === columnId)
+        header?.querySelector<HTMLButtonElement>('[data-column-collapse-toggle]')?.focus()
+      })
+    }
+  }
+
+  const columnHead = (col: KanbanColumn, controls = `kanban-column-content-${col.id}`): JSX.Element => {
     const visible = tasksOf(col.id).length
     const total = allTasks.filter((t) => t.columnId === col.id).length
     const wip = wipPresentation(total, col.wipLimit)
     const overWip = wip?.state === 'over'
     const fullWip = wip?.state === 'full'
+    const collapsed = collapsedColumns.has(col.id)
+    if (collapsed) {
+      return (
+        <header
+          className={`jcol-head jcol-head--collapsed${overWip ? ' jcol-head--over' : ''}${fullWip ? ' jcol-head--full' : ''}`}
+          data-column-nav-target={col.id}
+          tabIndex={-1}
+          aria-label={`${columnRegionLabel(col, visible)}, свёрнута`}
+        >
+          <IconButton
+            size="sm"
+            data-column-collapse-toggle=""
+            aria-label={`Развернуть колонку «${col.name}»`}
+            aria-expanded="false"
+            aria-controls={controls}
+            title="Развернуть колонку"
+            onClick={() => toggleColumnCollapsed(col.id, true)}
+          >
+            <span aria-hidden="true">›</span>
+          </IconButton>
+          <span className="jcol-collapsed-name" title={col.name}>{col.name}</span>
+          <span className="jcol-collapsed-count" aria-label={`${total} ${pluralTasks(total)}${wip ? `. ${wip.label}` : ''}`}>
+            {total}{col.wipLimit != null ? `/${col.wipLimit}` : ''}
+          </span>
+        </header>
+      )
+    }
     return (
       <header
         className={`jcol-head${overWip ? ' jcol-head--over' : ''}${fullWip ? ' jcol-head--full' : ''}${
@@ -1351,6 +1416,18 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             i
           </button>
         )}
+        <IconButton
+          className="jcol-collapse-button"
+          size="sm"
+          data-column-collapse-toggle=""
+          aria-label={`Свернуть колонку «${col.name}»`}
+          aria-expanded="true"
+          aria-controls={controls}
+          title="Свернуть колонку"
+          onClick={() => toggleColumnCollapsed(col.id, true)}
+        >
+          <span aria-hidden="true">‹</span>
+        </IconButton>
         {(() => {
           const activeMembers = members.filter((member) => member.active !== false)
           const filter = columnAssigneeFilters[col.id] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
@@ -2110,6 +2187,33 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             )}
           </section>
 
+          {columns.length > 1 && (
+            <section className="jcolumn-collapse-actions" role="group" aria-label="Управление свёрнутыми колонками">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={columns.every((column) => collapsedColumns.has(column.id))}
+                onClick={() => setCollapsedColumns((current) => new Set([...current, ...columns.map((column) => column.id)]))}
+              >
+                Свернуть все
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={columns.every((column) => !collapsedColumns.has(column.id))}
+                onClick={() => setCollapsedColumns((current) => {
+                  const displayed = new Set(columns.map((column) => column.id))
+                  return new Set([...current].filter((id) => !displayed.has(id)))
+                })}
+              >
+                Развернуть все
+              </Button>
+              <span role="status" aria-live="polite">
+                Свёрнуто {columns.filter((column) => collapsedColumns.has(column.id)).length} из {columns.length}
+              </span>
+            </section>
+          )}
+
           {activeFilterChips.length > 0 && (
             <div className="jactive-filters" role="region" aria-label="Активные фильтры" data-testid="active-filters">
               <span className="jactive-filters-label">Активные фильтры</span>
@@ -2159,7 +2263,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               {columns.map((col) => (
                 <section
                   key={col.id}
-                  className={`jcol${col.hidden ? ' jcol--hidden' : ''}${
+                  className={`jcol${collapsedColumns.has(col.id) ? ' jcol--collapsed' : ''}${col.hidden ? ' jcol--hidden' : ''}${
                     dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol--drop' : ''
                   }`}
                   data-testid="kanban-column"
@@ -2167,12 +2271,14 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   /* Имя делает колонку регионом: скринридер объявляет «Колонка
                      «В работе», 3 задачи» и умеет прыгать по ним. Без имени
                      section для доступности — обычный div. */
-                  aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
-                  aria-describedby={tasksOf(col.id).length === 0 ? `kanban-column-empty-${col.id}` : undefined}
+                  aria-label={`${columnRegionLabel(col, tasksOf(col.id).length)}${collapsedColumns.has(col.id) ? ', свёрнута' : ''}`}
+                  aria-describedby={!collapsedColumns.has(col.id) && tasksOf(col.id).length === 0 ? `kanban-column-empty-${col.id}` : undefined}
                 >
                   {columnHead(col)}
-                  {columnBody(col)}
-                  {composer(col)}
+                  <div id={`kanban-column-content-${col.id}`} className="jcol-content" hidden={collapsedColumns.has(col.id)}>
+                    {!collapsedColumns.has(col.id) && columnBody(col)}
+                    {!collapsedColumns.has(col.id) && composer(col)}
+                  </div>
                 </section>
               ))}
               <section
@@ -2230,14 +2336,14 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 {columns.map((col) => (
                   <section
                     key={col.id}
-                    className={`jcol jcol--headonly${col.hidden ? ' jcol--hidden' : ''}${
+                    className={`jcol jcol--headonly${collapsedColumns.has(col.id) ? ' jcol--collapsed' : ''}${col.hidden ? ' jcol--hidden' : ''}${
                       dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol--drop' : ''
                     }`}
                     data-testid="kanban-column"
                     data-column-id={col.id}
-                    aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
+                    aria-label={`${columnRegionLabel(col, tasksOf(col.id).length)}${collapsedColumns.has(col.id) ? ', свёрнута' : ''}`}
                   >
-                    {columnHead(col)}
+                    {columnHead(col, lanes.map((lane) => `kanban-column-cell-${col.id}-${lane.id || 'none'}`).join(' '))}
                   </section>
                 ))}
                 {addColumnBox}
@@ -2257,9 +2363,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   {!collapsedLanes.has(lane.id) && (
                     <div className="jlane-cols">
                       {columns.map((col) => (
-                        <div key={col.id} className="jcol jcol--incell">
-                          {columnBody(col, { kind: swimlane, id: lane.id })}
-                          {lane.id === '' ? composer(col) : null}
+                        <div
+                          key={col.id}
+                          id={`kanban-column-cell-${col.id}-${lane.id || 'none'}`}
+                          className={`jcol jcol--incell${collapsedColumns.has(col.id) ? ' jcol--collapsed jcol--collapsed-cell' : ''}`}
+                          data-column-id={col.id}
+                          aria-hidden={collapsedColumns.has(col.id) || undefined}
+                        >
+                          {!collapsedColumns.has(col.id) && columnBody(col, { kind: swimlane, id: lane.id })}
+                          {!collapsedColumns.has(col.id) && lane.id === '' ? composer(col) : null}
                         </div>
                       ))}
                     </div>

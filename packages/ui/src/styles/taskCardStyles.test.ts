@@ -81,6 +81,12 @@ describe('стили открытой карточки задачи', () => {
     expect(styled(cls)).toBe(true)
   })
 
+  it('свёрнутая колонка остаётся узкой, а её содержимое действительно скрыто', () => {
+    expect(rule('.jcol[data-column-id].jcol--collapsed')).toMatch(/width:\s*60px/)
+    expect(rule('.jcol[data-column-id].jcol--collapsed')).toMatch(/min-width:\s*60px/)
+    expect(rule('.jcol-content[hidden]')).toMatch(/display:\s*none/)
+  })
+
   it('обёртка панелей не переносит строки — иначе вкладка не скроллится', () => {
     // Панель объявлена `flex: 1 1 100%`. С `flex-wrap: wrap` каждая уходит на
     // свою строку, высота строки считается по содержимому, и `overflow: auto`
