@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 80eb824b
+checked: 0ebaed5f
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1021,6 +1021,16 @@ yesterday, recent calendar days, and a short date. Its accessible label and
 tooltip retain the exact local date and time. Fresh, recent, and stale states
 provide stable styling hooks; stale timestamps use the attention color, while
 compact and phone layouts bound the label width without hiding it.
+
+### Board snapshot status (2026-09-11)
+
+The filter toolbar identifies the current board snapshot using the greatest
+task `updatedAt` value, or the arrival time for an empty board. The semantic
+`time` element keeps an ISO value, an exact local tooltip, a relative visible
+caption, and the same fresh/recent/stale states as cards. Client-side filtering
+does not change the snapshot timestamp. During a background reload the existing
+board remains visible with `aria-busy="true"`, the timestamp becomes a polite
+`Обновляется…` status, and a reduced-motion-safe dot indicates activity.
 
 ### Visible board summary (2026-09-11)
 
