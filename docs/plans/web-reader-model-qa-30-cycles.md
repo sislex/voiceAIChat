@@ -45,14 +45,14 @@ are written before implementation, after inspecting the relevant capabilities.
 
 | Cycle | Area | Completed | Commit |
 | --- | --- | --- | --- |
-| 01 | Markup audit and evidence contract | 30/30 | `4bc85964` |
-| 02 | Layout and clipping, with native audit integration | 30/30 | `2046cf0a` |
-| 03 | Typography and text rendering | 30/30 | `c4f3ea90` |
-| 04 | Color and contrast | 30/30 | `7cd3a78a` |
-| 05 | Interactive control states | 30/30 | `f573dcd0` |
-| 06 | Forms and validation | 30/30 | `9e7bce0e` |
-| 07 | Focus and keyboard navigation | 30/30 | `42d682a5` |
-| 08 | Native accessibility evidence and naming confidence | 30/30 | pending |
+| 01 | Markup audit and evidence contract | 30/30 | `ee0fc797` |
+| 02 | Layout and clipping, with native audit integration | 30/30 | `3293c9ad` |
+| 03 | Typography and text rendering | 30/30 | `e1ef30b9` |
+| 04 | Color and contrast | 30/30 | `59f22ce2` |
+| 05 | Interactive control states | 30/30 | `d8ea3831` |
+| 06 | Forms and validation | 30/30 | `26bc6a6e` |
+| 07 | Focus and keyboard navigation | 30/30 | `e84b2176` |
+| 08 | Native accessibility evidence and naming confidence | 30/30 | `ac340e14` |
 | 09 | Images and responsive assets | 0/30 | pending |
 | 10 | Audio, video and canvas | 0/30 | pending |
 | 11 | Animation observation | 0/30 | pending |

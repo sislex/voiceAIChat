@@ -12,7 +12,12 @@ import { BrowserSessionManager } from './sessionManager.js'
 let site: FastifyInstance, manager: BrowserSessionManager, session: BrowserSessionMetadata, root: string, source = ''
 const target = 'http://audit.reader.test/'
 const send = (command: BrowserCommand, actor: 'user' | 'assistant' = 'assistant') => manager.command(session.id, { requestId: randomUUID(), incarnation: session.incarnation, actor, command })
-const open = async (html: string) => { source = html; await send({ type: 'navigate', url: target }) }
+const open = async (html: string) => {
+  source = html
+  await send({ type: 'navigate', url: target })
+  // Reloads of the same URL may restore the previous fixture's scroll offset.
+  await send({ type: 'inspect', action: { kind: 'evaluate', code: 'history.scrollRestoration="manual";scrollTo(0,0)' } })
+}
 const editFixture = async (edit?: FormFixtureEdit) => {
   if (!edit) return
   expect(await send({ type: 'selector', action: { kind: 'click', selector: edit.selector } })).toMatchObject({ ok: true })
