@@ -1,4 +1,4 @@
-/** Семантическое чтение отделено от действий: модель получает подписи и состояние доступных контролов. */
+/** Share semantic reading so audit names agree across both Reader engines. */
 export function previewReadingHelpers(): string {
  return String.raw`const readingVisible=el=>actionVisible(el)&&!el.closest('[data-voicechat-inspector],[inert]')&&el.id!=='voicechat-preview-inspector';
 const accessibleVisible=el=>readingVisible(el)&&!el.closest('[aria-hidden="true"]');

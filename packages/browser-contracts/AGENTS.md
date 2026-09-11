@@ -11,4 +11,6 @@ REST/WS остаются в `@voicechat/shared`; Node-транспорт и се
 The `./audit` export contains pure generators for trusted DOM audit programs.
 Both proxy Reader and native browser-runner execute the same checks; this package
 does not execute DOM code or start a browser. Keep new audit groups here to avoid
-different findings between engines. Wire fixtures into both browser suites.
+different findings between engines. Add examples to the shared registry exposed
+only by `./audit/fixtures`; both browser suites iterate it. Production imports must
+not load the fixture entry point. Audit source changes automatically select Reader E2E.

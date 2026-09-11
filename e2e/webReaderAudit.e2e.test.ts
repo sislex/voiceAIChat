@@ -5,8 +5,7 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { PreviewActionResultMessage, PreviewAuditOptions, PreviewAuditResult } from '@voicechat/shared'
 import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
-import { markupAuditFixtures } from '../apps/web-reader/src/routes/audit/markup.fixtures.js'
-import { layoutAuditFixtures } from '@voicechat/browser-contracts/audit'
+import { auditFixtures } from '@voicechat/browser-contracts/audit/fixtures'
 
 let app: FastifyInstance, browser: Browser, page: Page, base: string, source = ''
 async function open(html: string) {
@@ -42,16 +41,18 @@ describe('Web Reader markup audit in Chromium', () => {
   })
   afterAll(async () => { await browser?.close(); await app?.close() })
 
-  for (const fixture of [...markupAuditFixtures.map(f => ({ ...f, group: 'markup' })), ...layoutAuditFixtures.map(f => ({ ...f, group: 'layout' }))]) {
-    it(`detects ${fixture.rule}`, async () => {
+  for (const fixture of auditFixtures) {
+    it(`detects ${fixture.name ?? fixture.rule}`, async () => {
       await open(fixture.broken)
+      if (fixture.ready) await page.frames().find(frame => frame.url().includes('/api/preview?'))!.waitForFunction(fixture.ready)
       const report = await audit({ group: fixture.group, rules: [fixture.rule] })
       expect(report.checkedRules).toBe(1)
       expect(report.findings.length).toBeGreaterThan(0)
       expect(report.findings.every(f => f.id === fixture.rule && f.selector && f.evidence)).toBe(true)
     })
-    it(`clears ${fixture.rule} after repair`, async () => {
+    it(`clears ${fixture.name ?? fixture.rule} after repair`, async () => {
       await open(fixture.fixed)
+      if (fixture.ready) await page.frames().find(frame => frame.url().includes('/api/preview?'))!.waitForFunction(fixture.ready)
       expect((await audit({ group: fixture.group, rules: [fixture.rule] })).findings).toEqual([])
     })
   }
@@ -99,9 +100,54 @@ describe('Web Reader markup audit in Chromium', () => {
   })
   it('does not include sensitive field values in audit evidence', async () => {
     await open('<!doctype html><body><input type="password" value="never-report-this"><input name="token" value="nor-this"></body>')
-    const report = JSON.stringify(await audit())
-    expect(report).not.toContain('never-report-this')
-    expect(report).not.toContain('nor-this')
+    for (const group of ['markup', 'layout', 'typography']) {
+      const report = JSON.stringify(await audit({ group }))
+      expect(report).not.toContain('never-report-this')
+      expect(report).not.toContain('nor-this')
+    }
+  })
+  it('reads changed text and styles without reusing a previous audit snapshot', async () => {
+    await open('<!doctype html><p id="live" style="font-size:8px">Hello {{ user.name }}</p>')
+    const options = { group: 'typography', rules: ['small-font-text', 'raw-template-expression'] }
+    expect((await audit(options)).total).toBe(2)
+    await page.frameLocator('iframe').locator('#live').evaluate(el => { el.textContent = 'Hello Alex'; (el as HTMLElement).style.fontSize = '16px' })
+    expect((await audit(options)).findings).toEqual([])
+  })
+  it.each([
+    ['"My, serif, Demo"', 1],
+    ['"My, serif, Demo", sans-serif', 0],
+    ['"sans-serif"', 1],
+    ['"My \\"quoted\\", serif, Family"', 1],
+    ['Arial, ui-sans-serif', 0]
+  ])('parses the rendered font stack %s', async (font, count) => {
+    await open('<!doctype html><p id="font">Font stack</p>')
+    const accepted = await page.frameLocator('iframe').locator('#font').evaluate((el, value) => { (el as HTMLElement).style.fontFamily = value; return (el as HTMLElement).style.fontFamily }, String(font))
+    expect(accepted).not.toBe('')
+    expect((await audit({ group: 'typography', selector: '#font', rules: ['font-generic-fallback-missing'] })).total).toBe(count)
+  })
+  it('marks oversized font stacks incomplete without guessing their fallback', async () => {
+    await open('<!doctype html><p id="font">Font stack</p>')
+    await page.frameLocator('iframe').locator('#font').evaluate(el => { (el as HTMLElement).style.fontFamily = 'F'.repeat(4200)+', sans-serif' })
+    const report = await audit({ group: 'typography', selector: '#font', rules: ['font-generic-fallback-missing'] })
+    expect(report.truncated).toBe(true)
+    expect(report.limitations).toContain('Font stack inspection stopped at 4096 characters.')
+    expect(report.findings).toEqual([])
+  })
+  it('reports typography scan limits instead of claiming a complete result', async () => {
+    await open('<!doctype html><p>'+'a'.repeat(4200)+'</p><p>'+'<!-- spacer -->'.repeat(300)+'{{ missed }}</p>')
+    const report = await audit({ group: 'typography', rules: ['raw-template-expression'] })
+    expect(report.truncated).toBe(true)
+    expect(report.limitations).toContain('Text scan stopped at 4096 direct characters on an element.')
+    expect(report.limitations).toContain('Text scan stopped at 256 child nodes on an element.')
+  })
+  it('discovers typography checks and captures unreadable and repaired text', async () => {
+    await open('<!doctype html><html lang="en"><head><title>Typography audit evidence</title><style>body{font:18px/1.5 system-ui;background:#edf2f8;padding:32px}main{background:white;border-radius:16px;padding:32px;max-width:760px}.broken{font-size:8px;letter-spacing:-1px;width:240px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.fixed{font-size:18px;max-width:600px}section{border-top:1px solid #dce4ee;padding:16px 0}</style></head><body><main><h1>Typography audit: visible evidence</h1><section><h2>Unreadable text</h2><p class="broken">This deliberately tiny and tightly spaced text is difficult to read and loses its meaning when clipped.</p></section><section><h2>Repaired text</h2><p class="fixed">This text uses readable sizing, natural spacing, and wrapping within its container.</p></section></main></body></html>')
+    expect((await audit({ group: 'typography', mode: 'list', limit: 30 })).rules).toHaveLength(30)
+    expect((await audit({ group: 'typography', rules: ['small-font-text'] })).findings).toHaveLength(1)
+    if (process.env.VC_VISUAL_ARTIFACTS) {
+      await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
+      await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'cycle-03-typography.png'), fullPage: true })
+    }
   })
   it.each(['x-private', 'i-klingon', 'en-GB-oed', 'zh-min-nan'])('accepts valid legacy or private-use language %s', async lang => {
     await open('<!doctype html><html lang="' + lang + '"><head><title>Language fixture</title></head><body></body></html>')

@@ -1,6 +1,7 @@
 import { PREVIEW_AUDIT_LIMITS } from '@voicechat/shared'
 import { markupAuditRules } from './markup.js'
 import { layoutAuditRules } from './layout.js'
+import { typographyAuditRules } from './typography.js'
 
 /** The injected runtime must stay self-contained and explicitly report incomplete coverage. */
 export function previewAuditHelpers(surface: 'proxy' | 'chromium' = 'proxy'): string {
@@ -10,6 +11,7 @@ const auditRules=[];
 const auditRule=(group,id,title,severity,confidence,selector,check)=>auditRules.push({group,id,title,severity,confidence,selector,check});
 ${markupAuditRules()}
 ${layoutAuditRules()}
+${typographyAuditRules()}
 const auditMetadata=({group,id,title,severity,confidence})=>({group,id,title,severity,confidence});
 const runAudit=action=>{
   const started=performance.now(),group=action.group||'markup',mode=action.mode||'run';
@@ -23,6 +25,7 @@ const runAudit=action=>{
   const selected=action.rules?rules.filter(rule=>action.rules.includes(rule.id)):rules;
   const limitations=[${JSON.stringify(surface === 'proxy' ? 'Checks observe the rewritten proxy document, not the original browser origin.' : 'Checks observe the current native Chromium document at its browser origin.')},'Shadow root contents and child frame documents are not scanned.','Heuristic findings require visual review; an empty report is not a complete QA pass.'];
   const info=pageInfo(),page={url:info.url.slice(0,4096),title:info.title.slice(0,300)};
+  if(group==='typography')limitations.push('Text checks inspect up to 4096 direct text characters and 256 child nodes per element; descendants are checked separately. Font status inspects up to 1000 declared faces; font stacks up to 4096 characters.');
   let scope=document.documentElement;
   if(action.selector!==undefined){
     if(typeof action.selector!=='string'||!action.selector.trim()||action.selector.length>auditLimits.selector)throw new Error('Invalid audit scope selector.');
@@ -37,6 +40,7 @@ const runAudit=action=>{
   audit.scannedElements=nodes.length;
   const matchesCache=new Map(),visibleCache=new WeakMap(),styleCache=new WeakMap(),rectCache=new WeakMap();
   const context={all:selector=>{if(!matchesCache.has(selector))matchesCache.set(selector,nodes.filter(el=>el.matches(selector)));return matchesCache.get(selector)},visible:el=>{if(!visibleCache.has(el))visibleCache.set(el,actionVisible(el));return visibleCache.get(el)},style:el=>{if(!styleCache.has(el))styleCache.set(el,getComputedStyle(el));return styleCache.get(el)},rect:el=>{if(!rectCache.has(el))rectCache.set(el,el.getBoundingClientRect());return rectCache.get(el)}};
+  context.limit=message=>{audit.truncated=true;if(!limitations.includes(message))limitations.push(message)};
   const findings=[];
   for(const rule of selected){
     if(rule.selector==='@document'&&scope!==document.documentElement){limitations.push(rule.id+' requires document scope.');continue}

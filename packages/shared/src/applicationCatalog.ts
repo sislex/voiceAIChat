@@ -358,6 +358,10 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
                     ? ["shared", "ui-kit", "profile-app", "sessions-app"]
                     : ["shared", "ui-kit"],
       contractPaths: [`packages/${id}`],
+      ...(id === "browser-contracts" ? {
+        browserPaths: ["packages/browser-contracts/src/audit"],
+        e2eFiles: ["e2e/webReaderAudit.e2e.test.ts", "e2e/webReaderNative.e2e.test.ts"],
+      } : {}),
     }),
   ),
 ];
