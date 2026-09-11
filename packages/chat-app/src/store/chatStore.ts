@@ -993,7 +993,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     persisted?: Message
   ): Promise<void> {
     const text = fullText.trim()
-    setState({ streamingReply: '' })
+    setState({ streamingReply: '', preparingReply: false })
     if (!text) {
       if (voice.state() === 'thinking') voice.dispatch('reset') // пустой ответ → idle
       return
@@ -1463,7 +1463,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
     const patch: Partial<ChatState> = {
       pendingSubmits: { ...state.pendingSubmits, [operationId]: pendingSubmit },
-      pendingSubmit
+      pendingSubmit,
+      // Карточка ответа появляется в том же синхронном захвате операции, до
+      // первого await (создание/сохранение сообщения и запуск сети).
+      ...(!queueOnly ? { preparingReply: true } : {})
     }
     if (queueOnly && state.activeId) {
       const items = state.queuedTurns[state.activeId] ?? []
@@ -2035,6 +2038,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         if (!t || voice.state() !== 'idle' || !getState().activeId) return
         setError(null)
         const execTarget = activeConversationExecTarget()
+        // Доотправка — отдельный ход: резервируем его карточку до сохранения.
+        setState({ preparingReply: true })
         await persistMessage('u1', t, undefined, undefined, execTarget)
         await refreshConversations()
         if (!voice.dispatch('submit_text')) return // idle → thinking
@@ -2059,6 +2064,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           'acceptEdits'
         )
         const execTarget = activeConversationExecTarget()
+        // Повтор исходной реплики после принятия плана тоже начинает новый ход.
+        setState({ preparingReply: true })
         await persistMessage('u1', source.text, undefined, undefined, execTarget)
         await refreshConversations()
         if (!voice.dispatch('submit_text')) return
@@ -2084,6 +2091,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         // WS сохраняет порядок: cancel обрабатывается раньше новой отправки.
         const v = voice.state()
         if (v === 'thinking' || v === 'speaking') cancelRequest()
+        // Редактирование сразу запускает заменяющий ход, поэтому не ждём
+        // удаления/повторного сохранения, чтобы зарезервировать AI-карточку.
+        setState({ preparingReply: true })
         const messageExecTarget = source.execTarget ?? null
         const removed = getState().messages.slice(idx)
         for (const m of removed) {
