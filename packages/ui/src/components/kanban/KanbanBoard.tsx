@@ -356,6 +356,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [recentOnly, setRecentOnly] = useState(false)
   const [swimlane, setSwimlane] = useState<Swimlane>(props.defaultSwimlane ?? 'none')
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
+  const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [dragTask, setDragTask] = useState<string | null>(null)
   const [dragColumn, setDragColumn] = useState<string | null>(null)
   // Перенос: место вставки (общее для указателя и клавиатуры), высота
@@ -621,6 +622,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     })
   }, [members])
   const columns = (board?.columns ?? []).filter((c) => showHidden || !c.hidden)
+  const columnIdsKey = columns.map((column) => column.id).join('\u001f')
+  useEffect(() => {
+    setActiveColumnId((current) => columns.some((column) => column.id === current) ? current : columns[0]?.id ?? null)
+  }, [columnIdsKey])
   const doneColumnIds = useMemo(
     () => new Set((board?.columns ?? []).filter((c) => c.semanticType === 'done').map((c) => c.id)),
     [board]
@@ -712,6 +717,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     (count, column) => count + allTasks.filter((task) => task.columnId === column.id).length,
     0
   )
+  const effectiveActiveColumnId = columns.some((column) => column.id === activeColumnId)
+    ? activeColumnId
+    : columns[0]?.id ?? null
+  const activeColumnIndex = columns.findIndex((column) => column.id === effectiveActiveColumnId)
+
+  const jumpToColumn = (columnId: string): void => {
+    const column = columns.find((item) => item.id === columnId)
+    if (!column) return
+    setActiveColumnId(columnId)
+    const target = Array.from(
+      boardRef.current?.querySelectorAll<HTMLElement>('[data-column-nav-target]') ?? []
+    ).find((element) => element.dataset.columnNavTarget === columnId)
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+    setAnnounce(columnRegionLabel(column, tasksOf(column.id).length) + '.')
+  }
 
   const navigateBoard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget) return
@@ -721,15 +742,31 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       event.preventDefault()
       surface.scrollLeft += event.key === 'ArrowRight' ? step : -step
-      setAnnounce(event.key === 'ArrowRight' ? 'Доска прокручена вправо.' : 'Доска прокручена влево.')
+      const nextIndex = Math.min(
+        Math.max(activeColumnIndex + (event.key === 'ArrowRight' ? 1 : -1), 0),
+        columns.length - 1
+      )
+      const next = columns[nextIndex]
+      if (next) {
+        setActiveColumnId(next.id)
+        setAnnounce(columnRegionLabel(next, tasksOf(next.id).length) + '.')
+      }
     } else if (event.key === 'Home') {
       event.preventDefault()
       surface.scrollLeft = 0
-      setAnnounce('Показано начало доски.')
+      const first = columns[0]
+      if (first) {
+        setActiveColumnId(first.id)
+        setAnnounce(columnRegionLabel(first, tasksOf(first.id).length) + '.')
+      }
     } else if (event.key === 'End') {
       event.preventDefault()
       surface.scrollLeft = surface.scrollWidth
-      setAnnounce('Показан конец доски.')
+      const last = columns[columns.length - 1]
+      if (last) {
+        setActiveColumnId(last.id)
+        setAnnounce(columnRegionLabel(last, tasksOf(last.id).length) + '.')
+      }
     }
   }
 
@@ -1052,6 +1089,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         className={`jcol-head${overWip ? ' jcol-head--over' : ''}${
           dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol-head--drop' : ''
         }${dragColumn === col.id ? ' jcol-head--lifted' : ''}`}
+        data-column-nav-target={col.id}
+        tabIndex={-1}
+        aria-label={columnRegionLabel(col, visible)}
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
           grabColumn(e, e.currentTarget, col.id, false)
@@ -1619,6 +1659,46 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             >
               Показано {visibleTaskCount} из {displayedTaskTotal}
             </span>
+            {columns.length > 0 && (
+              <span className="jcolumn-nav" role="group" aria-label="Навигация по колонкам">
+                <IconButton
+                  size="sm"
+                  aria-label="Перейти к предыдущей колонке"
+                  title="Предыдущая колонка"
+                  disabled={activeColumnIndex <= 0}
+                  onClick={() => {
+                    const previous = columns[activeColumnIndex - 1]
+                    if (previous) jumpToColumn(previous.id)
+                  }}
+                >
+                  <span aria-hidden="true">←</span>
+                </IconButton>
+                <select
+                  className="sel jcolumn-nav-select"
+                  aria-label="Перейти к колонке"
+                  value={effectiveActiveColumnId ?? ''}
+                  onChange={(event) => jumpToColumn(event.target.value)}
+                >
+                  {columns.map((column) => (
+                    <option key={column.id} value={column.id}>
+                      {column.name} ({tasksOf(column.id).length})
+                    </option>
+                  ))}
+                </select>
+                <IconButton
+                  size="sm"
+                  aria-label="Перейти к следующей колонке"
+                  title="Следующая колонка"
+                  disabled={activeColumnIndex < 0 || activeColumnIndex >= columns.length - 1}
+                  onClick={() => {
+                    const next = columns[activeColumnIndex + 1]
+                    if (next) jumpToColumn(next.id)
+                  }}
+                >
+                  <span aria-hidden="true">→</span>
+                </IconButton>
+              </span>
+            )}
             <span className="javatars" role="group" aria-label="Фильтр по исполнителям">
               {members.map((m) => (
                 <button
