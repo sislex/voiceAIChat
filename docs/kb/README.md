@@ -76,6 +76,7 @@
 
 Всего записей: 750. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-02.md) — web-reader-ten-cycle-02
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-01.md) — web-reader-ten-cycle-01
 - [2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md) — web-reader-rebase-main
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md) — web-reader-qa-cycle-08
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md) — web-reader-qa-cycle-04
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md) — web-reader-qa-cycle-03
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md) — web-reader-qa-cycle-02
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md) — Web Reader QA cycle 01 - evidence-based markup audit
 
 ## Исторические планы
 

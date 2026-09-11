@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 8a3cf2a5
+checked: 4803394c
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -117,6 +117,10 @@ The standalone Web Reader store separates list refreshes from conversation activ
 Activation owns its recorder subscription and ignores stale callbacks and action results,
 including a switch away and back to the same conversation. Lookup and recorder failures
 become recoverable UI errors; explicit conversation URLs bypass project fallback lookup.
+The host bridge snapshots validated commands, caps pending work at 64, and accepts
+results only for sent commands. Repeated approved URLs do not reload the page.
+Active diagnostics survive recorder reboot; failed mode restoration does not announce
+a usable registration. Expired deferred opens cannot revive navigation.
 
 
 После успешного `preview.result` серверный `PreviewActionRelay` публикует `reader.changed` с разговором, адресом, заголовком, признаком навигации и исходным `PreviewAction` (контракт — `packages/shared/src/protocol.ts`, реализация — `apps/web-reader/src/mcp/previewMcp.ts`). Remote-мост передаёт кадр в `App`: только активный разговор добавляет подтверждённый шаг в ограниченную последними 20 элементами ленту, а навигационный кадр обновляет ленту без перемонтирования Reader: переход уже выполнен в живом документе, повторный mount терял DOM/ввод и делал лишний запрос. `WebReaderFrame` переводит действия в понятные подписи и позволяет повторить шаг через ту же актуальную host-регистрацию.
