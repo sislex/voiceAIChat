@@ -22,10 +22,10 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 199 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 78 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 98 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 2 коммит(ов) в areas после сверки: 3293c9ad feat(web-reader): add native layout audits (QA cycle 02) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1340 коммит(ов) в areas после сверки: 3293c9ad feat(web-reader): add native layout audits (QA cycle 02) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 3 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1341 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 62 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 3 коммит(ов) в areas после сверки: ee0fc797 feat(web-reader): add 30 markup audit checks (QA cycle 01) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 4 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 104 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 317 коммит(ов) в areas после сверки: 3293c9ad feat(web-reader): add native layout audits (QA cycle 02) … |
@@ -36,12 +36,12 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-10 | ⚠ 2 коммит(ов) в areas после сверки: 3293c9ad feat(web-reader): add native layout audits (QA cycle 02) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 3 коммит(ов) в areas после сверки: 3293c9ad feat(web-reader): add native layout audits (QA cycle 02) … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 4 коммит(ов) в areas после сверки: 3293c9ad feat(web-reader): add native layout audits (QA cycle 02) … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 198 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ⚠ 2 коммит(ов) в areas после сверки: 3293c9ad feat(web-reader): add native layout audits (QA cycle 02) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ⚠ 3 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 3 коммит(ов) в areas после сверки: 3293c9ad feat(web-reader): add native layout audits (QA cycle 02) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 4 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 736. Последние:
+Всего записей: 737. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md) — web-reader-qa-cycle-04
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md) — web-reader-qa-cycle-03
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md) — web-reader-qa-cycle-02
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md) — Web Reader QA cycle 01 - evidence-based markup audit
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-make-dependency-gate-regression.md](log/2026-09-11-alexeys-macbook-air-2-make-dependency-gate-regression.md) — Fix Make dependency graph regression in release 0.1.296
 - [2026-09-10-macbook-air-user-task-error-opens-task-chat.md](log/2026-09-10-macbook-air-user-task-error-opens-task-chat.md) — task-error-opens-task-chat
 - [2026-09-10-macbook-air-user-task-chat-composer.md](log/2026-09-10-macbook-air-user-task-chat-composer.md) — task-chat-composer
-- [2026-09-10-macbook-air-user-chat-settings-llm.md](log/2026-09-10-macbook-air-user-chat-settings-llm.md) — chat-settings-llm
 
 ## Исторические планы
 

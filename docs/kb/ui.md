@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 3df0eaa8
+checked: 0a0274e6
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2454,7 +2454,8 @@ The `audit` MCP tool inspects the live proxy or native Chromium document without
 `packages/shared/src/previewAudit.ts` defines bounded options and evidence; the
 `audit` action travels through the existing Reader relay and recorder bridge.
 Pure program generators in `packages/browser-contracts/src/audit/` execute 30
-markup checks, 30 layout checks and 30 typography checks. Web Reader retains stable re-export paths;
+markup checks, 30 layout checks, 30 typography checks and nine color report types
+covering 30 verified color/paint capabilities. Web Reader retains stable re-export paths;
 browser-runner executes the same checks through built-in `inspect/audit`, separate
 from model-supplied `evaluate` code and its policy. Use `mode: list` to discover rule IDs;
 `mode: run` is the default. `group` defaults to `markup`, `rules` narrows checks,
@@ -2496,6 +2497,27 @@ and 1,000 font faces, marking the report incomplete when a limit is reached.
 Font stacks are bounded at 4,096 characters and parsed with quote/escape awareness;
 a family named `"My, serif, Demo"` does not provide a generic fallback. Standard
 `generic(...)` families are recognized when reported by the browser.
+
+The `color` group estimates text, placeholder, generated text, custom selection,
+current focus-outline, control-boundary and named SVG-fill contrast. The 30-case
+capability matrix includes alpha foregrounds, nested translucent backgrounds,
+ancestor opacity and CSS sRGB/P3/Lab/LCH/OKLab/OKLCH syntax. A detached 1-pixel
+canvas converts colors to 8-bit sRGB; wide-gamut colors and threshold-adjacent
+ratios are approximations. Text references are 4.5:1, or 3:1 for computed sizes of
+24px regular / 14pt bold, following the
+[WCAG contrast reference](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html).
+Ratios are compared before display rounding. Findings are heuristic, not a WCAG
+conformance result; transforms, native appearance, visited-link privacy, SVG
+strokes and detailed glyph occlusion require separate visual inspection.
+
+`color-inspection-incomplete` reports unresolved image/gradient backdrops, blend
+modes, filters, text effects, transparent canvas backdrops and center occlusion,
+including generated text and placeholders. An opaque child backdrop can eliminate
+an irrelevant ancestor gradient; ancestor opacity is still composed. Per-call
+color/text caches avoid stale results and do not mutate cached SVG alpha values.
+Text discovery is bounded to 256 children and 4,096 characters per text node;
+paint composition stops at 64 ancestors and marks the scan truncated. Inspection
+does not focus controls, select text, scroll, insert a canvas or read field values.
 
 Test examples are exported separately from `@voicechat/browser-contracts/audit/fixtures`;
 production imports only the pure program generators. Both browser suites consume

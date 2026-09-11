@@ -47,8 +47,8 @@ are written before implementation, after inspecting the relevant capabilities.
 | --- | --- | --- | --- |
 | 01 | Markup audit and evidence contract | 30/30 | `cf8e2df1` |
 | 02 | Layout and clipping, with native audit integration | 30/30 | `3df0eaa8` |
-| 03 | Typography and text rendering | 30/30 | this commit |
-| 04 | Color and contrast | 0/30 | pending |
+| 03 | Typography and text rendering | 30/30 | `0a0274e6` |
+| 04 | Color and contrast | 30/30 | this commit |
 | 05 | Interactive control states | 0/30 | pending |
 | 06 | Forms and validation | 0/30 | pending |
 | 07 | Focus and keyboard navigation | 0/30 | pending |
@@ -213,3 +213,54 @@ completed all 455 browser tests with exit 0. Native public typography audits als
 ran on Google, Facebook and Instagram in 6.1, 12.6 and 10.6 ms without signing in
 or choosing consent. These single observations do not establish authenticated
 compatibility or prove the pages free of defects.
+
+## Cycle 04: color and contrast
+
+Thirty separately verified color/paint capabilities are grouped into nine report
+types. Color syntax support and paint composition are capabilities, not additional
+rule IDs. Every listed capability has broken/repaired Chromium examples on both
+Reader surfaces. Findings are estimates and review candidates.
+
+1. Normal text contrast.
+2. Alpha foreground.
+3. Nested translucent backgrounds.
+4. Ancestor opacity groups.
+5. Large regular threshold.
+6. Large bold threshold.
+7. Placeholder text.
+8. Inactive controls are excluded.
+9. Gradient background is indeterminate.
+10. Image background is indeterminate.
+11. Occlusion is reported.
+12. Blend mode is indeterminate.
+13. Filter is indeterminate.
+14. Text shadow needs paint review.
+15. Transparent canvas is not assumed white.
+16. Legacy rgba parsing.
+17. Modern sRGB color parsing.
+18. Display-p3 approximation.
+19. Lab color parsing.
+20. LCH color parsing.
+21. OKLab color parsing.
+22. OKLCH color parsing.
+23. Text fill overrides color.
+24. Before text.
+25. After text.
+26. Selection colors.
+27. Current focus outline.
+28. Control boundary.
+29. Named SVG icon fills.
+30. Opaque child excludes ancestor gradient.
+
+Supporting verification covers live CSS changes, generated-text uncertainty, SVG
+alpha cache isolation, limited scans, sensitive-value exclusion and read-only
+behavior. Ratios use an 8-bit sRGB approximation; gradients and other complex paint
+require additional visual evidence.
+
+Cycle 04 verification: 270 proxy Chromium tests, 249 native Chromium tests,
+nine browser-contract tests and both package typechecks passed. Inspected the
+color screenshot. `gate:fast` passed in 143.21 s and pre-commit `gate` passed in
+510.51 s, both exit 0; the final browser stage completed all 524 tests. Native
+public color audits ran on Google/Facebook/Instagram in 7.9/22.9/17.9 ms without
+truncation, login or consent actions. Returned candidates include incomplete paint
+observations; these are not counts of confirmed site defects.

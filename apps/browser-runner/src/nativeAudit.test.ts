@@ -75,7 +75,7 @@ describe('Native Reader built-in audits', () => {
     await open('<!doctype html><main>'+'<button></button>'.repeat(3100)+'</main>')
     expect((await audit({ group: 'layout', mode: 'list', limit: 30 })).rules).toHaveLength(30)
     const report = await audit({ rules: ['button-name-missing'], limit: 30 })
-    expect(report.groups).toEqual(['markup', 'layout', 'typography'])
+    expect(report.groups).toEqual(['markup', 'layout', 'typography', 'color'])
     expect(report.scannedElements).toBe(3000)
     expect(report.truncated).toBe(true)
     expect(report.findings).toHaveLength(30)
@@ -83,7 +83,7 @@ describe('Native Reader built-in audits', () => {
   })
   it('keeps sensitive field values out of evidence', async () => {
     await open('<!doctype html><input type="password" value="native-private"><textarea name="token">native-token</textarea>')
-    for (const group of ['markup', 'layout', 'typography']) {
+    for (const group of ['markup', 'layout', 'typography', 'color']) {
       const report = JSON.stringify(await audit({ group }))
       expect(report).not.toContain('native-private')
       expect(report).not.toContain('native-token')
@@ -101,5 +101,25 @@ describe('Native Reader built-in audits', () => {
     expect((await audit({ group: 'typography', rules: ['font-generic-fallback-missing'] })).total).toBe(1)
     await send({ type: 'inspect', action: { kind: 'evaluate', code: 'document.querySelector("#font").style.fontFamily=\'"My, serif, Demo", sans-serif\'' } })
     expect((await audit({ group: 'typography', rules: ['font-generic-fallback-missing'] })).total).toBe(0)
+  })
+  it('keeps color observations read-only while the human owns control', async () => {
+    await open('<!doctype html><style>body{background:white}</style><button id="focus" style="color:#ccc;background:white">Focus</button>')
+    await send({ type: 'input', action: { type: 'press', key: 'Tab' } }, 'user')
+    const evaluate = async (code: string) => (await send({ type: 'inspect', action: { kind: 'evaluate', code } }, 'user') as BrowserInspectResult).value
+    const state = 'JSON.stringify({html:document.documentElement.outerHTML,focus:document.activeElement.id,selection:getSelection().toString(),scrollY})'
+    const before = await evaluate(state)
+    await send({ type: 'control', owner: 'user' }, 'user')
+    try {
+      expect((await audit({ group: 'color', rules: ['text-contrast-low'] })).total).toBe(1)
+      expect((await send({ type: 'status' }) as BrowserSessionMetadata).lastActor).toBe('user')
+      expect(await evaluate(state)).toBe(before)
+    } finally { await send({ type: 'control', owner: 'shared' }, 'user') }
+  })
+  it('recomputes colors after a live style repair', async () => {
+    await open('<!doctype html><style>body{background:white}</style><p id="live" style="color:#ccc">Text</p>')
+    const options = { group: 'color', selector: '#live', rules: ['text-contrast-low'] }
+    expect((await audit(options)).total).toBe(1)
+    await send({ type: 'inspect', action: { kind: 'evaluate', code: 'document.querySelector("#live").style.color="black"' } })
+    expect((await audit(options)).total).toBe(0)
   })
 })

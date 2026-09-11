@@ -100,7 +100,7 @@ describe('Web Reader markup audit in Chromium', () => {
   })
   it('does not include sensitive field values in audit evidence', async () => {
     await open('<!doctype html><body><input type="password" value="never-report-this"><input name="token" value="nor-this"></body>')
-    for (const group of ['markup', 'layout', 'typography']) {
+    for (const group of ['markup', 'layout', 'typography', 'color']) {
       const report = JSON.stringify(await audit({ group }))
       expect(report).not.toContain('never-report-this')
       expect(report).not.toContain('nor-this')
@@ -164,6 +164,63 @@ describe('Web Reader markup audit in Chromium', () => {
     if (process.env.VC_VISUAL_ARTIFACTS) {
       await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
       await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'cycle-01-markup.png'), fullPage: true })
+    }
+  })
+  it.each(['input', 'textarea', 'button'])('observes live configured %s colors without reading field values', async tag => {
+    await open('<!doctype html><style>body{background:white}input,textarea,button{background:white}</style><'+tag+' id="target" style="color:#ccc">'+(tag==='input'?'':'Sample</'+tag+'>'))
+    const options = { group: 'color', selector: '#target', rules: ['text-contrast-low'] }
+    expect((await audit(options)).total).toBe(1)
+    await page.frameLocator('iframe').locator('#target').evaluate(el => { (el as HTMLElement).style.color = 'black' })
+    expect((await audit(options)).total).toBe(0)
+  })
+  it('reports unknown generated-text paint even when only the incomplete rule is selected', async () => {
+    await open('<!doctype html><style>body{background:white}.sample::before{content:"Generated";background:linear-gradient(white,black)}</style><div class="sample"></div>')
+    const report = await audit({ group: 'color', rules: ['color-inspection-incomplete'] })
+    expect(report.findings[0].evidence).toMatch(/::before:.*gradient/)
+  })
+  it('composes custom selection colors through ancestor opacity', async () => {
+    await open('<!doctype html><style>body{background:white}::selection{background:white;color:black}</style><section style="opacity:.3"><p>Selection</p></section>')
+    expect((await audit({ group: 'color', rules: ['selection-contrast-low'] })).total).toBe(1)
+  })
+  it('does not reuse one SVG shape opacity for another shape with the same fill', async () => {
+    await open('<!doctype html><style>body{background:white}</style><svg role="img" aria-label="Status" width="100" height="40"><rect id="faint" width="40" height="40" fill="black" fill-opacity=".2"/><rect id="solid" x="50" width="40" height="40" fill="black"/></svg>')
+    expect((await audit({ group: 'color', rules: ['svg-icon-contrast-low'] })).findings.map(f => f.selector)).toEqual(['#faint'])
+  })
+  it('marks limited paint and text discovery incomplete', async () => {
+    await open('<!doctype html><style>body{background:white}</style>'+'<section>'.repeat(70)+'<p id="deep">Deep text</p>'+'</section>'.repeat(70))
+    const deep = await audit({ group: 'color', selector: '#deep', rules: ['color-inspection-incomplete'] })
+    expect(deep.truncated).toBe(true)
+    expect(deep.findings[0].evidence).toContain('64 layers')
+    await open('<!doctype html><style>body{background:white}</style><p>'+' '.repeat(4200)+'Hidden suffix</p><p>'+'<!-- spacer -->'.repeat(300)+'Later text</p>')
+    const text = await audit({ group: 'color', rules: ['text-contrast-low'] })
+    expect(text.truncated).toBe(true)
+    expect(text.limitations).toContain('Color text discovery inspected only the first 4096 characters of a text node.')
+    expect(text.limitations).toContain('Color text discovery stopped after 256 child nodes on an element.')
+  })
+  it('does not change focus, selection, scroll or DOM while estimating colors', async () => {
+    await open('<!doctype html><style>body{background:white;height:1600px}</style><button id="focus">Focus</button><p id="text" style="color:#ccc">Low contrast</p>')
+    const frame = page.frames().find(frame => frame.url().includes('/api/preview?'))!
+    await frame.evaluate(() => {
+      document.querySelector<HTMLButtonElement>('#focus')!.focus()
+      const range = document.createRange(); range.selectNodeContents(document.querySelector('#text')!)
+      getSelection()!.removeAllRanges(); getSelection()!.addRange(range)
+      scrollTo(0, 100)
+    })
+    const observe = () => frame.evaluate(() => ({ html: document.documentElement.outerHTML, focus: document.activeElement?.id, selection: getSelection()?.toString(), scrollY }))
+    const before = await observe()
+    await audit({ group: 'color' })
+    expect(await observe()).toEqual(before)
+  })
+  it('discovers color report types and captures contrast evidence', async () => {
+    await open('<!doctype html><html lang="en"><head><title>Contrast audit evidence</title><style>body{font:18px/1.5 system-ui;background:#edf2f8;padding:32px}main{background:white;border-radius:16px;padding:32px;max-width:760px}section{border-top:1px solid #dce4ee;padding:16px 0}.low{color:#c4c4c4}.good{color:#172033}.unknown{background:linear-gradient(90deg,#edf2f8,#5276ad);color:#222;padding:20px}</style></head><body><main><h1>Contrast audit: paint evidence</h1><section><h2>Low contrast</h2><p class="low" id="low">This pale text is difficult to read on white.</p></section><section><h2>Repaired contrast</h2><p class="good">This dark text has strong contrast on white.</p></section><section><h2>Needs pixel review</h2><p class="unknown" id="unknown">A gradient needs more than one flat color estimate.</p></section></main></body></html>')
+    const catalog = await audit({ group: 'color', mode: 'list', limit: 30 })
+    expect(catalog.rules).toHaveLength(9)
+    expect(catalog.limitations.join(' ')).toContain('8-bit sRGB')
+    expect((await audit({ group: 'color', rules: ['text-contrast-low'] })).findings.map(f => f.selector)).toContain('#low')
+    expect((await audit({ group: 'color', rules: ['color-inspection-incomplete'] })).findings.map(f => f.selector)).toContain('#unknown')
+    if (process.env.VC_VISUAL_ARTIFACTS) {
+      await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
+      await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'cycle-04-color.png'), fullPage: true })
     }
   })
 })

@@ -2,6 +2,7 @@ import { PREVIEW_AUDIT_LIMITS } from '@voicechat/shared'
 import { markupAuditRules } from './markup.js'
 import { layoutAuditRules } from './layout.js'
 import { typographyAuditRules } from './typography.js'
+import { colorAuditRules } from './color.js'
 
 /** The injected runtime must stay self-contained and explicitly report incomplete coverage. */
 export function previewAuditHelpers(surface: 'proxy' | 'chromium' = 'proxy'): string {
@@ -12,6 +13,7 @@ const auditRule=(group,id,title,severity,confidence,selector,check)=>auditRules.
 ${markupAuditRules()}
 ${layoutAuditRules()}
 ${typographyAuditRules()}
+${colorAuditRules()}
 const auditMetadata=({group,id,title,severity,confidence})=>({group,id,title,severity,confidence});
 const runAudit=action=>{
   const started=performance.now(),group=action.group||'markup',mode=action.mode||'run';
@@ -26,6 +28,7 @@ const runAudit=action=>{
   const limitations=[${JSON.stringify(surface === 'proxy' ? 'Checks observe the rewritten proxy document, not the original browser origin.' : 'Checks observe the current native Chromium document at its browser origin.')},'Shadow root contents and child frame documents are not scanned.','Heuristic findings require visual review; an empty report is not a complete QA pass.'];
   const info=pageInfo(),page={url:info.url.slice(0,4096),title:info.title.slice(0,300)};
   if(group==='typography')limitations.push('Text checks inspect up to 4096 direct text characters and 256 child nodes per element; descendants are checked separately. Font status inspects up to 1000 declared faces; font stacks up to 4096 characters.');
+  if(group==='color')limitations.push('Contrast uses an 8-bit sRGB canvas approximation, including wide-gamut conversion; it does not certify WCAG compliance.','Checks use computed font size, not transformed glyph size; browser link colors conceal visited state.','Center hit-testing does not prove every glyph is unobscured. Complex paint, native control appearance, SVG strokes and non-text generated content need pixel review.','Text discovery inspects up to 256 child nodes and 4096 characters per text node; paint composition inspects up to 64 ancestor layers.');
   let scope=document.documentElement;
   if(action.selector!==undefined){
     if(typeof action.selector!=='string'||!action.selector.trim()||action.selector.length>auditLimits.selector)throw new Error('Invalid audit scope selector.');
