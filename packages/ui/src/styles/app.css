@@ -4765,6 +4765,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jfilter[open] > summary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .jfilter-count { display: inline-block; min-width: 16px; text-align: center; margin-left: 4px; background: var(--accent); color: var(--accent-fg); border-radius: 8px; font-size: 11px; padding: 0 4px; }
 .jfilter-menu { position: absolute; top: 100%; left: 0; z-index: 40; min-width: 180px; max-height: 260px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 16px rgba(9, 30, 66, 0.2); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.jfilter-menu--searchable { display: grid; gap: 7px; width: min(320px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 100px)); overflow: hidden; }
+.jfilter-search { width: 100%; min-width: 0; padding: 7px 9px; }
+.jfilter-results { color: var(--text-dim); font-size: 11px; }
+.jfilter-bulk { display: flex; flex-wrap: wrap; gap: 4px; }
+.jfilter-bulk button { min-height: 28px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font-size: 11px; cursor: pointer; }
+.jfilter-bulk button:disabled { opacity: .45; cursor: default; }
+.jfilter-options { display: grid; gap: 2px; min-height: 0; overflow: auto; }
+.jfilter-empty { margin: 8px 4px; color: var(--text-dim); font-size: 12px; }
 .jfilter-menu label { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 6px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .jfilter-menu label:hover { background: var(--surface-hover); }
 .jswimlane { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; opacity: 0.9; margin-left: auto; }

@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: d3df2615
+checked: 62cad05c
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -964,6 +964,17 @@ visually while their full accessible button name remains available. DOM tests
 cover every chip category, isolated removal, complete reset, and placement on a
 mobile board. The interactive Storybook board is the Chromium check for desktop
 and collapsed mobile behavior.
+
+Type, priority, label, and epic dropdowns share a searchable multi-select. The
+search field receives focus when the native `details` opens, reports
+`visible из total`, and shows an explicit empty result. Bulk actions select or
+clear only the currently visible values, while a separate reset removes the
+whole facet selection. Searching never removes already selected hidden values;
+Escape clears the dropdown query in place. Each option remains a native
+checkbox. The option list scrolls independently inside a viewport-bounded menu,
+including on phones. DOM tests cover partial bulk changes, preservation, empty
+results, focus, and Escape; built Chromium verifies the eight-label story and
+real responsive geometry.
 
 ### Compact task-card metadata (2026-09-11)
 
