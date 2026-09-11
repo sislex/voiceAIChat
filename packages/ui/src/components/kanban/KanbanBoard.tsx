@@ -270,13 +270,24 @@ const RECENT_MS = 24 * 60 * 60 * 1000
  * занимали пол-экрана до первой карточки, особенно после увеличения целей
  * нажатия под палец.
  */
-function FilterShell({ mobile, count, children }: { mobile: boolean; count: number; children: ReactNode }): JSX.Element {
+function FilterShell({ mobile, count, visibleTasks, snapshot, refreshing, children }: {
+  mobile: boolean
+  count: number
+  visibleTasks: number
+  snapshot: string
+  refreshing: boolean
+  children: ReactNode
+}): JSX.Element {
   if (!mobile) return <div className="jboard-filters" data-testid="board-filters">{children}</div>
   return (
     <details className="jboard-filters-shell" data-testid="board-filters-shell">
       <summary>
-        Фильтры
+        <span>Фильтры</span>
         {count > 0 && <span className="jfilter-count">{count}</span>}
+        <span className="jboard-mobile-filter-meta" aria-label={`${visibleTasks} ${pluralTasks(visibleTasks)}. ${refreshing ? 'Доска обновляется' : `Данные: ${snapshot}`}`}>
+          <span>{visibleTasks} {pluralTasks(visibleTasks)}</span>
+          <span>{refreshing ? 'обновляется…' : snapshot}</span>
+        </span>
       </summary>
       <div className="jboard-filters" data-testid="board-filters">{children}</div>
     </details>
@@ -2108,7 +2119,13 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               {props.onRetry && <Button variant="secondary" size="sm" onClick={props.onRetry}>Повторить загрузку</Button>}
             </section>
           )}
-          <FilterShell mobile={compact} count={activeFilterCount}>
+          <FilterShell
+            mobile={compact}
+            count={activeFilterCount}
+            visibleTasks={visibleTaskCount}
+            snapshot={snapshotUpdated.short}
+            refreshing={view.refreshing}
+          >
             <span className="jsearch-wrap">
               <input
                 ref={searchRef}

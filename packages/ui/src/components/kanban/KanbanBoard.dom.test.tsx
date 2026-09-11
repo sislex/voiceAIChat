@@ -1987,6 +1987,7 @@ describe('KanbanBoard — фильтры на телефоне', () => {
     // Развёрнутыми фильтры занимали пол-экрана до первой карточки.
     expect(shell).not.toHaveAttribute('open')
     expect(within(shell).getByText('Фильтры')).toBeInTheDocument()
+    expect(within(shell).getByLabelText(/1 задача\. Данные:/)).toHaveTextContent(/1 задача/)
   })
 
   it('число активных фильтров видно в свёрнутом виде', async () => {
@@ -1999,6 +2000,14 @@ describe('KanbanBoard — фильтры на телефоне', () => {
     await userEvent.click(firstFilter)
     // Иначе непонятно, почему на доске мало карточек.
     expect(within(shell.querySelector('summary')!).getByText('1')).toBeInTheDocument()
+  })
+
+  it('мобильная сводка сообщает фоновое обновление при закрытых фильтрах', () => {
+    setMobileViewport(true)
+    renderBoard({ loading: true })
+    const shell = screen.getByTestId('board-filters-shell')
+    expect(shell).not.toHaveAttribute('open')
+    expect(within(shell).getByLabelText('1 задача. Доска обновляется')).toHaveTextContent('обновляется…')
   })
 
   it('оставляет активные фильтры видимыми снаружи свёрнутой панели', async () => {

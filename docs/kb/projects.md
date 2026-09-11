@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: da728e21
+checked: b7dfaea4
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1039,6 +1039,14 @@ detail and last snapshot age, and offers an explicit reload action. The board
 references that warning through `aria-describedby`, allowing both assistive
 technology and browser automation to distinguish stale data from a fatal empty
 state. A successful replacement snapshot removes the marker with the error.
+
+On phone layouts the collapsed filter summary is a sticky 44-pixel control. It
+keeps the visible task count and snapshot age available without opening the
+large filter panel; active filter count remains a separate badge. The sticky
+surface accounts for the top safe area, uses a translucent blurred background,
+and stays above columns while they scroll. The expanded filter content remains
+inside the same surface, and desktop rendering still uses the ordinary
+non-sticky toolbar.
 
 ### Visible board summary (2026-09-11)
 
