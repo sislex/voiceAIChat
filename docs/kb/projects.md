@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: fd5c951d
+checked: e88155aa
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -992,6 +992,23 @@ the same removable active-filter chips, and participate in `Reset all`. The
 completed slice requests completed history when needed and limits the board to
 semantic `done` columns. The overdue slice excludes completed tasks and uses the
 same local-calendar deadline calculation as task cards.
+
+### WIP capacity feedback (2026-09-11)
+
+Every column with a positive WIP limit shows its current load as `current/limit`
+and a semantic progress bar. The accessible value describes the actionable
+state: available capacity and its free slots, an exactly full limit, or an
+overflow and its exact number of excess tasks. The visual fill is capped at
+100%, while the text keeps the real count, so an over-limit column cannot distort
+the header layout.
+
+WIP load always uses the complete task collection in the column. Search,
+assignee, and other view filters may reduce the rendered cards but cannot make a
+full column appear to have free capacity. Available, full, and over-limit states
+have separate header and badge treatments, and the compact grid keeps the count
+and progress track readable at mobile widths. Pure presentation logic lives in
+`kanbanMeta.tsx`; DOM tests cover semantic values, filter independence, and all
+three capacity states, while the `WipExceeded` story is the Chromium check.
 
 ### Меню колонки
 

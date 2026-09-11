@@ -109,6 +109,45 @@ describe('KanbanBoard (изолированный)', () => {
     expect(props.onReorderColumns).not.toHaveBeenCalled()
   })
 
+  it('WIP-шкалы показывают запас, предел и превышение независимо от фильтров', async () => {
+    const columns = [
+      { ...board.columns[0]!, id: 'available', name: 'Есть место', wipLimit: 3, position: 1024 },
+      { ...board.columns[0]!, id: 'full', name: 'На пределе', wipLimit: 2, position: 2048 },
+      { ...board.columns[0]!, id: 'over', name: 'Переполнена', wipLimit: 2, position: 3072 },
+      { ...board.columns[0]!, id: 'unlimited', name: 'Без лимита', wipLimit: null, position: 4096 }
+    ]
+    renderBoard({
+      board: {
+        columns,
+        tasks: [
+          task({ id: 'a1', columnId: 'available', flagged: true }),
+          task({ id: 'f1', columnId: 'full' }), task({ id: 'f2', columnId: 'full' }),
+          task({ id: 'o1', columnId: 'over' }), task({ id: 'o2', columnId: 'over' }), task({ id: 'o3', columnId: 'over' })
+        ]
+      }
+    })
+
+    const available = screen.getByRole('progressbar', { name: 'Заполнение WIP колонки «Есть место»' })
+    expect(available).toHaveAttribute('aria-valuenow', '1')
+    expect(available).toHaveAttribute('aria-valuemax', '3')
+    expect(available).toHaveAttribute('aria-valuetext', 'WIP: 1 из 3, свободно 2 места')
+    expect(available.firstElementChild).toHaveStyle({ width: '33%' })
+
+    const full = screen.getByRole('progressbar', { name: 'Заполнение WIP колонки «На пределе»' })
+    expect(full).toHaveAttribute('aria-valuetext', 'WIP-лимит заполнен: 2 из 2')
+    expect(full.closest('.jcol-head')).toHaveClass('jcol-head--full')
+
+    const over = screen.getByRole('progressbar', { name: 'Заполнение WIP колонки «Переполнена»' })
+    expect(over).toHaveAttribute('aria-valuenow', '2')
+    expect(over).toHaveAttribute('aria-valuetext', 'WIP-лимит превышен: 3 из 2, превышение на 1 задача')
+    expect(over.firstElementChild).toHaveStyle({ width: '100%' })
+    expect(screen.queryByRole('progressbar', { name: /Без лимита/ })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'С флагом' }))
+    expect(available).toHaveAttribute('aria-valuetext', 'WIP: 1 из 3, свободно 2 места')
+    expect(full).toHaveAttribute('aria-valuetext', 'WIP-лимит заполнен: 2 из 2')
+  })
+
   // @testCase TC-REG-1
   it('открытие и закрытие legacy-карточки сохраняет общую вертикальную позицию доски', async () => {
     renderBoard()

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { avatarColor, avatarContrast, columnRegionLabel, duePresentation, dueState, epicColor, initials, issueKey, projectKey } from './kanbanMeta'
+import { avatarColor, avatarContrast, columnRegionLabel, duePresentation, dueState, epicColor, initials, issueKey, projectKey, wipPresentation } from './kanbanMeta'
 
 describe('kanbanMeta', () => {
   it('projectKey: латиница из инициалов слов, кириллица транслитерируется', () => {
@@ -46,6 +46,23 @@ describe('kanbanMeta', () => {
     expect(columnRegionLabel({ name: 'To Do', hidden: false }, 11)).toBe('Колонка «To Do», 11 задач')
     expect(columnRegionLabel({ name: 'To Do', hidden: false }, 0)).toBe('Колонка «To Do», задач нет')
     expect(columnRegionLabel({ name: 'Архив', hidden: true }, 2)).toBe('Колонка «Архив», 2 задачи, скрыта')
+  })
+
+  it('WIP различает свободную ёмкость, предел и точное превышение', () => {
+    expect(wipPresentation(1, 3)).toEqual({
+      state: 'available', percentage: 33, progressValue: 1,
+      label: 'WIP: 1 из 3, свободно 2 места'
+    })
+    expect(wipPresentation(3, 3)).toEqual({
+      state: 'full', percentage: 100, progressValue: 3,
+      label: 'WIP-лимит заполнен: 3 из 3'
+    })
+    expect(wipPresentation(5, 3)).toEqual({
+      state: 'over', percentage: 100, progressValue: 3,
+      label: 'WIP-лимит превышен: 5 из 3, превышение на 2 задачи'
+    })
+    expect(wipPresentation(2, null)).toBeNull()
+    expect(wipPresentation(2, 0)).toBeNull()
   })
 
   it('инициалы и стабильные цвета', () => {
