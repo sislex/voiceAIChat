@@ -9,8 +9,8 @@ written before implementation. Existing audit work is preserved.
 | 01 | Store lifecycle and asynchronous failures | Merged, 10/10 | #141 |
 | 02 | Host bridge command lifecycle | Merged, 10/10 | #143 |
 | 03 | Host frame navigation and save recovery | Merged, 10/10 | #144 |
-| 04 | Assistant action history usability | Implemented, 10/10 | |
-| 05 | Address entry and navigation feedback | Planned | |
+| 04 | Assistant action history usability | Merged, 10/10 | #145 |
+| 05 | Address entry and navigation feedback | Implemented, 10/10 | |
 | 06 | Recorder scenario editing | Planned | |
 | 07 | Scenario portability and export | Planned | |
 | 08 | Recorder status and keyboard interaction | Planned | |
@@ -68,3 +68,16 @@ written before implementation. Existing audit work is preserved.
 8. Site labels without query/credentials.
 9. Distinct accessible repeat controls.
 10. Reset controls on conversation switch and wrap long labels.
+
+## Cycle 05 proposal
+
+1. Bare IPv4 loopback HTTP inference.
+2. Private IPv4 HTTP inference.
+3. Bracketed IPv6 loopback HTTP inference.
+4. Localhost subdomain HTTP inference.
+5. Scheme-relative URL inheritance.
+6. Explicit 443 HTTPS inference.
+7. Address-field validation feedback.
+8. Escape restores the current URL.
+9. Ctrl/Cmd+L selects the Reader address.
+10. Clear-page action persists the cleared state.
