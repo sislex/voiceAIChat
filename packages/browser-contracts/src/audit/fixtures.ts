@@ -1,6 +1,7 @@
 import { markupAuditFixtures } from './markup.fixtures.js'
 import { layoutAuditFixtures } from './layout.fixtures.js'
 import { typographyAuditFixtures } from './typography.fixtures.js'
+import { colorAuditFixtures } from './color.fixtures.js'
 
 /** Both browser suites consume the same examples; production never imports this entry point. */
 export interface AuditFixture {
@@ -14,6 +15,7 @@ export interface AuditFixture {
 export const auditFixtures: AuditFixture[] = [
   ...markupAuditFixtures.map(f => ({ ...f, group: 'markup' })),
   ...layoutAuditFixtures.map(f => ({ ...f, group: 'layout' })),
-  ...typographyAuditFixtures.map(f => ({ ...f, group: 'typography' }))
+  ...typographyAuditFixtures.map(f => ({ ...f, group: 'typography' })),
+  ...colorAuditFixtures.map(f => ({ ...f, group: 'color' }))
 ]
-export { markupAuditFixtures, layoutAuditFixtures, typographyAuditFixtures }
+export { markupAuditFixtures, layoutAuditFixtures, typographyAuditFixtures, colorAuditFixtures }
