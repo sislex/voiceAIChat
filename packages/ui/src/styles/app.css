@@ -7964,15 +7964,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 
 /* Свёрнутые фильтры доски на телефоне: один пункт с числом активных. */
-.jboard-filters-shell { border-bottom: 1px solid var(--border-soft, var(--border)); }
+.jboard-filters-shell { position: sticky; top: 0; z-index: 45; border-bottom: 1px solid var(--border-soft, var(--border)); background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 3px 10px rgba(9, 30, 66, .08); backdrop-filter: blur(10px); }
 .jboard-filters-shell > summary {
   display: flex; align-items: center; gap: var(--space-2, 8px);
-  min-height: 44px; padding: 0 var(--space-3, 12px);
+  min-height: calc(44px + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) var(--space-3, 12px) 0;
   cursor: pointer; font-weight: 600; list-style: none;
 }
 .jboard-filters-shell > summary::-webkit-details-marker { display: none; }
 .jboard-filters-shell > summary::before { content: '⌄'; transition: transform 0.15s ease; }
 .jboard-filters-shell[open] > summary::before { transform: rotate(180deg); }
+.jboard-mobile-filter-meta { display: inline-flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; color: var(--text-dim); font-size: 10px; font-weight: 500; }
+.jboard-mobile-filter-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Ярлык типа рядом с именем проекта в шапке страницы. */
 .projpage-type {

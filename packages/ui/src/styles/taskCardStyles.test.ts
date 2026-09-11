@@ -80,7 +80,8 @@ describe('стили открытой карточки задачи', () => {
     'jcard-stage-actions', 'jcard-progress', 'jcard-progress-bar', 'jcard-progress-fill',
     'jcard-progress-text', 'jcard-progress--empty', 'jcard-progress--complete',
     'jboard-snapshot', 'jboard-snapshot--fresh', 'jboard-snapshot--stale',
-    'jboard-stale', 'jboard-stale-mark', 'jboard-stale-copy',
+    'jboard-stale', 'jboard-stale-mark', 'jboard-stale-copy', 'jboard-filters-shell',
+    'jboard-mobile-filter-meta',
     'jcol-head', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
   ])('класс .%s имеет правила', (cls) => {
     expect(styled(cls)).toBe(true)
