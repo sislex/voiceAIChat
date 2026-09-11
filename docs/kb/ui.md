@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 6e243af8
+checked: b120dee5
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2471,6 +2471,8 @@ scenarioUrl многостраничного сценария. Legacy origin+pat
 не заменяется пустой строкой и не запускает первые действия. Проверки —
 `webRecorderScenario.test.ts`, `scenarioStorage.test.ts`, `playwrightExport.test.ts`,
 DOM Recorder и `e2e/webReaderScenarioStorage.e2e.test.ts`.
+
+The Recorder scenario editor supports manual click/input steps, duplication, action-kind and Enter editing, and a 200-step counter. Missing selectors prevent playback/export. Undo and redo retain at most 30 edits and reset on page changes or secret classification; temporary secret values are cleared when targets or ordering change and never enter edit history.
 
 ### Model-facing Web Reader audits
 
