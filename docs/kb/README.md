@@ -76,6 +76,7 @@
 
 Всего записей: 757. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-07.md) — web-reader-ten-cycle-07
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-06.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-06.md) — web-reader-ten-cycle-06
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-05.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-05.md) — web-reader-ten-cycle-05
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-04.md) — web-reader-ten-cycle-04
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md) — web-reader-rebase-main
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md) — web-reader-qa-cycle-08
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md) — web-reader-qa-cycle-07
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-06.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-06.md) — web-reader-qa-cycle-06
 
 ## Исторические планы
 

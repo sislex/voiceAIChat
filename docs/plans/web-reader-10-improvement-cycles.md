@@ -11,8 +11,8 @@ written before implementation. Existing audit work is preserved.
 | 03 | Host frame navigation and save recovery | Merged, 10/10 | #144 |
 | 04 | Assistant action history usability | Merged, 10/10 | #145 |
 | 05 | Address entry and navigation feedback | Merged, 10/10 | #147 |
-| 06 | Scenario editing | Implemented, 10/10 | |
-| 07 | Scenario portability and export | Planned | |
+| 06 | Scenario editing | Merged, 10/10 | #149 |
+| 07 | Scenario portability and export | Implemented, 10/10 | |
 | 08 | Recorder status and keyboard interaction | Planned | |
 | 09 | Reader diagnostics and recovery | Planned | |
 | 10 | Final integration and regression gaps | Planned | |
@@ -94,3 +94,16 @@ written before implementation. Existing audit work is preserved.
 8. Redo edits.
 9. Flag missing selectors and disable invalid playback/export.
 10. Clear temporary secrets when targets change.
+
+## Cycle 07 proposal
+
+1. Export versioned JSON scenario files.
+2. Import JSON files.
+3. Reject unsupported formats and versions.
+4. Report the exact malformed step.
+5. Limit file size by UTF-8 bytes.
+6. Reject empty or oversized step lists.
+7. Redact marked secret values during import and export.
+8. Preview source URL and step count.
+9. Apply imported steps explicitly to the current page.
+10. Cancel import and retry the same file without mutation.

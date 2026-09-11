@@ -40,6 +40,19 @@ describe('Reader: сохранение и редактирование сцен�
     const artifact = await download; expect(artifact.suggestedFilename()).toBe('web-reader-scenario.spec.ts')
     return readFile((await artifact.path())!, 'utf8')
   }
+  it('imports a portable scenario only after review and exports redacted JSON', async () => {
+    await openScenario([click('#first')])
+    const payload = { format: 'web-reader-scenario', version: 1, pageUrl: 'https://source.test/', steps: [typeStep('#password', 'never-export', true)] }
+    await shell().getByLabel('Файл сценария JSON').setInputFiles({ name: 'scenario.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(payload)) })
+    await shell().getByRole('group', { name: 'Проверка импорта' }).waitFor()
+    expect(await shell().getByLabel('Селектор шага 1').inputValue()).toBe('#first')
+    await shell().getByRole('button', { name: 'Применить к текущей странице' }).click()
+    expect(await shell().getByLabel('Селектор шага 1').inputValue()).toBe('#password')
+    expect(await shell().getByLabel('Адрес превью').inputValue()).toBe(site + '/page')
+    const download = page.waitForEvent('download'); await shell().getByRole('button', { name: 'Экспорт JSON' }).click()
+    const artifact = await download; expect(artifact.suggestedFilename()).toBe('web-reader-scenario.json')
+    const json = await readFile((await artifact.path())!, 'utf8'); expect(json).not.toContain('never-export'); expect(JSON.parse(json).steps[0].sensitive).toBe(true)
+  })
   it('загружает валидные шаги рядом с повреждёнными записями', async () => {
     await openScenario([null, false, 5, [], click('#first')])
     expect(await shell().getByLabel('Селектор шага 1').inputValue()).toBe('#first')
