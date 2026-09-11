@@ -250,6 +250,56 @@ describe('KanbanBoard (изолированный)', () => {
     expect(within(summary).getByLabelText('Без исполнителя: 2 задачи')).toBeInTheDocument()
   })
 
+  it('метрики включают синхронные быстрые срезы, chips и общий сброс', async () => {
+    const columns = [
+      board.columns[0]!,
+      { ...board.columns[0]!, id: 'done', name: 'Готово', semanticType: 'done' as const, position: 2048 }
+    ]
+    const onShowCompletedChange = vi.fn()
+    renderBoard({
+      board: {
+        columns,
+        tasks: [
+          task({ id: 'late', title: 'Просроченная', dueDate: Date.now() - 2 * 86_400_000, flagged: true }),
+          task({ id: 'assigned', title: 'Назначенная', assignee: 'bob' }),
+          task({ id: 'complete', title: 'Завершённая', columnId: 'done', assignee: 'bob' })
+        ]
+      },
+      showCompleted: false,
+      onShowCompletedChange
+    })
+    const summary = screen.getByRole('region', { name: 'Сводка доски' })
+
+    const overdue = within(summary).getByRole('button', { name: 'Просрочено: 1 задача' })
+    await userEvent.click(overdue)
+    expect(overdue).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Просрочено' })).toBeInTheDocument()
+    await userEvent.click(overdue)
+
+    const unassigned = within(summary).getByRole('button', { name: 'Без исполнителя: 1 задача' })
+    await userEvent.click(unassigned)
+    expect(unassigned).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Исполнитель: не назначено' })).toBeInTheDocument()
+    await userEvent.click(unassigned)
+
+    const flagged = within(summary).getByRole('button', { name: 'С флагом: 1 задача' })
+    await userEvent.click(flagged)
+    expect(flagged).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'С флагом' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(flagged)
+
+    await userEvent.click(within(summary).getByRole('button', { name: 'Завершено: 1 задача' }))
+    expect(onShowCompletedChange).toHaveBeenCalledWith(true)
+    expect(screen.getAllByTestId('kanban-column')).toHaveLength(1)
+    expect(screen.getByText('Готово')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Завершено' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Сбросить все' }))
+    expect(screen.getAllByTestId('kanban-column')).toHaveLength(2)
+    expect(within(summary).getByRole('button', { name: 'Завершено: 1 задача' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('фокусирует поиск по /, очищает его по Escape и отдельной кнопкой', async () => {
     renderBoard()
     const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
