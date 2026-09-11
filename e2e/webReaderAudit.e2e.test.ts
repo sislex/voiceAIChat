@@ -388,6 +388,14 @@ describe('Web Reader built-in diagnostics in Chromium', () => {
     await open('<!doctype html><body><input type="submit"><input type="reset"></body>')
     expect((await audit({ rules: ['button-name-missing'] })).findings).toEqual([])
   })
+  it('labels DOM-derived name gaps as heuristic when native browser naming can disagree', async () => {
+    await open('<!doctype html><style>#generated::before{content:"Save"}</style><button id="generated"></button>')
+    const report = await audit({ rules: ['button-name-missing'] })
+    expect(report.findings).toEqual([expect.objectContaining({
+      id: 'button-name-missing', selector: '#generated', confidence: 'heuristic',
+      evidence: expect.stringContaining('verify this selector with accessibility in Chromium')
+    })])
+  })
   it('captures a visible fixture with detected and repaired controls', async () => {
     await open('<!doctype html><html lang="en"><head><title>Markup audit evidence</title><style>body{font:18px system-ui;background:#edf2f8;padding:36px;color:#172033}main{max-width:760px;background:white;border-radius:16px;padding:32px}button{padding:12px 22px;min-width:80px;min-height:44px;border:1px solid #5276ad;border-radius:8px;background:#e7efff}section{padding:20px 0;border-top:1px solid #dce4ee}input{padding:12px;border:1px solid #5276ad;border-radius:8px}h1{margin-top:0}</style></head><body><main><h1>Markup audit: visible evidence</h1><section><h2>Missing button name</h2><button id="unnamed"></button><p>The audit identifies this selector and its missing name.</p></section><section><h2>Repaired control</h2><label for="name">Display name</label> <input id="name"><button>Save profile</button></section></main></body></html>')
     const report = await audit({ rules: ['button-name-missing'] })

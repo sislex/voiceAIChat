@@ -111,6 +111,19 @@ describe('Web Reader: единый разговор в полном Chromium', (
       expect((await command({ type: 'inspect', action: { kind: 'evaluate', code } })).value).toBe(before.value)
     } finally { await page.getByRole('button', { name: 'Вернуть управление модели' }).click() }
   })
+  it('model reads native accessibility evidence without changing human ownership or private input', async () => {
+    await start(); await mcp('open', { url: target })
+    await command({ type: 'inspect', action: { kind: 'evaluate', code: 'const field=document.querySelector("#name");field.type="password";field.value="native-accessibility-secret";field.focus()' } })
+    await page.getByRole('button', { name: 'Взять управление', exact: true }).click()
+    await page.getByText('Управление у вас.', { exact: false }).waitFor()
+    try {
+      const result = await mcp('accessibility', { selector: '#name' })
+      expect(result).toMatchObject({ page: { url: target }, accessibility: { source: 'chromium-accessibility', selector: '#name', node: { role: 'textbox', name: 'Имя', ignored: false, properties: expect.arrayContaining([expect.objectContaining({ name: 'focused', value: true })]) } } })
+      expect(JSON.stringify(result)).not.toContain('native-accessibility-secret')
+      expect(result).not.toHaveProperty('ok')
+      expect(await command({ type: 'status' })).toMatchObject({ control: 'user', lastActor: 'user' })
+    } finally { await page.getByRole('button', { name: 'Вернуть управление модели' }).click() }
+  })
   it('ввод модели виден пользователю и обычным browser-командам', async () => {
     await start(); await mcp('open', { url: target }); await mcp('type', { selector: '#name', text: 'Привет от модели' })
     expect(await command({ type: 'selector', action: { kind: 'read', selector: 'output' } })).toMatchObject({ text: 'Привет от модели' })

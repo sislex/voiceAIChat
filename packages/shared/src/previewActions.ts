@@ -1,3 +1,4 @@
+import { isPreviewAccessibilityOptions, type PreviewAccessibilityOptions, type PreviewAccessibilityResult } from './previewAccessibility'
 import { BROWSER_EVALUATE_CODE_LIMIT, normalizeBrowserEvaluateOptions, type BrowserEvaluateOptions } from './browserEvaluation'
 import { isPreviewAuditOptions, type PreviewAuditOptions, type PreviewAuditResult } from './previewAudit'
 import { isPreviewProbeOptions, type PreviewProbeOptions, type PreviewProbeResult } from './previewProbe'
@@ -72,6 +73,7 @@ export interface PreviewDragPoint {
 export type PreviewAction = BrowserFrameTarget & (
   | ({ kind: 'audit'; diagnostic?: boolean } & PreviewAuditOptions)
   | ({ kind: 'probe'; diagnostic?: boolean } & PreviewProbeOptions)
+  | ({ kind: 'accessibility'; diagnostic?: boolean } & PreviewAccessibilityOptions)
   | { kind: 'open'; url: string; diagnostic?: boolean }
   | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
@@ -343,6 +345,7 @@ export interface PreviewEditsResult {
 export type PreviewActionResult =
   | PreviewAuditResult
   | PreviewProbeResult
+  | PreviewAccessibilityResult
   | PreviewOpenResult
   | PreviewFindResult
   | PreviewClickResult
@@ -456,6 +459,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     }
     case 'audit':
       return value.frame === undefined && isPreviewAuditOptions(value)
+    case 'accessibility':
+      return isPreviewAccessibilityOptions(value)
     case 'probe':
       return value.frame === undefined && isPreviewProbeOptions(value)
     case 'errors':
@@ -636,7 +641,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'set {selector, value|checked} — установить select по значению или подписи option, checkbox/radio, date/range; ' +
     'upload {selector, name, base64, mimeType?} — загрузить файл в input type=file; ' +
     'viewport {width} — ширина превью в px (0 — адаптив) для проверки мобильной вёрстки; ' +
-    'a11y {selector?} — дерево доступности (роли и имена, как их видит скринридер). ' +
+    'a11y {selector?} returns a DOM-derived role/name snapshot; it can differ from the browser accessibility tree. ' +
+    'accessibility {selector} in Chromium returns the selected node from the native browser accessibility tree: role, name, description, states, name sources and related selectors. It does not interact, return control values or support frame scope. Read limits; a single-node observation is not a screen-reader scenario test. ' +
     'In both Web Reader engines, audit {group?, selector?, rules?, mode?, limit?, offset?} reports bounded QA findings with selectors and evidence. ' +
     'probe {selector} observes one standard CSS target, including hidden controls: visibility, disabled/read-only/inert state, sampled pointer blockers and source selectors. It never clicks, focuses or scrolls. Pointer reachability does not guarantee successful activation; inspect all state and limitations. ' +
     'Use mode:list to discover checks, then mode:run (default); follow nextOffset and read limitations. Default group: markup. ' +
