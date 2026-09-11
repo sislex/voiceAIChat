@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 17dd72ff
+checked: 0f9a7adf
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2447,6 +2447,226 @@ scenarioUrl многостраничного сценария. Legacy origin+pat
 не заменяется пустой строкой и не запускает первые действия. Проверки —
 `webRecorderScenario.test.ts`, `scenarioStorage.test.ts`, `playwrightExport.test.ts`,
 DOM Recorder и `e2e/webReaderScenarioStorage.e2e.test.ts`.
+
+### Model-facing Web Reader audits
+
+The `audit` MCP tool inspects the live proxy or native Chromium document without modifying it.
+`packages/shared/src/previewAudit.ts` defines bounded options and evidence; the
+`audit` action travels through the existing Reader relay and recorder bridge.
+Pure program generators in `packages/browser-contracts/src/audit/` execute 30
+markup checks, 30 layout checks, 30 typography checks and 30 form checks. Nine
+color report types and 26 focus report types each cover 30 verified capabilities. Web Reader retains stable re-export paths;
+browser-runner executes the same checks through built-in `inspect/audit`, separate
+from model-supplied `evaluate` code and its policy. Use `mode: list` to discover rule IDs;
+`mode: run` is the default. `group` defaults to `markup`, `rules` narrows checks,
+and `selector` must resolve to one element. Document-only checks explicitly report
+when the chosen scope excludes them.
+
+Reports distinguish observed states from heuristic candidates, include selectors
+and evidence, and expose `nextOffset`, scan counts, truncation and limitations.
+The scan is capped at 3,000 elements and 500 findings, with at most 30 results per
+response and a further serialized-size budget. Audit evidence does not read input
+values. The reported `surface` distinguishes the rewritten proxy document from
+native Chromium. Child frames and shadow roots are not covered, and an empty
+report is not a whole-page QA pass. Chromium Reader does not silently fall back to
+proxy auditing; an older runner must return an explicit audit report or an error.
+Native audits preserve human control and `lastActor`, and restore logical page URLs
+from operator host aliases. Duplicate-ID findings use selectors that distinguish
+sibling nodes even when their IDs are equal.
+
+Naming checks use the reader's DOM naming helper, not the complete
+browser accessible-name algorithm. A Playwright ARIA snapshot of an empty button with
+`::before{content:"Save"}` reported name "Save" while `button-name-missing`
+still reported a candidate. The button/link/heading rules therefore classify an
+empty DOM approximation as heuristic and direct the model to native accessibility
+evidence instead of presenting it as a confirmed browser-name defect.
+
+The current native Reader `a11y` action uses Playwright `locator.ariaSnapshot`,
+which computes an injected DOM snapshot; it is not Chromium's CDP Accessibility
+API. Direct CDP verification found a difference for a button containing
+`<img alt="" title="Save">`: Playwright reports name Save, while Chromium reports
+an empty button name. Treat snapshot source as material to naming conclusions.
+The native-only `accessibility {selector}` tool reads one exact standard CSS target through
+Chromium's CDP Accessibility tree. It returns the browser-computed role, name,
+description, ignored status/reasons, name-source precedence, selected state
+properties and bounded selectors for related nodes. The result identifies its
+source as `chromium-accessibility`; proxy mode returns an immediate Chromium
+requirement instead of fabricating a DOM approximation or waiting for relay.
+Frame and shadow-root traversal are outside this action.
+
+The native boundary whitelists a fixed property set, stores at most 40 properties
+and omits control values, value text, raw source-attribute values and CDP identifiers.
+Name and description remain
+application text because they are the intended evidence. Limits are 12 name sources,
+16 ignored reasons and 24 related-node records, with a 26,000-character total budget.
+Related selectors must be complete and unique; long or ambiguous selectors are
+omitted and the report is marked truncated. Missing properties remain absent rather
+than being coerced to false. Each call uses a short-lived CDP session, verifies the
+target identity after reading and times out after five seconds.
+
+Native accessibility is observational: it is allowed while the user owns the
+Chromium session and preserves `lastActor`. It does not click, focus, scroll, read
+selection or copy live control values. Real Chromium tests cover 29 native evidence
+capabilities plus DOM/native naming calibration. Public read-only runs on Google,
+Facebook and Instagram confirmed consent overlays: hidden underlying controls were
+reported as ignored with `ariaHiddenSubtree`, while Instagram's visible password-reset
+link exposed its native link role/name. No consent or login action was performed.
+
+The `layout` group inspects clipping and overflow, zero-size controls, fixed/sticky
+positioning, collapsed containers, grid/flex geometry, overlapping siblings and
+ineffective CSS properties. Its findings are heuristic candidates; intentional
+clipping, overlaps and scroll locks need application-specific review. Styles and
+rectangles are cached for one scan; overlap checks inspect up to 100 direct children.
+
+The `typography` group reports text sizing and spacing, clipping, missing generic
+font fallbacks, failed font faces, bidi/invisible characters, replacement glyphs,
+unresolved templates and likely decoding artifacts. It inspects direct text nodes
+without copying their contents into evidence, and skips input/textarea/select
+values. Text caches belong to one audit call, so editing an existing node changes
+the next report. Inspection stops at 4,096 characters or 256 child nodes per element
+and 1,000 font faces, marking the report incomplete when a limit is reached.
+Font stacks are bounded at 4,096 characters and parsed with quote/escape awareness;
+a family named `"My, serif, Demo"` does not provide a generic fallback. Standard
+`generic(...)` families are recognized when reported by the browser.
+
+The `color` group estimates text, placeholder, generated text, custom selection,
+current focus-outline, control-boundary and named SVG-fill contrast. The 30-case
+capability matrix includes alpha foregrounds, nested translucent backgrounds,
+ancestor opacity and CSS sRGB/P3/Lab/LCH/OKLab/OKLCH syntax. A detached 1-pixel
+canvas converts colors to 8-bit sRGB; wide-gamut colors and threshold-adjacent
+ratios are approximations. Text references are 4.5:1, or 3:1 for computed sizes of
+24px regular / 14pt bold, following the
+[WCAG contrast reference](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html).
+Ratios are compared before display rounding. Findings are heuristic, not a WCAG
+conformance result; transforms, native appearance, visited-link privacy, SVG
+strokes and detailed glyph occlusion require separate visual inspection.
+
+`color-inspection-incomplete` reports unresolved image/gradient backdrops, blend
+modes, filters, text effects, transparent canvas backdrops and center occlusion,
+including generated text and placeholders. An opaque child backdrop can eliminate
+an irrelevant ancestor gradient; ancestor opacity is still composed. Per-call
+color/text caches avoid stale results and do not mutate cached SVG alpha values.
+Text discovery is bounded to 256 children and 4,096 characters per text node;
+paint composition stops at 64 ancestors and marks the scan truncated. Inspection
+does not focus controls, select text, scroll, insert a canvas or read field values.
+
+The `forms` group observes ten native ValidityState flags as informational state,
+not confirmed bugs: untouched required forms can legitimately be incomplete.
+Twenty additional checks identify invisible invalid controls, ARIA/native state
+mismatches, invalid or ignored constraint metadata, reversed lengths/ranges, input
+and submission-method fallbacks, unresolved form owners and named controls that
+shadow `form.submit`. Custom or server validation can explain an ARIA/native mismatch.
+
+Form audits read `willValidate` and native validity flags without invoking
+`checkValidity`/`reportValidity`, which can fire invalid events. They do not read
+live field values or `validationMessage`; detached inputs parse only constraint
+attributes. Constraint parsing stops at 4,096 characters and reports incomplete
+inspection. HTML patterns use Unicode-sets (`v`) syntax. Native date/number parsers
+handle metadata, range inputs use an unclamped number parser, and overnight time
+ranges are excluded from reversed-range findings. Native length flags depend on
+user editing: the paired fixtures use real keyboard input and lower maxlength
+only after typing to exercise `tooLong`. These rules do not execute arbitrary
+application or server validation. References:
+[ValidityState](https://developer.mozilla.org/en-US/docs/Web/API/ValidityState),
+[validation events](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/checkValidity),
+[HTML patterns](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/pattern).
+
+The `focus` group inspects autofocus scopes, keyboard metadata, shortcut candidates,
+current active-element paint/geometry, flex/grid order and active-descendant
+references. Its 26 report types cover 30 verified cases. All findings are heuristic:
+missing outline/shadow can be intentional when borders or backgrounds indicate
+focus, and apparent Tab-entry gaps can have scripted alternatives. Actual Tab and
+Shift+Tab fixture checks accompany the geometry estimates. No focus or keyboard
+action occurs during auditing, and live values/caret selection are not read.
+
+Autofocus conflicts are scoped separately to documents, dialogs and popovers;
+pending closed scopes do not produce hidden-target findings. Native modal focus
+excludes background controls and respects the modal's escape from ancestor inertness.
+Native radio-group traversal and CSS `reading-flow` are excluded from order
+estimates. Open shadow-root focus is not mistaken for a focused host's paint.
+A background frame can retain `document.activeElement`; the report explicitly
+notes when `document.hasFocus()` is false. Cross-element comparisons use only the
+scanned scope. Bounds are 1,024 attribute characters, 128 opacity ancestors,
+100 direct order children and 64 relationship ID references; exceeding them makes
+the report incomplete.
+
+The integer parser may accept prefixes such as `0junk`; a syntax finding reports
+the actual reflected tabindex and does not claim it was ignored. `accesskey`
+accepts distinct one-code-point tokens separated by ASCII whitespace, and actual
+shortcut assignment remains browser/platform dependent. Keyboard hints are
+metadata observations, not a test of a mobile keyboard. These distinctions follow
+the [HTML interaction model](https://html.spec.whatwg.org/multipage/interaction.html)
+and [focus visibility guidance](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html).
+
+The read-only `probe {selector}` tool accepts a standard CSS selector and explains one target, including hidden targets
+that ordinary reading would omit. `packages/shared/src/previewProbe.ts` defines
+the options, result and runtime validation. Reports separate browser visibility,
+native disabled/read-only state, declared ARIA state, inertness and sampled pointer
+reachability. A reachable point does not guarantee activation or bypass Reader
+interaction policies. Conditions such as disabled fieldsets, their first-legend
+exception, inherited editability, closed details and CSS visibility overrides have
+paired fixtures on both surfaces. Nested fieldset reasons identify the actual
+disabling ancestor, not an inner fieldset whose legend exempts the target.
+
+Probe geometry uses up to eight client rectangles and 40 sampled viewport points.
+Clip intersections add candidates without discarding original samples, because
+fixed descendants can escape an ancestor's overflow clip. Reports retain up to
+eight hit targets and 30 reasons, inspect up to 128 ancestors, and cap source
+selectors at 500 characters. A 26,000-character response budget omits reason
+selectors if needed. Incomplete scans are explicit; unknown opacity/inert state
+uses null. Multiple modal dialogs do not imply that DOM order equals top-layer
+order. Native modal dialogs can escape ancestor inertness; background document
+inertness is also observed. Browser
+[visibility checks](https://developer.mozilla.org/en-US/docs/Web/API/Element/checkVisibility)
+and sampled hit testing describe the current state, not every future animation
+frame. Frame and shadow traversal are not implemented by probe.
+
+Both proxy and native boundaries reject malformed probe results; native observation
+preserves human control and `lastActor`. Native `find` references remain usable;
+a replacement DOM clone with copied reference attributes is rejected as stale.
+The runtime does not read field values, focus, select, scroll or mutate the document.
+Semantic reader visibility now
+respects CSS overrides of `hidden` and inherited `visibility:hidden`, while still
+allowing semantic containers with `display:contents`. Physical probe visibility
+uses the browser's own box/visibility checks separately.
+
+Test examples are exported separately from `@voicechat/browser-contracts/audit/fixtures`;
+production imports only the pure program generators. Both browser suites consume
+one fixture registry, including explicit readiness for font loading and real-keyboard
+setup for validity states that distinguish user edits from programmatic values. Audit source
+paths are registered as browser changes in the application catalog, so a new group
+selects both Reader E2E suites even when no application source file changes.
+
+External-site probes on 2026-09-11 demonstrated why bridge readiness and empty
+error logs are insufficient: Google showed consent, Facebook an error document,
+and Instagram changed from its splash screen to page-unavailable with consent.
+All had an attached Reader bridge and no observed JS exception. These are local
+public-page observations, not an authenticated compatibility guarantee. Original
+browser-origin flows use the existing `previewEngine: chromium` path described in
+[the native Reader section](features/playwright-reader.md#полный-chromium-внутри-web-reader-2026-09-10).
+Both engines support the audit command. Switching engines does not copy cookies
+between their sessions.
+
+A same-day probe through the actual `BrowserSessionManager` rendered Google's
+consent page and the Facebook/Instagram login forms behind cookie dialogs in fresh
+Chromium sessions. Screenshots confirmed those states. Both Meta sites logged a
+Credential Management service error despite rendering controls. No login or
+consent choice was attempted. These observations show why diagnosis must combine
+rendered state, network evidence and console errors rather than use one success flag.
+A later control probe on each site confirmed that browser visibility and Reader
+wait readiness did not imply pointer reachability: consent content intercepted all
+sampled points of the search/password target. The read-only probes took
+0.7/1.2/0.9 ms on Google/Facebook/Instagram respectively in that local run.
+
+The checks cover document metadata, IDs and references, names and labels,
+landmarks, headings, nested controls, details, tables, lists and focus order.
+`e2e/webReaderAudit.e2e.test.ts` and browser-runner's `nativeAudit.test.ts` verify a
+broken/repaired document pair for each rule on both surfaces, plus scope, pagination,
+limits and sensitive-value exclusion. `webReaderNative.e2e.test.ts` verifies the
+complete App/MCP/runner path on a page that denies iframe embedding, including
+auditing while the user owns control.
+`VC_VISUAL_ARTIFACTS` saves the visual fixture. The 30-cycle implementation plan is
+`docs/plans/web-reader-model-qa-30-cycles.md`; planned cycles are not completed work.
 
 ### Edit-режим: правки страницы в браузере клиента
 

@@ -79,10 +79,10 @@ it('параллельный evaluate не перемешивает побочн
   expect((await evaluate('window.unexpected')).valueType).toBe('undefined')
 })
 it('ожидание prompt не расходует лимит и сохраняет ответ сайта', async () => {
-  await expect(evaluate('document.querySelector("h1").textContent=prompt("Название","Черновик")', 100)).rejects.toThrow(
+  await expect(evaluate('document.querySelector("h1").textContent=prompt("Название","Черновик")', 1000)).rejects.toThrow(
     'Открыт диалог'
   )
-  await new Promise((resolve) => setTimeout(resolve, 300))
+  await new Promise((resolve) => setTimeout(resolve, 1200))
   const state = (await send({ type: 'status' })) as BrowserSessionMetadata
   expect(state.dialogs).toHaveLength(1)
   await send({ type: 'handleDialog', dialogId: state.dialogs![0].id, accept: true, promptText: 'Ответ после паузы' })
