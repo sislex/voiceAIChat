@@ -47,3 +47,14 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
 
 .webpreview-transfer { flex: none; max-height: 150px; overflow: auto; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-wrap: anywhere; }
 .webpreview-transfer .vc-btn { margin-right: 6px; }
+
+/* Keep editable steps usable when the Reader is narrower than the test viewport. */
+.webpreview-scenario-header { flex-wrap: wrap; }
+.webpreview-scenario li { flex-wrap: wrap; }
+.webpreview-scenario li input:not([type='checkbox']) { flex: 1 1 140px; min-width: min(140px, 100%); max-width: 100%; }
+.webpreview-scenario input[type='checkbox'] { flex: none; width: auto; min-width: 0; }
+.webpreview-scenario label { display: inline-flex; align-items: center; gap: 4px; }
+.webpreview-scenario ol[hidden] { display: none; }
+@media (max-width: 560px) {
+  .webpreview-scenario { max-height: 45vh; }
+}

@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 694cf7cf
+checked: f60d8269
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2479,6 +2479,8 @@ The Recorder imports and exports version-1 web-reader-scenario JSON files. Impor
 Scenario playback validates the complete bounded input before sending any command, including runtime step shapes and temporary secret values. Request IDs remain unique if the injected ID factory repeats. Invalid timeouts fall back to 12 seconds, excessive values cap at two minutes, and settling delays stay below the timeout. Malformed outcomes are ignored; throwing progress observers cannot strand a run or prevent cleanup.
 
 Reader diagnostic timing ownership resets with registration, navigation, and each new diagnostic run, and outstanding timings are capped at 64. Standalone diagnostic actions now appear in history. The history shows pass/fail totals and total duration, supports action search and failed-only filtering, and can collapse details or export the complete result set as JSON regardless of visible filters.
+
+The Recorder keeps scenario playback controls visible when step editing is collapsed; step rows wrap on narrow screens and checkboxes retain their intrinsic width. At mobile widths, the editor can use 45vh so a complete step remains visible beneath the wrapped controls. Failed scenario writes show a retry action using the current edits. Cookie-session reset allows one request, expires after 15 seconds, and aborts on navigation, disposal or unmount; stale responses cannot reload a later page. Reader errors and finished playback results can be dismissed, and recording status remains visible outside the tools menu.
 
 ### Model-facing Web Reader audits
 
