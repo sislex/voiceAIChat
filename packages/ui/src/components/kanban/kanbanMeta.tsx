@@ -23,6 +23,57 @@ export function pluralTasks(n: number): string {
   return 'задач'
 }
 
+export interface EmptyColumnPresentation {
+  state: 'empty' | 'filtered'
+  title: string
+  description: string
+  badge: string
+  hiddenCount: number
+  localFilterHidesMatches: boolean
+}
+
+/**
+ * Keeps the empty-column explanation based on the complete column rather than
+ * the currently rendered cards. This prevents a filter from presenting a
+ * populated workflow stage as a brand-new empty stage.
+ */
+export function emptyColumnPresentation(input: {
+  columnName: string
+  total: number
+  visible: number
+  globallyMatching: number
+  globalFiltersActive: boolean
+  localFilterActive: boolean
+}): EmptyColumnPresentation | null {
+  const total = Math.max(0, Math.trunc(input.total))
+  const visible = Math.max(0, Math.trunc(input.visible))
+  if (visible > 0) return null
+  if (total === 0) {
+    return {
+      state: 'empty',
+      title: `«${input.columnName}» пока пуста`,
+      description: 'Создайте первую задачу или перетащите сюда карточку из другой колонки.',
+      badge: 'Готова к работе',
+      hiddenCount: 0,
+      localFilterHidesMatches: false
+    }
+  }
+  const localFilterHidesMatches = input.localFilterActive && input.globallyMatching > 0
+  const source = localFilterHidesMatches && input.globalFiltersActive
+    ? 'Фильтры доски и исполнителей колонки скрывают её содержимое.'
+    : localFilterHidesMatches
+      ? 'Фильтр исполнителей этой колонки скрывает её содержимое.'
+      : 'Фильтры доски скрывают её содержимое.'
+  return {
+    state: 'filtered',
+    title: `В «${input.columnName}» нет подходящих задач`,
+    description: `${source} Сбросьте нужные условия, чтобы вернуть карточки.`,
+    badge: `Скрыто ${total} ${pluralTasks(total)}`,
+    hiddenCount: total,
+    localFilterHidesMatches
+  }
+}
+
 export interface WipPresentation {
   state: 'available' | 'full' | 'over'
   label: string

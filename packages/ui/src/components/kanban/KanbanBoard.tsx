@@ -30,7 +30,7 @@ import { TaskCard, epicOf } from './TaskCard'
 import { type TaskModalProps, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
-import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, duePresentation, epicColor, issueKey, pluralTasks, wipPresentation } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, duePresentation, emptyColumnPresentation, epicColor, issueKey, pluralTasks, wipPresentation } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -668,9 +668,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   }
 
   const hasColumnAssigneeFilter = Object.values(columnAssigneeFilters).some((value) => value.assigneeIds.length > 0 || value.includeUnassigned)
-  const filtersActive =
+  const globalFiltersActive =
     search.trim() !== '' || assignees.size > 0 || types.size > 0 || priorities.size > 0 ||
-    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || overdueOnly || completedOnly || hasColumnAssigneeFilter
+    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || overdueOnly || completedOnly
+  const filtersActive = globalFiltersActive || hasColumnAssigneeFilter
 
   /**
    * Сколько фильтров включено. Нужен подписи свёрнутого блока на телефоне:
@@ -681,7 +682,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     (onlyMine ? 1 : 0) + (flaggedOnly ? 1 : 0) + (recentOnly ? 1 : 0) + (overdueOnly ? 1 : 0) + (completedOnly ? 1 : 0) +
     Object.values(columnAssigneeFilters).filter((value) => value.assigneeIds.length > 0 || value.includeUnassigned).length
 
-  const resetFilters = (): void => {
+  const resetGlobalFilters = (): void => {
     setSearch('')
     setAssignees(new Set())
     setTypes(new Set())
@@ -689,11 +690,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setLabels(new Set())
     setEpics(new Set())
     setOnlyMine(false)
-    setColumnAssigneeFilters({})
     setFlaggedOnly(false)
     setRecentOnly(false)
     setOverdueOnly(false)
     setCompletedOnly(false)
+  }
+
+  const resetFilters = (): void => {
+    resetGlobalFilters()
+    setColumnAssigneeFilters({})
   }
 
   const matches = (t: Task): boolean => {
@@ -1546,6 +1551,16 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     // предлагать на пустом экране.
     const columnFilter = columnAssigneeFilters[col.id] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
     const columnFilterActive = columnFilter.assigneeIds.length > 0 || columnFilter.includeUnassigned
+    const completeColumnTasks = allTasks.filter((task) => task.columnId === col.id)
+    const globallyMatchingTasks = completeColumnTasks.filter(matches)
+    const empty = !lane ? emptyColumnPresentation({
+      columnName: col.name,
+      total: completeColumnTasks.length,
+      visible: tasks.length,
+      globallyMatching: globallyMatchingTasks.length,
+      globalFiltersActive,
+      localFilterActive: columnFilterActive
+    }) : null
     const key = bodyKey(lane ? lane.id : null, col.id)
     // Зона вставки между соседями after (сверху) и before (снизу): по ней
     // считается место указателя, из неё же берутся afterId/beforeId. Активная
@@ -1584,25 +1599,39 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             </div>
           )
         })}
-        {/* Пустая колонка объясняет, чем её наполнить. В свимлейнах подсказку не
-            повторяем в каждой ячейке — там пустых пересечений много по природе. */}
-        {tasks.length === 0 && !lane && (
-          <EmptyState
-            compact
-            className="jcol-empty"
-            icon="＋"
-            title={filtersActive ? 'Нет задач под фильтром' : 'Здесь пока пусто'}
-            description={filtersActive ? 'Измените или сбросьте фильтр этой колонки, чтобы увидеть остальные задачи.' : 'Перетащите карточку сюда или создайте задачу кнопкой ниже.'}
-            {...(columnFilterActive
-              // Пусто из-за фильтра самой колонки — сбрасываем его.
-              ? {
-                actionLabel: 'Сбросить фильтр колонки',
-                onAction: () => setColumnAssigneeFilters((prev) => ({ ...prev, [col.id]: EMPTY_COLUMN_ASSIGNEE_FILTER }))
-              }
-              // Пусто из-за фильтров доски — сброс колонки ничего бы не изменил,
-              // и кнопка выглядела бы сломанной.
-              : filtersActive ? { actionLabel: 'Сбросить фильтры доски', onAction: resetFilters } : {})}
-          />
+        {/* Swimlane intersections are intentionally silent because sparse
+            matrices would repeat the same guidance dozens of times. */}
+        {empty && (
+          <div
+            id={`kanban-column-empty-${col.id}`}
+            className={`vc-state vc-state--empty vc-state--compact jcol-empty jcol-empty--${empty.state}`}
+            data-testid="column-empty-state"
+            data-empty-kind={empty.state}
+            data-hidden-count={empty.hiddenCount}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="jcol-empty-icon" aria-hidden="true">{empty.state === 'empty' ? '＋' : '⌕'}</span>
+            <span className="jcol-empty-badge">{empty.badge}</span>
+            <p className="vc-state__title">{empty.title}</p>
+            <p className="vc-state__text">{empty.description}</p>
+            <div className="jcol-empty-actions">
+              {empty.state === 'empty' ? (
+                <Button variant="primary" size="sm" onClick={() => openComposer(col.id)}>Создать задачу</Button>
+              ) : (
+                <>
+                  {empty.localFilterHidesMatches && (
+                    <Button variant="secondary" size="sm" onClick={() => setColumnAssigneeFilters((prev) => ({ ...prev, [col.id]: EMPTY_COLUMN_ASSIGNEE_FILTER }))}>
+                      Сбросить исполнителей
+                    </Button>
+                  )}
+                  {globalFiltersActive && (
+                    <Button variant="secondary" size="sm" onClick={resetGlobalFilters}>Сбросить фильтры доски</Button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
     )
@@ -2036,6 +2065,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                      «В работе», 3 задачи» и умеет прыгать по ним. Без имени
                      section для доступности — обычный div. */
                   aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
+                  aria-describedby={tasksOf(col.id).length === 0 ? `kanban-column-empty-${col.id}` : undefined}
                 >
                   {columnHead(col)}
                   {columnBody(col)}
