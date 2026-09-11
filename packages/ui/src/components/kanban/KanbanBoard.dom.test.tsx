@@ -912,10 +912,19 @@ describe('KanbanBoard — состояния загрузки, пустоты и
     expect(screen.getByText('Колонок пока нет — создайте первую')).toBeInTheDocument()
   })
 
-  it('пустая колонка подсказывает, чем её наполнить', () => {
+  it('пустая колонка называет этап, показывает drop-подсказку и открывает сфокусированный композер', async () => {
     renderBoard({ board: { columns: [board.columns[0]!], tasks: [] } })
     const column = screen.getByTestId('kanban-column')
-    expect(within(column).getByTestId('empty-state')).toHaveTextContent('Здесь пока пусто')
+    const empty = within(column).getByTestId('column-empty-state')
+    expect(empty).toHaveAttribute('data-empty-kind', 'empty')
+    expect(empty).toHaveAttribute('data-hidden-count', '0')
+    expect(empty).toHaveAttribute('role', 'status')
+    expect(empty).toHaveTextContent('«To Do» пока пуста')
+    expect(empty).toHaveTextContent('Готова к работе')
+    expect(empty).toHaveTextContent('перетащите сюда карточку')
+    expect(column).toHaveAttribute('aria-describedby', empty.id)
+    await userEvent.click(within(empty).getByRole('button', { name: 'Создать задачу' }))
+    expect(screen.getByRole('textbox', { name: 'Новая задача в «To Do»' })).toHaveFocus()
   })
 })
 
@@ -1288,16 +1297,48 @@ describe('KanbanBoard — фильтры исполнителей', () => {
   // рендерилась: `EmptyState` принимает `actionLabel`/`onAction`, а сюда
   // передавали несуществующий `action` — проверка лишних свойств у спреда не
   // работает, и tsc молчал.
-  it('под фильтром пустая колонка даёт кнопку сброса, и она работает', async () => {
+  it('под глобальным фильтром показывает число скрытых задач и сбрасывает правильную область', async () => {
     renderBoard({ board: filteredBoard, currentUserId: 'alice', currentUser: 'Отображаемое имя', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
     await userEvent.click(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' }))
 
     // Пусто из-за фильтра доски, а не колонки — значит и сброс предлагается
     // тот, который действительно вернёт задачи.
-    const empty = screen.getByText('Нет задач под фильтром').closest('.vc-state')!
+    const empty = within(screen.getAllByTestId('kanban-column')[1]!).getByTestId('column-empty-state')
+    expect(empty).toHaveAttribute('data-empty-kind', 'filtered')
+    expect(empty).toHaveAttribute('data-hidden-count', '1')
+    expect(empty).toHaveTextContent('В «Doing» нет подходящих задач')
+    expect(empty).toHaveTextContent('Скрыто 1 задача')
     const reset = within(empty as HTMLElement).getByRole('button', { name: 'Сбросить фильтры доски' })
     await userEvent.click(reset)
     expect(screen.getAllByTestId('task-card').some((card) => card.textContent?.includes('Без исполнителя'))).toBe(true)
+  })
+
+  it('совместные фильтры дают независимые действия и глобальный сброс сохраняет локальный', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'alice', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    const firstColumn = screen.getAllByTestId('kanban-column')[0]!
+    await userEvent.click(within(firstColumn).getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Фильтр исполнителей колонки «To Do»' })).getByRole('checkbox', { name: 'bob' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'Моя')
+
+    const empty = within(firstColumn).getByTestId('column-empty-state')
+    expect(empty).toHaveTextContent('Фильтры доски и исполнителей колонки')
+    expect(within(empty).getByRole('button', { name: 'Сбросить исполнителей' })).toBeInTheDocument()
+    await userEvent.click(within(empty).getByRole('button', { name: 'Сбросить фильтры доски' }))
+    expect(within(firstColumn).getByText('Чужая')).toBeInTheDocument()
+    expect(within(firstColumn).queryByText('Моя')).not.toBeInTheDocument()
+    expect(within(firstColumn).getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ })).toHaveTextContent('1')
+  })
+
+  it('локальный фильтр пустой колонки сбрасывается без изменения доски', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'alice', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    const secondColumn = screen.getAllByTestId('kanban-column')[1]!
+    await userEvent.click(within(secondColumn).getByRole('button', { name: /Фильтр исполнителей колонки «Doing»/ }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Фильтр исполнителей колонки «Doing»' })).getByRole('checkbox', { name: 'alice' }))
+    const empty = within(secondColumn).getByTestId('column-empty-state')
+    expect(empty).toHaveTextContent('Фильтр исполнителей этой колонки')
+    expect(within(empty).queryByRole('button', { name: 'Сбросить фильтры доски' })).not.toBeInTheDocument()
+    await userEvent.click(within(empty).getByRole('button', { name: 'Сбросить исполнителей' }))
+    expect(within(secondColumn).getByText('Без исполнителя')).toBeInTheDocument()
   })
 
   it('выбирает нескольких исполнителей по ИЛИ и показывает badge', async () => {
