@@ -42,10 +42,42 @@ describe('TaskCard связанный чат', () => {
     expect(chip.querySelector('.jcard-epic-dot')!.getAttribute('style')).toMatch(/background/)
   })
 
-  // В подписи только «29 авг.» — без года; раньше подсказка говорила просто «Срок».
+  // The visible relative state stays compact while the tooltip preserves the exact date.
   it('подсказка срока показывает полную дату', () => {
     render(<TaskCard {...props({ task: mkTask({ dueDate: Date.UTC(2026, 7, 29, 9) }) })} />)
-    expect(screen.getByTitle(/^Срок: \d{2}\.\d{2}\.\d{4}$/)).toBeInTheDocument()
+    expect(screen.getByTitle(/^Срок \d{2}\.\d{2}\.\d{4}\. Просрочено на \d+ /)).toBeInTheDocument()
+  })
+
+  it('объясняет срок и метаданные карточки без открытия модалки', () => {
+    const now = Date.now()
+    render(<TaskCard {...props({
+      columnSemanticType: 'development',
+      task: mkTask({
+        title: 'Проверить платёж',
+        priority: 'high',
+        assignee: 'alexey.rozhnov',
+        storyPoints: 8,
+        dueDate: now,
+        labels: ['payments', 'ui', 'critical', 'release', 'frontend']
+      })
+    })} />)
+
+    const card = screen.getByTestId('task-card')
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('PROJ-1. Задача. Проверить платёж'))
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('Приоритет: Высокий'))
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('Исполнитель: alexey.rozhnov'))
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('Срок сегодня'))
+    expect(screen.getByRole('img', { name: 'Приоритет: Высокий' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Исполнитель: alexey.rozhnov' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Оценка: 8 story points')).toHaveTextContent('8 SP')
+
+    const labels = screen.getByRole('list', { name: 'Метки задачи: payments, ui, critical, release, frontend' })
+    expect(within(labels).getAllByRole('listitem')).toHaveLength(4)
+    expect(within(labels).getByText('payments')).toBeInTheDocument()
+    const more = within(labels).getByLabelText('Ещё 2 метки: release, frontend')
+    expect(more).toHaveTextContent('+2')
+    expect(more).toHaveAttribute('title', 'Все метки: payments, ui, critical, release, frontend')
+    expect(screen.getByLabelText(/^Срок сегодня,/)).toHaveTextContent('Сегодня')
   })
 
   it('постоянно показывает действие и открывает чат, не открывая карточку', () => {

@@ -60,6 +60,37 @@ export function dueState(ms: number, now = Date.now()): 'overdue' | 'soon' | 'ok
   return ms - now < 2 * day ? 'soon' : 'ok'
 }
 
+export interface DuePresentation {
+  state: 'overdue' | 'soon' | 'ok'
+  short: string
+  label: string
+  days: number
+}
+
+function dayWord(value: number): string {
+  const mod10 = value % 10
+  const mod100 = value % 100
+  if (mod10 === 1 && mod100 !== 11) return 'день'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дня'
+  return 'дней'
+}
+
+export function duePresentation(ms: number, now = Date.now()): DuePresentation {
+  const startOfDay = (value: number): number => {
+    const date = new Date(value)
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  }
+  const days = Math.round((startOfDay(ms) - startOfDay(now)) / (24 * 60 * 60 * 1000))
+  const fullDate = new Intl.DateTimeFormat('ru', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(ms))
+  if (days < 0) {
+    const elapsed = Math.abs(days)
+    return { state: 'overdue', short: `Просрочено ${elapsed} ${dayWord(elapsed)}`, label: `Срок ${fullDate}. Просрочено на ${elapsed} ${dayWord(elapsed)}`, days }
+  }
+  if (days === 0) return { state: 'soon', short: 'Сегодня', label: `Срок сегодня, ${fullDate}`, days }
+  if (days === 1) return { state: 'soon', short: 'Завтра', label: `Срок завтра, ${fullDate}`, days }
+  return { state: 'ok', short: `Через ${days} ${dayWord(days)}`, label: `Срок через ${days} ${dayWord(days)}, ${fullDate}`, days }
+}
+
 /** Иконка типа Jira: цветной квадрат с глифом (эпик ⚡, история 🔖, задача ✓). */
 export function TypeIcon({ type }: { type: WorkItemType }): JSX.Element {
   const bg = type === 'epic' ? '#904ee2' : type === 'story' ? '#63ba3c' : '#4bade8'
@@ -101,4 +132,3 @@ export function PriorityIcon({ priority }: { priority: TaskPriority }): JSX.Elem
     </svg>
   )
 }
-
