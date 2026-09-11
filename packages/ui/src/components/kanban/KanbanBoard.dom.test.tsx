@@ -211,6 +211,45 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('Метаданные')).toBeInTheDocument()
   })
 
+  it('сводит метрики видимых задач и пересчитывает их после фильтра и обновления доски', async () => {
+    const columns = [
+      board.columns[0]!,
+      { ...board.columns[0]!, id: 'done', name: 'Готово', semanticType: 'done' as const, position: 2048 }
+    ]
+    const tasks = [
+      task({ id: 'first', title: 'Первая', storyPoints: 3, dueDate: Date.now() - 2 * 86_400_000, flagged: true }),
+      task({ id: 'second', title: 'Вторая', storyPoints: 5, dueDate: Date.now() + 2 * 86_400_000, assignee: 'bob' }),
+      task({ id: 'complete', title: 'Завершённая', columnId: 'done', storyPoints: 2, dueDate: Date.now() - 2 * 86_400_000, assignee: 'bob' })
+    ]
+    const props: KanbanBoardProps = {
+      projectName: 'P1', board: { columns, tasks }, loading: false, members: [],
+      onCreateColumn: vi.fn(), onUpdateColumn: vi.fn(), onSetColumnHidden: vi.fn(),
+      onReorderColumns: vi.fn(), onDeleteColumn: vi.fn(), onCreateTask: vi.fn(),
+      onUpdateTask: vi.fn(), onMoveTask: vi.fn(), onDeleteTask: vi.fn()
+    }
+    const view = render(<KanbanBoard {...props} />)
+    const summary = screen.getByRole('region', { name: 'Сводка доски' })
+
+    expect(within(summary).getByLabelText('Видно: 3 задачи')).toHaveTextContent('3 задачи')
+    expect(within(summary).getByLabelText('Оценка: 10 SP')).toHaveTextContent('10 SP')
+    expect(within(summary).getByLabelText('Просрочено: 1 задача')).toHaveTextContent('1 задача')
+    expect(within(summary).getByLabelText('Без исполнителя: 1 задача')).toHaveTextContent('1 задача')
+    expect(within(summary).getByLabelText('С флагом: 1 задача')).toHaveTextContent('1 задача')
+    expect(within(summary).getByLabelText('Завершено: 1 задача')).toHaveTextContent('1 задача')
+
+    const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
+    await userEvent.type(search, 'Вторая')
+    expect(within(summary).getByLabelText('Видно: 1 задача')).toBeInTheDocument()
+    expect(within(summary).getByLabelText('Оценка: 5 SP')).toBeInTheDocument()
+    expect(within(summary).getByLabelText('Просрочено: 0 задач')).toBeInTheDocument()
+
+    await userEvent.clear(search)
+    view.rerender(<KanbanBoard {...props} board={{ columns, tasks: [...tasks, task({ id: 'live', title: 'Живое обновление', storyPoints: 2 })] }} />)
+    expect(within(summary).getByLabelText('Видно: 4 задачи')).toBeInTheDocument()
+    expect(within(summary).getByLabelText('Оценка: 12 SP')).toBeInTheDocument()
+    expect(within(summary).getByLabelText('Без исполнителя: 2 задачи')).toBeInTheDocument()
+  })
+
   it('фокусирует поиск по /, очищает его по Escape и отдельной кнопкой', async () => {
     renderBoard()
     const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
@@ -1169,7 +1208,7 @@ describe('KanbanBoard — фильтры исполнителей', () => {
     const empty = screen.getByText('Нет задач под фильтром').closest('.vc-state')!
     const reset = within(empty as HTMLElement).getByRole('button', { name: 'Сбросить фильтры доски' })
     await userEvent.click(reset)
-    expect(screen.getByText('Без исполнителя')).toBeInTheDocument()
+    expect(screen.getAllByTestId('task-card').some((card) => card.textContent?.includes('Без исполнителя'))).toBe(true)
   })
 
   it('выбирает нескольких исполнителей по ИЛИ и показывает badge', async () => {
