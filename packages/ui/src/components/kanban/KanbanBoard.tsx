@@ -30,7 +30,7 @@ import { TaskCard, epicOf } from './TaskCard'
 import { type TaskModalProps, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
-import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, epicColor, issueKey } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, duePresentation, epicColor, issueKey, pluralTasks } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -727,11 +727,27 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       })
       .sort((a, b) => compareTasksInColumn(a, b, board?.columns.find((c) => c.id === columnId)?.semanticType ?? 'custom'))
 
-  const visibleTaskCount = columns.reduce((count, column) => count + tasksOf(column.id).length, 0)
+  const visibleTasks = columns.flatMap((column) => tasksOf(column.id))
+  const visibleTaskCount = visibleTasks.length
   const displayedTaskTotal = columns.reduce(
     (count, column) => count + allTasks.filter((task) => task.columnId === column.id).length,
     0
   )
+  const visibleStoryPoints = visibleTasks.reduce((total, task) => total + (task.storyPoints ?? 0), 0)
+  const visibleOverdue = visibleTasks.filter(
+    (task) => task.dueDate != null && !doneColumnIds.has(task.columnId) && duePresentation(task.dueDate).state === 'overdue'
+  ).length
+  const visibleUnassigned = visibleTasks.filter((task) => task.assignee == null).length
+  const visibleFlagged = visibleTasks.filter((task) => task.flagged).length
+  const visibleCompleted = visibleTasks.filter((task) => doneColumnIds.has(task.columnId)).length
+  const boardSummary = [
+    ['Видно', visibleTaskCount, pluralTasks(visibleTaskCount)],
+    ['Оценка', visibleStoryPoints, 'SP'],
+    ['Просрочено', visibleOverdue, pluralTasks(visibleOverdue)],
+    ['Без исполнителя', visibleUnassigned, pluralTasks(visibleUnassigned)],
+    ['С флагом', visibleFlagged, pluralTasks(visibleFlagged)],
+    ['Завершено', visibleCompleted, pluralTasks(visibleCompleted)]
+  ] as const
   const effectiveActiveColumnId = columns.some((column) => column.id === activeColumnId)
     ? activeColumnId
     : columns[0]?.id ?? null
@@ -1898,6 +1914,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             )}
             {view.refreshing && <RefreshIndicator label="Обновляем доску…" />}
           </FilterShell>
+
+          <section className="jboard-summary" aria-label="Сводка доски" data-testid="board-summary">
+            <dl>
+              {boardSummary.map(([label, value, unit]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd aria-label={`${label}: ${value} ${unit}`}>{value}<span aria-hidden="true"> {unit}</span></dd>
+                </div>
+              ))}
+            </dl>
+          </section>
 
           {activeFilterChips.length > 0 && (
             <div className="jactive-filters" role="region" aria-label="Активные фильтры" data-testid="active-filters">
