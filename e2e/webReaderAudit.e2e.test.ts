@@ -5,7 +5,7 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { isPreviewProbeResult, type PreviewAction, type PreviewActionResultMessage, type PreviewAuditOptions, type PreviewAuditResult } from '@voicechat/shared'
 import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
-import { auditFixtures, probeFixtures, probeExpectationFailures, formConstraintExamples, formReadOnlyScene, formReadOnlySetup, formReadOnlyState, type FormFixtureEdit } from '@voicechat/browser-contracts/audit/fixtures'
+import { auditFixtures, probeFixtures, probeExpectationFailures, formConstraintExamples, formReadOnlyScene, formReadOnlySetup, formReadOnlyState, focusComparisonExamples, focusReadOnlyScene, focusReadOnlySetup, focusReadOnlyState, focusOrderScene, type FormFixtureEdit } from '@voicechat/browser-contracts/audit/fixtures'
 
 let app: FastifyInstance, browser: Browser, page: Page, base: string, source = ''
 async function open(html: string) {
@@ -159,6 +159,44 @@ describe('Web Reader built-in diagnostics in Chromium', () => {
     expect(validity).toHaveLength(10)
     expect(validity.every(rule => rule.severity === 'info' && rule.confidence === 'observed')).toBe(true)
   })
+  it.each(focusComparisonExamples)('preserves focus semantics: %s', async (_name, html, rule, total) => {
+    await open('<!doctype html>'+html)
+    expect((await audit({ group: 'focus', rules: [rule] })).total).toBe(total)
+  })
+  it('discovers 26 focus reports and makes their heuristic status explicit', async () => {
+    await open('<!doctype html><input>')
+    const report = await audit({ group: 'focus', mode: 'list', limit: 30 })
+    expect(report.rules).toHaveLength(26)
+    expect(report.rules.every(rule => rule.confidence === 'heuristic')).toBe(true)
+  })
+  it('bounds focus metadata inspection without declaring a malformed value', async () => {
+    await open('<!doctype html><input tabindex="'+'1'.repeat(1025)+'">')
+    const report = await audit({ group: 'focus', rules: ['tabindex-syntax-invalid'] })
+    expect(report.total).toBe(0)
+    expect(report.truncated).toBe(true)
+    expect(report.limitations).toContain('Focus metadata inspection stopped at 1024 attribute characters.')
+  })
+  it('excludes radio groups from order estimates and explains incomplete traversal', async () => {
+    await open('<!doctype html><div style="display:flex;flex-direction:row-reverse"><input type="radio" name="choice"><input type="radio" name="choice"></div>')
+    const report = await audit({ group: 'focus', rules: ['focus-flex-order-reversed'] })
+    expect(report.total).toBe(0)
+    expect(report.truncated).toBe(true)
+    expect(report.limitations).toContain('Focus order estimates exclude native radio-group traversal; run a keyboard scenario.')
+  })
+  it('reports depth, order and relationship inspection limits', async () => {
+    await open('<!doctype html>'+'<div>'.repeat(150)+'<input id="target">'+'</div>'.repeat(150)+'<script>document.querySelector("#target").focus()</script>')
+    const opacity = await audit({ group: 'focus', rules: ['focused-opacity-zero'] })
+    expect(opacity.truncated).toBe(true)
+    expect(opacity.limitations).toContain('Focus opacity inspection stopped at 128 ancestors.')
+    await open('<!doctype html><div style="display:flex">'+'<button>Action</button>'.repeat(101)+'</div>')
+    const order = await audit({ group: 'focus', rules: ['focus-flex-order-reversed'] })
+    expect(order.truncated).toBe(true)
+    expect(order.limitations).toContain('Focus order inspection stopped at 100 direct children.')
+    await open('<!doctype html><input id="target" aria-activedescendant="option" aria-controls="'+'missing '.repeat(65)+'"><div id="option">Choice</div><script>document.querySelector("#target").focus()</script>')
+    const relation = await audit({ group: 'focus', rules: ['active-descendant-unrelated'] })
+    expect(relation.truncated).toBe(true)
+    expect(relation.limitations).toContain('Focus relationship inspection stopped at 64 ID references.')
+  })
   for (const fixture of auditFixtures) {
     it(`detects ${fixture.name ?? fixture.rule}`, async () => {
       await open(fixture.broken)
@@ -220,7 +258,7 @@ describe('Web Reader built-in diagnostics in Chromium', () => {
   })
   it('does not include sensitive field values in audit evidence', async () => {
     await open('<!doctype html><body><input type="password" value="never-report-this"><input name="token" value="nor-this"></body>')
-    for (const group of ['markup', 'layout', 'typography', 'color', 'forms']) {
+    for (const group of ['markup', 'layout', 'typography', 'color', 'forms', 'focus']) {
       const report = JSON.stringify(await audit({ group }))
       expect(report).not.toContain('never-report-this')
       expect(report).not.toContain('nor-this')
@@ -242,6 +280,53 @@ describe('Web Reader built-in diagnostics in Chromium', () => {
     expect((await audit(options)).total).toBe(1)
     await page.frameLocator('iframe').locator('#target').evaluate(el => (el as HTMLInputElement).setCustomValidity(''))
     expect((await audit(options)).total).toBe(0)
+  })
+  it('observes focus without value reads, focus events or page mutations', async () => {
+    await open(focusReadOnlyScene)
+    const frame = page.frames().find(candidate => candidate.url().includes('/api/preview?'))!
+    await frame.evaluate(focusReadOnlySetup)
+    const before = await frame.evaluate(focusReadOnlyState)
+    const report = await audit({ group: 'focus', limit: 30 })
+    expect(report.findings.map(f => f.id)).toContain('focused-caret-transparent')
+    expect(JSON.stringify(report)).not.toContain('PRIVATE_')
+    expect(await frame.evaluate(focusReadOnlyState)).toEqual(before)
+  })
+  it('reports when active-element findings belong to an unfocused frame', async () => {
+    await open(focusReadOnlyScene)
+    const frame = page.frames().find(candidate => candidate.url().includes('/api/preview?'))!
+    await frame.locator('#target').focus()
+    await page.evaluate(() => { const hostInput = document.createElement('input'); document.body.append(hostInput); hostInput.focus() })
+    expect(await frame.evaluate(() => document.hasFocus())).toBe(false)
+    expect((await audit({ group: 'focus' })).limitations).toContain('This document does not currently own keyboard focus; active-element findings describe its retained focus target.')
+  })
+  it('compares estimated visual order with actual Tab navigation and a repair', async () => {
+    await open(focusOrderScene)
+    const options = { group: 'focus', rules: ['focus-flex-order-reversed'] }
+    const frame = page.frames().find(candidate => candidate.url().includes('/api/preview?'))!
+    expect((await audit(options)).total).toBe(1)
+    await frame.locator('#first').focus()
+    await page.keyboard.press('Tab')
+    expect(await frame.evaluate(() => document.activeElement?.id)).toBe('second')
+    await page.keyboard.press('Shift+Tab')
+    expect(await frame.evaluate(() => document.activeElement?.id)).toBe('first')
+    await frame.locator('#row').evaluate(el => { (el as HTMLElement).style.flexDirection = 'row' })
+    expect((await audit(options)).total).toBe(0)
+  })
+  it('captures current keyboard focus and verifies the same live repair', async () => {
+    await open('<!doctype html><html lang="en"><head><title>Focus audit evidence</title><style>body{font:16px/1.4 system-ui;background:#edf2f8;padding:20px;color:#172033}main{background:white;border-radius:16px;padding:28px;max-width:760px}h1{font-size:28px;margin:0 0 20px}h2{font-size:20px;margin:0 0 12px}section{border-top:1px solid #dce4ee;padding:20px 0}input{display:block;width:320px;padding:12px;margin:12px 0;font:inherit;border:1px solid #8b99ae;border-radius:6px}button{padding:12px;font:inherit;border:1px solid #8b99ae;background:#edf2f8;border-radius:6px}#row{display:flex;flex-direction:row-reverse;gap:12px;justify-content:flex-end}</style></head><body><main><h1>Focus audit: current keyboard state</h1><section><h2>Focused text field</h2><label>Project name<input id="target" value="Reader QA" style="outline:none;caret-color:transparent"></label><p>The audit inspects the current focus outline and caret color.</p></section><section><h2>Visual order and keyboard order</h2><div id="row"><button>First in DOM</button><button>Second in DOM</button></div><p>Compare the displayed sequence with actual Tab navigation.</p></section></main></body></html>')
+    const frame = page.frames().find(candidate => candidate.url().includes('/api/preview?'))!
+    await frame.locator('#target').focus()
+    const options = { group: 'focus', rules: ['focus-paint-needs-review', 'focused-caret-transparent', 'focus-flex-order-reversed'] }
+    expect((await audit(options)).findings.map(f => f.id)).toEqual(options.rules)
+    if (process.env.VC_VISUAL_ARTIFACTS) {
+      await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
+      await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'cycle-07-focus-before.png'), fullPage: true })
+    }
+    await frame.locator('#target').evaluate(el => { (el as HTMLElement).style.outline = '3px solid #225dcc'; (el as HTMLElement).style.caretColor = 'black' })
+    await frame.locator('#row').evaluate(el => { (el as HTMLElement).style.flexDirection = 'row' })
+    expect((await audit(options)).total).toBe(0)
+    expect(await frame.evaluate(() => document.activeElement?.id)).toBe('target')
+    if (process.env.VC_VISUAL_ARTIFACTS) await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'cycle-07-focus-after.png'), fullPage: true })
   })
   it('captures form configuration and native validation evidence', async () => {
     await open('<!doctype html><html lang="en"><head><title>Form audit evidence</title><style>body{font:16px/1.4 system-ui;background:#edf2f8;padding:20px;color:#172033}main{background:white;border-radius:16px;padding:24px;max-width:760px}h1{font-size:28px;margin:0 0 20px}h2{font-size:20px;margin:0 0 8px}p{margin:8px 0}section{border-top:1px solid #dce4ee;padding:12px 0}input{display:block;width:200px;padding:8px;margin-top:4px;font:inherit;border:1px solid #5276ad;border-radius:8px}.error{color:#a31c2f}code{background:#edf2f8;padding:2px 6px}</style></head><body><main><h1>Form audit: state and configuration</h1><section><h2>Conflicting configuration</h2><label>Quantity<input id="reversed" type="number" min="10" max="2"></label><p class="error">Minimum 10 exceeds maximum 2.</p></section><section><h2>Current validation state</h2><label>Email<input id="invalid" type="email" value="not-an-email" aria-invalid="true"></label><p>The browser reports <code>typeMismatch</code>; review the application error flow.</p></section><section><h2>Repaired configuration</h2><label>Quantity<input id="repaired" type="number" min="2" max="10" value="4"></label></section></main></body></html>')

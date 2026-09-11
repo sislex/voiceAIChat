@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 20814f73
+checked: 844753d9
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2454,15 +2454,15 @@ The `audit` MCP tool inspects the live proxy or native Chromium document without
 `packages/shared/src/previewAudit.ts` defines bounded options and evidence; the
 `audit` action travels through the existing Reader relay and recorder bridge.
 Pure program generators in `packages/browser-contracts/src/audit/` execute 30
-markup checks, 30 layout checks, 30 typography checks, 30 form checks and nine color
-report types covering 30 verified color/paint capabilities. Web Reader retains stable re-export paths;
+markup checks, 30 layout checks, 30 typography checks and 30 form checks. Nine
+color report types and 26 focus report types each cover 30 verified capabilities. Web Reader retains stable re-export paths;
 browser-runner executes the same checks through built-in `inspect/audit`, separate
 from model-supplied `evaluate` code and its policy. Use `mode: list` to discover rule IDs;
 `mode: run` is the default. `group` defaults to `markup`, `rules` narrows checks,
 and `selector` must resolve to one element. Document-only checks explicitly report
 when the chosen scope excludes them.
 
-Reports distinguish observed failures from heuristic candidates, include selectors
+Reports distinguish observed states from heuristic candidates, include selectors
 and evidence, and expose `nextOffset`, scan counts, truncation and limitations.
 The scan is capped at 3,000 elements and 500 findings, with at most 30 results per
 response and a further serialized-size budget. Audit evidence does not read input
@@ -2475,11 +2475,18 @@ from operator host aliases. Duplicate-ID findings use selectors that distinguish
 sibling nodes even when their IDs are equal.
 
 Naming checks currently use the reader's DOM naming helper, not the complete
-browser accessible-name algorithm. A Chromium probe with an empty button and
-`::before{content:"Save"}` produced AX name "Save" while `button-name-missing`
-still reported a candidate. Inspect the native accessibility snapshot before
+browser accessible-name algorithm. A Playwright ARIA snapshot of an empty button with
+`::before{content:"Save"}` reported name "Save" while `button-name-missing`
+still reported a candidate. Inspect additional accessibility evidence before
 confirming a naming defect; the accessibility cycle must correct this mismatch
 and its confidence classification.
+
+The current native Reader `a11y` action uses Playwright `locator.ariaSnapshot`,
+which computes an injected DOM snapshot; it is not Chromium's CDP Accessibility
+API. Direct CDP verification found a difference for a button containing
+`<img alt="" title="Save">`: Playwright reports name Save, while Chromium reports
+an empty button name. Treat snapshot source as material to naming conclusions.
+Direct browser AX evidence is planned for cycle 08 and is not exposed yet.
 
 The `layout` group inspects clipping and overflow, zero-size controls, fixed/sticky
 positioning, collapsed containers, grid/flex geometry, overlapping siblings and
@@ -2539,6 +2546,33 @@ application or server validation. References:
 [ValidityState](https://developer.mozilla.org/en-US/docs/Web/API/ValidityState),
 [validation events](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/checkValidity),
 [HTML patterns](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/pattern).
+
+The `focus` group inspects autofocus scopes, keyboard metadata, shortcut candidates,
+current active-element paint/geometry, flex/grid order and active-descendant
+references. Its 26 report types cover 30 verified cases. All findings are heuristic:
+missing outline/shadow can be intentional when borders or backgrounds indicate
+focus, and apparent Tab-entry gaps can have scripted alternatives. Actual Tab and
+Shift+Tab fixture checks accompany the geometry estimates. No focus or keyboard
+action occurs during auditing, and live values/caret selection are not read.
+
+Autofocus conflicts are scoped separately to documents, dialogs and popovers;
+pending closed scopes do not produce hidden-target findings. Native modal focus
+excludes background controls and respects the modal's escape from ancestor inertness.
+Native radio-group traversal and CSS `reading-flow` are excluded from order
+estimates. Open shadow-root focus is not mistaken for a focused host's paint.
+A background frame can retain `document.activeElement`; the report explicitly
+notes when `document.hasFocus()` is false. Cross-element comparisons use only the
+scanned scope. Bounds are 1,024 attribute characters, 128 opacity ancestors,
+100 direct order children and 64 relationship ID references; exceeding them makes
+the report incomplete.
+
+The integer parser may accept prefixes such as `0junk`; a syntax finding reports
+the actual reflected tabindex and does not claim it was ignored. `accesskey`
+accepts distinct one-code-point tokens separated by ASCII whitespace, and actual
+shortcut assignment remains browser/platform dependent. Keyboard hints are
+metadata observations, not a test of a mobile keyboard. These distinctions follow
+the [HTML interaction model](https://html.spec.whatwg.org/multipage/interaction.html)
+and [focus visibility guidance](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html).
 
 The read-only `probe {selector}` tool accepts a standard CSS selector and explains one target, including hidden targets
 that ordinary reading would omit. `packages/shared/src/previewProbe.ts` defines
