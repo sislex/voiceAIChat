@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-10
-checked: 9724b402
+updated: 2026-09-11
+checked: a7b7d1bb
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -227,6 +227,34 @@ Bearer, `VC_LLM_RUNNER_TIMEOUT_MS` — ожидание заголовков `/v
 ограничен). Эти переменные читает `config.ts`, а решение «remote или локальный
 spawn» принимается в `buildServer()`. Не задано — сервер работает как раньше,
 через `spawn`.
+
+### Local Make with a server-hosted model runner
+
+For browser QA, run core with embedded Make, an isolated `VC_DATA_DIR`, and a
+free loopback port. Build the product frontends and web shell first. Forward a
+local port over SSH to the remote runner container's port 8790, then set
+`VC_LLM_RUNNER_URL` and `VC_LLM_RUNNER_TOKEN` for the local core. Read the runner
+credential privately; it is separate from the browser user's login password.
+This keeps conversations and workshop files local while the CLI runs remotely.
+
+The connection must work in both directions. In embedded mode, `server.ts`
+builds the Make MCP URL from `VC_MCP_PUBLIC_BASE`; `VC_MAKE_MCP_PUBLIC_BASE` is
+used by remote Make mode. Verify `/api/health` from inside the runner at the
+callback base before sending a model prompt. A healthy `/v1/health` in the
+forward direction alone does not prove that the model can read or edit Make
+files. An unreachable callback can produce an ordinary model answer saying
+that Make tools are unavailable.
+
+In the September 11 local QA setup, a callback listener on the Docker host's
+bridge address timed out from the runner container. A working alternative was
+an SSH reverse Unix-socket forward to the local core, plus a temporary Python
+TCP-to-Unix-socket relay launched with `nsenter -t <runner-pid> -n`. The relay
+listened on loopback inside the runner network namespace while retaining the
+host filesystem namespace containing the SSH socket. Its loopback URL became
+`VC_MCP_PUBLIC_BASE`. No firewall or production service configuration change
+was needed. Discover the current container IP and PID at launch, keep relay
+ports distinct from service ports, and stop the relay/tunnel when the local
+test instance is no longer needed.
 
 ## Разбор потока
 
