@@ -84,6 +84,46 @@ describe('Web Reader: единый разговор в полном Chromium', (
     await start(); await mcp('open', { url: target }); expect(await mcp('read')).toMatchObject({ text: expect.stringContaining('Native Reader QA') })
     await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы' }).inputValue(), { timeout: 6000 }).toBe(target)
   })
+  it('model audits the native document through MCP while the user owns control', async () => {
+    await start(); await mcp('open', { url: target })
+    await page.getByRole('button', { name: 'Взять управление', exact: true }).click()
+    await page.getByText('Управление у вас.', { exact: false }).waitFor()
+    try {
+      const result = await mcp('audit', { rules: ['document-language-missing'] })
+      expect(result).toMatchObject({ ok: true, page: { url: target }, audit: { surface: 'chromium', total: 1, findings: [expect.objectContaining({ id: 'document-language-missing' })] } })
+      expect((await mcp('audit', { group: 'layout', mode: 'list', limit: 30 })).audit.rules).toHaveLength(30)
+      expect((await command({ type: 'status' })).control).toBe('user')
+      await expect.poll(() => page.getByRole('button', { name: 'Вернуть управление модели' }).isVisible()).toBe(true)
+    } finally { await page.getByRole('button', { name: 'Вернуть управление модели' }).click() }
+  })
+  it('model probes a control through MCP without changing human input or ownership', async () => {
+    await start(); await mcp('open', { url: target })
+    await command({ type: 'inspect', action: { kind: 'evaluate', code: 'const field=document.querySelector("#name");field.type="password";field.value="native-probe-secret";field.focus()' } })
+    await page.getByRole('button', { name: 'Взять управление', exact: true }).click()
+    await page.getByText('Управление у вас.', { exact: false }).waitFor()
+    const code = 'JSON.stringify({html:document.documentElement.outerHTML,focus:document.activeElement.id,value:document.querySelector("#name").value,scrollY})'
+    try {
+      const before = await command({ type: 'inspect', action: { kind: 'evaluate', code } })
+      const result = await mcp('probe', { selector: '#name' })
+      expect(result).toMatchObject({ ok: true, page: { url: target }, probe: { surface: 'chromium', selector: '#name', visibility: { visibleByBrowser: true }, state: { nativeDisabled: false, nativeReadOnly: false }, pointer: { status: 'reachable' } } })
+      expect(JSON.stringify(result)).not.toContain('native-probe-secret')
+      expect(await command({ type: 'status' })).toMatchObject({ control: 'user', lastActor: 'user' })
+      expect((await command({ type: 'inspect', action: { kind: 'evaluate', code } })).value).toBe(before.value)
+    } finally { await page.getByRole('button', { name: 'Вернуть управление модели' }).click() }
+  })
+  it('model reads native accessibility evidence without changing human ownership or private input', async () => {
+    await start(); await mcp('open', { url: target })
+    await command({ type: 'inspect', action: { kind: 'evaluate', code: 'const field=document.querySelector("#name");field.type="password";field.value="native-accessibility-secret";field.focus()' } })
+    await page.getByRole('button', { name: 'Взять управление', exact: true }).click()
+    await page.getByText('Управление у вас.', { exact: false }).waitFor()
+    try {
+      const result = await mcp('accessibility', { selector: '#name' })
+      expect(result).toMatchObject({ page: { url: target }, accessibility: { source: 'chromium-accessibility', selector: '#name', node: { role: 'textbox', name: 'Имя', ignored: false, properties: expect.arrayContaining([expect.objectContaining({ name: 'focused', value: true })]) } } })
+      expect(JSON.stringify(result)).not.toContain('native-accessibility-secret')
+      expect(result).not.toHaveProperty('ok')
+      expect(await command({ type: 'status' })).toMatchObject({ control: 'user', lastActor: 'user' })
+    } finally { await page.getByRole('button', { name: 'Вернуть управление модели' }).click() }
+  })
   it('ввод модели виден пользователю и обычным browser-командам', async () => {
     await start(); await mcp('open', { url: target }); await mcp('type', { selector: '#name', text: 'Привет от модели' })
     expect(await command({ type: 'selector', action: { kind: 'read', selector: 'output' } })).toMatchObject({ text: 'Привет от модели' })

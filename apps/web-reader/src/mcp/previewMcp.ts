@@ -6,6 +6,8 @@ import { browserDiagnosticsRequireChromium, normalizeBrowserDiagnosticOptions } 
 import { BROWSER_DOWNLOAD_MODEL_CHUNK, BROWSER_DOWNLOAD_TEXT_CHUNK, isBrowserDownloadInfo, isBrowserDownloadListResult, isBrowserDownloadReadResult } from '@voicechat/shared'
 import { BROWSER_DIALOG_ANSWER_LIMIT, normalizeBrowserDialogAnswer, isBrowserDialogListResult, isBrowserSessionMetadata } from '@voicechat/shared'
 import { isBrowserSiteDataResetResult, normalizeBrowserSiteDataReset } from '@voicechat/shared'
+import { isPreviewProbeResult, PREVIEW_PROBE_LIMITS } from '@voicechat/shared'
+import { isPreviewAccessibilityResult, PREVIEW_ACCESSIBILITY_LIMITS } from '@voicechat/shared'
 import type { BrowserActionOutcome, BrowserImageResult, BrowserControlCommand, BrowserModelScreenshotOptions } from '@voicechat/shared'
 // MCP-эндпоинт «browser»: инструменты модели для управления панелью веб-превью
 // пользователя (открыть URL, найти элемент, клик, ввод текста, структурированное
@@ -79,6 +81,13 @@ function toolResult(outcome: PreviewActionOutcome | BrowserActionOutcome): { con
   return { content: [{ type: 'text', text: json }] }
 }
 
+function validProbeReport(value: unknown, surface: 'proxy' | 'chromium'): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const fields = value as Record<string, unknown>
+  const result = { page: fields.page, probe: fields.probe }
+  return isPreviewProbeResult(result) && result.probe.surface === surface
+}
+
 export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMcpOptions): void {
   const turns = opts.turns ?? createPreviewTurnTokens(opts.secret)
   // Свой scope с парсером-пустышкой — тело читает транспорт MCP-SDK (см. kbMcp.ts).
@@ -111,14 +120,49 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           if (!result || !('cursor' in result) || typeof result.cursor !== 'number' || !(action.kind === 'console' ? 'console' in result && Array.isArray(result.console) : 'network' in result && Array.isArray(result.network))) return toolResult({ ok: false, error: 'Раннер не подтвердил расширенное чтение журнала. Обновите browser-runner.' })
         }
         if (direct?.ok && action.kind === 'evaluate' && action.timeoutMs !== undefined && (!direct.result || !('valueFormat' in direct.result) || !('elapsedMs' in direct.result))) return toolResult({ ok: false, error: 'Раннер не подтвердил ограничение evaluate. Обновите browser-runner.' })
+        if (direct?.ok && action.kind === 'probe' && !validProbeReport(direct.result, 'chromium')) return toolResult({ ok: false, error: 'The native runner did not return a valid control probe. Update browser-runner and retry.' })
+        if (direct?.ok && action.kind === 'accessibility') {
+          const fields = direct.result as Record<string, unknown> | undefined
+          const result = { page: fields?.page, accessibility: fields?.accessibility }
+          if (!isPreviewAccessibilityResult(result)) return toolResult({ ok: false, error: 'The runner did not return valid native accessibility evidence. Update browser-runner and retry.' })
+          return toolResult({ ok: true, result })
+        }
         if (direct) return toolResult(direct)
         if ((action.kind === 'console' || action.kind === 'network') && browserDiagnosticsRequireChromium(action)) return toolResult({ ok: false, error: 'Вкладки, курсор и расширенные фильтры журналов доступны только в Playwright Reader или Chromium-проверке.' })
         if (action.kind === 'evaluate' && action.timeoutMs !== undefined) return toolResult({ ok: false, error: 'timeoutMs evaluate доступен только в Playwright Reader или Chromium-проверке.' })
+        if (action.kind === 'accessibility') return toolResult({ ok: false, error: 'Native accessibility requires Chromium mode. Switch the Web Reader engine to Chromium.' })
         if (action.frame !== undefined) return toolResult({ ok: false, error: 'frame доступен только в Playwright Reader или Chromium-проверке.' })
         const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
+        if (outcome.ok && action.kind === 'probe' && !validProbeReport(outcome.result, 'proxy')) return toolResult({ ok: false, error: 'The proxy page did not return a valid control probe. Reload the Web Reader page and retry.' })
         return toolResult(outcome)
       }
       const L = PREVIEW_ACTION_LIMITS
+      server.registerTool('accessibility', {
+        description: 'Read one exact standard CSS target from Chromium’s native accessibility tree, including hidden or ignored nodes. Returns role, name, description, selected states, name-source precedence and related selectors. This source differs from the DOM-derived a11y snapshot. Does not click, focus, scroll or return live control values. Name and description are application text. Read truncation and limits; single-node evidence does not prove a screen-reader scenario. Chromium only; no frame scope or caller code.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: {
+          selector: z.string().trim().min(1).max(PREVIEW_ACCESSIBILITY_LIMITS.selector),
+          frame: z.never().optional(),
+          code: z.never().optional()
+        }
+      }, async options => run({ kind: 'accessibility', ...options }))
+      server.registerTool('probe', {
+        description: 'Observe one standard CSS target without clicking, focusing, scrolling or reading its value. Reports browser visibility, native and declared disabled/read-only/inert state, sampled pointer interception and source selectors. Hidden targets can be inspected. Pointer reachability is separate from activation and does not guarantee a successful application action. Read limits and truncation; frame scope is not supported.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: { selector: z.string().trim().min(1).max(PREVIEW_PROBE_LIMITS.selector), frame: z.never().optional() }
+      }, async options => run({ kind: 'probe', ...options }))
+      server.registerTool('audit', {
+        description: 'Inspect the current Web Reader document in proxy or native Chromium mode for QA issues. Returns rule IDs, selectors, severity, evidence, coverage limits and nextOffset. Use mode:list to discover checks, mode:run to inspect. The returned groups list discovers available diagnostic areas. Heuristic findings require visual confirmation. Default group: markup. This tool does not modify the page.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: {
+          group: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/).optional(),
+          selector: z.string().trim().min(1).max(1000).optional(),
+          rules: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,79}$/)).min(1).max(30).refine(ids => new Set(ids).size === ids.length).optional(),
+          mode: z.enum(['list', 'run']).optional(),
+          offset: z.number().int().min(0).max(500).optional(),
+          limit: z.number().int().min(1).max(30).optional()
+        }
+      }, async options => run({ kind: 'audit', ...options }))
       const frameSchema = z.union([z.string().trim().min(1).max(L.selector), z.array(z.string().trim().min(1).max(L.selector)).min(1).max(8)]).optional().describe('Селектор iframe или цепочка вложенных iframe из frames. Только Chromium; без параметра — верхняя страница.')
       // Одинаковое разрешение машины для open и new-tab: доступ берётся из хода.
       const resolveUrl = async (url: string): Promise<{ url: string } | { error: string }> => {
@@ -530,8 +574,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'a11y',
         {
           description:
-            'Дерево доступности открытой в превью страницы: роли и имена элементов, как их видит скринридер ' +
-            '(button «Сохранить», textbox «Пароль»), с селекторами для click/type. Компактнее read для навигации по UI.',
+            'DOM-derived role/name snapshot of the open preview page, with selectors for click/type. ' +
+            'This compact navigation aid can differ from Chromium native accessibility; use accessibility for native evidence about one selected node.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
             limit: z.number().positive().max(L.a11yNodes).optional().describe(`Максимум узлов (по умолчанию ${L.a11yNodes})`)
