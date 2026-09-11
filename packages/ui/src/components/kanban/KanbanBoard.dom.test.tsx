@@ -1300,8 +1300,28 @@ describe('KanbanBoard — состояния загрузки, пустоты и
   it('повторная загрузка уже показанной доски её не подменяет скелетоном', () => {
     renderBoard({ loading: true })
     expect(screen.queryByTestId('kanban-skeleton')).not.toBeInTheDocument()
-    expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
+    const visibleBoard = screen.getByTestId('kanban-board')
+    expect(visibleBoard).toBeInTheDocument()
+    expect(visibleBoard.closest('.jboard-wrap')).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByText('Обновляем доску…')).toBeInTheDocument()
+    expect(screen.getByTestId('board-snapshot-time')).toHaveTextContent('Обновляется…')
+    expect(screen.getByTestId('board-snapshot-time')).toHaveAttribute('data-refreshing', 'true')
+  })
+
+  it('показывает время самого свежего изменения снимка и не меняет его при поиске', async () => {
+    const now = Date.now()
+    renderBoard({ board: { ...board, tasks: [
+      task({ id: 'older', title: 'Старая', updatedAt: now - 30 * 60_000 }),
+      task({ id: 'latest', title: 'Свежая', updatedAt: now - 5 * 60_000 })
+    ] } })
+    const snapshot = screen.getByTestId('board-snapshot-time')
+    expect(snapshot).toHaveAttribute('dateTime', new Date(now - 5 * 60_000).toISOString())
+    expect(snapshot).toHaveAccessibleName(/^Снимок доски\. Обновлено:/)
+    expect(snapshot).toHaveTextContent('Данные: 5 мин')
+    expect(snapshot).toHaveClass('jboard-snapshot--fresh')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'Старая')
+    expect(snapshot).toHaveAttribute('dateTime', new Date(now - 5 * 60_000).toISOString())
   })
 
   it('ошибка без доски предлагает «Повторить»', async () => {

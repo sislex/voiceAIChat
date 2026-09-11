@@ -79,6 +79,7 @@ describe('стили открытой карточки задачи', () => {
     'jcard-updated', 'jcard-updated--fresh', 'jcard-updated--stale',
     'jcard-stage-actions', 'jcard-progress', 'jcard-progress-bar', 'jcard-progress-fill',
     'jcard-progress-text', 'jcard-progress--empty', 'jcard-progress--complete',
+    'jboard-snapshot', 'jboard-snapshot--fresh', 'jboard-snapshot--stale',
     'jcol-head', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
   ])('класс .%s имеет правила', (cls) => {
     expect(styled(cls)).toBe(true)
