@@ -66,3 +66,10 @@ it('локальная сборка без Git помечает неизвест
     ).commit
   ).toBeNull()
 })
+
+it('requires the localized UI host while continuing to accept older panels', () => {
+  const localized = { ...manifest, host: { minVersion: '1.1.0', maxVersionExclusive: '2.0.0' } }
+  expect(() => parseApplicationFrontendManifest(localized, 'make-ui', '1.0.0')).toThrow('API оболочки')
+  expect(parseApplicationFrontendManifest(localized, 'make-ui')).toEqual(localized)
+  expect(parseApplicationFrontendManifest(manifest, 'make-ui')).toEqual(manifest)
+})

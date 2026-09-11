@@ -5,7 +5,8 @@ import {
 } from './applicationRelease'
 
 /** API оболочки меняется отдельно от версии её интерфейса. */
-export const APPLICATION_HOST_API_VERSION = '1.0.0'
+// Version 1.1 adds application-supplied labels and language to shared dialogs and notifications.
+export const APPLICATION_HOST_API_VERSION = '1.1.0'
 export interface ApplicationFrontendAsset {
   path: string
   integrity: string

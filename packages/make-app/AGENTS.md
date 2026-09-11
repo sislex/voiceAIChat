@@ -11,6 +11,26 @@ or Markdown files in English. Use English for new test descriptions and examples
 Preserve application behavior when translating comments. Communicate with the user
 in English.
 
+## Interface localization
+
+Make supports Russian and English independently of the host. Put interface text in
+`src/i18n/messages.ts` or `commonMessages.ts`; use `mt` and subscribe with
+`useMakeLocale` in each surface. Use the wrappers in `src/i18n/ui.tsx` for dialogs,
+errors, confirmations, and notifications so shared defaults do not leak through.
+Translate known server/shared metadata with `localizeMakeText`; preserve project
+content, paths, and technical diagnostics. Preview-language emulation is a separate
+setting. Add both languages and matching interpolation parameters in the same change.
+
+The Monaco control adapter uses the upstream MIT Russian catalog. After upgrading
+Monaco, run `node packages/make-app/scripts/update-monaco-locale.mjs` from the root
+and verify find/menu controls in Chromium. Do not translate editor source or remount
+its model when switching language. `src/i18n/*test*`, the Monaco adapter DOM test,
+and `e2e/make.e2e.test.ts` cover localization and draft preservation.
+
+Localized dialogs and notifications require host API 1.1.0. Keep the minimum in
+`release.json` aligned with any shared host UI ports the panel consumes; an older
+host must reject the new artifact instead of ignoring translated labels.
+
 ## Development boundaries
 
 - Gate: `npm run gate:app -- make-ui`; internal edits select the application.

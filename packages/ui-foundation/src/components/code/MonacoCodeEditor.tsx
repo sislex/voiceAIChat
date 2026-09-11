@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type * as MonacoNs from 'monaco-editor/esm/vs/editor/editor.api'
 import Editor, { type OnMount } from '@monaco-editor/react'
-import { attachJsxAutoClose, setupMonaco, syncProjectModels } from './monacoSetup'
+import { attachJsxAutoClose, setupMonaco, syncProjectModels, setModelSnippetTranslator } from './monacoSetup'
 import { monacoLanguageFor } from './monacoLang'
 import type { CodeEditorProps } from '../CodeEditor'
 
 /** Редактор на Monaco — настоящий VS Code: подсветка TSX/JSX, автодополнение, поиск, сворачивание. */
-export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles, onSelectionChange, onInlineCommand, readOnly, changedLines }: CodeEditorProps): JSX.Element {
+export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles, onSelectionChange, onInlineCommand, readOnly, changedLines, loadingLabel = 'Загружаю редактор…', translateUiText }: CodeEditorProps): JSX.Element {
   const monaco = useMemo(() => setupMonaco(), [])
   useEffect(() => { if (projectFiles) syncProjectModels(monaco, projectFiles) }, [monaco, projectFiles])
   const saveRef = useRef(onSave)
   saveRef.current = onSave
   const editorRef = useRef<MonacoNs.editor.IStandaloneCodeEditor | null>(null)
+  const translateRef = useRef(translateUiText); translateRef.current = translateUiText
   const selRef = useRef(onSelectionChange); selRef.current = onSelectionChange
   const inlineRef = useRef(onInlineCommand); inlineRef.current = onInlineCommand
   // Маркеры ошибок компиляции: приходят из make_check после сохранения.
@@ -36,6 +37,8 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
   }, [changedLines, value])
   const onMount: OnMount = (editor, m) => {
     editorRef.current = editor
+    const model = editor.getModel()
+    if (model) setModelSnippetTranslator(model, (text) => translateRef.current?.(text) ?? text)
     // Редактор пересоздаётся при смене файла (key={path}) — коллекция декораций старого экземпляра мертва.
     decorationsRef.current = null
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => saveRef.current?.())
@@ -61,7 +64,7 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
         theme="vs-dark"
         onChange={(next) => onChange(next ?? '')}
         onMount={onMount}
-        loading={<div className="make-monaco-loading">Загружаю редактор…</div>}
+        loading={<div className="make-monaco-loading">{loadingLabel}</div>}
         options={{
           readOnly: Boolean(readOnly),
           fontSize: 12.5,

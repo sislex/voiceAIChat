@@ -1,3 +1,4 @@
+import { mt, useMakeLocale, formatMakeDate } from '../i18n'
 // Preview element comments (item 32): numbered list matching iframe inspector markers, a form for
 // the selected element, resolve/delete actions, and forwarding open issues to the assistant.
 import { useState } from 'react'
@@ -21,11 +22,12 @@ export interface MakeCommentsPanelProps {
 /** Assistant request text for open comments, numbered consistently with preview markers. */
 export function commentsPrompt(comments: MakeComment[]): string {
   const open = comments.filter((c) => !c.resolved && c.status !== 'pending')
-  const lines = open.map((c, i) => `${i + 1}. ${c.elementLabel || c.selector} (селектор \`${c.selector}\`): ${c.text}`)
-  return `Замечания к превью (${open.length}):\n${lines.join('\n')}\nИсправь каждое: найди элемент по селектору в файлах проекта (make_read_file), внеси правку и перечисли, что изменил по каждому пункту. `
+  const lines = open.map((c, i) => mt("valueValueSelectorValueValue", { p0: i + 1, p1: c.elementLabel || c.selector, p2: c.selector, p3: c.text }))
+  return mt("previewFeedbackValueValueFixEachItemFindThe", { p0: open.length, p1: lines.join('\n') })
 }
 
 export function MakeCommentsPanel({ comments, selected, onAdd, onResolve, onApprove, onRemove, onHighlight, onAskAssistant, onClose }: MakeCommentsPanelProps): JSX.Element {
+  useMakeLocale()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const open = comments.filter((c) => !c.resolved && c.status !== 'pending')
@@ -36,37 +38,37 @@ export function MakeCommentsPanel({ comments, selected, onAdd, onResolve, onAppr
     try { await onAdd(text.trim()); setText('') } finally { setBusy(false) }
   }
   return (
-    <aside className="make-comments" aria-label="Комментарии к превью" data-testid="make-comments">
+    <aside className="make-comments" aria-label={mt("previewComments")} data-testid="make-comments">
       <div className="make-comments-head">
-        <strong>Комментарии</strong>
-        <small>{open.length} открытых · {comments.filter((c) => c.resolved).length} решено{pending.length > 0 ? <> · <b className="make-comment-pending-count" data-testid="make-comments-pending">{pending.length} на модерации</b></> : null}</small>
+        <strong>{mt("comments")}</strong>
+        <small>{open.length}{' '}{mt("open")}{' '}{comments.filter((c) => c.resolved).length}{' '}{mt("resolved")}{pending.length > 0 ? <> · <b className="make-comment-pending-count" data-testid="make-comments-pending">{pending.length}{' '}{mt("awaitingModeration")}</b></> : null}</small>
         <span className="make-head-spacer" />
-        {onAskAssistant && open.length > 0 && <Button size="sm" variant="primary" onClick={() => onAskAssistant(commentsPrompt(comments))}>Исправить все</Button>}
-        <IconButton size="sm" aria-label="Закрыть комментарии" title="Закрыть" onClick={onClose}>✕</IconButton>
+        {onAskAssistant && open.length > 0 && <Button size="sm" variant="primary" onClick={() => onAskAssistant(commentsPrompt(comments))}>{mt("fixAll")}</Button>}
+        <IconButton size="sm" aria-label={mt("closeComments")} title={mt("close")} onClick={onClose}>✕</IconButton>
       </div>
       <form className="make-comment-form" onSubmit={(e) => { e.preventDefault(); void submit() }}>
         {selected
           ? <code className="make-comment-target" title={selected.selector}>&lt;{selected.tag}&gt; {selected.text ? `«${selected.text.slice(0, 40)}»` : selected.selector}</code>
-          : <span className="fsub">Выберите элемент в превью (режим выбора), чтобы оставить комментарий.</span>}
-        <textarea className="tin" aria-label="Текст комментария" placeholder={selected ? 'Что не так с этим элементом?' : 'Сначала выберите элемент'} rows={2} value={text} disabled={!selected || busy} onChange={(e) => setText(e.target.value)}
+          : <span className="fsub">{mt("selectAnElementInThePreviewUsingSelectionMode")}</span>}
+        <textarea className="tin" aria-label={mt("commentText")} placeholder={selected ? mt("whatIsWrongWithThisElement") : mt("selectAnElementFirst")} rows={2} value={text} disabled={!selected || busy} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
-        <Button size="sm" variant="secondary" type="submit" disabled={!selected || !text.trim() || busy} loading={busy}>Добавить</Button>
+        <Button size="sm" variant="secondary" type="submit" disabled={!selected || !text.trim() || busy} loading={busy}>{mt("add")}</Button>
       </form>
-      {comments.length === 0 ? <EmptyState title="Комментариев пока нет" description="Выберите элемент в превью и опишите, что поправить — метка появится прямо на странице." /> : (
+      {comments.length === 0 ? <EmptyState title={mt("noCommentsYet")} description={mt("selectAnElementInThePreviewAndDescribeWhat")} /> : (
         <ul className="make-comment-list" role="list">
           {comments.map((c) => {
             const n = open.indexOf(c) + 1
             return (
               <li key={c.id} className={`make-comment${c.resolved ? ' resolved' : ''}${c.status === 'pending' ? ' make-comment--pending' : ''}`}>
-                <button type="button" className="make-comment-pin" aria-label={`Показать элемент комментария ${c.resolved ? '' : n}`} title="Показать в превью" onClick={() => onHighlight(c.selector)}>{c.resolved ? '✓' : n}</button>
+                <button type="button" className="make-comment-pin" aria-label={mt("showCommentElementValue", { p0: c.resolved ? '' : n })} title={mt("showInPreview")} onClick={() => onHighlight(c.selector)}>{c.resolved ? '✓' : n}</button>
                 <div className="make-comment-body">
                   <code className="make-comment-el" title={c.selector}>{c.elementLabel || c.selector}</code>
                   <p>{c.text}</p>
-                  <small>{c.status === 'pending' ? '⏳ на модерации · ' : ''}{c.author === 'guest' ? `зритель${c.guestName ? ` ${c.guestName}` : ''}` : c.author} · {new Date(c.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small>
+                  <small>{c.status === 'pending' ? mt("awaitingModeration_f88224") : ''}{c.author === 'guest' ? mt("viewerValue", { p0: c.guestName ? ` ${c.guestName}` : '' }) : c.author} · {formatMakeDate(c.createdAt)}</small>
                 </div>
                 <span className="make-comment-actions">
-                  {c.status === 'pending' && onApprove ? <Button size="sm" variant="primary" onClick={() => onApprove(c.id)}>Одобрить</Button> : <Button size="sm" variant="ghost" onClick={() => onResolve(c.id, !c.resolved)}>{c.resolved ? 'Вернуть' : 'Решено'}</Button>}
-                  <IconButton size="sm" aria-label={`Удалить комментарий ${c.text.slice(0, 20)}`} title="Удалить" onClick={() => onRemove(c.id)}>✕</IconButton>
+                  {c.status === 'pending' && onApprove ? <Button size="sm" variant="primary" onClick={() => onApprove(c.id)}>{mt("approve")}</Button> : <Button size="sm" variant="ghost" onClick={() => onResolve(c.id, !c.resolved)}>{c.resolved ? mt("restore") : mt("resolved_8113f2")}</Button>}
+                  <IconButton size="sm" aria-label={mt("deleteCommentValue", { p0: c.text.slice(0, 20) })} title={mt("delete")} onClick={() => onRemove(c.id)}>✕</IconButton>
                 </span>
               </li>
             )

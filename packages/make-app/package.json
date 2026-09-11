@@ -24,7 +24,8 @@
     "@voicechat/ui-kit": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@voicechat/ui-foundation": "*"
+    "@voicechat/ui-foundation": "*",
+    "@voicechat/make-contracts": "*"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",
