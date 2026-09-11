@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { machinePreviewUrl, planModelAction } from '@voicechat/shared'
+import { isPreviewAccessibilityResult, isPreviewProbeResult, machinePreviewUrl, planModelAction } from '@voicechat/shared'
 import type { BrowserRunnerClient } from '@voicechat/browser-contracts/client'
 import type { PlaywrightReaderCore } from './core.js'
 import type { PlaywrightReaderService } from './service.js'
@@ -55,6 +55,9 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
         })
         // Селекторные ошибки приходят значением. Их нельзя превращать в успешный ответ MCP.
         if ('ok' in result && !result.ok) return { ok: false, error: result.error ?? 'Действие в Chromium не выполнено' }
+        if (action.kind === 'audit' && (!('audit' in result) || result.audit?.version !== 1 || result.audit.surface !== 'chromium')) return { ok: false, error: 'This browser runner does not support native audits. Update browser-runner and retry.' }
+        if (action.kind === 'accessibility' && (!('accessibility' in result) || !isPreviewAccessibilityResult({ page: result.page, accessibility: result.accessibility }))) return { ok: false, error: 'This browser runner did not return native accessibility evidence. Update browser-runner and retry.' }
+        if (action.kind === 'probe' && (!('probe' in result) || !isPreviewProbeResult({ page: result.page, probe: result.probe }) || result.probe?.surface !== 'chromium')) return { ok: false, error: 'This browser runner did not return a valid native control probe. Update browser-runner and retry.' }
         return { ok: true, result }
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : 'Действие в Chromium не выполнено' }

@@ -4,7 +4,7 @@
 // TODO, пока человек не перетащит её руками. Здесь зафиксировано, что она
 // уезжает сама и что сломанное окружение не превращается в бесконечный цикл.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -12,6 +12,7 @@ import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
+import { AgentRegistry } from './agents/registry.js'
 import type { Board, LlmClient, LlmHandle, LlmRequest, ProjectDetail, Task, TaskPreparationRun } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
@@ -51,14 +52,16 @@ beforeEach(async () => {
     db,
     sessionSecret: SECRET,
     claude: fakeCli(),
-    codex: fakeCli()
+    codex: fakeCli(),
+    ciExecutor: { run: async () => ({ exitCode: 0, timedOut: false }) }
   })
   adminTok = signToken({ name: 'admin', role: 'admin' }, SECRET)
 })
 
 afterEach(async () => {
   await app.close()
-  db.close()
+  await db.close()
+  vi.restoreAllMocks()
 })
 
 /** Проект с системным workflow и задача в TODO. */
@@ -74,6 +77,95 @@ async function taskInBacklog(): Promise<{ projectId: string; taskId: string; col
 
 const enableAutoPilot = (projectId: string, taskId: string) =>
   inj({ method: 'PATCH', url: `/api/projects/${projectId}/tasks/${taskId}`, payload: { autoPilot: true } })
+
+describe('автопроход: ручное QA и независимость карточек', () => {
+  it('пропуски двух QA-этапов сразу приводят к Automated QA и очереди merge', async () => {
+    const { projectId, taskId, columns } = await taskInBacklog()
+    const machine = await db.machines.createAgent('admin', 'QA')
+    await db.machines.linkMachine('admin', projectId, machine.id)
+    vi.spyOn(AgentRegistry.prototype, 'isOnline').mockReturnValue(true)
+    for (const semantic of ['preparation', 'ready', 'development', 'component_qa']) {
+      await db.tasks.moveTask('admin', projectId, taskId, { columnId: columns.find((column) => column.semanticType === semantic)!.id })
+    }
+    await db.ready
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    const readiness = { functionalRequirements: 'Серверная задача', acceptanceCriteria: 'Проверки проходят', acceptanceCriteriaConflict: false, uiImpact: 'none', testCases: [], affectedComponents: [] }
+    raw.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,status,readiness_json,created_at,finished_at) VALUES (?,?,?,'success',?,1,2)`).run('prep-qa', projectId, taskId, JSON.stringify(readiness))
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,1,'released',3)`).run('ws-qa', projectId, taskId, machine.id, '/qa', 'feature/qa', 'a'.repeat(40))
+    raw.prepare(`INSERT INTO ci_runs (id,project_id,task_id,status,workspace_id,triggered_by,mode,created_at) VALUES (?,?,?,'success',?,'admin','development',4)`).run('dev-qa', projectId, taskId, 'ws-qa')
+    const mergeStart = vi.spyOn(db.ci, 'startMergeRun').mockRejectedValue(new Error('Проверяем только постановку на merge'))
+    await enableAutoPilot(projectId, taskId)
+    await eventually(() => semanticOf(projectId, taskId), (stage) => stage === 'awaiting_merge')
+    await eventually(async () => mergeStart.mock.calls.length, (count) => count >= 1)
+    expect((await db.tasks.getComponentQaTaskState('admin', projectId, taskId))!.latestRun?.status).toBe('skipped')
+    expect((await db.ci.getIntegrationTestTaskState('admin', projectId, taskId))!.latestRun?.status).toBe('skipped')
+    expect((await db.qa.listQaStageRuns('admin', projectId, taskId, 'automated_qa'))[0].status).toBe('success')
+  })
+
+  it('сбой инфраструктуры QA не создаёт немедленный бесконечный повтор', async () => {
+    const { projectId, taskId, columns } = await taskInBacklog()
+    const machine = await db.machines.createAgent('admin', 'QA')
+    await db.machines.linkMachine('admin', projectId, machine.id)
+    vi.spyOn(AgentRegistry.prototype, 'isOnline').mockReturnValue(true)
+    vi.spyOn(Date, 'now').mockReturnValue(1000)
+    for (const semantic of ['preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa']) {
+      await db.tasks.moveTask('admin', projectId, taskId, { columnId: columns.find((column) => column.semanticType === semantic)!.id })
+    }
+    await enableAutoPilot(projectId, taskId)
+    await eventually(() => db.qa.listQaStageRuns('admin', projectId, taskId, 'automated_qa'), (runs) => runs[0]?.status === 'failed')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(await db.qa.listQaStageRuns('admin', projectId, taskId, 'automated_qa')).toHaveLength(1)
+    expect((await db.tasks.getTaskDetail('admin', projectId, taskId))!.autoPilotFixCycles).toBe(0)
+  })
+
+  async function manualQaTask() {
+    const fixture = await taskInBacklog()
+    for (const semantic of ['preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa']) {
+      await db.tasks.moveTask('admin', fixture.projectId, fixture.taskId, { columnId: fixture.columns.find((column) => column.semanticType === semantic)!.id })
+    }
+    return fixture
+  }
+
+  it('с выключенной остановкой ставит задачу в ожидание merge и сразу будит следующий тик', async () => {
+    const { projectId, taskId } = await manualQaTask()
+    const snapshots = vi.spyOn(db.tasks, 'autoPilotSnapshot')
+    await enableAutoPilot(projectId, taskId)
+    await eventually(() => semanticOf(projectId, taskId), (stage) => stage === 'awaiting_merge')
+    await eventually(async () => snapshots.mock.calls.length, (count) => count >= 2)
+  })
+
+  it('ждёт ручное QA, а снятие флага немедленно продолжает автопроход', async () => {
+    const { projectId, taskId } = await manualQaTask()
+    const url = `/api/projects/${projectId}/tasks/${taskId}`
+    expect((await inj({ method: 'PATCH', url, payload: { autoPilot: true, autoPilotRequiresManualQa: true } })).statusCode).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(await semanticOf(projectId, taskId)).toBe('manual_qa')
+    await inj({ method: 'PATCH', url, payload: { autoPilotRequiresManualQa: false } })
+    await eventually(() => semanticOf(projectId, taskId), (stage) => stage === 'awaiting_merge')
+  })
+
+  it('не принимает строку вместо переключателя', async () => {
+    const { projectId, taskId } = await taskInBacklog()
+    const response = await inj({ method: 'PATCH', url: `/api/projects/${projectId}/tasks/${taskId}`, payload: { autoPilotRequiresManualQa: 'false' } })
+    expect(response.statusCode).toBe(400)
+  })
+
+  it('ошибка первой карточки не мешает второй пройти ручное QA', async () => {
+    const { projectId, taskId, columns } = await manualQaTask()
+    const second = (await db.tasks.createTask('admin', projectId, { title: 'Вторая', columnId: columns.find((column) => column.semanticType === 'manual_qa')!.id }))!
+    await db.tasks.updateTask('admin', projectId, second.id, { autoPilot: true })
+    const snapshot = db.tasks.autoPilotSnapshot.bind(db.tasks)
+    vi.spyOn(db.tasks, 'autoPilotSnapshot').mockImplementation(async (id) => (await snapshot(id)).sort((a, b) => Number(b.task.id === taskId) - Number(a.task.id === taskId)))
+    const transition = db.tasks.transitionAutoPilotTask.bind(db.tasks)
+    vi.spyOn(db.tasks, 'transitionAutoPilotTask').mockImplementation((id, tid, to, action) => {
+      if (tid === taskId) return Promise.reject(new Error('Ошибка первой карточки'))
+      return transition(id, tid, to, action)
+    })
+    await enableAutoPilot(projectId, taskId)
+    await eventually(() => semanticOf(projectId, second.id), (stage) => stage === 'awaiting_merge')
+    expect(await semanticOf(projectId, taskId)).toBe('manual_qa')
+  })
+})
 
 async function runs(projectId: string, taskId: string): Promise<TaskPreparationRun[]> {
   const res = await inj({ method: 'GET', url: `/api/projects/${projectId}/tasks/${taskId}/preparation/runs` })
@@ -118,6 +210,14 @@ describe('автопроход у новых задач', () => {
 })
 
 describe('автопроход: начало конвейера', () => {
+  it('нулевой лимит повторов разрешает первую попытку подготовки', async () => {
+    const { projectId, taskId } = await taskInBacklog()
+    await inj({ method: 'PATCH', url: `/api/projects/${projectId}`, payload: { autoPilotFixLimit: 0 } })
+    await enableAutoPilot(projectId, taskId)
+    await eventually(() => runs(projectId, taskId), (list) => list.length === 1 && list[0].status === 'failed')
+    await eventually(() => semanticOf(projectId, taskId), (stage) => stage === 'decision_required')
+    expect(await runs(projectId, taskId)).toHaveLength(1)
+  })
   it('включённый автопроход сам уводит задачу из TODO в подготовку и запускает попытку', async () => {
     const { projectId, taskId } = await taskInBacklog()
     // Попытка не завершается: проверяется сам факт автозапуска, а не её исход.

@@ -4,6 +4,10 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { VoiceChatDb } from './database.js'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import Database from 'better-sqlite3'
 
 let db: VoiceChatDb
 beforeEach(async () => {
@@ -38,6 +42,14 @@ const columnOf = async (projectId: string, taskId: string): Promise<string> => {
 }
 
 describe('автопроход: провал этапа', () => {
+  it('служебный баг не запускает второй конвейер при включённом автопроходе проекта', async () => {
+    const { projectId, taskId } = await setup()
+    await db.projects.updateProject('alice', projectId, { autoPilotDefault: true })
+    const handled = await db.tasks.handleAutoPilotFailure('alice', projectId, taskId, 'automated_qa', 'run-1', 'тесты упали')
+    const bug = (await db.tasks.getCiTask('alice', projectId, handled!.bugTaskId!))!
+    expect(bug.autoPilot).toBe(false)
+    expect((await db.tasks.autoPilotSnapshot(projectId)).map((item) => item.task.id)).toEqual([taskId])
+  })
   it('без признака автопрохода ничего не происходит', async () => {
     const { projectId, taskId } = await setup(false)
     expect(await db.tasks.handleAutoPilotFailure('alice', projectId, taskId, 'automated_qa', 'run-1', 'тесты упали')).toBeNull()
@@ -101,6 +113,51 @@ describe('автопроход: провал этапа', () => {
     // Из awaiting_merge пути в development нет. Раньше обработчик бросал
     // исключение прямо в колбэк завершения рана.
     await (async () => await db.tasks.handleAutoPilotFailure('alice', projectId, taskId, 'automated_qa', 'r1', 'упало'))()
+  })
+})
+
+describe('остановка на ручном QA для отдельной задачи', () => {
+  it('миграция сохраняет прежнюю остановку и не перезаписывает выбор при следующем открытии', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'vc-autopilot-migration-'))
+    const path = join(directory, 'db.sqlite')
+    let migrated = new VoiceChatDb(path)
+    try {
+      await migrated.identity.createUser('alice', '', 'developer')
+      const project = await migrated.projects.createProject('alice', { name: 'P' })
+      await migrated.projects.updateProject('alice', project.id, { autoPilotRequiresManualQa: true })
+      const board = (await migrated.tasks.getBoard('alice', project.id))!
+      const task = (await migrated.tasks.createTask('alice', project.id, { title: 'Legacy', columnId: board.columns[0].id }))!
+      await migrated.close()
+      const legacy = new Database(path)
+      legacy.exec('ALTER TABLE tasks DROP COLUMN auto_pilot_requires_manual_qa')
+      legacy.close()
+      migrated = new VoiceChatDb(path)
+      await migrated.ready
+      expect((await migrated.tasks.getTaskDetail('alice', project.id, task.id))!.autoPilotRequiresManualQa).toBe(true)
+      await migrated.tasks.updateTask('alice', project.id, task.id, { autoPilotRequiresManualQa: false })
+      await migrated.close()
+      migrated = new VoiceChatDb(path)
+      await migrated.ready
+      expect((await migrated.tasks.getTaskDetail('alice', project.id, task.id))!.autoPilotRequiresManualQa).toBe(false)
+    } finally {
+      await migrated.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('наследуется при создании, затем сохраняется независимо от проекта', async () => {
+    const project = await db.projects.createProject('alice', { name: 'P' })
+    await db.projects.updateProject('alice', project.id, { autoPilotDefault: true, autoPilotRequiresManualQa: true })
+    const board = (await db.tasks.getBoard('alice', project.id))!
+    const task = (await db.tasks.createTask('alice', project.id, { title: 'QA', columnId: board.columns[0].id }))!
+    expect(task.autoPilotRequiresManualQa).toBe(true)
+    await db.projects.updateProject('alice', project.id, { autoPilotRequiresManualQa: false })
+    expect((await db.tasks.autoPilotSnapshot(project.id))[0].requiresManualQa).toBe(true)
+    await db.tasks.updateTask('alice', project.id, task.id, { autoPilotRequiresManualQa: false })
+    expect((await db.tasks.autoPilotSnapshot(project.id))[0].requiresManualQa).toBe(false)
+    expect((await db.tasks.getBoard('alice', project.id))!.tasks[0].autoPilotRequiresManualQa).toBe(false)
+    await db.tasks.updateTask('alice', project.id, task.id, { autoPilotRequiresManualQa: true })
+    expect((await db.tasks.getTaskDetail('alice', project.id, task.id))!.autoPilotRequiresManualQa).toBe(true)
   })
 })
 

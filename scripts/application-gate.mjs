@@ -8,7 +8,7 @@ import {
   applicationForPath,
   validateApplicationCatalog
 } from '../packages/shared/src/applicationCatalog.ts'
-import { PACKAGES, selectAffected } from './affected-check.mjs'
+import { PACKAGES, selectAffected, validatePackageDependencies } from './affected-check.mjs'
 const root = resolve(import.meta.dirname, '..')
 const git = (...args) =>
   execFileSync('git', args, {
@@ -20,6 +20,42 @@ const matches = (file, path) => file === path || file.startsWith(path + '/')
 const docs = (file) =>
   /^(docs|plans|artifacts|generated\/kb)\//.test(file) ||
   /(^|\/)(AGENTS|CLAUDE|README)\.md$/.test(file)
+
+export function validateApplicationDependencies(repository = root, catalog = APPLICATION_CATALOG) {
+  validateApplicationCatalog(catalog)
+  const lock = JSON.parse(readFileSync(resolve(repository, 'package-lock.json'), 'utf8'))
+  const workspaces = new Map()
+  for (const path of Object.keys(lock.packages)) {
+    if (!/^(apps|packages)\//.test(path) || path.includes('/node_modules/')) continue
+    const manifestPath = resolve(repository, path, 'package.json')
+    if (!existsSync(manifestPath)) continue
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    const owner = applicationForPath(path, catalog)
+    if (!owner || !owner.workspaces.includes(manifest.name)) {
+      throw new Error(`No application owns workspace ${manifest.name}: ${path}`)
+    }
+    workspaces.set(manifest.name, { manifest, owner })
+  }
+  for (const app of catalog) {
+    for (const name of app.workspaces) {
+      const workspace = workspaces.get(name)
+      if (!workspace) throw new Error(`Missing workspace ${name} for ${app.id}`)
+      const { manifest } = workspace
+      for (const dependency of Object.keys({
+        ...manifest.dependencies,
+        ...manifest.devDependencies,
+        ...manifest.peerDependencies,
+        ...manifest.optionalDependencies
+      })) {
+        const owner = workspaces.get(dependency)?.owner
+        if (owner && owner.id !== app.id && !app.buildDependencies.includes(owner.id)) {
+          throw new Error(`Missing build dependency in application catalog: ${app.id} -> ${owner.id}`)
+        }
+      }
+    }
+  }
+}
+
 export function lockChangedApplications(
   before,
   after,
@@ -252,6 +288,9 @@ export function applicationCommands(app) {
   })
 }
 export async function main(args = process.argv.slice(2)) {
+  // Package tests do not run the root graph tests; reject drift before choosing a gate.
+  validatePackageDependencies(root)
+  validateApplicationDependencies()
   if (args.includes('--fast') && !args.includes('--worktree'))
     args = [...args, '--worktree']
   const dry = args.includes('--dry-run'),
