@@ -1440,14 +1440,21 @@ describe('KanbanBoard — перенос указателем', () => {
     move(60, 140)
     expect(screen.getByTestId('drop-placeholder')).toBeInTheDocument()
     expect(document.querySelector('.vc-drag-ghost')).not.toBeNull()
+    expect(surface).toHaveAttribute('data-dragging', 'pointer')
+    expect(surface).toHaveAttribute('data-drag-task-id', 't1')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Задача «A» взята указателем. Исходная колонка «To Do».')
+    expect(document.querySelector('[data-drop-active="true"]')).not.toBeNull()
     // Копия — картинка, а не второй экземпляр карточки.
     expect(screen.getAllByTestId('task-card')).toHaveLength(3)
 
     move(360, 175)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Цель переноса задачи «A»: Колонка «In Progress», позиция 2 из 2.')
     up(360, 175)
     expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', 't3', null)
     expect(document.querySelector('.vc-draglayer')).toBeNull()
     expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+    expect(surface).not.toHaveAttribute('data-dragging')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Задача «A» перенесена. Колонка «In Progress», позиция 2 из 2.')
     expect(surface.scrollLeft).toBe(120)
     expect(surface.scrollTop).toBe(75)
     expect(bodies[0]!.scrollTop).toBe(0)
@@ -1516,6 +1523,7 @@ describe('KanbanBoard — перенос указателем', () => {
     move(40, 145)
     up(40, 145)
     expect(props.onMoveTask).not.toHaveBeenCalled()
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Задача «A» осталась на месте.')
   })
 
   it('палец: перенос начинается удержанием, короткий скролл его не запускает', () => {
@@ -1567,6 +1575,7 @@ describe('KanbanBoard — перенос указателем', () => {
     expect(props.onMoveTask).not.toHaveBeenCalled()
     expect(document.querySelector('.vc-draglayer')).toBeNull()
     expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Перенос задачи «A» отменён.')
     // Отпускание уже отменённого жеста ничего не двигает.
     up(360, 175)
     expect(props.onMoveTask).not.toHaveBeenCalled()
