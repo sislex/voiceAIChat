@@ -4,7 +4,7 @@ import { appendWebRecorderStep, normalizeWebRecorderStep } from '@shared/webReco
 import { loadScenario, scenarioKey } from './scenarioStorage'
 import { createScenarioRunner, type ScenarioProgress } from './scenarioRunner'
 import { normalizeReaderAddress } from './readerAddress'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { PREVIEW_ACTION_LIMITS, PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, PREVIEW_INSPECTOR_MESSAGE_TYPE, isPreviewInspectorCommand } from '@shared/previewInspector'
 import {
@@ -42,6 +42,9 @@ const VIEWPORTS = [['', 'Адаптив'], ['375', 'iPhone 375'], ['768', 'Пл�
 export function Recorder(): JSX.Element {
   const [url, setUrl] = useState<string | null>(null); const [draft, setDraft] = useState(''); const [recording, setRecording] = useState(false)
   const [inspecting, setInspecting] = useState(false); const [editing, setEditing] = useState(false); const [capturing, setCapturing] = useState(false); const [disposed, setDisposed] = useState(false)
+  const addressRef = useRef<HTMLInputElement>(null)
+  const addressErrorId = useId()
+  const [addressError, setAddressError] = useState<string | null>(null)
   const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<DiagnosticsStep[] | null>(null)
   const [scenarioUrl, setScenarioUrl] = useState<string | null>(null)
@@ -89,7 +92,7 @@ export function Recorder(): JSX.Element {
     setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
     currentUrl.current = next
     if (next) setFrameKey((value) => value + 1)
-    setUrl(next); setDraft(next ?? ''); setError(null)
+    setUrl(next); setDraft(next ?? ''); setError(null); setAddressError(null)
     // Сценарий этой страницы сохраняется в браузере — восстанавливаем при открытии.
     setScenarioUrl(next); setSteps(loadScenario(next)); setSecretValues({})
     reply({ kind: 'page-status', status: next ? 'loading' : 'empty', url: next })
@@ -294,7 +297,7 @@ export function Recorder(): JSX.Element {
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled: inspecting }, sameOrigin) }, [inspecting, url])
   const open = (): void => {
     const result = normalizeReaderAddress(draft, currentUrl.current)
-    if (result.error) { setError(result.error); return }
+    if (result.error) { setAddressError(result.error); addressRef.current?.focus(); return }
     applyUrl(result.url)
     reply({ kind: 'save-url', url: result.url })
   }
@@ -370,13 +373,18 @@ export function Recorder(): JSX.Element {
     URL.revokeObjectURL(link.href)
   }
   if (disposed) return <section className="webpreview" aria-label="Web Reader"><div className="webpreview-empty" role="status">Панель Web Reader отключена host-приложением</div></section>
-  return <section className="webpreview" aria-label="Web Reader">
+  return <section className="webpreview" aria-label="Web Reader" onKeyDown={event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
+      event.preventDefault(); addressRef.current?.focus(); addressRef.current?.select()
+    }
+  }}>
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Назад" title="Назад" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" title="Вперёд" onClick={() => historyGo(1)}>›</IconButton>
       <IconButton variant="secondary" aria-label="Обновить страницу" title="Обновить страницу" disabled={!url} onClick={reload}>↻</IconButton>
-      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
+      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) } }} /></label>
       <Button variant="secondary" type="submit">Открыть</Button>
+      <IconButton variant="secondary" type="button" aria-label="Очистить страницу" title="Очистить страницу" disabled={!url && !draft} onClick={() => { applyUrl(null); reply({ kind: 'save-url', url: null }); addressRef.current?.focus() }}>×</IconButton>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
       {/* Инструменты страницы собраны в свёрнутое меню, чтобы тулбар не переполнял
           узкую панель превью. Активные режимы подсвечивают саму сводку меню. */}
@@ -392,6 +400,7 @@ export function Recorder(): JSX.Element {
         </div>
       </details>
     </form>
+    {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
     {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем страницу…</div>}
     {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button></div>}
     {error && <p className="webpreview-error" role="alert">{error}</p>}

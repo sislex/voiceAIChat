@@ -10,7 +10,7 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 96 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 7 коммит(ов) в areas после сверки: e873c8db fix(web-reader): bound navigation preparation and isolate saves (#144) … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 8 коммит(ов) в areas после сверки: 6e243af8 feat(web-reader): add searchable assistant action history (#145) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 30 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 80 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 103 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1358 коммит(ов) в areas после сверки: e873c8db fix(web-reader): bound navigation preparation and isolate saves (#144) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1359 коммит(ов) в areas после сверки: 6e243af8 feat(web-reader): add searchable assistant action history (#145) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 7 коммит(ов) в areas после сверки: 316c0227 feat(kanban): add column navigator … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 11 коммит(ов) в areas после сверки: 316c0227 feat(kanban): add column navigator … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 753. Последние:
+Всего записей: 754. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-05.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-05.md) — web-reader-ten-cycle-05
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-04.md) — web-reader-ten-cycle-04
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-03.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-03.md) — web-reader-ten-cycle-03
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-02.md) — web-reader-ten-cycle-02
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md) — web-reader-qa-cycle-07
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-06.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-06.md) — web-reader-qa-cycle-06
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-05.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-05.md) — web-reader-qa-cycle-05
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md) — web-reader-qa-cycle-04
 
 ## Исторические планы
 
