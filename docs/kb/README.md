@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: ac340e14 feat(web-reader): expose native accessibility evidence … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 32 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 33 коммит(ов) в areas после сверки: 2b960b44 feat(kanban): improve board search and navigation … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 4 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 148 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 311 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
@@ -23,9 +23,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 80 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 103 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1351 коммит(ов) в areas после сверки: bb60d1ac docs(kb): update after merge 07d7f465-05cb-4f97-b4bf-3bfc36619e26 … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 9 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1354 коммит(ов) в areas после сверки: 8a3cf2a5 Improve Kanban search and keyboard navigation (#140) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 6 коммит(ов) в areas после сверки: 2b960b44 feat(kanban): improve board search and navigation … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 10 коммит(ов) в areas после сверки: 2b960b44 feat(kanban): improve board search and navigation … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-11 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 320 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
@@ -33,7 +33,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-11 | ⚠ 2 коммит(ов) в areas после сверки: 2607fd04 feat: route task tabs and tighten brief validation … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ⚠ 7 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 224 коммит(ов) в areas после сверки: 2607fd04 feat: route task tabs and tighten brief validation … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-11 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: 2b960b44 feat(kanban): improve board search and navigation |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 8 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 4 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-11, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 747. Последние:
+Всего записей: 749. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-01.md) — web-reader-ten-cycle-01
 - [2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md) — web-reader-rebase-main
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md) — web-reader-qa-cycle-08
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md) — web-reader-qa-cycle-07
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md) — web-reader-qa-cycle-03
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md) — web-reader-qa-cycle-02
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md) — Web Reader QA cycle 01 - evidence-based markup audit
-- [2026-09-11-alexeys-macbook-air-2-web-reader-gate-timing.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-gate-timing.md) — Замер отдельных гейтов Web Reader и его UI
 
 ## Исторические планы
 
