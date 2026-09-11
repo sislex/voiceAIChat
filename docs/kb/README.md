@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 82 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 105 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1394 коммит(ов) в areas после сверки: 4fd080ff feat(kanban): add board diagnostics snapshot … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1395 коммит(ов) в areas после сверки: fdb5c5ab test(ui): stabilize lazy dialog loading … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 35 коммит(ов) в areas после сверки: 4fd080ff feat(kanban): add board diagnostics snapshot … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 36 коммит(ов) в areas после сверки: 4fd080ff feat(kanban): add board diagnostics snapshot … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 14 коммит(ов) в areas после сверки: 679cb84f feat(kanban): copy task permalinks … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-12 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 26 коммит(ов) в areas после сверки: 4fd080ff feat(kanban): add board diagnostics snapshot … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 27 коммит(ов) в areas после сверки: fdb5c5ab test(ui): stabilize lazy dialog loading … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-11, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
