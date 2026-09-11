@@ -378,6 +378,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [collapsedColumnsHydrated, setCollapsedColumnsHydrated] = useState(false)
   const [swimlane, setSwimlane] = useState<Swimlane>(props.defaultSwimlane ?? 'none')
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
+  const [collapsedLanesHydrated, setCollapsedLanesHydrated] = useState(false)
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [dragTask, setDragTask] = useState<string | null>(null)
   const [dragColumn, setDragColumn] = useState<string | null>(null)
@@ -536,6 +537,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   }, [allTasks, board, currentUserId, props.projectName])
   const densityStorageKey = filterStorageKey?.replace('voicechat.kanban.filters.v3.', 'voicechat.kanban.density.v1.') ?? null
   const collapsedColumnsStorageKey = filterStorageKey?.replace('voicechat.kanban.filters.v3.', 'voicechat.kanban.collapsed-columns.v1.') ?? null
+  const collapsedLanesStorageKey = filterStorageKey?.replace('voicechat.kanban.filters.v3.', 'voicechat.kanban.collapsed-lanes.v1.') ?? null
   useEffect(() => {
     setDensityHydrated(false)
     setDensity('comfortable')
@@ -570,6 +572,32 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     if (!collapsedColumnsHydrated || !collapsedColumnsStorageKey) return
     try { localStorage.setItem(collapsedColumnsStorageKey, JSON.stringify([...collapsedColumns])) } catch { /* Browser preferences may be unavailable. */ }
   }, [collapsedColumns, collapsedColumnsHydrated, collapsedColumnsStorageKey])
+  useEffect(() => {
+    setCollapsedLanesHydrated(false)
+    setCollapsedLanes(new Set())
+    if (!collapsedLanesStorageKey || swimlane === 'none') {
+      setCollapsedLanesHydrated(true)
+      return
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem(collapsedLanesStorageKey) ?? '{}') as unknown
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+        const ids = (saved as Record<string, unknown>)[swimlane]
+        if (Array.isArray(ids)) setCollapsedLanes(new Set(ids.filter((id): id is string => typeof id === 'string')))
+      }
+    } catch { /* Browser preferences may be unavailable or damaged. */ }
+    setCollapsedLanesHydrated(true)
+  }, [collapsedLanesStorageKey, swimlane])
+  useEffect(() => {
+    if (!collapsedLanesHydrated || !collapsedLanesStorageKey || swimlane === 'none') return
+    try {
+      const raw = JSON.parse(localStorage.getItem(collapsedLanesStorageKey) ?? '{}') as unknown
+      const saved = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+      localStorage.setItem(collapsedLanesStorageKey, JSON.stringify({ ...saved, [swimlane]: [...collapsedLanes] }))
+    } catch {
+      try { localStorage.setItem(collapsedLanesStorageKey, JSON.stringify({ [swimlane]: [...collapsedLanes] })) } catch { /* Browser preferences may be unavailable. */ }
+    }
+  }, [collapsedLanes, collapsedLanesHydrated, collapsedLanesStorageKey, swimlane])
   useEffect(() => {
     setFiltersHydrated(false)
     // Сначала очищаем предыдущий контекст: состояние другого пользователя,
@@ -785,19 +813,20 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     return task.assignee == null ? selected.includeUnassigned : selected.assigneeIds.includes(task.assignee)
   }
 
+  const taskBelongsToLane = (task: Task, lane: { kind: Swimlane; id: string }): boolean => {
+    if (lane.kind === 'none') return true
+    if (lane.kind === 'epic') {
+      if (task.type === 'epic') return false
+      return (epicOf(task, allTasks)?.id ?? '') === lane.id
+    }
+    return (task.assignee ?? '') === lane.id
+  }
+
   const tasksOf = (columnId: string, lane?: { kind: Swimlane; id: string }): Task[] =>
     allTasks
       .filter((t) => t.columnId === columnId && matches(t))
       .filter((t) => matchesColumnAssignee(t, columnId))
-      .filter((t) => {
-        if (!lane || lane.kind === 'none') return true
-        if (lane.kind === 'epic') {
-          if (t.type === 'epic') return false
-          const epic = epicOf(t, allTasks)
-          return (epic?.id ?? '') === lane.id
-        }
-        return (t.assignee ?? '') === lane.id
-      })
+      .filter((t) => !lane || taskBelongsToLane(t, lane))
       .sort((a, b) => compareTasksInColumn(a, b, board?.columns.find((c) => c.id === columnId)?.semanticType ?? 'custom'))
 
   const visibleTasks = columns.flatMap((column) => tasksOf(column.id))
@@ -1753,43 +1782,72 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   // Свимлейны: по эпикам (эпики-карточки скрыты, «Без эпика» — последний) или
   // по исполнителям («Не назначено» — последний).
-  const lanes: Array<{ id: string; title: JSX.Element; count: number }> =
+  const laneTotal = (kind: Swimlane, id: string): number => columns.reduce(
+    (count, column) => count + allTasks.filter((task) => task.columnId === column.id && taskBelongsToLane(task, { kind, id })).length,
+    0
+  )
+  const lanes: Array<{ id: string; name: string; title: JSX.Element; count: number; total: number }> =
     swimlane === 'epic'
       ? [
           ...allEpics.map((e) => ({
             id: e.id,
+            name: e.title,
             title: (
               <span className="jlane-title">
                 <span className="jcard-epic-dot" style={{ background: epicColor(e.id) }} />
                 {e.title}
               </span>
             ),
-            count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'epic', id: e.id }).length, 0)
+            count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'epic', id: e.id }).length, 0),
+            total: laneTotal('epic', e.id)
           })),
           {
             id: '',
+            name: 'Без эпика',
             title: <span className="jlane-title">Без эпика</span>,
-            count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'epic', id: '' }).length, 0)
+            count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'epic', id: '' }).length, 0),
+            total: laneTotal('epic', '')
           }
         ]
       : swimlane === 'assignee'
         ? [
             ...members.map((m) => ({
               id: m.username,
+              name: m.username,
               title: (
                 <span className="jlane-title">
                   <Avatar username={m.username} size={20} /> {m.username}
                 </span>
               ),
-              count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'assignee', id: m.username }).length, 0)
+              count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'assignee', id: m.username }).length, 0),
+              total: laneTotal('assignee', m.username)
             })),
             {
               id: '',
+              name: 'Не назначено',
               title: <span className="jlane-title">Не назначено</span>,
-              count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'assignee', id: '' }).length, 0)
+              count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'assignee', id: '' }).length, 0),
+              total: laneTotal('assignee', '')
             }
           ]
         : []
+
+  useEffect(() => {
+    if (!collapsedLanesHydrated || swimlane === 'none') return
+    const valid = new Set(lanes.map((lane) => lane.id))
+    setCollapsedLanes((current) => {
+      const next = new Set([...current].filter((id) => valid.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [collapsedLanesHydrated, lanes.map((lane) => lane.id).join('\0'), swimlane])
+
+  const toggleLaneCollapsed = (laneId: string): void => {
+    setCollapsedLanes((current) => toggle(current, laneId))
+    requestAnimationFrame(() => {
+      Array.from(boardRef.current?.querySelectorAll<HTMLButtonElement>('[data-lane-collapse-toggle]') ?? [])
+        .find((button) => button.dataset.laneId === laneId)?.focus()
+    })
+  }
 
   const boardOpenTask = openTaskId ? allTasks.find((t) => t.id === openTaskId) : undefined
   // Доска отдаёт лёгкую карточку без тяжёлых текстов; при открытии догружаем
@@ -2332,6 +2390,29 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               tabIndex={0}
               onKeyDown={navigateBoard}
             >
+              {lanes.length > 1 && (
+                <div className="jlane-collapse-actions" role="group" aria-label="Управление дорожками">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={lanes.every((lane) => collapsedLanes.has(lane.id))}
+                    onClick={() => setCollapsedLanes(new Set(lanes.map((lane) => lane.id)))}
+                  >
+                    Свернуть дорожки
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={lanes.every((lane) => !collapsedLanes.has(lane.id))}
+                    onClick={() => setCollapsedLanes(new Set())}
+                  >
+                    Развернуть дорожки
+                  </Button>
+                  <span className="jlane-collapse-status" role="status" aria-live="polite">
+                    Свёрнуто дорожек {lanes.filter((lane) => collapsedLanes.has(lane.id)).length} из {lanes.length}
+                  </span>
+                </div>
+              )}
               <div className="jlane-heads">
                 {columns.map((col) => (
                   <section
@@ -2349,19 +2430,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 {addColumnBox}
               </div>
               {lanes.map((lane) => (
-                <section key={lane.id || '·'} className="jlane" data-testid="swimlane">
+                <section key={lane.id || '·'} className="jlane" data-testid="swimlane" data-lane-id={lane.id}>
                   <button
                     className="jlane-head"
+                    data-lane-collapse-toggle=""
+                    data-lane-id={lane.id}
+                    aria-label={`${collapsedLanes.has(lane.id) ? 'Развернуть' : 'Свернуть'} дорожку «${lane.name}», ${lane.count} ${pluralTasks(lane.count)}${filtersActive ? ` из ${lane.total}` : ''}`}
                     aria-expanded={!collapsedLanes.has(lane.id)}
-                    onClick={() => setCollapsedLanes(toggle(collapsedLanes, lane.id))}
+                    aria-controls={`kanban-lane-content-${lane.id || 'none'}`}
+                    onClick={() => toggleLaneCollapsed(lane.id)}
                   >
                     {/* Раскрытие дорожки — общий шеврон, как у лент карточки. */}
                     <span className="vc-feed-caret" aria-hidden="true" />
                     {lane.title}
-                    <span className="jcol-count">{lane.count}</span>
+                    <span className="jcol-count">{filtersActive ? `${lane.count} из ${lane.total}` : lane.total}</span>
                   </button>
-                  {!collapsedLanes.has(lane.id) && (
-                    <div className="jlane-cols">
+                  <div id={`kanban-lane-content-${lane.id || 'none'}`} className="jlane-cols" hidden={collapsedLanes.has(lane.id)}>
+                    {!collapsedLanes.has(lane.id) && (
+                      <>
                       {columns.map((col) => (
                         <div
                           key={col.id}
@@ -2374,8 +2460,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                           {!collapsedColumns.has(col.id) && lane.id === '' ? composer(col) : null}
                         </div>
                       ))}
-                    </div>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </section>
               ))}
             </div>
