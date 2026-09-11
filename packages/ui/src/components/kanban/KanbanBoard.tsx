@@ -295,6 +295,21 @@ function FilterDropdown({ label, active, children }: { label: string; active: nu
   )
 }
 
+function ActiveFilterChip({ label, onRemove }: { label: string; onRemove: () => void }): JSX.Element {
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      className="jactive-filter-chip"
+      aria-label={`Удалить фильтр: ${label}`}
+      onClick={onRemove}
+    >
+      <span className="jactive-filter-chip-text">{label}</span>
+      <span aria-hidden="true">×</span>
+    </Button>
+  )
+}
+
 export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   // Телефонная раскладка: тот же порог, что у карточки задачи (720px).
   const compact = useMediaQuery(MOBILE_QUERY)
@@ -768,6 +783,79 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         setAnnounce(columnRegionLabel(last, tasksOf(last.id).length) + '.')
       }
     }
+  }
+
+  const activeFilterChips: Array<{ key: string; label: string; onRemove: () => void }> = []
+  if (search.trim()) {
+    activeFilterChips.push({ key: 'search', label: `Поиск: ${search.trim()}`, onRemove: () => setSearch('') })
+  }
+  for (const assignee of assignees) {
+    activeFilterChips.push({
+      key: `assignee:${assignee}`,
+      label: `Исполнитель: ${assignee || 'не назначено'}`,
+      onRemove: () => setAssignees((current) => {
+        const next = new Set(current)
+        next.delete(assignee)
+        return next
+      })
+    })
+  }
+  for (const type of types) {
+    activeFilterChips.push({
+      key: `type:${type}`,
+      label: `Тип: ${TYPE_LABEL[type]}`,
+      onRemove: () => setTypes((current) => {
+        const next = new Set(current)
+        next.delete(type)
+        return next
+      })
+    })
+  }
+  for (const priority of priorities) {
+    activeFilterChips.push({
+      key: `priority:${priority}`,
+      label: `Приоритет: ${PRIORITY_LABEL[priority]}`,
+      onRemove: () => setPriorities((current) => {
+        const next = new Set(current)
+        next.delete(priority)
+        return next
+      })
+    })
+  }
+  for (const label of labels) {
+    activeFilterChips.push({
+      key: `label:${label}`,
+      label: `Метка: ${label}`,
+      onRemove: () => setLabels((current) => {
+        const next = new Set(current)
+        next.delete(label)
+        return next
+      })
+    })
+  }
+  for (const epicId of epics) {
+    activeFilterChips.push({
+      key: `epic:${epicId}`,
+      label: `Эпик: ${allEpics.find((epic) => epic.id === epicId)?.title ?? epicId}`,
+      onRemove: () => setEpics((current) => {
+        const next = new Set(current)
+        next.delete(epicId)
+        return next
+      })
+    })
+  }
+  if (onlyMine) activeFilterChips.push({ key: 'onlyMine', label: 'Только мои задачи', onRemove: () => setOnlyMine(false) })
+  if (flaggedOnly) activeFilterChips.push({ key: 'flagged', label: 'С флагом', onRemove: () => setFlaggedOnly(false) })
+  if (recentOnly) activeFilterChips.push({ key: 'recent', label: 'Обновлены за сутки', onRemove: () => setRecentOnly(false) })
+  for (const [columnId, filter] of Object.entries(columnAssigneeFilters)) {
+    if (filter.assigneeIds.length === 0 && !filter.includeUnassigned) continue
+    const column = board?.columns.find((item) => item.id === columnId)
+    const values = [...filter.assigneeIds, ...(filter.includeUnassigned ? ['без исполнителя'] : [])]
+    activeFilterChips.push({
+      key: `column:${columnId}`,
+      label: `Колонка «${column?.name ?? columnId}»: ${values.join(', ')}`,
+      onRemove: () => setColumnAssigneeFilters((current) => ({ ...current, [columnId]: EMPTY_COLUMN_ASSIGNEE_FILTER }))
+    })
   }
 
   // Перенос колонки moving перед target.
@@ -1808,13 +1896,18 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 Показывать чаты завершённых задач
               </label>
             )}
-            {filtersActive && (
-              <button className="jquick jquick--clear" onClick={resetFilters}>
-                Сбросить фильтры
-              </button>
-            )}
             {view.refreshing && <RefreshIndicator label="Обновляем доску…" />}
           </FilterShell>
+
+          {activeFilterChips.length > 0 && (
+            <div className="jactive-filters" role="region" aria-label="Активные фильтры" data-testid="active-filters">
+              <span className="jactive-filters-label">Активные фильтры</span>
+              {activeFilterChips.map((chip) => <ActiveFilterChip key={chip.key} label={chip.label} onRemove={chip.onRemove} />)}
+              <Button variant="ghost" size="sm" className="jactive-filters-clear" onClick={resetFilters}>
+                Сбросить все
+              </Button>
+            </div>
+          )}
 
           {/* Именно «колонок нет вообще»: при снятом чекбоксе «скрытые» видимых
               колонок тоже нет, но подсказка про создание там была бы неправдой. */}
