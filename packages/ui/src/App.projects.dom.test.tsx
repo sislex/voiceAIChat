@@ -384,7 +384,8 @@ describe('App — чаты завершённых задач в сайдбаре
     expect(within(modal).queryByRole('button', { name: /Открыть чат/ })).not.toBeInTheDocument()
     await userEvent.click(within(modal).getByRole('tab', { name: 'AI-чат' }))
     expect(await within(modal).findByTestId('task-chat-surface')).toBeInTheDocument()
-    expect(window.location.hash).toBe(`#/projects/${projectId}/task/${taskId}`)
+    // @testCase TC-2
+    expect(window.location.hash).toBe(`#/projects/${projectId}/task/${taskId}/chat`)
   })
 
   it('возврат задачи из «Готово» возвращает чат в список', async () => {

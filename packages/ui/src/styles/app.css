@@ -7186,6 +7186,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-chat-panel--surface > .main { flex: 1 1 auto; height: auto; min-height: 0; }
 .task-chat-panel--surface .scroll { min-height: 0; overscroll-behavior: contain; }
 .task-chat-panel--surface .voicebar { flex: none; }
+.task-chat-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; pointer-events: none; color: #6b7280; text-align: center; }
 .task-tab-empty { padding: 18px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-dim); }
 .task-tab-warning { padding: 10px; border-radius: 8px; background: var(--warning-soft); }
 @media (max-width: 720px) {
