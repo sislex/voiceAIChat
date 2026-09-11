@@ -1,6 +1,7 @@
 import { READER_PROJECT_ORIGIN, readerProjectUrl } from '@shared/previewProject'
 import { Button, IconButton } from '@voicechat/ui-kit'
 import { appendWebRecorderStep, normalizeWebRecorderStep } from '@shared/webRecorderScenario'
+import { ScenarioTransfer } from './ScenarioTransfer'
 import { useScenarioEditor } from './scenarioEditor'
 import { loadScenario, scenarioKey } from './scenarioStorage'
 import { createScenarioRunner, type ScenarioProgress } from './scenarioRunner'
@@ -407,6 +408,7 @@ export function Recorder(): JSX.Element {
         </div>
       </details>
     </form>
+    <ScenarioTransfer key={frameKey} pageUrl={scenarioUrl} steps={steps} disabled={scenarioRunning} onImport={next => { setSecretValues({}); setScenarioProgress(null); setSteps(next) }} />
     {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
     {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем страницу…</div>}
     {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button></div>}
