@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: cf8e2df1
+checked: 3df0eaa8
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2454,7 +2454,7 @@ The `audit` MCP tool inspects the live proxy or native Chromium document without
 `packages/shared/src/previewAudit.ts` defines bounded options and evidence; the
 `audit` action travels through the existing Reader relay and recorder bridge.
 Pure program generators in `packages/browser-contracts/src/audit/` execute 30
-markup checks and 30 layout checks. Web Reader retains stable re-export paths;
+markup checks, 30 layout checks and 30 typography checks. Web Reader retains stable re-export paths;
 browser-runner executes the same checks through built-in `inspect/audit`, separate
 from model-supplied `evaluate` code and its policy. Use `mode: list` to discover rule IDs;
 `mode: run` is the default. `group` defaults to `markup`, `rules` narrows checks,
@@ -2473,11 +2473,35 @@ Native audits preserve human control and `lastActor`, and restore logical page U
 from operator host aliases. Duplicate-ID findings use selectors that distinguish
 sibling nodes even when their IDs are equal.
 
+Naming checks currently use the reader's DOM naming helper, not the complete
+browser accessible-name algorithm. A Chromium probe with an empty button and
+`::before{content:"Save"}` produced AX name "Save" while `button-name-missing`
+still reported a candidate. Inspect the native accessibility snapshot before
+confirming a naming defect; the accessibility cycle must correct this mismatch
+and its confidence classification.
+
 The `layout` group inspects clipping and overflow, zero-size controls, fixed/sticky
 positioning, collapsed containers, grid/flex geometry, overlapping siblings and
 ineffective CSS properties. Its findings are heuristic candidates; intentional
 clipping, overlaps and scroll locks need application-specific review. Styles and
 rectangles are cached for one scan; overlap checks inspect up to 100 direct children.
+
+The `typography` group reports text sizing and spacing, clipping, missing generic
+font fallbacks, failed font faces, bidi/invisible characters, replacement glyphs,
+unresolved templates and likely decoding artifacts. It inspects direct text nodes
+without copying their contents into evidence, and skips input/textarea/select
+values. Text caches belong to one audit call, so editing an existing node changes
+the next report. Inspection stops at 4,096 characters or 256 child nodes per element
+and 1,000 font faces, marking the report incomplete when a limit is reached.
+Font stacks are bounded at 4,096 characters and parsed with quote/escape awareness;
+a family named `"My, serif, Demo"` does not provide a generic fallback. Standard
+`generic(...)` families are recognized when reported by the browser.
+
+Test examples are exported separately from `@voicechat/browser-contracts/audit/fixtures`;
+production imports only the pure program generators. Both browser suites consume
+one fixture registry, including explicit readiness for font loading. Audit source
+paths are registered as browser changes in the application catalog, so a new group
+selects both Reader E2E suites even when no application source file changes.
 
 External-site probes on 2026-09-11 demonstrated why bridge readiness and empty
 error logs are insufficient: Google showed consent, Facebook an error document,

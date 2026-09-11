@@ -35,6 +35,13 @@ test('application gates reject missing catalog edges before running checks or a 
   }
 })
 
+test('shared audit programs always select both Reader browser suites', () => {
+  const plan = planApplicationChecks(['packages/browser-contracts/src/audit/typography.ts'])
+  assert.equal(plan.full, false)
+  assert.ok(plan.e2eFiles.includes('e2e/webReaderAudit.e2e.test.ts'))
+  assert.ok(plan.e2eFiles.includes('e2e/webReaderNative.e2e.test.ts'))
+  for (const id of ['browser-runner', 'web-reader', 'playwright-reader']) assert.ok(plan.applications.some(app => app.id === id))
+})
 test('внутренний Make не втягивает сервер или UI', () => {
   const p = planApplicationChecks(['apps/make/src/workspace.ts'])
   assert.equal(p.full, false)

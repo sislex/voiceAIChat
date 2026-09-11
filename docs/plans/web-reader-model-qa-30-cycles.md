@@ -46,8 +46,8 @@ are written before implementation, after inspecting the relevant capabilities.
 | Cycle | Area | Completed | Commit |
 | --- | --- | --- | --- |
 | 01 | Markup audit and evidence contract | 30/30 | `cf8e2df1` |
-| 02 | Layout and clipping, with native audit integration | 30/30 | `feat(web-reader): add native layout audits (QA cycle 02)` |
-| 03 | Typography and text rendering | 0/30 | pending |
+| 02 | Layout and clipping, with native audit integration | 30/30 | `3df0eaa8` |
+| 03 | Typography and text rendering | 30/30 | this commit |
 | 04 | Color and contrast | 0/30 | pending |
 | 05 | Interactive control states | 0/30 | pending |
 | 06 | Forms and validation | 0/30 | pending |
@@ -166,3 +166,50 @@ complete App/MCP/runner audit path passed with human ownership preserved. Inspec
 the layout screenshot. `gate:fast` passed in 910.58 s; pre-commit `gate` passed in
 528.68 s, both with exit code 0 and all 371 Reader E2E tests. Public native audits
 ran on Google, Facebook and Instagram without signing in or choosing consent.
+
+## Cycle 03: typography and text rendering
+
+Add these 30 independent text diagnostics on both Reader surfaces, with paired
+browser fixtures, live-update checks, bounded scans and visual evidence.
+
+1. `small-font-text`.
+2. `zero-font-text`.
+3. `zero-line-height`.
+4. `tight-line-height`.
+5. `tight-letter-spacing`.
+6. `tight-word-spacing`.
+7. `transparent-text`.
+8. `nowrap-text-overflow`.
+9. `ellipsis-truncates-text`.
+10. `line-clamp-truncates-text`.
+11. `uppercase-long-passage`.
+12. `capitalize-long-passage`.
+13. `wide-text-measure`.
+14. `narrow-text-measure`.
+15. `justified-narrow-prose`.
+16. `font-generic-fallback-missing`.
+17. `break-all-prose`.
+18. `thin-small-text`.
+19. `heavy-text-stroke`.
+20. `long-unbreakable-token`.
+21. `prose-selection-disabled`.
+22. `text-indent-outside-box`.
+23. `bidi-control-characters`.
+24. `invisible-characters-only`.
+25. `inline-link-cue-missing`.
+26. `outside-list-marker-clipped`.
+27. `replacement-character-text`.
+28. `raw-template-expression`.
+29. `mojibake-text-pattern`.
+30. `font-face-load-error`.
+
+Supporting work separates test fixtures from production exports and registers
+browser audit code as a browser-tested library in the application gate.
+
+Cycle 03 verification: 201 proxy Chromium tests, 187 native Chromium tests,
+14 planner tests and 9 browser-contract tests passed. Inspected the typography
+screenshot. `gate:fast` passed in 476.82 s and `gate` passed in 496.25 s; each
+completed all 455 browser tests with exit 0. Native public typography audits also
+ran on Google, Facebook and Instagram in 6.1, 12.6 and 10.6 ms without signing in
+or choosing consent. These single observations do not establish authenticated
+compatibility or prove the pages free of defects.
