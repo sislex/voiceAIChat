@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
 updated: 2026-09-11
-checked: c28239cd
+checked: ec5657cf
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -252,6 +252,13 @@ npm run typecheck 2>&1 | grep -E "error TS" | head -3; echo "typecheck ok"
 приложения не втягивают все тесты ядра. Публичные контракты добавляют адресные мосты,
 библиотеки — потребителей по графу. Lock diff проверяется с обеих сторон по npm-дереву;
 неизвестный пакет, root-конфиг или неразрешимый diff включает `gate:all`.
+Every cross-owner workspace dependency declared by a package must also name the
+owning application in that catalog entry's `buildDependencies`; the catalog test
+derives this requirement from `package-lock.json` and fails before any build when
+the graph is incomplete. The legacy `scripts/affected-check.mjs` package graph is
+validated separately against every workspace manifest, so the same dependency
+must also be present in its `PACKAGES[].dependsOn` list while that compatibility
+entry point remains in the repository.
 `--dry-run` выводит выбор без запуска. Для старых CI-команд `npm run affected-check`
 теперь является именем нового планировщика; старый JS-граф оставлен для общей
 embedded-композиции и сравнительных тестов. Сохранённые пользовательские команды

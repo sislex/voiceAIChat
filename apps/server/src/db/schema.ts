@@ -685,6 +685,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_date    INTEGER,
   flagged     INTEGER NOT NULL DEFAULT 0,
   auto_pilot  INTEGER NOT NULL DEFAULT 0,
+  auto_pilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0,
   auto_pilot_fix_cycles INTEGER NOT NULL DEFAULT 0,
   -- Момент попадания в колонку с семантикой done (NULL — задача не завершена).
   done_at     INTEGER,

@@ -828,6 +828,7 @@ describe('ChatColumn — автопрокрутка ленты', () => {
 })
 
 describe('ChatColumn — подготовка ответа', () => {
+  // @testCase TC-UI-1
   it('показывает «Готовим ответ…» в ленте до первого фрагмента и убирает после начала стрима', () => {
     const { rerender } = render(<ChatColumn title="Тест" state="thinking" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} />)
     const preparing = screen.getByTestId('reply-preparing')

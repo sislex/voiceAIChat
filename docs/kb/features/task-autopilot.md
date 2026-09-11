@@ -1,17 +1,21 @@
 ---
 title: Автопроход задачи по QA-конвейеру
-updated: 2026-09-06
-checked: 18513181
+updated: 2026-09-11
+checked: 55104903
 areas:
   - packages/shared/src/projects.ts
-  - apps/server/src/server.ts
+  - apps/server/src/kanban/module.ts
+  - apps/server/src/db/repos/tasks.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/routes/qa.ts
   - apps/server/src/ci/componentQa.ts
   - apps/server/src/ci/integrationTests.ts
+  - apps/server/src/ci/runManager.ts
+  - apps/server/src/ci/modelHooks.ts
   - packages/ui/src/components/kanban/TaskCard.tsx
+  - packages/ui/src/components/kanban/TaskModal.tsx
   - packages/ui/src/components/ProjectSettings.tsx
 ---
 
@@ -37,18 +41,29 @@ areas:
 `packages/shared/src/projects.ts`, запись и миграции — в
 `apps/server/src/db/database.ts` и `apps/server/src/db/schema.ts`.
 
+Task settings expose autopilot and a manual QA pause. `Task.autoPilotRequiresManualQa`
+is stored in `tasks.auto_pilot_requires_manual_qa` and carried by task PATCH and
+board snapshots. New tasks inherit the project preference once; subsequent edits
+are independent. Migration preserves the previous project setting for existing
+tasks. With the pause disabled, autopilot moves from `manual_qa` to the merge
+queue immediately. Clearing the pause also wakes the coordinator.
+
 ## Координатор
 
-Координатор собран в `apps/server/src/server.ts`. Tick подписан на сам
-`boardHub.onChange`, а не на обёртку `emitBoard`: завершение preparation-, CI-,
-QA- и merge-ранов зовёт `boardHub.emit` напрямую, и пока тик планировала только
-обёртка, автопроход не узнавал об окончании этапа и стоял до следующего действия
-человека. Tick смотрит текущий `semantic_type` и запускает ровно соответствующий
-исполнитель: подготовку задачи, development-ран, Component QA, Integration Tests,
-Automated QA либо существующий `MergeRunManager`. Активные раны переиспользуются
-собственными idempotency-гейтами; параллельные ticks одного проекта подавляет
-process-local `Set`, а изменение доски, пришедшее во время тика, не теряется —
-оно запоминается в `pendingTicks` и выполняется сразу после текущего прохода.
+The coordinator lives in `apps/server/src/kanban/module.ts` and subscribes to
+`boardHub.onChange`. Executors emit directly through the hub, so subscribing only
+to the `emitBoard` wrapper would miss completion events. A tick selects the
+executor for the task's current `semantic_type`: preparation, development,
+Component QA, Integration Tests, Automated QA, or `MergeRunManager`. Executor
+idempotency reuses active runs. A process-local set serializes ticks per project;
+`pendingTicks` preserves changes received during a tick and processes them next.
+
+Failures are caught per task so one unavailable workspace cannot stall the project.
+Skipped Component QA, Integration Tests and manual QA emit board events to wake
+their successors. A QA run created as `blocked` reaches the failure handler even
+when its executor never starts. Retrying failed or blocked QA respects the shared
+delay using persisted `finishedAt`, preventing immediate infrastructure retry
+loops. A zero retry limit still permits the first preparation and merge attempts.
 
 Начало конвейера покрыто тем же координатором. Из `backlog` и `preparation`
 карточка сама уходит в подготовку (`launchTaskPreparation` идемпотентен и
@@ -104,13 +119,11 @@ development-рана через `startForDevelopmentTransition`. До этого
 Оба runner-а передают в `completed` ещё и `classification`: без неё отвалившаяся
 посреди шага машина («Машина отключилась во время выполнения команды») шла в
 fix-loop как дефект кода и жгла цикл доработки за чужой сбой (прод, CHAT-413).
-Runner Component QA и Integration Tests обязаны звать `completed` **на каждом**
-исходе, включая ранние выходы (`blocked`: недоступный workspace, сломанный
-`git diff`, изменённые нетестовые файлы). Молчание в этих ветках оставляло
-карточку в колонке этапа: автопроход об окончании не знал, а board-событие
-запускало следующий такой же ран — на проде так крутился CHAT-412 с
-«Изменены нетестовые файлы». Вместе с результатом передаётся `classification`,
-чтобы сбой окружения не возвращал карточку в доработку.
+Component QA and Integration Tests await `completed` on every outcome, including
+early exits for unavailable workspaces, failed diff inspection and missing case
+coverage. The completion transition must finish before the final board event can
+start another attempt. Failure classification distinguishes implementation defects
+from infrastructure outages so the latter do not consume development fix cycles.
 
 Успешные специализированные runner-ы сообщают результат callback-ом. Координатор
 завершает gate штатными DB-методами, поэтому переходы идут через
@@ -144,6 +157,12 @@ payload `from/to`; отдельно журналируются ошибка, в�
 карточку. Затем увеличивает счётчик циклов, переводит исходную задачу в
 `development` разрешённым automation-переходом и запускает development fix-run.
 После его успеха board event снова запускает QA-цепочку с Component QA.
+
+Diagnostic bugs receive `autoPilot=false`: the original task's fix run handles
+the defect, and project defaults must not launch duplicate development. The
+reason, summary, commands, blockers and log tail are persisted in `fixContext`
+before enqueueing and included in the first development model request.
+Component QA and Integration Tests also store `linkedFixRunId`.
 
 Перед созданием очередного bug метод сравнивает использованные циклы с
 `autoPilotFixLimit`. При исчерпанном лимите новая доработка не стартует: карточка

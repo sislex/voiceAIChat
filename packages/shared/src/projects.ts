@@ -1027,6 +1027,8 @@ export interface Task {
   flagged: boolean
   /** Карточка автоматически проходит development и QA-конвейер. */
   autoPilot?: boolean
+  /** Pause autopilot at manual QA; new tasks inherit the project's default. */
+  autoPilotRequiresManualQa?: boolean
   /** Уже использованные автоматические круги доработки. */
   autoPilotFixCycles?: number
   /**
