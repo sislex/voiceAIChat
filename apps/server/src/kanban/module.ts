@@ -229,7 +229,8 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
       if (input[key] === 'true') input[key] = true
       if (input[key] === 'false') input[key] = false
     }
-    if (root.schemaVersion === '2') root.schemaVersion = 2
+    // schemaVersion — часть версии контракта, а не совместимый тип: строка '2'
+    // не принимается, чтобы нормализация не меняла смысл формата.
     normalizeBoolean(root, 'acceptanceCriteriaConflict')
     if (root.schemaVersion !== 2) issues.push('schemaVersion должен быть равен 2')
     requireString(root, 'functionalRequirements')
@@ -279,11 +280,7 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
       for (const key of ['scope', 'outOfScope', 'businessRules', 'errorsAndEdgeCases', 'uiStates', 'contractChanges', 'dataChanges', 'constraints', 'contradictions']) {
         normalizeStringList(root, key)
         const items = requireArray(root, key)
-        root[key] = items.map((item) => {
-          const objectItem = record(item)
-          return objectItem && typeof objectItem.text === 'string' && objectItem.text.trim() ? objectItem.text : item
-        })
-        for (const [index, item] of (root[key] as unknown[]).entries()) {
+        for (const [index, item] of items.entries()) {
           if (typeof item !== 'string' || !item.trim()) issues.push(`${key}[${index}] должен быть непустой строкой`)
         }
       }
@@ -325,9 +322,7 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
         const source = record(item)
         const path = `sources[${index}]`
         if (!source) { issues.push(`${path} должен быть объектом`); continue }
-        const kindAliases: Record<string, string> = { knowledge_base: 'knowledge', 'knowledge-base': 'knowledge', 'knowledge-base-gap': 'knowledge', 'code-search': 'code' }
-        if (typeof source.kind === 'string' && kindAliases[source.kind]) source.kind = kindAliases[source.kind]
-        if (typeof source.refs === 'string') source.refs = [source.refs]
+        if (typeof source.refs === 'string' && source.refs.trim()) source.refs = [source.refs]
         normalizeBoolean(source, 'critical')
         if (typeof source.status === 'string') {
           const canonicalStatus = source.status.trim().toLowerCase()

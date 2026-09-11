@@ -12,7 +12,8 @@ const routes: ProjectsRoute[] = [
   { kind: 'assistant', projectId: 'p1' },
   { kind: 'task', projectId: 'p1', taskId: 't/1' },
   { kind: 'task-tab', projectId: 'p1', taskId: 't1', tab: 'preparation' },
-  { kind: 'task-tab', projectId: 'p1', taskId: 't1', tab: 'chat' }
+  { kind: 'task-tab', projectId: 'p1', taskId: 't1', tab: 'chat' },
+  { kind: 'task-tab', projectId: 'p1', taskId: 't1', tab: 'progress' }
 ]
 describe('projects route', () => {
   it.each(routes)('round-trips $kind', (route) => expect(parseProjectsRoute(buildProjectsRoute(route))).toEqual(route))
@@ -29,5 +30,6 @@ describe('projects route', () => {
     expect(parseProjectsRoute('/projects/p1/code')).toEqual({ kind: 'code', projectId: 'p1' })
     expect(parseProjectsRoute('/projects/p1/code/ws%3Aws-1')).toEqual({ kind: 'code', projectId: 'p1', workspaceId: 'ws:ws-1' })
     expect(parseProjectsRoute('/projects/p1/code/ws-1/extra')).toBeNull()
+    expect(parseProjectsRoute('/projects/p1/task/t1/unknown-tab')).toBeNull()
   })
 })

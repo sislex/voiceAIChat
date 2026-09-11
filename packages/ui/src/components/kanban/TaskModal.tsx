@@ -507,6 +507,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // остаются смонтированными — как и были. Панели merge, подготовки и ленты
   // рана намеренно живут по `activeTab`: у merge это свежий снимок машин при
   // возврате, у двух других — живые подписки, незачем держать их скрытыми.
+  // Прямой URL и history-навигация меняют initialTab без размонтирования карточки.
+  useEffect(() => {
+    if (props.initialTab && props.initialTab !== activeTab) setActiveTab(props.initialTab)
+  }, [props.initialTab, task.id])
   const [seenTabs, setSeenTabs] = useState<ReadonlySet<TaskTab>>(() => new Set([activeTab]))
   useEffect(() => {
     setSeenTabs((current) => current.has(activeTab) ? current : new Set([...current, activeTab]))

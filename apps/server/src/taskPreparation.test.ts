@@ -654,8 +654,8 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[0].prompt).toContain('Не заменяй строки массивами или объектами')
   })
 
-  // @testCase TC-REG-03
-  it('принимает совместимые { id, text } в строковых списках и сохраняет канонические строки', async () => {
+  // @testCase TC-8
+  it('отклоняет объектные элементы строковых списков, не меняя смысл требований', async () => {
     const { project, task } = await taskInBacklog()
     const compatible = JSON.stringify({
       ...JSON.parse(READINESS),
@@ -676,15 +676,14 @@ describe('подготовка к разработке: диагностика �
       assumptions: [],
       sources: [{ id: 'kb', kind: 'knowledge', status: 'available', summary: 'Раздел БЗ прочитан', refs: ['features/task-preparation'], critical: true }, { id: 'code', kind: 'code', status: 'available', summary: 'Контракт прочитан', refs: ['packages/shared/src/qa.ts'], critical: true }]
     })
-    claudeAnswer = () => ({ text: compatible })
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? compatible : compatibleReadiness() })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
     expect(run.status).toBe('success')
-    expect(claudeCalls).toHaveLength(1)
-    expect(claudeCalls[0].prompt).toContain('Строковые списки scope, outOfScope, businessRules')
-    expect(claudeCalls[0].prompt).not.toContain('Не возвращай элементы этих списков простыми строками')
-    expect(run.readiness).toMatchObject({ businessRules: ['Правило'], errorsAndEdgeCases: ['Ошибка'] })
+    expect(claudeCalls).toHaveLength(2)
+    expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
+    expect(run.readiness).toMatchObject({ businessRules: ['Правило'], errorsAndEdgeCases: [] })
   })
 
   it('отклоняет объект строкового списка без непустого text и передаёт путь в repair-ход', async () => {
@@ -726,7 +725,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(1)
   })
 
-  it('нормализует совместимые kind и одиночный refs до общего контракта', async () => {
+  it('отклоняет несовместимые kind источников, но сохраняет однозначный refs', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
     normalized.sources = [
@@ -735,22 +734,19 @@ describe('подготовка к разработке: диагностика �
       { id: 'kb-3', kind: 'knowledge-base-gap', status: 'absent', summary: 'Пробел', refs: 'gap', critical: false },
       { id: 'code', kind: 'code-search', status: 'available', summary: 'Код', refs: 'apps/server/src/server.ts', critical: true }
     ]
-    claudeAnswer = () => ({ text: JSON.stringify(normalized) })
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify(normalized) : compatibleReadiness() })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
     expect(run.status).toBe('success')
-    expect(run.readiness?.sources?.map((source) => source.kind)).toEqual(['knowledge', 'knowledge', 'knowledge', 'code'])
-    expect(run.readiness?.sources?.map((source) => source.refs)).toEqual([
-      ['docs/kb/features/task-preparation.md'], ['kb'], ['gap'], ['apps/server/src/server.ts']
-    ])
-    expect(claudeCalls).toHaveLength(1)
+    expect(claudeCalls).toHaveLength(2)
+    expect(claudeCalls[1].prompt).toContain('sources[0].kind имеет недопустимое значение: knowledge_base')
   })
 
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
-    normalized.schemaVersion = '2'
+    normalized.schemaVersion = 2
     normalized.acceptanceCriteriaConflict = 'false'
     normalized.sources.push({ id: 'S-10', kind: 'code', status: ' UNAVAILABLE ', summary: 'index.html нужен на этапе реализации', refs: 'index.html', critical: 'false' })
     claudeAnswer = () => ({ text: JSON.stringify(normalized) })
@@ -833,6 +829,7 @@ describe('подготовка к разработке: диагностика �
   })
 
 
+  // @testCase TC-7
   it('отклоняет JSON в Markdown-ограде и любой окружающий служебный текст', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ text: `\`\`\`json\\n${compatibleReadiness()}\\n\`\`\`` })

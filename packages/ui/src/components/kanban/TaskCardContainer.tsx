@@ -305,7 +305,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
       onDeleteAttachment: async (id) => { await window.api['tasks:deleteAttachment']({ projectId: props.task.projectId, taskId: props.task.id, attachmentId: id }); setSourceAttachments((all) => all.filter((item) => item.id !== id)); setDraft((value) => ({ ...value, attachments: value.attachments.filter((item) => item.id !== id) })) },
       onChangeReworkDraft: setDraft,
       onCancelRework: () => { setDraft(EMPTY_DRAFT); setReworkOpen(false) },
-      onOpenChat: () => setActiveTab('chat'),
+      onOpenChat: () => { setActiveTab('chat'); props.onTabChange?.('chat') },
       loadAttachment: async (attachmentId) => {
         const file = await window.api['tasks:readAttachment']({ projectId: props.task.projectId, taskId: props.task.id, attachmentId })
         return `data:${file.mimeType};base64,${file.dataBase64}`
