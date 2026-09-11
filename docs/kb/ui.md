@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: e873c8db
+checked: 6e243af8
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2428,6 +2428,12 @@ page-loading/ready, поэтому старый onLoad не отменяет н�
 панели через горизонтальный scroll контейнера; мобильная адресная строка занимает
 свою строку, элементы тулбара имеют высоту не менее 36 px. Регрессии —
 `Recorder.dom.test.tsx`, `readerAddress.test.ts`, `e2e/webReaderUi.e2e.test.ts`.
+
+The Recorder address bar infers HTTP for loopback/private IPv4, bracketed IPv6
+loopback, localhost subdomains and machine.internal names; an explicit 443 port
+selects HTTPS. Scheme-relative addresses inherit the current page scheme. Address
+errors are associated with the field, Escape restores the live URL, Ctrl/Cmd+L
+selects the address within the Recorder, and Clear closes and persists a null URL.
 
 ### Запись и повторный запуск сценария
 
