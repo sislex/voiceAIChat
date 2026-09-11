@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 80 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 103 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1367 коммит(ов) в areas после сверки: 694cf7cf fix(web-reader): harden scenario playback boundaries (#153) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1368 коммит(ов) в areas после сверки: f60d8269 feat(web-reader): improve diagnostic history and timing ownership (#154) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 10 коммит(ов) в areas после сверки: 36b352b9 feat(kanban): summarize visible board work … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: 36b352b9 feat(kanban): summarize visible board work … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 6 коммит(ов) в areas после сверки: de6981b1 feat(kanban): clarify task card metadata … |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 761. Последние:
+Всего записей: 762. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md) — web-reader-ten-cycle-10
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-09.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-09.md) — web-reader-ten-cycle-09
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-08.md) — web-reader-ten-cycle-08
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-07.md) — web-reader-ten-cycle-07
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-03.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-03.md) — web-reader-ten-cycle-03
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-02.md) — web-reader-ten-cycle-02
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-01.md) — web-reader-ten-cycle-01
-- [2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md) — web-reader-rebase-main
 
 ## Исторические планы
 
