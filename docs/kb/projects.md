@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 29171e8f
+checked: e1093bdf
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1077,6 +1077,24 @@ old clients and is migrated to `dueWindow: overdue` when no enum exists. Pure
 boundary tests cover every interval, DOM tests cover selection and persistence,
 and Chromium verifies the full option set, metric synchronization, chips, reset,
 and mobile layout.
+
+### Priority overview (2026-09-11)
+
+A named priority region below the board summary exposes low, medium, high, and
+urgent task counts as icon buttons. Counts apply every active condition except
+the priority filter itself, including per-column assignee filters. They therefore
+remain stable and actionable while one or more priorities are selected instead
+of collapsing all unselected values to zero.
+
+Buttons mirror the existing multi-select priority filter and active chips, expose
+pressed state and full count units, and combine selections with OR. A zero-count
+button is disabled only while unselected; an active zero-count value remains
+available for removal. `Все приоритеты` clears the complete priority selection.
+Urgent/high selections use the danger palette, other selections use the board
+accent, and each retains its semantic priority icon. The compact row scrolls
+horizontally on narrow screens. DOM tests cover counts, OR selection, reset, and
+other-filter interaction; Chromium verifies semantics, synchronization, and
+mobile overflow.
 
 ### Меню колонки
 

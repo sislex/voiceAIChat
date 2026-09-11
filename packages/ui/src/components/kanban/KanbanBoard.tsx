@@ -30,7 +30,7 @@ import { TaskCard, epicOf } from './TaskCard'
 import { type TaskModalProps, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
-import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, duePresentation, emptyColumnPresentation, epicColor, issueKey, matchesDueWindow, pluralTasks, wipPresentation } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, PriorityIcon, TYPE_LABEL, columnRegionLabel, duePresentation, emptyColumnPresentation, epicColor, issueKey, matchesDueWindow, pluralTasks, wipPresentation } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -724,7 +724,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setColumnAssigneeFilters({})
   }
 
-  const matches = (t: Task): boolean => {
+  const matches = (t: Task, ignorePriority = false): boolean => {
     const q = search.trim().toLowerCase()
     const searchable = [
       t.title,
@@ -737,7 +737,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     if (q && !searchable.some((value) => value.toLowerCase().includes(q))) return false
     if (assignees.size > 0 && !assignees.has(t.assignee ?? '')) return false
     if (types.size > 0 && !types.has(t.type)) return false
-    if (priorities.size > 0 && !priorities.has(t.priority)) return false
+    if (!ignorePriority && priorities.size > 0 && !priorities.has(t.priority)) return false
     if (labels.size > 0 && !t.labels.some((l) => labels.has(l))) return false
     if (epics.size > 0) {
       const epic = epicOf(t, allTasks)
@@ -751,15 +751,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     return true
   }
 
+  const matchesColumnAssignee = (task: Task, columnId: string): boolean => {
+    if (onlyMine) return true
+    const selected = columnAssigneeFilters[columnId] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
+    if (selected.assigneeIds.length === 0 && !selected.includeUnassigned) return true
+    return task.assignee == null ? selected.includeUnassigned : selected.assigneeIds.includes(task.assignee)
+  }
+
   const tasksOf = (columnId: string, lane?: { kind: Swimlane; id: string }): Task[] =>
     allTasks
       .filter((t) => t.columnId === columnId && matches(t))
-      .filter((t) => {
-        if (onlyMine) return true // глобальный режим временно имеет приоритет
-        const selected = columnAssigneeFilters[columnId] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
-        if (selected.assigneeIds.length === 0 && !selected.includeUnassigned) return true
-        return t.assignee == null ? selected.includeUnassigned : selected.assigneeIds.includes(t.assignee)
-      })
+      .filter((t) => matchesColumnAssignee(t, columnId))
       .filter((t) => {
         if (!lane || lane.kind === 'none') return true
         if (lane.kind === 'epic') {
@@ -784,6 +786,13 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const visibleUnassigned = visibleTasks.filter((task) => task.assignee == null).length
   const visibleFlagged = visibleTasks.filter((task) => task.flagged).length
   const visibleCompleted = visibleTasks.filter((task) => doneColumnIds.has(task.columnId)).length
+  const priorityBaseTasks = columns.flatMap((column) => allTasks.filter(
+    (task) => task.columnId === column.id && matches(task, true) && matchesColumnAssignee(task, column.id)
+  ))
+  const priorityCounts = Object.fromEntries(TASK_PRIORITIES.map((priority) => [
+    priority,
+    priorityBaseTasks.filter((task) => task.priority === priority).length
+  ])) as Record<TaskPriority, number>
   const toggleCompletedOnly = (): void => {
     const next = !completedOnly
     setCompletedOnly(next)
@@ -1580,7 +1589,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const columnFilter = columnAssigneeFilters[col.id] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
     const columnFilterActive = columnFilter.assigneeIds.length > 0 || columnFilter.includeUnassigned
     const completeColumnTasks = allTasks.filter((task) => task.columnId === col.id)
-    const globallyMatchingTasks = completeColumnTasks.filter(matches)
+    const globallyMatchingTasks = completeColumnTasks.filter((task) => matches(task))
     const empty = !lane ? emptyColumnPresentation({
       columnName: col.name,
       total: completeColumnTasks.length,
@@ -2070,6 +2079,35 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 <div key={label} className="jboard-summary-item" aria-label={`${label}: ${value} ${unit}`}>{content}</div>
               )
             })}
+          </section>
+
+          <section className="jpriority-overview" aria-label="Обзор приоритетов" data-testid="priority-overview">
+            <span className="jpriority-overview-label">Приоритеты</span>
+            {TASK_PRIORITIES.map((priority) => {
+              const active = priorities.has(priority)
+              const count = priorityCounts[priority]
+              return (
+                <Button
+                  key={priority}
+                  variant="secondary"
+                  size="sm"
+                  className={`jpriority-overview-item jpriority-overview-item--${priority}`}
+                  aria-label={`${PRIORITY_LABEL[priority]}: ${count} ${pluralTasks(count)}`}
+                  aria-pressed={active}
+                  disabled={count === 0 && !active}
+                  onClick={() => setPriorities(toggle(priorities, priority))}
+                >
+                  <PriorityIcon priority={priority} />
+                  <span>{PRIORITY_LABEL[priority]}</span>
+                  <strong>{count}</strong>
+                </Button>
+              )
+            })}
+            {priorities.size > 0 && (
+              <Button variant="ghost" size="sm" className="jpriority-overview-clear" onClick={() => setPriorities(new Set())}>
+                Все приоритеты
+              </Button>
+            )}
           </section>
 
           {activeFilterChips.length > 0 && (

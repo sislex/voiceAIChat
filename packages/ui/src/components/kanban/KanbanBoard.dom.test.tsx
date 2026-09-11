@@ -423,6 +423,46 @@ describe('KanbanBoard (изолированный)', () => {
     expect(select).toHaveValue('all')
   })
 
+  it('обзор приоритетов показывает устойчивые счётчики и управляет OR-фильтром', async () => {
+    renderBoard({
+      board: {
+        columns: [board.columns[0]!],
+        tasks: [
+          task({ id: 'low', title: 'Низкая', priority: 'low' }),
+          task({ id: 'medium-1', title: 'Средняя первая', priority: 'medium' }),
+          task({ id: 'medium-2', title: 'Средняя вторая', priority: 'medium' }),
+          task({ id: 'high', title: 'Высокая', priority: 'high' })
+        ]
+      }
+    })
+    const overview = screen.getByRole('region', { name: 'Обзор приоритетов' })
+    const low = within(overview).getByRole('button', { name: 'Низкий: 1 задача' })
+    const medium = within(overview).getByRole('button', { name: 'Средний: 2 задачи' })
+    const high = within(overview).getByRole('button', { name: 'Высокий: 1 задача' })
+    const urgent = within(overview).getByRole('button', { name: 'Срочный: 0 задач' })
+    expect(medium).toHaveAttribute('aria-pressed', 'false')
+    expect(urgent).toBeDisabled()
+
+    await userEvent.click(high)
+    expect(high).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(within(overview).getByRole('button', { name: 'Средний: 2 задачи' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Приоритет: Высокий' })).toBeInTheDocument()
+
+    await userEvent.click(low)
+    expect(low).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(2)
+    expect(within(overview).getByRole('button', { name: 'Все приоритеты' })).toBeInTheDocument()
+    await userEvent.click(within(overview).getByRole('button', { name: 'Все приоритеты' }))
+    expect(screen.getAllByTestId('task-card')).toHaveLength(4)
+    expect(low).toHaveAttribute('aria-pressed', 'false')
+    expect(high).toHaveAttribute('aria-pressed', 'false')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'первая')
+    expect(within(overview).getByRole('button', { name: 'Средний: 1 задача' })).toBeEnabled()
+    expect(within(overview).getByRole('button', { name: 'Низкий: 0 задач' })).toBeDisabled()
+  })
+
   it('фокусирует поиск по /, очищает его по Escape и отдельной кнопкой', async () => {
     renderBoard()
     const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
