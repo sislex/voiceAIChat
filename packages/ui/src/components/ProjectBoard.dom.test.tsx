@@ -169,7 +169,7 @@ describe('ProjectBoard', () => {
   it('меню колонки: WIP-лимит сохраняется через onUpdateColumn', async () => {
     const p = renderBoard()
     await userEvent.click(screen.getByLabelText('Меню колонки «To Do»'))
-    await userEvent.click(screen.getByRole('button', { name: 'WIP-лимит…' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'WIP-лимит…' }))
     await userEvent.type(screen.getByLabelText('WIP-лимит'), '3{enter}')
     expect(p.onUpdateColumn).toHaveBeenCalledWith('c1', { wipLimit: 3 })
   })
