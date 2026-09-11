@@ -4729,6 +4729,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jboard-summary .vc-btn.jboard-summary-item[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .jboard-summary-label { color: var(--text-dim); font-size: 11px; }
 .jboard-summary-item strong { font-size: 12px; white-space: nowrap; }
+.jpriority-overview { display: flex; align-items: center; gap: 5px; padding: 4px 12px 2px; overflow-x: auto; scrollbar-width: thin; }
+.jpriority-overview-label { flex: 0 0 auto; color: var(--text-dim); font-size: 11px; font-weight: 600; }
+.jpriority-overview-item { flex: 0 0 auto; gap: 4px; min-height: 28px; padding-inline: 7px; }
+.jpriority-overview-item strong { min-width: 16px; border-radius: 999px; background: var(--ci-neutral-bg); font-size: 10px; line-height: 16px; text-align: center; }
+.jpriority-overview-item[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.jpriority-overview-item--urgent[aria-pressed='true'],
+.jpriority-overview-item--high[aria-pressed='true'] { background: var(--ci-removed-bg); border-color: var(--ci-removed); color: var(--ci-removed); }
+.jpriority-overview-clear { flex: 0 0 auto; color: var(--text-dim); }
 .kanban-filter-empty { margin: 8px 12px 0; border: 1px dashed var(--border); border-radius: var(--radius-medium); }
 .javatars { display: inline-flex; align-items: center; }
 .javatar-btn { border: 2px solid transparent; background: none; padding: 0; border-radius: 50%; cursor: pointer; margin-left: -4px; transition: transform 0.1s; }
