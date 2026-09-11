@@ -68,6 +68,38 @@ export interface TaskCardProps {
   dragging: boolean
   /** Карточка «взята» с клавиатуры: остаётся на месте и подсвечена. */
   grabbed?: boolean
+  /** Current board search, used to explain why this card matched. */
+  searchQuery?: string
+}
+
+function HighlightedText({ text, query }: { text: string; query?: string }): JSX.Element {
+  const needle = query?.trim().toLocaleLowerCase() ?? ''
+  if (!needle) return <>{text}</>
+  const lower = text.toLocaleLowerCase()
+  const parts: Array<{ text: string; hit: boolean }> = []
+  let cursor = 0
+  while (cursor < text.length) {
+    const at = lower.indexOf(needle, cursor)
+    if (at < 0) {
+      parts.push({ text: text.slice(cursor), hit: false })
+      break
+    }
+    if (at > cursor) parts.push({ text: text.slice(cursor, at), hit: false })
+    parts.push({ text: text.slice(at, at + needle.length), hit: true })
+    cursor = at + needle.length
+  }
+  return <>{parts.map((part, index) => part.hit
+    ? <mark className="jcard-search-hit" key={index}>{part.text}</mark>
+    : <span key={index}>{part.text}</span>)}</>
+}
+
+function matchingSnippet(text: string, query?: string): string | null {
+  const needle = query?.trim().toLocaleLowerCase() ?? ''
+  const at = needle ? text.toLocaleLowerCase().indexOf(needle) : -1
+  if (at < 0) return null
+  const start = Math.max(0, at - 28)
+  const end = Math.min(text.length, at + needle.length + 44)
+  return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`
 }
 
 /** Эпик-предок задачи (родитель истории или родитель родителя задачи). */
@@ -177,6 +209,13 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const due = task.dueDate == null ? null : duePresentation(task.dueDate)
   const visibleLabels = task.labels.slice(0, 3)
   const hiddenLabelCount = Math.max(0, task.labels.length - visibleLabels.length)
+  const query = props.searchQuery?.trim()
+  const searchContexts = query ? [
+    task.assignee && matchingSnippet(task.assignee, query) ? { label: 'Исполнитель', text: task.assignee } : null,
+    ...task.labels.slice(visibleLabels.length).filter((label) => matchingSnippet(label, query)).map((label) => ({ label: 'Метка', text: label })),
+    matchingSnippet(task.description, query) ? { label: 'Описание', text: matchingSnippet(task.description, query)! } : null,
+    matchingSnippet(task.acceptanceCriteria, query) ? { label: 'Критерии', text: matchingSnippet(task.acceptanceCriteria, query)! } : null
+  ].filter((item): item is { label: string; text: string } => item != null).slice(0, 2) : []
   const cardLabel = [
     key,
     TYPE_LABEL[task.type],
@@ -238,8 +277,8 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         >
           <GripIcon />
         </span>
-        <span className="jcard-key jcard-key--head">{key}</span>
-        <span className="jcard-title" title={task.title}>{task.title}</span>
+        <span className="jcard-key jcard-key--head"><HighlightedText text={key} query={query} /></span>
+        <span className="jcard-title" title={task.title}><HighlightedText text={task.title} query={query} /></span>
         <span className="jcard-menuwrap" ref={menuRef}>
           <IconButton
             className="jcard-reveal"
@@ -324,7 +363,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           )}
           {task.labels.length > 0 && (
             <span className="jcard-labels" role="list" aria-label={`Метки задачи: ${task.labels.join(', ')}`}>
-              {visibleLabels.map((label) => <span key={label} className="jcard-label" role="listitem">{label}</span>)}
+              {visibleLabels.map((label) => <span key={label} className="jcard-label" role="listitem"><HighlightedText text={label} query={query} /></span>)}
               {hiddenLabelCount > 0 && (
                 <span
                   className="jcard-label jcard-label--more"
@@ -339,6 +378,16 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           )}
           {readyStage && task.skills.map((s) => (
             <span key={`skill-${s}`} className="jcard-skill" title={`Навык: ${s}`}>{s}</span>
+          ))}
+        </div>
+      )}
+
+      {searchContexts.length > 0 && (
+        <div className="jcard-search-context" aria-label="Совпадения поиска">
+          {searchContexts.map((context) => (
+            <span key={`${context.label}:${context.text}`} className="jcard-search-context-row">
+              <strong>{context.label}:</strong> <HighlightedText text={context.text} query={query} />
+            </span>
           ))}
         </div>
       )}

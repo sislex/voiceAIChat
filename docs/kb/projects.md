@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 715707f6
+checked: d3df2615
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -914,6 +914,17 @@ when no tasks match. The zero-result state offers one action that clears every
 global and per-column filter. A dedicated clear button keeps focus in the search
 field, while `Escape` clears the query in place and `/` focuses search unless the
 user is already editing another field.
+
+Visible matches are highlighted case-insensitively in the issue key, title, and
+the first three label chips. If a card matched data that is normally hidden or
+compressed, it adds at most two compact context rows for the assignee, an
+overflow label, the description, or acceptance criteria. Description and
+criteria rows contain a bounded excerpt around the match. Matching uses literal
+substring indexes, so punctuation and regular-expression characters are safe;
+the original text remains the accessible text of the card. Empty searches add
+no highlight markup. DOM tests cover repeated matches, case folding, hidden
+sources, special characters, and accessible names; built Chromium verifies
+rendered color and mobile card overflow.
 
 The shared board scroll surface is a named, focusable region. When the surface
 itself has focus, Left and Right move by one column width and Home/End move to the
