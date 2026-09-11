@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 9751e279
+checked: e873c8db
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -125,6 +125,10 @@ Preview preparation has a 15-second deadline for both host and model navigation.
 Unmount cancels pending preparation; a newer host URL supersedes older model
 opens. Address saving shows pending state and only the latest save may report
 an error. The iframe is inert until preview preparation succeeds.
+Assistant action history can be collapsed and searched by action, page title,
+or site. Counts remain visible, repeat buttons have distinct accessible names,
+and conversation changes reset history controls. Site metadata excludes query
+parameters and credentials; action descriptions retain their original semantics.
 
 
 После успешного `preview.result` серверный `PreviewActionRelay` публикует `reader.changed` с разговором, адресом, заголовком, признаком навигации и исходным `PreviewAction` (контракт — `packages/shared/src/protocol.ts`, реализация — `apps/web-reader/src/mcp/previewMcp.ts`). Remote-мост передаёт кадр в `App`: только активный разговор добавляет подтверждённый шаг в ограниченную последними 20 элементами ленту, а навигационный кадр обновляет ленту без перемонтирования Reader: переход уже выполнен в живом документе, повторный mount терял DOM/ввод и делал лишний запрос. `WebReaderFrame` переводит действия в понятные подписи и позволяет повторить шаг через ту же актуальную host-регистрацию.
