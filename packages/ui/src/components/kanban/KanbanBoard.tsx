@@ -26,7 +26,7 @@ import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
-import { TaskCard, epicOf } from './TaskCard'
+import { TaskCard, epicOf, updatedPresentation } from './TaskCard'
 import { type TaskModalProps, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
@@ -549,6 +549,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const board = useMemo(() => normalizeBoard(props.board), [props.board])
   const allTasks = useMemo(() => board?.tasks ?? [], [board])
+  const snapshotUpdatedAt = useMemo(() => {
+    const latestTaskUpdate = board?.tasks.reduce((latest, task) => Math.max(latest, task.updatedAt), 0) ?? 0
+    return latestTaskUpdate || Date.now()
+  }, [board])
+  const snapshotUpdated = updatedPresentation(snapshotUpdatedAt)
   const scrollScopeId = props.scrollScopeId ?? board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? null
 
   // Блокирующие обновления (например, переключение завершённых задач) временно
@@ -2079,7 +2084,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         />
       )}
       {view.state === 'data' && board && (
-        <div className="jboard-wrap">
+        <div className="jboard-wrap" aria-busy={view.refreshing}>
           {/* Перенос с клавиатуры не видно фокусом — его проговаривает эта область. */}
           <div className="vc-sr-only" role="status" aria-live="polite" data-testid="kanban-live">
             {announce}
@@ -2135,6 +2140,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             >
               Показано {visibleTaskCount} из {displayedTaskTotal}
             </span>
+            <time
+              className={`jboard-snapshot jboard-snapshot--${snapshotUpdated.state}`}
+              data-testid="board-snapshot-time"
+              data-refreshing={view.refreshing || undefined}
+              dateTime={new Date(snapshotUpdatedAt).toISOString()}
+              aria-label={`Снимок доски. ${snapshotUpdated.label}`}
+              aria-live="polite"
+              title={`Снимок доски. ${snapshotUpdated.label}`}
+            >
+              {view.refreshing ? 'Обновляется…' : `Данные: ${snapshotUpdated.short}`}
+            </time>
             {columns.length > 0 && (
               <span className="jcolumn-nav" role="group" aria-label="Навигация по колонкам">
                 <IconButton
