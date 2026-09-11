@@ -15,13 +15,12 @@ import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { canStartCiRun, canStartParallelCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
 import type { TaskModalTab } from './TaskModal'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, PriorityIcon, TYPE_LABEL, TypeIcon, duePresentation, epicColor, issueKey } from './kanbanMeta'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { ChatIcon, DotsIcon, FlagIcon, GripIcon } from '../icons'
-import { formatDate } from '../../lib/dateFormat'
 
 export interface TaskCardProps {
   task: Task
@@ -141,6 +140,17 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const children = props.allTasks.filter((t) => t.parentId === task.id)
   const doneChildren = children.filter((t) => props.doneColumnIds.has(t.columnId))
   const key = issueKey(props.projectName, task)
+  const due = task.dueDate == null ? null : duePresentation(task.dueDate)
+  const visibleLabels = task.labels.slice(0, 3)
+  const hiddenLabelCount = Math.max(0, task.labels.length - visibleLabels.length)
+  const cardLabel = [
+    key,
+    TYPE_LABEL[task.type],
+    task.title,
+    `Приоритет: ${PRIORITY_LABEL[task.priority]}`,
+    task.assignee ? `Исполнитель: ${task.assignee}` : 'Исполнитель не назначен',
+    due?.label
+  ].filter(Boolean).join('. ')
 
   return (
     <div
@@ -148,6 +158,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       className={`jcard jcard--stage-${props.columnSemanticType ?? 'custom'}${done ? ' jcard--compact' : ''}${task.flagged ? ' jcard--flagged' : ''}${developmentStage && task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed && !done ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
       data-task-id={task.id}
+      aria-label={cardLabel}
       tabIndex={0}
       onClick={() => props.onOpen(task.id)}
       onPointerDown={(e) => {
@@ -230,7 +241,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </button>
       )}
 
-      {!done && !stoppedStage && (task.flagged || task.autoPilot || epic || (props.columnSemanticType === 'backlog' && task.labels.length > 0) || (readyStage && task.skills.length > 0)) && (
+      {!done && !stoppedStage && (task.flagged || task.autoPilot || epic || task.labels.length > 0 || (readyStage && task.skills.length > 0)) && (
         <div className="jcard-chips">
           {task.flagged && <span className="jcard-flag" title="Помечена флагом"><FlagIcon filled /> Флаг</span>}
           {task.autoPilot && <span className="jcard-label" title="Автоматический проход конвейера">Автопроход</span>}
@@ -243,9 +254,21 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               {epic.title}
             </span>
           )}
-          {props.columnSemanticType === 'backlog' && task.labels.map((l) => (
-            <span key={l} className="jcard-label">{l}</span>
-          ))}
+          {task.labels.length > 0 && (
+            <span className="jcard-labels" role="list" aria-label={`Метки задачи: ${task.labels.join(', ')}`}>
+              {visibleLabels.map((label) => <span key={label} className="jcard-label" role="listitem">{label}</span>)}
+              {hiddenLabelCount > 0 && (
+                <span
+                  className="jcard-label jcard-label--more"
+                  role="listitem"
+                  aria-label={`Ещё ${hiddenLabelCount} метки: ${task.labels.slice(visibleLabels.length).join(', ')}`}
+                  title={`Все метки: ${task.labels.join(', ')}`}
+                >
+                  +{hiddenLabelCount}
+                </span>
+              )}
+            </span>
+          )}
           {readyStage && task.skills.map((s) => (
             <span key={`skill-${s}`} className="jcard-skill" title={`Навык: ${s}`}>{s}</span>
           ))}
@@ -444,18 +467,28 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </span>
 
         <span className="jcard-foot-right">
-          {/* В подписи только «29 авг.» — год виден лишь в подсказке. */}
-          {task.dueDate != null && (
-            <span className={`jcard-due jcard-due--${dueState(task.dueDate)}`} title={`Срок: ${formatDate(task.dueDate)}`}>
-              {fmtDue(task.dueDate)}
+          {task.dueDate != null && due && (
+            <time
+              className={`jcard-due jcard-due--${due.state}`}
+              dateTime={new Date(task.dueDate).toISOString()}
+              aria-label={due.label}
+              title={due.label}
+            >
+              {due.short}
+            </time>
+          )}
+          {task.storyPoints != null && (
+            <span className="jcard-pts" aria-label={`Оценка: ${task.storyPoints} story points`} title={`Оценка: ${task.storyPoints} story points`}>
+              {task.storyPoints} SP
             </span>
           )}
-          {task.storyPoints != null && <span className="jcard-pts" title="Стори-поинты">{task.storyPoints}</span>}
           <PriorityIcon priority={task.priority} />
           {task.assignee ? (
-            <Avatar username={task.assignee} />
+            <span className="jcard-assignee" role="img" aria-label={`Исполнитель: ${task.assignee}`}>
+              <Avatar username={task.assignee} />
+            </span>
           ) : (
-            <span className="javatar javatar--none" title="Не назначено">?</span>
+            <span className="javatar javatar--none" role="img" aria-label="Исполнитель не назначен" title="Не назначено">?</span>
           )}
         </span>
       </div>
