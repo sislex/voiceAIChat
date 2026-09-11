@@ -176,6 +176,99 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('Скрытая')).toBeInTheDocument()
   })
 
+  it('ищет по содержимому, меткам и исполнителю и показывает количество результатов', async () => {
+    renderBoard({
+      board: {
+        columns: [board.columns[0]!],
+        tasks: [
+          task({ id: 'title', title: 'Уникальный заголовок' }),
+          task({ id: 'description', title: 'Описание', description: 'Содержит webhook' }),
+          task({ id: 'criteria', title: 'Критерий', acceptanceCriteria: 'Должен пройти smoke' }),
+          task({ id: 'meta', title: 'Метаданные', labels: ['payments'], assignee: 'alexey' })
+        ]
+      }
+    })
+    const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
+    const count = screen.getByTestId('board-result-count')
+    expect(count).toHaveTextContent('Показано 4 из 4')
+    expect(count).toHaveAttribute('role', 'status')
+
+    await userEvent.type(search, 'webhook')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByText('Описание')).toBeInTheDocument()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'smoke')
+    expect(screen.getByText('Критерий')).toBeInTheDocument()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'payments')
+    expect(screen.getByText('Метаданные')).toBeInTheDocument()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'alexey')
+    expect(count).toHaveTextContent('Показано 1 из 4')
+    expect(screen.getByText('Метаданные')).toBeInTheDocument()
+  })
+
+  it('фокусирует поиск по /, очищает его по Escape и отдельной кнопкой', async () => {
+    renderBoard()
+    const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
+    expect(search).toHaveAttribute('aria-keyshortcuts', '/')
+
+    fireEvent.keyDown(document.body, { key: '/' })
+    expect(document.activeElement).toBe(search)
+
+    await userEvent.type(search, 'нет')
+    await userEvent.keyboard('{Escape}')
+    expect(search).toHaveValue('')
+    expect(document.activeElement).toBe(search)
+
+    await userEvent.type(search, 'другой')
+    const clear = screen.getByRole('button', { name: 'Очистить поиск на доске' })
+    expect(clear).toHaveAttribute('title', 'Очистить поиск')
+    await userEvent.click(clear)
+    expect(search).toHaveValue('')
+    expect(document.activeElement).toBe(search)
+  })
+
+  it('объясняет нулевой результат и сбрасывает все фильтры одним действием', async () => {
+    renderBoard()
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'ничего не найдено')
+
+    const empty = screen.getByTestId('kanban-filter-empty')
+    expect(empty).toHaveTextContent('По выбранным фильтрам задач не найдено')
+    expect(screen.getByTestId('board-result-count')).toHaveTextContent('Показано 0 из 1')
+
+    await userEvent.click(within(empty).getByRole('button', { name: 'Сбросить все фильтры' }))
+    expect(screen.queryByTestId('kanban-filter-empty')).not.toBeInTheDocument()
+    expect(screen.getByTestId('board-result-count')).toHaveTextContent('Показано 1 из 1')
+    expect(screen.getByText('A')).toBeInTheDocument()
+  })
+
+  it('прокручивает сфокусированную доску стрелками и переходит к краям по Home и End', () => {
+    renderBoard()
+    const surface = screen.getByRole('region', { name: /Канбан-доска проекта «P1»/ })
+    const column = screen.getByTestId('kanban-column')
+    vi.spyOn(column, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, width: 300, height: 400, top: 0, right: 300, bottom: 400, left: 0, toJSON: () => ({})
+    })
+    Object.defineProperty(surface, 'scrollWidth', { configurable: true, value: 1400 })
+    surface.focus()
+
+    fireEvent.keyDown(surface, { key: 'ArrowRight' })
+    expect(surface.scrollLeft).toBe(308)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Доска прокручена вправо')
+
+    fireEvent.keyDown(surface, { key: 'ArrowLeft' })
+    expect(surface.scrollLeft).toBe(0)
+    fireEvent.keyDown(surface, { key: 'End' })
+    expect(surface.scrollLeft).toBe(1400)
+    fireEvent.keyDown(surface, { key: 'Home' })
+    expect(surface.scrollLeft).toBe(0)
+    expect(surface).toHaveAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight Home End')
+  })
+
   it('стрелка использует полный порядок, включая скрытую колонку, и позицию в конце цели', async () => {
     const onMoveTask = vi.fn(async () => {})
     const orderedBoard: Board = {
