@@ -902,6 +902,24 @@ variant="page"`: в заголовке имя проекта, в слоте `act
 
 DnD строит `afterId`/`beforeId` по полному порядку задач ячейки, включая скрытые фильтрами карточки, и передаёт только целевую колонку и соседей: активный фильтр не меняет порядок и сам по себе не переназначает исполнителя. То же вычисление применяется в обычной раскладке и swimlanes.
 
+### Board search and keyboard navigation (2026-09-11)
+
+The board search covers the issue key, title, description, acceptance criteria,
+labels, and assignee. Its result counter uses the currently displayed columns as
+the denominator, updates through a polite live region, and remains visible even
+when no tasks match. The zero-result state offers one action that clears every
+global and per-column filter. A dedicated clear button keeps focus in the search
+field, while `Escape` clears the query in place and `/` focuses search unless the
+user is already editing another field.
+
+The shared board scroll surface is a named, focusable region. When the surface
+itself has focus, Left and Right move by one column width and Home/End move to the
+horizontal edges. Child controls keep their native key handling. Each movement is
+also announced through the existing `kanban-live` region. This behavior applies
+to both the normal layout and swimlanes and is covered in
+`KanbanBoard.dom.test.tsx`; the `ManyColumns` Storybook story is the manual browser
+check for actual horizontal scrolling.
+
 ### Меню колонки
 
 `KanbanBoard` хранит id открытого меню в едином состоянии `colMenu`, поэтому открытие

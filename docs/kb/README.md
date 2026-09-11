@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 80 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 103 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1350 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1351 коммит(ов) в areas после сверки: bb60d1ac docs(kb): update after merge 07d7f465-05cb-4f97-b4bf-3bfc36619e26 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 9 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 746. Последние:
+Всего записей: 747. Последние:
 
 - [2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md) — web-reader-rebase-main
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md) — web-reader-qa-cycle-08
