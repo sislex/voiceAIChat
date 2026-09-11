@@ -1,7 +1,7 @@
 // Атрибутика Jira-карточек: иконки типов и приоритетов, ключи задач (PRJ-42),
 // цвета аватаров/эпиков, форматирование сроков. Чистые функции — без стора.
 
-import type { KanbanColumn, TaskPriority, WorkItemType } from '@shared/projects'
+import type { BoardView, KanbanColumn, TaskPriority, WorkItemType } from '@shared/projects'
 
 // Аватар, инициалы и цвет по логину переехали в @voicechat/ui-kit: их просит и
 // список пользователей, и карточка профиля, а копия неизбежно разошлась бы с
@@ -177,6 +177,21 @@ export function duePresentation(ms: number, now = Date.now()): DuePresentation {
   if (days === 0) return { state: 'soon', short: 'Сегодня', label: `Срок сегодня, ${fullDate}`, days }
   if (days === 1) return { state: 'soon', short: 'Завтра', label: `Срок завтра, ${fullDate}`, days }
   return { state: 'ok', short: `Через ${days} ${dayWord(days)}`, label: `Срок через ${days} ${dayWord(days)}, ${fullDate}`, days }
+}
+
+export function matchesDueWindow(
+  dueDate: number | null,
+  dueWindow: BoardView['dueWindow'],
+  done: boolean,
+  now = Date.now()
+): boolean {
+  if (dueWindow === 'all') return true
+  if (dueWindow === 'none') return dueDate == null
+  if (dueDate == null) return false
+  const days = duePresentation(dueDate, now).days
+  if (dueWindow === 'overdue') return !done && days < 0
+  if (dueWindow === 'today') return days === 0
+  return days >= 0 && days < 7
 }
 
 /** Иконка типа Jira: цветной квадрат с глифом (эпик ⚡, история 🔖, задача ✓). */
