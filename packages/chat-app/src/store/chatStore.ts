@@ -1411,7 +1411,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     const remaining = Object.values(pendingSubmits)
     const patch: Partial<ChatState> = {
       pendingSubmits,
-      pendingSubmit: remaining[remaining.length - 1] ?? null
+      pendingSubmit: remaining[remaining.length - 1] ?? null,
+      // Ошибка/отмена этой обычной операции не должна оставить её карточку.
+      ...(pending.queueOnly ? {} : { preparingReply: false })
     }
     if (restoreDraft && !state.draft && pending.text) patch.draft = pending.text
     if (restoreDraft && state.attachments.length === 0 && pending.attachments.length > 0) {
@@ -2095,21 +2097,29 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         // удаления/повторного сохранения, чтобы зарезервировать AI-карточку.
         setState({ preparingReply: true })
         const messageExecTarget = source.execTarget ?? null
-        const removed = getState().messages.slice(idx)
-        for (const m of removed) {
-          await client['messages:delete']({ conversationId: activeId, messageId: m.id })
+        try {
+          const removed = getState().messages.slice(idx)
+          for (const m of removed) {
+            await client['messages:delete']({ conversationId: activeId, messageId: m.id })
+          }
+          replaceCachedMessages(activeId, getState().messages.slice(0, idx))
+          setError(null)
+          const sourceAttachments = source.attachments ?? []
+          await persistMessage(role, text, undefined, source.meta, messageExecTarget, sourceAttachments)
+          await refreshConversations()
+          if (!voice.dispatch('submit_text')) {
+            setState({ preparingReply: false })
+            return
+          }
+          beginReply(
+            [{ speakerId: 1, text }],
+            sourceAttachments.flatMap((item) => (item.uploadId ? [item.uploadId] : [])),
+            messageExecTarget
+          )
+        } catch (error) {
+          setState({ preparingReply: false })
+          throw error
         }
-        replaceCachedMessages(activeId, getState().messages.slice(0, idx))
-        setError(null)
-        const sourceAttachments = source.attachments ?? []
-        await persistMessage(role, text, undefined, source.meta, messageExecTarget, sourceAttachments)
-        await refreshConversations()
-        if (!voice.dispatch('submit_text')) return // idle → thinking
-        beginReply(
-          [{ speakerId: 1, text }],
-          sourceAttachments.flatMap((item) => (item.uploadId ? [item.uploadId] : [])),
-          messageExecTarget
-        )
       },
       async updateTaskLaunchStatus(messageId, proposalId, status, result) {
         const activeId = getState().activeId
