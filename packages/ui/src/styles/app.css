@@ -4999,6 +4999,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Свимлейны */
 .jlane-heads { display: flex; gap: 8px; align-items: flex-start; }
+.jlane-collapse-actions { display: flex; align-items: center; gap: 4px; min-height: 32px; }
+.jlane-collapse-status { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
 .jlane { display: flex; flex-direction: column; margin-top: 8px; }
 .jlane-head { display: flex; align-items: center; gap: 8px; border: none; background: none; color: inherit; font-size: 13px; font-weight: 600; padding: 6px 4px; cursor: pointer; text-align: left; }
 .jlane-head:hover { background: var(--surface-hover); border-radius: 4px; }
@@ -5006,6 +5008,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jlane-head[aria-expanded='true'] .vc-feed-caret { transform: rotate(45deg); }
 .jlane-title { display: inline-flex; align-items: center; gap: 6px; }
 .jlane-cols { display: flex; gap: 8px; align-items: flex-start; }
+.jlane-cols[hidden] { display: none; }
 .jlane-cols .jcol--incell { flex: 0 0 272px; width: 272px; min-height: 40px; }
 .jlane-cols .jcol--incell.jcol--collapsed { flex-basis: 60px; width: 60px; min-width: 60px; }
 

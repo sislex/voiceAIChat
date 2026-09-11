@@ -158,6 +158,54 @@ describe('KanbanBoard (изолированный)', () => {
     expect(document.querySelectorAll('.jcol--collapsed-cell[aria-hidden="true"]')).toHaveLength(controlledIds.length)
   })
 
+  it('показывает полный и отфильтрованный размер дорожки и связывает переключатель с содержимым', async () => {
+    localStorage.clear()
+    const laneBoard: Board = {
+      columns: board.columns.map((column) => ({ ...column, hidden: false })),
+      tasks: [
+        task({ id: 'alice-a', title: 'Alpha', assignee: 'alice' }),
+        task({ id: 'alice-b', title: 'Beta', assignee: 'alice', columnId: 'c2' }),
+        task({ id: 'free', title: 'Free', assignee: null })
+      ]
+    }
+    renderBoard({ board: laneBoard, currentUserId: 'lane-user', defaultSwimlane: 'assignee', members: [{ username: 'alice', role: 'member', addedAt: 1 }] })
+    const lane = screen.getByRole('button', { name: 'Свернуть дорожку «alice», 2 задачи' })
+    expect(lane).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById(lane.getAttribute('aria-controls')!)).not.toHaveAttribute('hidden')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'Alpha')
+    expect(screen.getByRole('button', { name: 'Свернуть дорожку «alice», 1 задача из 2' })).toHaveTextContent('1 из 2')
+  })
+
+  it('массово сворачивает дорожки и возвращает фокус после отдельного переключения', async () => {
+    localStorage.clear()
+    renderBoard({ currentUserId: 'lane-bulk-user', defaultSwimlane: 'assignee', members: [{ username: 'alice', role: 'member', addedAt: 1 }] })
+    const group = screen.getByRole('group', { name: 'Управление дорожками' })
+    expect(within(group).getByText('Свёрнуто дорожек 0 из 2')).toBeInTheDocument()
+    await userEvent.click(within(group).getByRole('button', { name: 'Свернуть дорожки' }))
+    expect(screen.getAllByRole('button', { name: /Развернуть дорожку/ })).toHaveLength(2)
+    expect(within(group).getByText('Свёрнуто дорожек 2 из 2')).toBeInTheDocument()
+
+    await userEvent.click(within(group).getByRole('button', { name: 'Развернуть дорожки' }))
+    const collapse = screen.getByRole('button', { name: /Свернуть дорожку «Не назначено»/ })
+    collapse.focus()
+    await userEvent.click(collapse)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /Развернуть дорожку «Не назначено»/ })))
+  })
+
+  it('сохраняет дорожки отдельно по режиму и удаляет исчезнувшие значения', async () => {
+    localStorage.clear()
+    const key = 'voicechat.kanban.collapsed-lanes.v1.lane-persist-user.p1'
+    localStorage.setItem(key, JSON.stringify({ assignee: ['alice', 'removed'], epic: ['epic-kept'] }))
+    const first = render(<KanbanBoardHarness currentUserId="lane-persist-user" defaultSwimlane="assignee" members={[{ username: 'alice', role: 'member', addedAt: 1 }]} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Развернуть дорожку «alice»/ })).toBeInTheDocument())
+    await waitFor(() => expect(localStorage.getItem(key)).toBe(JSON.stringify({ assignee: ['alice'], epic: ['epic-kept'] })))
+    first.unmount()
+
+    render(<KanbanBoardHarness currentUserId="different-lane-user" defaultSwimlane="assignee" members={[{ username: 'alice', role: 'member', addedAt: 1 }]} />)
+    expect(screen.getByRole('button', { name: /Свернуть дорожку «alice»/ })).toBeInTheDocument()
+  })
+
   it('ошибка показывается баннером role=alert; без board — только баннер', () => {
     renderBoard({ board: null, error: 'Сервер недоступен' })
     expect(screen.getByRole('alert')).toHaveTextContent('Сервер недоступен')
