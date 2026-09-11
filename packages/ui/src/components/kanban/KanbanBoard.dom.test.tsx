@@ -246,6 +246,64 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('A')).toBeInTheDocument()
   })
 
+  it('показывает все виды активных фильтров и снимает их по одному или вместе', async () => {
+    const filteredView = {
+      ...DEFAULT_BOARD_VIEW,
+      search: 'needle',
+      assignees: ['alexey'],
+      types: ['story' as const],
+      priorities: ['high' as const],
+      labels: ['ui'],
+      epics: ['epic-1'],
+      onlyMine: true,
+      flaggedOnly: true,
+      recentOnly: true,
+      columnAssignees: { c1: { assigneeIds: ['bob'], unassigned: true } }
+    }
+    renderBoard({
+      currentUserId: 'alexey',
+      members: [
+        { username: 'alexey', role: 'member', active: true, addedAt: 1 },
+        { username: 'bob', role: 'member', active: true, addedAt: 1 }
+      ],
+      view: filteredView,
+      board: {
+        columns: [board.columns[0]!],
+        tasks: [
+          task({ id: 'epic-1', type: 'epic', title: 'Платежи' }),
+          task({ id: 'story-1', type: 'story', parentId: 'epic-1', title: 'needle', labels: ['ui'], priority: 'high', assignee: 'alexey', flagged: true, updatedAt: Date.now() })
+        ]
+      }
+    })
+
+    const strip = await screen.findByRole('region', { name: 'Активные фильтры' })
+    const expected = [
+      'Поиск: needle',
+      'Исполнитель: alexey',
+      'Тип: История',
+      'Приоритет: Высокий',
+      'Метка: ui',
+      'Эпик: Платежи',
+      'Только мои задачи',
+      'С флагом',
+      'Обновлены за сутки',
+      'Колонка «To Do»: bob, без исполнителя'
+    ]
+    for (const label of expected) {
+      expect(within(strip).getByRole('button', { name: `Удалить фильтр: ${label}` })).toBeInTheDocument()
+    }
+
+    await userEvent.click(within(strip).getByRole('button', { name: 'Удалить фильтр: Поиск: needle' }))
+    expect(within(strip).queryByRole('button', { name: 'Удалить фильтр: Поиск: needle' })).not.toBeInTheDocument()
+    expect(within(strip).getByRole('button', { name: 'Удалить фильтр: Исполнитель: alexey' })).toBeInTheDocument()
+
+    await userEvent.click(within(strip).getByRole('button', { name: 'Удалить фильтр: Колонка «To Do»: bob, без исполнителя' }))
+    expect(within(strip).queryByText(/Колонка «To Do»/)).not.toBeInTheDocument()
+
+    await userEvent.click(within(strip).getByRole('button', { name: 'Сбросить все' }))
+    expect(screen.queryByTestId('active-filters')).not.toBeInTheDocument()
+  })
+
   it('прокручивает сфокусированную доску стрелками и переходит к краям по Home и End', () => {
     renderBoard({
       board: {
@@ -1332,6 +1390,17 @@ describe('KanbanBoard — фильтры на телефоне', () => {
     await userEvent.click(firstFilter)
     // Иначе непонятно, почему на доске мало карточек.
     expect(within(shell.querySelector('summary')!).getByText('1')).toBeInTheDocument()
+  })
+
+  it('оставляет активные фильтры видимыми снаружи свёрнутой панели', async () => {
+    setMobileViewport(true)
+    renderBoard({ currentUserId: 'mobile-user', view: { ...DEFAULT_BOARD_VIEW, search: 'A' } })
+    const shell = screen.getByTestId('board-filters-shell')
+    const strip = await screen.findByTestId('active-filters')
+
+    expect(shell).not.toHaveAttribute('open')
+    expect(shell).not.toContainElement(strip)
+    expect(within(strip).getByRole('button', { name: 'Удалить фильтр: Поиск: A' })).toBeInTheDocument()
   })
 })
 

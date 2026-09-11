@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 8a3cf2a5
+checked: 44879c71
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -935,6 +935,21 @@ same selection. Header targets are shared by the regular layout and swimlane
 layout, so both modes have the same navigation behavior. DOM tests cover focus,
 edge states, hidden columns, and swimlanes; the `ManyColumns`, `HiddenColumns`,
 and `SwimlanesByAssignee` Storybook stories are used for Chromium verification.
+
+### Active filter strip (2026-09-11)
+
+Every active task filter is repeated as a removable chip below the filter bar:
+search, each assignee, type, priority, label, epic, the three quick modes, and
+each per-column assignee selection. Epic and column identifiers are resolved to
+their visible names. Removing a chip changes only its condition; `Reset all`
+clears the same complete set as the zero-result recovery action.
+
+The strip is outside the mobile `details` element, so a collapsed filter panel
+cannot hide the reason for a reduced or empty board. Long values are truncated
+visually while their full accessible button name remains available. DOM tests
+cover every chip category, isolated removal, complete reset, and placement on a
+mobile board. The interactive Storybook board is the Chromium check for desktop
+and collapsed mobile behavior.
 
 ### Меню колонки
 
