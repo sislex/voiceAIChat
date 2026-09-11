@@ -10,8 +10,8 @@ written before implementation. Existing audit work is preserved.
 | 02 | Host bridge command lifecycle | Merged, 10/10 | #143 |
 | 03 | Host frame navigation and save recovery | Merged, 10/10 | #144 |
 | 04 | Assistant action history usability | Merged, 10/10 | #145 |
-| 05 | Address entry and navigation feedback | Implemented, 10/10 | |
-| 06 | Recorder scenario editing | Planned | |
+| 05 | Address entry and navigation feedback | Merged, 10/10 | #147 |
+| 06 | Scenario editing | Implemented, 10/10 | |
 | 07 | Scenario portability and export | Planned | |
 | 08 | Recorder status and keyboard interaction | Planned | |
 | 09 | Reader diagnostics and recovery | Planned | |
@@ -81,3 +81,16 @@ written before implementation. Existing audit work is preserved.
 8. Escape restores the current URL.
 9. Ctrl/Cmd+L selects the Reader address.
 10. Clear-page action persists the cleared state.
+
+## Cycle 06 proposal
+
+1. Add click steps manually.
+2. Add text steps manually.
+3. Duplicate a step.
+4. Switch action kind without incompatible fields.
+5. Edit Enter submission.
+6. Show step numbers and count.
+7. Undo edits with bounded history.
+8. Redo edits.
+9. Flag missing selectors and disable invalid playback/export.
+10. Clear temporary secrets when targets change.
