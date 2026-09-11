@@ -8,8 +8,8 @@ written before implementation. Existing audit work is preserved.
 | --- | --- | --- | --- |
 | 01 | Store lifecycle and asynchronous failures | Merged, 10/10 | #141 |
 | 02 | Host bridge command lifecycle | Merged, 10/10 | #143 |
-| 03 | Host frame navigation and save recovery | Implemented, 10/10 | |
-| 04 | Assistant action history usability | Planned | |
+| 03 | Host frame navigation and save recovery | Merged, 10/10 | #144 |
+| 04 | Assistant action history usability | Implemented, 10/10 | |
 | 05 | Address entry and navigation feedback | Planned | |
 | 06 | Recorder scenario editing | Planned | |
 | 07 | Scenario portability and export | Planned | |
@@ -55,3 +55,16 @@ written before implementation. Existing audit work is preserved.
 8. Clear retry state when a new save succeeds.
 9. Reset save errors between conversations.
 10. Make the unprepared iframe inert and remove its tab stop.
+
+## Cycle 04 proposal
+
+1. Collapsible history.
+2. Total action count.
+3. Action-label search.
+4. Page-title and site search.
+5. No-match feedback.
+6. Clear search with button or Escape.
+7. Recorded page titles.
+8. Site labels without query/credentials.
+9. Distinct accessible repeat controls.
+10. Reset controls on conversation switch and wrap long labels.
