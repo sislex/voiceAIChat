@@ -5,13 +5,19 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { isPreviewProbeResult, type PreviewAction, type PreviewActionResultMessage, type PreviewAuditOptions, type PreviewAuditResult } from '@voicechat/shared'
 import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
-import { auditFixtures, probeFixtures, probeExpectationFailures } from '@voicechat/browser-contracts/audit/fixtures'
+import { auditFixtures, probeFixtures, probeExpectationFailures, formConstraintExamples, formReadOnlyScene, formReadOnlySetup, formReadOnlyState, type FormFixtureEdit } from '@voicechat/browser-contracts/audit/fixtures'
 
 let app: FastifyInstance, browser: Browser, page: Page, base: string, source = ''
 async function open(html: string) {
   source = html
   await page.goto(base + '/host')
   await page.frameLocator('iframe').locator('#voicechat-preview-inspector').waitFor({ state: 'attached' })
+}
+async function editFixture(edit?: FormFixtureEdit) {
+  if (!edit) return
+  await page.frameLocator('iframe').locator(edit.selector).focus()
+  await page.keyboard.type(edit.text)
+  if (edit.after) await page.frames().find(frame => frame.url().includes('/api/preview?'))!.evaluate(edit.after)
 }
 async function perform(action: PreviewAction) {
   const message = await page.evaluate(action => new Promise<PreviewActionResultMessage>((resolve, reject) => {
@@ -134,9 +140,29 @@ describe('Web Reader built-in diagnostics in Chromium', () => {
     }
   })
 
+  it.each(formConstraintExamples)('preserves form semantics: $name', async example => {
+    await open('<!doctype html>'+example.html)
+    expect((await audit({ group: 'forms', rules: [example.rule] })).total).toBe(example.total)
+  })
+  it('reports bounded form inspection rather than rejecting oversized patterns', async () => {
+    await open('<!doctype html><input pattern="'+'a'.repeat(4097)+'">')
+    const report = await audit({ group: 'forms', rules: ['pattern-syntax-invalid'] })
+    expect(report.total).toBe(0)
+    expect(report.truncated).toBe(true)
+    expect(report.limitations).toContain('Form constraint inspection stopped at 4096 attribute characters.')
+  })
+  it('discovers 30 form checks and classifies validity as observed state', async () => {
+    await open('<!doctype html><input required>')
+    const catalog = await audit({ group: 'forms', mode: 'list', limit: 30 })
+    expect(catalog.rules).toHaveLength(30)
+    const validity = catalog.rules.filter(rule => rule.id.startsWith('validity-'))
+    expect(validity).toHaveLength(10)
+    expect(validity.every(rule => rule.severity === 'info' && rule.confidence === 'observed')).toBe(true)
+  })
   for (const fixture of auditFixtures) {
     it(`detects ${fixture.name ?? fixture.rule}`, async () => {
       await open(fixture.broken)
+      await editFixture(fixture.edit?.broken)
       if (fixture.ready) await page.frames().find(frame => frame.url().includes('/api/preview?'))!.waitForFunction(fixture.ready)
       const report = await audit({ group: fixture.group, rules: [fixture.rule] })
       expect(report.checkedRules).toBe(1)
@@ -145,6 +171,7 @@ describe('Web Reader built-in diagnostics in Chromium', () => {
     })
     it(`clears ${fixture.name ?? fixture.rule} after repair`, async () => {
       await open(fixture.fixed)
+      await editFixture(fixture.edit?.fixed)
       if (fixture.ready) await page.frames().find(frame => frame.url().includes('/api/preview?'))!.waitForFunction(fixture.ready)
       expect((await audit({ group: fixture.group, rules: [fixture.rule] })).findings).toEqual([])
     })
@@ -193,10 +220,36 @@ describe('Web Reader built-in diagnostics in Chromium', () => {
   })
   it('does not include sensitive field values in audit evidence', async () => {
     await open('<!doctype html><body><input type="password" value="never-report-this"><input name="token" value="nor-this"></body>')
-    for (const group of ['markup', 'layout', 'typography', 'color']) {
+    for (const group of ['markup', 'layout', 'typography', 'color', 'forms']) {
       const report = JSON.stringify(await audit({ group }))
       expect(report).not.toContain('never-report-this')
       expect(report).not.toContain('nor-this')
+    }
+  })
+  it('observes form validity without reading values, firing invalid or changing the page', async () => {
+    await open(formReadOnlyScene)
+    const frame = page.frames().find(candidate => candidate.url().includes('/api/preview?'))!
+    await frame.evaluate(formReadOnlySetup)
+    const before = await frame.evaluate(formReadOnlyState)
+    const report = await audit({ group: 'forms', limit: 30 })
+    expect(report.findings.map(f => f.id)).toContain('validity-custom-error')
+    expect(JSON.stringify(report)).not.toContain('PRIVATE_')
+    expect(await frame.evaluate(formReadOnlyState)).toEqual(before)
+  })
+  it('refreshes validity after the application clears a custom error', async () => {
+    await open(formReadOnlyScene)
+    const options = { group: 'forms', rules: ['validity-custom-error'] }
+    expect((await audit(options)).total).toBe(1)
+    await page.frameLocator('iframe').locator('#target').evaluate(el => (el as HTMLInputElement).setCustomValidity(''))
+    expect((await audit(options)).total).toBe(0)
+  })
+  it('captures form configuration and native validation evidence', async () => {
+    await open('<!doctype html><html lang="en"><head><title>Form audit evidence</title><style>body{font:16px/1.4 system-ui;background:#edf2f8;padding:20px;color:#172033}main{background:white;border-radius:16px;padding:24px;max-width:760px}h1{font-size:28px;margin:0 0 20px}h2{font-size:20px;margin:0 0 8px}p{margin:8px 0}section{border-top:1px solid #dce4ee;padding:12px 0}input{display:block;width:200px;padding:8px;margin-top:4px;font:inherit;border:1px solid #5276ad;border-radius:8px}.error{color:#a31c2f}code{background:#edf2f8;padding:2px 6px}</style></head><body><main><h1>Form audit: state and configuration</h1><section><h2>Conflicting configuration</h2><label>Quantity<input id="reversed" type="number" min="10" max="2"></label><p class="error">Minimum 10 exceeds maximum 2.</p></section><section><h2>Current validation state</h2><label>Email<input id="invalid" type="email" value="not-an-email" aria-invalid="true"></label><p>The browser reports <code>typeMismatch</code>; review the application error flow.</p></section><section><h2>Repaired configuration</h2><label>Quantity<input id="repaired" type="number" min="2" max="10" value="4"></label></section></main></body></html>')
+    expect((await audit({ group: 'forms', rules: ['range-constraints-reversed'] })).findings.map(f => f.selector)).toEqual(['#reversed'])
+    expect((await audit({ group: 'forms', rules: ['validity-type-mismatch'] })).findings.map(f => f.selector)).toEqual(['#invalid'])
+    if (process.env.VC_VISUAL_ARTIFACTS) {
+      await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
+      await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'cycle-06-forms.png'), fullPage: true })
     }
   })
   it('reads changed text and styles without reusing a previous audit snapshot', async () => {

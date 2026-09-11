@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: b16b2d46
+checked: 20814f73
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2454,8 +2454,8 @@ The `audit` MCP tool inspects the live proxy or native Chromium document without
 `packages/shared/src/previewAudit.ts` defines bounded options and evidence; the
 `audit` action travels through the existing Reader relay and recorder bridge.
 Pure program generators in `packages/browser-contracts/src/audit/` execute 30
-markup checks, 30 layout checks, 30 typography checks and nine color report types
-covering 30 verified color/paint capabilities. Web Reader retains stable re-export paths;
+markup checks, 30 layout checks, 30 typography checks, 30 form checks and nine color
+report types covering 30 verified color/paint capabilities. Web Reader retains stable re-export paths;
 browser-runner executes the same checks through built-in `inspect/audit`, separate
 from model-supplied `evaluate` code and its policy. Use `mode: list` to discover rule IDs;
 `mode: run` is the default. `group` defaults to `markup`, `rules` narrows checks,
@@ -2519,6 +2519,27 @@ Text discovery is bounded to 256 children and 4,096 characters per text node;
 paint composition stops at 64 ancestors and marks the scan truncated. Inspection
 does not focus controls, select text, scroll, insert a canvas or read field values.
 
+The `forms` group observes ten native ValidityState flags as informational state,
+not confirmed bugs: untouched required forms can legitimately be incomplete.
+Twenty additional checks identify invisible invalid controls, ARIA/native state
+mismatches, invalid or ignored constraint metadata, reversed lengths/ranges, input
+and submission-method fallbacks, unresolved form owners and named controls that
+shadow `form.submit`. Custom or server validation can explain an ARIA/native mismatch.
+
+Form audits read `willValidate` and native validity flags without invoking
+`checkValidity`/`reportValidity`, which can fire invalid events. They do not read
+live field values or `validationMessage`; detached inputs parse only constraint
+attributes. Constraint parsing stops at 4,096 characters and reports incomplete
+inspection. HTML patterns use Unicode-sets (`v`) syntax. Native date/number parsers
+handle metadata, range inputs use an unclamped number parser, and overnight time
+ranges are excluded from reversed-range findings. Native length flags depend on
+user editing: the paired fixtures use real keyboard input and lower maxlength
+only after typing to exercise `tooLong`. These rules do not execute arbitrary
+application or server validation. References:
+[ValidityState](https://developer.mozilla.org/en-US/docs/Web/API/ValidityState),
+[validation events](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/checkValidity),
+[HTML patterns](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/pattern).
+
 The read-only `probe {selector}` tool accepts a standard CSS selector and explains one target, including hidden targets
 that ordinary reading would omit. `packages/shared/src/previewProbe.ts` defines
 the options, result and runtime validation. Reports separate browser visibility,
@@ -2553,7 +2574,8 @@ uses the browser's own box/visibility checks separately.
 
 Test examples are exported separately from `@voicechat/browser-contracts/audit/fixtures`;
 production imports only the pure program generators. Both browser suites consume
-one fixture registry, including explicit readiness for font loading. Audit source
+one fixture registry, including explicit readiness for font loading and real-keyboard
+setup for validity states that distinguish user edits from programmatic values. Audit source
 paths are registered as browser changes in the application catalog, so a new group
 selects both Reader E2E suites even when no application source file changes.
 
