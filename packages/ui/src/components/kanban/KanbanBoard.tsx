@@ -1432,6 +1432,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onStartMerge={props.onStartMerge}
       previousColumn={previousColumn ? { id: previousColumn.id, name: previousColumn.name } : null}
       nextColumn={nextColumn ? { id: nextColumn.id, name: nextColumn.name } : null}
+      moveColumns={fullColumns.map((column) => ({ id: column.id, name: column.name, hidden: column.hidden }))}
       onMoveToColumn={async (taskId, fromColumnId, targetColumnId) => {
         const current = allTasks.find((task) => task.id === taskId)
         if (!current || current.columnId !== fromColumnId) return
