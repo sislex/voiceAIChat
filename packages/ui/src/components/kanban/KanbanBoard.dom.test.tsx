@@ -82,6 +82,82 @@ describe('KanbanBoard (изолированный)', () => {
     await waitFor(() => expect(screen.getByTestId('kanban-board')).toHaveAttribute('data-density', 'comfortable'))
   })
 
+  it('сворачивает колонку в узкую доступную полосу и возвращает фокус на переключатель', async () => {
+    localStorage.clear()
+    const visibleBoard: Board = {
+      columns: board.columns.map((column) => ({ ...column, hidden: false })),
+      tasks: [...board.tasks, task({ id: 't2', columnId: 'c2', title: 'B', position: 1024 })]
+    }
+    renderBoard({ board: visibleBoard, currentUserId: 'collapse-user' })
+
+    const group = screen.getByRole('group', { name: 'Управление свёрнутыми колонками' })
+    expect(within(group).getByText('Свёрнуто 0 из 2')).toBeInTheDocument()
+    expect(within(group).getByRole('button', { name: 'Развернуть все' })).toBeDisabled()
+    const collapse = screen.getByRole('button', { name: 'Свернуть колонку «To Do»' })
+    const contentId = collapse.getAttribute('aria-controls')
+    expect(collapse).toHaveAttribute('aria-expanded', 'true')
+    expect(contentId).toBeTruthy()
+
+    collapse.focus()
+    await userEvent.click(collapse)
+
+    const expand = screen.getByRole('button', { name: 'Развернуть колонку «To Do»' })
+    await waitFor(() => expect(document.activeElement).toBe(expand))
+    expect(expand).toHaveAttribute('aria-expanded', 'false')
+    expect(expand).toHaveAttribute('aria-controls', contentId)
+    expect(document.getElementById(contentId!)).toHaveAttribute('hidden')
+    expect(expand.closest('[data-column-id]')).toHaveClass('jcol--collapsed')
+    expect(within(group).getByText('Свёрнуто 1 из 2')).toBeInTheDocument()
+    expect(screen.getByLabelText('Перейти к колонке')).toHaveDisplayValue('To Do (1)')
+
+    await userEvent.click(expand)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Свернуть колонку «To Do»' })))
+    expect(screen.getByText('A')).toBeInTheDocument()
+  })
+
+  it('сворачивает и разворачивает все колонки одной командой', async () => {
+    localStorage.clear()
+    renderBoard({
+      board: { columns: board.columns.map((column) => ({ ...column, hidden: false })), tasks: board.tasks },
+      currentUserId: 'collapse-all-user'
+    })
+    const group = screen.getByRole('group', { name: 'Управление свёрнутыми колонками' })
+
+    await userEvent.click(within(group).getByRole('button', { name: 'Свернуть все' }))
+    expect(screen.getAllByRole('button', { name: /Развернуть колонку/ })).toHaveLength(2)
+    expect(within(group).getByText('Свёрнуто 2 из 2')).toBeInTheDocument()
+    expect(within(group).getByRole('button', { name: 'Свернуть все' })).toBeDisabled()
+
+    await userEvent.click(within(group).getByRole('button', { name: 'Развернуть все' }))
+    expect(screen.getAllByRole('button', { name: /Свернуть колонку/ })).toHaveLength(2)
+    expect(within(group).getByRole('button', { name: 'Развернуть все' })).toBeDisabled()
+  })
+
+  it('восстанавливает свёрнутые колонки только для того же пользователя и удаляет устаревшие id', async () => {
+    localStorage.clear()
+    const key = 'voicechat.kanban.collapsed-columns.v1.collapse-user.p1'
+    localStorage.setItem(key, JSON.stringify(['c1', 'removed-column']))
+    const first = render(<KanbanBoardHarness currentUserId="collapse-user" />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Развернуть колонку «To Do»' })).toBeInTheDocument())
+    await waitFor(() => expect(localStorage.getItem(key)).toBe(JSON.stringify(['c1'])))
+    first.unmount()
+    render(<KanbanBoardHarness currentUserId="another-user" />)
+    expect(screen.getByRole('button', { name: 'Свернуть колонку «To Do»' })).toBeInTheDocument()
+  })
+
+  it('скрывает ячейки свёрнутой колонки во всех свимлейнах, сохраняя шапку', async () => {
+    localStorage.clear()
+    render(<KanbanBoardHarness currentUserId="collapse-lane-user" defaultSwimlane="assignee" />)
+    await userEvent.click(screen.getByRole('button', { name: 'Свернуть колонку «To Do»' }))
+
+    const expand = screen.getByRole('button', { name: 'Развернуть колонку «To Do»' })
+    const controlledIds = expand.getAttribute('aria-controls')?.split(' ') ?? []
+    expect(controlledIds.length).toBeGreaterThan(0)
+    expect(controlledIds.every((id) => document.getElementById(id)?.classList.contains('jcol--collapsed-cell'))).toBe(true)
+    expect(document.querySelectorAll('.jcol--collapsed-cell[aria-hidden="true"]')).toHaveLength(controlledIds.length)
+  })
+
   it('ошибка показывается баннером role=alert; без board — только баннер', () => {
     renderBoard({ board: null, error: 'Сервер недоступен' })
     expect(screen.getByRole('alert')).toHaveTextContent('Сервер недоступен')

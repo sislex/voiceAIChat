@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: e1093bdf
+checked: 342365c6
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1095,6 +1095,25 @@ accent, and each retains its semantic priority icon. The compact row scrolls
 horizontally on narrow screens. DOM tests cover counts, OR selection, reset, and
 other-filter interaction; Chromium verifies semantics, synchronization, and
 mobile overflow.
+
+### Collapsible board columns (2026-09-11)
+
+Each displayed board column can be reduced to a 60-pixel rail from its header.
+The rail keeps the column name, complete task count, WIP limit and WIP state, so
+freeing horizontal space does not hide the information needed to decide where a
+task can move. Column order and the toolbar navigator stay unchanged. In
+swimlane mode the matching cell in every lane is reduced with the header, while
+the lane grid keeps its column alignment.
+
+The header toggle exposes `aria-expanded` and `aria-controls`; after either
+collapse or expansion, focus moves to the replacement toggle. Toolbar commands
+collapse or expand every displayed column and announce `N из M`. The preference
+is stored locally under
+`voicechat.kanban.collapsed-columns.v1.<user>.<project>`, isolated by user and
+stable project id. Hydration accepts only string identifiers and removes ids
+that no longer exist in the board snapshot. DOM tests cover focus, semantics,
+bulk commands, persistence, stale-id cleanup, and swimlanes. Chromium verifies
+the built Storybook at desktop and mobile widths, including reload restoration.
 
 ### Меню колонки
 
