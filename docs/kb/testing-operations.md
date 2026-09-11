@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-11
-checked: ec5657cf
+checked: 55104903
 areas:
   - package.json
   - scripts
@@ -81,6 +81,13 @@ areas:
 до кнопки. Каждому пользователю в тесте нужен свой `PUT /api/settings` с
 `onboarded: true`. Пароль в `POST /api/admin/users` не должен содержать логин —
 политика такие отклоняет.
+
+Project creation also requires an online machine in the host UI (`App.tsx`,
+`requireMachine`). The Projects E2E fixture currently starts no companion, so
+clicking “New project” opens the device connection dialog instead of
+`new-project-dialog`. A missing name-field timeout in this setup is followed by
+cascading missing-project failures; it does not establish a project-form defect.
+Provide an online test companion before treating this suite as delivery evidence.
 
 **Ловушка: брошенный `tsx watch` без `VC_DATA_DIR` правит базу по умолчанию.**
 `npm run -w @voicechat/server dev` — это `tsx watch`: процесс перезапускается на
