@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-10
-checked: 11105f5c
+updated: 2026-09-11
+checked: 06b025e0
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -60,11 +60,19 @@ REST preview-url только для собственного web-recorder; об
   `VoiceChatDb` на том же файле, обязан `await db.ready` / `await db.close()`; тест с изменяемыми
   часами (`now: () => clock`) обязан ждать каждый вызов — иначе тело прочитает уже переставленные часы.
 
-**Установка схемы Postgres под замком (2026-09-08).** `VoiceChatDb.init()` на Postgres ставит `PG_SCHEMA.sql`
-внутри транзакции после `SELECT pg_advisory_xact_lock(<константа>)`: соседние процессы стенда (ядро, канбан,
-машины, ридер) открывают базу одновременно, и без замка `CREATE TABLE IF NOT EXISTS` двух сессий упирается в
-deadlock (40P01), а `CREATE SCHEMA IF NOT EXISTS` — в duplicate key по `pg_namespace`. Регрессия —
-`db/database.pgBootstrap.test.ts` (только с `VC_TEST_DB_URL`).
+**PostgreSQL schema installation and additive upgrades (2026-09-11).**
+`VoiceChatDb.init()` holds the schema advisory lock for the whole transaction.
+It creates missing tables first, compares every generated `PG_SCHEMA.columns`
+entry with `information_schema.columns`, adds missing columns, and only then
+creates indexes, seeds, foreign keys, and PostgreSQL-specific objects. This
+ordering prevents a release from starting with code that queries a column which
+`CREATE TABLE IF NOT EXISTS` left absent in an older table. The upgrade plan is
+derived from the same `schema.ts` definitions as a fresh PostgreSQL schema, so a
+future additive column change does not require a second handwritten PostgreSQL
+DDL statement. Semantic data transformations still remain explicit; for example,
+the task-level manual-QA flag is copied from its project only when that column is
+first added. `database.pgBootstrap.test.ts` recreates this production upgrade
+path against a real server when `VC_TEST_DB_URL` is set.
 
 **Postgres как движок всей базы (`VC_DB_URL`, 2026-09-07, `docs/plans/db-postgres.md`).** Тот же
 `VoiceChatDb`, тот же код репозиториев: `new VoiceChatDb(path, { postgres: { url } })` открывает
@@ -79,11 +87,11 @@ truthy/bucket`). Схема Postgres выводится из `schema.ts` ген�
 BIGINT, REAL → DOUBLE PRECISION, AUTOINCREMENT → BIGSERIAL, у каждой таблицы явный `rowid`, FK
 отдельными `ALTER` после всех таблиц, сиды через транслятор) плюс `PG_EXTRA_SQL`: полнотекстовый
 индекс `messages.text_tsv` (tsvector, GIN; `toPgTsQuery` в `fts.ts`) вместо FTS5 и plpgsql-триггеры
-`cost_dirty`. Поэтому **новая колонка объявляется в `CREATE TABLE` в `schema.ts`**, а ALTER в
-`migrate()` — только для старых SQLite-файлов; гейт `schemaPg.test.ts` требует и то и другое.
-Миграции `migrate()` на Postgres не выполняются: база создаётся переносом
-(`db/copyToPostgres.ts`, CLI `npx tsx apps/server/src/db/copyToPostgres.cli.ts --sqlite <файл> --url <postgres://…>`)
-уже в актуальной схеме. Прод работает на Postgres с 2026-09-08 (см. deploy.md). Тесты: `VC_TEST_DB_URL=postgres://…` заставляет каждую `:memory:`-базу
+`cost_dirty`. A new column is declared once in `schema.ts`: `migrate()` upgrades
+legacy SQLite files, while the generated PostgreSQL column reconciliation upgrades
+existing PostgreSQL tables before the server starts accepting requests. Data can
+also be copied initially with `db/copyToPostgres.ts` and its CLI. Прод работает
+на Postgres с 2026-09-08 (см. deploy.md). Тесты: `VC_TEST_DB_URL=postgres://…` заставляет каждую `:memory:`-базу
 открываться свежей схемой `t_<id>` в Postgres и удалять её в `close()` — так гоняется вся матрица
 сервера; контейнеру нужен `-c max_locks_per_transaction=1024` (схемы с сотней таблиц дропаются
 одной транзакцией). Тесты сырого драйвера и файловых баз помечены `ON_POSTGRES`; тесты
