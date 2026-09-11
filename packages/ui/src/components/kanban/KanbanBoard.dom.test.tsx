@@ -956,13 +956,53 @@ describe('KanbanBoard (изолированный)', () => {
     expect(menu).toBeInTheDocument()
   })
 
-  it('Escape закрывает меню колонки', async () => {
+  it('Escape закрывает меню колонки и возвращает фокус на связанный триггер', async () => {
     renderBoard()
-    await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «To Do»' }))
+    const trigger = screen.getByRole('button', { name: 'Меню колонки «To Do»' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(trigger)
+    const menu = screen.getByRole('menu', { name: 'Действия колонки «To Do»' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(trigger).toHaveAttribute('aria-controls', menu.id)
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus())
 
     await userEvent.keyboard('{Escape}')
 
     expect(screen.queryByTestId('column-menu')).not.toBeInTheDocument()
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('ходит по пунктам меню стрелками, Home и End и закрывает меню по Tab', async () => {
+    renderBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «To Do»' }))
+    const menu = screen.getByRole('menu', { name: 'Действия колонки «To Do»' })
+    const items = within(menu).getAllByRole('menuitem')
+    await waitFor(() => expect(items[0]).toHaveFocus())
+    await userEvent.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await userEvent.keyboard('{End}')
+    expect(items.at(-1)).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(items[0]).toHaveFocus()
+    await userEvent.keyboard('{ArrowUp}')
+    expect(items.at(-1)).toHaveFocus()
+    await userEvent.keyboard('{Home}')
+    expect(items[0]).toHaveFocus()
+    await userEvent.keyboard('{Tab}')
+    expect(screen.queryByRole('menu', { name: 'Действия колонки «To Do»' })).not.toBeInTheDocument()
+  })
+
+  it('открытие меню другой колонки заменяет первое и фокусирует его действие', async () => {
+    renderBoard({ board: { ...board, columns: board.columns.map((column) => ({ ...column, hidden: false })) } })
+    const first = screen.getByRole('button', { name: 'Меню колонки «To Do»' })
+    const second = screen.getByRole('button', { name: 'Меню колонки «Скрытая»' })
+    await userEvent.click(first)
+    await userEvent.click(second)
+    expect(screen.queryByRole('menu', { name: 'Действия колонки «To Do»' })).not.toBeInTheDocument()
+    const menu = screen.getByRole('menu', { name: 'Действия колонки «Скрытая»' })
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus())
+    expect(second).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('повторное нажатие на триггер закрывает меню колонки', async () => {
@@ -1071,7 +1111,7 @@ describe('KanbanBoard (изолированный)', () => {
     const filters = screen.getByTestId('board-filters')
     await userEvent.click(within(filters).getByRole('checkbox', { name: /скрытые/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «Скрытая»' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Удалить' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Удалить' }))
 
     const dialog = await screen.findByTestId('confirm-dialog')
     expect(within(dialog).getByRole('heading', { name: 'Удалить колонку «Скрытая» со всеми задачами?' })).toBeInTheDocument()

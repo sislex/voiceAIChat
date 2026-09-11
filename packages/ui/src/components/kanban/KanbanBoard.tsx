@@ -477,6 +477,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const boardRef = useRef<HTMLDivElement | null>(null)
   const boardScrollRef = useRef(new Map<string, { left: number; top: number }>())
   const colMenuRef = useRef<HTMLSpanElement | null>(null)
+  const colMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const colMenuPanelRef = useRef<HTMLDivElement | null>(null)
   const assigneeFilterRef = useRef<HTMLDivElement | null>(null)
   const drag = usePointerDrag()
 
@@ -1397,6 +1399,40 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
   }
 
+  const openColumnMenu = (columnId: string, trigger: HTMLButtonElement): void => {
+    colMenuTriggerRef.current = trigger
+    setColMenu(columnId)
+    requestAnimationFrame(() => colMenuPanelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
+  }
+
+  const closeColumnMenu = (restoreFocus = false): void => {
+    setColMenu(null)
+    if (restoreFocus) requestAnimationFrame(() => colMenuTriggerRef.current?.focus())
+  }
+
+  const navigateColumnMenu = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if ((event.target as HTMLElement).closest('input')) return
+    const items = Array.from(colMenuPanelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeColumnMenu(true)
+      return
+    }
+    if (event.key === 'Tab') {
+      closeColumnMenu()
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || items.length === 0) return
+    event.preventDefault()
+    const current = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? items.length - 1
+        : event.key === 'ArrowDown' ? (current + 1 + items.length) % items.length
+          : (current - 1 + items.length) % items.length
+    items[next]?.focus()
+  }
+
   const columnHead = (col: KanbanColumn, controls = `kanban-column-content-${col.id}`): JSX.Element => {
     const visible = tasksOf(col.id).length
     const total = allTasks.filter((t) => t.columnId === col.id).length
@@ -1629,14 +1665,28 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             size="sm"
             aria-label={`Меню колонки «${col.name}»`}
             title="Меню колонки"
+            aria-haspopup="menu"
             aria-expanded={colMenu === col.id}
-            onClick={() => setColMenu((v) => (v === col.id ? null : col.id))}
+            aria-controls={`column-menu-${col.id}`}
+            onClick={(event) => {
+              if (colMenu === col.id) closeColumnMenu()
+              else openColumnMenu(col.id, event.currentTarget)
+            }}
           >
             <DotsIcon />
           </IconButton>
           {colMenu === col.id && (
-            <div className="jcard-menu" data-testid="column-menu">
+            <div
+              id={`column-menu-${col.id}`}
+              ref={colMenuPanelRef}
+              className="jcard-menu"
+              data-testid="column-menu"
+              role="menu"
+              aria-label={`Действия колонки «${col.name}»`}
+              onKeyDown={navigateColumnMenu}
+            >
               <button
+                role="menuitem"
                 onClick={() => {
                   setColMenu(null)
                   setRenaming(col.id)
@@ -1665,6 +1715,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 />
               ) : (
                 <button
+                  role="menuitem"
                   onClick={() => {
                     setWipEditing(col.id)
                     setWipDraft(col.wipLimit != null ? String(col.wipLimit) : '')
@@ -1674,6 +1725,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 </button>
               )}
               <button
+                role="menuitem"
                 onClick={() => {
                   setColMenu(null)
                   props.onSetColumnHidden(col.id, !col.hidden)
@@ -1683,6 +1735,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               </button>
               {col.semanticType === 'custom' && (
                 <button
+                  role="menuitem"
                   className="jcard-menu-danger"
                   onClick={() => {
                     setColMenu(null)

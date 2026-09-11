@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 993d120b
+checked: c9c83160
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1187,6 +1187,15 @@ DOM-сценарии внешнего и внутреннего pointer-нажа
 `packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx`; внешний клик там
 одновременно проверяет, что целевая карточка продолжает получать событие и
 открывает свою модалку.
+
+The column action popup exposes a complete keyboard menu contract. Its trigger
+announces `aria-haspopup="menu"`, expanded state, and the controlled menu id; the
+popup uses `role="menu"` and each available action uses `role="menuitem"`.
+Opening a menu focuses its first action. Arrow keys move between actions with
+wrapping, Home and End jump to the edges, Escape closes the popup and returns
+focus to its trigger, and Tab closes it while preserving normal tab order.
+Opening another column menu replaces the current popup and transfers focus to
+the new menu after React has committed it.
 
 ### Универсальный ассистент виджета
 
