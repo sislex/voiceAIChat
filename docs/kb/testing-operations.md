@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-11
-checked: 17cc6b29
+checked: ec5657cf
 areas:
   - package.json
   - scripts
@@ -9,6 +9,7 @@ areas:
   - apps/server/src/server.test.ts
   - apps/server/src/playwrightReaderBridge
   - apps/playwright-reader
+  - apps/browser-runner/vitest.config.ts
   - apps/llm-runner/vitest.config.ts
   - apps/agent/vitest.config.ts
   - packages/shared/vitest.config.ts
@@ -206,7 +207,32 @@ selection of Make UI and its hosts after contract changes.
 
 `apps/desktop` и `apps/agent-tray` помечены `manualGate`: замыкание потребителей их не втягивает, потому что корневой `npm install` их `node_modules` не ставит и чужая правка UI валила бы гейт на машине без локального install.
 
-`apps/browser-runner` получил свой `vitest.config.ts`: `include: ['src/**/*.{test,spec}.ts']` и `hookTimeout: 60_000`. `describeElement.test.ts` поднимает настоящий Chromium в `beforeAll`, и на загруженной машине запуск не укладывался в дефолтные 10 с — полный гейт краснел при 83 из 83 зелёных тестах, а в одиночном прогоне пакет проходил за 3–5 с. `globals: true` в этот конфиг не добавлен просто потому, что тесты импортируют `describe`/`it`/`expect` явно и он не нужен. На скорость он не влияет: чередующийся A/B на этом пакете дал 3,8/3,2/3,3 с с ним против 7,8/3,5/2,8 с без (первый прогон холодный). Ранее здесь было записано, что `globals` замедляет пакет втрое — это ошибка замера под нагрузкой соседних worktree, утверждение снято.
+`apps/browser-runner` has its own `vitest.config.ts`: the source include is
+bounded to test/spec files, hooks have 60 seconds, individual tests have 15
+seconds, and at most four files run concurrently. Every browser-heavy file owns
+real Chromium processes. With the default eight workers, an all-application gate
+produced 17 unrelated timeouts; four workers left one completed download stress
+case failing only because its 6.37-second duration exceeded Vitest's default five
+seconds. The 15-second deadline still catches a stalled action while allowing the
+same tests to run under the gate's CPU and browser-process load. Tests import
+`describe`/`it`/`expect` explicitly, so `globals` remains disabled.
+
+Expiry tests must keep the live control token well beyond fixture setup and RPC
+latency, then create a separate already-expired token for the negative case. The
+Make task-scope MCP test uses a ten-second live token and a deliberately expired
+100-millisecond token. A 100-millisecond live token intermittently expired between
+`initialize`, `tools/list`, and the mutation assertion during an all-app gate.
+
+The Browser Runner prompt/evaluate lifecycle test gives Chromium one second to
+open the JavaScript dialog, then deliberately waits 1.2 seconds before answering.
+This still proves that dialog waiting pauses the evaluate budget without letting
+gate scheduling consume the former 100-millisecond setup allowance first.
+
+Native audit fixtures reuse one public URL. Chromium may restore the prior
+document's scroll offset when that URL is reloaded, including after an offscreen
+`content-visibility:auto` case. The fixture loader sets manual scroll restoration
+and returns to the viewport origin after each navigation so visibility and pointer
+comparisons start from the viewport declared by the fixture.
 
 Прогон витрины через axe разбит на три шарда `packages/ui/src/test/stories.a11y.{0,1,2}.dom.test.tsx` поверх общего `storiesA11yShard.tsx`. Vitest параллелит по файлам, а не по тестам, и один файл на 457 проверок ложился в конец прогона: `packages/ui` целиком 72 с, без этого файла 53 с, сам файл 24 с — то есть его время почти не перекрывалось с остальными 148 файлами. После шардирования те же проверки идут 14,5 с.
 
