@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { avatarColor, avatarContrast, columnRegionLabel, duePresentation, dueState, emptyColumnPresentation, epicColor, initials, issueKey, projectKey, wipPresentation } from './kanbanMeta'
+import { avatarColor, avatarContrast, columnRegionLabel, duePresentation, dueState, emptyColumnPresentation, epicColor, initials, issueKey, matchesDueWindow, projectKey, wipPresentation } from './kanbanMeta'
 
 describe('kanbanMeta', () => {
   it('projectKey: латиница из инициалов слов, кириллица транслитерируется', () => {
@@ -38,6 +38,19 @@ describe('kanbanMeta', () => {
       state: 'ok', short: 'Через 5 дней', days: 5
     })
     expect(duePresentation(new Date(2026, 8, 16, 9).getTime(), now).label).toContain('16.09.2026')
+  })
+
+  it('matchesDueWindow использует локальные дни и взаимоисключающие интервалы', () => {
+    const now = new Date(2026, 8, 11, 12).getTime()
+    const at = (offset: number): number => new Date(2026, 8, 11 + offset, 23).getTime()
+    expect(matchesDueWindow(at(-1), 'overdue', false, now)).toBe(true)
+    expect(matchesDueWindow(at(-1), 'overdue', true, now)).toBe(false)
+    expect(matchesDueWindow(at(0), 'today', false, now)).toBe(true)
+    expect(matchesDueWindow(at(6), 'week', false, now)).toBe(true)
+    expect(matchesDueWindow(at(7), 'week', false, now)).toBe(false)
+    expect(matchesDueWindow(null, 'none', false, now)).toBe(true)
+    expect(matchesDueWindow(null, 'today', false, now)).toBe(false)
+    expect(matchesDueWindow(at(20), 'all', false, now)).toBe(true)
   })
 
   it('emptyColumnPresentation различает настоящую пустоту и источник фильтрации', () => {

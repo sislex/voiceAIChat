@@ -4757,6 +4757,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jfilter-menu label { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 6px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .jfilter-menu label:hover { background: var(--surface-hover); }
 .jswimlane { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; opacity: 0.9; margin-left: auto; }
+.jdue-window { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; }
+.jdue-window .sel { min-width: 142px; color: var(--text); }
 .jboard-density-control { display: inline-flex; align-items: center; gap: 4px; }
 .jboard-density-label { color: var(--text-dim); font-size: 12px; }
 .jboard-density-control .jquick { padding-inline: 7px; }

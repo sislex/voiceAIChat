@@ -30,7 +30,7 @@ import { TaskCard, epicOf } from './TaskCard'
 import { type TaskModalProps, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
-import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, duePresentation, emptyColumnPresentation, epicColor, issueKey, pluralTasks, wipPresentation } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, duePresentation, emptyColumnPresentation, epicColor, issueKey, matchesDueWindow, pluralTasks, wipPresentation } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -370,7 +370,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [filtersHydrated, setFiltersHydrated] = useState(false)
   const [flaggedOnly, setFlaggedOnly] = useState(false)
   const [recentOnly, setRecentOnly] = useState(false)
-  const [overdueOnly, setOverdueOnly] = useState(false)
+  const [dueWindow, setDueWindow] = useState<BoardView['dueWindow']>('all')
   const [completedOnly, setCompletedOnly] = useState(false)
   const [density, setDensity] = useState<BoardDensity>('comfortable')
   const [densityHydrated, setDensityHydrated] = useState(false)
@@ -515,7 +515,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setOnlyMine(view.onlyMine)
     setFlaggedOnly(view.flaggedOnly)
     setRecentOnly(view.recentOnly)
-    setOverdueOnly(view.overdueOnly)
+    setDueWindow(view.dueWindow === 'all' && view.overdueOnly ? 'overdue' : view.dueWindow)
     setCompletedOnly(view.completedOnly)
     setColumnAssigneeFilters(Object.fromEntries(Object.entries(view.columnAssignees).map(([columnId, filter]) => [columnId, { assigneeIds: filter.assigneeIds, includeUnassigned: filter.unassigned }])))
     setSwimlane(view.swimlane)
@@ -564,7 +564,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setColumnAssigneeFilters({})
     setFlaggedOnly(false)
     setRecentOnly(false)
-    setOverdueOnly(false)
+    setDueWindow('all')
     setCompletedOnly(false)
     setSwimlane(props.defaultSwimlane ?? 'none')
     setShowHidden(false)
@@ -601,7 +601,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       }
       const raw = localStorage.getItem(filterStorageKey)
       if (raw) {
-        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; overdueOnly?: boolean; completedOnly?: boolean; columnAssigneeFilters?: Record<string, ColumnAssigneeFilter>; swimlane?: Swimlane; showHidden?: boolean }
+        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; overdueOnly?: boolean; dueWindow?: BoardView['dueWindow']; completedOnly?: boolean; columnAssigneeFilters?: Record<string, ColumnAssigneeFilter>; swimlane?: Swimlane; showHidden?: boolean }
         if (typeof saved.search === 'string') setSearch(saved.search)
         if (Array.isArray(saved.assignees)) setAssignees(new Set(saved.assignees))
         if (Array.isArray(saved.types)) setTypes(new Set(saved.types))
@@ -611,7 +611,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         if (typeof saved.onlyMine === 'boolean') setOnlyMine(saved.onlyMine)
         if (typeof saved.flaggedOnly === 'boolean') setFlaggedOnly(saved.flaggedOnly)
         if (typeof saved.recentOnly === 'boolean') setRecentOnly(saved.recentOnly)
-        if (typeof saved.overdueOnly === 'boolean') setOverdueOnly(saved.overdueOnly)
+        if (saved.dueWindow === 'all' || saved.dueWindow === 'overdue' || saved.dueWindow === 'today' || saved.dueWindow === 'week' || saved.dueWindow === 'none') setDueWindow(saved.dueWindow)
+        else if (saved.overdueOnly === true) setDueWindow('overdue')
         if (typeof saved.completedOnly === 'boolean') setCompletedOnly(saved.completedOnly)
         if (saved.columnAssigneeFilters && typeof saved.columnAssigneeFilters === 'object') setColumnAssigneeFilters(saved.columnAssigneeFilters)
         // Вид доски — такая же настройка взгляда, как фильтры: свимлейны и показ
@@ -634,7 +635,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onlyMine,
       flaggedOnly,
       recentOnly,
-      overdueOnly,
+      overdueOnly: dueWindow === 'overdue',
+      dueWindow,
       completedOnly,
       columnAssignees: Object.fromEntries(Object.entries(columnAssigneeFilters).map(([columnId, filter]) => [columnId, { assigneeIds: [...filter.assigneeIds], unassigned: filter.includeUnassigned }])),
       swimlane,
@@ -651,10 +653,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
     if (!filterStorageKey) return
     try {
-      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, overdueOnly, completedOnly, columnAssigneeFilters, swimlane, showHidden }))
+      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, overdueOnly: dueWindow === 'overdue', dueWindow, completedOnly, columnAssigneeFilters, swimlane, showHidden }))
     } catch { /* предпочтения браузера недоступны */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignees, columnAssigneeFilters, completedOnly, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, overdueOnly, priorities, recentOnly, search, showHidden, swimlane, types])
+  }, [assignees, columnAssigneeFilters, completedOnly, dueWindow, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, priorities, recentOnly, search, showHidden, swimlane, types])
   useEffect(() => {
     const allowed = new Set(members.filter((member) => member.active !== false).map((member) => member.username))
     setColumnAssigneeFilters((prev) => {
@@ -691,7 +693,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const hasColumnAssigneeFilter = Object.values(columnAssigneeFilters).some((value) => value.assigneeIds.length > 0 || value.includeUnassigned)
   const globalFiltersActive =
     search.trim() !== '' || assignees.size > 0 || types.size > 0 || priorities.size > 0 ||
-    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || overdueOnly || completedOnly
+    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || dueWindow !== 'all' || completedOnly
   const filtersActive = globalFiltersActive || hasColumnAssigneeFilter
 
   /**
@@ -700,7 +702,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
    */
   const activeFilterCount =
     (search.trim() ? 1 : 0) + assignees.size + types.size + priorities.size + labels.size + epics.size +
-    (onlyMine ? 1 : 0) + (flaggedOnly ? 1 : 0) + (recentOnly ? 1 : 0) + (overdueOnly ? 1 : 0) + (completedOnly ? 1 : 0) +
+    (onlyMine ? 1 : 0) + (flaggedOnly ? 1 : 0) + (recentOnly ? 1 : 0) + (dueWindow !== 'all' ? 1 : 0) + (completedOnly ? 1 : 0) +
     Object.values(columnAssigneeFilters).filter((value) => value.assigneeIds.length > 0 || value.includeUnassigned).length
 
   const resetGlobalFilters = (): void => {
@@ -713,7 +715,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setOnlyMine(false)
     setFlaggedOnly(false)
     setRecentOnly(false)
-    setOverdueOnly(false)
+    setDueWindow('all')
     setCompletedOnly(false)
   }
 
@@ -744,7 +746,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     if (onlyMine && t.assignee !== currentUserId) return false
     if (flaggedOnly && !t.flagged) return false
     if (recentOnly && Date.now() - t.updatedAt > RECENT_MS) return false
-    if (overdueOnly && (t.dueDate == null || doneColumnIds.has(t.columnId) || duePresentation(t.dueDate).state !== 'overdue')) return false
+    if (!matchesDueWindow(t.dueDate, dueWindow, doneColumnIds.has(t.columnId))) return false
     if (completedOnly && !doneColumnIds.has(t.columnId)) return false
     return true
   }
@@ -796,7 +798,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   }> = [
     { label: 'Видно', value: visibleTaskCount, unit: pluralTasks(visibleTaskCount) },
     { label: 'Оценка', value: visibleStoryPoints, unit: 'SP' },
-    { label: 'Просрочено', value: visibleOverdue, unit: pluralTasks(visibleOverdue), active: overdueOnly, onClick: () => setOverdueOnly((value) => !value) },
+    { label: 'Просрочено', value: visibleOverdue, unit: pluralTasks(visibleOverdue), active: dueWindow === 'overdue', onClick: () => setDueWindow((value) => value === 'overdue' ? 'all' : 'overdue') },
     { label: 'Без исполнителя', value: visibleUnassigned, unit: pluralTasks(visibleUnassigned), active: assignees.has(''), onClick: () => setAssignees((value) => toggle(value, '')) },
     { label: 'С флагом', value: visibleFlagged, unit: pluralTasks(visibleFlagged), active: flaggedOnly, onClick: () => setFlaggedOnly((value) => !value) },
     { label: 'Завершено', value: visibleCompleted, unit: pluralTasks(visibleCompleted), active: completedOnly, onClick: toggleCompletedOnly }
@@ -916,7 +918,12 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   if (onlyMine) activeFilterChips.push({ key: 'onlyMine', label: 'Только мои задачи', onRemove: () => setOnlyMine(false) })
   if (flaggedOnly) activeFilterChips.push({ key: 'flagged', label: 'С флагом', onRemove: () => setFlaggedOnly(false) })
   if (recentOnly) activeFilterChips.push({ key: 'recent', label: 'Обновлены за сутки', onRemove: () => setRecentOnly(false) })
-  if (overdueOnly) activeFilterChips.push({ key: 'overdue', label: 'Просрочено', onRemove: () => setOverdueOnly(false) })
+  if (dueWindow !== 'all') {
+    const labels: Record<Exclude<BoardView['dueWindow'], 'all'>, string> = {
+      overdue: 'Срок: просрочено', today: 'Срок: сегодня', week: 'Срок: 7 дней', none: 'Срок: не указан'
+    }
+    activeFilterChips.push({ key: 'due', label: labels[dueWindow], onRemove: () => setDueWindow('all') })
+  }
   if (completedOnly) activeFilterChips.push({ key: 'completed', label: 'Завершено', onRemove: () => setCompletedOnly(false) })
   for (const [columnId, filter] of Object.entries(columnAssigneeFilters)) {
     if (filter.assigneeIds.length === 0 && !filter.includeUnassigned) continue
@@ -1949,6 +1956,21 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 ))}
               </>
             </FilterDropdown>
+            <label className="jdue-window">
+              Срок
+              <select
+                className="sel"
+                aria-label="Срок задач"
+                value={dueWindow}
+                onChange={(event) => setDueWindow(event.target.value as BoardView['dueWindow'])}
+              >
+                <option value="all">Все</option>
+                <option value="overdue">Просрочено</option>
+                <option value="today">Сегодня</option>
+                <option value="week">Ближайшие 7 дней</option>
+                <option value="none">Без срока</option>
+              </select>
+            </label>
             {allLabels.length > 0 && (
               <FilterDropdown label="Метка" active={labels.size}>
                 <>
