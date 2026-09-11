@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 3d7b62a7
+checked: 715707f6
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1095,6 +1095,20 @@ accent, and each retains its semantic priority icon. The compact row scrolls
 horizontally on narrow screens. DOM tests cover counts, OR selection, reset, and
 other-filter interaction; Chromium verifies semantics, synchronization, and
 mobile overflow.
+
+### Board keyboard help (2026-09-11)
+
+The filter toolbar has a `Клавиши` control that opens a modal reference generated
+from the board's implemented keyboard contract: search focus, surface column
+navigation, card opening, keyboard dragging, commit/cancel, and the card action
+menu. The trigger exposes dialog and expanded semantics. Opening moves focus to
+the close button; Tab remains trapped, while Escape, the close button, and the
+backdrop close the dialog and return focus to the trigger. A note explains that
+commands are not intercepted while the user edits a field. The definition list
+uses visual `kbd` tokens, becomes one column below 600 pixels, and remains
+bounded and scrollable within the viewport. DOM tests verify content and focus;
+built Chromium checks desktop semantics, focus trapping, Escape, and mobile
+geometry.
 
 ### Collapsible board columns (2026-09-11)
 

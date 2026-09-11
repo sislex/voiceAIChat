@@ -50,6 +50,38 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
 }
 
 describe('KanbanBoard (изолированный)', () => {
+  it('показывает только реально поддержанные сочетания клавиш в доступном диалоге', async () => {
+    renderBoard()
+    const opener = screen.getByRole('button', { name: 'Клавиши' })
+    expect(opener).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(opener).toHaveAttribute('aria-expanded', 'false')
+
+    await userEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'Сочетания клавиш' })
+    expect(opener).toHaveAttribute('aria-expanded', 'true')
+    expect(opener).toHaveAttribute('aria-controls', dialog.id)
+    expect(within(dialog).getByText('Перейти к поиску по доске')).toBeInTheDocument()
+    expect(within(dialog).getByText('Взять карточку для переноса')).toBeInTheDocument()
+    expect(within(dialog).getByText('Открыть меню действий карточки')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('Enter')).toHaveLength(2)
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Закрыть справку по клавиатуре' }))
+  })
+
+  it('закрывает справку Escape и кликом по фону с возвратом фокуса', async () => {
+    renderBoard()
+    const opener = screen.getByRole('button', { name: 'Клавиши' })
+    await userEvent.click(opener)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Сочетания клавиш' })).not.toBeInTheDocument())
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+
+    await userEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'Сочетания клавиш' })
+    fireEvent.pointerDown(dialog.parentElement!, { target: dialog.parentElement })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Сочетания клавиш' })).not.toBeInTheDocument())
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+  })
+
   it('переключает плотность, раскрывает состояние и сохраняет выбор по пользователю и проекту', async () => {
     localStorage.clear()
     renderBoard({ currentUserId: 'density-user' })

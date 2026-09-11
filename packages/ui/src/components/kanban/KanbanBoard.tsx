@@ -379,6 +379,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [swimlane, setSwimlane] = useState<Swimlane>(props.defaultSwimlane ?? 'none')
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
   const [collapsedLanesHydrated, setCollapsedLanesHydrated] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [dragTask, setDragTask] = useState<string | null>(null)
   const [dragColumn, setDragColumn] = useState<string | null>(null)
@@ -396,6 +397,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [automationInfoColumn, setAutomationInfoColumn] = useState<KanbanColumn | null>(null)
   const automationInfoButtonRef = useRef<HTMLButtonElement | null>(null)
   const automationInfoCloseRef = useRef<HTMLButtonElement | null>(null)
+  const shortcutsButtonRef = useRef<HTMLButtonElement | null>(null)
+  const shortcutsCloseRef = useRef<HTMLButtonElement | null>(null)
   const [wipEditing, setWipEditing] = useState<string | null>(null)
   const [wipDraft, setWipDraft] = useState('')
   const [composerCol, setComposerCol] = useState<string | null>(null)
@@ -452,6 +455,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     window.addEventListener('keydown', closeOnEscape, true)
     return () => window.removeEventListener('keydown', closeOnEscape, true)
   }, [automationInfoColumn])
+  useEffect(() => {
+    if (!shortcutsOpen) return
+    shortcutsCloseRef.current?.focus()
+    const close = (): void => {
+      setShortcutsOpen(false)
+      requestAnimationFrame(() => shortcutsButtonRef.current?.focus())
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      close()
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => window.removeEventListener('keydown', closeOnEscape, true)
+  }, [shortcutsOpen])
   // Esc клавиатурного переноса нужно поймать раньше Esc страницы-обёртки
   // (useDialogStack слушает тот же window в фазе перехвата): иначе доска
   // закрывалась бы вместо отмены переноса. Поэтому именно useLayoutEffect —
@@ -2166,6 +2185,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 Компактно
               </button>
             </span>
+            <button
+              ref={shortcutsButtonRef}
+              type="button"
+              className="jquick jboard-shortcuts-button"
+              aria-haspopup="dialog"
+              aria-expanded={shortcutsOpen}
+              aria-controls="kanban-shortcuts-dialog"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              Клавиши
+            </button>
             <label className="kanban-showhidden">
               <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
             </label>
@@ -2505,6 +2535,57 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 <section><h3>Где хранится</h3><p>{info.storage}</p></section>
                 <section><h3>Дальнейшее использование</h3><p>{info.next}</p></section>
               </div>
+            </section>
+          </div>
+        )
+      })()}
+      {shortcutsOpen && (() => {
+        const close = (): void => {
+          setShortcutsOpen(false)
+          requestAnimationFrame(() => shortcutsButtonRef.current?.focus())
+        }
+        const shortcuts = [
+          { keys: ['/'], action: 'Перейти к поиску по доске' },
+          { keys: ['←', '→'], action: 'Перейти к соседней колонке, когда доска в фокусе' },
+          { keys: ['Home', 'End'], action: 'Перейти к первой или последней колонке' },
+          { keys: ['Enter'], action: 'Открыть карточку задачи' },
+          { keys: ['Пробел'], action: 'Взять карточку для переноса' },
+          { keys: ['←', '→', '↑', '↓'], action: 'Выбрать колонку и место взятой карточки' },
+          { keys: ['Enter'], action: 'Положить взятую карточку' },
+          { keys: ['Esc'], action: 'Отменить перенос или очистить поиск' },
+          { keys: ['Shift', 'F10'], action: 'Открыть меню действий карточки' }
+        ]
+        return (
+          <div className="jautomation-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) close() }}>
+            <section
+              id="kanban-shortcuts-dialog"
+              className="jboard-shortcuts-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="kanban-shortcuts-title"
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key !== 'Tab') return
+                event.preventDefault()
+                shortcutsCloseRef.current?.focus()
+              }}
+            >
+              <header className="jautomation-dialog-head">
+                <div>
+                  <div className="jautomation-eyebrow">Канбан-доска</div>
+                  <h2 id="kanban-shortcuts-title">Сочетания клавиш</h2>
+                </div>
+                <button ref={shortcutsCloseRef} type="button" className="jautomation-close" aria-label="Закрыть справку по клавиатуре" onClick={close}>×</button>
+              </header>
+              <dl className="jboard-shortcuts-list">
+                {shortcuts.map((shortcut, index) => (
+                  <Fragment key={`${shortcut.action}-${index}`}>
+                    <dt>{shortcut.keys.map((key) => <kbd key={key}>{key}</kbd>)}</dt>
+                    <dd>{shortcut.action}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+              <p className="jboard-shortcuts-note">Во время ввода в поле команды доски не перехватываются.</p>
             </section>
           </div>
         )
