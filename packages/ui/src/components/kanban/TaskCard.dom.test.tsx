@@ -145,6 +145,44 @@ describe('TaskCard — объяснение результатов поиска'
   })
 })
 
+describe('TaskCard — прогресс подзадач', () => {
+  const parent = mkTask({ id: 'parent', title: 'Родитель', columnId: 'development' })
+  const first = mkTask({ id: 'child-1', parentId: 'parent', columnId: 'done' })
+  const second = mkTask({ id: 'child-2', parentId: 'parent', columnId: 'development' })
+
+  it('показывает прогресс на любом этапе с числовым и текстовым aria-контрактом', () => {
+    render(<TaskCard {...props({
+      task: parent,
+      allTasks: [parent, first, second],
+      doneColumnIds: new Set(['done']),
+      columnSemanticType: 'development'
+    })} />)
+
+    const progress = screen.getByRole('progressbar', { name: 'Прогресс подзадач' })
+    expect(progress).toHaveAttribute('aria-valuemin', '0')
+    expect(progress).toHaveAttribute('aria-valuemax', '2')
+    expect(progress).toHaveAttribute('aria-valuenow', '1')
+    expect(progress).toHaveAttribute('aria-valuetext', 'Выполнено 1 из 2, осталось 1, 50%')
+    expect(progress).toHaveTextContent('50%1/2осталось 1')
+    expect(progress.querySelector('.jcard-progress-fill')).toHaveStyle({ width: '50%' })
+  })
+
+  it('различает нулевой и полный прогресс и не рисует его без подзадач', () => {
+    const { rerender } = render(<TaskCard {...props({ task: parent, allTasks: [parent, second], columnSemanticType: 'ready' })} />)
+    let progress = screen.getByRole('progressbar')
+    expect(progress).toHaveClass('jcard-progress--empty')
+    expect(progress).toHaveTextContent('0%0/1осталось 1')
+
+    rerender(<TaskCard {...props({ task: parent, allTasks: [parent, first], doneColumnIds: new Set(['done']), columnSemanticType: 'manual_qa' })} />)
+    progress = screen.getByRole('progressbar')
+    expect(progress).toHaveClass('jcard-progress--complete')
+    expect(progress).toHaveTextContent('100%1/1готово')
+
+    rerender(<TaskCard {...props({ task: parent, allTasks: [parent] })} />)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+})
+
 
 function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
   return { id: 'run-1', taskId: 't1', status: 'running', error: null, slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }

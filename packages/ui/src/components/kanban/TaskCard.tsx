@@ -205,6 +205,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
   const doneChildren = children.filter((t) => props.doneColumnIds.has(t.columnId))
+  const remainingChildren = children.length - doneChildren.length
+  const childProgressPercent = children.length === 0 ? 0 : Math.round((doneChildren.length / children.length) * 100)
+  const childProgressLabel = `Выполнено ${doneChildren.length} из ${children.length}, осталось ${remainingChildren}, ${childProgressPercent}%`
   const key = issueKey(props.projectName, task)
   const due = task.dueDate == null ? null : duePresentation(task.dueDate)
   const visibleLabels = task.labels.slice(0, 3)
@@ -393,12 +396,25 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       )}
 
 
-      {props.columnSemanticType === 'backlog' && children.length > 0 && (
-        <div className="jcard-progress" title={`Подзадачи: ${doneChildren.length} из ${children.length}`}>
-          <span className="jcard-progress-bar">
-            <span className="jcard-progress-fill" style={{ width: `${Math.round((doneChildren.length / children.length) * 100)}%` }} />
+      {children.length > 0 && (
+        <div
+          className={`jcard-progress${childProgressPercent === 100 ? ' jcard-progress--complete' : childProgressPercent === 0 ? ' jcard-progress--empty' : ''}`}
+          role="progressbar"
+          aria-label="Прогресс подзадач"
+          aria-valuemin={0}
+          aria-valuemax={children.length}
+          aria-valuenow={doneChildren.length}
+          aria-valuetext={childProgressLabel}
+          title={`Подзадачи: ${childProgressLabel}`}
+        >
+          <span className="jcard-progress-bar" aria-hidden="true">
+            <span className="jcard-progress-fill" style={{ width: `${childProgressPercent}%` }} />
           </span>
-          <span className="jcard-progress-text">{doneChildren.length}/{children.length}</span>
+          <span className="jcard-progress-text">
+            <strong>{childProgressPercent}%</strong>
+            <span>{doneChildren.length}/{children.length}</span>
+            <span>{remainingChildren === 0 ? 'готово' : `осталось ${remainingChildren}`}</span>
+          </span>
         </div>
       )}
 
