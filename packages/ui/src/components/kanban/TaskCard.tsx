@@ -102,6 +102,24 @@ function matchingSnippet(text: string, query?: string): string | null {
   return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`
 }
 
+export function updatedPresentation(timestamp: number, now = Date.now()): { short: string; label: string; state: 'fresh' | 'recent' | 'stale' } {
+  const date = new Date(timestamp)
+  const elapsed = Math.max(0, now - timestamp)
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const current = new Date(now)
+  const currentStart = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime()
+  const calendarDays = Math.max(0, Math.round((currentStart - start) / 86_400_000))
+  const exact = date.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+  const label = `Обновлено: ${exact}`
+  if (elapsed < 60_000) return { short: 'сейчас', label, state: 'fresh' }
+  if (elapsed < 3_600_000) return { short: `${Math.floor(elapsed / 60_000)} мин`, label, state: 'fresh' }
+  if (calendarDays === 0 && elapsed < 6 * 3_600_000) return { short: `${Math.floor(elapsed / 3_600_000)} ч`, label, state: 'fresh' }
+  if (calendarDays === 0) return { short: 'сегодня', label, state: 'fresh' }
+  if (calendarDays === 1) return { short: 'вчера', label, state: 'recent' }
+  if (calendarDays < 7) return { short: `${calendarDays} дн`, label, state: 'recent' }
+  return { short: date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }), label, state: 'stale' }
+}
+
 /** Эпик-предок задачи (родитель истории или родитель родителя задачи). */
 export function epicOf(task: Task, all: Task[]): Task | null {
   let cur: Task | null = task
@@ -210,6 +228,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const childProgressLabel = `Выполнено ${doneChildren.length} из ${children.length}, осталось ${remainingChildren}, ${childProgressPercent}%`
   const key = issueKey(props.projectName, task)
   const due = task.dueDate == null ? null : duePresentation(task.dueDate)
+  const updated = updatedPresentation(task.updatedAt)
   const visibleLabels = task.labels.slice(0, 3)
   const hiddenLabelCount = Math.max(0, task.labels.length - visibleLabels.length)
   const query = props.searchQuery?.trim()
@@ -600,6 +619,14 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </span>
 
         <span className="jcard-foot-right">
+          <time
+            className={`jcard-updated jcard-updated--${updated.state}`}
+            dateTime={new Date(task.updatedAt).toISOString()}
+            aria-label={updated.label}
+            title={updated.label}
+          >
+            {updated.short}
+          </time>
           {task.dueDate != null && due && (
             <time
               className={`jcard-due jcard-due--${due.state}`}

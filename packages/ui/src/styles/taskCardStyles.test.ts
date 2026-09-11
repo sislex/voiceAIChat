@@ -76,6 +76,7 @@ describe('стили открытой карточки задачи', () => {
     'merge-chip', 'merge-badge',
     // Карточка на доске и шапка колонки.
     'jcard-epic', 'jcard-epic-dot', 'jcard-flag', 'jcard-due', 'jcard-pts',
+    'jcard-updated', 'jcard-updated--fresh', 'jcard-updated--stale',
     'jcard-stage-actions', 'jcard-progress', 'jcard-progress-bar', 'jcard-progress-fill',
     'jcard-progress-text', 'jcard-progress--empty', 'jcard-progress--complete',
     'jcol-head', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
