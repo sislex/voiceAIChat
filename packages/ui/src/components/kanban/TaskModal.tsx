@@ -15,6 +15,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { formatDateTime, formatDate } from '../../lib/dateFormat'
 import { ALL_PROJECT_FEATURES, type ProjectFeatureSet } from '@shared/projectTypes'
 import type { Board, ProjectMember, Task, TaskPriority, TaskRunResult, WorkItemType } from '@shared/projects'
+import type { SupportedTaskPatch } from '@shared/widgetAssistant'
 import { normalizeAcceptanceCriteria, TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt, Message, PermissionMode, VoiceState } from '@shared/types'
 import { Button } from '@voicechat/ui-kit'
@@ -73,6 +74,8 @@ export interface TaskUpdateFields {
   storyPoints?: number | null
   dueDate?: number | null
   flagged?: boolean
+  autoPilot?: boolean
+  autoPilotRequiresManualQa?: boolean
 }
 
 
@@ -158,7 +161,7 @@ export interface TaskModalProps {
   onCreateSubtask?: (columnId: string, input: { title: string; type: WorkItemType; parentId: string }) => void
   onClose: () => void
   /** Focused editable field, for synchronized assistant context. */
-  onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
+  onSelectedFieldChange?: (field: keyof SupportedTaskPatch | null) => void
   /** Черновик новой задачи: карточка ничего не сохраняет до выбора действия. */
   draft?: boolean
   /** Действия создания, показанные в стандартной нижней панели карточки. */
@@ -984,7 +987,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       </nav>}
       <div className={`jmodal jmodal--tab-${activeTab}`} onFocusCapture={(event) => {
         const label = (event.target as HTMLElement).getAttribute('aria-label') ?? ''
-        const field: keyof TaskUpdateFields | null = label.includes('Заголовок') ? 'title' : label.includes('Описание') ? 'description' : label.includes('Критерии') ? 'acceptanceCriteria' : label.includes('Приоритет') ? 'priority' : label.includes('Исполнитель') ? 'assignee' : label.includes('Стори') ? 'storyPoints' : label.includes('Срок') ? 'dueDate' : null
+        const field: keyof SupportedTaskPatch | null = label.includes('Заголовок') ? 'title' : label.includes('Описание') ? 'description' : label.includes('Критерии') ? 'acceptanceCriteria' : label.includes('Приоритет') ? 'priority' : label.includes('Исполнитель') ? 'assignee' : label.includes('Стори') ? 'storyPoints' : label.includes('Срок') ? 'dueDate' : null
         props.onSelectedFieldChange?.(field)
       }}>
         {/* Панели вкладок — в своей обёртке, колонка свойств — её сосед: статус,
@@ -1245,6 +1248,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               раз, панель не размонтируем — переключение вкладок туда-обратно
               не должно перечитывать то же самое. */}
           {settingsMounted && <div className="task-settings-stack">
+            {task.type === 'task' && <section className="ci-task" aria-label="Автопроход задачи">
+              <h3 className="ci-task-title">Автопроход задачи</h3>
+              <label><input type="checkbox" checked={task.autoPilot ?? false}
+                onChange={(event) => props.onUpdate(task.id, { autoPilot: event.target.checked })} /> Автоматически доставлять задачу в main</label>
+              <p className="ci-task-hint">Запускать этапы, исправлять ошибки и выполнять merge после успешных проверок.</p>
+              <label><input type="checkbox" checked={task.autoPilotRequiresManualQa ?? false}
+                onChange={(event) => props.onUpdate(task.id, { autoPilotRequiresManualQa: event.target.checked })} /> Остановить на ручном QA</label>
+              <p className="ci-task-hint">Если выключено, автопроход после Automated QA сам поставит задачу в очередь на merge.</p>
+            </section>}
             <CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} />
             <CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} />
             <CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} />

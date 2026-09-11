@@ -167,6 +167,19 @@ async function setup() {
   return { project, task, agent, readyColId: ready.id }
 }
 
+it('автоматическая доработка сохраняет диагностику до первого вызова модели', async () => {
+  const { project, task } = await setup()
+  const diagnostic = { stepId: 'integration_tests:qa-1', logTail: 'FAIL checkout.test.ts', failures: [], updatedAt: 1000 }
+  const modelWork = vi.fn(async () => ({ ok: true }))
+  const manager = createCiRunManager({ db, executor: ciExecutor, boardChanged: () => {}, modelWork, modelSummary: async () => 'готово' })
+  const started = await manager.start('admin', project.id, task.id, { mode: 'development', fixContext: diagnostic })
+  expect('run' in started).toBe(true)
+  if (!('run' in started)) return
+  expect((await db.ci.getCiRunRaw(started.run.id))?.fixContext).toEqual(diagnostic)
+  await vi.waitFor(() => expect(modelWork).toHaveBeenCalledWith(expect.objectContaining({ run: expect.objectContaining({ fixContext: diagnostic }) })))
+  await vi.waitFor(async () => expect((await db.ci.getCiRunRaw(started.run.id))?.finishedAt).not.toBeNull())
+})
+
 it('новый менеджер после рестарта возвращает незапущенный ран в очередь и прерывает активный', async () => {
   const { project, task, agent, readyColId } = await setup()
   const development = (await db.tasks.getBoard('admin', project.id))!.columns.find((column) => column.semanticType === 'development')!

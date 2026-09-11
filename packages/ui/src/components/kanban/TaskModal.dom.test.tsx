@@ -38,6 +38,22 @@ function props(over: Partial<TaskModalProps> = {}): TaskModalProps {
 const openProgress = async (): Promise<void> => {
   await userEvent.click(screen.getByRole('tab', { name: 'Ход выполнения' }))
 }
+describe('TaskModal — настройки автопрохода', () => {
+  it('сохраняет отдельную остановку на QA и показывает подтверждённое сервером состояние', async () => {
+    const onUpdate = vi.fn()
+    const view = render(<TaskModal {...props({ onUpdate, task: mkTask({ autoPilot: true, autoPilotRequiresManualQa: false }) })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    const checkbox = await screen.findByRole('checkbox', { name: 'Остановить на ручном QA' })
+    expect(checkbox).not.toBeChecked()
+    fireEvent.click(checkbox)
+    expect(onUpdate).toHaveBeenCalledWith('t1', { autoPilotRequiresManualQa: true })
+    view.rerender(<TaskModal {...props({ onUpdate, task: mkTask({ autoPilot: true, autoPilotRequiresManualQa: true }) })} />)
+    expect(screen.getByRole('checkbox', { name: 'Остановить на ручном QA' })).toBeChecked()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Автоматически доставлять задачу в main' }))
+    expect(onUpdate).toHaveBeenCalledWith('t1', { autoPilot: false })
+  })
+})
+
 describe('TaskModal — синхронизация полных данных задачи', () => {
   it('подставляет поздно загруженные описание и критерии для того же task.id', () => {
     const { rerender } = render(<TaskModal {...props()} />)

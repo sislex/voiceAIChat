@@ -764,6 +764,11 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_scenario_json')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN automated_qa_scenario_json TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_default')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN autopilot_default INTEGER NOT NULL DEFAULT 0`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_requires_manual_qa')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN autopilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0`)
+    if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'auto_pilot_requires_manual_qa')) {
+      await this.sql.exec(`ALTER TABLE tasks ADD COLUMN auto_pilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0`)
+      // Preserve existing pauses during migration; subsequent changes belong to each task.
+      await this.sql.exec(`UPDATE tasks SET auto_pilot_requires_manual_qa = COALESCE((SELECT autopilot_requires_manual_qa FROM projects WHERE projects.id = tasks.project_id), 0)`)
+    }
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_fix_limit')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN autopilot_fix_limit INTEGER NOT NULL DEFAULT 3`)
     const ciWorkspaceCols = (await this.sql.all(`PRAGMA table_info(ci_workspaces)`)) as Array<{ name: string }>
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'branch')) await this.sql.exec(`ALTER TABLE ci_workspaces ADD COLUMN branch TEXT`)

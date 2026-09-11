@@ -716,6 +716,8 @@ export interface IpcInvokeMap {
       storyPoints?: number | null
       dueDate?: number | null
       flagged?: boolean
+      autoPilot?: boolean
+      autoPilotRequiresManualQa?: boolean
     }
     result: Task
   }
