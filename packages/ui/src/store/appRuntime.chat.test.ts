@@ -145,6 +145,8 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(api._state.messages.filter((message) => message.role === 'u1')).toHaveLength(1)
   })
 
+  // @testCase TC-INT-1
+  // @testCase TC-REG-1
   it('три быстрые отправки создают независимые операции и запросы', async () => {
     const { store, api } = makeStore(['Чат'])
     await store.actions.init()
@@ -176,6 +178,7 @@ describe('voiceStore — интеграция стора с api-моком и м
     await Promise.all(sends)
   })
 
+  // @testCase TC-UI-1
   it('обычная отправка остаётся pending до события ленты и резервирует место ответа', async () => {
     const { store } = makeStore()
     await store.actions.init()
@@ -279,6 +282,7 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().draft).toBe('Новый текст')
   })
 
+  // @testCase TC-INT-1
   it('во время активного ответа синхронно показывает реплику только в оптимистичной очереди', async () => {
     const { store } = makeStore()
     await store.actions.init()
@@ -996,6 +1000,7 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
     expect(store.getState().messages.some((m) => m.text === 'Ответ')).toBe(true)
   })
 
+  // @testCase TC-NEG-1
   it('applyClaudeError показывает баннер и возвращает в idle', async () => {
     const { store } = makeClaudeStore()
     await store.actions.init()
@@ -1542,17 +1547,20 @@ describe('voiceStore — правки/удаление/вложения', () => 
     return { store, api, sendClaudePrompt, cancelClaude, editQueued, deleteQueued, sendQueuedNow }
   }
 
-  it('cancelRequest отменяет запрос и возвращает в idle', async () => {
+  // @testCase TC-NEG-1
+  it('cancelRequest отменяет запрос, убирает карточку подготовки и возвращает в idle', async () => {
     const { store, cancelClaude } = makeClaudeStore()
     await store.actions.init()
     store.actions.setDraft('вопрос')
     await store.actions.submitText()
     expect(store.getState().voice).toBe('thinking')
+    expect(store.getState().preparingReply).toBe(true)
 
     store.actions.cancelRequest()
     expect(store.getState().voice).toBe('idle')
     expect(cancelClaude).toHaveBeenCalled()
     expect(store.getState().streamingReply).toBe('')
+    expect(store.getState().preparingReply).toBe(false)
   })
 
   it('deleteMessage удаляет сообщение из ленты и БД', async () => {
@@ -1568,7 +1576,7 @@ describe('voiceStore — правки/удаление/вложения', () => 
     expect(api._state.messages.find((m) => m.id === msg.id)).toBeUndefined()
   })
 
-  it('editMessage удаляет сообщение и последующие, отправляет исправленный текст', async () => {
+  it('editMessage удаляет сообщение и последующие, сразу резервирует карточку и отправляет исправленный текст', async () => {
     const { store, api, sendClaudePrompt } = makeClaudeStore()
     await store.actions.init()
     // Готовим историю: реплика пользователя + ответ.
@@ -1581,7 +1589,9 @@ describe('voiceStore — правки/удаление/вложения', () => 
     expect(store.getState().messages.length).toBe(2)
 
     sendClaudePrompt.mockClear()
-    await store.actions.editMessage(first.id, 'новый вопрос')
+    const editing = store.actions.editMessage(first.id, 'новый вопрос')
+    expect(store.getState().preparingReply).toBe(true)
+    await editing
 
     const texts = store.getState().messages.map((m) => m.text)
     expect(texts).toEqual(['новый вопрос']) // старые удалены, добавлен исправленный
@@ -1910,6 +1920,7 @@ describe('voiceStore — ходы, переживающие обновление
 
   // @testCase TC-UI-1
   // @testCase TC-REG-1
+  // @testCase TC-NEG-1
   it('send → B → A сохраняет адресную реплику и ответ в исходном разговоре', async () => {
     const { store, api } = makeStore(['A'])
     await store.actions.init()
@@ -1925,9 +1936,11 @@ describe('voiceStore — ходы, переживающие обновление
 
     store.actions.setDraft('реплика A')
     const sending = store.actions.submitText()
+    expect(store.getState().preparingReply).toBe(true)
     await vi.advanceTimersByTimeAsync(0)
     await store.actions.selectConversation(b.id)
     expect(store.getState().activeId).toBe(b.id)
+    expect(store.getState().preparingReply).toBe(false)
     release()
     await sending
     expect(store.getState().messages.some((message) => message.text === 'реплика A')).toBe(false)
