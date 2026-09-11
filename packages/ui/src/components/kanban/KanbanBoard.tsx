@@ -30,7 +30,7 @@ import { TaskCard, epicOf } from './TaskCard'
 import { type TaskModalProps, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
-import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, duePresentation, epicColor, issueKey, pluralTasks } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, duePresentation, epicColor, issueKey, pluralTasks, wipPresentation } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -1216,10 +1216,12 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const columnHead = (col: KanbanColumn): JSX.Element => {
     const visible = tasksOf(col.id).length
     const total = allTasks.filter((t) => t.columnId === col.id).length
-    const overWip = col.wipLimit != null && total > col.wipLimit
+    const wip = wipPresentation(total, col.wipLimit)
+    const overWip = wip?.state === 'over'
+    const fullWip = wip?.state === 'full'
     return (
       <header
-        className={`jcol-head${overWip ? ' jcol-head--over' : ''}${
+        className={`jcol-head${overWip ? ' jcol-head--over' : ''}${fullWip ? ' jcol-head--full' : ''}${
           dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol-head--drop' : ''
         }${dragColumn === col.id ? ' jcol-head--lifted' : ''}`}
         data-column-nav-target={col.id}
@@ -1271,9 +1273,21 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 а он несовместим с флекс-раскладкой счётчика и бейджей рядом. */}
             <span className="jcol-name-text">{col.name}</span>
             <span className="jcol-count">{filtersActive || hasColumnAssigneeFilter ? `${visible} из ${total}` : total}</span>
-            {col.wipLimit != null && (
-              <span className={`jcol-wip${overWip ? ' jcol-wip--over' : ''}`} title={`WIP-лимит: ${col.wipLimit}`}>
-                {total}/{col.wipLimit}
+            {wip && col.wipLimit != null && (
+              <span className={`jcol-wip jcol-wip--${wip.state}`} title={wip.label}>
+                <span>{total}/{col.wipLimit}</span>
+                <span
+                  className="jcol-wip-track"
+                  role="progressbar"
+                  aria-label={`Заполнение WIP колонки «${col.name}»`}
+                  aria-valuemin={0}
+                  aria-valuemax={col.wipLimit}
+                  aria-valuenow={wip.progressValue}
+                  aria-valuetext={wip.label}
+                >
+                  <span className="jcol-wip-fill" style={{ width: `${wip.percentage}%` }} />
+                </span>
+                <span className="vc-sr-only">{wip.label}</span>
               </span>
             )}
             {col.hidden && <span className="jcol-hidden-mark">скрыта</span>}

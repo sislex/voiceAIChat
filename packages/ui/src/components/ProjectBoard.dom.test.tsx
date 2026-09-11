@@ -143,13 +143,15 @@ describe('ProjectBoard', () => {
     expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
   })
 
-  it('WIP-лимит: превышение подсвечивает счётчик «N/лимит»', () => {
+  it('WIP-лимит: превышение подсвечивает счётчик и объясняет величину', () => {
     renderBoard({
       board: { ...board, columns: [{ ...board.columns[0], wipLimit: 1 }, board.columns[1]] }
     })
-    const wip = screen.getByTitle('WIP-лимит: 1')
+    const progress = screen.getByRole('progressbar', { name: 'Заполнение WIP колонки «To Do»' })
+    const wip = progress.closest('.jcol-wip')!
     expect(wip).toHaveTextContent('2/1')
     expect(wip.className).toContain('jcol-wip--over')
+    expect(progress).toHaveAttribute('aria-valuetext', 'WIP-лимит превышен: 2 из 1, превышение на 1 задача')
   })
 
   it('свимлейны по эпикам: карточки группируются, эпики не показываются как карточки', async () => {

@@ -23,6 +23,43 @@ export function pluralTasks(n: number): string {
   return 'задач'
 }
 
+export interface WipPresentation {
+  state: 'available' | 'full' | 'over'
+  label: string
+  percentage: number
+  progressValue: number
+}
+
+function pluralPlaces(value: number): string {
+  const mod10 = value % 10
+  const mod100 = value % 100
+  if (mod10 === 1 && mod100 !== 11) return 'место'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'места'
+  return 'мест'
+}
+
+export function wipPresentation(total: number, limit: number | null): WipPresentation | null {
+  if (limit == null || !Number.isFinite(limit) || limit <= 0) return null
+  const safeTotal = Math.max(0, Math.trunc(total))
+  const safeLimit = Math.trunc(limit)
+  const remaining = safeLimit - safeTotal
+  const percentage = Math.min(100, Math.round((safeTotal / safeLimit) * 100))
+  if (remaining < 0) {
+    const over = Math.abs(remaining)
+    return {
+      state: 'over', percentage, progressValue: safeLimit,
+      label: `WIP-лимит превышен: ${safeTotal} из ${safeLimit}, превышение на ${over} ${pluralTasks(over)}`
+    }
+  }
+  if (remaining === 0) {
+    return { state: 'full', percentage, progressValue: safeLimit, label: `WIP-лимит заполнен: ${safeTotal} из ${safeLimit}` }
+  }
+  return {
+    state: 'available', percentage, progressValue: safeTotal,
+    label: `WIP: ${safeTotal} из ${safeLimit}, свободно ${remaining} ${pluralPlaces(remaining)}`
+  }
+}
+
 /**
  * Имя колонки как региона для скринридера: «Колонка «В работе», 3 задачи».
  * Считаем видимые под фильтром задачи — ровно то, что человек услышит, пройдя
