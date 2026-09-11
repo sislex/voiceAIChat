@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 91ed019e
+checked: 29171e8f
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1060,6 +1060,23 @@ Escape. Moving focus between the card and its descendant controls no longer
 cancels a pending board operation through a bubbled blur. DOM tests cover the
 complete contract and Chromium verifies it against both normal and already
 grabbed Storybook cards.
+
+### Due-date windows (2026-09-11)
+
+The board toolbar provides one mutually exclusive due-date selector: all tasks,
+overdue, today, the next seven local calendar days, or tasks without a due date.
+The seven-day window includes day zero through day six. Today and the window use
+calendar boundaries instead of elapsed 24-hour intervals; overdue excludes done
+tasks, matching the summary metric and task-card presentation.
+
+The selection participates in result counts, empty-state diagnosis, active
+filter chips, global reset, server-backed `BoardView`, and legacy local storage.
+The overdue summary button selects the same enum value, so it cannot conflict
+with `today`, `week`, or `none`. `overdueOnly` is written alongside the enum for
+old clients and is migrated to `dueWindow: overdue` when no enum exists. Pure
+boundary tests cover every interval, DOM tests cover selection and persistence,
+and Chromium verifies the full option set, metric synchronization, chips, reset,
+and mobile layout.
 
 ### Меню колонки
 
