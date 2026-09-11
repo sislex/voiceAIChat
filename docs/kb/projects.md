@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 44879c71
+checked: 101b281e
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -950,6 +950,22 @@ visually while their full accessible button name remains available. DOM tests
 cover every chip category, isolated removal, complete reset, and placement on a
 mobile board. The interactive Storybook board is the Chromium check for desktop
 and collapsed mobile behavior.
+
+### Compact task-card metadata (2026-09-11)
+
+Each task card exposes a composite accessible name with the issue key, type,
+title, full priority name, assignee, and due state. Due dates use local calendar
+days and render compact relative states (`Overdue`, `Today`, `Tomorrow`, or days
+remaining); the `time` element keeps the exact date and full state in its
+accessible label and tooltip. Assignee avatars and story-point values have named
+accessible units instead of relying on initials or bare numbers.
+
+Labels remain visible in every workflow stage. A card renders the first three
+labels and a `+N` overflow item whose tooltip and accessible name list every
+hidden label, which prevents wide metadata from changing the board geometry.
+`TaskCard.dom.test.tsx` covers the complete semantic contract, and the
+`AllAttributes` and `LongTitles` Storybook states are the Chromium checks for
+relative deadlines and label overflow.
 
 ### Меню колонки
 

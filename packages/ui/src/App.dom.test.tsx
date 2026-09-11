@@ -239,7 +239,7 @@ describe('App — действия модели в веб-превью (мост
       const history = await screen.findByRole('region', { name: 'Действия ассистента' })
       expect(within(history).getAllByRole('listitem')).toHaveLength(2)
       expect(within(history).queryByText('Нажал Чужая кнопка')).not.toBeInTheDocument()
-      await userEvent.click(within(history).getAllByRole('button', { name: 'Повторить' })[0])
+      await userEvent.click(within(history).getAllByRole('button', { name: /^Повторить действие \d+:/ })[0])
       await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'command', action: { kind: 'errors' }, requestId: expect.any(String) }), window.location.origin))
       expect(screen.getByTitle('Web Reader')).toBe(frame)
       view.unmount()
