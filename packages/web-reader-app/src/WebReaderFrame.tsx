@@ -5,25 +5,9 @@ import type { PreviewAction } from '@shared/previewActions'
 import type { WebRecorderHostMessage } from '@shared/webRecorder'
 import { browserId } from '@shared/browserId'
 import { prepareReaderPreview } from './preparePreview'
+import { ReaderActionHistory } from './ReaderActionHistory'
 import { createReaderHostBridge, type ReaderHostBridge, type PreviewActionOutcome } from './hostBridge'
 
-function previewActionLabel(action: PreviewAction): string {
-  switch (action.kind) {
-    case 'open': return `Открыл ${action.url}`
-    case 'click': return `Нажал ${action.text ?? action.selector ?? 'элемент'}`
-    case 'type': return `Ввёл текст в ${action.selector}`
-    case 'read': return `Прочитал ${action.selector ?? 'страницу'}`
-    case 'accessibility': return `Inspected browser accessibility: ${action.selector}`
-    case 'probe': return `Осмотрел элемент ${action.selector}`
-    case 'audit': return 'Проверил страницу'
-    case 'find': return `Нашёл ${action.text ?? action.selector ?? 'элементы'}`
-    case 'screenshot': return 'Сделал снимок страницы'
-    case 'errors': return 'Проверил ошибки страницы'
-    case 'back': return 'Перешёл назад'
-    case 'forward': return 'Перешёл вперёд'
-    default: return `Выполнил: ${action.kind}`
-  }
-}
 
 export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, pageError, onAskError, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
@@ -182,10 +166,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     {saving && <p role="status">Сохраняем адрес страницы…</p>}
     {saveError && <div className="webpreview-error" role="alert"><span>{saveError}</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retrySave.current?.()}>Повторить сохранение</button></div>}
     {pageError && <div className="webpreview-error" role="alert"><span>{pageError}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}</div>}
-    {actions.length > 0 && <section className="webpreview-scenario" aria-label="Действия ассистента">
-      <strong>Действия ассистента</strong>
-      <ol>{actions.map((item) => <li key={item.id}><span>{previewActionLabel(item.action)}</span>{onRepeatAction && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" onClick={() => onRepeatAction(item.action)}>Повторить</button>}</li>)}</ol>
-    </section>}
+    <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} />
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
     {previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retryOpen.current ? retryOpen.current() : setRetryKey((value) => value + 1)}>Повторить</button></div>}
     <iframe key={conversationId} ref={frameRef} className="webpreview-frame" src={src} title="Web Reader" aria-hidden={previewSession !== 'ready'} tabIndex={previewSession === 'ready' ? 0 : -1} {...{ inert: previewSession !== 'ready' ? '' : undefined }} />
