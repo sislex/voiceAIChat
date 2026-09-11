@@ -7,7 +7,7 @@ import type { Task } from '@shared/projects'
 import type { CiRun, CiRunSummary } from '@shared/ci'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
-import { TaskCard, type TaskCardProps } from './TaskCard'
+import { TaskCard, type TaskCardProps, updatedPresentation } from './TaskCard'
 
 function mkTask(over: Partial<Task> = {}): Task {
   return {
@@ -180,6 +180,31 @@ describe('TaskCard — прогресс подзадач', () => {
 
     rerender(<TaskCard {...props({ task: parent, allTasks: [parent] })} />)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+})
+
+describe('TaskCard — время последнего обновления', () => {
+  const now = new Date(2026, 8, 11, 18, 0).getTime()
+
+  it('выбирает короткие состояния от текущего момента до старой даты', () => {
+    expect(updatedPresentation(now - 20_000, now)).toMatchObject({ short: 'сейчас', state: 'fresh' })
+    expect(updatedPresentation(now - 5 * 60_000, now)).toMatchObject({ short: '5 мин', state: 'fresh' })
+    expect(updatedPresentation(now - 2 * 3_600_000, now)).toMatchObject({ short: '2 ч', state: 'fresh' })
+    expect(updatedPresentation(new Date(2026, 8, 11, 7).getTime(), now)).toMatchObject({ short: 'сегодня', state: 'fresh' })
+    expect(updatedPresentation(new Date(2026, 8, 10, 18).getTime(), now)).toMatchObject({ short: 'вчера', state: 'recent' })
+    expect(updatedPresentation(new Date(2026, 8, 6, 18).getTime(), now)).toMatchObject({ short: '5 дн', state: 'recent' })
+    expect(updatedPresentation(new Date(2026, 7, 20, 18).getTime(), now)).toMatchObject({ short: '20.08', state: 'stale' })
+  })
+
+  it('рендерит точное машинное и доступное время вместе с состоянием свежести', () => {
+    const updatedAt = Date.now() - 5 * 60_000
+    const expected = updatedPresentation(updatedAt)
+    render(<TaskCard {...props({ task: mkTask({ updatedAt }) })} />)
+    const time = screen.getByLabelText(expected.label)
+    expect(time).toHaveAttribute('dateTime', new Date(updatedAt).toISOString())
+    expect(time).toHaveAttribute('title', expected.label)
+    expect(time).toHaveClass('jcard-updated--fresh')
+    expect(time).toHaveTextContent('5 мин')
   })
 })
 
