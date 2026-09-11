@@ -8,9 +8,12 @@ REST/WS остаются в `@voicechat/shared`; Node-транспорт и се
 `packages/shared/src/applicationCatalog.ts`. Для внутренней проверки:
 `npm run -w @voicechat/browser-contracts typecheck` и `npm run -w @voicechat/browser-contracts test`.
 
-The `./audit` export contains pure generators for trusted DOM audit programs.
+The `./audit` export contains pure generators for trusted DOM audits and control probes.
 Both proxy Reader and native browser-runner execute the same checks; this package
 does not execute DOM code or start a browser. Keep new audit groups here to avoid
 different findings between engines. Add examples to the shared registry exposed
 only by `./audit/fixtures`; both browser suites iterate it. Production imports must
 not load the fixture entry point. Audit source changes automatically select Reader E2E.
+Control probes share the native DOM prelude and have a separate bounded result
+contract. Keep physical hit testing distinct from semantic reading visibility and
+from an attempted application interaction.

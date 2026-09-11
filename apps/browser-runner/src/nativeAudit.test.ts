@@ -4,8 +4,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, afterAll, describe, it, expect } from 'vitest'
-import { auditFixtures } from '@voicechat/browser-contracts/audit/fixtures'
-import type { BrowserCommand, BrowserInspectResult, BrowserSessionMetadata, PreviewAuditOptions } from '@voicechat/shared'
+import { auditFixtures, probeFixtures, probeExpectationFailures } from '@voicechat/browser-contracts/audit/fixtures'
+import { isPreviewProbeResult } from '@voicechat/shared'
+import type { BrowserCommand, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, PreviewAuditOptions } from '@voicechat/shared'
 import { BrowserSessionManager } from './sessionManager.js'
 
 let site: FastifyInstance, manager: BrowserSessionManager, session: BrowserSessionMetadata, root: string, source = ''
@@ -19,6 +20,15 @@ const audit = async (options: PreviewAuditOptions = {}) => {
   expect(result.page?.url).toBe(target)
   return result.audit!
 }
+const probe = async (selector = '#target') => {
+  const result = await send({ type: 'inspect', action: { kind: 'probe', selector } }) as BrowserInspectResult
+  expect(result.ok, result.error).toBe(true)
+  const payload = { page: result.page, probe: result.probe }
+  if (!isPreviewProbeResult(payload)) throw new Error('Invalid native probe result: '+JSON.stringify(payload))
+  expect(payload.page.url).toBe(target)
+  expect(payload.probe.surface).toBe('chromium')
+  return payload.probe
+}
 
 describe('Native Reader built-in audits', () => {
   beforeAll(async () => {
@@ -30,6 +40,40 @@ describe('Native Reader built-in audits', () => {
     session = await manager.start({ sessionId: randomUUID(), userKey: 'audit-test', conversationKey: randomUUID(), profileMode: 'ephemeral' })
   })
   afterAll(async () => { await manager?.close(); await site?.close(); if (root) await rm(root, { recursive: true, force: true }) })
+  for (const fixture of probeFixtures) for (const state of ['condition', 'comparison'] as const) {
+    it(`probes ${fixture.name}: ${state}`, async () => {
+      await open(fixture[state].html)
+      const report = await probe()
+      expect(probeExpectationFailures(report, fixture[state].expect)).toEqual([])
+    })
+  }
+  it.each([
+    '<button hidden style="display:block"></button>',
+    '<section style="visibility:hidden"><button style="visibility:visible"></button></section>'
+  ])('semantic audits include CSS-visible controls (%#)', async body => {
+    await open('<!doctype html>'+body)
+    expect((await audit({ rules: ['button-name-missing'] })).total).toBe(1)
+  })
+  it('rejects missing or ambiguous probe targets and unsupported frames', async () => {
+    await open('<!doctype html><button>One</button><button>Two</button>')
+    for (const selector of ['', '#missing', 'button', '[']) expect(await send({ type: 'inspect', action: { kind: 'probe', selector } })).toMatchObject({ ok: false })
+    await expect(send({ type: 'inspect', action: { kind: 'probe', selector: 'button' }, frame: '#child' })).rejects.toThrow('frame')
+  })
+  it('returns a valid partial probe when source inspection reaches its bounds', async () => {
+    await open('<!doctype html>'+'<div>'.repeat(150)+'<button id="target">Save</button>'+'</div>'.repeat(150))
+    const report = await probe()
+    expect(report.truncated).toBe(true)
+    expect(report.state.inert).toBe(null)
+    expect(report.visibility.effectiveOpacity).toBe(null)
+  })
+  it('probes find references but rejects a replacement DOM clone', async () => {
+    await open('<!doctype html><button id="target">Save</button>')
+    const found = await send({ type: 'selector', action: { kind: 'find', selector: '#target' } }) as BrowserSelectorResult
+    const selector = found.matches![0].selector
+    expect((await probe(selector)).pointer.status).toBe('reachable')
+    await send({ type: 'inspect', action: { kind: 'evaluate', code: 'const target=document.querySelector("#target");target.replaceWith(target.cloneNode(true))' } })
+    expect(await send({ type: 'inspect', action: { kind: 'probe', selector } })).toMatchObject({ ok: false, error: expect.stringContaining('stale_element_ref') })
+  })
   for (const fixture of auditFixtures) {
     it(`detects ${fixture.name ?? fixture.rule} at the original origin`, async () => {
       await open(fixture.broken)

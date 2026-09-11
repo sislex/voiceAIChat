@@ -3,9 +3,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import type { PreviewActionResultMessage, PreviewAuditOptions, PreviewAuditResult } from '@voicechat/shared'
+import { isPreviewProbeResult, type PreviewAction, type PreviewActionResultMessage, type PreviewAuditOptions, type PreviewAuditResult } from '@voicechat/shared'
 import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
-import { auditFixtures } from '@voicechat/browser-contracts/audit/fixtures'
+import { auditFixtures, probeFixtures, probeExpectationFailures } from '@voicechat/browser-contracts/audit/fixtures'
 
 let app: FastifyInstance, browser: Browser, page: Page, base: string, source = ''
 async function open(html: string) {
@@ -13,8 +13,8 @@ async function open(html: string) {
   await page.goto(base + '/host')
   await page.frameLocator('iframe').locator('#voicechat-preview-inspector').waitFor({ state: 'attached' })
 }
-async function audit(options: PreviewAuditOptions = {}): Promise<PreviewAuditResult['audit']> {
-  const message = await page.evaluate(options => new Promise<PreviewActionResultMessage>((resolve, reject) => {
+async function perform(action: PreviewAction) {
+  const message = await page.evaluate(action => new Promise<PreviewActionResultMessage>((resolve, reject) => {
     const frame = document.querySelector('iframe')!.contentWindow!, requestId = crypto.randomUUID()
     const timer = setTimeout(() => { removeEventListener('message', receive); reject(new Error('Audit reply timed out')) }, 5000)
     const receive = (event: MessageEvent) => {
@@ -22,13 +22,22 @@ async function audit(options: PreviewAuditOptions = {}): Promise<PreviewAuditRes
       clearTimeout(timer); removeEventListener('message', receive); resolve(event.data)
     }
     addEventListener('message', receive)
-    frame.postMessage({ type: 'voicechat.preview.action.v1', requestId, action: { kind: 'audit', ...options } }, location.origin)
-  }), options)
+    frame.postMessage({ type: 'voicechat.preview.action.v1', requestId, action }, location.origin)
+  }), action)
   if (!message.ok) throw new Error(message.error)
-  return (message.result as PreviewAuditResult).audit
+  return message.result
+}
+async function audit(options: PreviewAuditOptions = {}): Promise<PreviewAuditResult['audit']> {
+  return ((await perform({ kind: 'audit', ...options })) as PreviewAuditResult).audit
+}
+async function probe(selector = '#target') {
+  const result = await perform({ kind: 'probe', selector })
+  if (!isPreviewProbeResult(result)) throw new Error('Invalid proxy probe result: '+JSON.stringify(result))
+  expect(result.probe.surface).toBe('proxy')
+  return result.probe
 }
 
-describe('Web Reader markup audit in Chromium', () => {
+describe('Web Reader built-in diagnostics in Chromium', () => {
   beforeAll(async () => {
     app = fastify()
     app.addHook('onRequest', async req => { (req as unknown as { user: object }).user = { name: 'audit-e2e', role: 'user' } })
@@ -40,6 +49,90 @@ describe('Web Reader markup audit in Chromium', () => {
     page.setDefaultTimeout(5000)
   })
   afterAll(async () => { await browser?.close(); await app?.close() })
+
+  for (const fixture of probeFixtures) for (const state of ['condition', 'comparison'] as const) {
+    it(`probes ${fixture.name}: ${state}`, async () => {
+      await open(fixture[state].html)
+      const report = await probe()
+      expect(probeExpectationFailures(report, fixture[state].expect)).toEqual([])
+    })
+  }
+  it.each([
+    '<button id="target" hidden style="display:block" onclick="this.dataset.clicked=\'yes\'"></button>',
+    '<section style="visibility:hidden"><button id="target" style="visibility:visible" onclick="this.dataset.clicked=\'yes\'"></button></section>'
+  ])('reads and activates controls made visible by CSS overrides (%#)', async body => {
+    await open('<!doctype html>'+body)
+    expect((await audit({ rules: ['button-name-missing'] })).total).toBe(1)
+    await perform({ kind: 'click', selector: '#target' })
+    expect(await page.frameLocator('iframe').locator('#target').getAttribute('data-clicked')).toBe('yes')
+  })
+  it('still excludes hidden and fully transparent controls from semantic audit names', async () => {
+    await open('<!doctype html><button hidden></button><section style="opacity:0"><button style="opacity:1"></button></section>')
+    expect((await audit({ rules: ['button-name-missing'] })).total).toBe(0)
+  })
+  it('refreshes control state and pointer blockers without changing the page', async () => {
+    await open('<!doctype html><button id="target" disabled>Save</button>')
+    expect((await probe()).state.nativeDisabled).toBe(true)
+    await page.frameLocator('iframe').locator('#target').evaluate(el => { (el as HTMLButtonElement).disabled = false; (el as HTMLElement).style.pointerEvents = 'none' })
+    const report = await probe()
+    expect(report.state.nativeDisabled).toBe(false)
+    expect(report.pointer.status).toBe('blocked')
+    expect(report.reasons.map(reason => reason.code)).toContain('pointer-events-none')
+  })
+  it('attributes nested fieldset disabling to the actual outer cause', async () => {
+    await open('<!doctype html><fieldset id="outer" disabled><fieldset id="inner" disabled><legend><button id="target">Save</button></legend></fieldset></fieldset>')
+    const report = await probe()
+    expect(report.state.nativeDisabled).toBe(true)
+    expect(report.reasons.find(reason => reason.code === 'disabled-fieldset')?.selector).toBe('#outer')
+  })
+  it('keeps samples for fixed descendants that escape an overflow ancestor', async () => {
+    await open('<!doctype html><div style="overflow:hidden;width:20px;height:20px"><button id="target" style="position:fixed;left:200px;top:200px">Save</button></div>')
+    expect((await probe()).pointer.status).toBe('reachable')
+  })
+  it('rejects missing, ambiguous and malformed probe selectors', async () => {
+    await open('<!doctype html><button>One</button><button>Two</button>')
+    await expect(probe('#missing')).rejects.toThrow('exactly one')
+    await expect(probe('button')).rejects.toThrow('exactly one')
+    await expect(probe('[')).rejects.toThrow()
+  })
+  it('reports bounded incomplete probe geometry, ancestors and source selectors', async () => {
+    await open('<!doctype html><section style="opacity:0">'+'<div>'.repeat(150)+'<button id="target">Save</button>'+'</div>'.repeat(150)+'</section>')
+    const deep = await probe()
+    expect(deep.truncated).toBe(true)
+    expect(deep.visibility.effectiveOpacity).toBe(null)
+    expect(deep.visibility.visibleByBrowser).toBe(false)
+    await open('<!doctype html><div style="width:25px"><a id="target" href="#">'+'word '.repeat(100)+'</a></div>')
+    const wrapped = await probe()
+    expect(wrapped.truncated).toBe(true)
+    expect(wrapped.visibility.rectangles).toHaveLength(8)
+    expect(wrapped.pointer.points.length).toBeLessThanOrEqual(40)
+    await open('<!doctype html><section inert id="'+'X'.repeat(650)+'"><button id="target">Save</button></section>')
+    const long = await probe()
+    expect(long.truncated).toBe(true)
+    expect(long.reasons.every(reason => (reason.selector?.length ?? 0) <= 500)).toBe(true)
+    expect(JSON.stringify(long).length).toBeLessThan(26000)
+  })
+  it('probes preserve focus, text selection, DOM, scroll and sensitive values', async () => {
+    await open('<!doctype html><style>body{height:1600px}</style><input id="target" type="password" value="probe-secret"><p id="text">Selected text</p>')
+    const frame = page.frames().find(frame => frame.url().includes('/api/preview?'))!
+    await frame.evaluate(() => { document.querySelector<HTMLInputElement>('#target')!.focus(); const range = document.createRange(); range.selectNodeContents(document.querySelector('#text')!); getSelection()!.removeAllRanges(); getSelection()!.addRange(range); scrollTo(0, 100) })
+    const snapshot = () => frame.evaluate(() => ({ html: document.documentElement.outerHTML, focus: document.activeElement?.id, selection: getSelection()?.toString(), scrollY, value: document.querySelector<HTMLInputElement>('#target')!.value }))
+    const before = await snapshot(), report = await probe()
+    expect(JSON.stringify(report)).not.toContain('probe-secret')
+    expect(await snapshot()).toEqual(before)
+  })
+  it('captures a visible control whose pointer input is intercepted', async () => {
+    await open('<!doctype html><html lang="en"><head><title>Control probe evidence</title><style>body{font:18px/1.5 system-ui;background:#edf2f8;padding:32px}main{background:white;border-radius:16px;padding:32px;max-width:760px}section{border-top:1px solid #dce4ee;padding:20px 0}button{width:220px;height:52px;font:inherit;border:1px solid #5276ad;border-radius:8px;background:#e7efff}.stack{position:relative;width:220px;height:52px}#overlay{position:absolute;inset:0;background:rgba(180,35,50,.22);border:2px dashed #ae2434;display:grid;place-items:center;color:#831b29;font-weight:bold}</style></head><body><main><h1>Control probe: interaction evidence</h1><section><h2>Visible but intercepted</h2><div class="stack"><button id="blocked">Save changes</button><div id="overlay">Overlay intercepts input</div></div><p>The probe identifies the element receiving pointer input.</p></section><section><h2>Reachable control</h2><button id="ready">Save changes</button><p>Pointer reachability is separate from disabled or read-only state.</p></section></main></body></html>')
+    const blocked = await probe('#blocked'), ready = await probe('#ready')
+    expect(blocked.visibility.visibleByBrowser).toBe(true)
+    expect(blocked.pointer.status).toBe('blocked')
+    expect(blocked.pointer.hitTargets.map(hit => hit.selector)).toContain('#overlay')
+    expect(ready.pointer.status).toBe('reachable')
+    if (process.env.VC_VISUAL_ARTIFACTS) {
+      await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
+      await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'cycle-05-probe.png'), fullPage: true })
+    }
+  })
 
   for (const fixture of auditFixtures) {
     it(`detects ${fixture.name ?? fixture.rule}`, async () => {

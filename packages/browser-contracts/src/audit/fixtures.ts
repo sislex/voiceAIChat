@@ -19,3 +19,4 @@ export const auditFixtures: AuditFixture[] = [
   ...colorAuditFixtures.map(f => ({ ...f, group: 'color' }))
 ]
 export { markupAuditFixtures, layoutAuditFixtures, typographyAuditFixtures, colorAuditFixtures }
+export { probeFixtures, probeExpectationFailures, probeResultFixture, type ProbeExpectation, type ProbeScene, type ProbeFixture } from './probe.fixtures.js'
