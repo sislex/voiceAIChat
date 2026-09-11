@@ -1,9 +1,40 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  main,
   planApplicationChecks,
-  lockChangedApplications
+  lockChangedApplications,
+  validateApplicationDependencies
 } from './application-gate.mjs'
+import { PACKAGES } from './affected-check.mjs'
+import { APPLICATION_CATALOG } from '../packages/shared/src/applicationCatalog.ts'
+
+test('application gates reject missing manifest edges before running checks or a dry run', async () => {
+  const panel = PACKAGES.find((pkg) => pkg.id === 'make-app')
+  const dependencies = panel.dependsOn
+  try {
+    panel.dependsOn = dependencies.filter((id) => id !== 'make-contracts')
+    for (const args of [['make'], ['make', '--dry-run'], ['--worktree', '--dry-run']]) {
+      await assert.rejects(main(args), /Missing workspace dependencies.*make-app -> make-contracts/)
+    }
+  } finally {
+    panel.dependsOn = dependencies
+  }
+})
+
+test('application gates reject missing catalog edges before running checks or a dry run', async () => {
+  const panel = APPLICATION_CATALOG.find((app) => app.id === 'make-ui')
+  const dependencies = panel.buildDependencies
+  try {
+    panel.buildDependencies = dependencies.filter((id) => id !== 'make-contracts')
+    for (const args of [['make'], ['make', '--dry-run'], ['--worktree', '--dry-run']]) {
+      await assert.rejects(main(args), /Missing build dependency.*make-ui -> make-contracts/)
+    }
+  } finally {
+    panel.buildDependencies = dependencies
+  }
+})
+
 test('внутренний Make не втягивает сервер или UI', () => {
   const p = planApplicationChecks(['apps/make/src/workspace.ts'])
   assert.equal(p.full, false)
@@ -22,6 +53,7 @@ test('вынесенный контракт проверяет потребит�
   const p = planApplicationChecks(['packages/make-contracts/src/core.ts'])
   assert.ok(p.applications.some((a) => a.id === 'make'))
   assert.ok(p.applications.some((a) => a.id === 'core'))
+  assert.ok(p.applications.some((a) => a.id === 'make-ui'))
 })
 test('неизвестные пути и root конфиг не дают пустой успех', () => {
   for (const file of ['apps/new/src/index.ts', 'Dockerfile', 'package.json'])
@@ -74,65 +106,8 @@ test('root lock и неизвестные изменения зависимос�
     null
   )
 })
-test('каталог владеет каждым workspace и знает реальные внутренние зависимости', async () => {
-  const { readFileSync, existsSync } = await import('node:fs')
-  const { APPLICATION_CATALOG, applicationForPath } = await import(
-    '../packages/shared/src/applicationCatalog.ts'
-  )
-  const lock = JSON.parse(
-    readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8')
-  )
-  const workspaces = new Map(
-    Object.keys(lock.packages)
-      .filter(
-        (path) =>
-          /^(apps|packages)\//.test(path) &&
-          !path.includes('/node_modules/') &&
-          existsSync(new URL('../' + path + '/package.json', import.meta.url))
-      )
-      .map((path) => [
-        JSON.parse(
-          readFileSync(
-            new URL('../' + path + '/package.json', import.meta.url),
-            'utf8'
-          )
-        ).name,
-        path
-      ])
-  )
-  for (const [name, path] of workspaces) {
-    const owner = applicationForPath(path)
-    assert.ok(owner, `Нет владельца ${path}`)
-    assert.ok(
-      owner.workspaces.includes(name),
-      `${name} не принадлежит ${owner.id}`
-    )
-  }
-  for (const app of APPLICATION_CATALOG)
-    for (const name of app.workspaces) {
-      const path = workspaces.get(name)
-      assert.ok(path, `Нет workspace ${name}`)
-      const pkg = JSON.parse(
-        readFileSync(
-          new URL('../' + path + '/package.json', import.meta.url),
-          'utf8'
-        )
-      )
-      for (const dependency of Object.keys({
-        ...pkg.dependencies,
-        ...pkg.devDependencies,
-        ...pkg.peerDependencies
-      })) {
-        const owner = workspaces.has(dependency)
-          ? applicationForPath(workspaces.get(dependency))
-          : null
-        if (owner && owner.id !== app.id)
-          assert.ok(
-            app.buildDependencies.includes(owner.id),
-            `${app.id} не учитывает сборочную зависимость ${owner.id}`
-          )
-      }
-    }
+test('каталог владеет каждым workspace и знает реальные внутренние зависимости', () => {
+  assert.doesNotThrow(() => validateApplicationDependencies())
 })
 test('изменение браузерного поведения и сам E2E включают исполняемый браузерный набор', () => {
   assert.deepEqual(

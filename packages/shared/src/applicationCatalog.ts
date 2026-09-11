@@ -283,6 +283,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
         "shared",
         "ui-kit",
         "ui-foundation",
+        ...(id === "make-ui" ? ["make-contracts"] : []),
         ...(id.includes("reader") ? ["chat-app"] : []),
       ],
       runtimeDependencies: [...new Set(["core", backend])],
