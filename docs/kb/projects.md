@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-12
-checked: 1c1cdb21
+checked: ea4c1e13
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1161,6 +1161,15 @@ omits the current column. Selection closes the menu and uses the guarded board
 move path, which rejects duplicate requests and announces the destination. The
 menu keeps its existing top/bottom actions and uses a bounded, scrollable height
 when projects have many workflow stages.
+
+The same menu can copy a stable absolute task permalink. The route keeps the
+current deployment pathname and encodes both project and task identifiers before
+building `#/projects/:projectId/task/:taskId`. Selection closes the menu without
+opening the card. The board reports success or clipboard failure both visibly in
+the filter toolbar and through its live region, and clears that report when the
+project changes. `taskPermalink` has deterministic encoding coverage; TaskCard
+and board DOM tests cover menu isolation and both clipboard outcomes, while the
+FullFeaturedCard Chromium check verifies the real clipboard value.
 
 ### Due-date windows (2026-09-11)
 

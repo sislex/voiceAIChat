@@ -331,6 +331,14 @@ export function formatVisibleBoardList(input: {
   return lines.join('\n')
 }
 
+export function taskPermalink(
+  task: Pick<Task, 'projectId' | 'id'>,
+  page: Pick<Location, 'origin' | 'pathname'> | null = typeof window === 'undefined' ? null : window.location
+): string {
+  const route = `#/projects/${encodeURIComponent(task.projectId)}/task/${encodeURIComponent(task.id)}`
+  return page ? `${page.origin}${page.pathname}${route}` : route
+}
+
 /** Searchable multi-select with bulk operations over the currently visible options. */
 function FilterDropdown({ label, selected, options, onChange }: {
   label: string
@@ -483,6 +491,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [collapsedLanesHydrated, setCollapsedLanesHydrated] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [copyBoardStatus, setCopyBoardStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [copyTaskLinkStatus, setCopyTaskLinkStatus] = useState<{ title: string; copied: boolean } | null>(null)
+  useEffect(() => setCopyTaskLinkStatus(null), [improvementsProjectId])
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [dragTask, setDragTask] = useState<string | null>(null)
   const [dragColumn, setDragColumn] = useState<string | null>(null)
@@ -1492,6 +1502,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         if (moved === false) return
         setAnnounce(`Задача «${current.title}» перенесена в колонку «${columnName(targetColumnId)}».`)
       }}
+      onCopyLink={async (taskId) => {
+        const current = allTasks.find((task) => task.id === taskId)
+        if (!current) return
+        const copied = await copyText(taskPermalink(current))
+        setCopyTaskLinkStatus({ title: current.title, copied })
+        setAnnounce(copied
+          ? `Ссылка на задачу «${current.title}» скопирована.`
+          : `Не удалось скопировать ссылку на задачу «${current.title}».`)
+      }}
       onGrab={(e, card, immediate) => grabTask(e, card, t.id, immediate)}
       onCardKeys={onCardKeys(t)}
       onCardBlur={() => {
@@ -2456,6 +2475,18 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             >
               {copyBoardStatus === 'success' ? 'Скопировано' : copyBoardStatus === 'error' ? 'Повторить копирование' : 'Копировать список'}
             </Button>
+            {copyTaskLinkStatus && (
+              <span
+                className="jboard-copy-feedback"
+                data-testid="copy-task-link-status"
+                data-error={!copyTaskLinkStatus.copied || undefined}
+                role="status"
+              >
+                {copyTaskLinkStatus.copied
+                  ? `Ссылка на «${copyTaskLinkStatus.title}» скопирована`
+                  : `Не удалось скопировать ссылку на «${copyTaskLinkStatus.title}»`}
+              </span>
+            )}
             <label className="kanban-showhidden">
               <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
             </label>

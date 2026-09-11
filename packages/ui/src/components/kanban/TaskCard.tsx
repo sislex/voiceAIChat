@@ -58,6 +58,8 @@ export interface TaskCardProps {
   moveColumns?: Array<{ id: string; name: string; hidden?: boolean }>
   /** Переместить карточку существующим сценарием доски. */
   onMoveToColumn?: (taskId: string, fromColumnId: string, targetColumnId: string) => void | Promise<void>
+  /** Copy a stable route to this task and report the result at board level. */
+  onCopyLink?: (taskId: string) => void | Promise<void>
 
   /** Захват указателем: доска решает, перенос это или клик/скролл.
       `immediate` — захват с ручки, удержание пальца не нужно. */
@@ -331,6 +333,11 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               onKeyDown={navigateMenu}
             >
               <button role="menuitem" onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
+              {props.onCopyLink && (
+                <button role="menuitem" onClick={() => { setMenuOpen(false); void props.onCopyLink?.(task.id) }}>
+                  Копировать ссылку
+                </button>
+              )}
               <button role="menuitem" onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { flagged: !task.flagged }) }}>
                 {task.flagged ? 'Снять флаг' : 'Добавить флаг'}
               </button>
