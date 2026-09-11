@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: b7dfaea4
+checked: 69b1f61a
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1435,6 +1435,12 @@ DOM-узлы доски, колонок и карточек сохраняют �
   указателем (клон без `data-testid`/`id`, чтобы не двоиться в тестах и хит-тесте),
   а на месте вставки — плейсхолдер `.jcard-placeholder` высотой с карточку;
   исходная карточка скрыта (`.jcard.dragging { display: none }`).
+  The board also exposes `data-dragging="pointer"` and `data-drag-task-id`, while
+  the selected insertion gap exposes `data-drop-active`. The atomic live region
+  announces pointer lift with the source column, each distinct target with its
+  column and position, successful placement, same-position placement, and every
+  cancellation path. Repeated pointer events inside one gap do not repeat the
+  announcement.
 - **Цель считает доска, а не движок.** Ячейка (колонка × дорожка свимлейна) — по
   `[data-drop-body]`, внутри неё ближайшая по вертикали зона `[data-dropzone]`
   даёт `afterId`/`beforeId` (контракт `move` не изменился) и `data-slot` для
