@@ -4,7 +4,7 @@ import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-fou
 import { act, fireEvent, screen, within, waitFor, cleanup } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
-import { formatVisibleBoardList, KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
+import { formatVisibleBoardList, KanbanBoard, taskPermalink, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
 import { DEFAULT_BOARD_VIEW } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
@@ -50,6 +50,30 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
 }
 
 describe('KanbanBoard (изолированный)', () => {
+  it('строит абсолютную кодированную ссылку и показывает результат копирования карточки', async () => {
+    expect(taskPermalink(
+      { projectId: 'project / один', id: 'task / два' },
+      { origin: 'https://chat.example', pathname: '/app/' }
+    )).toBe('https://chat.example/app/#/projects/project%20%2F%20%D0%BE%D0%B4%D0%B8%D0%BD/task/task%20%2F%20%D0%B4%D0%B2%D0%B0')
+
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Копировать ссылку' }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/#\/projects\/p1\/task\/t1$/)))
+    expect(screen.getByTestId('copy-task-link-status')).toHaveTextContent('Ссылка на «A» скопирована')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Ссылка на задачу «A» скопирована.')
+
+    writeText.mockRejectedValueOnce(new DOMException('Нет прав', 'NotAllowedError'))
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Копировать ссылку' }))
+    await waitFor(() => expect(screen.getByTestId('copy-task-link-status')).toHaveAttribute('data-error', 'true'))
+    expect(screen.getByTestId('copy-task-link-status')).toHaveTextContent('Не удалось скопировать ссылку на «A»')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Не удалось скопировать ссылку на задачу «A».')
+  })
+
   it('форматирует и копирует текущее представление доски со всеми полезными атрибутами', async () => {
     const dueDate = Date.UTC(2026, 8, 20)
     const exportBoard: Board = {
