@@ -54,6 +54,8 @@ export interface TaskCardProps {
   /** Фактические соседние колонки в полном проектном порядке. */
   previousColumn?: { id: string; name: string } | null
   nextColumn?: { id: string; name: string } | null
+  /** Ordered destinations for direct stage selection in the card action menu. */
+  moveColumns?: Array<{ id: string; name: string; hidden?: boolean }>
   /** Переместить карточку существующим сценарием доски. */
   onMoveToColumn?: (taskId: string, fromColumnId: string, targetColumnId: string) => void | Promise<void>
 
@@ -337,6 +339,25 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               </button>
               <button role="menuitem" onClick={() => { setMenuOpen(false); props.onMoveTop(task.id) }}>В начало колонки</button>
               <button role="menuitem" onClick={() => { setMenuOpen(false); props.onMoveBottom(task.id) }}>В конец колонки</button>
+              {props.onMoveToColumn && props.moveColumns?.some((column) => column.id !== task.columnId) && (
+                <>
+                  <span className="jcard-menu-label" role="presentation">Переместить в колонку</span>
+                  {props.moveColumns.filter((column) => column.id !== task.columnId).map((column) => (
+                    <button
+                      key={column.id}
+                      role="menuitem"
+                      disabled={movingStage}
+                      title={column.hidden ? `Скрытая колонка «${column.name}»` : undefined}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        void moveToColumn(column.id)
+                      }}
+                    >
+                      В колонку «{column.name}»{column.hidden ? ' · скрытая' : ''}
+                    </button>
+                  ))}
+                </>
+              )}
               <button
                 role="menuitem"
                 className="jcard-menu-danger"

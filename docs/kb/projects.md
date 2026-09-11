@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 6f026934
+checked: 2078cd84
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1138,6 +1138,13 @@ Escape. Moving focus between the card and its descendant controls no longer
 cancels a pending board operation through a bubbled blur. DOM tests cover the
 complete contract and Chromium verifies it against both normal and already
 grabbed Storybook cards.
+
+The card menu also contains an ordered “Move to column” group. It lists every
+other project column, includes hidden destinations with an explicit marker, and
+omits the current column. Selection closes the menu and uses the guarded board
+move path, which rejects duplicate requests and announces the destination. The
+menu keeps its existing top/bottom actions and uses a bounded, scrollable height
+when projects have many workflow stages.
 
 ### Due-date windows (2026-09-11)
 
