@@ -33,7 +33,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-11 | ⚠ 2 коммит(ов) в areas после сверки: 2607fd04 feat: route task tabs and tighten brief validation … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ⚠ 7 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 224 коммит(ов) в areas после сверки: 2607fd04 feat: route task tabs and tighten brief validation … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: 316c0227 feat(kanban): add column navigator |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-11 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 8 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: e873c8db fix(web-reader): bound navigation preparation and isolate saves (#144) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-11, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
