@@ -183,6 +183,17 @@ describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
   })
 })
 
+describe('работа модели: диагностика автоматической доработки', () => {
+  it('передаёт сбой QA в первый запрос модели разработки', async () => {
+    const { ctx } = await setup('off')
+    ctx.run.fixContext = { stepId: 'integration_tests:qa-1', logTail: 'FAIL checkout.test.ts: expected 200, received 500', failures: [], updatedAt: 1000 }
+    const rec = recorder()
+    await hooksWith(rec.client).modelWork(ctx)
+    expect(rec.last()!.prompt).toContain('integration_tests:qa-1')
+    expect(rec.last()!.prompt).toContain('FAIL checkout.test.ts: expected 200, received 500')
+  })
+})
+
 describe('работа модели: браузерная проверка задачи', () => {
   const PREVIEW_MCP = 'http://voicechat:8787/mcp/preview?k=secret'
 

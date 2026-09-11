@@ -180,7 +180,7 @@ export interface ProjectsActions {
   createTaskFromProposalInPreparation(projectId: string, proposalId: string, input: Pick<Task, 'title' | 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'> & { selection?: import('@voicechat/shared').TaskPreparationLlmSelection; sourceConversationId?: string }): Promise<import('@voicechat/shared').TaskLaunchResult>
   updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean; autoPilot?: boolean; autoPilotRequiresManualQa?: boolean }
   ): Promise<void>
   moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<boolean>
   deleteTask(taskId: string): Promise<void>
@@ -1561,4 +1561,3 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
 
   return { getState, subscribe: core.subscribe, dispose: core.dispose, actions }
 }
-

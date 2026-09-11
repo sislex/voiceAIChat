@@ -91,6 +91,8 @@ export interface CiRunStartOptions {
   launch?: CiRunLaunch
   /** Явная машина запуска; без неё `parallel` подбирает машину сам. */
   agentId?: string
+  /** Persist QA diagnostics before enqueueing so the model sees them on its first turn. */
+  fixContext?: import('@voicechat/shared').CiFixDiagnosticContext
 }
 
 export interface CiRunManager {
@@ -527,6 +529,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       kbContextMode: project.ciKbContextMode ?? 'auto',
       slotProgress: { done: 0, total, phase: 'В очереди' }
     })
+    if (launchOptions?.fixContext) {
+      await deps.db.ci.updateCiRun(run.id, { fixContext: launchOptions.fixContext })
+      run.fixContext = launchOptions.fixContext
+    }
     if (developmentColumnId && developmentColumnId !== task.columnId) {
       await deps.db.tasks.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
     }

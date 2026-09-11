@@ -800,8 +800,20 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       emitBoard(run.projectId)
       return
     }
-    const handled = await db.tasks.handleAutoPilotFailure(userId, run.projectId, run.taskId, stage, runId, reason, options?.remarks ?? '')
-    if (handled && !handled.decisionRequired) await ciRunManager.start(userId, run.projectId, run.taskId, { mode: 'development' })
+    const diagnostics = [reason, options?.remarks ?? '', 'summary' in run ? run.summary : '',
+      typeof run.log === 'string' ? run.log : JSON.stringify(run.log),
+      'commands' in run ? JSON.stringify(run.commands) : '',
+      'blockerReasons' in run ? run.blockerReasons.join('\n') : ''].filter(Boolean).join('\n').slice(-50000)
+    const handled = await db.tasks.handleAutoPilotFailure(userId, run.projectId, run.taskId, stage, runId, reason, diagnostics)
+    if (handled && !handled.decisionRequired) {
+      const started = await ciRunManager.start(userId, run.projectId, run.taskId, {
+        mode: 'development',
+        fixContext: { stepId: `${stage}:${runId}`, logTail: diagnostics, failures: [], updatedAt: Date.now() }
+      })
+      if ('error' in started) await db.qa.recordAutoPilotEvent(run.projectId, run.taskId, 'autopilot.stopped', { stage, runId, reason: started.error })
+      else if (stage === 'component_qa') await db.ci.linkComponentQaFixRun(userId, runId, started.run.id)
+      else if (stage === 'integration_tests') await db.ci.linkIntegrationTestFixRun(userId, runId, started.run.id)
+    }
     emitBoard(run.projectId)
   }
   const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'component_qa'}),completed:async (runId,userId,passed,reason,classification)=>{
@@ -838,7 +850,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if (runs.some((run) => run.status === 'success' || run.status === 'completed')) return
     const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
     const failed = runs.filter((run) => run.status === 'failed' || run.status === 'blocked').length
-    if (failed >= limit) {
+    if (failed > 0 && failed >= limit) {
       await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: 'Подготовка не прошла после автоматических повторов', attempts: failed, limit })
       // Из TODO пути в decision_required нет (карту переходов автопроход не
       // обходит): там карточка просто остаётся ждать человека с записью в аудите.
@@ -897,7 +909,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if (!retryAllowedNow({ finishedAt: await db.ci.lastCiRunFinishedAt(task.id), now: Date.now() })) return
     const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
     const failures = await db.ci.countTrailingFailedCiRuns(task.id)
-    if (failures >= limit) {
+    if (failures > 0 && failures >= limit) {
       await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Подряд упавшие development-раны', failures, limit })
       try { await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.development_limit_exhausted') }
       catch { /* переход недоступен из текущей колонки */ }
@@ -940,7 +952,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   const autoPilotMerge = async (userId: string, projectId: string, task: import('@voicechat/shared').Task): Promise<void> => {
     const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
     const failures = await db.ci.countTrailingFailedMergeRuns(task.id)
-    if (failures >= limit) {
+    if (failures > 0 && failures >= limit) {
       await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'merge', reason: 'Подряд упавшие merge-раны', failures, limit })
       try { await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.merge_limit_exhausted') }
       catch { /* переход недоступен из текущей колонки */ }
@@ -965,22 +977,51 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       try {
         for (const item of await db.tasks.autoPilotSnapshot(projectId)) {
           const { task, stage, userId } = item
-          // Машина нужна не всем стадиям: пропуск ручного QA — чистая работа с
-          // доской, а подготовка требует копию проекта только у Git-проекта.
-          const needsMachine = stage === 'manual_qa'
-            ? false
-            : stage === 'backlog' || stage === 'preparation'
-              ? Boolean((await db.projects.getProject(userId, projectId))?.gitUrl)
-              : true
-          if (needsMachine && !await projectHasOnlineMachine(userId, projectId)) continue
-          if (stage === 'backlog' || stage === 'preparation') await autoPilotPreparation(userId, projectId, task)
-          else if (stage === 'ready') await autoPilotDevelopment(userId, projectId, task)
-          else if (stage === 'development') await autoPilotDevelopmentStuck(userId, projectId, task)
-          else if (stage === 'component_qa') { const run=await db.ci.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')await componentQaRunner.launch(run.id,userId) }
-          else if (stage === 'integration_tests') { const run=await db.ci.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
-          else if (stage === 'automated_qa') { const run=await db.qa.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')await automatedQaRunner.launch(run.id,userId) }
-          else if (stage === 'manual_qa' && !item.requiresManualQa) await db.tasks.transitionAutoPilotTask(projectId,task.id,'awaiting_merge','autopilot.skip_manual_qa')
-          else if (stage === 'awaiting_merge' || stage === 'merge') await autoPilotMerge(userId, projectId, task)
+          try {
+            // Машина нужна не всем стадиям: пропуск ручного QA — чистая работа с
+            // доской, а подготовка требует копию проекта только у Git-проекта.
+            const needsMachine = stage === 'manual_qa'
+              ? false
+              : stage === 'backlog' || stage === 'preparation'
+                ? Boolean((await db.projects.getProject(userId, projectId))?.gitUrl)
+                : true
+            if (needsMachine && !await projectHasOnlineMachine(userId, projectId)) continue
+            if (stage === 'component_qa' || stage === 'integration_tests' || stage === 'automated_qa') {
+              const latest = stage === 'component_qa'
+                ? (await db.tasks.getComponentQaTaskState(userId, projectId, task.id))?.latestRun
+                : stage === 'integration_tests'
+                  ? (await db.ci.getIntegrationTestTaskState(userId, projectId, task.id))?.latestRun
+                  : (await db.qa.listQaStageRuns(userId, projectId, task.id, stage))[0]
+              // A completion event must not immediately repeat the same failure.
+              // Persisted finishedAt keeps the retry delay across server restarts.
+              if (latest && (latest.status === 'blocked' || latest.status === 'failed')
+                && !retryAllowedNow({ finishedAt: latest.finishedAt, now: Date.now() })) continue
+            }
+            if (stage === 'backlog' || stage === 'preparation') await autoPilotPreparation(userId, projectId, task)
+            else if (stage === 'ready') await autoPilotDevelopment(userId, projectId, task)
+            else if (stage === 'development') await autoPilotDevelopmentStuck(userId, projectId, task)
+            else if (stage === 'component_qa') {
+              const run = await db.ci.startComponentQaRun(userId, projectId, task.id)
+              if (run.status === 'queued') await componentQaRunner.launch(run.id, userId)
+              else if (run.status === 'skipped') emitBoard(projectId)
+              else if (run.status === 'blocked') await onAutoPilotFailure(run.id, userId, stage, run.summary, { classification: run.failureClassification })
+            }
+            else if (stage === 'integration_tests') {
+              const run = await db.ci.startIntegrationTestRun(userId, projectId, task.id)
+              if (run.status === 'queued') await integrationTestRunner.launch(run.id, userId)
+              else if (run.status === 'skipped') emitBoard(projectId)
+              else if (run.status === 'blocked') await onAutoPilotFailure(run.id, userId, stage, run.summary, { classification: run.failureClassification })
+            }
+            else if (stage === 'automated_qa') { const run=await db.qa.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')await automatedQaRunner.launch(run.id,userId) }
+            else if (stage === 'manual_qa' && !item.requiresManualQa) {
+              await db.tasks.transitionAutoPilotTask(projectId, task.id, 'awaiting_merge', 'autopilot.skip_manual_qa')
+              emitBoard(projectId)
+            }
+            else if (stage === 'awaiting_merge' || stage === 'merge') await autoPilotMerge(userId, projectId, task)
+          } catch (error) {
+            // An unavailable workspace for one task must not stall the other tasks.
+            app.log.warn({ projectId, taskId: task.id, error }, 'autopilot task failed')
+          }
         }
       } catch (error) { app.log.warn({ projectId, error }, 'autopilot tick failed') }
       finally {
