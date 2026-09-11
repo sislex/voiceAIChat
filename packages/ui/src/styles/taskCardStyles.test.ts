@@ -87,6 +87,11 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.jcol-content[hidden]')).toMatch(/display:\s*none/)
   })
 
+  it('свёрнутая дорожка не оставляет видимую сетку', () => {
+    expect(rule('.jlane-cols[hidden]')).toMatch(/display:\s*none/)
+    expect(rule('.jlane-collapse-actions')).toMatch(/display:\s*flex/)
+  })
+
   it('обёртка панелей не переносит строки — иначе вкладка не скроллится', () => {
     // Панель объявлена `flex: 1 1 100%`. С `flex-wrap: wrap` каждая уходит на
     // свою строку, высота строки считается по содержимому, и `overflow: auto`
