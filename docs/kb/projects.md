@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: ab74391b
+checked: 80eb824b
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1012,6 +1012,15 @@ have explicit styles. Its `progressbar` exposes the child count as min/max/curre
 values and a complete text alternative with completed, remaining, and percentage
 values. Compact density and phone layouts hide only the redundant remaining
 caption while preserving the semantic value and keeping the row inside the card.
+
+### Task update freshness (2026-09-11)
+
+Every task card renders `updatedAt` as a semantic `time` value in its footer.
+The visible value progresses from now, minutes and hours through today,
+yesterday, recent calendar days, and a short date. Its accessible label and
+tooltip retain the exact local date and time. Fresh, recent, and stale states
+provide stable styling hooks; stale timestamps use the attention color, while
+compact and phone layouts bound the label width without hiding it.
 
 ### Visible board summary (2026-09-11)
 
