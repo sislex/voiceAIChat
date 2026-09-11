@@ -1,6 +1,7 @@
 import { READER_PROJECT_ORIGIN, readerProjectUrl } from '@shared/previewProject'
 import { Button, IconButton } from '@voicechat/ui-kit'
 import { appendWebRecorderStep, normalizeWebRecorderStep } from '@shared/webRecorderScenario'
+import { DiagnosticHistory, type DiagnosticsStep } from './DiagnosticHistory'
 import { ScenarioTransfer } from './ScenarioTransfer'
 import { useScenarioEditor } from './scenarioEditor'
 import { loadScenario, scenarioKey } from './scenarioStorage'
@@ -30,7 +31,6 @@ type Step = WebRecorderScenarioStep
 /** Адресованные ответы Reader (без ready); Omit не дистрибутивен над union. */
 type Addressed = Extract<WebRecorderClientMessage, { registrationId: string }>
 type ReplyBody = Addressed extends infer M ? M extends Addressed ? Omit<M, 'type' | 'conversationId' | 'registrationId'> : never : never
-interface DiagnosticsStep { requestId: string; action: string; ok: boolean; durationMs: number }
 const RECORD = 'voicechat.preview.record.v1'
 // Режим правок страницы: канал Reader ↔ инъецированный скрипт previewProxy.
 const EDIT = 'voicechat.preview.edit.v1'
@@ -88,6 +88,7 @@ export function Recorder(): JSX.Element {
   const applyUrl = (next: string | null): void => {
     if (next) next = readerProjectUrl(next, sameOrigin)
     loadGeneration.current++
+    diagnosticStarts.current.clear()
     scenarioRunner.current?.cancel('Открывается другая страница — запуск отменён.')
     scenarioRunner.current?.setReady(false)
     pageReady.current = false
@@ -123,6 +124,7 @@ export function Recorder(): JSX.Element {
       const message = data
       if (message.kind === 'init') {
         const same = session.current && session.current.conversationId === message.conversationId && session.current.registrationId === message.registrationId
+        if (!same) { diagnosticStarts.current.clear(); diagnosticsMode.current = false; setDiagnostics(null) }
         session.current = { conversationId: message.conversationId, registrationId: message.registrationId }
         setDisposed(false)
         // Идемпотентный повтор init той же регистрации не перезагружает страницу.
@@ -150,6 +152,7 @@ export function Recorder(): JSX.Element {
           return
         }
         if (diagnosticsMode.current || message.action.diagnostic === true) {
+          if (diagnosticStarts.current.size >= 64) diagnosticStarts.current.delete(diagnosticStarts.current.keys().next().value!)
           diagnosticStarts.current.set(message.requestId, { action: message.action.kind, started: performance.now() })
         }
         frame.current.contentWindow.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId: message.requestId, action: message.action }, sameOrigin)
@@ -163,7 +166,7 @@ export function Recorder(): JSX.Element {
       }
       if (message.kind === 'recording-state') { setRecordingMode(message.enabled); return }
       if (message.kind === 'diagnostics-start') {
-        if (message.active) { diagnosticsMode.current = true; setDiagnostics([]) }
+        if (message.active) { diagnosticStarts.current.clear(); diagnosticsMode.current = true; setDiagnostics([]) }
         else {
           diagnosticsMode.current = false
           setDiagnostics((current) => {
@@ -222,7 +225,7 @@ export function Recorder(): JSX.Element {
         if (diagnostic) {
           diagnosticStarts.current.delete(message.requestId)
           const progress = { requestId: message.requestId, action: diagnostic.action, ok: message.ok === true, durationMs: Math.round(performance.now() - diagnostic.started) }
-          setDiagnostics((current) => current ? [...current, progress] : current)
+          setDiagnostics((current) => [...(current ?? []), progress])
           reply({ kind: 'diagnostics-progress', ...progress })
         }
         // Локальные шаги сценария не имеют pending на стороне host — не отвечаем.
@@ -413,10 +416,7 @@ export function Recorder(): JSX.Element {
     {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем страницу…</div>}
     {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button></div>}
     {error && <p className="webpreview-error" role="alert">{error}</p>}
-    {diagnostics && <section className="webpreview-scenario" aria-label="Диагностика Web Reader">
-      <strong>Диагностика: {diagnostics.length} шаг.</strong>
-      <ol>{diagnostics.map((step) => <li key={step.requestId} data-status={step.ok ? 'passed' : 'failed'}>{step.ok ? '✓' : '✕'} <code>{step.action}</code> — {step.durationMs} мс</li>)}</ol>
-    </section>}
+    {diagnostics && <DiagnosticHistory key={`${session.current?.conversationId}:${session.current?.registrationId}`} steps={diagnostics} />}
     {scenarioProgress && <div className="webpreview-run-status" role="status" aria-live="polite" data-status={scenarioProgress.status}>
       {scenarioProgress.status === 'running' ? 'Выполняется сценарий' : scenarioProgress.status === 'passed' ? 'Сценарий выполнен' : scenarioProgress.status === 'cancelled' ? 'Сценарий остановлен' : 'Ошибка сценария'}: {scenarioProgress.completed} из {scenarioProgress.total}
       {scenarioProgress.error && <span> — {scenarioProgress.error}</span>}

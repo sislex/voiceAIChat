@@ -13,8 +13,8 @@ written before implementation. Existing audit work is preserved.
 | 05 | Address entry and navigation feedback | Merged, 10/10 | #147 |
 | 06 | Scenario editing | Merged, 10/10 | #149 |
 | 07 | Scenario portability and export | Merged, 10/10 | #151 |
-| 08 | Playback validation and lifecycle | Implemented, 10/10 | |
-| 09 | Reader diagnostics and recovery | Planned | |
+| 08 | Playback validation and lifecycle | Merged, 10/10 | #153 |
+| 09 | Diagnostic history and lifecycle | Implemented, 10/10 | |
 | 10 | Final integration and regression gaps | Planned | |
 
 ## Cycle 01 proposal
@@ -120,3 +120,16 @@ written before implementation. Existing audit work is preserved.
 8. Bound settling delays below the timeout.
 9. Ignore malformed outcomes.
 10. Contain progress-listener exceptions.
+
+## Cycle 09 proposal
+
+1. Reset timings on registration and diagnostic-run changes.
+2. Clear pending timings on navigation.
+3. Cap outstanding timing records at 64.
+4. Show standalone diagnostic action results.
+5. Show pass and fail totals.
+6. Show total action duration.
+7. Search diagnostic action names.
+8. Filter failed actions.
+9. Collapse diagnostic details.
+10. Export complete diagnostics as JSON.
