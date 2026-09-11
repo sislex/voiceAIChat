@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: f21aa98a
+checked: 2635eac8
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1026,6 +1026,23 @@ evidence, and the column region references it through `aria-describedby`.
 Swimlane cells omit repeated explanations. `emptyColumnPresentation` holds the
 pure classification, while unit, DOM, and Chromium checks cover the interaction
 and the compact mobile layout.
+
+### Board density (2026-09-11)
+
+The filter toolbar exposes an `Обычно`/`Компактно` density group with pressed
+state semantics. Compact mode reduces columns from 272 to 240 pixels, tightens
+board, header, body, drop-zone, card, chip, and footer spacing, and keeps the card
+action menu visible. Card titles and metadata remain readable instead of being
+removed, so density changes geometry without changing the information model.
+
+The choice is stored separately from the server-backed board view under
+`voicechat.kanban.density.v1.<user>.<project>`. Hydration validates the two known
+values, falls back to comfortable density for missing or damaged data, and
+resets before a user/project context change to prevent preference leakage. Both
+regular and swimlane surfaces expose `data-density` and the same CSS modifier.
+Mobile controls fill the filter row and keep 40-pixel targets. DOM tests cover
+semantics, persistence, isolation, and damaged storage; Chromium checks exact
+desktop geometry, reload restoration, and mobile target size.
 
 ### Меню колонки
 

@@ -25,7 +25,8 @@ const css = [
 const styled = (cls: string): boolean => new RegExp(`\\.${cls}(?![\\w-])`).test(css)
 /** Тело первого правила с этим селектором — для проверки конкретных свойств. */
 function rule(selector: string): string {
-  return new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
 }
 
 describe('стили открытой карточки задачи', () => {
@@ -122,5 +123,12 @@ describe('стили открытой карточки задачи', () => {
     // в колонках начинались на разной высоте — верх доски выглядел рваным.
     expect(rule('.jcol-head')).toMatch(/min-height:\s*50px/)
     expect(rule('.jcol-name-text')).toMatch(/-webkit-line-clamp:\s*2/)
+  })
+
+  it('компактная плотность уменьшает геометрию, не скрывая меню карточки', () => {
+    expect(rule('.jboard--density-compact')).toMatch(/gap:\s*4px/)
+    expect(rule('.jboard--density-compact .jcol')).toMatch(/width:\s*240px/)
+    expect(rule('.jboard--density-compact .jcard:not(.jcard--compact)')).toMatch(/max-height:\s*240px/)
+    expect(rule('.jboard--density-compact .jcard-reveal')).toMatch(/opacity:\s*1/)
   })
 })

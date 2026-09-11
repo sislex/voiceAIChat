@@ -52,6 +52,7 @@ import {
 } from '@voicechat/ui-foundation/lib/dnd'
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
+type BoardDensity = 'comfortable' | 'compact'
 
 interface ColumnAssigneeFilter {
   assigneeIds: string[]
@@ -371,6 +372,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [recentOnly, setRecentOnly] = useState(false)
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [completedOnly, setCompletedOnly] = useState(false)
+  const [density, setDensity] = useState<BoardDensity>('comfortable')
+  const [densityHydrated, setDensityHydrated] = useState(false)
   const [swimlane, setSwimlane] = useState<Swimlane>(props.defaultSwimlane ?? 'none')
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
@@ -529,6 +532,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const projectId = board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? (board ? props.projectName : null)
     return currentUserId && projectId ? kanbanFilterKey(currentUserId, projectId) : null
   }, [allTasks, board, currentUserId, props.projectName])
+  const densityStorageKey = filterStorageKey?.replace('voicechat.kanban.filters.v3.', 'voicechat.kanban.density.v1.') ?? null
+  useEffect(() => {
+    setDensityHydrated(false)
+    setDensity('comfortable')
+    if (!densityStorageKey) {
+      setDensityHydrated(true)
+      return
+    }
+    try {
+      const saved = localStorage.getItem(densityStorageKey)
+      if (saved === 'compact' || saved === 'comfortable') setDensity(saved)
+    } catch { /* Browser preferences may be unavailable. */ }
+    setDensityHydrated(true)
+  }, [densityStorageKey])
+  useEffect(() => {
+    if (!densityHydrated || !densityStorageKey) return
+    try { localStorage.setItem(densityStorageKey, density) } catch { /* Browser preferences may be unavailable. */ }
+  }, [density, densityHydrated, densityStorageKey])
   useEffect(() => {
     setFiltersHydrated(false)
     // Сначала очищаем предыдущий контекст: состояние другого пользователя,
@@ -1958,6 +1979,27 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 <option value="assignee">По исполнителям</option>
               </select>
             </label>
+            <span className="jboard-density-control" role="group" aria-label="Плотность доски">
+              <span className="jboard-density-label">Плотность</span>
+              <button
+                type="button"
+                className={`jquick${density === 'comfortable' ? ' on' : ''}`}
+                aria-label="Обычная плотность"
+                aria-pressed={density === 'comfortable'}
+                onClick={() => setDensity('comfortable')}
+              >
+                Обычно
+              </button>
+              <button
+                type="button"
+                className={`jquick${density === 'compact' ? ' on' : ''}`}
+                aria-label="Компактная плотность"
+                aria-pressed={density === 'compact'}
+                onClick={() => setDensity('compact')}
+              >
+                Компактно
+              </button>
+            </span>
             <label className="kanban-showhidden">
               <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
             </label>
@@ -2044,8 +2086,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
           {swimlane === 'none' ? (
             <div
-              className="kanban-board jboard"
+              className={`kanban-board jboard jboard--density-${density}`}
               data-testid="kanban-board"
+              data-density={density}
               ref={boardRef}
               role="region"
               aria-label={`Канбан-доска проекта «${props.projectName}». Стрелки влево и вправо прокручивают колонки, Home и End переходят к краям.`}
@@ -2113,8 +2156,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             </div>
           ) : (
             <div
-              className="kanban-board jboard jboard--lanes"
+              className={`kanban-board jboard jboard--lanes jboard--density-${density}`}
               data-testid="kanban-board"
+              data-density={density}
               ref={boardRef}
               role="region"
               aria-label={`Канбан-доска проекта «${props.projectName}». Стрелки влево и вправо прокручивают колонки, Home и End переходят к краям.`}
