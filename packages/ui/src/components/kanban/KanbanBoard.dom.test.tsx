@@ -50,6 +50,55 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
 }
 
 describe('KanbanBoard (изолированный)', () => {
+  it('ищет варианты фильтра и массово меняет только найденные значения', async () => {
+    const labelBoard: Board = {
+      ...board,
+      tasks: [
+        task({ id: 'front', title: 'Front', labels: ['frontend'] }),
+        task({ id: 'front-old', title: 'Front old', labels: ['frontend-legacy'] }),
+        task({ id: 'back', title: 'Back', labels: ['backend'] })
+      ]
+    }
+    renderBoard({ board: labelBoard })
+    await userEvent.click(screen.getByText('Метка'))
+    const search = screen.getByRole('searchbox', { name: 'Поиск в фильтре «Метка»' })
+    await waitFor(() => expect(search).toHaveFocus())
+    const menu = search.closest<HTMLElement>('.jfilter-menu')!
+    expect(within(menu).getByText('Показано 3 из 3')).toBeInTheDocument()
+
+    await userEvent.type(search, 'front')
+    expect(within(menu).getByText('Показано 2 из 3')).toBeInTheDocument()
+    await userEvent.click(within(menu).getByRole('button', { name: 'Выбрать найденные' }))
+    expect(within(menu).getByRole('checkbox', { name: 'frontend' })).toBeChecked()
+    expect(within(menu).getByRole('checkbox', { name: 'frontend-legacy' })).toBeChecked()
+    expect(screen.queryByText('Back')).not.toBeInTheDocument()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'back')
+    expect(within(menu).getByRole('checkbox', { name: 'backend' })).not.toBeChecked()
+    expect(screen.getByText('Метка').closest('summary')).toHaveTextContent('2')
+    await userEvent.click(within(menu).getByRole('button', { name: 'Снять найденные' }))
+    expect(screen.getByText('Метка').closest('summary')).toHaveTextContent('2')
+    await userEvent.click(within(menu).getByRole('button', { name: 'Сбросить всё' }))
+    expect(screen.getByText('Back')).toBeInTheDocument()
+  })
+
+  it('показывает пустой поиск вариантов и Escape очищает его на месте', async () => {
+    renderBoard()
+    await userEvent.click(screen.getByText('Приоритет'))
+    const search = screen.getByRole('searchbox', { name: 'Поиск в фильтре «Приоритет»' })
+    await userEvent.type(search, 'несуществующий')
+    const menu = search.closest<HTMLElement>('.jfilter-menu')!
+    expect(within(menu).getByText('Показано 0 из 4')).toBeInTheDocument()
+    expect(within(menu).getByText('Нет подходящих вариантов')).toBeInTheDocument()
+    expect(within(menu).getByRole('button', { name: 'Выбрать найденные' })).toBeDisabled()
+
+    await userEvent.keyboard('{Escape}')
+    expect(search).toHaveValue('')
+    expect(search).toHaveFocus()
+    expect(within(menu).getByText('Показано 4 из 4')).toBeInTheDocument()
+  })
+
   it('показывает только реально поддержанные сочетания клавиш в доступном диалоге', async () => {
     renderBoard()
     const opener = screen.getByRole('button', { name: 'Клавиши' })

@@ -283,15 +283,67 @@ function FilterShell({ mobile, count, children }: { mobile: boolean; count: numb
   )
 }
 
-/** Мультивыбор в выпадашке фильтра (details/summary — без своего позиционирования). */
-function FilterDropdown({ label, active, children }: { label: string; active: number; children: JSX.Element }): JSX.Element {
+interface FilterOption { value: string; label: string }
+
+/** Searchable multi-select with bulk operations over the currently visible options. */
+function FilterDropdown({ label, selected, options, onChange }: {
+  label: string
+  selected: ReadonlySet<string>
+  options: FilterOption[]
+  onChange: (next: ReadonlySet<string>) => void
+}): JSX.Element {
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const visible = options.filter((option) => option.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const selectVisible = (): void => onChange(new Set([...selected, ...visible.map((option) => option.value)]))
+  const clearVisible = (): void => {
+    const values = new Set(visible.map((option) => option.value))
+    onChange(new Set([...selected].filter((value) => !values.has(value))))
+  }
+  const toggleOption = (value: string): void => {
+    const next = new Set(selected)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    onChange(next)
+  }
   return (
-    <details className="jfilter">
+    <details className="jfilter" onToggle={(event) => { if (event.currentTarget.open) requestAnimationFrame(() => searchRef.current?.focus()) }}>
       <summary>
         {label}
-        {active > 0 && <span className="jfilter-count">{active}</span>}
+        {selected.size > 0 && <span className="jfilter-count">{selected.size}</span>}
       </summary>
-      <div className="jfilter-menu">{children}</div>
+      <div className="jfilter-menu jfilter-menu--searchable">
+        <input
+          ref={searchRef}
+          type="search"
+          className="login-input jfilter-search"
+          value={query}
+          aria-label={`Поиск в фильтре «${label}»`}
+          placeholder={`Найти: ${label.toLocaleLowerCase()}`}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && query) {
+              event.preventDefault()
+              event.stopPropagation()
+              setQuery('')
+            }
+          }}
+        />
+        <span className="jfilter-results" role="status" aria-live="polite">Показано {visible.length} из {options.length}</span>
+        <div className="jfilter-bulk" role="group" aria-label={`Массовый выбор фильтра «${label}»`}>
+          <button type="button" disabled={visible.length === 0 || visible.every((option) => selected.has(option.value))} onClick={selectVisible}>Выбрать найденные</button>
+          <button type="button" disabled={!visible.some((option) => selected.has(option.value))} onClick={clearVisible}>Снять найденные</button>
+          <button type="button" disabled={selected.size === 0} onClick={() => onChange(new Set())}>Сбросить всё</button>
+        </div>
+        <div className="jfilter-options">
+          {visible.map((option) => (
+            <label key={option.value}>
+              <input type="checkbox" checked={selected.has(option.value)} onChange={() => toggleOption(option.value)} /> {option.label}
+            </label>
+          ))}
+          {visible.length === 0 && <p className="jfilter-empty">Нет подходящих вариантов</p>}
+        </div>
+      </div>
     </details>
   )
 }
@@ -2102,24 +2154,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             <button className={`jquick${recentOnly ? ' on' : ''}`} aria-pressed={recentOnly} onClick={() => setRecentOnly((v) => !v)}>
               Обновлены за сутки
             </button>
-            <FilterDropdown label="Тип" active={types.size}>
-              <>
-                {WORK_ITEM_TYPES.map((t) => (
-                  <label key={t}>
-                    <input type="checkbox" checked={types.has(t)} onChange={() => setTypes(toggle(types, t))} /> {TYPE_LABEL[t]}
-                  </label>
-                ))}
-              </>
-            </FilterDropdown>
-            <FilterDropdown label="Приоритет" active={priorities.size}>
-              <>
-                {TASK_PRIORITIES.map((p) => (
-                  <label key={p}>
-                    <input type="checkbox" checked={priorities.has(p)} onChange={() => setPriorities(toggle(priorities, p))} /> {PRIORITY_LABEL[p]}
-                  </label>
-                ))}
-              </>
-            </FilterDropdown>
+            <FilterDropdown label="Тип" selected={types} options={WORK_ITEM_TYPES.map((type) => ({ value: type, label: TYPE_LABEL[type] }))} onChange={(next) => setTypes(new Set([...next] as WorkItemType[]))} />
+            <FilterDropdown label="Приоритет" selected={priorities} options={TASK_PRIORITIES.map((priority) => ({ value: priority, label: PRIORITY_LABEL[priority] }))} onChange={(next) => setPriorities(new Set([...next] as TaskPriority[]))} />
             <label className="jdue-window">
               Срок
               <select
@@ -2136,26 +2172,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               </select>
             </label>
             {allLabels.length > 0 && (
-              <FilterDropdown label="Метка" active={labels.size}>
-                <>
-                  {allLabels.map((l) => (
-                    <label key={l}>
-                      <input type="checkbox" checked={labels.has(l)} onChange={() => setLabels(toggle(labels, l))} /> {l}
-                    </label>
-                  ))}
-                </>
-              </FilterDropdown>
+              <FilterDropdown label="Метка" selected={labels} options={allLabels.map((label) => ({ value: label, label }))} onChange={setLabels} />
             )}
             {allEpics.length > 0 && (
-              <FilterDropdown label="Эпик" active={epics.size}>
-                <>
-                  {allEpics.map((e) => (
-                    <label key={e.id}>
-                      <input type="checkbox" checked={epics.has(e.id)} onChange={() => setEpics(toggle(epics, e.id))} /> {e.title}
-                    </label>
-                  ))}
-                </>
-              </FilterDropdown>
+              <FilterDropdown label="Эпик" selected={epics} options={allEpics.map((epic) => ({ value: epic.id, label: epic.title }))} onChange={setEpics} />
             )}
             <label className="jswimlane">
               Свимлейны

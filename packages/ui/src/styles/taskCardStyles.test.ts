@@ -104,6 +104,12 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.jcard-search-context-row')).toMatch(/text-overflow:\s*ellipsis/)
   })
 
+  it('поиск по вариантам ограничивает меню и оставляет список прокручиваемым', () => {
+    expect(rule('.jfilter-menu--searchable')).toMatch(/max-height:/)
+    expect(rule('.jfilter-menu--searchable')).toMatch(/overflow:\s*hidden/)
+    expect(rule('.jfilter-options')).toMatch(/overflow:\s*auto/)
+  })
+
   it('обёртка панелей не переносит строки — иначе вкладка не скроллится', () => {
     // Панель объявлена `flex: 1 1 100%`. С `flex-wrap: wrap` каждая уходит на
     // свою строку, высота строки считается по содержимому, и `overflow: auto`
