@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: e88155aa
+checked: f21aa98a
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1009,6 +1009,23 @@ have separate header and badge treatments, and the compact grid keeps the count
 and progress track readable at mobile widths. Pure presentation logic lives in
 `kanbanMeta.tsx`; DOM tests cover semantic values, filter independence, and all
 three capacity states, while the `WipExceeded` story is the Chromium check.
+
+### Column empty states (2026-09-11)
+
+An empty rendered column is classified from its complete task collection. A
+truly empty stage names the column, explains both creation and drag-and-drop,
+and opens a focused inline composer from its primary action. A populated stage
+hidden by filters instead shows the exact hidden task count and identifies
+whether board filters, the column assignee filter, or both caused the result.
+
+Reset actions follow that diagnosis. Clearing board filters preserves a column's
+assignee selection, and the local reset is offered only when it can reveal a
+globally matching task. This avoids an action that appears to do nothing. Each
+state is a polite status with stable `data-empty-kind` and `data-hidden-count`
+evidence, and the column region references it through `aria-describedby`.
+Swimlane cells omit repeated explanations. `emptyColumnPresentation` holds the
+pure classification, while unit, DOM, and Chromium checks cover the interaction
+and the compact mobile layout.
 
 ### Меню колонки
 
