@@ -454,6 +454,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   // приподнятой карточки (её занимает плейсхолдер), колонка-цель при переносе
   // колонки, состояние клавиатурного переноса и текст для скринридера.
   const [dropAt, setDropAt] = useState<DropAt | null>(null)
+  const pointerAnnouncementRef = useRef('')
   const [liftHeight, setLiftHeight] = useState(0)
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
   const [grab, setGrab] = useState<KeyboardGrab | null>(null)
@@ -1161,34 +1162,65 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   }
 
   /** Положить задачу в выбранное место. Обратно на своё — молча, без запроса. */
-  const applyDrop = (taskId: string, at: DropAt): void => {
-    if (at.afterId === taskId || at.beforeId === taskId) return
+  const applyDrop = (taskId: string, at: DropAt): boolean => {
+    if (at.afterId === taskId || at.beforeId === taskId) return false
     props.onMoveTask(taskId, at.columnId, at.afterId, at.beforeId)
+    return true
   }
 
   const endPointerDrag = (): void => {
     setDragTask(null)
     setDropAt(null)
+    pointerAnnouncementRef.current = ''
   }
 
   const grabTask = (e: ReactPointerEvent<HTMLElement>, card: HTMLElement, taskId: string, immediate: boolean): void => {
     if (grab) return
+    const draggedTask = allTasks.find((task) => task.id === taskId)
+    if (!draggedTask) return
+    const describeTarget = (at: DropAt): string => {
+      const laneId = at.bodyKey.split('|')[0] || null
+      const list = neighbours(taskId, at.columnId, laneId)
+      const before = at.beforeId ? list.findIndex((task) => task.id === at.beforeId) : -1
+      const position = before >= 0 ? before + 1 : list.length + 1
+      return `Колонка «${columnName(at.columnId)}», позиция ${position} из ${list.length + 1}.`
+    }
+    const updatePointerTarget = (p: DragPoint): void => {
+      const at = findDropAt(p)
+      setDropAt(at)
+      if (!at) return
+      const description = describeTarget(at)
+      if (description === pointerAnnouncementRef.current) return
+      pointerAnnouncementRef.current = description
+      setAnnounce(`Цель переноса задачи «${draggedTask.title}»: ${description}`)
+    }
     drag.begin(e, {
       lift: card,
       immediate,
       onStart: (p) => {
         setLiftHeight(Math.round(card.getBoundingClientRect().height))
         setDragTask(taskId)
-        setDropAt(findDropAt(p))
+        const at = findDropAt(p)
+        setDropAt(at)
+        pointerAnnouncementRef.current = at ? describeTarget(at) : ''
+        setAnnounce(`Задача «${draggedTask.title}» взята указателем. Исходная колонка «${columnName(draggedTask.columnId)}».`)
       },
-      onMove: (p) => setDropAt(findDropAt(p)),
+      onMove: updatePointerTarget,
       tick: autoScrollTo,
       onDrop: (p) => {
         const at = findDropAt(p)
         endPointerDrag()
-        if (at) applyDrop(taskId, at)
+        if (!at) {
+          setAnnounce(`Перенос задачи «${draggedTask.title}» отменён: цель не выбрана.`)
+          return
+        }
+        if (applyDrop(taskId, at)) setAnnounce(`Задача «${draggedTask.title}» перенесена. ${describeTarget(at)}`)
+        else setAnnounce(`Задача «${draggedTask.title}» осталась на месте.`)
       },
-      onCancel: endPointerDrag
+      onCancel: () => {
+        endPointerDrag()
+        setAnnounce(`Перенос задачи «${draggedTask.title}» отменён.`)
+      }
     })
   }
 
@@ -1863,6 +1895,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             data-slot={slot}
             data-after={after ?? ''}
             data-before={before ?? ''}
+            data-drop-active={active || undefined}
           />
           {active && (
             <div
@@ -2103,7 +2136,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           data-stale={view.staleError || undefined}
         >
           {/* Перенос с клавиатуры не видно фокусом — его проговаривает эта область. */}
-          <div className="vc-sr-only" role="status" aria-live="polite" data-testid="kanban-live">
+          <div className="vc-sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="kanban-live">
             {announce}
           </div>
           {view.staleError && (
@@ -2484,6 +2517,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               role="region"
               aria-label={`Канбан-доска проекта «${props.projectName}». Стрелки влево и вправо прокручивают колонки, Home и End переходят к краям.`}
               aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+              data-dragging={dragTask ? 'pointer' : grab ? 'keyboard' : undefined}
+              data-drag-task-id={dragTask ?? grab?.taskId}
               tabIndex={0}
               onKeyDown={navigateBoard}
             >
@@ -2556,6 +2591,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               role="region"
               aria-label={`Канбан-доска проекта «${props.projectName}». Стрелки влево и вправо прокручивают колонки, Home и End переходят к краям.`}
               aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+              data-dragging={dragTask ? 'pointer' : grab ? 'keyboard' : undefined}
+              data-drag-task-id={dragTask ?? grab?.taskId}
               tabIndex={0}
               onKeyDown={navigateBoard}
             >
