@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-12
-checked: ea4c1e13
+checked: 679cb84f
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1086,6 +1086,30 @@ distinct button text and are announced through the board live region. The pure
 `formatVisibleBoardList` formatter has deterministic DOM coverage; the Storybook
 Chromium check grants clipboard permission, applies a search filter, and verifies
 that the copied task count and filter description match the screen.
+
+### Board diagnostics snapshot (2026-09-12)
+
+The filter toolbar opens a semantic `Dialog` containing one self-consistent
+diagnostic snapshot of the current board view. It records transport state
+(`current`, `refreshing`, or `stale`), the exact snapshot timestamp and age,
+loading state, loaded/displayed/visible task counts, total/displayed/hidden and
+collapsed column counts, active column, density, swimlane mode, completed and
+hidden-column visibility, active filters, and the visible summary metrics. A
+column table adds visible/total task load and each WIP limit in display order.
+All values are derived from the same render as the board, so the dialog does not
+trigger a second request or combine data from different snapshots.
+
+The root exposes stable `data-snapshot-state`, `data-snapshot-age`,
+`data-visible-tasks`, and `data-displayed-columns` evidence for browser tools.
+`formatBoardDiagnostics` produces the same information as structured plain text
+for model context or defect reports, including an ISO timestamp and one line per
+column. Clipboard state is announced in the fixed dialog footer. The shared
+dialog primitive provides focus trapping, Escape handling, opener-focus return,
+and a full-screen phone layout; the column table remains horizontally scrollable.
+`KanbanBoard.dom.test.tsx` fixes the semantics, filtered counts, report contents,
+clipboard behavior, accessibility, and focus contract. Built Storybook Chromium
+checks desktop and phone geometry, clipboard output, scrollability, and console
+errors.
 
 ### WIP capacity feedback (2026-09-11)
 

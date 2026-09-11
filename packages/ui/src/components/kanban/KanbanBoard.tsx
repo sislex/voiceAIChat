@@ -33,6 +33,7 @@ import { ImprovementModal } from './ImprovementModal'
 import { Avatar, PRIORITY_LABEL, PriorityIcon, TYPE_LABEL, columnRegionLabel, duePresentation, emptyColumnPresentation, epicColor, issueKey, matchesDueWindow, pluralTasks, wipPresentation } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '@voicechat/ui-kit'
+import { Dialog } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
@@ -53,7 +54,7 @@ import {
 } from '@voicechat/ui-foundation/lib/dnd'
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
-type BoardDensity = 'comfortable' | 'compact'
+export type BoardDensity = 'comfortable' | 'compact'
 
 interface ColumnAssigneeFilter {
   assigneeIds: string[]
@@ -339,6 +340,84 @@ export function taskPermalink(
   return page ? `${page.origin}${page.pathname}${route}` : route
 }
 
+export interface BoardDiagnosticsSnapshot {
+  projectName: string
+  snapshotState: 'current' | 'refreshing' | 'stale'
+  snapshotAge: 'fresh' | 'recent' | 'stale'
+  snapshotAt: string
+  refreshing: boolean
+  loadedTasks: number
+  displayedTasks: number
+  visibleTasks: number
+  totalColumns: number
+  displayedColumns: number
+  hiddenColumns: number
+  collapsedColumns: number
+  activeColumn: string | null
+  density: BoardDensity
+  swimlane: Swimlane
+  showHidden: boolean
+  showCompleted: boolean
+  activeFilters: readonly string[]
+  metrics: {
+    storyPoints: number
+    overdue: number
+    unassigned: number
+    flagged: number
+    completed: number
+  }
+  columns: Array<{
+    id: string
+    name: string
+    hidden: boolean
+    visibleTasks: number
+    totalTasks: number
+    wipLimit: number | null
+  }>
+}
+
+const DIAGNOSTIC_STATE_LABEL: Record<BoardDiagnosticsSnapshot['snapshotState'], string> = {
+  current: 'Актуальный снимок',
+  refreshing: 'Обновляется',
+  stale: 'Устаревший снимок'
+}
+
+const SWIMLANE_LABEL: Record<Swimlane, string> = {
+  none: 'нет',
+  epic: 'по эпикам',
+  assignee: 'по исполнителям'
+}
+
+const SNAPSHOT_AGE_LABEL: Record<BoardDiagnosticsSnapshot['snapshotAge'], string> = {
+  fresh: 'свежий',
+  recent: 'недавний',
+  stale: 'давний'
+}
+
+export function formatBoardDiagnostics(snapshot: BoardDiagnosticsSnapshot): string {
+  const lines = [
+    `# ${snapshot.projectName} — диагностика канбана`,
+    `Статус данных: ${DIAGNOSTIC_STATE_LABEL[snapshot.snapshotState]}`,
+    `Свежесть снимка: ${SNAPSHOT_AGE_LABEL[snapshot.snapshotAge]}`,
+    `Снимок: ${snapshot.snapshotAt}`,
+    `Фоновое обновление: ${snapshot.refreshing ? 'да' : 'нет'}`,
+    `Задачи: загружено ${snapshot.loadedTasks}; в показанных колонках ${snapshot.displayedTasks}; видно ${snapshot.visibleTasks}`,
+    `Колонки: всего ${snapshot.totalColumns}; показано ${snapshot.displayedColumns}; скрыто ${snapshot.hiddenColumns}; свёрнуто ${snapshot.collapsedColumns}`,
+    `Активная колонка: ${snapshot.activeColumn ?? 'нет'}`,
+    `Представление: плотность ${snapshot.density === 'compact' ? 'компактная' : 'обычная'}; свимлейны ${SWIMLANE_LABEL[snapshot.swimlane]}; скрытые ${snapshot.showHidden ? 'показаны' : 'скрыты'}; завершённые ${snapshot.showCompleted ? 'загружены' : 'не загружены'}`,
+    `Фильтры (${snapshot.activeFilters.length}): ${snapshot.activeFilters.length > 0 ? snapshot.activeFilters.join('; ') : 'нет'}`,
+    `Сводка: ${snapshot.metrics.storyPoints} SP; просрочено ${snapshot.metrics.overdue}; без исполнителя ${snapshot.metrics.unassigned}; с флагом ${snapshot.metrics.flagged}; завершено ${snapshot.metrics.completed}`,
+    '',
+    '## Показанные колонки'
+  ]
+  for (const column of snapshot.columns) {
+    const wip = wipPresentation(column.totalTasks, column.wipLimit)?.label ?? 'WIP-лимит не задан'
+    lines.push(`- ${column.name}${column.hidden ? ' (скрытая)' : ''}: видно ${column.visibleTasks} из ${column.totalTasks}; ${wip}`)
+  }
+  if (snapshot.columns.length === 0) lines.push('- Нет колонок')
+  return lines.join('\n')
+}
+
 /** Searchable multi-select with bulk operations over the currently visible options. */
 function FilterDropdown({ label, selected, options, onChange }: {
   label: string
@@ -490,6 +569,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
   const [collapsedLanesHydrated, setCollapsedLanesHydrated] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  const [copyDiagnosticsStatus, setCopyDiagnosticsStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [copyBoardStatus, setCopyBoardStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [copyTaskLinkStatus, setCopyTaskLinkStatus] = useState<{ title: string; copied: boolean } | null>(null)
   useEffect(() => setCopyTaskLinkStatus(null), [improvementsProjectId])
@@ -1152,6 +1233,48 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       label: `Колонка «${column?.name ?? columnId}»: ${values.join(', ')}`,
       onRemove: () => setColumnAssigneeFilters((current) => ({ ...current, [columnId]: EMPTY_COLUMN_ASSIGNEE_FILTER }))
     })
+  }
+
+  const boardDiagnostics: BoardDiagnosticsSnapshot = {
+    projectName: props.projectName,
+    snapshotState: !loading && props.error ? 'stale' : loading ? 'refreshing' : 'current',
+    snapshotAge: snapshotUpdated.state,
+    snapshotAt: new Date(snapshotUpdatedAt).toISOString(),
+    refreshing: loading,
+    loadedTasks: allTasks.length,
+    displayedTasks: displayedTaskTotal,
+    visibleTasks: visibleTaskCount,
+    totalColumns: board?.columns.length ?? 0,
+    displayedColumns: columns.length,
+    hiddenColumns: board?.columns.filter((column) => column.hidden).length ?? 0,
+    collapsedColumns: columns.filter((column) => collapsedColumns.has(column.id)).length,
+    activeColumn: columns.find((column) => column.id === effectiveActiveColumnId)?.name ?? null,
+    density,
+    swimlane,
+    showHidden,
+    showCompleted,
+    activeFilters: activeFilterChips.map((chip) => chip.label),
+    metrics: {
+      storyPoints: visibleStoryPoints,
+      overdue: visibleOverdue,
+      unassigned: visibleUnassigned,
+      flagged: visibleFlagged,
+      completed: visibleCompleted
+    },
+    columns: columns.map((column) => ({
+      id: column.id,
+      name: column.name,
+      hidden: column.hidden,
+      visibleTasks: tasksOf(column.id).length,
+      totalTasks: allTasks.filter((task) => task.columnId === column.id).length,
+      wipLimit: column.wipLimit
+    }))
+  }
+
+  const copyBoardDiagnostics = async (): Promise<void> => {
+    const copied = await copyText(formatBoardDiagnostics(boardDiagnostics))
+    setCopyDiagnosticsStatus(copied ? 'success' : 'error')
+    setAnnounce(copied ? 'Диагностика доски скопирована.' : 'Не удалось скопировать диагностику доски.')
   }
 
   // Перенос колонки moving перед target.
@@ -2467,6 +2590,19 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             <Button
               variant="secondary"
               size="sm"
+              data-testid="open-board-diagnostics"
+              aria-haspopup="dialog"
+              aria-expanded={diagnosticsOpen}
+              onClick={() => {
+                setCopyDiagnosticsStatus('idle')
+                setDiagnosticsOpen(true)
+              }}
+            >
+              Диагностика
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               className="jboard-copy-list"
               data-testid="copy-board-list"
               disabled={visibleTaskCount === 0}
@@ -2885,6 +3021,92 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           </div>
         )
       })()}
+      {diagnosticsOpen && (
+        <Dialog
+          title="Диагностика доски"
+          ariaLabel={`Диагностика доски проекта «${props.projectName}»`}
+          size="md"
+          className="jboard-diagnostics-dialog"
+          testId="board-diagnostics-dialog"
+          onClose={() => setDiagnosticsOpen(false)}
+          padded
+          footer={(
+            <>
+              <span className="jboard-diagnostics-copy-status" role="status" data-error={copyDiagnosticsStatus === 'error' || undefined}>
+                {copyDiagnosticsStatus === 'success' ? 'Отчёт скопирован' : copyDiagnosticsStatus === 'error' ? 'Не удалось скопировать отчёт' : ''}
+              </span>
+              <Button variant="secondary" onClick={() => void copyBoardDiagnostics()}>
+                {copyDiagnosticsStatus === 'error' ? 'Повторить копирование' : 'Копировать отчёт'}
+              </Button>
+              <Button variant="primary" onClick={() => setDiagnosticsOpen(false)}>Готово</Button>
+            </>
+          )}
+        >
+          <div
+            className="jboard-diagnostics"
+            data-testid="board-diagnostics"
+            data-snapshot-state={boardDiagnostics.snapshotState}
+            data-snapshot-age={boardDiagnostics.snapshotAge}
+            data-visible-tasks={boardDiagnostics.visibleTasks}
+            data-displayed-columns={boardDiagnostics.displayedColumns}
+          >
+            <section className={`jboard-diagnostics-state jboard-diagnostics-state--${boardDiagnostics.snapshotState}`} aria-label="Состояние данных">
+              <strong>{DIAGNOSTIC_STATE_LABEL[boardDiagnostics.snapshotState]}</strong>
+              <time dateTime={boardDiagnostics.snapshotAt}>Снимок: {snapshotUpdated.label}</time>
+              <span>Свежесть: {SNAPSHOT_AGE_LABEL[boardDiagnostics.snapshotAge]} · фоновое обновление: {boardDiagnostics.refreshing ? 'идёт' : 'нет'}</span>
+            </section>
+
+            <section aria-labelledby="board-diagnostics-counts">
+              <h3 id="board-diagnostics-counts">Объём данных</h3>
+              <dl className="jboard-diagnostics-grid">
+                <div><dt>Задачи</dt><dd>{boardDiagnostics.visibleTasks} видно · {boardDiagnostics.displayedTasks} в показанных колонках · {boardDiagnostics.loadedTasks} загружено</dd></div>
+                <div><dt>Колонки</dt><dd>{boardDiagnostics.displayedColumns} показано · {boardDiagnostics.totalColumns} всего</dd></div>
+                <div><dt>Скрытые</dt><dd>{boardDiagnostics.hiddenColumns}</dd></div>
+                <div><dt>Свёрнутые</dt><dd>{boardDiagnostics.collapsedColumns}</dd></div>
+                <div><dt>Активная колонка</dt><dd>{boardDiagnostics.activeColumn ?? 'нет'}</dd></div>
+                <div><dt>Представление</dt><dd>{boardDiagnostics.density === 'compact' ? 'Компактное' : 'Обычное'} · свимлейны {SWIMLANE_LABEL[boardDiagnostics.swimlane]}</dd></div>
+              </dl>
+            </section>
+
+            <section aria-labelledby="board-diagnostics-health">
+              <h3 id="board-diagnostics-health">Сводка видимых задач</h3>
+              <dl className="jboard-diagnostics-grid jboard-diagnostics-grid--compact">
+                <div><dt>Оценка</dt><dd>{boardDiagnostics.metrics.storyPoints} SP</dd></div>
+                <div><dt>Просрочено</dt><dd>{boardDiagnostics.metrics.overdue}</dd></div>
+                <div><dt>Без исполнителя</dt><dd>{boardDiagnostics.metrics.unassigned}</dd></div>
+                <div><dt>С флагом</dt><dd>{boardDiagnostics.metrics.flagged}</dd></div>
+                <div><dt>Завершено</dt><dd>{boardDiagnostics.metrics.completed}</dd></div>
+              </dl>
+            </section>
+
+            <section aria-labelledby="board-diagnostics-filters">
+              <h3 id="board-diagnostics-filters">Активные фильтры <span>{boardDiagnostics.activeFilters.length}</span></h3>
+              {boardDiagnostics.activeFilters.length > 0
+                ? <ul className="jboard-diagnostics-filters">{boardDiagnostics.activeFilters.map((filter) => <li key={filter}>{filter}</li>)}</ul>
+                : <p className="jboard-diagnostics-empty">Нет активных фильтров</p>}
+            </section>
+
+            <section aria-labelledby="board-diagnostics-columns">
+              <h3 id="board-diagnostics-columns">Показанные колонки</h3>
+              <div className="jboard-diagnostics-table-wrap">
+                <table>
+                  <thead><tr><th scope="col">Колонка</th><th scope="col">Видно</th><th scope="col">Всего</th><th scope="col">WIP</th></tr></thead>
+                  <tbody>
+                    {boardDiagnostics.columns.map((column) => (
+                      <tr key={column.id}>
+                        <th scope="row">{column.name}{column.hidden ? ' · скрытая' : ''}</th>
+                        <td>{column.visibleTasks}</td>
+                        <td>{column.totalTasks}</td>
+                        <td>{column.wipLimit == null ? '—' : `${column.totalTasks}/${column.wipLimit}`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </Dialog>
+      )}
       {openImprovement && board && (
         <ImprovementModal
           improvement={openImprovement}
