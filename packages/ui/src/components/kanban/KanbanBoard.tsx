@@ -369,6 +369,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [filtersHydrated, setFiltersHydrated] = useState(false)
   const [flaggedOnly, setFlaggedOnly] = useState(false)
   const [recentOnly, setRecentOnly] = useState(false)
+  const [overdueOnly, setOverdueOnly] = useState(false)
+  const [completedOnly, setCompletedOnly] = useState(false)
   const [swimlane, setSwimlane] = useState<Swimlane>(props.defaultSwimlane ?? 'none')
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
@@ -510,6 +512,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setOnlyMine(view.onlyMine)
     setFlaggedOnly(view.flaggedOnly)
     setRecentOnly(view.recentOnly)
+    setOverdueOnly(view.overdueOnly)
+    setCompletedOnly(view.completedOnly)
     setColumnAssigneeFilters(Object.fromEntries(Object.entries(view.columnAssignees).map(([columnId, filter]) => [columnId, { assigneeIds: filter.assigneeIds, includeUnassigned: filter.unassigned }])))
     setSwimlane(view.swimlane)
     setShowHidden(view.showHidden)
@@ -539,6 +543,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setColumnAssigneeFilters({})
     setFlaggedOnly(false)
     setRecentOnly(false)
+    setOverdueOnly(false)
+    setCompletedOnly(false)
     setSwimlane(props.defaultSwimlane ?? 'none')
     setShowHidden(false)
     if (!filterStorageKey) {
@@ -574,7 +580,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       }
       const raw = localStorage.getItem(filterStorageKey)
       if (raw) {
-        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; columnAssigneeFilters?: Record<string, ColumnAssigneeFilter>; swimlane?: Swimlane; showHidden?: boolean }
+        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; overdueOnly?: boolean; completedOnly?: boolean; columnAssigneeFilters?: Record<string, ColumnAssigneeFilter>; swimlane?: Swimlane; showHidden?: boolean }
         if (typeof saved.search === 'string') setSearch(saved.search)
         if (Array.isArray(saved.assignees)) setAssignees(new Set(saved.assignees))
         if (Array.isArray(saved.types)) setTypes(new Set(saved.types))
@@ -584,6 +590,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         if (typeof saved.onlyMine === 'boolean') setOnlyMine(saved.onlyMine)
         if (typeof saved.flaggedOnly === 'boolean') setFlaggedOnly(saved.flaggedOnly)
         if (typeof saved.recentOnly === 'boolean') setRecentOnly(saved.recentOnly)
+        if (typeof saved.overdueOnly === 'boolean') setOverdueOnly(saved.overdueOnly)
+        if (typeof saved.completedOnly === 'boolean') setCompletedOnly(saved.completedOnly)
         if (saved.columnAssigneeFilters && typeof saved.columnAssigneeFilters === 'object') setColumnAssigneeFilters(saved.columnAssigneeFilters)
         // Вид доски — такая же настройка взгляда, как фильтры: свимлейны и показ
         // скрытых колонок раньше жили только в памяти и терялись на перезагрузке.
@@ -605,6 +613,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onlyMine,
       flaggedOnly,
       recentOnly,
+      overdueOnly,
+      completedOnly,
       columnAssignees: Object.fromEntries(Object.entries(columnAssigneeFilters).map(([columnId, filter]) => [columnId, { assigneeIds: [...filter.assigneeIds], unassigned: filter.includeUnassigned }])),
       swimlane,
       showHidden,
@@ -620,10 +630,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
     if (!filterStorageKey) return
     try {
-      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, columnAssigneeFilters, swimlane, showHidden }))
+      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, overdueOnly, completedOnly, columnAssigneeFilters, swimlane, showHidden }))
     } catch { /* предпочтения браузера недоступны */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignees, columnAssigneeFilters, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, priorities, recentOnly, search, showHidden, swimlane, types])
+  }, [assignees, columnAssigneeFilters, completedOnly, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, overdueOnly, priorities, recentOnly, search, showHidden, swimlane, types])
   useEffect(() => {
     const allowed = new Set(members.filter((member) => member.active !== false).map((member) => member.username))
     setColumnAssigneeFilters((prev) => {
@@ -636,15 +646,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       return changed ? next : prev
     })
   }, [members])
-  const columns = (board?.columns ?? []).filter((c) => showHidden || !c.hidden)
-  const columnIdsKey = columns.map((column) => column.id).join('\u001f')
-  useEffect(() => {
-    setActiveColumnId((current) => columns.some((column) => column.id === current) ? current : columns[0]?.id ?? null)
-  }, [columnIdsKey])
   const doneColumnIds = useMemo(
     () => new Set((board?.columns ?? []).filter((c) => c.semanticType === 'done').map((c) => c.id)),
     [board]
   )
+  const columns = (board?.columns ?? [])
+    .filter((c) => showHidden || !c.hidden)
+    .filter((c) => !completedOnly || c.semanticType === 'done')
+  const columnIdsKey = columns.map((column) => column.id).join('\u001f')
+  useEffect(() => {
+    setActiveColumnId((current) => columns.some((column) => column.id === current) ? current : columns[0]?.id ?? null)
+  }, [columnIdsKey])
   const allEpics = allTasks.filter((t) => t.type === 'epic')
   const allLabels = useMemo(() => [...new Set(allTasks.flatMap((t) => t.labels))].sort(), [allTasks])
 
@@ -658,7 +670,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const hasColumnAssigneeFilter = Object.values(columnAssigneeFilters).some((value) => value.assigneeIds.length > 0 || value.includeUnassigned)
   const filtersActive =
     search.trim() !== '' || assignees.size > 0 || types.size > 0 || priorities.size > 0 ||
-    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || hasColumnAssigneeFilter
+    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || overdueOnly || completedOnly || hasColumnAssigneeFilter
 
   /**
    * Сколько фильтров включено. Нужен подписи свёрнутого блока на телефоне:
@@ -666,7 +678,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
    */
   const activeFilterCount =
     (search.trim() ? 1 : 0) + assignees.size + types.size + priorities.size + labels.size + epics.size +
-    (onlyMine ? 1 : 0) + (flaggedOnly ? 1 : 0) + (recentOnly ? 1 : 0) +
+    (onlyMine ? 1 : 0) + (flaggedOnly ? 1 : 0) + (recentOnly ? 1 : 0) + (overdueOnly ? 1 : 0) + (completedOnly ? 1 : 0) +
     Object.values(columnAssigneeFilters).filter((value) => value.assigneeIds.length > 0 || value.includeUnassigned).length
 
   const resetFilters = (): void => {
@@ -680,6 +692,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setColumnAssigneeFilters({})
     setFlaggedOnly(false)
     setRecentOnly(false)
+    setOverdueOnly(false)
+    setCompletedOnly(false)
   }
 
   const matches = (t: Task): boolean => {
@@ -704,6 +718,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     if (onlyMine && t.assignee !== currentUserId) return false
     if (flaggedOnly && !t.flagged) return false
     if (recentOnly && Date.now() - t.updatedAt > RECENT_MS) return false
+    if (overdueOnly && (t.dueDate == null || doneColumnIds.has(t.columnId) || duePresentation(t.dueDate).state !== 'overdue')) return false
+    if (completedOnly && !doneColumnIds.has(t.columnId)) return false
     return true
   }
 
@@ -740,14 +756,25 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const visibleUnassigned = visibleTasks.filter((task) => task.assignee == null).length
   const visibleFlagged = visibleTasks.filter((task) => task.flagged).length
   const visibleCompleted = visibleTasks.filter((task) => doneColumnIds.has(task.columnId)).length
-  const boardSummary = [
-    ['Видно', visibleTaskCount, pluralTasks(visibleTaskCount)],
-    ['Оценка', visibleStoryPoints, 'SP'],
-    ['Просрочено', visibleOverdue, pluralTasks(visibleOverdue)],
-    ['Без исполнителя', visibleUnassigned, pluralTasks(visibleUnassigned)],
-    ['С флагом', visibleFlagged, pluralTasks(visibleFlagged)],
-    ['Завершено', visibleCompleted, pluralTasks(visibleCompleted)]
-  ] as const
+  const toggleCompletedOnly = (): void => {
+    const next = !completedOnly
+    setCompletedOnly(next)
+    if (next && !showCompleted) setShowCompleted(true)
+  }
+  const boardSummary: Array<{
+    label: string
+    value: number
+    unit: string
+    active?: boolean
+    onClick?: () => void
+  }> = [
+    { label: 'Видно', value: visibleTaskCount, unit: pluralTasks(visibleTaskCount) },
+    { label: 'Оценка', value: visibleStoryPoints, unit: 'SP' },
+    { label: 'Просрочено', value: visibleOverdue, unit: pluralTasks(visibleOverdue), active: overdueOnly, onClick: () => setOverdueOnly((value) => !value) },
+    { label: 'Без исполнителя', value: visibleUnassigned, unit: pluralTasks(visibleUnassigned), active: assignees.has(''), onClick: () => setAssignees((value) => toggle(value, '')) },
+    { label: 'С флагом', value: visibleFlagged, unit: pluralTasks(visibleFlagged), active: flaggedOnly, onClick: () => setFlaggedOnly((value) => !value) },
+    { label: 'Завершено', value: visibleCompleted, unit: pluralTasks(visibleCompleted), active: completedOnly, onClick: toggleCompletedOnly }
+  ]
   const effectiveActiveColumnId = columns.some((column) => column.id === activeColumnId)
     ? activeColumnId
     : columns[0]?.id ?? null
@@ -863,6 +890,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   if (onlyMine) activeFilterChips.push({ key: 'onlyMine', label: 'Только мои задачи', onRemove: () => setOnlyMine(false) })
   if (flaggedOnly) activeFilterChips.push({ key: 'flagged', label: 'С флагом', onRemove: () => setFlaggedOnly(false) })
   if (recentOnly) activeFilterChips.push({ key: 'recent', label: 'Обновлены за сутки', onRemove: () => setRecentOnly(false) })
+  if (overdueOnly) activeFilterChips.push({ key: 'overdue', label: 'Просрочено', onRemove: () => setOverdueOnly(false) })
+  if (completedOnly) activeFilterChips.push({ key: 'completed', label: 'Завершено', onRemove: () => setCompletedOnly(false) })
   for (const [columnId, filter] of Object.entries(columnAssigneeFilters)) {
     if (filter.assigneeIds.length === 0 && !filter.includeUnassigned) continue
     const column = board?.columns.find((item) => item.id === columnId)
@@ -1916,14 +1945,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           </FilterShell>
 
           <section className="jboard-summary" aria-label="Сводка доски" data-testid="board-summary">
-            <dl>
-              {boardSummary.map(([label, value, unit]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd aria-label={`${label}: ${value} ${unit}`}>{value}<span aria-hidden="true"> {unit}</span></dd>
-                </div>
-              ))}
-            </dl>
+            {boardSummary.map(({ label, value, unit, active, onClick }) => {
+              const content = <><span className="jboard-summary-label">{label}</span><strong>{value} {unit}</strong></>
+              return onClick ? (
+                <Button
+                  key={label}
+                  variant="ghost"
+                  size="sm"
+                  className="jboard-summary-item"
+                  aria-label={`${label}: ${value} ${unit}`}
+                  aria-pressed={active}
+                  onClick={onClick}
+                >
+                  {content}
+                </Button>
+              ) : (
+                <div key={label} className="jboard-summary-item" aria-label={`${label}: ${value} ${unit}`}>{content}</div>
+              )
+            })}
           </section>
 
           {activeFilterChips.length > 0 && (
