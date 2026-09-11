@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { BrowserRunnerClient } from '@voicechat/browser-contracts/client'
+import { probeResultFixture } from '@voicechat/browser-contracts/audit/fixtures'
 import type { BrowserModelTarget, PlaywrightReaderCore } from './core.js'
 import { createPlaywrightReaderModule } from './module.js'
 
@@ -19,6 +20,16 @@ function fixture(target: BrowserModelTarget | null = { sessionId: 'c', conversat
 }
 
 describe('действия модели через приложение', () => {
+  it('requires a valid native probe report without falling back to the proxy', async () => {
+    const { service, runner } = fixture()
+    const action = { kind: 'probe' as const, selector: '#target' }
+    expect(await service.execute('ann', 'c', action)).toMatchObject({ ok: false, error: expect.stringContaining('valid native control probe') })
+    const result = { ok: true, ...probeResultFixture('chromium') }
+    vi.mocked(runner.command).mockResolvedValueOnce(result)
+    expect(await service.execute('ann', 'c', action)).toEqual({ ok: true, result })
+    vi.mocked(runner.command).mockResolvedValueOnce({ ok: true, ...probeResultFixture('proxy') })
+    expect(await service.execute('ann', 'c', action)).toMatchObject({ ok: false })
+  })
   it('requires an explicit native audit report from the runner', async () => {
     const { service, runner } = fixture()
     expect(await service.execute('ann', 'c', { kind: 'audit' })).toMatchObject({ ok: false, error: expect.stringContaining('does not support native audits') })

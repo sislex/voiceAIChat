@@ -162,6 +162,14 @@ UI kit и собственные стили, поэтому правка `packag
 только свою панель и передаёт `VC_E2E_APPLICATIONS=web-reader-ui` общему тесту
 артефактов; его E2E заняли 2,88 с, пересборка shell в этом пути не нужна.
 
+After changing shared Reader action types, a focused full-App proxy test needs
+fresh product panels, recorder and web host bundles. `npm run build:frontends`
+builds the panels; `npm run -w @voicechat/web-recorder build` and
+`npm run -w @voicechat/web build` are separate. An old message validator can ignore
+a new action and cause a relay timeout even when direct iframe tests pass. The
+application gate performs the required builds; this distinction matters when
+running a focused browser test manually before the gate.
+
 ### Fast-stage затронутых тестов
 
 Для проверок, которые могут идти дольше 300 секунд, штатный запуск — `npm run gate:fast:logged`. Команда немедленно печатает JSON с `runId`, PID worker-а и абсолютными путями `.long-runs/<runId>.log` и `.long-runs/<runId>.json`; закрытие или таймаут shell-клиента после этого не останавливает worker. Полный объединённый stdout/stderr остаётся в log-файле. Состояние читается отдельной командой `npm run gate:status -- <runId>`: она не перезапускает гейт и классифицирует ран как `running`, `succeeded` (`exitCode: 0`), `failed` (настоящий ненулевой `exitCode`) либо `lost` (running-запись есть, worker уже отсутствует). Повторный status безопасен и только читает артефакты. Универсальный вариант: `node scripts/long-run.mjs start -- <command> [args...]`; argv передаётся напрямую без shell-интерпретации. Реальный прогон 4 сентября 2026 подтверждён для run `20260904125743481-975afbcd-bffa-428f-a2ee-de565fc2c961`: после отдельного 300-секундного таймаута ожидания status оставался `running`, журнал продолжил расти, а итоговая повторная проверка вернула `succeeded` и `exitCode: 0`; полный гейт занял 10 минут 9 секунд. Оба файла в `.long-runs/` подтверждены через `git check-ignore`.

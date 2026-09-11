@@ -78,6 +78,18 @@ describe('Reader: модель управляет настоящим App чер�
     expect(await site().getByLabel('Имя').inputValue()).toBe('Проверка модели')
     expect(await act({ kind: 'read' })).toMatchObject({ ok: true, result: { page: { title: 'Model QA' } } })
   })
+  it('probe observes the live proxy control through App, relay and WebSocket', async () => {
+    await open()
+    await site().locator('#name').evaluate(el => { const input = el as HTMLInputElement; input.type = 'password'; input.value = 'proxy-probe-secret'; input.readOnly = true; input.focus() })
+    const snapshot = () => site().locator('html').evaluate(() => ({ html: document.documentElement.outerHTML, value: (document.querySelector('#name') as HTMLInputElement).value, focus: document.activeElement?.id, marker: Reflect.get(window, 'qaMarker'), scrollY }))
+    const before = await snapshot()
+    const outcome = await act({ kind: 'probe', selector: '#name' })
+    expect(outcome, outcome.error).toMatchObject({ ok: true, result: { page: { url: target }, probe: { surface: 'proxy', state: { nativeReadOnly: true }, pointer: { status: 'reachable' } } } })
+    expect(JSON.stringify(outcome)).not.toContain('proxy-probe-secret')
+    expect(await snapshot()).toEqual(before)
+    await expect.poll(() => changed.find(event => event.action.kind === 'probe')).toMatchObject({ address: target, title: 'Model QA' })
+    expect(pageLoads).toBe(1)
+  })
   it('back и forward не перемонтируют документ после history-перехода', async () => {
     await open(); const marker = await site().locator('html').evaluate(() => Reflect.get(window, 'qaMarker'))
     await act({ kind: 'click', selector: '#next' }); expect(await act({ kind: 'back' })).toMatchObject({ ok: true })

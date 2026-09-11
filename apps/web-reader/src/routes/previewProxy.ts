@@ -2,6 +2,7 @@ import { decodePreviewText, decodePreviewResponse, isPreviewText, previewContent
 import { previewKeyboardHelpers } from './previewKeyboard.js'
 import { previewReadingHelpers } from './previewReading.js'
 import { previewAuditHelpers } from './audit/runtime.js'
+import { previewProbeHelpers } from '@voicechat/browser-contracts/audit'
 import { previewResourceScript } from './previewResources.js'
 import { READER_PROJECT_ORIGIN, readerProjectUrl, type ReaderProjectRequest, type ReaderProjectResponse } from '@voicechat/shared'
 import { loadPreviewProject, ProjectPreviewError } from './previewProjectLoader.js'
@@ -247,6 +248,7 @@ const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim(
 ${previewInteractionHelpers()}
 ${previewReadingHelpers()}
 ${previewAuditHelpers()}
+${previewProbeHelpers()}
 ${previewKeyboardHelpers()}
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el)};
@@ -280,6 +282,7 @@ const setNativeValue=(el,value)=>{
 };
 const run=(action)=>{
   if(action.kind==='audit')return runAudit(action);
+  if(action.kind==='probe')return runProbe(action);
   if(action.kind==='find'){
     const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'));
     const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));

@@ -48,8 +48,8 @@ are written before implementation, after inspecting the relevant capabilities.
 | 01 | Markup audit and evidence contract | 30/30 | `cf8e2df1` |
 | 02 | Layout and clipping, with native audit integration | 30/30 | `3df0eaa8` |
 | 03 | Typography and text rendering | 30/30 | `0a0274e6` |
-| 04 | Color and contrast | 30/30 | this commit |
-| 05 | Interactive control states | 0/30 | pending |
+| 04 | Color and contrast | 30/30 | `b16b2d46` |
+| 05 | Interactive control states | 30/30 | this commit |
 | 06 | Forms and validation | 0/30 | pending |
 | 07 | Focus and keyboard navigation | 0/30 | pending |
 | 08 | ARIA widgets and state relationships | 0/30 | pending |
@@ -264,3 +264,52 @@ color screenshot. `gate:fast` passed in 143.21 s and pre-commit `gate` passed in
 public color audits ran on Google/Facebook/Instagram in 7.9/22.9/17.9 ms without
 truncation, login or consent actions. Returned candidates include incomplete paint
 observations; these are not counts of confirmed site defects.
+
+## Cycle 05: control-state probe
+
+Add a bounded, read-only `probe {selector}` tool on both Reader surfaces. It
+reports geometry, pointer interception, native versus declared states and editing
+properties without attempting an action. The 30 diagnostic capabilities are:
+
+
+1. Report pointer interception and the blocking element selector.
+2. Find sampled reachable points when the center is covered.
+3. Sample clipped portions using ancestor clip intersections.
+4. Observe the usable portion of partially offscreen targets.
+5. Inspect multiple client rectangles of wrapped inline links.
+6. Explain target `pointer-events:none`.
+7. Recognize a descendant restoring pointer events under a disabled pointer ancestor.
+8. Identify direct native disabled state.
+9. Identify disabled fieldset inheritance.
+10. Respect the first-legend exception to disabled fieldsets.
+11. Separate declared ARIA disabled state from native enforcement.
+12. Identify inert ancestors.
+13. Identify implicit modal blocking of the background document.
+14. Respect modal dialogs escaping ancestor inertness.
+15. Observe effective readonly text inputs.
+16. Observe effective readonly textareas.
+17. Explain readonly attributes ignored by incompatible input types.
+18. Observe inherited contenteditable state.
+19. Observe non-editable islands inside editable containers.
+20. Identify display:none rendering suppression.
+21. Identify computed visibility:hidden suppression.
+22. Respect descendant visibility overrides of hidden ancestors.
+23. Identify fully transparent ancestor opacity.
+24. Report very low effective opacity without calling it hidden.
+25. Identify content-visibility:hidden suppression.
+26. Report skipped content-visibility:auto rendering as snapshot state.
+27. Identify content hidden by closed details.
+28. Respect the first summary's visibility inside closed details.
+29. Identify closed-dialog rendering suppression.
+30. Recognize CSS overriding the HTML hidden attribute.
+
+
+Supporting work includes shared validation, native ownership preservation, MCP
+integration, scope errors, limits, privacy, live-state tests and browser screenshots.
+Cycle 05 verification: 340 proxy diagnostics, 314 native diagnostics, 40 shared
+contract/mapping tests, 121 MCP tests, nine module tests and ten browser-contract
+tests passed. Full proxy/native App paths and visual screenshots were checked.
+`gate:fast` passed in 592.30 s and pre-commit `gate` in 616.81 s, both exit 0;
+the latter completed 596 browser tests. Public native probes on Google, Facebook
+and Instagram observed visible controls intercepted by consent content without
+login or consent actions. This commit completes 150 of 900 planned improvements.

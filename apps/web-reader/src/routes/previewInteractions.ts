@@ -1,8 +1,9 @@
-/** Общие проверки действий: успех означает доступное действие, а не вызов DOM-метода. */
+/** Follow computed visibility so CSS overrides and semantic containers remain readable. */
 export function previewInteractionHelpers(): string {
   return `const actionVisible=(el)=>{
   if(!el.isConnected||['script','style','template','noscript'].includes(el.localName))return false;
-  for(let node=el;node;node=node.parentElement){const style=getComputedStyle(node);if(node.hidden||style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse'||Number.parseFloat(style.opacity)===0)return false}
+  if(['hidden','collapse'].includes(getComputedStyle(el).visibility))return false;
+  for(let node=el;node;node=node.parentElement){const style=getComputedStyle(node);if(style.display==='none'||Number.parseFloat(style.opacity)===0)return false}
   return true
 };
 const chooseTarget=(action,clickable=false)=>{

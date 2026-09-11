@@ -9,6 +9,7 @@ import type { BrowserFrameContext, BrowserFrameTarget } from './browserFrames'
 import type { BrowserWaitOptions } from './browserWaiting'
 import type { PreviewElementPayload } from './previewInspector'
 import type { PreviewAuditOptions, PreviewAuditResult } from './previewAudit'
+import type { PreviewProbeOptions, PreviewProbeResult } from './previewProbe'
 
 /** Состояния голосового пайплайна. */
 export type VoiceState = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking'
@@ -304,6 +305,7 @@ export interface BrowserElementDescription {
  */
 export type BrowserInspectAction =
   | ({ kind: 'audit' } & PreviewAuditOptions)
+  | ({ kind: 'probe' } & PreviewProbeOptions)
   | ({ kind: 'console' } & BrowserConsoleOptions)
   | ({ kind: 'network' } & BrowserNetworkOptions)
   | { kind: 'styles'; selector: string; properties?: string[] }
@@ -347,6 +349,7 @@ export interface BrowserInspectResult extends BrowserLogSummary, BrowserEvaluati
   network?: BrowserNetworkEntry[]
   styles?: Record<string, string>
   audit?: PreviewAuditResult['audit']
+  probe?: PreviewProbeResult['probe']
   error?: string
 }
 

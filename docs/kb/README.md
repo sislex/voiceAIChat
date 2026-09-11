@@ -22,8 +22,8 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 199 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 78 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 98 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 3 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1341 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 4 коммит(ов) в areas после сверки: 59f22ce2 feat(web-reader): add color and paint diagnostics (QA cycle 04) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1342 коммит(ов) в areas после сверки: 59f22ce2 feat(web-reader): add color and paint diagnostics (QA cycle 04) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 62 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 4 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 737. Последние:
+Всего записей: 738. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-05.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-05.md) — web-reader-qa-cycle-05
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md) — web-reader-qa-cycle-04
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md) — web-reader-qa-cycle-03
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md) — web-reader-qa-cycle-02
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-make-english-documentation.md](log/2026-09-11-alexeys-macbook-air-2-make-english-documentation.md) — English comments and documentation for Make
 - [2026-09-11-alexeys-macbook-air-2-make-dependency-gate-regression.md](log/2026-09-11-alexeys-macbook-air-2-make-dependency-gate-regression.md) — Fix Make dependency graph regression in release 0.1.296
 - [2026-09-10-macbook-air-user-task-error-opens-task-chat.md](log/2026-09-10-macbook-air-user-task-error-opens-task-chat.md) — task-error-opens-task-chat
-- [2026-09-10-macbook-air-user-task-chat-composer.md](log/2026-09-10-macbook-air-user-task-chat-composer.md) — task-chat-composer
 
 ## Исторические планы
 

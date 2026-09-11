@@ -314,7 +314,7 @@ export class BrowserSessionManager {
       } else session.queue.cancel()
       return this.metadata(session)
     }
-    const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit'].includes(command.action.kind))
+    const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe'].includes(command.action.kind))
     if (!observing && request.actor === 'assistant' && session.queue.owner === 'user') throw new Error('human_control: Управление у пользователя. Дождитесь возврата управления модели.')
     if (command.type === 'inspect' && command.action.kind === 'evaluate') {
       const target = session.pages.get(request.tabId ?? session.activeTabId)
@@ -369,7 +369,7 @@ export class BrowserSessionManager {
     }
     // Наблюдение панели не должно стирать отметку о действии модели.
     if (command.type === 'status') return this.metadata(session)
-    if (command.type !== 'screenshot' && !(command.type === 'inspect' && command.action.kind === 'audit')) session.lastActor = request.actor
+    if (command.type !== 'screenshot' && !(command.type === 'inspect' && ['audit', 'probe'].includes(command.action.kind))) session.lastActor = request.actor
     // Управление вкладками не требует существования прежней активной страницы:
     // после закрытия последней пользователь всё ещё должен суметь открыть новую.
     if (command.type === 'newTab') {

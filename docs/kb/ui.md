@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 0a0274e6
+checked: b16b2d46
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2519,6 +2519,38 @@ Text discovery is bounded to 256 children and 4,096 characters per text node;
 paint composition stops at 64 ancestors and marks the scan truncated. Inspection
 does not focus controls, select text, scroll, insert a canvas or read field values.
 
+The read-only `probe {selector}` tool accepts a standard CSS selector and explains one target, including hidden targets
+that ordinary reading would omit. `packages/shared/src/previewProbe.ts` defines
+the options, result and runtime validation. Reports separate browser visibility,
+native disabled/read-only state, declared ARIA state, inertness and sampled pointer
+reachability. A reachable point does not guarantee activation or bypass Reader
+interaction policies. Conditions such as disabled fieldsets, their first-legend
+exception, inherited editability, closed details and CSS visibility overrides have
+paired fixtures on both surfaces. Nested fieldset reasons identify the actual
+disabling ancestor, not an inner fieldset whose legend exempts the target.
+
+Probe geometry uses up to eight client rectangles and 40 sampled viewport points.
+Clip intersections add candidates without discarding original samples, because
+fixed descendants can escape an ancestor's overflow clip. Reports retain up to
+eight hit targets and 30 reasons, inspect up to 128 ancestors, and cap source
+selectors at 500 characters. A 26,000-character response budget omits reason
+selectors if needed. Incomplete scans are explicit; unknown opacity/inert state
+uses null. Multiple modal dialogs do not imply that DOM order equals top-layer
+order. Native modal dialogs can escape ancestor inertness; background document
+inertness is also observed. Browser
+[visibility checks](https://developer.mozilla.org/en-US/docs/Web/API/Element/checkVisibility)
+and sampled hit testing describe the current state, not every future animation
+frame. Frame and shadow traversal are not implemented by probe.
+
+Both proxy and native boundaries reject malformed probe results; native observation
+preserves human control and `lastActor`. Native `find` references remain usable;
+a replacement DOM clone with copied reference attributes is rejected as stale.
+The runtime does not read field values, focus, select, scroll or mutate the document.
+Semantic reader visibility now
+respects CSS overrides of `hidden` and inherited `visibility:hidden`, while still
+allowing semantic containers with `display:contents`. Physical probe visibility
+uses the browser's own box/visibility checks separately.
+
 Test examples are exported separately from `@voicechat/browser-contracts/audit/fixtures`;
 production imports only the pure program generators. Both browser suites consume
 one fixture registry, including explicit readiness for font loading. Audit source
@@ -2538,9 +2570,13 @@ between their sessions.
 A same-day probe through the actual `BrowserSessionManager` rendered Google's
 consent page and the Facebook/Instagram login forms behind cookie dialogs in fresh
 Chromium sessions. Screenshots confirmed those states. Both Meta sites logged a
-Credential Management service error despite rendering usable controls. No login or
+Credential Management service error despite rendering controls. No login or
 consent choice was attempted. These observations show why diagnosis must combine
 rendered state, network evidence and console errors rather than use one success flag.
+A later control probe on each site confirmed that browser visibility and Reader
+wait readiness did not imply pointer reachability: consent content intercepted all
+sampled points of the search/password target. The read-only probes took
+0.7/1.2/0.9 ms on Google/Facebook/Instagram respectively in that local run.
 
 The checks cover document metadata, IDs and references, names and labels,
 landmarks, headings, nested controls, details, tables, lists and focus order.
