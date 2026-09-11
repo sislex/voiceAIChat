@@ -1104,6 +1104,23 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     props.onReorderColumns(ids)
   }
 
+  const reorderColumnByKeyboard = (columnId: string, direction: -1 | 1, trigger: HTMLButtonElement): void => {
+    if (!board) return
+    const visibleIndex = columns.findIndex((column) => column.id === columnId)
+    const target = columns[visibleIndex + direction]
+    const current = board.columns.find((column) => column.id === columnId)
+    if (!target || !current) {
+      setAnnounce(`Колонка «${current?.name ?? 'без названия'}» уже ${direction < 0 ? 'первая' : 'последняя'}.`)
+      return
+    }
+    const ids = board.columns.map((column) => column.id).filter((id) => id !== columnId)
+    const targetIndex = ids.indexOf(target.id)
+    ids.splice(direction < 0 ? targetIndex : targetIndex + 1, 0, columnId)
+    props.onReorderColumns(ids)
+    setAnnounce(`Колонка «${current.name}» перемещена на позицию ${visibleIndex + direction + 1} из ${columns.length}.`)
+    trigger.focus()
+  }
+
   const columnName = (columnId: string): string =>
     (board?.columns ?? []).find((c) => c.id === columnId)?.name ?? 'без названия'
 
@@ -1528,16 +1545,26 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           grabColumn(e, e.currentTarget, col.id, false)
         }}
       >
-        <span
+        <button
+          type="button"
           className="jcol-grip"
-          aria-hidden="true"
+          aria-label={`Переместить колонку «${col.name}»`}
+          aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+          title="Перетащите или нажмите Alt+←/→"
           onPointerDown={(e) => {
             e.stopPropagation()
             grabColumn(e, e.currentTarget, col.id, true)
           }}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return
+            event.preventDefault()
+            event.stopPropagation()
+            reorderColumnByKeyboard(col.id, event.key === 'ArrowLeft' ? -1 : 1, event.currentTarget)
+          }}
         >
           <GripIcon />
-        </span>
+        </button>
         {renaming === col.id ? (
           <input
             className="ctitle-edit"

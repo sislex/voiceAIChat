@@ -82,7 +82,7 @@ describe('стили открытой карточки задачи', () => {
     'jboard-snapshot', 'jboard-snapshot--fresh', 'jboard-snapshot--stale',
     'jboard-stale', 'jboard-stale-mark', 'jboard-stale-copy', 'jboard-filters-shell',
     'jboard-mobile-filter-meta',
-    'jcol-head', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
+    'jcol-head', 'jcol-grip', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
   ])('класс .%s имеет правила', (cls) => {
     expect(styled(cls)).toBe(true)
   })
