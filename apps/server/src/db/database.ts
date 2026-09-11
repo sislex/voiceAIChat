@@ -7,7 +7,7 @@ import { createSqliteSql } from './sql/sqlite.js'
 import { createPgSql } from './sql/pg.js'
 import type { Sql } from './sql/types.js'
 import { createLane, type Lane } from './sql/lane.js'
-import { PG_SCHEMA } from './schemaPg.js'
+import { PG_SCHEMA, postgresColumnUpgradePlan } from './schemaPg.js'
 
 /** Ключ advisory-замка установки схемы Postgres: произвольная константа, одна на все процессы стенда. */
 const PG_SCHEMA_LOCK_KEY = 7_260_119
@@ -171,7 +171,19 @@ export class VoiceChatDb {
       await this.sql.transaction(async () => {
         await this.sql.run(`SELECT pg_advisory_xact_lock(?)`, [PG_SCHEMA_LOCK_KEY])
         if (schema) await this.sql.exec(`CREATE SCHEMA IF NOT EXISTS ${schema}`)
-        await this.sql.exec(PG_SCHEMA.sql)
+        // Existing PostgreSQL tables are not changed by CREATE TABLE IF NOT EXISTS.
+        // Reconcile columns before indexes and foreign keys so a release cannot
+        // start successfully with queries that target a newer schema than the DB.
+        await this.sql.exec(PG_SCHEMA.tables.join('\n'))
+        const existing = await this.sql.all<{ table_name: string; column_name: string }>(
+          `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = current_schema()`
+        )
+        const upgrade = postgresColumnUpgradePlan(PG_SCHEMA.columns, existing)
+        if (upgrade.sql) await this.sql.exec(upgrade.sql)
+        if (upgrade.keys.has('tasks.auto_pilot_requires_manual_qa')) {
+          await this.sql.exec(`UPDATE tasks SET auto_pilot_requires_manual_qa = COALESCE((SELECT autopilot_requires_manual_qa FROM projects WHERE projects.id = tasks.project_id), 0)`)
+        }
+        await this.sql.exec(PG_SCHEMA.afterColumnsSql)
       })
       await this.ctx.repos.projects.seedBuiltinProjectTypes()
     } else {
