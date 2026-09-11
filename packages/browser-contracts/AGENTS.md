@@ -17,3 +17,8 @@ not load the fixture entry point. Audit source changes automatically select Read
 Control probes share the native DOM prelude and have a separate bounded result
 contract. Keep physical hit testing distinct from semantic reading visibility and
 from an attempted application interaction.
+
+Form audit fixtures can request real keyboard editing before observation. Keep
+that preparation in the test-only fixture entry point; auditing must not read live
+values, call validation methods or dispatch invalid events. Native validity states
+are informational and are not automatically application defects.

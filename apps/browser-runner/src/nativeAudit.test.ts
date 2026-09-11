@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, afterAll, describe, it, expect } from 'vitest'
-import { auditFixtures, probeFixtures, probeExpectationFailures } from '@voicechat/browser-contracts/audit/fixtures'
+import { auditFixtures, probeFixtures, probeExpectationFailures, formConstraintExamples, formReadOnlyScene, formReadOnlySetup, formReadOnlyState, type FormFixtureEdit } from '@voicechat/browser-contracts/audit/fixtures'
 import { isPreviewProbeResult } from '@voicechat/shared'
 import type { BrowserCommand, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, PreviewAuditOptions } from '@voicechat/shared'
 import { BrowserSessionManager } from './sessionManager.js'
@@ -13,6 +13,12 @@ let site: FastifyInstance, manager: BrowserSessionManager, session: BrowserSessi
 const target = 'http://audit.reader.test/'
 const send = (command: BrowserCommand, actor: 'user' | 'assistant' = 'assistant') => manager.command(session.id, { requestId: randomUUID(), incarnation: session.incarnation, actor, command })
 const open = async (html: string) => { source = html; await send({ type: 'navigate', url: target }) }
+const editFixture = async (edit?: FormFixtureEdit) => {
+  if (!edit) return
+  expect(await send({ type: 'selector', action: { kind: 'click', selector: edit.selector } })).toMatchObject({ ok: true })
+  expect(await send({ type: 'input', action: { type: 'type', text: edit.text } })).toMatchObject({ state: 'ready' })
+  if (edit.after) expect(await send({ type: 'inspect', action: { kind: 'evaluate', code: edit.after } })).toMatchObject({ ok: true })
+}
 const audit = async (options: PreviewAuditOptions = {}) => {
   const result = await send({ type: 'inspect', action: { kind: 'audit', ...options } }) as BrowserInspectResult
   expect(result.ok, result.error).toBe(true)
@@ -74,9 +80,29 @@ describe('Native Reader built-in audits', () => {
     await send({ type: 'inspect', action: { kind: 'evaluate', code: 'const target=document.querySelector("#target");target.replaceWith(target.cloneNode(true))' } })
     expect(await send({ type: 'inspect', action: { kind: 'probe', selector } })).toMatchObject({ ok: false, error: expect.stringContaining('stale_element_ref') })
   })
+  it.each(formConstraintExamples)('preserves form semantics: $name', async example => {
+    await open('<!doctype html>'+example.html)
+    expect((await audit({ group: 'forms', rules: [example.rule] })).total).toBe(example.total)
+  })
+  it('reports bounded form inspection rather than rejecting oversized patterns', async () => {
+    await open('<!doctype html><input pattern="'+'a'.repeat(4097)+'">')
+    const report = await audit({ group: 'forms', rules: ['pattern-syntax-invalid'] })
+    expect(report.total).toBe(0)
+    expect(report.truncated).toBe(true)
+    expect(report.limitations).toContain('Form constraint inspection stopped at 4096 attribute characters.')
+  })
+  it('discovers 30 form checks and classifies validity as observed state', async () => {
+    await open('<!doctype html><input required>')
+    const catalog = await audit({ group: 'forms', mode: 'list', limit: 30 })
+    expect(catalog.rules).toHaveLength(30)
+    const validity = catalog.rules.filter(rule => rule.id.startsWith('validity-'))
+    expect(validity).toHaveLength(10)
+    expect(validity.every(rule => rule.severity === 'info' && rule.confidence === 'observed')).toBe(true)
+  })
   for (const fixture of auditFixtures) {
     it(`detects ${fixture.name ?? fixture.rule} at the original origin`, async () => {
       await open(fixture.broken)
+      await editFixture(fixture.edit?.broken)
       if (fixture.ready) expect(await send({ type: 'selector', action: { kind: 'wait', predicate: fixture.ready } })).toMatchObject({ ok: true })
       const report = await audit({ group: fixture.group, rules: [fixture.rule] })
       expect(report.findings.length).toBeGreaterThan(0)
@@ -84,6 +110,7 @@ describe('Native Reader built-in audits', () => {
     })
     it(`clears ${fixture.name ?? fixture.rule} after repair`, async () => {
       await open(fixture.fixed)
+      await editFixture(fixture.edit?.fixed)
       if (fixture.ready) expect(await send({ type: 'selector', action: { kind: 'wait', predicate: fixture.ready } })).toMatchObject({ ok: true })
       expect((await audit({ group: fixture.group, rules: [fixture.rule] })).findings).toEqual([])
     })
@@ -98,6 +125,27 @@ describe('Native Reader built-in audits', () => {
       expect(metadata.lastActor).toBe('user')
       await expect(send({ type: 'selector', action: { kind: 'click', selector: 'button' } })).rejects.toThrow('human_control')
     } finally { await send({ type: 'control', owner: 'shared' }, 'user') }
+  })
+  it('observes form validity under human control without events, value reads or mutations', async () => {
+    await open(formReadOnlyScene)
+    const evaluate = async (code: string) => (await send({ type: 'inspect', action: { kind: 'evaluate', code } }, 'user') as BrowserInspectResult).value
+    await evaluate(formReadOnlySetup)
+    await send({ type: 'control', owner: 'user' }, 'user')
+    try {
+      const before = await evaluate(formReadOnlyState)
+      const report = await audit({ group: 'forms', limit: 30 })
+      expect(report.findings.map(f => f.id)).toContain('validity-custom-error')
+      expect(JSON.stringify(report)).not.toContain('PRIVATE_')
+      expect(await send({ type: 'status' })).toMatchObject({ lastActor: 'user' })
+      expect(await evaluate(formReadOnlyState)).toEqual(before)
+    } finally { await send({ type: 'control', owner: 'shared' }, 'user') }
+  })
+  it('refreshes validity after the application clears a custom error', async () => {
+    await open(formReadOnlyScene)
+    const options = { group: 'forms', rules: ['validity-custom-error'] }
+    expect((await audit(options)).total).toBe(1)
+    await send({ type: 'inspect', action: { kind: 'evaluate', code: 'document.querySelector("#target").setCustomValidity("")' } })
+    expect((await audit(options)).total).toBe(0)
   })
   it('does not mutate the inspected DOM and returns exact duplicate-ID selectors', async () => {
     await open('<!doctype html><button id="same">One</button><button id="same">Two</button>')
@@ -119,7 +167,7 @@ describe('Native Reader built-in audits', () => {
     await open('<!doctype html><main>'+'<button></button>'.repeat(3100)+'</main>')
     expect((await audit({ group: 'layout', mode: 'list', limit: 30 })).rules).toHaveLength(30)
     const report = await audit({ rules: ['button-name-missing'], limit: 30 })
-    expect(report.groups).toEqual(['markup', 'layout', 'typography', 'color'])
+    expect(report.groups).toEqual(['markup', 'layout', 'typography', 'color', 'forms'])
     expect(report.scannedElements).toBe(3000)
     expect(report.truncated).toBe(true)
     expect(report.findings).toHaveLength(30)
@@ -127,7 +175,7 @@ describe('Native Reader built-in audits', () => {
   })
   it('keeps sensitive field values out of evidence', async () => {
     await open('<!doctype html><input type="password" value="native-private"><textarea name="token">native-token</textarea>')
-    for (const group of ['markup', 'layout', 'typography', 'color']) {
+    for (const group of ['markup', 'layout', 'typography', 'color', 'forms']) {
       const report = JSON.stringify(await audit({ group }))
       expect(report).not.toContain('native-private')
       expect(report).not.toContain('native-token')

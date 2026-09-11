@@ -49,8 +49,8 @@ are written before implementation, after inspecting the relevant capabilities.
 | 02 | Layout and clipping, with native audit integration | 30/30 | `3df0eaa8` |
 | 03 | Typography and text rendering | 30/30 | `0a0274e6` |
 | 04 | Color and contrast | 30/30 | `b16b2d46` |
-| 05 | Interactive control states | 30/30 | this commit |
-| 06 | Forms and validation | 0/30 | pending |
+| 05 | Interactive control states | 30/30 | `20814f73` |
+| 06 | Forms and validation | 30/30 | this commit |
 | 07 | Focus and keyboard navigation | 0/30 | pending |
 | 08 | ARIA widgets and state relationships | 0/30 | pending |
 | 09 | Images and responsive assets | 0/30 | pending |
@@ -313,3 +313,50 @@ tests passed. Full proxy/native App paths and visual screenshots were checked.
 the latter completed 596 browser tests. Public native probes on Google, Facebook
 and Instagram observed visible controls intercepted by consent content without
 login or consent actions. This commit completes 150 of 900 planned improvements.
+
+## Cycle 06: forms and validation
+
+Add 30 read-only checks in the dynamically discovered `forms` audit group.
+Native validity is reported as state, not a confirmed UI bug.
+
+1. Native valueMissing state.
+2. Native typeMismatch state.
+3. Native patternMismatch state.
+4. Native tooLong state.
+5. Native tooShort state.
+6. Native rangeUnderflow state.
+7. Native rangeOverflow state.
+8. Native stepMismatch state.
+9. Native badInput state.
+10. Native customError state.
+11. Invalid control that is not visibly rendered.
+12. Native invalid state without a declared ARIA error.
+13. Declared ARIA error without native invalidity.
+14. Invalid pattern expression syntax.
+15. Required attribute ignored by the input type.
+16. Pattern attribute ignored by the input type.
+17. Minlength ignored by the control type.
+18. Maxlength ignored by the control type.
+19. Multiple ignored by the input type.
+20. Accept ignored outside file inputs.
+21. Minlength exceeds maxlength.
+22. Minimum exceeds maximum, excluding valid periodic time ranges.
+23. Invalid minimum constraint syntax.
+24. Invalid maximum constraint syntax.
+25. Invalid step constraint syntax.
+26. Unknown declared input type falling back to text.
+27. Invalid form/submitter method keyword.
+28. Dialog submission method without a containing dialog.
+29. Explicit form owner cannot be resolved.
+30. Named form content shadows the submit method.
+
+Verification must include real user editing for native length and bad-input states,
+constraint parser edge cases, no invalid events or value/error leakage, paired
+fixtures on both Reader engines, a visually inspected screenshot and both gates.
+Cycle 06 verification: 419 proxy and 392 native diagnostics, ten browser-contract
+tests and both package typechecks passed. Inspected the form screenshot.
+`gate:fast` passed in 160.03 s and pre-commit `gate` in 522.63 s, both exit 0;
+the latter passed 675 browser tests. Public native forms audits on Google,
+Facebook and Instagram completed without findings or truncation on their initial
+documents; this does not validate custom or signed-in scenarios. This commit
+completes 180 of 900 planned improvements.
