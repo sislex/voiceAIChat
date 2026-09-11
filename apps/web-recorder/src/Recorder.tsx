@@ -50,6 +50,11 @@ export function Recorder(): JSX.Element {
   const { steps, setSteps, editSteps, past, future, undo, redo } = useScenarioEditor(); const [error, setError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<DiagnosticsStep[] | null>(null)
   const [scenarioUrl, setScenarioUrl] = useState<string | null>(null)
+  const [scenarioCollapsed, setScenarioCollapsed] = useState(false)
+  const [storageError, setStorageError] = useState<string | null>(null)
+  const sessionReset = useRef<AbortController | null>(null)
+  const sessionResetTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [resettingSession, setResettingSession] = useState(false)
   const [scenarioProgress, setScenarioProgress] = useState<ScenarioProgress | null>(null)
   const scenarioRunner = useRef<ReturnType<typeof createScenarioRunner> | null>(null)
   const scenarioRunning = scenarioProgress?.status === 'running'
@@ -85,9 +90,12 @@ export function Recorder(): JSX.Element {
     frame.current?.contentWindow?.postMessage({ type: RECORD, enabled }, sameOrigin)
     setRecording(enabled)
   }
+  const cancelSessionReset = (): void => { sessionReset.current?.abort(); sessionReset.current = null; if (sessionResetTimeout.current) clearTimeout(sessionResetTimeout.current); sessionResetTimeout.current = null; setResettingSession(false) }
   const applyUrl = (next: string | null): void => {
     if (next) next = readerProjectUrl(next, sameOrigin)
     loadGeneration.current++
+    cancelSessionReset()
+    setScenarioCollapsed(false); setStorageError(null)
     diagnosticStarts.current.clear()
     scenarioRunner.current?.cancel('Открывается другая страница — запуск отменён.')
     scenarioRunner.current?.setReady(false)
@@ -178,6 +186,7 @@ export function Recorder(): JSX.Element {
         return
       }
       if (message.kind === 'dispose') {
+        cancelSessionReset()
         scenarioRunner.current?.cancel('Reader отключён — запуск отменён.')
         scenarioRunner.current?.setReady(false)
         reply({ kind: 'disposed' })
@@ -199,6 +208,7 @@ export function Recorder(): JSX.Element {
           }
         }
         if (next && next !== currentUrl.current) {
+          cancelSessionReset()
           const previous = currentUrl.current
           currentUrl.current = next
           // Это подтверждённая навигация живого iframe: его src менять нельзя.
@@ -219,7 +229,7 @@ export function Recorder(): JSX.Element {
         }
         return
       }
-      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { loadGeneration.current++; scenarioRunner.current?.setReady(false); pageReady.current = false; setLoadState('loading'); setLoadError(null); reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
+      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { cancelSessionReset(); loadGeneration.current++; scenarioRunner.current?.setReady(false); pageReady.current = false; setLoadState('loading'); setLoadError(null); reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
       if (message?.type === PREVIEW_ACTION_RESULT_TYPE && typeof message.requestId === 'string') {
         const diagnostic = diagnosticStarts.current.get(message.requestId)
         if (diagnostic) {
@@ -274,14 +284,16 @@ export function Recorder(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (!scenarioUrl) return
-    const key = scenarioKey(scenarioUrl)
-    if (!key) return
+  const saveScenario = (): void => {
+    const key = scenarioUrl ? scenarioKey(scenarioUrl) : null
+    if (!key) { setStorageError(null); return }
     try {
       localStorage.setItem(key, JSON.stringify(steps.map(normalizeWebRecorderStep).filter(Boolean)))
-    } catch { /* квота браузера — сценарий просто не сохранится */ }
-  }, [steps, scenarioUrl])
+      setStorageError(null)
+    } catch { setStorageError('Сценарий не сохранён в браузере. Освободите место или разрешите хранилище и повторите сохранение.') }
+  }
+  useEffect(() => { saveScenario() }, [steps, scenarioUrl])
+  useEffect(() => () => { sessionReset.current?.abort(); sessionReset.current = null; if (sessionResetTimeout.current) clearTimeout(sessionResetTimeout.current); sessionResetTimeout.current = null }, [])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: EDIT, enabled: editing }, sameOrigin) }, [editing, url])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: CAPTURE, enabled: capturing }, sameOrigin) }, [capturing, url])
   const closeTools = (): void => { if (toolsMenu.current) toolsMenu.current.open = false }
@@ -349,13 +361,25 @@ export function Recorder(): JSX.Element {
     try { delta === -1 ? frame.current?.contentWindow?.history.back() : frame.current?.contentWindow?.history.forward() } catch { /* cross-doc сразу после загрузки */ }
   }
   const resetSession = (): void => {
-    void fetch('/api/preview/reset-cookies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-      .then((res) => {
+    if (sessionReset.current) return
+    const controller = new AbortController()
+    sessionReset.current = controller; setResettingSession(true); setError(null)
+    const target = currentUrl.current
+    const generation = loadGeneration.current
+    const timeout = sessionResetTimeout.current = setTimeout(() => {
+      if (sessionReset.current === controller) { setError('Сброс сессии занял слишком много времени. Повторите попытку.'); controller.abort() }
+    }, 15_000)
+    void fetch('/api/preview/reset-cookies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: controller.signal })
+      .then(res => {
         if (!res.ok) throw new Error('HTTP ' + res.status)
-        // Разлогиненное состояние видно после перезагрузки страницы.
-        if (currentUrl.current) applyUrl(currentUrl.current)
+        if (sessionReset.current === controller && !controller.signal.aborted && target && currentUrl.current === target && generation === loadGeneration.current) applyUrl(target)
       })
-      .catch(() => setError('Не удалось сбросить сессии превью.'))
+      .catch(() => { if (sessionReset.current === controller && !controller.signal.aborted) setError('Не удалось сбросить сессии превью.') })
+      .finally(() => {
+        clearTimeout(timeout)
+        if (sessionResetTimeout.current === timeout) sessionResetTimeout.current = null
+        if (sessionReset.current === controller) { sessionReset.current = null; setResettingSession(false) }
+      })
   }
   const editStepOrder = (index: number, direction: -1 | 1 | 0): void => {
     if (scenarioRunning) return
@@ -403,7 +427,7 @@ export function Recorder(): JSX.Element {
           <Button variant="secondary" type="button" onClick={() => { applyUrl(READER_PROJECT_ORIGIN + '/'); toolsMenu.current?.removeAttribute('open') }}>Текущий проект</Button>
           <Button variant="secondary" type="button" disabled={!url || scenarioRunning || steps.length >= 200} onClick={() => addStep('click')}>Добавить клик</Button>
           <Button variant="secondary" type="button" disabled={!url || scenarioRunning || steps.length >= 200} onClick={() => addStep('type')}>Добавить ввод</Button>
-          <Button variant="secondary" type="button" disabled={!url} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>⟲ Сессия</Button>
+          <Button variant="secondary" type="button" disabled={!url || resettingSession} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>{resettingSession ? 'Сбрасываем сессию…' : '⟲ Сессия'}</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={() => activateMode(inspecting ? null : 'inspect')}>⌖ Выбор элемента</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => activateMode(editing ? null : 'edit')}>✎ Редактировать</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={capturing} onClick={() => activateMode(capturing ? null : 'capture')}>📸 Область</Button>
@@ -415,13 +439,18 @@ export function Recorder(): JSX.Element {
     {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
     {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем страницу…</div>}
     {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button></div>}
-    {error && <p className="webpreview-error" role="alert">{error}</p>}
+    {error && <div className="webpreview-error webpreview-load-error" role="alert"><span>{error}</span><Button size="sm" aria-label="Скрыть ошибку Reader" onClick={() => setError(null)}>×</Button></div>}
+    {storageError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{storageError}</span><Button size="sm" onClick={saveScenario}>Повторить сохранение</Button></div>}
+    {recording && <div className="webpreview-run-status" role="status" aria-live="polite">Идёт запись сценария: {steps.length} шаг.</div>}
     {diagnostics && <DiagnosticHistory key={`${session.current?.conversationId}:${session.current?.registrationId}`} steps={diagnostics} />}
     {scenarioProgress && <div className="webpreview-run-status" role="status" aria-live="polite" data-status={scenarioProgress.status}>
       {scenarioProgress.status === 'running' ? 'Выполняется сценарий' : scenarioProgress.status === 'passed' ? 'Сценарий выполнен' : scenarioProgress.status === 'cancelled' ? 'Сценарий остановлен' : 'Ошибка сценария'}: {scenarioProgress.completed} из {scenarioProgress.total}
       {scenarioProgress.error && <span> — {scenarioProgress.error}</span>}
+      {!scenarioRunning && <Button size="sm" aria-label="Скрыть результат сценария" onClick={() => setScenarioProgress(null)}>×</Button>}
     </div>}
     {(steps.length > 0 || past.length > 0 || future.length > 0) && <section className="webpreview-scenario" aria-label="Сценарий автотеста">
+      <div className="webpreview-scenario-header">
+      <Button size="sm" aria-expanded={!scenarioCollapsed} onClick={() => setScenarioCollapsed(value => !value)}>{scenarioCollapsed ? 'Показать шаги' : 'Скрыть шаги'}</Button>
       <Button variant="secondary" disabled={scenarioRunning || loadState !== 'ready' || !steps.length || steps.some(step => !step.selector.trim())} onClick={run}>Запустить</Button>
       {scenarioRunning && <Button variant="secondary" onClick={() => scenarioRunner.current?.cancel()}>Остановить сценарий</Button>}
       <strong>Шагов: {steps.length} / 200</strong>
@@ -429,7 +458,8 @@ export function Recorder(): JSX.Element {
       <Button variant="secondary" disabled={scenarioRunning || !future.length} onClick={() => { setSecretValues({}); redo() }}>Повторить правку</Button>
       <Button variant="secondary" type="button" disabled={!steps.length || steps.some(step => !step.selector.trim())} onClick={exportPlaywright}>Экспорт в Playwright</Button>
       <Button variant="secondary" type="button" disabled={scenarioRunning} onClick={() => { editSteps([]); setSecretValues({}); setScenarioProgress(null) }}>Очистить</Button>
-      <ol>
+      </div>
+      <ol hidden={scenarioCollapsed}>
       {steps.map((step, index) => <li key={index}><span>Шаг {index + 1}</span><select aria-label={'Действие шага ' + (index + 1)} value={step.kind} disabled={scenarioRunning} onChange={event => {
         const kind = event.target.value as Step['kind']; setSecretValues({}); editSteps(all => all.map((item, i) => i === index ? { kind, selector: item.selector, text: '', sensitive: false } : item))
       }}><option value="click">Клик</option><option value="type">Ввод</option></select><input aria-invalid={!step.selector.trim()} maxLength={PREVIEW_ACTION_LIMITS.selector} disabled={scenarioRunning} aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => { setSecretValues({}); editSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item)) }} />

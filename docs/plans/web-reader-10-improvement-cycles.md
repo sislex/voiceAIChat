@@ -14,8 +14,8 @@ written before implementation. Existing audit work is preserved.
 | 06 | Scenario editing | Merged, 10/10 | #149 |
 | 07 | Scenario portability and export | Merged, 10/10 | #151 |
 | 08 | Playback validation and lifecycle | Merged, 10/10 | #153 |
-| 09 | Diagnostic history and lifecycle | Implemented, 10/10 | |
-| 10 | Final integration and regression gaps | Planned | |
+| 09 | Diagnostic history and lifecycle | Merged, 10/10 | #154 |
+| 10 | Recorder recovery and responsive controls | Implemented, 10/10 | |
 
 ## Cycle 01 proposal
 
@@ -133,3 +133,16 @@ written before implementation. Existing audit work is preserved.
 8. Filter failed actions.
 9. Collapse diagnostic details.
 10. Export complete diagnostics as JSON.
+
+## Cycle 10 proposal
+
+1. Collapse scenario step editing.
+2. Wrap step controls on narrow screens.
+3. Keep checkbox widths intrinsic.
+4. Report scenario save failures.
+5. Retry failed saves without losing current edits.
+6. Prevent duplicate session reset requests.
+7. Cancel stale resets across document and SPA navigation.
+8. Dismiss Reader errors.
+9. Dismiss finished playback results.
+10. Show recording status outside the tools menu.
