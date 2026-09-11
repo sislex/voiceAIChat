@@ -39,6 +39,7 @@ import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { useCommandSource } from '@voicechat/ui-foundation/runtime'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { DotsIcon, GripIcon } from '../icons'
@@ -296,6 +297,40 @@ function FilterShell({ mobile, count, visibleTasks, snapshot, refreshing, childr
 
 interface FilterOption { value: string; label: string; leading?: ReactNode; meta?: string }
 
+export function formatVisibleBoardList(input: {
+  projectName: string
+  columns: ReadonlyArray<{ column: KanbanColumn; tasks: readonly Task[] }>
+  totalTasks: number
+  activeFilters: readonly string[]
+}): string {
+  const visibleCount = input.columns.reduce((total, entry) => total + entry.tasks.length, 0)
+  const lines = [
+    `# ${input.projectName} — канбан`,
+    `Показано: ${visibleCount} из ${input.totalTasks}`,
+    `Фильтры: ${input.activeFilters.length > 0 ? input.activeFilters.join('; ') : 'нет'}`
+  ]
+  for (const { column, tasks } of input.columns) {
+    lines.push('', `## ${column.name}${column.hidden ? ' (скрытая)' : ''} — ${tasks.length}`)
+    if (tasks.length === 0) {
+      lines.push('- Нет задач')
+      continue
+    }
+    for (const task of tasks) {
+      const details = [
+        TYPE_LABEL[task.type],
+        PRIORITY_LABEL[task.priority],
+        `исполнитель: ${task.assignee ?? 'не назначено'}`
+      ]
+      if (task.storyPoints != null) details.push(`${task.storyPoints} SP`)
+      if (task.dueDate != null) details.push(`срок: ${new Date(task.dueDate).toISOString().slice(0, 10)}`)
+      if (task.labels.length > 0) details.push(`метки: ${task.labels.join(', ')}`)
+      if (task.flagged) details.push('с флагом')
+      lines.push(`- [${issueKey(input.projectName, task)}] ${task.title} · ${details.join(' · ')}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 /** Searchable multi-select with bulk operations over the currently visible options. */
 function FilterDropdown({ label, selected, options, onChange }: {
   label: string
@@ -447,6 +482,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
   const [collapsedLanesHydrated, setCollapsedLanesHydrated] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [copyBoardStatus, setCopyBoardStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [dragTask, setDragTask] = useState<string | null>(null)
   const [dragColumn, setDragColumn] = useState<string | null>(null)
@@ -966,6 +1002,19 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     ? activeColumnId
     : columns[0]?.id ?? null
   const activeColumnIndex = columns.findIndex((column) => column.id === effectiveActiveColumnId)
+
+  const copyVisibleBoard = async (): Promise<void> => {
+    const copied = await copyText(formatVisibleBoardList({
+      projectName: props.projectName,
+      columns: columns.map((column) => ({ column, tasks: tasksOf(column.id) })),
+      totalTasks: displayedTaskTotal,
+      activeFilters: activeFilterChips.map((chip) => chip.label)
+    }))
+    setCopyBoardStatus(copied ? 'success' : 'error')
+    setAnnounce(copied
+      ? `Список скопирован: ${visibleTaskCount} ${pluralTasks(visibleTaskCount)}.`
+      : 'Не удалось скопировать список задач.')
+  }
 
   const jumpToColumn = (columnId: string): void => {
     const column = columns.find((item) => item.id === columnId)
@@ -2396,6 +2445,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             >
               Клавиши
             </button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="jboard-copy-list"
+              data-testid="copy-board-list"
+              disabled={visibleTaskCount === 0}
+              aria-label={`Копировать список видимых задач, ${visibleTaskCount} ${pluralTasks(visibleTaskCount)}`}
+              onClick={() => void copyVisibleBoard()}
+            >
+              {copyBoardStatus === 'success' ? 'Скопировано' : copyBoardStatus === 'error' ? 'Повторить копирование' : 'Копировать список'}
+            </Button>
             <label className="kanban-showhidden">
               <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
             </label>
