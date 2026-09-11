@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-09-06
-checked: 991a960a
+updated: 2026-09-11
+checked: 55104903
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -485,16 +485,14 @@ runner'ом `apps/server/src/ci/integrationTests.ts` и своей веткой 
 тесты уже лежат в HEAD-коммите development-workspace, и проверяет/прогоняет
 именно их.
 
-**Тесты приносит разработка — это решение, а не пробел.** Промпт
-development-рана (`automationHint` в `ci/modelHooks.ts`) перечисляет обязательные
-`required && automatable` кейсы readiness и требует закрыть каждый автотестом в
-том же коммите, пометив его маркером `@testCase <id кейса>` в комментарии.
-Причина именно такая: у модели разработки задача, readiness и собственный код уже
-в контексте, а поздний LLM-ран читал бы всё заново (лишние токены), приносил бы
-ещё один коммит и ещё один полный прогон гейта. Покрытие раннер читает из
-маркеров (`grep -HoE` по файлам диффа → `parseAutomationMarkers` в `shared/qa.ts`);
-если маркеров нет вовсе, остаётся прежний синтез из диффа с пометкой в логе, что
-покрытие требует ручной сверки.
+**Development owns the tests.** `automationHint` in `ci/modelHooks.ts` lists
+the readiness cases marked `required && automatable` and requires a test for
+each, with an `@testCase <case id>` comment in the same development commit.
+The development model already has the task and implementation context; a later
+model run would duplicate that work and require another commit and gate. The
+runner extracts markers from changed test files using `grep -HoE` and
+`parseAutomationMarkers` in `shared/qa.ts`. Missing even one mandatory marker
+returns the task for correction; coverage is never invented from the first file.
 
 **Модель и старт.** Ран хранит id успешного development-рана, ветку и SHA его
 workspace, номер попытки, статус
@@ -529,58 +527,38 @@ development-ран на этом workspace и успешный `task_preparation
 `testType`), поэтому правка неавтоматизируемого кейса или самих
 `automationLinks` версию не меняет.
 
-**Исполнение.** `integrationTestExecutionContext` сам достаёт машину, путь,
-`projects.test_command` и базовую ветку `projects.ci_base_branch` (пустое
-значение нормализуется в `main`) джойном ран → development-ран → workspace,
-причём только для рана в `queued` с `pushed=1` и
-`w.commit_sha = r.commit_sha`; иначе runner закрывает ран как
-`blocked/infrastructure/workspace_unavailable`. Команды разбирает общий
-`testStages` (дефолт стадии — `npm run affected-check`, не
-Vitest-специфичный). Перед прогоном runner вычисляет
-`git merge-base origin/<base> HEAD` и читает всю разницу ветки командой
-`git diff --name-only <merge-base> HEAD`. Если merge-base недоступен,
-основной diff завершился ошибкой или вернул пустой список, runner использует
-`git diff-tree --no-commit-id --name-only -r -m --first-parent HEAD`. Пустой
-результат обоих способов считается ошибкой определения изменений и блокирует
-ран до grep, установки зависимостей и тестовых стадий. Полученный список
-проверяет `validateIntegrationTestDiff` (`qa.ts`): разрешены пути с сегментом
-`__tests__|tests?|test|integration` и файлы `*.test.*`/`*.spec.*`. Любой
-другой файл — немедленный `blocked` + `implementation_defect` +
-`non_test_files_changed` и блокеры `non_test_file:<path>`. Затем `git rev-parse
-HEAD` даёт SHA, и `recordIntegrationAutomationLinks` записывает ссылки. Стадии
-идут последовательно через тот же `ciExecutor` с `CI=1`, общий бюджет 30 минут
-делится между ними (каждая получает остаток), stdout всех стадий льётся в
-единый `log` с обрезкой до 500 000 символов, на каждую стадию создаётся запись
-`stage-N` с командой, exit code, длительностью, статусом и диагностикой. Первый
-ненулевой код прерывает остальные: все нули → `passed`; ненулевой →
-`failed/implementation_defect/non_zero_exit`; timeout или `exitCode == null` →
-`blocked/infrastructure` с `command_timeout`/`executor_disconnected`; исключение
-в промисе → `blocked/infrastructure/executor_error`. Отмена дергает
-`AbortController` из карты живых ранов, после чего цикл выходит, не записывая
-итог (статус уже проставил маршрут). `failInterruptedIntegrationTestRuns` в
-`buildServer` закрывает все `queued|running` как
-`blocked/infrastructure/server_restarted`.
+**Execution.** `integrationTestExecutionContext` resolves the machine, workspace,
+test command and base branch through the successful development run. It requires
+a queued run, a pushed workspace and matching commit SHAs; otherwise execution
+ends as `blocked/infrastructure/workspace_unavailable`. Commands use the shared
+`testStages` parser, defaulting to `npm run affected-check`.
 
-**Как появляются `automationLinks`.** Основной путь — маркеры `@testCase` в самих
-тестах: пара «кейс → файл» берётся из них, кейс без маркера остаётся непокрытым.
-Fallback для веток без маркеров прежний: runner берёт первый прошедший валидацию
-путь из диффа и приписывает его **всем** обязательным automatable-кейсам снимка.
-Если маркеры присутствуют, но не совпали ни с одним обязательным automatable-кейсом,
-fallback не применяется: полностью пустое обязательное покрытие завершает ран как
-`blocked/implementation_defect/missing_automation` с блокерами
-`missing_automation:<testId>` ещё до проверки кэша и запуска стадий.
-`recordIntegrationAutomationLinks` пишет непустые ссылки в три
-места сразу — в канонический `task_preparation_runs.readiness_json` (заменяя
-ссылки с тем же SHA), в сам ран (`commit_sha`, `test_cases_json`,
-`automation_links_json`) и в `ci_workspaces.commit_sha` того workspace, откуда
-взят development-ран. Последнее существенно: именно поэтому SHA рана и SHA
-workspace после записи снова совпадают и гейт проходит. Дефект разбора диффа
-исправлен: регулярка `/\\r?\\n/` с двойным экранированием искала литерал «\r», из-за
-чего многофайловый дифф приходил в валидацию одной склейкой и коммит разработки
-проезжал проверку, если внутри встречался хоть один тестовый путь (CHAT-411:
-ран на коммите с `database.ts` и `schema.ts` спокойно дошёл до стадий). Сейчас
-там `/\r?\n/`, и такой коммит закрывается как
-`blocked/implementation_defect/non_test_files_changed`.
+The runner reads the full feature diff against `git merge-base origin/<base> HEAD`.
+If that fails or returns no paths, it falls back to
+`git diff-tree --no-commit-id --name-only -r -m --first-parent HEAD`. An empty
+result from both methods blocks execution before marker inspection or dependency
+installation. `validateIntegrationTestDiff` selects marker candidates with a
+`__tests__|tests?|test|integration` path segment or `*.test.*`/`*.spec.*` filename.
+Implementation files are expected in this full feature diff: rejecting them
+previously made ordinary features impossible to deliver regardless of test results.
+
+After `git rev-parse HEAD`, `recordIntegrationAutomationLinks` stores the coverage
+links. Commands execute sequentially through `ciExecutor` with `CI=1`, sharing a
+30-minute budget. The combined log keeps its last 500,000 characters; each command
+records its exit code, duration, status and diagnostics. A nonzero exit stops the
+remaining commands and produces `failed/implementation_defect/non_zero_exit`.
+Timeouts, missing exit codes and executor exceptions are infrastructure blockers.
+Cancellation aborts execution without overwriting the status set by the route.
+Server startup closes interrupted runs as `blocked/infrastructure/server_restarted`.
+
+**Coverage links.** `@testCase` markers explicitly connect each case to a test
+file. Missing mandatory cases produce `blocked/implementation_defect/missing_automation`
+with `missing_automation:<testId>` blockers before consulting cached gate results.
+The runner never assigns a random test file to uncovered cases.
+`recordIntegrationAutomationLinks` updates canonical readiness JSON, the run's
+case and link snapshots, and the development workspace SHA. Matching SHAs keep
+coverage tied to the tested revision. Diff output is split on actual newlines
+so implementation paths cannot become part of a test filename.
 
 **Гейт.** `integrationTestGate(run, currentSha, currentCases)` (чистая функция в
 `qa.ts`, причины дедуплицируются) требует статус `passed`/`skipped` без
@@ -627,27 +605,20 @@ integration-ран при этом не переводится в `failed`. URL-
 
 ## Жизненный цикл и переходы
 
-Специализированный Integration Tests запускается только явным `POST
-…/qa/integration/runs` (в UI — действие панели), а не переносом или сортировкой
-карточки. `startIntegrationTestRun` требует QA-право и сверяет системную колонку
-`integration_tests`, актуальный pushed development-workspace с машиной, путём,
-веткой и SHA, успешный development-ран и успешный readiness-снимок. Несоблюдение
-предусловий создаёт аудируемый `blocked`-ран в `integration_test_runs`; живой
-`queued|running` ран того же SHA и версии снимка переиспользуется. Если
-обязательных automatable-кейсов нет, а исключённые обязательные кейсы полностью
-обоснованы, старт сразу сохраняет `skipped` и транзакционно переносит задачу в
-`automated_qa`.
+Integration Tests starts through `POST …/qa/integration/runs` or the autopilot
+coordinator. `startIntegrationTestRun` checks QA permission, the current column,
+pushed workspace, successful development run and readiness snapshot. Failed
+preconditions create an auditable blocked run. Active runs for the same SHA and
+snapshot are reused. With no mandatory automated cases and justified exclusions,
+startup records `skipped` and transactionally moves the task to `automated_qa`.
 
-Обычный Integration Tests ран исполняет последовательность команд в сохранённом
-development-workspace, валидирует, что HEAD-дифф содержит только тестовые файлы,
-записывает команды, общий лог, снимок кейсов и `automation_links` в
-`integration_test_runs`, а ссылки также в readiness-снимок; код тестов остаётся
-в workspace и ветке задачи. После `passed` автоматического переноса нет:
-`completeIntegrationTestRun` по явному запросу повторно проверяет статус, команды,
-блокеры, текущие SHA и semantic version, полноту automation links, текущую колонку
-и разрешённость workflow-перехода, затем переводит задачу в `automated_qa`.
-`failed|blocked|cancelled|stale` её не двигают и допускают повтор либо
-development fix-run. Источники: `apps/server/src/db/database.ts`,
+A normal run executes in the saved development workspace, records command results,
+logs and case coverage, and leaves the implementation and tests in the task branch.
+After success, the coordinator callback invokes `completeIntegrationTestRun`.
+Explicit completion uses the same method: it rechecks status, command results,
+blockers, current SHA, semantic version, mandatory coverage and workflow legality
+before moving to `automated_qa`. Failed, blocked, cancelled or stale runs require
+a retry or development fix. Sources: `apps/server/src/db/repos/ci.ts`,
 `apps/server/src/ci/integrationTests.ts`, `apps/server/src/routes/qa.ts`.
 
 Automated QA стартует явным `POST …/qa/runs/automated_qa` либо координатором

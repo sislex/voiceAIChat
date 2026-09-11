@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { buildGates, consumersOf, createCommandDiagnostics, dependenciesOf, fastCheckForPackage, fastPlanForPackage, packageArgs, parseOptions, PACKAGES, relatedArgs, runFastChecks, runPackageGates, selectAffected, workersPerJob } from './affected-check.mjs'
+import { buildGates, consumersOf, createCommandDiagnostics, dependenciesOf, fastCheckForPackage, fastPlanForPackage, packageArgs, parseOptions, PACKAGES, relatedArgs, runFastChecks, runPackageGates, selectAffected, validatePackageDependencies, workersPerJob } from './affected-check.mjs'
 import { gitHistoryPaths } from './kb.mjs'
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
@@ -110,18 +110,13 @@ test('PACKAGES перечисляет каждый воркспейс репоз
 
 test('dependsOn включает каждую workspace-зависимость из package.json', () => {
   const repository = dirname(dirname(fileURLToPath(import.meta.url)))
-  const idByWorkspace = new Map(PACKAGES.filter((pkg) => pkg.workspace).map((pkg) => [pkg.workspace, pkg.id]))
-  const missing = []
-  for (const pkg of PACKAGES) {
-    const manifest = JSON.parse(readFileSync(join(repository, pkg.path, 'package.json'), 'utf8'))
-    const declared = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
-    for (const dependency of declared) {
-      const id = idByWorkspace.get(dependency)
-      if (!id || pkg.dependsOn.includes(id)) continue
-      missing.push(`${pkg.id} -> ${id}`)
-    }
-  }
-  assert.deepEqual(missing, [])
+  assert.doesNotThrow(() => validatePackageDependencies(repository))
+})
+
+test('Make contract changes include the panel and its hosts', () => {
+  const affected = ids(selectAffected(['packages/make-contracts/src/localization.ts']))
+  for (const id of ['make-app', 'ui', 'web']) assert.ok(affected.includes(id), id)
+  assert.ok(dependenciesOf('make-app').has('make-contracts'))
 })
 
 test('consumersOf даёт транзитивное замыкание и не тянет пакеты вне workspaces', () => {

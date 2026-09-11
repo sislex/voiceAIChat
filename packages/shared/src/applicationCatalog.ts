@@ -249,7 +249,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     minimumDependencyApis: { core: "1.1.0" },
     buildDependencies: ["shared", "browser-contracts", "web-reader-contracts", "playwright-reader-contracts", "ui-kit"],
     browserPaths: ["apps/web-reader/src", "apps/web-recorder/src"],
-    e2eFiles: ["e2e/webReaderCache.e2e.test.ts", "e2e/webReaderCookies.e2e.test.ts", "e2e/webReaderEncoding.e2e.test.ts", "e2e/webReaderForms.e2e.test.ts", "e2e/webReaderHost.e2e.test.ts", "e2e/webReaderHtml.e2e.test.ts", "e2e/webReaderHttp.e2e.test.ts", "e2e/webReaderInteractions.e2e.test.ts", "e2e/webReaderKeyboard.e2e.test.ts", "e2e/webReaderModel.e2e.test.ts", "e2e/webReaderModules.e2e.test.ts", "e2e/webReaderNative.e2e.test.ts", "e2e/webReaderNavigation.e2e.test.ts", "e2e/webReaderOwnProject.e2e.test.ts", "e2e/webReaderProject.e2e.test.ts", "e2e/webReaderReading.e2e.test.ts", "e2e/webReaderResources.e2e.test.ts", "e2e/webReaderScenario.e2e.test.ts", "e2e/webReaderScenarioStorage.e2e.test.ts", "e2e/webReaderStorage.e2e.test.ts", "e2e/webReaderStyles.e2e.test.ts", "e2e/webReaderUi.e2e.test.ts"],
+    e2eFiles: ["e2e/webReaderAudit.e2e.test.ts", "e2e/webReaderCache.e2e.test.ts", "e2e/webReaderCookies.e2e.test.ts", "e2e/webReaderEncoding.e2e.test.ts", "e2e/webReaderForms.e2e.test.ts", "e2e/webReaderHost.e2e.test.ts", "e2e/webReaderHtml.e2e.test.ts", "e2e/webReaderHttp.e2e.test.ts", "e2e/webReaderInteractions.e2e.test.ts", "e2e/webReaderKeyboard.e2e.test.ts", "e2e/webReaderModel.e2e.test.ts", "e2e/webReaderModules.e2e.test.ts", "e2e/webReaderNative.e2e.test.ts", "e2e/webReaderNavigation.e2e.test.ts", "e2e/webReaderOwnProject.e2e.test.ts", "e2e/webReaderProject.e2e.test.ts", "e2e/webReaderReading.e2e.test.ts", "e2e/webReaderResources.e2e.test.ts", "e2e/webReaderScenario.e2e.test.ts", "e2e/webReaderScenarioStorage.e2e.test.ts", "e2e/webReaderStorage.e2e.test.ts", "e2e/webReaderStyles.e2e.test.ts", "e2e/webReaderUi.e2e.test.ts"],
     services: ["web-reader"],
     entrypoint: "apps/web-reader/src/standalone/index.ts",
     healthPath: "/v1/health",
@@ -283,6 +283,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
         "shared",
         "ui-kit",
         "ui-foundation",
+        ...(id === "make-ui" ? ["make-contracts"] : []),
         ...(id.includes("reader") ? ["chat-app"] : []),
       ],
       runtimeDependencies: [...new Set(["core", backend])],
@@ -357,6 +358,10 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
                     ? ["shared", "ui-kit", "profile-app", "sessions-app"]
                     : ["shared", "ui-kit"],
       contractPaths: [`packages/${id}`],
+      ...(id === "browser-contracts" ? {
+        browserPaths: ["packages/browser-contracts/src/audit"],
+        e2eFiles: ["e2e/webReaderAudit.e2e.test.ts", "e2e/webReaderNative.e2e.test.ts"],
+      } : {}),
     }),
   ),
 ];

@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-10
-checked: 83b7e546
+updated: 2026-09-11
+checked: 55104903
 areas:
   - package.json
   - scripts
@@ -9,6 +9,7 @@ areas:
   - apps/server/src/server.test.ts
   - apps/server/src/playwrightReaderBridge
   - apps/playwright-reader
+  - apps/browser-runner/vitest.config.ts
   - apps/llm-runner/vitest.config.ts
   - apps/agent/vitest.config.ts
   - packages/shared/vitest.config.ts
@@ -81,6 +82,13 @@ areas:
 `onboarded: true`. Пароль в `POST /api/admin/users` не должен содержать логин —
 политика такие отклоняет.
 
+Project creation also requires an online machine in the host UI (`App.tsx`,
+`requireMachine`). The Projects E2E fixture currently starts no companion, so
+clicking “New project” opens the device connection dialog instead of
+`new-project-dialog`. A missing name-field timeout in this setup is followed by
+cascading missing-project failures; it does not establish a project-form defect.
+Provide an online test companion before treating this suite as delivery evidence.
+
 **Ловушка: брошенный `tsx watch` без `VC_DATA_DIR` правит базу по умолчанию.**
 `npm run -w @voicechat/server dev` — это `tsx watch`: процесс перезапускается на
 каждом изменении серверных файлов и при старте прогоняет `migrate()`. Если у него
@@ -143,9 +151,42 @@ UI kit и собственные стили, поэтому правка `packag
 регистрирует static-маршруты при запуске. Иначе iframe может получить пустой
 документ вместо текущей сборки.
 
+Замер отдельных гейтов Web Reader 11 сентября 2026 (Europe/Minsk), SHA
+`17dd72ff`, macOS arm64 / Apple M2 / 24 ГБ / Node 22.19.0: последовательные
+`npm run gate:app -- web-reader` и `npm run gate:app -- web-reader-ui` завершились
+с кодом 0 за **112,86 с** и **22,54 с** соответственно (`/usr/bin/time -p`,
+полное wall time с typecheck, сборками и E2E). Первый гейт: 410 тестов API,
+85 рекордера, 28 мостов ядра и 209 E2E; второй: 54 теста панели, 4 host-контракта
+и 3 E2E артефакта. Всего 793 успешных теста, сумма времени гейтов — 135,40 с.
+Это один локальный замер с установленными зависимостями, а не среднее по CI;
+первая попытка в песочнице остановилась при запуске Chromium и в эти времена
+не входит. Логи успешных прогонов: `.long-runs/20260910221626833-da96e570-546c-488d-8b79-7cfc579be1e5.log`
+и `.long-runs/20260910222012411-7af767cc-a7c0-4c41-aa6c-10fb196c19fb.log`.
+
+Изолированный набор тестов не означает изолированную подготовку браузерного
+окружения: `scripts/application-gate.mjs` перед E2E backend Reader вызывает
+`build:frontends` для всех продуктовых панелей и сборку общего web host.
+В этом замере сам E2E-набор Reader занял 67,38 с. Гейт `web-reader-ui` собирает
+только свою панель и передаёт `VC_E2E_APPLICATIONS=web-reader-ui` общему тесту
+артефактов; его E2E заняли 2,88 с, пересборка shell в этом пути не нужна.
+
+After changing shared Reader action types, a focused full-App proxy test needs
+fresh product panels, recorder and web host bundles. `npm run build:frontends`
+builds the panels; `npm run -w @voicechat/web-recorder build` and
+`npm run -w @voicechat/web build` are separate. An old message validator can ignore
+a new action and cause a relay timeout even when direct iframe tests pass. The
+application gate performs the required builds; this distinction matters when
+running a focused browser test manually before the gate.
+
 ### Fast-stage затронутых тестов
 
 Для проверок, которые могут идти дольше 300 секунд, штатный запуск — `npm run gate:fast:logged`. Команда немедленно печатает JSON с `runId`, PID worker-а и абсолютными путями `.long-runs/<runId>.log` и `.long-runs/<runId>.json`; закрытие или таймаут shell-клиента после этого не останавливает worker. Полный объединённый stdout/stderr остаётся в log-файле. Состояние читается отдельной командой `npm run gate:status -- <runId>`: она не перезапускает гейт и классифицирует ран как `running`, `succeeded` (`exitCode: 0`), `failed` (настоящий ненулевой `exitCode`) либо `lost` (running-запись есть, worker уже отсутствует). Повторный status безопасен и только читает артефакты. Универсальный вариант: `node scripts/long-run.mjs start -- <command> [args...]`; argv передаётся напрямую без shell-интерпретации. Реальный прогон 4 сентября 2026 подтверждён для run `20260904125743481-975afbcd-bffa-428f-a2ee-de565fc2c961`: после отдельного 300-секундного таймаута ожидания status оставался `running`, журнал продолжил расти, а итоговая повторная проверка вернула `succeeded` и `exitCode: 0`; полный гейт занял 10 минут 9 секунд. Оба файла в `.long-runs/` подтверждены через `git check-ignore`.
+
+The persisted status JSON uses `running` or `finished`; `succeeded` and `failed`
+are classifications returned by the status command. Automation reading the raw
+file must check `state: finished` together with `exitCode`, or use the status CLI.
+Treating raw `finished` as a failed run can prevent a successful gate from starting
+its next step. `scripts/long-run.mjs` defines and validates this distinction.
 
 `scripts/affected-check.mjs` запускает быстрый этап напрямую как `npx vitest related`, чтобы не передавать несовместимый `--related` подкоманде `vitest run`. При параллельных пакетных jobs ограничение worker должно задавать одновременно `--minWorkers` и `--maxWorkers` одним значением. Если передать только `--maxWorkers=1`, Vitest 2 может вычислить минимум выше максимума и завершиться ещё до запуска suites, поэтому структурированного JSON с ошибками тестов не будет; аргументы централизованы в `relatedArgs` и покрыты `scripts/affected-check.test.mjs`.
 
@@ -153,9 +194,52 @@ UI kit и собственные стили, поэтому правка `packag
 
 Граф пакетов в `affected-check` явный (`PACKAGES[].dependsOn`), потому что часть связей живёт только в алиасах: `apps/web` тянет `@voicechat/ui` через tsconfig `paths` и alias в `vite.config.ts`, а в его `dependencies` этого пакета нет. Два сторожевых теста не дают графу разойтись с репозиторием — один требует, чтобы в `PACKAGES` был каждый воркспейс, другой сверяет `dependsOn` с манифестами. Это закрывает дефект, из-за которого десять воркспейсов (`ui-kit`, `app-shell`, `chat-app`, `profile-app`, `projects-app`, `operations-app`, `admin-app`, `stt-runner`, `browser-runner`, `automation-runner`) отсутствовали в списке: их путь не распознавался, и любая правка фронта молча уходила в полный гейт с формулировкой «нераспознанный критичный путь». Пути `e2e/`, `frontend-quality/` и `.claude/` полный гейт больше не включают — у них свои команды.
 
+`application-gate.mjs` also uses this graph for shared host code. Every invocation
+now calls `validatePackageDependencies` and `validateApplicationDependencies`
+before selecting or running checks,
+including explicit application gates and `--dry-run`. The validator compares
+workspace dependencies, dev dependencies, peer dependencies, and optional
+dependencies with `PACKAGES[].dependsOn` and the catalog's `buildDependencies`;
+additional alias edges remain valid. Catalog validation also checks workspace
+ownership against the lock file and manifests.
+This is a manifest check, so internal application changes still run only their
+selected test suites. A package dependency change must update this graph as well
+as the application catalog. Release `0.1.296` exposed the missing
+`make-app -> make-contracts` and `make-ui -> make-contracts` edges introduced by
+localization: the previous
+application gate passed package tests, while only the later root regression
+checked graph consistency. The release assertion and the application entry point
+now share the same validators; regression tests cover both missing edges and
+selection of Make UI and its hosts after contract changes.
+
 `apps/desktop` и `apps/agent-tray` помечены `manualGate`: замыкание потребителей их не втягивает, потому что корневой `npm install` их `node_modules` не ставит и чужая правка UI валила бы гейт на машине без локального install.
 
-`apps/browser-runner` получил свой `vitest.config.ts`: `include: ['src/**/*.{test,spec}.ts']` и `hookTimeout: 60_000`. `describeElement.test.ts` поднимает настоящий Chromium в `beforeAll`, и на загруженной машине запуск не укладывался в дефолтные 10 с — полный гейт краснел при 83 из 83 зелёных тестах, а в одиночном прогоне пакет проходил за 3–5 с. `globals: true` в этот конфиг не добавлен просто потому, что тесты импортируют `describe`/`it`/`expect` явно и он не нужен. На скорость он не влияет: чередующийся A/B на этом пакете дал 3,8/3,2/3,3 с с ним против 7,8/3,5/2,8 с без (первый прогон холодный). Ранее здесь было записано, что `globals` замедляет пакет втрое — это ошибка замера под нагрузкой соседних worktree, утверждение снято.
+`apps/browser-runner` has its own `vitest.config.ts`: the source include is
+bounded to test/spec files, hooks have 60 seconds, individual tests have 15
+seconds, and at most four files run concurrently. Every browser-heavy file owns
+real Chromium processes. With the default eight workers, an all-application gate
+produced 17 unrelated timeouts; four workers left one completed download stress
+case failing only because its 6.37-second duration exceeded Vitest's default five
+seconds. The 15-second deadline still catches a stalled action while allowing the
+same tests to run under the gate's CPU and browser-process load. Tests import
+`describe`/`it`/`expect` explicitly, so `globals` remains disabled.
+
+Expiry tests must keep the live control token well beyond fixture setup and RPC
+latency, then create a separate already-expired token for the negative case. The
+Make task-scope MCP test uses a ten-second live token and a deliberately expired
+100-millisecond token. A 100-millisecond live token intermittently expired between
+`initialize`, `tools/list`, and the mutation assertion during an all-app gate.
+
+The Browser Runner prompt/evaluate lifecycle test gives Chromium one second to
+open the JavaScript dialog, then deliberately waits 1.2 seconds before answering.
+This still proves that dialog waiting pauses the evaluate budget without letting
+gate scheduling consume the former 100-millisecond setup allowance first.
+
+Native audit fixtures reuse one public URL. Chromium may restore the prior
+document's scroll offset when that URL is reloaded, including after an offscreen
+`content-visibility:auto` case. The fixture loader sets manual scroll restoration
+and returns to the viewport origin after each navigation so visibility and pointer
+comparisons start from the viewport declared by the fixture.
 
 Прогон витрины через axe разбит на три шарда `packages/ui/src/test/stories.a11y.{0,1,2}.dom.test.tsx` поверх общего `storiesA11yShard.tsx`. Vitest параллелит по файлам, а не по тестам, и один файл на 457 проверок ложился в конец прогона: `packages/ui` целиком 72 с, без этого файла 53 с, сам файл 24 с — то есть его время почти не перекрывалось с остальными 148 файлами. После шардирования те же проверки идут 14,5 с.
 

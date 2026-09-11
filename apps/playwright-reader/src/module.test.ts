@@ -1,9 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { BrowserRunnerClient } from '@voicechat/browser-contracts/client'
+import { probeResultFixture } from '@voicechat/browser-contracts/audit/fixtures'
+import type { PreviewAccessibilityResult } from '@voicechat/shared'
 import type { BrowserModelTarget, PlaywrightReaderCore } from './core.js'
 import { createPlaywrightReaderModule } from './module.js'
 
 const meta = { id: 'c', conversationId: 'c', incarnation: 'inc', state: 'ready' as const, activeTabId: 't', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: 'https://example.com/', title: 'Страница' }
+const accessibilityResult = (): PreviewAccessibilityResult => ({
+  page: { url: 'https://example.com/', title: 'Example' },
+  accessibility: {
+    version: 1, surface: 'chromium', source: 'chromium-accessibility', selector: '#target',
+    node: { role: 'button', name: 'Save', ignored: false, properties: [], nameSources: [{ type: 'contents' }], ignoredReasons: [] },
+    truncated: false, elapsedMs: 1, limitations: []
+  }
+})
 function fixture(target: BrowserModelTarget | null = { sessionId: 'c', conversationKey: 'c', profileMode: 'persistent' }) {
   const core: PlaywrightReaderCore = {
     conversation: async () => ({ assistantKind: 'playwright-reader' }),
@@ -19,6 +29,35 @@ function fixture(target: BrowserModelTarget | null = { sessionId: 'c', conversat
 }
 
 describe('действия модели через приложение', () => {
+  it('requires strict native accessibility evidence from the runner', async () => {
+    const { service, runner } = fixture()
+    const action = { kind: 'accessibility' as const, selector: '#target' }
+    expect(await service.execute('ann', 'c', action)).toMatchObject({ ok: false, error: expect.stringContaining('native accessibility evidence') })
+    const result = { ok: true, ...accessibilityResult() }
+    vi.mocked(runner.command).mockResolvedValueOnce(result)
+    expect(await service.execute('ann', 'c', action)).toEqual({ ok: true, result })
+    const invalid = accessibilityResult()
+    ;(invalid.accessibility.node as unknown as Record<string, unknown>).value = 'secret'
+    vi.mocked(runner.command).mockResolvedValueOnce({ ok: true, ...invalid })
+    expect(await service.execute('ann', 'c', action)).toMatchObject({ ok: false })
+  })
+  it('requires a valid native probe report without falling back to the proxy', async () => {
+    const { service, runner } = fixture()
+    const action = { kind: 'probe' as const, selector: '#target' }
+    expect(await service.execute('ann', 'c', action)).toMatchObject({ ok: false, error: expect.stringContaining('valid native control probe') })
+    const result = { ok: true, ...probeResultFixture('chromium') }
+    vi.mocked(runner.command).mockResolvedValueOnce(result)
+    expect(await service.execute('ann', 'c', action)).toEqual({ ok: true, result })
+    vi.mocked(runner.command).mockResolvedValueOnce({ ok: true, ...probeResultFixture('proxy') })
+    expect(await service.execute('ann', 'c', action)).toMatchObject({ ok: false })
+  })
+  it('requires an explicit native audit report from the runner', async () => {
+    const { service, runner } = fixture()
+    expect(await service.execute('ann', 'c', { kind: 'audit' })).toMatchObject({ ok: false, error: expect.stringContaining('does not support native audits') })
+    const result = { ok: true, page: { url: 'https://example.com/', title: 'Audit' }, audit: { version: 1 as const, group: 'layout', groups: ['markup', 'layout'], mode: 'list' as const, surface: 'chromium' as const, scope: 'document', findings: [], rules: [], total: 0, checkedRules: 0, scannedElements: 0, truncated: false, elapsedMs: 0, limitations: [] } }
+    vi.mocked(runner.command).mockResolvedValueOnce(result)
+    expect(await service.execute('ann', 'c', { kind: 'audit', group: 'layout', mode: 'list' })).toEqual({ ok: true, result })
+  })
   it('диалоги маршрутизируются в авторизованную сессию и сохраняют ошибку открытого диалога', async () => {
     const { service, runner } = fixture()
     await service.control('ann', 'c', { type: 'dialogs', tabId: 't' })

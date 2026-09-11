@@ -1,6 +1,8 @@
 import { decodePreviewText, decodePreviewResponse, isPreviewText, previewContentType, previewRedirect, PreviewResponseError } from './previewResponse.js'
 import { previewKeyboardHelpers } from './previewKeyboard.js'
 import { previewReadingHelpers } from './previewReading.js'
+import { previewAuditHelpers } from './audit/runtime.js'
+import { previewProbeHelpers } from '@voicechat/browser-contracts/audit'
 import { previewResourceScript } from './previewResources.js'
 import { READER_PROJECT_ORIGIN, readerProjectUrl, type ReaderProjectRequest, type ReaderProjectResponse } from '@voicechat/shared'
 import { loadPreviewProject, ProjectPreviewError } from './previewProjectLoader.js'
@@ -171,7 +173,7 @@ const uniqueSelector=(el)=>{
   const parts=[];let node=el;
   while(node&&node.nodeType===1&&parts.length<ARRAY_LIMIT){
     let s=part(node);
-    if(!node.id&&node.parentElement){const same=[...node.parentElement.children].filter(x=>x.localName===node.localName);if(same.length>1)s+=':nth-of-type('+(same.indexOf(node)+1)+')'}
+    if(node.parentElement){const same=[...node.parentElement.children].filter(x=>x.localName===node.localName);if(same.length>1)s+=':nth-of-type('+(same.indexOf(node)+1)+')'}
     parts.unshift(s);const candidate=parts.join(' > ');
     try{if(document.querySelectorAll(candidate).length===1)return candidate}catch{}
     node=node.parentElement
@@ -245,6 +247,8 @@ const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url)
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
 ${previewInteractionHelpers()}
 ${previewReadingHelpers()}
+${previewAuditHelpers()}
+${previewProbeHelpers()}
 ${previewKeyboardHelpers()}
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el)};
@@ -277,6 +281,9 @@ const setNativeValue=(el,value)=>{
   if(desc&&desc.set)desc.set.call(el,value);else el.value=value
 };
 const run=(action)=>{
+  if(action.kind==='audit')return runAudit(action);
+  if(action.kind==='accessibility')throw new Error('Native accessibility requires Chromium mode.');
+  if(action.kind==='probe')return runProbe(action);
   if(action.kind==='find'){
     const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'));
     const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
