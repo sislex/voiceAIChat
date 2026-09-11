@@ -92,6 +92,12 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.jlane-collapse-actions')).toMatch(/display:\s*flex/)
   })
 
+  it('справка по клавиатуре ограничена viewport и перестраивается на телефоне', () => {
+    expect(rule('.jboard-shortcuts-dialog')).toMatch(/max-height:\s*min\(/)
+    expect(rule('.jboard-shortcuts-dialog')).toMatch(/overflow:\s*auto/)
+    expect(rule('.jboard-shortcuts-list')).toMatch(/grid-template-columns:/)
+  })
+
   it('обёртка панелей не переносит строки — иначе вкладка не скроллится', () => {
     // Панель объявлена `flex: 1 1 100%`. С `flex-wrap: wrap` каждая уходит на
     // свою строку, высота строки считается по содержимому, и `overflow: auto`
