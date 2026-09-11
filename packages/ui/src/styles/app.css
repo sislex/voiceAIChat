@@ -4737,6 +4737,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jpriority-overview-item--urgent[aria-pressed='true'],
 .jpriority-overview-item--high[aria-pressed='true'] { background: var(--ci-removed-bg); border-color: var(--ci-removed); color: var(--ci-removed); }
 .jpriority-overview-clear { flex: 0 0 auto; color: var(--text-dim); }
+.jcolumn-collapse-actions { display: flex; align-items: center; gap: 4px; padding: 2px 12px; color: var(--text-dim); font-size: 11px; }
+.jcolumn-collapse-actions .vc-btn { min-height: 26px; }
+.jcolumn-collapse-actions [role='status'] { margin-left: 2px; white-space: nowrap; }
 .kanban-filter-empty { margin: 8px 12px 0; border: 1px dashed var(--border); border-radius: var(--radius-medium); }
 .javatars { display: inline-flex; align-items: center; }
 .javatar-btn { border: 2px solid transparent; background: none; padding: 0; border-radius: 50%; cursor: pointer; margin-left: -4px; transition: transform 0.1s; }
@@ -4796,6 +4799,15 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jboard--lanes { flex-direction: column; align-items: stretch; }
 .jcol { flex: 0 0 272px; flex-shrink: 0; width: 272px; display: flex; flex-direction: column; background: var(--panel); border-radius: 8px;
   min-width: 0; min-height: 100%; overflow: visible; }
+.jcol-content { display: contents; }
+.jcol-content[hidden] { display: none; }
+.jcol-content[hidden] { display: none; }
+.jcol[data-column-id].jcol--collapsed { flex-basis: 60px; width: 60px; min-width: 60px; }
+.jcol-head--collapsed { height: 100%; min-height: 180px; flex-direction: column; align-items: center; justify-content: flex-start; padding: 7px 5px; cursor: default; }
+.jcol-collapsed-name { min-height: 0; overflow: hidden; writing-mode: vertical-rl; text-orientation: mixed; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.jcol-collapsed-count { flex: 0 0 auto; margin-top: auto; padding: 2px 4px; border-radius: 999px; background: var(--ci-neutral-bg); color: var(--text-dim); font-size: 10px; font-weight: 700; }
+.jcol--collapsed-cell { min-height: 36px; background: color-mix(in srgb, var(--panel) 60%, transparent); }
+.jcol-collapse-button { color: var(--text-dim); }
 .jcol--hidden { opacity: 0.55; outline: 1px dashed var(--border); }
 .jcol--add { background: none; gap: 6px; padding: 4px; }
 .jcol--headonly { height: auto; max-height: none; min-height: 0; overflow: visible; }
@@ -4995,6 +5007,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jlane-title { display: inline-flex; align-items: center; gap: 6px; }
 .jlane-cols { display: flex; gap: 8px; align-items: flex-start; }
 .jlane-cols .jcol--incell { flex: 0 0 272px; width: 272px; min-height: 40px; }
+.jlane-cols .jcol--incell.jcol--collapsed { flex-basis: 60px; width: 60px; min-width: 60px; }
 
 /* Модалка задачи */
 /* Карточка крупнее обычного окна и фиксированной высоты: колонки скроллятся
