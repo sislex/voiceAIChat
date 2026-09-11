@@ -25,6 +25,92 @@ function props(over: Partial<TaskCardProps> = {}): TaskCardProps {
   }
 }
 
+describe('TaskCard — клавиатура и меню действий', () => {
+  it('описывает карточку и открывает её Enter, оставляя Space переносу', () => {
+    const onOpen = vi.fn()
+    const onCardKeys = vi.fn()
+    render(<TaskCard {...props({ onOpen, onCardKeys })} />)
+    const card = screen.getByTestId('task-card')
+    expect(card).toHaveAttribute('role', 'article')
+    expect(card).toHaveAttribute('aria-keyshortcuts', 'Enter Space Shift+F10')
+    expect(card).toHaveAccessibleDescription('Enter — открыть; Пробел — перенести; Shift+F10 — открыть действия.')
+
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(onOpen).toHaveBeenCalledWith('t1')
+    expect(onCardKeys).not.toHaveBeenCalled()
+    fireEvent.keyDown(card, { key: ' ' })
+    expect(onCardKeys).toHaveBeenCalledTimes(1)
+  })
+
+  it('Shift+F10 открывает именованное меню, фокусирует первый пункт и ходит стрелками', async () => {
+    render(<TaskCard {...props()} />)
+    const card = screen.getByTestId('task-card')
+    card.focus()
+    fireEvent.keyDown(card, { key: 'F10', shiftKey: true })
+    const menu = await screen.findByRole('menu', { name: 'Действия с «Задача A»' })
+    const items = within(menu).getAllByRole('menuitem')
+    await waitFor(() => expect(items[0]).toHaveFocus())
+
+    await userEvent.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await userEvent.keyboard('{End}')
+    expect(items.at(-1)).toHaveFocus()
+    await userEvent.keyboard('{Home}')
+    expect(items[0]).toHaveFocus()
+    await userEvent.keyboard('{ArrowUp}')
+    expect(items.at(-1)).toHaveFocus()
+  })
+
+  it('Escape закрывает меню и возвращает фокус карточке', async () => {
+    render(<TaskCard {...props()} />)
+    const card = screen.getByTestId('task-card')
+    fireEvent.keyDown(card, { key: 'ContextMenu' })
+    const menu = await screen.findByRole('menu')
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus())
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(card).toHaveFocus())
+  })
+
+  it('кнопка и правый клик раскрывают одно меню с полным aria-контрактом', async () => {
+    render(<TaskCard {...props()} />)
+    const card = screen.getByTestId('task-card')
+    const trigger = screen.getByRole('button', { name: 'Действия с «Задача A»' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(trigger)
+    const menu = await screen.findByRole('menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(trigger).toHaveAttribute('aria-controls', menu.id)
+    await userEvent.keyboard('{Escape}')
+    fireEvent.contextMenu(card)
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+  })
+
+  it('клавиши внутренних кнопок не открывают карточку и не запускают перенос', async () => {
+    const onOpen = vi.fn()
+    const onOpenChat = vi.fn()
+    const onCardKeys = vi.fn()
+    render(<TaskCard {...props({ onOpen, onOpenChat, onCardKeys })} />)
+    const chat = screen.getByRole('button', { name: 'Связанный чат' })
+    chat.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onOpenChat).toHaveBeenCalledWith('t1')
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(onCardKeys).not.toHaveBeenCalled()
+  })
+
+  it('Enter у уже взятой карточки передаётся доске для завершения переноса', () => {
+    const onOpen = vi.fn()
+    const onCardKeys = vi.fn()
+    render(<TaskCard {...props({ grabbed: true, onOpen, onCardKeys })} />)
+    const card = screen.getByTestId('task-card')
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(onCardKeys).toHaveBeenCalledTimes(1)
+  })
+})
+
 
 function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
   return { id: 'run-1', taskId: 't1', status: 'running', error: null, slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
