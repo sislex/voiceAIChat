@@ -1085,7 +1085,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const onCardKeys = (task: Task) => (e: ReactKeyboardEvent<HTMLElement>, card: HTMLElement): void => {
     // Клавиши кнопок внутри карточки (⋯, «Чат», CI) остаются их собственными.
     if (e.target !== e.currentTarget) return
-    const take = e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter'
+    const take = e.key === ' ' || e.key === 'Spacebar'
     if (!grab) {
       if (!take) return
       e.preventDefault()
@@ -1128,7 +1128,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       stepGrab({ ...grab, index })
       return
     }
-    if (take) {
+    if (take || e.key === 'Enter') {
       e.preventDefault()
       const at = dropOfGrab(grab)
       const sameSpot = grab.columnId === grab.from.columnId && grab.index === grab.from.index

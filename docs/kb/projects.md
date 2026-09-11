@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 2635eac8
+checked: 91ed019e
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1043,6 +1043,23 @@ regular and swimlane surfaces expose `data-density` and the same CSS modifier.
 Mobile controls fill the filter row and keep 40-pixel targets. DOM tests cover
 semantics, persistence, isolation, and damaged storage; Chromium checks exact
 desktop geometry, reload restoration, and mobile target size.
+
+### Task card keyboard contract (2026-09-11)
+
+Focusable task cards expose themselves as named articles with an accessible
+shortcut description. `Enter` opens a normal card, `Space` starts keyboard
+dragging, and `Enter` commits a card that is already grabbed. `Shift+F10`, the
+Context Menu key, and a pointer context click open the same action menu without
+starting a drag or opening the task. Keyboard events from chat, CI, and other
+nested controls remain owned by those controls.
+
+The action trigger exposes `aria-haspopup="menu"`, expansion state, and the menu
+id. The named menu uses menuitem semantics, focuses its first action when opened,
+wraps with Up/Down, supports Home/End, closes on Tab, and restores card focus on
+Escape. Moving focus between the card and its descendant controls no longer
+cancels a pending board operation through a bubbled blur. DOM tests cover the
+complete contract and Chromium verifies it against both normal and already
+grabbed Storybook cards.
 
 ### Меню колонки
 
