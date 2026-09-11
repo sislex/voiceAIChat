@@ -1392,6 +1392,8 @@ export interface BoardView {
   onlyMine: boolean
   flaggedOnly: boolean
   recentOnly: boolean
+  overdueOnly: boolean
+  completedOnly: boolean
   /** Фильтр исполнителей по колонкам: id колонки → выбор. */
   columnAssignees: Record<string, { assigneeIds: string[]; unassigned: boolean }>
   swimlane: 'none' | 'epic' | 'assignee'
@@ -1409,6 +1411,8 @@ export const DEFAULT_BOARD_VIEW: BoardView = {
   onlyMine: false,
   flaggedOnly: false,
   recentOnly: false,
+  overdueOnly: false,
+  completedOnly: false,
   columnAssignees: {},
   swimlane: 'none',
   showHidden: false,
@@ -1434,7 +1438,7 @@ export function sanitizeBoardView(raw: unknown): Partial<BoardView> {
   if (types) view.types = types
   const priorities = strings(input.priorities)?.filter((item): item is TaskPriority => (TASK_PRIORITIES as readonly string[]).includes(item))
   if (priorities) view.priorities = priorities
-  for (const key of ['onlyMine', 'flaggedOnly', 'recentOnly', 'showHidden', 'showCompleted'] as const) {
+  for (const key of ['onlyMine', 'flaggedOnly', 'recentOnly', 'overdueOnly', 'completedOnly', 'showHidden', 'showCompleted'] as const) {
     if (typeof input[key] === 'boolean') view[key] = input[key]
   }
   if (input.swimlane === 'none' || input.swimlane === 'epic' || input.swimlane === 'assignee') view.swimlane = input.swimlane

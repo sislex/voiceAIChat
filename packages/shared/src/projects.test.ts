@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyTaskStatuses, canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, completedVisibilityCutoff, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
+import { applyTaskStatuses, canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, completedVisibilityCutoff, DEFAULT_BOARD_VIEW, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, sanitizeBoardView, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
   sanitizeProjectTestUsers,
   designPromptLines, taskMakeSources, type TaskDesignLink, type Task, type TaskStatus
 } from './projects'
@@ -25,6 +25,14 @@ describe('QA workflow semantics', () => {
     expect(canTransitionWorkflow('component_qa', 'preparation', 'user')).toBe(true)
     expect(canTransitionWorkflow('done', 'preparation', 'user')).toBe(true)
     expect(canTransitionWorkflow('cancelled', 'preparation', 'user')).toBe(false)
+  })
+})
+
+describe('board view filters', () => {
+  it('defaults and sanitizes the persisted due and completed slices', () => {
+    expect(DEFAULT_BOARD_VIEW).toMatchObject({ overdueOnly: false, completedOnly: false })
+    expect(sanitizeBoardView({ overdueOnly: true, completedOnly: true })).toEqual({ overdueOnly: true, completedOnly: true })
+    expect(sanitizeBoardView({ overdueOnly: 'yes', completedOnly: 1 })).toEqual({})
   })
 })
 

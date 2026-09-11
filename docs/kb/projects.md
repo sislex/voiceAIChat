@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 48a29ff1
+checked: fd5c951d
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -703,6 +703,9 @@ Done ставит её заново; перенос между done-колонк
 `voicechat.kanban.filters.v3.<user>.<projectId>`. Ключ строится только по
 реальному `projectId` загруженной доски — пока её нет, ключа нет вовсе, иначе
 вид писался бы под временным ключом с именем проекта и терялся при его подмене.
+`BoardView` also stores `overdueOnly` and `completedOnly`; the shared sanitizer
+accepts only booleans, so old saved JSON receives false defaults and malformed
+clients cannot persist truthy strings or numbers.
 Раньше и то и другое жило только в памяти, и каждая перезагрузка (а на проде —
 каждый деплой) возвращала доску к исходному виду.
 
@@ -982,6 +985,13 @@ task plurals. Its flexible layout wraps on narrow screens and remains outside
 the collapsible mobile filter panel. `KanbanBoard.dom.test.tsx` covers metric
 values, filtering, and a replacement snapshot; `FullFeaturedCard` is the
 desktop and mobile Chromium check.
+
+The overdue, unassigned, flagged, and completed metrics are also toggle buttons.
+They stay synchronized with the ordinary filters, expose `aria-pressed`, create
+the same removable active-filter chips, and participate in `Reset all`. The
+completed slice requests completed history when needed and limits the board to
+semantic `done` columns. The overdue slice excludes completed tasks and uses the
+same local-calendar deadline calculation as task cards.
 
 ### Меню колонки
 
