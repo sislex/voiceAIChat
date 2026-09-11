@@ -40,6 +40,13 @@ import CssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
 
 let configured = false
+const snippetTranslators = new WeakMap<monaco.editor.ITextModel, (text: string) => string>()
+
+/** Keep editor preferences local to their model; other applications can keep their defaults. */
+export function setModelSnippetTranslator(model: monaco.editor.ITextModel, translate?: (text: string) => string): void {
+  if (translate) snippetTranslators.set(model, translate)
+  else snippetTranslators.delete(model)
+}
 
 export function setupMonaco(): typeof monaco {
   if (configured) return monaco
@@ -74,7 +81,7 @@ export function setupMonaco(): typeof monaco {
         if (!word) return { suggestions: [] }
         const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn, endColumn: position.column }
         return {
-          suggestions: snippetsFor(language).map((s) => ({
+          suggestions: snippetsFor(language, snippetTranslators.get(model)).map((s) => ({
             label: s.label,
             filterText: s.prefix,
             kind: monaco.languages.CompletionItemKind.Snippet,

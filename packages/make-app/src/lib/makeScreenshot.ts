@@ -1,3 +1,4 @@
+import { mt } from '../i18n'
 // Make preview screenshot (item 10): capture the same-origin iframe document with html2canvas and
 // attach the PNG to chat. Load the roughly 200 KB library lazily because screenshots are
 // infrequent.
@@ -47,6 +48,6 @@ export async function captureIframeScreenshot(target: ScreenshotTarget, filename
     scale: Math.min(2, window.devicePixelRatio || 1)
   })
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-  if (!blob) throw new Error('Не удалось получить изображение')
+  if (!blob) throw new Error(mt("couldNotCaptureTheImage"))
   return new File([blob], filename, { type: 'image/png' })
 }

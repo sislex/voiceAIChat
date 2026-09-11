@@ -1,3 +1,4 @@
+import { mt, useMakeLocale } from '../i18n'
 // Selected preview element styles (roadmap item 8): apply changes immediately in the iframe through
 // postMessage, then append a project stylesheet rule when saved. This persists point-and-edit
 // changes in project files.
@@ -47,6 +48,7 @@ export function cssRule(selector: string, values: StyleValues): string {
 }
 
 export function MakeStylePanel({ selector, id, className, computed, onPreview, onWrite, onReset }: MakeStylePanelProps): JSX.Element {
+  useMakeLocale()
   const [rule, setRule] = useState(() => shortSelector(selector, id, className))
   const [values, setValues] = useState<StyleValues>({})
   const [writing, setWriting] = useState(false)
@@ -61,27 +63,27 @@ export function MakeStylePanel({ selector, id, className, computed, onPreview, o
   return (
     <div className="make-style" data-testid="make-style">
       <div className="make-style-grid">
-        <label className="make-style-field"><span>Селектор</span><input type="text" value={rule} onChange={(e) => setRule(e.target.value)} aria-label="Селектор правила" /></label>
-        <label className="make-style-field"><span>Цвет</span><span className="make-style-color"><input type="color" value={toHex(current('color')) || '#000000'} onChange={(e) => set('color', e.target.value)} aria-label="Цвет текста" /><code>{current('color')}</code></span></label>
-        <label className="make-style-field"><span>Фон</span><span className="make-style-color"><input type="color" value={toHex(current('background-color')) || '#ffffff'} onChange={(e) => set('background-color', e.target.value)} aria-label="Цвет фона" /><code>{current('background-color') || '—'}</code></span></label>
-        <label className="make-style-field"><span>Размер шрифта</span><input type="text" value={current('font-size')} onChange={(e) => set('font-size', e.target.value)} aria-label="Размер шрифта" placeholder="16px" /></label>
-        <label className="make-style-field"><span>Насыщенность</span>
-          <select value={current('font-weight')} onChange={(e) => set('font-weight', e.target.value)} aria-label="Насыщенность шрифта">
+        <label className="make-style-field"><span>{mt("selector")}</span><input type="text" value={rule} onChange={(e) => setRule(e.target.value)} aria-label={mt("ruleSelector")} /></label>
+        <label className="make-style-field"><span>{mt("color")}</span><span className="make-style-color"><input type="color" value={toHex(current('color')) || '#000000'} onChange={(e) => set('color', e.target.value)} aria-label={mt("textColor")} /><code>{current('color')}</code></span></label>
+        <label className="make-style-field"><span>{mt("background")}</span><span className="make-style-color"><input type="color" value={toHex(current('background-color')) || '#ffffff'} onChange={(e) => set('background-color', e.target.value)} aria-label={mt("backgroundColor")} /><code>{current('background-color') || '—'}</code></span></label>
+        <label className="make-style-field"><span>{mt("fontSize")}</span><input type="text" value={current('font-size')} onChange={(e) => set('font-size', e.target.value)} aria-label={mt("fontSize")} placeholder="16px" /></label>
+        <label className="make-style-field"><span>{mt("weight")}</span>
+          <select value={current('font-weight')} onChange={(e) => set('font-weight', e.target.value)} aria-label={mt("fontWeight")}>
             {['', '300', '400', '500', '600', '700', '800'].map((w) => <option key={w} value={w}>{w || '—'}</option>)}
           </select>
         </label>
-        <label className="make-style-field"><span>Выравнивание</span>
-          <select value={current('text-align')} onChange={(e) => set('text-align', e.target.value)} aria-label="Выравнивание текста">
-            {['', 'left', 'center', 'right', 'justify'].map((a) => <option key={a} value={a}>{a || '—'}</option>)}
+        <label className="make-style-field"><span>{mt("alignment")}</span>
+          <select value={current('text-align')} onChange={(e) => set('text-align', e.target.value)} aria-label={mt("textAlignment")}>
+            {(['', 'left', 'center', 'right', 'justify'] as const).map((a) => <option key={a} value={a}>{a ? mt(({ left: 'alignLeft', center: 'alignCenter', right: 'alignRight', justify: 'alignJustify' } as const)[a]) : '—'}</option>)}
           </select>
         </label>
-        <label className="make-style-field"><span>Отступ внутри</span><input type="text" value={current('padding')} onChange={(e) => set('padding', e.target.value)} aria-label="Внутренний отступ" placeholder="8px 12px" /></label>
-        <label className="make-style-field"><span>Отступ снаружи</span><input type="text" value={current('margin')} onChange={(e) => set('margin', e.target.value)} aria-label="Внешний отступ" placeholder="0" /></label>
-        <label className="make-style-field"><span>Скругление</span><input type="text" value={current('border-radius')} onChange={(e) => set('border-radius', e.target.value)} aria-label="Скругление углов" placeholder="8px" /></label>
+        <label className="make-style-field"><span>{mt("innerSpacing")}</span><input type="text" value={current('padding')} onChange={(e) => set('padding', e.target.value)} aria-label={mt("padding")} placeholder="8px 12px" /></label>
+        <label className="make-style-field"><span>{mt("outerSpacing")}</span><input type="text" value={current('margin')} onChange={(e) => set('margin', e.target.value)} aria-label={mt("margin")} placeholder="0" /></label>
+        <label className="make-style-field"><span>{mt("rounding")}</span><input type="text" value={current('border-radius')} onChange={(e) => set('border-radius', e.target.value)} aria-label={mt("borderRadius")} placeholder="8px" /></label>
       </div>
       <div className="make-style-actions">
-        <Button size="sm" variant="primary" disabled={!dirty || !rule.trim()} loading={writing} onClick={async () => { setWriting(true); try { await onWrite(rule.trim(), values); setValues({}) } finally { setWriting(false) } }}>Записать в CSS</Button>
-        <Button size="sm" variant="ghost" disabled={!dirty} onClick={() => { setValues({}); onReset() }}>Сбросить</Button>
+        <Button size="sm" variant="primary" disabled={!dirty || !rule.trim()} loading={writing} onClick={async () => { setWriting(true); try { await onWrite(rule.trim(), values); setValues({}) } finally { setWriting(false) } }}>{mt("writeToCss")}</Button>
+        <Button size="sm" variant="ghost" disabled={!dirty} onClick={() => { setValues({}); onReset() }}>{mt("reset")}</Button>
       </div>
     </div>
   )

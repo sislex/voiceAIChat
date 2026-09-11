@@ -8,7 +8,12 @@ export function mockSlug(text: string): string {
   return slug || 'items'
 }
 
-export interface MockPromptOptions { count?: number; path?: string }
+export interface MockPromptOptions {
+  count?: number
+  path?: string
+  /** Localize generated instructions without altering the user's data description. */
+  translate?: (text: string) => string
+}
 
 /** Текст запроса ассистенту: коллекция `$collection` по описанию, N записей, поля из описания, подключение через fetch. */
 export function makeMockPrompt(description: string, options: MockPromptOptions = {}): { path: string; prompt: string } {
@@ -22,6 +27,6 @@ export function makeMockPrompt(description: string, options: MockPromptOptions =
     `Сгенерируй ${count} правдоподобных записей на русском (уникальные, без «Lorem ipsum»), у каждой — числовое поле id начиная с 1 и поля из описания; типы соблюдай (числа числами, даты в ISO).`,
     `Файл записывай целиком через make_write_file. Если в проекте есть код, который должен показывать эти данные, подключи его через fetch("${path.replace(/^mock\//, '').replace(/\.json$/, '')}") и проверь проект (make_check).`,
     'Ничего другого в проекте не меняй.'
-  ].join(' ')
+  ].map((line) => options.translate?.(line) ?? line).join(' ')
   return { path, prompt }
 }

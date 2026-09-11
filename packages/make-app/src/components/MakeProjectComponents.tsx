@@ -1,3 +1,5 @@
+import { Dialog, ErrorState, useToast } from '../i18n/ui'
+import { localizeMakeText, mt, useMakeLocale } from '../i18n'
 import { probeLocalStorybook } from '@voicechat/ui-foundation/lib/browserResources'
 // Make Project mode displays real repository components in the project's Storybook and edits files
 // directly in a machine working copy. It is separate from MakePane because repository copies and
@@ -6,7 +8,7 @@ import { probeLocalStorybook } from '@voicechat/ui-foundation/lib/browserResourc
 // /api/preview proxy reaches the machine port through <agentId>.machine.internal. It does not
 // forward WebSockets, so HMR is unavailable through that path and saving reloads the frame.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Dialog, EmptyState, ErrorState, IconButton, Skeleton, StatusPill, useToast, type StatusTone } from '@voicechat/ui-kit'
+import { Button, EmptyState, IconButton, Skeleton, StatusPill, type StatusTone } from '@voicechat/ui-kit'
 import type { RendererApi } from '@shared/ipc'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
 import type { ProjectComponentEntry, ProjectComponentsListing, ProjectStorybookAccess, ProjectStorybookSession } from '@shared/projectComponents'
@@ -14,7 +16,7 @@ import { machineOrigin, projectStorybookFrameUrl, storybookFrameUrlAt } from '@s
 import { makeStorybookCommandKey } from '@voicechat/ui-foundation/persistence'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
-import { CodeEditor } from '@voicechat/ui-foundation/components/CodeEditor'
+import { CodeEditor } from './MakeCodeEditor'
 
 export type MakeProjectComponentsApi = Pick<
   RendererApi,
@@ -40,22 +42,22 @@ const errorText = (error: unknown): string => (error instanceof Error ? error.me
 
 /** Working-copy label: the task is clearer than a path, while the machine identifies where it lives. */
 export function workspaceLabel(ref: GitWorkspaceRef): string {
-  const base = ref.taskSeq ? `#${ref.taskSeq} ${ref.taskTitle ?? ''}`.trim() : ref.kind === 'project-worktree' ? 'Копия проекта' : ref.path
+  const base = ref.taskSeq ? `#${ref.taskSeq} ${ref.taskTitle ?? ''}`.trim() : ref.kind === 'project-worktree' ? mt("projectCopy") : ref.path
   return ref.machineName ? `${base} · ${ref.machineName}` : base
 }
 
 const STATE_LABEL: Record<ProjectStorybookSession['state'], string> = {
-  stopped: 'Storybook остановлен',
-  starting: 'Storybook собирается…',
-  running: 'Storybook работает',
-  failed: 'Storybook не запустился'
+  get stopped() { return mt("storybookStopped") },
+  get starting() { return mt("storybookIsBuilding") },
+  get running() { return mt("storybookIsRunning") },
+  get failed() { return mt("storybookFailedToStart") }
 }
 
 /** Short connection-mode label beside the preview status. */
 const ACCESS_LABEL: Record<ProjectStorybookAccess['kind'], string> = {
-  direct: 'кадр напрямую',
-  tunnel: 'кадр через локальный агент',
-  proxy: 'кадр через мост машины'
+  get direct() { return mt("directFrame") },
+  get tunnel() { return mt("frameThroughLocalAgent") },
+  get proxy() { return mt("frameThroughMachineBridge") }
 }
 
 const STATE_TONE: Record<ProjectStorybookSession['state'], StatusTone> = {
@@ -66,6 +68,7 @@ const STATE_TONE: Record<ProjectStorybookSession['state'], StatusTone> = {
 }
 
 export function MakeProjectComponents({ projectId, api, ensurePreview, localAgentId = null, onOpenTask, onInsertToChat }: MakeProjectComponentsProps): JSX.Element {
+  useMakeLocale()
   const toast = useToast()
   const [workspaces, setWorkspaces] = useState<GitWorkspaceRef[] | null>(null)
   const [workspaceId, setWorkspaceId] = useState<string>('')
@@ -183,7 +186,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
     let opened: ProjectStorybookAccess | null = null
     void (async () => {
       if (await probeDirect(session.port, listedStoryIds)) {
-        if (alive) setAccess({ kind: 'direct', url: `http://127.0.0.1:${session.port}`, tunnelId: null, note: 'Storybook на этой же машине — кадр берётся напрямую.' })
+        if (alive) setAccess({ kind: 'direct', url: `http://127.0.0.1:${session.port}`, tunnelId: null, note: mt("storybookRunsOnThisMachineSoTheFrameLoads") })
         return
       }
       try {
@@ -192,7 +195,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
         if (alive) setAccess(result)
       } catch {
         // If the server does not respond, the proxy can still use the machine's direct address.
-        if (alive) setAccess({ kind: 'proxy', url: `/api/preview?url=${encodeURIComponent(machineOrigin(session.agentId, session.port))}`, tunnelId: null, note: 'Кадр идёт через мост машины.' })
+        if (alive) setAccess({ kind: 'proxy', url: `/api/preview?url=${encodeURIComponent(machineOrigin(session.agentId, session.port))}`, tunnelId: null, note: mt("theFrameLoadsThroughTheMachineBridge") })
       }
     })()
     return () => {
@@ -254,7 +257,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
       setChanged((prev) => (prev.includes(file.path) ? prev : [...prev, file.path]))
       // HMR cannot pass through the proxy; reload the frame after saving so edits become visible.
       setFrameRev((rev) => rev + 1)
-      toast.success('Файл сохранён в рабочей копии')
+      toast.success(mt("fileSavedToWorkingCopy"))
     } catch (error) {
       toast.error(errorText(error))
     } finally {
@@ -275,7 +278,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
       setChanged([])
       setTicketTitle('')
       setTicketNote('')
-      toast.success(`Задача ${result.branch} готова к слиянию`)
+      toast.success(mt("taskValueIsReadyToMerge", { p0: result.branch }))
       onOpenTask?.(projectId, result.taskId)
     } catch (error) {
       setTicketError(errorText(error))
@@ -305,35 +308,33 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
     <div className="mpc">
       <div className="mpc-head">
         <label className="mpc-ws">
-          <span className="mpc-ws-label">Рабочая копия</span>
+          <span className="mpc-ws-label">{mt("workingCopy")}</span>
           <select
             value={workspaceId}
             onChange={(event) => setWorkspaceId(event.target.value)}
             disabled={!workspaces?.length}
-            aria-label="Рабочая копия проекта"
+            aria-label={mt("projectWorkingCopy")}
           >
-            {!workspaces?.length && <option value="">Копий нет</option>}
+            {!workspaces?.length && <option value="">{mt("noWorkingCopies")}</option>}
             {workspaces?.map((ref) => (
-              <option key={ref.id} value={ref.id}>{workspaceLabel(ref)}{ref.online ? '' : ' · офлайн'}</option>
+              <option key={ref.id} value={ref.id}>{workspaceLabel(ref)}{ref.online ? '' : mt("offline")}</option>
             ))}
           </select>
         </label>
         <StatusPill tone={STATE_TONE[session?.state ?? 'stopped']}>
-          {STATE_LABEL[session?.state ?? 'stopped']}{session?.adopted ? ' (запущен вне панели)' : ''}
+          {STATE_LABEL[session?.state ?? 'stopped']}{session?.adopted ? mt("startedOutsideThePanel") : ''}
         </StatusPill>
         {session?.state === 'running' || session?.state === 'starting' ? (
           <>
-            <Button size="sm" variant="secondary" onClick={() => void act('restart')} loading={sessionBusy}>Перезапустить</Button>
+            <Button size="sm" variant="secondary" onClick={() => void act('restart')} loading={sessionBusy}>{mt("restart")}</Button>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => void act('stop')}
               loading={sessionBusy}
-              title={session?.adopted ? 'Storybook запущен вне панели — остановите его там же, где запускали' : undefined}
+              title={session?.adopted ? mt("storybookWasStartedOutsideThePanelStopItWhere") : undefined}
               disabled={session?.adopted}
-            >
-              Остановить
-            </Button>
+            >{mt("stop")}</Button>
           </>
         ) : (
           <Button
@@ -342,32 +343,29 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
             onClick={() => void act('start')}
             loading={sessionBusy}
             disabled={!workspace || !workspace.online || readOnly}
-          >
-            Запустить Storybook
-          </Button>
+          >{mt("startStorybook")}</Button>
         )}
-        {access && <span className="mpc-access" title={access.note}>{ACCESS_LABEL[access.kind]}</span>}
-        <Button size="sm" variant="ghost" onClick={() => setCommandOpen(true)}>Команда</Button>
-        <Button size="sm" variant="ghost" onClick={() => setLogOpen(true)} disabled={!session?.log}>Лог</Button>
+        {access && <span className="mpc-access" title={access.note ? localizeMakeText(access.note) : undefined}>{ACCESS_LABEL[access.kind]}</span>}
+        <Button size="sm" variant="ghost" onClick={() => setCommandOpen(true)}>{mt("command")}</Button>
+        <Button size="sm" variant="ghost" onClick={() => setLogOpen(true)} disabled={!session?.log}>{mt("log")}</Button>
         {changed.length > 0 && (
           <Button
             size="sm"
             variant="primary"
-            onClick={() => { setTicketTitle(`Правка ${activeComponent?.title ?? 'компонента'}`); setTicketOpen(true) }}
-          >
-            Создать задачу ({changed.length})
+            onClick={() => { setTicketTitle(mt("editValue", { p0: activeComponent?.title ?? mt("component") })); setTicketOpen(true) }}
+          >{mt("createTask")}{changed.length})
           </Button>
         )}
       </div>
 
       {workspace && !workspace.online && (
-        <ErrorState compact message="Машина этой копии не в сети" detail="Storybook запускать негде, файлы тоже не прочитать." />
+        <ErrorState compact message={mt("thisWorkingCopySMachineIsOffline")} detail={mt("storybookCannotRunAndFilesCannotBeRead")} />
       )}
       {readOnly && workspace?.online && (
-        <ErrorState compact message="Копия доступна только для чтения" detail={workspace.readOnlyReason ?? 'Каталог занят раном или машина открыта на чтение.'} />
+        <ErrorState compact message={mt("thisWorkingCopyIsReadOnly")} detail={workspace.readOnlyReason ?? mt("theDirectoryIsInUseByARunOr")} />
       )}
       {session?.state === 'failed' && session.error && (
-        <ErrorState compact message={session.error} detail="Откройте лог запуска — там видно, на чём остановилась сборка." />
+        <ErrorState compact message={session.error} detail={mt("openTheStartupLogToSeeWhereTheBuild")} />
       )}
 
       <div className="mpc-body">
@@ -376,15 +374,15 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
             className="mpc-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Поиск компонента"
-            aria-label="Поиск компонента"
+            placeholder={mt("searchComponents")}
+            aria-label={mt("searchComponents")}
           />
           {listView.state === 'skeleton' && <div className="mpc-skeletons">{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={28} />)}</div>}
-          {listView.state === 'error' && <ErrorState message="Не удалось прочитать компоненты" detail={load.error ?? undefined} onRetry={() => void loadComponents()} />}
+          {listView.state === 'error' && <ErrorState message={mt("couldNotReadComponents")} detail={load.error ?? undefined} onRetry={() => void loadComponents()} />}
           {listView.state === 'empty' && (
             <EmptyState
-              title="Компонентов не найдено"
-              description="В рабочей копии нет файлов *.stories.tsx — заведите сториз, и компонент появится здесь."
+              title={mt("noComponentsFound")}
+              description={mt("theWorkingCopyHasNoStoriesTsxFilesAdd")}
             />
           )}
           {listView.state === 'data' && (
@@ -415,23 +413,21 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
               ))}
             </ul>
           )}
-          {listing?.truncated && <p className="mpc-note">Список обрезан: компонентов больше, чем помещается в ответ машины.</p>}
+          {listing?.truncated && <p className="mpc-note">{mt("theListIsTruncatedMoreComponentsExistThanFit")}</p>}
         </div>
 
         <div className="mpc-main">
-          <div className="mpc-tabs" role="tablist" aria-label="Просмотр компонента">
-            <button type="button" role="tab" aria-selected={view === 'frame'} onClick={() => setView('frame')}>Кадр</button>
+          <div className="mpc-tabs" role="tablist" aria-label={mt("componentPreview")}>
+            <button type="button" role="tab" aria-selected={view === 'frame'} onClick={() => setView('frame')}>{mt("frame")}</button>
             <button
               type="button"
               role="tab"
               aria-selected={view === 'code'}
               onClick={() => { setView('code'); if (selected.path && file?.path !== selected.path) void openFile(selected.path) }}
               disabled={!selected.path}
-            >
-              Код
-            </button>
+            >{mt("code")}</button>
             {view === 'frame' && frameUrl && (
-              <IconButton aria-label="Перезагрузить кадр" title="Перезагрузить кадр" onClick={() => setFrameRev((rev) => rev + 1)}>⟳</IconButton>
+              <IconButton aria-label={mt("reloadFrame")} title={mt("reloadFrame")} onClick={() => setFrameRev((rev) => rev + 1)}>⟳</IconButton>
             )}
           </div>
 
@@ -439,32 +435,30 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
             frameUrl ? (
               <iframe
                 className="mpc-frame"
-                title="Стори компонента"
+                title={mt("componentStories")}
                 src={frameUrl}
                 sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"
               />
             ) : (
               <EmptyState
-                title={session?.state === 'running' ? 'Выберите стори слева' : 'Storybook ещё не запущен'}
+                title={session?.state === 'running' ? mt("selectAStoryOnTheLeft") : mt("storybookHasNotStartedYet")}
                 description={session?.state === 'running'
-                  ? 'Кадр покажет компонент так, как его собирает сам проект.'
-                  : 'Запустите Storybook на машине — он соберёт компоненты этой рабочей копии.'}
+                  ? mt("theFrameShowsTheComponentAsBuiltByThe")
+                  : mt("startStorybookOnTheMachineToBuildComponentsFrom")}
               />
             )
           )}
 
           {view === 'code' && (
             <div className="mpc-editor">
-              {fileError && <ErrorState compact message="Файл не прочитан" detail={fileError} onRetry={() => selected.path && void openFile(selected.path)} />}
+              {fileError && <ErrorState compact message={mt("fileHasNotBeenRead")} detail={fileError} onRetry={() => selected.path && void openFile(selected.path)} />}
               {file && (
                 <>
                   <div className="mpc-editor-head">
-                    <span className="mpc-editor-path">{file.path}{dirty ? ' · не сохранено' : ''}</span>
-                    <Button size="sm" variant="primary" onClick={() => void save()} loading={saving} disabled={!dirty || readOnly}>Сохранить</Button>
+                    <span className="mpc-editor-path">{file.path}{dirty ? mt("unsaved_a117f2") : ''}</span>
+                    <Button size="sm" variant="primary" onClick={() => void save()} loading={saving} disabled={!dirty || readOnly}>{mt("save")}</Button>
                     {onInsertToChat && (
-                      <Button size="sm" variant="ghost" onClick={() => onInsertToChat(`Работаем над компонентом ${activeComponent?.title ?? file.path} (файл ${file.path} в рабочей копии проекта).`)}>
-                        В чат
-                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => onInsertToChat(mt("workOnComponentValueFileValueInTheProject", { p0: activeComponent?.title ?? file.path, p1: file.path }))}>{mt("toChat")}</Button>
                     )}
                   </div>
                   <CodeEditor
@@ -472,12 +466,12 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
                     value={file.content}
                     onChange={(value) => setFile((prev) => (prev ? { ...prev, content: value } : prev))}
                     onSave={() => void save()}
-                    ariaLabel={`Содержимое ${file.path}`}
+                    ariaLabel={mt("contentsOfValue", { p0: file.path })}
                     readOnly={readOnly}
                   />
                 </>
               )}
-              {!file && !fileError && <EmptyState title="Файл не выбран" description="Выберите компонент слева — откроется его файл сториз." />}
+              {!file && !fileError && <EmptyState title={mt("noFileSelected")} description={mt("selectAComponentOnTheLeftToOpenIts")} />}
             </div>
           )}
         </div>
@@ -485,20 +479,17 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
 
       {commandOpen && (
         <Dialog
-          title="Команда запуска Storybook"
+          title={mt("storybookStartupCommand")}
           onClose={() => setCommandOpen(false)}
           actions={<Button variant="primary" onClick={() => {
             try { localStorage.setItem(makeStorybookCommandKey(projectId), command.trim()) } catch { /* In private browsing, keep the command for this session only. */ }
             setCommandOpen(false)
-          }}>Запомнить</Button>}
+          }}>{mt("remember")}</Button>}
         >
-          <p className="mpc-ticket-note">
-            Выполняется в каталоге рабочей копии; порт, <code>--no-open</code> и <code>--ci</code>
-            панель добавит сама. В монорепо укажите пакет витрины — например
-            <code> npm run -w @voicechat/ui storybook --</code>.
+          <p className="mpc-ticket-note">{mt("runsInTheWorkingCopyDirectoryThePanelAdds")}{' '}<code>--no-open</code>{' '}{mt("and")}{' '}<code>--ci</code>{mt("automaticallyInAMonorepoSpecifyTheShowcasePackageFor")}<code> npm run -w @voicechat/ui storybook --</code>.
           </p>
           <label className="mpc-field">
-            <span>Команда</span>
+            <span>{mt("command")}</span>
             <input
               value={command}
               onChange={(event) => setCommand(event.target.value)}
@@ -510,34 +501,31 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, localAgen
       )}
 
       {logOpen && (
-        <Dialog title="Лог запуска Storybook" onClose={() => setLogOpen(false)} size="lg">
-          <pre className="mpc-log">{session?.log || 'Пока пусто'}</pre>
+        <Dialog title={mt("storybookStartupLog")} onClose={() => setLogOpen(false)} size="lg">
+          <pre className="mpc-log">{session?.log || mt("emptyForNow")}</pre>
         </Dialog>
       )}
 
       {ticketOpen && (
         <Dialog
-          title="Задача из правки"
+          title={mt("taskFromEdit")}
           onClose={() => setTicketOpen(false)}
           closeOnOverlay={false}
-          actions={<Button variant="primary" onClick={() => void createTicket()} loading={ticketBusy} disabled={!ticketTitle.trim()}>Создать и подготовить к слиянию</Button>}
+          actions={<Button variant="primary" onClick={() => void createTicket()} loading={ticketBusy} disabled={!ticketTitle.trim()}>{mt("createAndPrepareToMerge")}</Button>}
         >
-          <p className="mpc-ticket-note">
-            Правка уйдёт в отдельную ветку и будет отправлена в origin, а карточка встанет
-            в колонку «Ожидает слияния» — слить её можно кнопкой на доске.
-          </p>
+          <p className="mpc-ticket-note">{mt("theEditWillBeCommittedToASeparateBranch")}</p>
           <label className="mpc-field">
-            <span>Название</span>
+            <span>{mt("title")}</span>
             <input value={ticketTitle} onChange={(event) => setTicketTitle(event.target.value)} autoFocus />
           </label>
           <label className="mpc-field">
-            <span>Что изменено</span>
+            <span>{mt("whatChanged")}</span>
             <textarea value={ticketNote} onChange={(event) => setTicketNote(event.target.value)} rows={3} />
           </label>
           <ul className="mpc-ticket-paths" role="list">
             {changed.map((path) => <li key={path}>{path}</li>)}
           </ul>
-          {ticketError && <ErrorState compact message="Задача не создана" detail={ticketError} />}
+          {ticketError && <ErrorState compact message={mt("taskWasNotCreated")} detail={ticketError} />}
         </Dialog>
       )}
     </div>

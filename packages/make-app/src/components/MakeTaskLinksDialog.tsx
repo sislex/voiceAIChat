@@ -1,3 +1,5 @@
+import { Dialog, useToast } from '../i18n/ui'
+import { mt, useMakeLocale } from '../i18n'
 // Make's project-task dialog is the reverse of a task card's Design section: list cards referencing
 // this Make project and link the open page without leaving the design. The server resolves the
 // project from the Make conversation, restricts the list, and returns 404 without access; the panel
@@ -6,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { MakeLinkableTask, MakeTaskLink } from '@shared/projects'
-import { Button, Dialog, EmptyState, IconButton, useToast } from '@voicechat/ui-kit'
+import { Button, EmptyState, IconButton } from '@voicechat/ui-kit'
 
 interface Props {
   conversationId: string
@@ -19,6 +21,7 @@ interface Props {
 }
 
 export function MakeTaskLinksDialog({ conversationId, currentPath, api, onOpenTask, onClose }: Props): JSX.Element {
+  useMakeLocale()
   const toast = useToast()
   const [links, setLinks] = useState<MakeTaskLink[]>([])
   const [tasks, setTasks] = useState<MakeLinkableTask[]>([])
@@ -45,7 +48,7 @@ export function MakeTaskLinksDialog({ conversationId, currentPath, api, onOpenTa
     try {
       await api['make:linkTask']({ conversationId, taskId, path })
       setLinks(await api['make:taskLinks']({ conversationId }))
-      toast.success('Дизайн связан с задачей')
+      toast.success(mt("designLinkedToTask"))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
@@ -54,32 +57,32 @@ export function MakeTaskLinksDialog({ conversationId, currentPath, api, onOpenTa
   }, [api, conversationId, path, taskId, toast])
 
   return (
-    <Dialog className="make-dialog" padded title="Задачи проекта" ariaLabel="Задачи проекта" size="md" onClose={onClose} testId="make-task-links">
+    <Dialog className="make-dialog" padded title={mt("projectTasks_121d1a")} ariaLabel={mt("projectTasks_121d1a")} size="md" onClose={onClose} testId="make-task-links">
       {links.length === 0
-        ? <EmptyState compact icon="🗂" title="Связей пока нет" description="Свяжите открытую страницу с карточкой — она появится в разделе «Дизайн» задачи." testId="make-task-links-empty" />
+        ? <EmptyState compact icon="🗂" title={mt("noLinksYet")} description={mt("linkTheOpenPageToATaskToShow")} testId="make-task-links-empty" />
         : <ul className="make-task-links-list">
             {links.map((item) => (
               <li key={item.id}>
                 <span className="make-task-links__key">{item.taskKey}</span>
                 <span className="make-task-links__title">{item.taskTitle}</span>
-                <span className="make-task-links__path">{item.path || 'проект целиком'}</span>
-                {onOpenTask && <IconButton size="sm" title="Открыть карточку" aria-label={`Открыть карточку ${item.taskKey}`} onClick={() => onOpenTask(item.projectId, item.taskId)}>↗</IconButton>}
+                <span className="make-task-links__path">{item.path || mt("entireProject")}</span>
+                {onOpenTask && <IconButton size="sm" title={mt("openTask")} aria-label={mt("openTaskValue", { p0: item.taskKey })} onClick={() => onOpenTask(item.projectId, item.taskId)}>↗</IconButton>}
               </li>
             ))}
           </ul>}
 
       {tasks.length === 0
-        ? <p className="fsub">Make-проект не привязан к проекту или в нём ещё нет карточек: привязка задаётся в настройках этого чата.</p>
+        ? <p className="fsub">{mt("thisMakeProjectIsNotLinkedToAProject")}</p>
         : <div className="make-task-links-form">
-            <label><span className="fsub">Задача</span>
-              <select aria-label="Задача проекта" value={taskId} onChange={(e) => setTaskId(e.target.value)}>
+            <label><span className="fsub">{mt("task")}</span>
+              <select aria-label={mt("projectTask")} value={taskId} onChange={(e) => setTaskId(e.target.value)}>
                 {tasks.map((task) => <option key={task.taskId} value={task.taskId}>{task.taskKey} · {task.title}</option>)}
               </select>
             </label>
-            <label><span className="fsub">Страница</span>
-              <input className="tin" aria-label="Страница дизайна" value={path} placeholder="index.html" onChange={(e) => setPath(e.target.value)} />
+            <label><span className="fsub">{mt("page")}</span>
+              <input className="tin" aria-label={mt("designPage")} value={path} placeholder="index.html" onChange={(e) => setPath(e.target.value)} />
             </label>
-            <Button size="sm" variant="primary" disabled={busy || !taskId} loading={busy} onClick={() => void link()}>Связать с задачей</Button>
+            <Button size="sm" variant="primary" disabled={busy || !taskId} loading={busy} onClick={() => void link()}>{mt("linkToTask")}</Button>
           </div>}
     </Dialog>
   )

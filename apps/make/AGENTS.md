@@ -44,6 +44,17 @@ when translating documentation. Communicate with the user in English.
   imports. Internal dependencies include `@voicechat/shared` and
   `@voicechat/make-contracts`.
 
+## Interface localization
+
+`src/localization.ts` resolves Russian/English from `makeLocale=ru|en`, then the
+`vc_make_locale` cookie, then `Accept-Language`. The response hook translates only
+Make-owned error fields and check messages using `@voicechat/make-contracts/localization`;
+it preserves codes, mock responses, and project data. Keep new server messages in
+the shared bilingual catalog. `src/publicLocale.ts` localizes password access,
+guest comments, galleries, and built-in runner feedback without rewriting project
+markup. Inline event handlers must use `window.URL` because `document.URL` can
+shadow the global constructor in their scope. Verify both locales in `localization.test.ts` and the browser suite.
+
 ## Layout
 
 `core.ts`, `service.ts`, `internal.ts`, `taskScope.ts`, and `hub.ts` retain

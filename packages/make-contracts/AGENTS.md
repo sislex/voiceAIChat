@@ -10,3 +10,8 @@ Communicate with the user in English.
 
 Public-surface changes require contract checks for Make and
 `apps/server/src/makeBridge`. Run `npm run gate:app -- make-contracts`.
+
+The `./localization` subpath owns the pure Russian/English system-message catalog,
+locale resolution, and interpolation helpers shared by Make UI and HTTP responses.
+Add both translations with identical placeholder names. Preserve status codes,
+identifiers, and user-supplied details; contract tests cover those boundaries.

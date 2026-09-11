@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-10
-checked: 83b7e546
+updated: 2026-09-11
+checked: 17dd72ff
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -1247,6 +1247,35 @@ diff-UI (своя вёрстка, свои токены, своя доступн
 поправить» без коммита оставляло задачу в нерабочем состоянии.
 
 ## Отдельный режим «Make — веб-проект с ассистентом»
+
+**Make interface localization (2026-09-11).** The Make panel and shared-project view
+have a Russian/English selector. Russian remains the default; the choice is stored
+under `vc.make.locale` and synchronized across panels/tabs. `vc_make_locale` supplies
+the server preference, while explicit `makeLocale` URLs carry it to story/test
+runners, galleries, and password-protected publications. The interface choice does
+not change preview-language emulation or project source. The host shell and its chat
+remain separate applications with their own interface text.
+
+`packages/make-app/src/i18n/` contains typed UI catalogs, interpolation, locale
+subscriptions, and wrappers for shared dialogs, confirmations, errors, and toasts.
+`packages/make-contracts/src/localization.ts` exports the pure system-message catalog
+and resolver. The Make HTTP hook translates its own errors and check messages,
+preserving status codes, user details, and mock/project payloads. Backend language
+precedence is explicit query, saved cookie, then weighted `Accept-Language`.
+Public password forms, guest comments, galleries, and built-in runner feedback use
+`apps/make/src/publicLocale.ts`.
+
+The editor wrapper preserves the mounted Monaco model and unsaved draft on language
+changes. It adapts built-in controls using Monaco's MIT Russian catalog and supplies
+translated completion hints through the shared editor port. Regenerate that catalog
+with `node packages/make-app/scripts/update-monaco-locale.mjs` after Monaco upgrades.
+Accessibility descriptions use axe's Russian catalog. `src/i18n/coverage.test.ts`
+checks starter/template coverage and prevents uncataloged interface text; DOM tests
+check persistence, dialogs, errors, interpolation, and draft preservation. The Make
+Chromium suite checks the real editor, both languages, reload/mobile behavior, and
+public password/comment feedback. The panel manifest requires host API 1.1.0 for
+localized shared-dialog and notification props. Deploy a web/desktop host providing
+that API before the new Make UI; older panels still work with the new host.
 
 Четвёртый split-режим (маршруты `#/make` и `#/make/<conversationId>`, `assistantKind: 'make'`,
 константа `MAKE_KIND`/предикат `isMakeConversation` в `@shared/types`+`@shared/make`). Устроен

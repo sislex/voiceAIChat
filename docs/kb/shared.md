@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-09-10
-checked: 11105f5c
+updated: 2026-09-11
+checked: 17dd72ff
 areas:
   - packages/shared/src
 ---
@@ -22,6 +22,7 @@ areas:
 |---|---|
 | `types.ts` | Разговоры, сообщения, настройки, пользователь, провайдеры и модели, метаданные/usage хода, статусы разговора. |
 | `imageStudioInternal.ts` | Внутренние пути и лимиты отдельной студии картинок, тело запроса генерации с исходником/референсами и его валидатор. |
+| `applicationFrontend.ts` | Frontend artifact manifests and the host API version. API 1.1.0 adds localized labels/language for shared dialogs and notifications; Make UI requires at least 1.1.0. Older panels remain compatible. |
 | `protocol.ts` | Имена REST-путей, JSON-сообщения `/ws`, бинарные кадры, активные ходы и ответы API. |
 | `webRecorder.ts`, `webRecorderScenario.ts` | Контракт host/Recorder, шаги сценария и чистая нормализация/лимиты/склейка записи. |
 | `ipc.ts` | Полный набор мостов `window.*`; компоненты UI знают только эти формы. |
