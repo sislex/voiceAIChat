@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-11
-checked: 2078cd84
+updated: 2026-09-12
+checked: 1c1cdb21
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1070,6 +1070,22 @@ the same removable active-filter chips, and participate in `Reset all`. The
 completed slice requests completed history when needed and limits the board to
 semantic `done` columns. The overdue slice excludes completed tasks and uses the
 same local-calendar deadline calculation as task cards.
+
+### Visible board text export (2026-09-12)
+
+The filter toolbar can copy the current board view as structured plain text. The
+export uses displayed column order and the same fully filtered, locally sorted
+task lists as the rendered board. It records the visible/loaded count, active
+filter labels, empty columns, hidden-column markers, and each task's issue key,
+type, priority, assignee, story points, ISO due date, labels, and flag. This makes
+the visible snapshot portable to a message, issue, or model context without
+silently including cards that the current filters hide.
+
+The action is disabled for a zero-result view. Clipboard success and failure have
+distinct button text and are announced through the board live region. The pure
+`formatVisibleBoardList` formatter has deterministic DOM coverage; the Storybook
+Chromium check grants clipboard permission, applies a search filter, and verifies
+that the copied task count and filter description match the screen.
 
 ### WIP capacity feedback (2026-09-11)
 

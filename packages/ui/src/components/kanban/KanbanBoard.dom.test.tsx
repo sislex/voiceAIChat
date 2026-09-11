@@ -4,7 +4,7 @@ import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-fou
 import { act, fireEvent, screen, within, waitFor, cleanup } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
-import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
+import { formatVisibleBoardList, KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
 import { DEFAULT_BOARD_VIEW } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
@@ -50,6 +50,44 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
 }
 
 describe('KanbanBoard (изолированный)', () => {
+  it('форматирует и копирует текущее представление доски со всеми полезными атрибутами', async () => {
+    const dueDate = Date.UTC(2026, 8, 20)
+    const exportBoard: Board = {
+      columns: [
+        { ...board.columns[0]!, id: 'c1', name: 'План' },
+        { ...board.columns[0]!, id: 'c2', name: 'Готово', position: 2048 }
+      ],
+      tasks: [
+        task({ id: 'first', seq: 7, columnId: 'c1', title: 'Экспортировать доску', type: 'story', priority: 'high', assignee: 'alice', storyPoints: 5, dueDate, labels: ['ux', 'share'], flagged: true }),
+        task({ id: 'second', seq: 8, columnId: 'c2', title: 'Скрыть фильтром', assignee: 'bob' })
+      ]
+    }
+    const formatted = formatVisibleBoardList({
+      projectName: 'Reader',
+      columns: [{ column: exportBoard.columns[0]!, tasks: [exportBoard.tasks[0]!] }, { column: exportBoard.columns[1]!, tasks: [] }],
+      totalTasks: 2,
+      activeFilters: ['Исполнитель: alice']
+    })
+    expect(formatted).toContain('# Reader — канбан\nПоказано: 1 из 2\nФильтры: Исполнитель: alice')
+    expect(formatted).toContain('## План — 1\n- [READ-7] Экспортировать доску · История · Высокий · исполнитель: alice · 5 SP · срок: 2026-09-20 · метки: ux, share · с флагом')
+    expect(formatted).toContain('## Готово — 0\n- Нет задач')
+
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderBoard({ board: exportBoard, members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    await userEvent.click(screen.getByRole('button', { name: 'Фильтр: alice' }))
+    await userEvent.click(screen.getByTestId('copy-board-list'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    const copied = String(writeText.mock.calls[0]?.[0])
+    expect(copied).toContain('Показано: 1 из 2')
+    expect(copied).toContain('Фильтры: Исполнитель: alice')
+    expect(copied).toContain('Экспортировать доску')
+    expect(copied).not.toContain('Скрыть фильтром')
+    expect(screen.getByTestId('copy-board-list')).toHaveTextContent('Скопировано')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Список скопирован: 1 задача.')
+  })
+
   it('показывает исполнителей с аватарами и полными счётчиками и синхронизирует быстрый выбор', async () => {
     const assigneeBoard: Board = {
       ...board,
