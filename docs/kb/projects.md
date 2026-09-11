@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: c9c83160
+checked: ab74391b
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1002,6 +1002,16 @@ hidden label, which prevents wide metadata from changing the board geometry.
 `TaskCard.dom.test.tsx` covers the complete semantic contract, and the
 `AllAttributes` and `LongTitles` Storybook states are the Chromium checks for
 relative deadlines and label overflow.
+
+### Child task progress (2026-09-11)
+
+Every task with direct children shows their completion progress regardless of
+the parent's current workflow stage. The compact row combines a visual track,
+percentage, completed/total count, and remaining count; zero and complete states
+have explicit styles. Its `progressbar` exposes the child count as min/max/current
+values and a complete text alternative with completed, remaining, and percentage
+values. Compact density and phone layouts hide only the redundant remaining
+caption while preserving the semantic value and keeping the row inside the card.
 
 ### Visible board summary (2026-09-11)
 
