@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: 101b281e
+checked: 48a29ff1
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -966,6 +966,22 @@ hidden label, which prevents wide metadata from changing the board geometry.
 `TaskCard.dom.test.tsx` covers the complete semantic contract, and the
 `AllAttributes` and `LongTitles` Storybook states are the Chromium checks for
 relative deadlines and label overflow.
+
+### Visible board summary (2026-09-11)
+
+The board keeps a compact summary directly below its filters: visible tasks,
+visible story points, overdue active tasks, unassigned tasks, flagged tasks, and
+completed tasks in the current snapshot. Every metric uses the fully filtered
+task set across currently displayed columns, so global filters, per-column
+assignee filters, hidden-column visibility, and incoming board snapshots update
+the figures without a separate data source. Completed tasks are excluded from
+the overdue count even when historical completed tasks are loaded.
+
+The summary is a named region with explicit accessible units and correct Russian
+task plurals. Its flexible layout wraps on narrow screens and remains outside
+the collapsible mobile filter panel. `KanbanBoard.dom.test.tsx` covers metric
+values, filtering, and a replacement snapshot; `FullFeaturedCard` is the
+desktop and mobile Chromium check.
 
 ### Меню колонки
 
