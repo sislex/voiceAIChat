@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-11
-checked: 51084d40
+checked: e3e3c59b
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2475,6 +2475,8 @@ DOM Recorder и `e2e/webReaderScenarioStorage.e2e.test.ts`.
 The Recorder scenario editor supports manual click/input steps, duplication, action-kind and Enter editing, and a 200-step counter. Missing selectors prevent playback/export. Undo and redo retain at most 30 edits and reset on page changes or secret classification; temporary secret values are cleared when targets or ordering change and never enter edit history.
 
 The Recorder imports and exports version-1 web-reader-scenario JSON files. Import validates HTTP(S) source URLs, a 1 MB UTF-8 limit, and all 1–200 steps before showing a review. Applying replaces the current page scenario without navigation; cancel leaves it intact. Both directions redact marked secret values. Navigation invalidates pending file reads, and file input resets allow retrying the same file.
+
+Scenario playback validates the complete bounded input before sending any command, including runtime step shapes and temporary secret values. Request IDs remain unique if the injected ID factory repeats. Invalid timeouts fall back to 12 seconds, excessive values cap at two minutes, and settling delays stay below the timeout. Malformed outcomes are ignored; throwing progress observers cannot strand a run or prevent cleanup.
 
 ### Model-facing Web Reader audits
 

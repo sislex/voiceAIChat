@@ -12,8 +12,8 @@ written before implementation. Existing audit work is preserved.
 | 04 | Assistant action history usability | Merged, 10/10 | #145 |
 | 05 | Address entry and navigation feedback | Merged, 10/10 | #147 |
 | 06 | Scenario editing | Merged, 10/10 | #149 |
-| 07 | Scenario portability and export | Implemented, 10/10 | |
-| 08 | Recorder status and keyboard interaction | Planned | |
+| 07 | Scenario portability and export | Merged, 10/10 | #151 |
+| 08 | Playback validation and lifecycle | Implemented, 10/10 | |
 | 09 | Reader diagnostics and recovery | Planned | |
 | 10 | Final integration and regression gaps | Planned | |
 
@@ -107,3 +107,16 @@ written before implementation. Existing audit work is preserved.
 8. Preview source URL and step count.
 9. Apply imported steps explicitly to the current page.
 10. Cancel import and retry the same file without mutation.
+
+## Cycle 08 proposal
+
+1. Validate the scenario list at runtime.
+2. Reject malformed or unsupported steps.
+3. Enforce the count limit before traversing steps.
+4. Reject non-string secret values.
+5. Keep request IDs unique with repeated ID factories.
+6. Normalize invalid timeouts.
+7. Cap excessive timeouts at two minutes.
+8. Bound settling delays below the timeout.
+9. Ignore malformed outcomes.
+10. Contain progress-listener exceptions.

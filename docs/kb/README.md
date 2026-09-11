@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 80 коммит(ов) в areas после сверки: 47c6484b fix(db): reconcile PostgreSQL columns on startup … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 103 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: ec181445 Merge main into CHAT-444 (task 07d7f465-05cb-4f97-b4bf-3bfc36619e26) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1364 коммит(ов) в areas после сверки: de6981b1 feat(kanban): clarify task card metadata … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1366 коммит(ов) в areas после сверки: ec8ed864 fix(web-reader): harden scenario playback boundaries … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 9 коммит(ов) в areas после сверки: de6981b1 feat(kanban): clarify task card metadata … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 13 коммит(ов) в areas после сверки: de6981b1 feat(kanban): clarify task card metadata … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 6 коммит(ов) в areas после сверки: de6981b1 feat(kanban): clarify task card metadata … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 2 коммит(ов) в areas после сверки: de6981b1 feat(kanban): clarify task card metadata … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: ec8ed864 fix(web-reader): harden scenario playback boundaries |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-11, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 758. Последние:
+Всего записей: 760. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-08.md) — web-reader-ten-cycle-08
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-07.md) — web-reader-ten-cycle-07
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-06.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-06.md) — web-reader-ten-cycle-06
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-05.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-05.md) — web-reader-ten-cycle-05
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-01.md) — web-reader-ten-cycle-01
 - [2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md) — web-reader-rebase-main
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md) — web-reader-qa-cycle-08
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md) — web-reader-qa-cycle-07
 
 ## Исторические планы
 
