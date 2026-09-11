@@ -8,7 +8,7 @@
 // «⠿» (единственное место с touch-action: none — палец там не скроллит) или
 // удержанием самой карточки; с клавиатуры карточка фокусируется (tabIndex).
 
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
@@ -111,9 +111,43 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const confirm = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const menuPanelRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const menuId = useId()
 
   useDismissibleMenu(menuOpen, menuRef, () => setMenuOpen(false))
+
+  const openMenu = (): void => {
+    setMenuOpen(true)
+    requestAnimationFrame(() => menuPanelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
+  }
+
+  const closeMenuAndRestoreFocus = (): void => {
+    setMenuOpen(false)
+    requestAnimationFrame(() => cardRef.current?.focus())
+  }
+
+  const navigateMenu = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const items = Array.from(menuPanelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeMenuAndRestoreFocus()
+      return
+    }
+    if (event.key === 'Tab') {
+      setMenuOpen(false)
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || items.length === 0) return
+    event.preventDefault()
+    const current = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? items.length - 1
+        : event.key === 'ArrowDown' ? (current + 1 + items.length) % items.length
+          : (current - 1 + items.length) % items.length
+    items[next]?.focus()
+  }
 
   const done = props.doneColumnIds.has(task.columnId)
   // Сервер выбирает состояние; helper сохраняет совместимость со stale payload.
@@ -158,19 +192,41 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       className={`jcard jcard--stage-${props.columnSemanticType ?? 'custom'}${done ? ' jcard--compact' : ''}${task.flagged ? ' jcard--flagged' : ''}${developmentStage && task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed && !done ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
       data-task-id={task.id}
+      role="article"
       aria-label={cardLabel}
+      aria-describedby={`${menuId}-shortcuts`}
+      aria-keyshortcuts="Enter Space Shift+F10"
       tabIndex={0}
       onClick={() => props.onOpen(task.id)}
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return
+        event.preventDefault()
+        if (!props.grabbed) openMenu()
+      }}
       onPointerDown={(e) => {
         // С кнопок, полей и меню внутри карточки перенос не начинаем.
         if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
         if (cardRef.current) props.onGrab?.(e, cardRef.current, false)
       }}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        if (!props.grabbed && e.key === 'Enter') {
+          e.preventDefault()
+          props.onOpen(task.id)
+          return
+        }
+        if (!props.grabbed && ((e.key === 'F10' && e.shiftKey) || e.key === 'ContextMenu')) {
+          e.preventDefault()
+          openMenu()
+          return
+        }
         if (cardRef.current) props.onCardKeys?.(e, cardRef.current)
       }}
-      onBlur={() => props.onCardBlur?.()}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) props.onCardBlur?.()
+      }}
     >
+      <span id={`${menuId}-shortcuts`} className="vc-sr-only">Enter — открыть; Пробел — перенести; Shift+F10 — открыть действия.</span>
       <div className="jcard-top">
         <span
           className="jcard-grip"
@@ -190,26 +246,38 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             size="sm"
             aria-label={`Действия с «${task.title}»`}
             title="Действия"
+            aria-haspopup="menu"
             aria-expanded={menuOpen}
+            aria-controls={menuOpen ? menuId : undefined}
             onClick={(e) => {
               e.stopPropagation()
-              setMenuOpen((v) => !v)
+              if (menuOpen) setMenuOpen(false)
+              else openMenu()
             }}
           >
             <DotsIcon />
           </IconButton>
           {menuOpen && (
-            <div className="jcard-menu" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
-              <button onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { flagged: !task.flagged }) }}>
+            <div
+              id={menuId}
+              ref={menuPanelRef}
+              className="jcard-menu"
+              role="menu"
+              aria-label={`Действия с «${task.title}»`}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={navigateMenu}
+            >
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { flagged: !task.flagged }) }}>
                 {task.flagged ? 'Снять флаг' : 'Добавить флаг'}
               </button>
-              <button onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { autoPilot: !task.autoPilot }) }}>
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { autoPilot: !task.autoPilot }) }}>
                 {task.autoPilot ? 'Выключить автопроход' : 'Включить автопроход'}
               </button>
-              <button onClick={() => { setMenuOpen(false); props.onMoveTop(task.id) }}>В начало колонки</button>
-              <button onClick={() => { setMenuOpen(false); props.onMoveBottom(task.id) }}>В конец колонки</button>
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onMoveTop(task.id) }}>В начало колонки</button>
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onMoveBottom(task.id) }}>В конец колонки</button>
               <button
+                role="menuitem"
                 className="jcard-menu-danger"
                 onClick={() => {
                   setMenuOpen(false)

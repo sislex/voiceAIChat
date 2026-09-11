@@ -120,7 +120,7 @@ describe('ProjectBoard', () => {
   it('меню карточки: «Добавить флаг» зовёт onUpdateTask(flagged)', async () => {
     const p = renderBoard()
     await userEvent.click(screen.getByLabelText('Действия с «A»'))
-    await userEvent.click(screen.getByRole('button', { name: 'Добавить флаг' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Добавить флаг' }))
     expect(p.onUpdateTask).toHaveBeenCalledWith('t1', { flagged: true })
   })
 
