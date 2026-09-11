@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-11
-checked: ec181445
+checked: 8a3cf2a5
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -919,6 +919,22 @@ also announced through the existing `kanban-live` region. This behavior applies
 to both the normal layout and swimlanes and is covered in
 `KanbanBoard.dom.test.tsx`; the `ManyColumns` Storybook story is the manual browser
 check for actual horizontal scrolling.
+
+### Column navigator (2026-09-11)
+
+The filter bar contains a column navigator with a select and previous/next
+buttons. It lists the currently displayed columns in board order, includes each
+visible task count, disables directional actions at the edges, and preserves the
+current selection when hidden columns are revealed. If the selected column is no
+longer displayed, the first available column becomes current.
+
+Choosing a column scrolls its header into view, moves focus to that header, and
+announces the column name, visible task count, and hidden state through
+`kanban-live`. Arrow, Home, and End navigation on the board surface updates the
+same selection. Header targets are shared by the regular layout and swimlane
+layout, so both modes have the same navigation behavior. DOM tests cover focus,
+edge states, hidden columns, and swimlanes; the `ManyColumns`, `HiddenColumns`,
+and `SwimlanesByAssignee` Storybook stories are used for Chromium verification.
 
 ### Меню колонки
 

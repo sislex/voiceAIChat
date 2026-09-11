@@ -247,9 +247,18 @@ describe('KanbanBoard (изолированный)', () => {
   })
 
   it('прокручивает сфокусированную доску стрелками и переходит к краям по Home и End', () => {
-    renderBoard()
+    renderBoard({
+      board: {
+        columns: [
+          { ...board.columns[0]!, id: 'c1', name: 'Первая', position: 1024 },
+          { ...board.columns[0]!, id: 'c2', name: 'Вторая', position: 2048 },
+          { ...board.columns[0]!, id: 'c3', name: 'Третья', position: 3072 }
+        ],
+        tasks: [task({ id: 't1', columnId: 'c1' })]
+      }
+    })
     const surface = screen.getByRole('region', { name: /Канбан-доска проекта «P1»/ })
-    const column = screen.getByTestId('kanban-column')
+    const column = screen.getAllByTestId('kanban-column')[0]!
     vi.spyOn(column, 'getBoundingClientRect').mockReturnValue({
       x: 0, y: 0, width: 300, height: 400, top: 0, right: 300, bottom: 400, left: 0, toJSON: () => ({})
     })
@@ -258,15 +267,80 @@ describe('KanbanBoard (изолированный)', () => {
 
     fireEvent.keyDown(surface, { key: 'ArrowRight' })
     expect(surface.scrollLeft).toBe(308)
-    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Доска прокручена вправо')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «Вторая», задач нет')
+    expect(screen.getByRole('combobox', { name: 'Перейти к колонке' })).toHaveValue('c2')
 
     fireEvent.keyDown(surface, { key: 'ArrowLeft' })
     expect(surface.scrollLeft).toBe(0)
     fireEvent.keyDown(surface, { key: 'End' })
     expect(surface.scrollLeft).toBe(1400)
+    expect(screen.getByRole('combobox', { name: 'Перейти к колонке' })).toHaveValue('c3')
     fireEvent.keyDown(surface, { key: 'Home' })
     expect(surface.scrollLeft).toBe(0)
+    expect(screen.getByRole('combobox', { name: 'Перейти к колонке' })).toHaveValue('c1')
     expect(surface).toHaveAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight Home End')
+  })
+
+  it('переходит между видимыми колонками, фокусирует заголовок и обновляет список скрытых', async () => {
+    renderBoard({
+      board: {
+        columns: [
+          { ...board.columns[0]!, id: 'c1', name: 'Первая', position: 1024 },
+          { ...board.columns[0]!, id: 'c2', name: 'Скрытая', hidden: true, position: 2048 },
+          { ...board.columns[0]!, id: 'c3', name: 'Третья', position: 3072 }
+        ],
+        tasks: [task({ id: 't1', columnId: 'c3', title: 'В третьей' })]
+      }
+    })
+    const select = screen.getByRole('combobox', { name: 'Перейти к колонке' })
+    const previous = screen.getByRole('button', { name: 'Перейти к предыдущей колонке' })
+    const next = screen.getByRole('button', { name: 'Перейти к следующей колонке' })
+    expect(within(select).getAllByRole('option')).toHaveLength(2)
+    expect(select).toHaveValue('c1')
+    expect(previous).toBeDisabled()
+    expect(next).toBeEnabled()
+
+    const thirdHeader = document.querySelector<HTMLElement>('[data-column-nav-target="c3"]')!
+    thirdHeader.scrollIntoView = vi.fn()
+    await userEvent.click(next)
+    expect(select).toHaveValue('c3')
+    expect(thirdHeader.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+    expect(document.activeElement).toBe(thirdHeader)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «Третья», 1 задача')
+    expect(next).toBeDisabled()
+
+    await userEvent.click(previous)
+    expect(select).toHaveValue('c1')
+    await userEvent.click(screen.getByRole('checkbox', { name: /скрытые/ }))
+    expect(within(select).getAllByRole('option')).toHaveLength(3)
+    expect(select).toHaveValue('c1')
+
+    const hiddenHeader = document.querySelector<HTMLElement>('[data-column-nav-target="c2"]')!
+    hiddenHeader.scrollIntoView = vi.fn()
+    await userEvent.selectOptions(select, 'c2')
+    expect(document.activeElement).toBe(hiddenHeader)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «Скрытая», задач нет, скрыта')
+  })
+
+  it('использует тот же навигатор в раскладке со свимлейнами', async () => {
+    renderBoard({
+      defaultSwimlane: 'assignee',
+      members: [{ username: 'alexey', role: 'member', active: true, addedAt: 1 }],
+      board: {
+        columns: [
+          { ...board.columns[0]!, id: 'c1', name: 'Первая', position: 1024 },
+          { ...board.columns[0]!, id: 'c2', name: 'Вторая', position: 2048 }
+        ],
+        tasks: [task({ id: 't1', columnId: 'c2', assignee: 'alexey' })]
+      }
+    })
+    const secondHeader = document.querySelector<HTMLElement>('[data-column-nav-target="c2"]')!
+    secondHeader.scrollIntoView = vi.fn()
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Перейти к колонке' }), 'c2')
+
+    expect(document.activeElement).toBe(secondHeader)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «Вторая», 1 задача')
   })
 
   it('стрелка использует полный порядок, включая скрытую колонку, и позицию в конце цели', async () => {
