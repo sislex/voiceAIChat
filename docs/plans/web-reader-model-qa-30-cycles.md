@@ -50,8 +50,8 @@ are written before implementation, after inspecting the relevant capabilities.
 | 03 | Typography and text rendering | 30/30 | `0a0274e6` |
 | 04 | Color and contrast | 30/30 | `b16b2d46` |
 | 05 | Interactive control states | 30/30 | `20814f73` |
-| 06 | Forms and validation | 30/30 | this commit |
-| 07 | Focus and keyboard navigation | 0/30 | pending |
+| 06 | Forms and validation | 30/30 | `844753d9` |
+| 07 | Focus and keyboard navigation | 30/30 | this commit |
 | 08 | ARIA widgets and state relationships | 0/30 | pending |
 | 09 | Images and responsive assets | 0/30 | pending |
 | 10 | Audio, video and canvas | 0/30 | pending |
@@ -360,3 +360,66 @@ the latter passed 675 browser tests. Public native forms audits on Google,
 Facebook and Instagram completed without findings or truncation on their initial
 documents; this does not validate custom or signed-in scenarios. This commit
 completes 180 of 900 planned improvements.
+
+## Cycle 07: focus and keyboard diagnostics
+
+Add a read-only `focus` audit group with 26 report types covering 30 distinct
+verified capabilities. The feature reports current focus and declared keyboard
+configuration candidates; it does not claim to execute a Tab path or certify WCAG.
+
+1. Invalid tabindex integer syntax.
+2. Tabindex declared on a dialog.
+3. Conflicting autofocus in one document scope.
+4. Conflicting autofocus inside one dialog scope.
+5. Conflicting autofocus inside one popover scope.
+6. Autofocus targeting a natively disabled control.
+7. Autofocus targeting content currently hidden in an active scope.
+8. Autofocus without a known programmatically focusable target.
+9. Standalone custom widget without an apparent keyboard entry.
+10. Standalone native control explicitly removed from sequential navigation.
+11. Inline click handler without an apparent keyboard entry.
+12. Explicitly negative-tabindex scroll region without a child keyboard entry.
+13. Invalid inputmode keyword.
+14. Invalid enterkeyhint keyword.
+15. Invalid accesskey token syntax, respecting Unicode code points.
+16. Duplicate accesskey candidates between active controls.
+17. Current focus-visible state without computed outline or shadow.
+18. Transparent current focus outline.
+19. Transparent caret in the currently focused text input.
+20. Transparent caret in the currently focused contenteditable host.
+21. Fully transparent currently focused element/ancestor.
+22. Currently focused target entirely outside the viewport.
+23. Currently focused target with zero width.
+24. Currently focused target with zero height.
+25. Focusable flex items whose geometry reverses their estimated keyboard order.
+26. Focusable grid items whose geometry reverses their estimated keyboard order.
+27. Current focus below an aria-hidden declaration.
+28. Focused widget's missing aria-activedescendant reference.
+29. Focused widget's hidden active descendant.
+30. Active descendant unrelated to the focused widget's descendants/owns/controls.
+
+Supporting comparisons (not additional counted features): independent autofocus
+scopes; pending closed dialog/popover scopes; native disabled-fieldset inheritance;
+readonly controls; contenteditable with tabIndex -1 but native editing-host focus;
+first-summary native semantics; delegated keyboard behavior acknowledged as unknown;
+modern CSS reading-flow conservatively excluded from DOM order estimates; limits;
+no focus/Tab/caret/value/selection mutation; live-state refresh and both engines.
+
+Do not use a strict syntax failure to assert browsers ignore tabindex: native
+integer parsing accepts a numeric prefix such as ` 0junk`, although author syntax
+is nonconforming. Use evidence distinguishing syntax from observed tabIndex.
+Accesskey is a unique space-separated list of one-code-point tokens per WHATWG;
+MDN's short single-character description is incomplete. Autofocus has document,
+dialog and popover scoping roots, not one global conflict bucket.
+
+Retain heuristic confidence for focus paint, reachability and order candidates.
+Alternative border/background focus indicators, shortcuts, delegated handlers,
+roving focus and browser preferences require actual scenario testing. Do not call
+outline absence alone a confirmed invisible-focus defect.
+
+Cycle 07 verification: 511 proxy and 482 native diagnostics, ten browser-contract
+tests and both package typechecks passed. Inspected before/after focus screenshots
+and exercised real Tab navigation. `gate:fast` passed in 168.11 s and pre-commit
+`gate` in 548.33 s, both exit 0; the latter passed 767 browser tests. Public native
+focus audits completed on Google/Facebook/Instagram, reporting heuristic candidates
+without truncation. This commit completes 210 of 900 planned improvements.

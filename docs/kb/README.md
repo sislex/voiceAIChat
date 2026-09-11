@@ -22,8 +22,8 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 199 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 78 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 98 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 5 коммит(ов) в areas после сверки: d8ea3831 feat(web-reader): add read-only control probes (QA cycle 05) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1343 коммит(ов) в areas после сверки: d8ea3831 feat(web-reader): add read-only control probes (QA cycle 05) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: 26bc6a6e feat(web-reader): add 30 form diagnostics (QA cycle 06) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1344 коммит(ов) в areas после сверки: 26bc6a6e feat(web-reader): add 30 form diagnostics (QA cycle 06) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 62 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 4 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 739. Последние:
+Всего записей: 740. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md) — web-reader-qa-cycle-07
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-06.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-06.md) — web-reader-qa-cycle-06
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-05.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-05.md) — web-reader-qa-cycle-05
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md) — web-reader-qa-cycle-04
@@ -85,7 +86,6 @@
 - [2026-09-11-alexeys-macbook-air-2-web-reader-gate-timing.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-gate-timing.md) — Замер отдельных гейтов Web Reader и его UI
 - [2026-09-11-alexeys-macbook-air-2-make-localization.md](log/2026-09-11-alexeys-macbook-air-2-make-localization.md) — Russian and English localization for Make
 - [2026-09-11-alexeys-macbook-air-2-make-english-documentation.md](log/2026-09-11-alexeys-macbook-air-2-make-english-documentation.md) — English comments and documentation for Make
-- [2026-09-11-alexeys-macbook-air-2-make-dependency-gate-regression.md](log/2026-09-11-alexeys-macbook-air-2-make-dependency-gate-regression.md) — Fix Make dependency graph regression in release 0.1.296
 
 ## Исторические планы
 

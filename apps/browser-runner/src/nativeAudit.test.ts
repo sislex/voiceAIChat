@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, afterAll, describe, it, expect } from 'vitest'
-import { auditFixtures, probeFixtures, probeExpectationFailures, formConstraintExamples, formReadOnlyScene, formReadOnlySetup, formReadOnlyState, type FormFixtureEdit } from '@voicechat/browser-contracts/audit/fixtures'
+import { auditFixtures, probeFixtures, probeExpectationFailures, formConstraintExamples, formReadOnlyScene, formReadOnlySetup, formReadOnlyState, focusComparisonExamples, focusReadOnlyScene, focusReadOnlySetup, focusReadOnlyState, focusOrderScene, type FormFixtureEdit } from '@voicechat/browser-contracts/audit/fixtures'
 import { isPreviewProbeResult } from '@voicechat/shared'
 import type { BrowserCommand, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, PreviewAuditOptions } from '@voicechat/shared'
 import { BrowserSessionManager } from './sessionManager.js'
@@ -99,6 +99,44 @@ describe('Native Reader built-in audits', () => {
     expect(validity).toHaveLength(10)
     expect(validity.every(rule => rule.severity === 'info' && rule.confidence === 'observed')).toBe(true)
   })
+  it.each(focusComparisonExamples)('preserves focus semantics: %s', async (_name, html, rule, total) => {
+    await open('<!doctype html>'+html)
+    expect((await audit({ group: 'focus', rules: [rule] })).total).toBe(total)
+  })
+  it('discovers 26 focus reports and makes their heuristic status explicit', async () => {
+    await open('<!doctype html><input>')
+    const report = await audit({ group: 'focus', mode: 'list', limit: 30 })
+    expect(report.rules).toHaveLength(26)
+    expect(report.rules.every(rule => rule.confidence === 'heuristic')).toBe(true)
+  })
+  it('bounds focus metadata inspection without declaring a malformed value', async () => {
+    await open('<!doctype html><input tabindex="'+'1'.repeat(1025)+'">')
+    const report = await audit({ group: 'focus', rules: ['tabindex-syntax-invalid'] })
+    expect(report.total).toBe(0)
+    expect(report.truncated).toBe(true)
+    expect(report.limitations).toContain('Focus metadata inspection stopped at 1024 attribute characters.')
+  })
+  it('excludes radio groups from order estimates and explains incomplete traversal', async () => {
+    await open('<!doctype html><div style="display:flex;flex-direction:row-reverse"><input type="radio" name="choice"><input type="radio" name="choice"></div>')
+    const report = await audit({ group: 'focus', rules: ['focus-flex-order-reversed'] })
+    expect(report.total).toBe(0)
+    expect(report.truncated).toBe(true)
+    expect(report.limitations).toContain('Focus order estimates exclude native radio-group traversal; run a keyboard scenario.')
+  })
+  it('reports depth, order and relationship inspection limits', async () => {
+    await open('<!doctype html>'+'<div>'.repeat(150)+'<input id="target">'+'</div>'.repeat(150)+'<script>document.querySelector("#target").focus()</script>')
+    const opacity = await audit({ group: 'focus', rules: ['focused-opacity-zero'] })
+    expect(opacity.truncated).toBe(true)
+    expect(opacity.limitations).toContain('Focus opacity inspection stopped at 128 ancestors.')
+    await open('<!doctype html><div style="display:flex">'+'<button>Action</button>'.repeat(101)+'</div>')
+    const order = await audit({ group: 'focus', rules: ['focus-flex-order-reversed'] })
+    expect(order.truncated).toBe(true)
+    expect(order.limitations).toContain('Focus order inspection stopped at 100 direct children.')
+    await open('<!doctype html><input id="target" aria-activedescendant="option" aria-controls="'+'missing '.repeat(65)+'"><div id="option">Choice</div><script>document.querySelector("#target").focus()</script>')
+    const relation = await audit({ group: 'focus', rules: ['active-descendant-unrelated'] })
+    expect(relation.truncated).toBe(true)
+    expect(relation.limitations).toContain('Focus relationship inspection stopped at 64 ID references.')
+  })
   for (const fixture of auditFixtures) {
     it(`detects ${fixture.name ?? fixture.rule} at the original origin`, async () => {
       await open(fixture.broken)
@@ -147,6 +185,32 @@ describe('Native Reader built-in audits', () => {
     await send({ type: 'inspect', action: { kind: 'evaluate', code: 'document.querySelector("#target").setCustomValidity("")' } })
     expect((await audit(options)).total).toBe(0)
   })
+  it('observes focus under human control without value reads or focus mutations', async () => {
+    await open(focusReadOnlyScene)
+    const evaluate = async (code: string) => (await send({ type: 'inspect', action: { kind: 'evaluate', code } }, 'user') as BrowserInspectResult).value
+    await evaluate(focusReadOnlySetup)
+    const before = await evaluate(focusReadOnlyState)
+    await send({ type: 'control', owner: 'user' }, 'user')
+    try {
+      const report = await audit({ group: 'focus', limit: 30 })
+      expect(report.findings.map(f => f.id)).toContain('focused-caret-transparent')
+      expect(JSON.stringify(report)).not.toContain('PRIVATE_')
+      expect(await send({ type: 'status' })).toMatchObject({ lastActor: 'user' })
+      expect(await evaluate(focusReadOnlyState)).toEqual(before)
+    } finally { await send({ type: 'control', owner: 'shared' }, 'user') }
+  })
+  it('compares a visual-order finding against real Tab navigation and a repair', async () => {
+    await open(focusOrderScene)
+    const options = { group: 'focus', rules: ['focus-flex-order-reversed'] }
+    expect((await audit(options)).total).toBe(1)
+    const active = async () => (await send({ type: 'inspect', action: { kind: 'evaluate', code: 'document.activeElement.id' } }, 'user') as BrowserInspectResult).value
+    await send({ type: 'input', action: { type: 'press', key: 'Tab' } }, 'user')
+    expect(await active()).toBe('first')
+    await send({ type: 'input', action: { type: 'press', key: 'Tab' } }, 'user')
+    expect(await active()).toBe('second')
+    await send({ type: 'inspect', action: { kind: 'evaluate', code: 'document.querySelector("#row").style.flexDirection="row"' } })
+    expect((await audit(options)).total).toBe(0)
+  })
   it('does not mutate the inspected DOM and returns exact duplicate-ID selectors', async () => {
     await open('<!doctype html><button id="same">One</button><button id="same">Two</button>')
     const evaluate = async (code: string) => (await send({ type: 'inspect', action: { kind: 'evaluate', code } }) as BrowserInspectResult).value
@@ -167,7 +231,7 @@ describe('Native Reader built-in audits', () => {
     await open('<!doctype html><main>'+'<button></button>'.repeat(3100)+'</main>')
     expect((await audit({ group: 'layout', mode: 'list', limit: 30 })).rules).toHaveLength(30)
     const report = await audit({ rules: ['button-name-missing'], limit: 30 })
-    expect(report.groups).toEqual(['markup', 'layout', 'typography', 'color', 'forms'])
+    expect(report.groups).toEqual(['markup', 'layout', 'typography', 'color', 'forms', 'focus'])
     expect(report.scannedElements).toBe(3000)
     expect(report.truncated).toBe(true)
     expect(report.findings).toHaveLength(30)
@@ -175,7 +239,7 @@ describe('Native Reader built-in audits', () => {
   })
   it('keeps sensitive field values out of evidence', async () => {
     await open('<!doctype html><input type="password" value="native-private"><textarea name="token">native-token</textarea>')
-    for (const group of ['markup', 'layout', 'typography', 'color', 'forms']) {
+    for (const group of ['markup', 'layout', 'typography', 'color', 'forms', 'focus']) {
       const report = JSON.stringify(await audit({ group }))
       expect(report).not.toContain('native-private')
       expect(report).not.toContain('native-token')

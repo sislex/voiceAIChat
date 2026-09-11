@@ -4,6 +4,7 @@ import { layoutAuditRules } from './layout.js'
 import { typographyAuditRules } from './typography.js'
 import { colorAuditRules } from './color.js'
 import { formsAuditRules } from './forms.js'
+import { focusAuditRules } from './focus.js'
 
 /** The injected runtime must stay self-contained and explicitly report incomplete coverage. */
 export function previewAuditHelpers(surface: 'proxy' | 'chromium' = 'proxy'): string {
@@ -16,6 +17,7 @@ ${layoutAuditRules()}
 ${typographyAuditRules()}
 ${colorAuditRules()}
 ${formsAuditRules()}
+${focusAuditRules()}
 const auditMetadata=({group,id,title,severity,confidence})=>({group,id,title,severity,confidence});
 const runAudit=action=>{
   const started=performance.now(),group=action.group||'markup',mode=action.mode||'run';
@@ -31,6 +33,10 @@ const runAudit=action=>{
   const info=pageInfo(),page={url:info.url.slice(0,4096),title:info.title.slice(0,300)};
   if(group==='typography')limitations.push('Text checks inspect up to 4096 direct text characters and 256 child nodes per element; descendants are checked separately. Font status inspects up to 1000 declared faces; font stacks up to 4096 characters.');
   if(group==='forms')limitations.push('Native validity flags describe current form state, not confirmed application bugs; native length flags distinguish user editing from programmatic values.','Checks do not read live control values or validation messages and do not invoke validation methods or dispatch invalid events.','Constraint attributes are limited to 4096 characters; detached native inputs parse constraint metadata. Custom and server validation may explain ARIA/native differences.');
+  if(group==='focus'){
+    limitations.push('Focus checks do not press keys or prove keyboard operability. Shortcuts, delegated handlers, roving focus and browser preferences require an actual scenario.','Missing outline or shadow is a review candidate; borders, backgrounds and custom paint may provide valid focus indicators.','Cross-element comparisons use the scanned scope. Keyboard metadata is bounded at 1024 characters, opacity at 128 ancestors, order at 100 direct children and relationships at 64 ID references.','Order estimates exclude native radio-group traversal and modern reading-flow layouts. Virtual-keyboard hints do not verify a physical device keyboard.');
+    if(!document.hasFocus())limitations.push('This document does not currently own keyboard focus; active-element findings describe its retained focus target.');
+  }
   if(group==='color')limitations.push('Contrast uses an 8-bit sRGB canvas approximation, including wide-gamut conversion; it does not certify WCAG compliance.','Checks use computed font size, not transformed glyph size; browser link colors conceal visited state.','Center hit-testing does not prove every glyph is unobscured. Complex paint, native control appearance, SVG strokes and non-text generated content need pixel review.','Text discovery inspects up to 256 child nodes and 4096 characters per text node; paint composition inspects up to 64 ancestor layers.');
   let scope=document.documentElement;
   if(action.selector!==undefined){
