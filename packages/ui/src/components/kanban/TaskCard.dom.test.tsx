@@ -87,6 +87,19 @@ describe('TaskCard — клавиатура и меню действий', () =>
     expect(await screen.findByRole('menu')).toBeInTheDocument()
   })
 
+  it('копирует ссылку отдельным пунктом и закрывает меню без открытия карточки', async () => {
+    const onCopyLink = vi.fn().mockResolvedValue(undefined)
+    const onOpen = vi.fn()
+    render(<TaskCard {...props({ onCopyLink, onOpen })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «Задача A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Копировать ссылку' }))
+
+    expect(onCopyLink).toHaveBeenCalledOnce()
+    expect(onCopyLink).toHaveBeenCalledWith('t1')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
   it('клавиши внутренних кнопок не открывают карточку и не запускают перенос', async () => {
     const onOpen = vi.fn()
     const onOpenChat = vi.fn()
