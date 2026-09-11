@@ -23,6 +23,8 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export interface DialogProps {
+  /** Language of this dialog, independent of the surrounding host application. */
+  lang?: string
   /** Заголовок в шапке; он же имя окна для скринридера. */
   title: ReactNode
   /** Имя окна, если видимый заголовок для него слишком длинный. */
@@ -57,6 +59,7 @@ export interface DialogProps {
 }
 
 export function Dialog({
+  lang,
   title,
   ariaLabel,
   size = 'md',
@@ -148,6 +151,7 @@ export function Dialog({
         ref={panelRef}
         className={['vc-dialog', `vc-dialog--${size}`, phone && 'vc-dialog--phone', className].filter(Boolean).join(' ')}
         role="dialog"
+        lang={lang}
         aria-modal="true"
         {...label}
         // Окно фокусируемо: если внутри нет ни одной кнопки, фокус всё равно уходит с фона.

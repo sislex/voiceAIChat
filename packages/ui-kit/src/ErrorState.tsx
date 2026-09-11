@@ -20,6 +20,8 @@ export interface ErrorStateProps {
   /** Повторить чтение. Нет обработчика — нет кнопки. */
   onRetry?: () => void
   retryLabel?: string
+  /** Localized label for technical details. */
+  detailLabel?: string
   /** Плотный вариант: баннер над уже показанными данными, секция страницы. */
   compact?: boolean
   className?: string
@@ -31,6 +33,7 @@ export function ErrorState({
   detail,
   onRetry,
   retryLabel = 'Повторить',
+  detailLabel = 'Подробнее',
   compact = false,
   className,
   testId = 'error-state'
@@ -47,7 +50,7 @@ export function ErrorState({
       <p className="vc-state__title">{message}</p>
       {detail && (
         <details className="vc-state__detail">
-          <summary>Подробнее</summary>
+          <summary>{detailLabel}</summary>
           <pre>{detail}</pre>
         </details>
       )}

@@ -5,6 +5,10 @@ import { Suspense, lazy, useMemo, useRef, type KeyboardEvent } from 'react'
 import { highlightCode } from '../lib/codeHighlight'
 
 export interface CodeEditorProps {
+  /** Accessible loading text supplied by the owning application. */
+  loadingLabel?: string
+  /** Translate built-in completion labels without changing inserted code. */
+  translateUiText?: (text: string) => string
   path: string
   value: string
   onChange: (next: string) => void

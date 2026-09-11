@@ -29,6 +29,7 @@ import {
   type ReactNode
 } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocaleSource, type UiLocaleSource } from './localeSource'
 import { MOBILE_QUERY, useMediaQuery } from './mediaQuery'
 
 export type ToastKind = 'success' | 'error' | 'info'
@@ -40,6 +41,11 @@ export interface ToastAction {
 }
 
 export interface ToastOptions {
+  /** Optional application store keeps already visible messages in the selected language. */
+  localeSource?: UiLocaleSource
+  /** Independent applications can localize the dismiss control and content language. */
+  closeLabel?: string
+  lang?: string
   action?: ToastAction
   /** Сколько держать на экране, мс. 0 — до крестика (так ведут себя ошибки). */
   duration?: number
@@ -70,12 +76,52 @@ const CLOSE_LABEL = 'Закрыть уведомление'
 const ICON: Record<ToastKind, string> = { success: '✓', error: '!', info: 'i' }
 
 interface ToastItem {
+  localeSource?: ToastOptions['localeSource']
+  closeLabel?: string
+  lang?: string
   id: string
   kind: ToastKind
   text: string
   action?: ToastAction
   /** 0 — по времени не закрывать. */
   duration: number
+}
+
+function ToastMessage({ item, dismiss }: { item: ToastItem; dismiss: (id: string) => void }): JSX.Element {
+  const { lang, translate } = useLocaleSource(item.localeSource, item.lang)
+  return (
+    <div
+      lang={lang}
+      className={`vc-toast vc-toast--${item.kind}`}
+      data-testid={`toast-${item.kind}`}
+      {...(item.kind === 'error' ? { role: 'alert', 'aria-live': 'assertive' as const } : { role: 'status' })}
+      // Handle Escape locally so a notification does not intercept dialog or application shortcuts.
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return
+        event.stopPropagation()
+        dismiss(item.id)
+      }}
+    >
+      <span className="vc-toast-icon" aria-hidden="true">
+        {ICON[item.kind]}
+      </span>
+      <span className="vc-toast-text">{translate(item.text)}</span>
+      {item.action && (
+        <button
+          className="vc-toast-action"
+          onClick={() => {
+            item.action?.onClick()
+            dismiss(item.id)
+          }}
+        >
+          {translate(item.action.label)}
+        </button>
+      )}
+      <button className="vc-toast-close" aria-label={translate(item.closeLabel ?? CLOSE_LABEL)} title={translate(item.closeLabel ?? CLOSE_LABEL)} onClick={() => dismiss(item.id)}>
+        ✕
+      </button>
+    </div>
+  )
 }
 
 const ToastContext = createContext<ToastApi | null>(null)
@@ -110,7 +156,7 @@ export function ToastProvider({ children, avoidSelector }: ToastProviderProps): 
   const push = useCallback((kind: ToastKind, text: string, options?: ToastOptions): string => {
     const id = nextId()
     const duration = options?.duration ?? (kind === 'error' ? 0 : options?.action ? TOAST_ACTION_DURATION_MS : TOAST_DURATION_MS)
-    setItems((all) => [...all, { id, kind, text, duration, ...(options?.action ? { action: options.action } : {}) }])
+    setItems((all) => [...all, { id, kind, text, duration, localeSource: options?.localeSource, closeLabel: options?.closeLabel, lang: options?.lang, ...(options?.action ? { action: options.action } : {}) }])
     return id
   }, [])
 
@@ -204,40 +250,7 @@ export function ToastProvider({ children, avoidSelector }: ToastProviderProps): 
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      {visible.map((item) => (
-        <div
-          key={item.id}
-          className={`vc-toast vc-toast--${item.kind}`}
-          data-testid={`toast-${item.kind}`}
-          {...(item.kind === 'error' ? { role: 'alert', 'aria-live': 'assertive' as const } : { role: 'status' })}
-          // Esc закрывает тост, когда фокус внутри него. Обработчик локальный:
-          // глобальный перебивал бы Esc окон и хоткеи приложения.
-          onKeyDown={(event) => {
-            if (event.key !== 'Escape') return
-            event.stopPropagation()
-            dismiss(item.id)
-          }}
-        >
-          <span className="vc-toast-icon" aria-hidden="true">
-            {ICON[item.kind]}
-          </span>
-          <span className="vc-toast-text">{item.text}</span>
-          {item.action && (
-            <button
-              className="vc-toast-action"
-              onClick={() => {
-                item.action?.onClick()
-                dismiss(item.id)
-              }}
-            >
-              {item.action.label}
-            </button>
-          )}
-          <button className="vc-toast-close" aria-label={CLOSE_LABEL} title={CLOSE_LABEL} onClick={() => dismiss(item.id)}>
-            ✕
-          </button>
-        </div>
-      ))}
+      {visible.map((item) => <ToastMessage key={item.id} item={item} dismiss={dismiss} />)}
     </div>
   )
 

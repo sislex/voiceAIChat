@@ -3,6 +3,10 @@
 import { Suspense, lazy } from 'react'
 
 export interface CodeDiffProps {
+  /** Labels supplied by independent applications with their own locale. */
+  loadingLabel?: string
+  originalLabel?: string
+  modifiedLabel?: string
   path: string
   original: string
   modified: string
@@ -21,13 +25,13 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
 }
 
 /** Простое построчное сравнение (LCS не нужен: показываем строки, отсутствующие в другой версии). */
-export function FallbackDiff({ original, modified }: CodeDiffProps): JSX.Element {
+export function FallbackDiff({ original, modified, originalLabel = 'Снимок', modifiedLabel = 'Сейчас' }: CodeDiffProps): JSX.Element {
   const left = original.split('\n'), right = modified.split('\n')
   const rightSet = new Set(right), leftSet = new Set(left)
   return (
     <div className="make-diff-fallback" data-testid="make-diff-fallback">
-      <pre aria-label="Снимок">{left.map((l, i) => <span key={i} className={rightSet.has(l) ? '' : 'make-diff-removed'}>{l}{'\n'}</span>)}</pre>
-      <pre aria-label="Сейчас">{right.map((l, i) => <span key={i} className={leftSet.has(l) ? '' : 'make-diff-added'}>{l}{'\n'}</span>)}</pre>
+      <pre aria-label={originalLabel}>{left.map((l, i) => <span key={i} className={rightSet.has(l) ? '' : 'make-diff-removed'}>{l}{'\n'}</span>)}</pre>
+      <pre aria-label={modifiedLabel}>{right.map((l, i) => <span key={i} className={leftSet.has(l) ? '' : 'make-diff-added'}>{l}{'\n'}</span>)}</pre>
     </div>
   )
 }
