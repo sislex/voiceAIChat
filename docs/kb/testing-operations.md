@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-10
-checked: 83b7e546
+updated: 2026-09-11
+checked: 17cc6b29
 areas:
   - package.json
   - scripts
@@ -152,6 +152,24 @@ UI kit и собственные стили, поэтому правка `packag
 Размер пула считает `workersPerJob(jobs)` — `availableParallelism() / jobs`, минимум один воркер. Раньше при `--jobs 2` жёстко ставилось `--maxWorkers=1`, и это был самый дорогой параметр гейта: замер на 8 CPU дал `packages/ui` 108 с против 42 с при дефолтном пуле. Крутить пул выше числа CPU бессмысленно — там же: 4 воркера 40 с, 8 воркеров 41 с, 12 воркеров 61 с, `--pool=threads` 44 с, `--no-isolate` 127 с и красный прогон. Машина насыщается уже на дефолте, поэтому ускорение даёт только сокращение объёма работы, а не настройки раннера; единый корневой `vitest.workspace.ts` по этой же причине не заводили.
 
 Граф пакетов в `affected-check` явный (`PACKAGES[].dependsOn`), потому что часть связей живёт только в алиасах: `apps/web` тянет `@voicechat/ui` через tsconfig `paths` и alias в `vite.config.ts`, а в его `dependencies` этого пакета нет. Два сторожевых теста не дают графу разойтись с репозиторием — один требует, чтобы в `PACKAGES` был каждый воркспейс, другой сверяет `dependsOn` с манифестами. Это закрывает дефект, из-за которого десять воркспейсов (`ui-kit`, `app-shell`, `chat-app`, `profile-app`, `projects-app`, `operations-app`, `admin-app`, `stt-runner`, `browser-runner`, `automation-runner`) отсутствовали в списке: их путь не распознавался, и любая правка фронта молча уходила в полный гейт с формулировкой «нераспознанный критичный путь». Пути `e2e/`, `frontend-quality/` и `.claude/` полный гейт больше не включают — у них свои команды.
+
+`application-gate.mjs` also uses this graph for shared host code. Every invocation
+now calls `validatePackageDependencies` and `validateApplicationDependencies`
+before selecting or running checks,
+including explicit application gates and `--dry-run`. The validator compares
+workspace dependencies, dev dependencies, peer dependencies, and optional
+dependencies with `PACKAGES[].dependsOn` and the catalog's `buildDependencies`;
+additional alias edges remain valid. Catalog validation also checks workspace
+ownership against the lock file and manifests.
+This is a manifest check, so internal application changes still run only their
+selected test suites. A package dependency change must update this graph as well
+as the application catalog. Release `0.1.296` exposed the missing
+`make-app -> make-contracts` and `make-ui -> make-contracts` edges introduced by
+localization: the previous
+application gate passed package tests, while only the later root regression
+checked graph consistency. The release assertion and the application entry point
+now share the same validators; regression tests cover both missing edges and
+selection of Make UI and its hosts after contract changes.
 
 `apps/desktop` и `apps/agent-tray` помечены `manualGate`: замыкание потребителей их не втягивает, потому что корневой `npm install` их `node_modules` не ставит и чужая правка UI валила бы гейт на машине без локального install.
 
