@@ -4950,6 +4950,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; background: var(--ci-neutral-bg); color: var(--text); border-radius: 3px; padding: 1px 6px; }
 .jcard-labels { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .jcard-label--more { font-weight: 600; }
+.jcard-search-hit { border-radius: 2px; background: color-mix(in srgb, var(--warning) 35%, transparent); color: inherit; box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 45%, transparent); }
+.jcard-search-context { display: grid; gap: 3px; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 7%, transparent); color: var(--text-dim); font-size: 11px; line-height: 1.3; }
+.jcard-search-context-row { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jcard-search-context-row strong { color: var(--text); font-weight: 600; }
 .jcard-progress { display: flex; align-items: center; gap: 6px; }
 .jcard-progress-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--ci-neutral-bg); overflow: hidden; }
 .jcard-progress-fill { display: block; height: 100%; background: var(--ci-success); }

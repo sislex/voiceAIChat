@@ -98,6 +98,12 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.jboard-shortcuts-list')).toMatch(/grid-template-columns:/)
   })
 
+  it('совпадение поиска и его контекст имеют явную визуальную подачу', () => {
+    expect(rule('.jcard-search-hit')).toMatch(/background:/)
+    expect(rule('.jcard-search-context')).toMatch(/display:\s*grid/)
+    expect(rule('.jcard-search-context-row')).toMatch(/text-overflow:\s*ellipsis/)
+  })
+
   it('обёртка панелей не переносит строки — иначе вкладка не скроллится', () => {
     // Панель объявлена `flex: 1 1 100%`. С `flex-wrap: wrap` каждая уходит на
     // свою строку, высота строки считается по содержимому, и `overflow: auto`

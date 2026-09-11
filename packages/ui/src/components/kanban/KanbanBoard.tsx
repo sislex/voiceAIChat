@@ -1326,6 +1326,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       }}
       dragging={dragTask === t.id}
       grabbed={grab?.taskId === t.id}
+      searchQuery={search}
     />
     )
   }

@@ -111,6 +111,40 @@ describe('TaskCard — клавиатура и меню действий', () =>
   })
 })
 
+describe('TaskCard — объяснение результатов поиска', () => {
+  it('подсвечивает все совпадения без учёта регистра, сохраняя доступное имя карточки', () => {
+    render(<TaskCard {...props({ task: mkTask({ title: 'Alpha alpha', labels: ['Alpha-team'] }), searchQuery: 'ALPHA' })} />)
+    const card = screen.getByTestId('task-card')
+    expect(card.querySelectorAll('mark.jcard-search-hit')).toHaveLength(3)
+    expect(Array.from(card.querySelectorAll('mark')).map((mark) => mark.textContent)).toEqual(['Alpha', 'alpha', 'Alpha'])
+    expect(card).toHaveAccessibleName(/Alpha alpha/)
+  })
+
+  it('показывает источник совпадения в скрытых полях и безопасно принимает спецсимволы', () => {
+    const task = mkTask({
+      assignee: 'alice',
+      labels: ['one', 'two', 'three', 'release[1]'],
+      description: 'Префикс с искомым [value] и продолжением описания',
+      acceptanceCriteria: 'Ответ содержит [value]'
+    })
+    const { rerender } = render(<TaskCard {...props({ task, searchQuery: 'ALICE' })} />)
+    expect(screen.getByLabelText('Совпадения поиска')).toHaveTextContent('Исполнитель: alice')
+    expect(screen.getByLabelText('Совпадения поиска').querySelectorAll('mark')).toHaveLength(1)
+
+    rerender(<TaskCard {...props({ task, searchQuery: '[value]' })} />)
+    const context = screen.getByLabelText('Совпадения поиска')
+    expect(context).toHaveTextContent('Описание:')
+    expect(context).toHaveTextContent('Критерии:')
+    expect(context.querySelectorAll('mark')).toHaveLength(2)
+  })
+
+  it('не добавляет разметку подсветки для пустого запроса', () => {
+    render(<TaskCard {...props({ searchQuery: '   ' })} />)
+    expect(screen.getByTestId('task-card').querySelector('mark')).toBeNull()
+    expect(screen.queryByLabelText('Совпадения поиска')).not.toBeInTheDocument()
+  })
+})
+
 
 function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
   return { id: 'run-1', taskId: 't1', status: 'running', error: null, slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
