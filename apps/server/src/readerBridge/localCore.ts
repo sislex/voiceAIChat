@@ -8,7 +8,7 @@ import type { PreviewActionRelay } from '@voicechat/web-reader-contracts'
 import type { PreviewRunKeys } from '../browser/machinePreview.js'
 import { saveBrowserShot } from '../browser/checkShots.js'
 import type { MachinesService } from '../machines/service.js'
-import { RpcError } from '@voicechat/shared'
+import { CI_BROWSER_ACTIONS, RpcError } from '@voicechat/shared'
 import type { ReaderCore } from '@voicechat/web-reader-contracts'
 
 export interface LocalReaderCoreDeps {
@@ -59,6 +59,22 @@ export function createLocalReaderCore(deps: LocalReaderCoreDeps): ReaderCore {
      * Кадр уходит в ленту активного рана задачи ссылкой на файл: base64 в логе распухал бы на сотни
      * килобайт при каждом реплее ленты. Нет рана или шага — кадр просто не логируется: модель его уже получила.
      */
+    async logBrowserEvidence(entry, event) {
+      if (!entry.ciCheck) return
+      if (!CI_BROWSER_ACTIONS.includes(event.action)) throw new RpcError(400, 'Invalid browser action')
+      const { runId, stepId } = entry.ciCheck
+      const detail = await deps.db.ci.getCiRun(entry.userId, runId)
+      const step = detail?.steps.find(item => item.id === stepId && item.kind === 'model_work' && item.status === 'running')
+      if (!detail || !step || detail.run.conversationId !== entry.conversationId || detail.run.triggeredBy !== entry.userId) throw new RpcError(409, 'Browser check stage is no longer active')
+      // Rebuild the payload so an internal caller cannot persist page contents or credentials.
+      const safe = {
+        action: event.action, ok: event.ok === true, target: event.target === true,
+        ...(event.infrastructureError === true ? { infrastructureError: true } : {}),
+        ...(event.requestedTarget === true ? { requestedTarget: true } : {}),
+        ...(Number.isInteger(event.width) && event.width! > 0 && event.width! <= 10000 ? { width: event.width } : {})
+      }
+      await deps.db.ci.addCiEvent({ projectId: detail.run.projectId, runId, type: 'browser.observed', actorType: 'system', payload: { stepId, event: safe } })
+    },
     async logBrowserShot(userId, conversationId, pngBase64) {
       const { db } = deps
       const taskId = (await db.chat.getConversation(userId, conversationId))?.taskId

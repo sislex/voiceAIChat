@@ -43,11 +43,14 @@ export interface RunManagerOptions {
   profileHome?: (userId: string) => string
   /** Таймаут сироты; 0 — не следить (для тестов, которым это мешает). */
   orphanMs?: number
+  /** Keep the HTTP body alive while the CLI is silent; 0 disables it in tests. */
+  heartbeatMs?: number
   /** Диагностика (по умолчанию — stderr процесса). */
   log?: (message: string) => void
 }
 
 export const DEFAULT_ORPHAN_MS = 30_000
+export const DEFAULT_HEARTBEAT_MS = 15_000
 
 /**
  * Сколько ждём хвост stdout/stderr после выхода процесса. Обычно потоки
@@ -181,6 +184,11 @@ export class RunManager {
       return id
     }
 
+    let heartbeatTimer: NodeJS.Timeout | undefined
+    const stopHeartbeat = (): void => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
+      heartbeatTimer = undefined
+    }
     let orphanTimer: NodeJS.Timeout | undefined
     const disarm = (): void => {
       if (!orphanTimer) return
@@ -191,6 +199,7 @@ export class RunManager {
       if (closed) return
       frame({ t: 'exit', code })
       closed = true
+      stopHeartbeat()
       disarm()
       this.runs.delete(id)
       cleanup()
@@ -199,6 +208,7 @@ export class RunManager {
     const abandon = (reason: string): void => {
       if (closed) return
       closed = true
+      stopHeartbeat()
       disarm()
       this.runs.delete(id)
       cleanup()
@@ -219,6 +229,17 @@ export class RunManager {
     const send = (f: LlmRunFrame): void => {
       if (frame(f)) disarm()
       else arm()
+    }
+
+    // Blank NDJSON lines are ignored by existing clients and never become model output.
+    // Do not keep filling a blocked socket or reset its orphan deadline with heartbeats.
+    const heartbeatMs = this.opts.heartbeatMs ?? DEFAULT_HEARTBEAT_MS
+    if (heartbeatMs > 0) {
+      heartbeatTimer = setInterval(() => {
+        if (closed || orphanTimer) return
+        if (!sink.write('\n')) arm()
+      }, heartbeatMs)
+      heartbeatTimer.unref?.()
     }
 
     child.on('error', (err) => {

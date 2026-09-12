@@ -792,6 +792,16 @@
 }
 /* Строка занимает место между лентой и композером: кнопка не перекрывает
    читаемое сообщение и не получает фокус сама при появлении. */
+.chat-search { display: flex; align-items: center; gap: 4px; padding: 8px; min-width: 0; flex-shrink: 0; }
+.chat-search input { flex: 1; min-width: 0; width: 100%; }
+.chat-search [role='status'] { white-space: nowrap; }
+.chat-match-current { outline: 2px solid var(--text); }
+.main--compact .msg { margin-block: 6px; }
+.main--compact .bub { position: relative; padding: 8px 12px; }
+.main--compact .msg > .chip, .main--compact .msg-engine { display: none; }
+.chat-menu { position: relative; }
+.chat-menu > button { position: absolute; z-index: 10; right: 0; min-width: 180px; }
+.recording-status { margin: 4px 0; font-size: 12px; }
 .new-message-row {
   flex: none;
   display: flex;
@@ -7425,6 +7435,18 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .release-links{display:flex;flex-wrap:wrap;gap:14px;margin:0;font-size:13px}.release-links a{color:var(--accent);font-weight:600;text-decoration:none}.release-links a:hover{text-decoration:underline}
 .release-more{align-self:center}
 .release-production{border-color:var(--success);background:var(--success-soft)}
+.release-alert--setup{display:grid;gap:6px}.release-alert--setup span{color:var(--text)}.release-alert--setup .vc-btn{justify-self:start}
+.release-production-info{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;padding:10px 14px;border:1px solid var(--border);border-radius:12px;background:var(--panel);font-size:12px;color:var(--text-dim)}.release-production-info strong{color:var(--text);font-size:13px}
+.release-filters{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.release-filter{border:1px solid var(--border);border-radius:999px;padding:5px 12px;background:var(--surface);color:var(--text-dim);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.release-filter--active{border-color:var(--accent);background:var(--accent-soft);color:var(--text)}
+.release-filter-count{margin-left:6px;padding:0 6px;border-radius:999px;background:var(--danger-soft);color:var(--danger);font-size:11px}
+.release-search{flex:1 1 160px;min-width:0;margin-left:auto;border:1px solid var(--border);border-radius:999px;padding:6px 12px;background:var(--surface);color:var(--text);font:inherit;font-size:12px}
+.release-table-empty{color:var(--text-dim);text-align:center}
+.release-log-error{color:var(--danger)}
+.release-step-progress{padding:0 12px 10px}
+.release-steps-summary{margin:-8px 0 0;color:var(--text-dim);font-size:12px}
+.release-table td[data-label='Действия']{white-space:nowrap}.release-table td[data-label='Действия'] .vc-btn+.vc-btn{margin-left:6px}
 .release-sha{border:0;padding:0;background:transparent;color:inherit;font:inherit;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}.release-sha:hover{color:var(--accent)}
 .release-attempt,.release-count{color:var(--text-dim)}
 .release-detail-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
@@ -7456,6 +7478,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .release-run-step summary{grid-template-columns:auto 1fr auto}
 .release-run-status{display:none}
 .release-settings-actions .vc-btn{flex:1}
+.release-search{margin-left:0;flex-basis:100%}
 }
 
 /* Вкладка Merge задачи: запуск, лента рана, история попыток и репозитории. */

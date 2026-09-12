@@ -6,7 +6,7 @@ import { dirname } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { LlmRunBody, LlmRunFrame } from '@voicechat/shared'
 import { parseLlmRunFrame } from '@voicechat/shared'
-import { CodexThreadInUseError, RunManager, type RunSink } from './rawRun.js'
+import { CodexThreadInUseError, DEFAULT_HEARTBEAT_MS, RunManager, type RunSink } from './rawRun.js'
 import type { SpawnFn } from '../cli/claudeCli.js'
 
 /** Фейковый процесс CLI: реальные claude/codex в тестах не запускаются. */
@@ -64,7 +64,10 @@ function fakeSink(opts: { flushed?: boolean } = {}): RunSink & {
     end: () => {
       ended = true
     },
-    drain: () => drainCb?.(),
+    drain: () => {
+      opts.flushed = true
+      drainCb?.()
+    },
     close: () => closeCb?.(),
     ended: () => ended
   }
@@ -93,6 +96,79 @@ const request = (over: Partial<LlmRunBody> = {}): LlmRunBody => ({
 afterEach(() => vi.useRealTimers())
 
 describe('RunManager', () => {
+  it.each(['claude', 'codex'] as const)('keeps a silent %s alive without producing model frames', async (kind) => {
+    vi.useFakeTimers()
+    const { child, stdout, stderr, signals } = fakeChild()
+    const sink = fakeSink()
+    const write = vi.spyOn(sink, 'write')
+    const runs = new RunManager({ spawn: vi.fn(() => child) as unknown as SpawnFn })
+    runs.start(request({ kind }), sink)
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(write).toHaveBeenCalledTimes(10 * 60_000 / DEFAULT_HEARTBEAT_MS)
+    expect(write.mock.calls.every(([chunk]) => chunk === '\n')).toBe(true)
+    expect(sink.frames).toEqual([])
+    expect(signals).toEqual([])
+    expect(runs.size).toBe(1)
+
+    stdout.end('late output\n')
+    stderr.end()
+    await vi.advanceTimersByTimeAsync(1)
+    child.emit('close', 0)
+    expect(sink.frames).toEqual([{ t: 'out', s: 'late output' }, { t: 'exit', code: 0 }])
+    const writesAtExit = write.mock.calls.length
+    await vi.advanceTimersByTimeAsync(DEFAULT_HEARTBEAT_MS * 2)
+    expect(write).toHaveBeenCalledTimes(writesAtExit)
+    expect(sink.ended()).toBe(true)
+    expect(runs.size).toBe(0)
+  })
+
+  it('does not accumulate heartbeats or postpone the orphan deadline on a blocked socket', async () => {
+    vi.useFakeTimers()
+    const { child, signals } = fakeChild()
+    const sink = fakeSink({ flushed: false })
+    const write = vi.spyOn(sink, 'write')
+    const runs = new RunManager({
+      spawn: vi.fn(() => child) as unknown as SpawnFn, heartbeatMs: 10, orphanMs: 100
+    })
+    runs.start(request(), sink)
+
+    await vi.advanceTimersByTimeAsync(109)
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(signals).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(signals).toEqual(['SIGTERM'])
+    expect(sink.ended()).toBe(true)
+    expect(runs.size).toBe(0)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(write).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['disconnect', 'error', 'cancel'] as const)('stops heartbeats after %s', async (reason) => {
+    vi.useFakeTimers()
+    const { child, stdout, stderr } = fakeChild()
+    const sink = fakeSink()
+    const write = vi.spyOn(sink, 'write')
+    const runs = new RunManager({ spawn: vi.fn(() => child) as unknown as SpawnFn, heartbeatMs: 10 })
+    const id = runs.start(request(), sink)
+    await vi.advanceTimersByTimeAsync(10)
+
+    if (reason === 'disconnect') sink.close()
+    else if (reason === 'error') child.emit('error', new Error('CLI failed'))
+    else {
+      runs.cancel(id)
+      stdout.end()
+      stderr.end()
+      await vi.advanceTimersByTimeAsync(1)
+      child.emit('close', null)
+    }
+    const writesAtEnd = write.mock.calls.length
+    await vi.advanceTimersByTimeAsync(100)
+    expect(write).toHaveBeenCalledTimes(writesAtEnd)
+    expect(runs.size).toBe(0)
+    expect(sink.ended()).toBe(true)
+  })
+
   it('строки stdout уходят кадрами out, stderr — err, в конце exit', async () => {
     const { child, stdout, stderr } = fakeChild()
     const spawn = vi.fn(() => child) as unknown as SpawnFn

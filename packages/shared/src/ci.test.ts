@@ -1,7 +1,7 @@
 // Чистая логика домена CI: бюджет уточняющих вопросов и полнота списков.
 import { describe, it, expect } from 'vitest'
 import {
-  ciBrowserCheckUrl,
+  ciBrowserCheckUrl, ciBrowserCheckPrompt, evaluateCiBrowserEvidence, CI_BROWSER_VIEWPORTS, type CiBrowserEvidenceEvent,
   normalizeCiBrowserCheck,
   normalizeCiBrowserStartPath,
   DEFAULT_CI_BROWSER_CHECK,
@@ -792,6 +792,34 @@ describe('extractImprovementFiles', () => {
   it('ограничивает число файлов', () => {
     const log = Array.from({ length: 30 }, (_, i) => `src/file${i}.ts`).join(' ')
     expect(extractImprovementFiles(log, 5)).toHaveLength(5)
+  })
+})
+
+describe('browser evidence execution gate', () => {
+  const complete = (): CiBrowserEvidenceEvent[] => [
+    { action: 'open', ok: true, target: true, requestedTarget: true },
+    ...CI_BROWSER_VIEWPORTS.flatMap(width => [
+      { action: 'viewport' as const, ok: true, target: true, width },
+      ...(['read', 'a11y', 'styles', 'evaluate', 'errors', 'console', 'network', 'screenshot', 'press', 'click'] as const).map(action => ({ action, ok: true, target: true }))
+    ])
+  ]
+  it('preserves the exact hash route and assigned machine in the prompt', () => {
+    const check = normalizeCiBrowserCheck({ mode: 'chromium', devServerPort: 5173, startPath: '/#/projects/project/releases' })
+    expect(ciBrowserCheckPrompt(check, 'agent-1')).toContain('http://agent-1.machine.internal:5173/#/projects/project/releases')
+    for (const width of CI_BROWSER_VIEWPORTS) expect(ciBrowserCheckPrompt(check, 'agent-1')).toContain(String(width))
+    expect(ciBrowserCheckPrompt(DEFAULT_CI_BROWSER_CHECK, null)).toBe('')
+  })
+  it('requires all viewports and diagnostics after opening the exact target', () => {
+    expect(evaluateCiBrowserEvidence(complete()).status).toBe('passed')
+    expect(evaluateCiBrowserEvidence([]).status).toBe('blocked')
+    expect(evaluateCiBrowserEvidence(complete().filter(e => e.action !== 'open')).missing).toContain('open:exact_target')
+    expect(evaluateCiBrowserEvidence(complete().filter(e => e.action !== 'screenshot')).missing).toContain('320:screenshot')
+    expect(evaluateCiBrowserEvidence(complete().map(e => ({ ...e, target: false }))).status).toBe('blocked')
+  })
+  it('does not count failed calls, checks before open, or another screen', () => {
+    expect(evaluateCiBrowserEvidence([...complete().slice(1), complete()[0]]).status).toBe('blocked')
+    expect(evaluateCiBrowserEvidence([{ action: 'open', ok: false, target: false, infrastructureError: true }]).status).toBe('infrastructure_error')
+    expect(evaluateCiBrowserEvidence(complete().map(e => e.action === 'read' ? { ...e, ok: false } : e)).status).toBe('blocked')
   })
 })
 

@@ -628,6 +628,8 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('missing_acceptance_criteria')
   })
 
+  // @testCase T9
+  // @testCase T11
   // @testCase TC-SCHEMA-SINGLE-JSON
   // @testCase TC-BRIEF-01
   it('rejects multiple JSON objects on every preparation and recovery attempt', async () => {
@@ -647,6 +649,42 @@ describe('подготовка к разработке: диагностика �
     expect(run.error).toContain('ровно один JSON-объект')
   })
 
+  // @testCase T10
+  it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    input.decisions = [{ id: 'D1', text: 'Decision', rationale: 'Reason', questionId }]
+    claudeAnswer = () => ({ text: JSON.stringify(input) })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(run.readiness?.decisions).toEqual([{ id: 'D1', text: 'Decision', rationale: 'Reason', ...(questionId ? { questionId } : {}) }])
+    expect(run.readiness?.functionalRequirements).toBe(input.functionalRequirements)
+    const again = await taskInBacklog()
+    claudeAnswer = () => ({ text: JSON.stringify(run.readiness) })
+    const repeated = await settled(adminTok, (await launch(adminTok, again.project.id, again.task.id)).id)
+    expect(repeated.status).toBe('success')
+    expect(repeated.readiness?.decisions).toEqual(run.readiness?.decisions)
+  })
+
+  // @testCase T9
+  // @testCase T11
+  it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
+    const { project, task } = await taskInBacklog()
+    const valid = compatibleReadiness()
+    const input = JSON.parse(valid)
+    const invalid = variant === 'prefix' ? 'Готово. ' + valid
+      : variant === 'fence' ? '```json\n' + valid + '\n```'
+      : variant === 'suffix' ? valid + ' Готово.'
+      : variant === 'multiple' ? valid + '\n' + valid
+      : variant === 'link' ? JSON.stringify({ ...input, decisions: [{ id: 'd', text: 'x', rationale: 'x', questionId: 4 }] })
+      : JSON.stringify({ ...input, functionalRequirements: [] })
+    claudeAnswer = () => ({ text: invalid })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+  })
+
+  // @testCase T9
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })
