@@ -2655,6 +2655,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         speakingMessageId={voice.speakingMessageId}
         onSpeakMessage={voiceActions.replayMessage}
         onDeleteMessage={chatActions.deleteMessage}
+        failedSubmits={Object.values(chat.failedSubmits)}
+        onRetryFailedSubmit={(id) => { void chatActions.retryFailedSubmit(id) }}
+        onDeleteFailedSubmit={chatActions.deleteFailedSubmit}
         onEditMessage={chatActions.editMessage}
         onAnswerQuestions={(text) => void chatActions.answerQuestions(text)}
         onAnswerCiInteraction={(runId, interactionId, text) => void projectsActions.answerCiInteraction(runId, interactionId, { text })}
@@ -2713,6 +2716,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
+            captureActive={voice.captureActive}
             defaultCollapsed={compactChat && !isEmptyPreparedChat}
             allowCollapse={compactChat && !isEmptyPreparedChat}
             layout={isEmptyPreparedChat ? 'centered' : 'docked'}

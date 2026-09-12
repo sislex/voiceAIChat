@@ -20,6 +20,7 @@ import { DEFAULT_DELAYS, type PipelineDelays, transcriptFrames } from '../mockPi
 const HANDS_FREE_GAP_MS = 400
 
 export interface VoiceDomainState {
+  captureActive: boolean
   /** Текущее состояние голосового автомата. */
   voice: VoiceState
   /** Живые сегменты распознавания (растут во время записи). */
@@ -99,7 +100,7 @@ export interface VoiceDeps {
 }
 
 function initialState(): VoiceDomainState {
-  return { voice: 'idle', liveSegments: [], speakingMessageId: null }
+  return { voice: 'idle', captureActive: false, liveSegments: [], speakingMessageId: null }
 }
 
 /** Сессия синтеза: очередь чанков и признак «источник закончился». */
@@ -184,7 +185,9 @@ export function createVoiceStore(deps: VoiceDeps): VoiceStore {
   }
 
   /** Запуск реального захвата (fire-and-forget); ошибки не рвут UX-цикл. */
+  let captureGeneration = 0
   function startCapture(): void {
+    const generation = ++captureGeneration
     if (!audio) return
     handsVad.reset() // новая сессия слушания — сбрасываем детектор паузы
     void audio
@@ -192,11 +195,16 @@ export function createVoiceStore(deps: VoiceDeps): VoiceStore {
         deviceId: settings().micDeviceId,
         onEnergy: (r) => applyMicEnergy(r) // hands-free авто-пауза по тишине
       })
-      .then(() => deps.onMicsChanged?.()) // после разрешения появляются реальные метки
+      .then(() => {
+        if (generation === captureGeneration && getState().voice === 'listening') setState({ captureActive: true })
+        deps.onMicsChanged?.()
+      }) // после разрешения появляются реальные метки
       .catch((err) => console.warn('[audio] запуск захвата не удался', err))
   }
 
   function stopCapture(): void {
+    captureGeneration++
+    setState({ captureActive: false })
     if (!audio) return
     void audio.stop().catch((err) => console.warn('[audio] остановка захвата не удалась', err))
   }
