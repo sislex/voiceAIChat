@@ -1,5 +1,5 @@
 import { createChunkSink } from '../ci/chunkSink.js'
-import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseTimeouts } from '@voicechat/shared'
+import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, suggestNextReleaseVersion, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseTimeouts } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
 export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; gitUrl:string; prepareCheckout:boolean; limits?:ReleaseTimeouts }
@@ -54,7 +54,10 @@ export function releaseKnowledgeBaseCommand(target:ReleaseProjectTarget,releaseB
 export function releaseSwitchCommand(target:ProductionTarget,release:Pick<ProjectRelease,'id'|'branch'|'sha'>):string {
   const fetchedRef=`refs/voicechat/releases/${release.id}`
   const refspec=quote(`+refs/heads/${release.branch}:${fetchedRef}`)
-  return at(target,`test -z "$(git status --porcelain)" && test "$(git config --get remote.origin.url)" = ${quote(target.expectedRepository)} && git fetch origin ${refspec} && test "$(git rev-parse ${quote(fetchedRef)})" = ${quote(release.sha)} && git cat-file -e ${quote(`${release.sha}^{commit}`)} && git checkout -B ${quote(release.branch)} ${quote(release.sha)} && git reset --hard ${quote(release.sha)} && git update-ref -d ${quote(fetchedRef)}`)
+  // Every precondition names itself: a bare `test -z … && …` chain failed with
+  // an empty log, and a stray file in the production checkout looked like a
+  // network problem.
+  return at(target,`if [ -n "$(git status --porcelain)" ]; then echo 'Production checkout содержит незакоммиченные изменения — переключение остановлено:'; git status --porcelain; exit 1; fi && if [ "$(git config --get remote.origin.url)" != ${quote(target.expectedRepository)} ]; then echo 'Production checkout смотрит на другой remote.origin.url:'; git config --get remote.origin.url; exit 1; fi && git fetch origin ${refspec} && if [ "$(git rev-parse ${quote(fetchedRef)})" != ${quote(release.sha)} ]; then echo ${quote(`SHA ветки ${release.branch} в origin изменился после подготовки: ожидался ${release.sha}`)}; git rev-parse ${quote(fetchedRef)}; exit 1; fi && git cat-file -e ${quote(`${release.sha}^{commit}`)} && git checkout -B ${quote(release.branch)} ${quote(release.sha)} && git reset --hard ${quote(release.sha)} && git update-ref -d ${quote(fetchedRef)}`)
 }
 
 /**
@@ -159,7 +162,8 @@ export class ReleaseManager {
     const version=assertReleaseBranch(branch)
     if(this.preparing.has(target.projectId))throw new Error('Подготовка release-ветки уже выполняется')
     if(baseBranch!==target.baseBranch&&!assertReleaseBranch(baseBranch))throw new Error('Недопустимая базовая ветка')
-    if((await this.listBranches(target)).some(item=>item.branch===branch))throw new Error('Release-ветка уже существует')
+    const existing=await this.listBranches(target)
+    if(existing.some(item=>item.branch===branch))throw new Error(`Release-ветка ${branch} уже существует; следующая свободная версия — ${suggestNextReleaseVersion(existing.map(item=>item.branch))}`)
     const release=await this.db.releases.createProjectRelease(userId,target.projectId,{branch,version,sha:'',status:'preparing',agentId:target.agentId,checkoutPath:target.path,limits:target.limits??DEFAULT_RELEASE_TIMEOUTS})
     this.preparing.add(target.projectId)
     void this.prepare(userId,target,release,baseBranch).finally(()=>this.preparing.delete(target.projectId))

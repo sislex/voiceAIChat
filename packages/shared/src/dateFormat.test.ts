@@ -1,3 +1,4 @@
+import { formatRelativeTime } from './dateFormat'
 import { describe, expect, it } from 'vitest'
 import { formatDate, formatDateTime, isoDate } from './dateFormat'
 
@@ -26,5 +27,21 @@ describe('формат дат', () => {
 
   it('isoDate годится для атрибута time', () => {
     expect(isoDate(moment)).toBe('2026-08-29T01:38:00.000Z')
+  })
+})
+
+describe('formatRelativeTime', () => {
+  const now = Date.UTC(2026, 8, 12, 12, 0)
+  it('округляет до минут, часов и дней', () => {
+    expect(formatRelativeTime(now - 10_000, now)).toBe('только что')
+    expect(formatRelativeTime(now - 5 * 60_000, now)).toBe('5 мин назад')
+    expect(formatRelativeTime(now - 3 * 3_600_000, now)).toBe('3 ч назад')
+    expect(formatRelativeTime(now - 30 * 3_600_000, now)).toBe('вчера')
+    expect(formatRelativeTime(now - 5 * 86_400_000, now)).toBe('5 дн. назад')
+    expect(formatRelativeTime(now + 20 * 60_000, now)).toBe('через 20 мин')
+  })
+  it('старше месяца — обычная дата, мусор — пустая строка', () => {
+    expect(formatRelativeTime(now - 40 * 86_400_000, now)).not.toContain('назад')
+    expect(formatRelativeTime('not a date', now)).toBe('')
   })
 })
