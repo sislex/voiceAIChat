@@ -767,6 +767,10 @@ export interface IpcInvokeMap {
   'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:retouch': { arg: { conversationId: string; path: string; prompt: string; selection: import('./imageStudio').ImageStudioSelection; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:extract': { arg: { conversationId: string; path: string; selection: import('./imageStudio').ImageStudioSelection }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:place': { arg: { conversationId: string; basePath: string; objectPath: string; x?: number; y?: number; width?: number; height?: number }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:restoreVersion': { arg: { conversationId: string; currentPath: string; targetPath: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
   'imgstudio:publish': { arg: { conversationId: string; password?: string | null }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
   'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean } }
@@ -1583,6 +1587,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'imgstudio:rename',
   'imgstudio:generate',
   'imgstudio:edit',
+  'imgstudio:retouch',
+  'imgstudio:extract',
+  'imgstudio:place',
+  'imgstudio:restoreVersion',
   'imgstudio:cancel',
   'imgstudio:publish',
   'imgstudio:publication',

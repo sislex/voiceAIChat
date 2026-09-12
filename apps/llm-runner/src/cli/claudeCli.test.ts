@@ -164,6 +164,21 @@ describe('ClaudeCli', () => {
     expect(allowed).not.toMatch(/write|edit|delete|rename|apply/)
   })
 
+  it('подключает Image Studio MCP и разрешает полный набор инструментов', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send({
+      prompt: 'отретушируй лицо', sessionId: null, model: 'opus',
+      imageStudioMcpUrl: 'http://image-studio:8796/mcp/image-studio?k=s&conv=c1&user=admin'
+    }, makeHandlers())
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as { mcpServers: Record<string, { url: string }> }
+    expect(config.mcpServers.image_studio?.url).toContain('conv=c1')
+    expect(args[args.indexOf('--allowedTools') + 1]).toContain('mcp__image_studio__image_retouch')
+    expect(args[args.indexOf('--allowedTools') + 1]).toContain('mcp__image_studio__image_restore')
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('image_extract')
+  })
+
   it('projectMachines: другие машины проекта в хинте, machines в allow-list; без них — нет', () => {
     const { child } = fakeChild()
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn

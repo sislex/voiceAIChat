@@ -17,6 +17,7 @@ import { createRemoteImageStudio } from './remote.js'
 
 const SECRET = 'studio-session-secret'
 const INTERNAL = 'studio-internal-token'
+const MCP = 'studio-mcp-secret'
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from('fixture')])
 const auth = { authorization: `Bearer ${signToken({ name: 'ann', role: 'developer' }, SECRET)}` }
 
@@ -65,12 +66,12 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
     studioUrl = `http://127.0.0.1:${studioPort}`
     core = await buildServer({
       config: loadConfig({ PORT: '0', VC_DATA_DIR: join(dir, 'core'), VC_MODELS_DIR: join(dir, 'models'), VC_PIPER_VOICES_DIR: join(dir, 'voices'),
-        VC_IMAGE_STUDIO_MODE: mode, VC_IMAGE_STUDIO_URL: studioUrl, VC_INTERNAL_TOKEN: INTERNAL }),
+        VC_IMAGE_STUDIO_MODE: mode, VC_IMAGE_STUDIO_URL: studioUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP }),
       db, codex: client, sessionSecret: SECRET
     })
     coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
     if (mode === 'remote') {
-      studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port: studioPort, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, version: 'test' } })).app
+      studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port: studioPort, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, mcpSecret: MCP, version: 'test' } })).app
       await studio.listen({ host: '127.0.0.1', port: studioPort })
     } else studioUrl = coreUrl
   }, 60_000)
@@ -189,7 +190,7 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
     expect(offline.status).toBe(503)
     expect(await offline.json()).toEqual({ error: 'image_studio_unavailable' })
     const port = Number(new URL(studioUrl).port)
-    studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, version: 'test' } })).app
+    studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, mcpSecret: MCP, version: 'test' } })).app
     await studio.listen({ host: '127.0.0.1', port })
     expect(await (await fetch(api('run'), { headers: auth })).json()).toEqual({ active: false })
     const read = await fetch(api('file?path=cat.png'), { headers: auth })

@@ -48,6 +48,18 @@ describe('ImageStudioStore', () => {
     const big = Buffer.concat([png(), Buffer.alloc(13 * 1024 * 1024)])
     await expect(store.writeBuffer(CONV, 'huge.png', big)).rejects.toMatchObject({ code: 'too_big' })
   })
+
+  it('переименование сохраняет граф версий и происхождение извлечённого объекта', async () => {
+    await store.writeBuffer(CONV, 'портрет.png', png('base'))
+    await store.setMeta(CONV, 'портрет.png', { operation: 'upload' })
+    await store.writeBuffer(CONV, 'лицо.png', png('face'))
+    await store.setMeta(CONV, 'лицо.png', { source: 'портрет.png', operation: 'extract', selection: { kind: 'rectangle', x: 10, y: 20, width: 30, height: 40 } })
+    await store.writeBuffer(CONV, 'лицо-2.png', png('edited'))
+    await store.setMeta(CONV, 'лицо-2.png', { source: 'лицо.png', operation: 'edit' })
+    await store.rename(CONV, 'лицо.png', 'голова.png')
+    expect((await store.list(CONV)).find((file) => file.path === 'лицо-2.png')?.source).toBe('голова.png')
+    expect(await store.extractionOrigin(CONV, 'лицо-2.png')).toEqual({ path: 'портрет.png', bounds: { kind: 'rectangle', x: 10, y: 20, width: 30, height: 40 } })
+  })
 })
 
 describe('ImageStudioStore: sniffing содержимого', () => {

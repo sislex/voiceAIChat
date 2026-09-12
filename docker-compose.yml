@@ -221,6 +221,7 @@ services:
       VC_DATA_DIR: /data
       VC_CORE_URL: http://voicechat:8787
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
+      VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
     volumes:
       - vc-data:/data

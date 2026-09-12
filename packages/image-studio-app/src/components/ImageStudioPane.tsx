@@ -3895,6 +3895,42 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       onUsePrompt={(text) => { setPrompt(text); setViewing(null); promptRef.current?.focus() }}
       onPickForEdit={(path) => { setSelected(path); setViewing(null); setCompare(false); promptRef.current?.focus() }}
       onVariate={(path) => { setViewing(null); setCompare(false); variate(files.find((file) => file.path === path) ?? { path, size: 0, updatedAt: 0 }) }}
+      onRetouch={async (path, selection, prompt) => {
+        let next: string | null = null
+        const ok = await run(async () => {
+          const result = await api['imgstudio:retouch']({ conversationId, path, selection, prompt })
+          next = result.file.path
+        }, 'Ретушь сохранена новой версией', 'Модель ретуширует выделение')
+        if (!ok || !next) throw new Error('Ретушь не выполнена')
+        setViewing(next)
+      }}
+      onExtract={async (path, selection) => {
+        let next: string | null = null
+        const ok = await run(async () => {
+          const result = await api['imgstudio:extract']({ conversationId, path, selection })
+          next = result.file.path
+        }, 'Объект извлечён в отдельный PNG')
+        if (!ok || !next) throw new Error('Объект не извлечён')
+        setViewing(next)
+      }}
+      onPlace={async (objectPath, basePath) => {
+        let next: string | null = null
+        const ok = await run(async () => {
+          const result = await api['imgstudio:place']({ conversationId, objectPath, basePath })
+          next = result.file.path
+        }, 'Объект возвращён новой версией')
+        if (!ok || !next) throw new Error('Объект не возвращён')
+        setViewing(next)
+      }}
+      onRestoreVersion={async (currentPath, targetPath) => {
+        let next: string | null = null
+        const ok = await run(async () => {
+          const result = await api['imgstudio:restoreVersion']({ conversationId, currentPath, targetPath })
+          next = result.file.path
+        }, `Восстановлена версия «${targetPath}»`)
+        if (!ok || !next) throw new Error('Версия не восстановлена')
+        setViewing(next)
+      }}
       onDownload={(path) => void download(path)}
       onCopy={(path) => copy(files.find((file) => file.path === path) ?? { path, size: 0, updatedAt: 0 })}
       {...(notes[viewing] !== undefined ? { note: notes[viewing] } : {})}

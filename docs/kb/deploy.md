@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-10
-checked: 83b7e546
+updated: 2026-09-12
+checked: 5a464d55
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -205,6 +205,10 @@ Caddy ведёт `/api/image-studio/*` и `/g/*` в студию напряму�
 standalone запускается `npm run -w @voicechat/image-studio start` с теми же переменными
 (каталог можно задать через `VC_IMAGE_STUDIO_DATA_DIR`). На один каталог запускается один
 экземпляр студии: слоты генераций и лимиты попыток пароля живут в памяти процесса.
+The standalone process also requires `VC_MCP_SECRET`, shared with the core and
+forwarded by `docker-compose.yml`. The core embeds that secret in a private,
+conversation-scoped MCP URL passed only to the selected LLM runner. A missing
+secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
 (образ `voicechat-kanban`, стадия `kanban-runtime`, порт 8789, тот же код `apps/server`, точка входа
