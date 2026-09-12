@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-12
-checked: d9864647
+updated: 2026-09-13
+checked: 1593d89c
 areas:
   - packages/make-app
   - packages/image-studio-app
