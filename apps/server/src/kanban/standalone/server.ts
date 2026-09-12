@@ -152,6 +152,7 @@ export async function buildKanbanServer(opts: BuildKanbanServerOptions): Promise
   kanban.service.board.subscribeTaskRepositories(async (update) => emit({ kind: 'taskRepositories', update }))
   kanban.service.board.subscribeQaStages(async (update) => emit({ kind: 'qaStage', update }))
   kanban.service.board.subscribeImprovements((projectId) => emit({ kind: 'improvements', projectId }))
+  kanban.service.board.subscribeReleases(async (update) => emit({ kind: 'release', update }))
   kanban.service.notifications.subscribe(async (event) => emit({ kind: 'notification', event }))
   app.addHook('onClose', async () => { if (flushTimer) clearTimeout(flushTimer); await flush() })
 
