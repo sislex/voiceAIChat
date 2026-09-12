@@ -137,6 +137,21 @@ export function compareReleaseBranches(left: string, right: string): number | nu
   }
   return 0
 }
+/**
+ * Next patch version after the highest existing `release/x.y.z` branch. The
+ * Release Center offers it as a one-click default: typing the version by hand
+ * was the most frequent source of "branch already exists" errors.
+ */
+export function suggestNextReleaseVersion(branches: readonly string[], fallback = '0.1.0'): string {
+  let best: string | null = null
+  for (const branch of branches) {
+    if (!releaseVersion(branch)) continue
+    if (best === null || (compareReleaseBranches(branch, best) ?? 0) > 0) best = branch
+  }
+  if (best === null) return fallback
+  const [major, minor, patch] = releaseVersion(best)!.split('.').map(Number) as [number, number, number]
+  return `${major}.${minor}.${patch + 1}`
+}
 export function assertReleaseBranch(branch: string): string {
   const version = releaseVersion(branch)
   if (!version) throw new Error('Разрешены только ветки release/x.y.z')
