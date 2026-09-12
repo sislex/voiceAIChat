@@ -21,6 +21,7 @@ const bridge = (): void => {
 afterEach(() => { delete (window as { ci?: unknown }).ci })
 
 describe('NewTaskPreparationPanel', () => {
+  // @testCase TC-INT-02
   it('раскладывает попытки по этапам: исходная постановка и каждый цикл доработки', async () => {
     bridge()
     const loadRuns = vi.fn(async () => [run(), run({ id: 'r2', attempt: 2, status: 'running', createdAt: 2_000, finishedAt: null, canCancel: true })])
@@ -41,7 +42,7 @@ describe('NewTaskPreparationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
     await waitFor(() => expect(screen.getByTestId('new-task-preparation-stage-1')).toHaveAttribute('aria-current', 'step'))
     expect(screen.getByTestId('new-task-preparation-stage-2')).toHaveTextContent('Выполняется')
-    await waitFor(() => expect(screen.getByTestId('new-task-preparation-stage-1')).toHaveTextContent('Development Brief и результат'))
+    await waitFor(() => expect(screen.getByTestId('new-task-preparation-stage-1')).toHaveTextContent('готово'))
   })
 
   it('цикл без попыток предлагает запуск подготовки прямо в своём этапе', async () => {
@@ -49,7 +50,7 @@ describe('NewTaskPreparationPanel', () => {
     const onStart = vi.fn()
     render(<NewTaskPreparationPanel cycles={[cycle]} workflow={[]} preparation={{ projectId: 'p1', taskId: 't1', loadRuns: async () => [run()], onStart }} />)
     const second = await screen.findByTestId('new-task-preparation-stage-2')
-    await waitFor(() => expect(second).toHaveTextContent('Подготовка к разработке ещё не запускалась'))
+    await waitFor(() => expect(second).toHaveTextContent('Подготовка этого этапа ещё не запускалась'))
     expect(second).toHaveTextContent('Ожидает')
   })
 })

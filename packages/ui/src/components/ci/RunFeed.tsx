@@ -624,7 +624,7 @@ const LOG_CAP = 500
  * гейт плана с кнопками «Одобрить» / «На доработку». Отвеченная пауза
  * показывается статично — ответить могли и из связанного чата.
  */
-function InteractionCard(props: {
+export function InteractionCard(props: {
   interaction: CiInteraction
   disabled: boolean
   onAnswer: (answer: CiInteractionAnswer) => void

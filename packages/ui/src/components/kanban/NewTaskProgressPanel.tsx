@@ -3,16 +3,16 @@
 // the Make mock (model work, checks, knowledge base, resources) and the legacy
 // timeline. Data comes from the CI task report; the feed itself is the shared
 // `RunFeed`, so retry/cancel/answer work exactly as in the legacy card.
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Badge, Button, EmptyState, ErrorState, MetricGrid, ResultTable, Skeleton, SubTabs } from '@voicechat/ui-kit'
 import type { CiRunReport, CiRunSummary, CiTaskReport } from '@shared/ci'
 import { canStartCiRun } from '@shared/ci'
 import type { KbTaskUsageReport } from '@shared/kb'
 import { ciStatusLabel, ciTone, fmtDuration, type CiTone } from '../ci/ciFormat'
-import { DevelopmentRunFeed } from '../ci/TaskRunFeed'
+import { NewDevelopmentRunFeed } from './NewDevelopmentRunFeed'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { formatDateTime } from '../../lib/dateFormat'
-import { TaskTimeline } from './TaskTimeline'
+import { useNewTaskAction, useNewTaskResource } from './useNewTaskResource'
 import { AttemptList, MetricTiles, StageCard, StageHeading, StageRail } from './NewTaskStages'
 import type { TaskReworkCycleViewModel } from './TaskCardViewModel'
 import { assignToCycles, ciStageStatus, pluralRu, stageStatusOf, type CycleStage, type StageStatus } from './taskCycles'
@@ -50,20 +50,15 @@ const checkSteps = (run: CiRunReport) => run.steps.filter((step) => step.kind ==
 
 export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Element {
   const [section, setSection] = useState<ProgressSection>('overview')
-  const [report, setReport] = useState<CiTaskReport | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const resource = useNewTaskResource(props.projectId + ':' + props.taskId, async () => {
+    if (!window.ci) throw new Error('CI bridge недоступен')
+    return window.ci.getTaskReport(props.projectId, props.taskId)
+  })
+  const { data: report, error, loading, refresh: load } = resource
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-  const [launching, setLaunching] = useState(false)
-  const load = useCallback(async (): Promise<void> => {
-    if (!window.ci) { setLoading(false); setError('CI bridge недоступен'); return }
-    try {
-      const next = await window.ci.getTaskReport(props.projectId, props.taskId)
-      setReport(next); setError(null)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setLoading(false) }
-  }, [props.projectId, props.taskId])
-  useEffect(() => { setLoading(true); void load() }, [load, props.ciSummary?.id, props.ciSummary?.status])
+  const { busy: launching, error: launchError, act } = useNewTaskAction(load)
+  useEffect(() => { if (props.ciSummary) void load() }, [load, props.ciSummary?.id, props.ciSummary?.status])
   // A finished run changes the report totals; a new run appears in the list.
   useEffect(() => {
     const bridge = window.ci
@@ -80,16 +75,15 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
   const activeStatus = props.ciSummary?.status
   const canStart = Boolean(props.onStartCi) && (props.canStart ?? true) && canStartCiRun(activeStatus ? { status: activeStatus } : null)
   const launch = async (): Promise<void> => {
-    if (!props.onStartCi || launching) return
-    setLaunching(true)
-    try { await props.onStartCi() } finally { setLaunching(false) }
+    if (!props.onStartCi || !canStart) return
+    await act(async () => { await props.onStartCi!() })
   }
 
   if (loading && !report) return <div className="new-task-process" data-testid="new-task-progress">
     <span className="vc-sr-only" aria-live="polite">Загрузка хода выполнения…</span>
     <Skeleton variant="list" count={3} item="block" height={96} gap={10} />
   </div>
-  if (error && !report) return <ErrorState message="Не удалось загрузить ход выполнения" detail={error} onRetry={() => { setLoading(true); void load() }} />
+  if (error && !report) return <ErrorState message="Не удалось загрузить ход выполнения" detail={error} onRetry={() => void load()} />
 
   return <div className="new-task-process" data-testid="new-task-progress">
     <SubTabs items={SECTIONS} value={section} onChange={setSection} ariaLabel="Разделы хода выполнения" className="new-task-subtabs" />
@@ -103,7 +97,7 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
           {props.onStartCi && <Button size="sm" variant="primary" disabled={!canStart} loading={launching} onClick={() => void launch()}>В очередь на разработку</Button>}
         </div>}
       />
-      {error && <ErrorState compact message="Не удалось обновить ход выполнения" detail={error} onRetry={() => void load()} />}
+      {(error || launchError) && <ErrorState compact message="Не удалось обновить ход выполнения" detail={error || launchError} onRetry={() => void load()} />}
       <StageRail testId="new-task-progress-rail">
         {stages.map((stage, index) => {
           const status = stageStatusOf(stage, runStatus)
@@ -117,7 +111,8 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
             statusLabel={DEVELOPMENT_LABEL[status] ?? undefined}
             eyebrow={`Этап ${stage.number}`}
             title={stage.cycle ? `Разработка доработки ${stage.cycle.sequence}` : 'Разработка первоначальной постановки'}
-            workflow={props.workflow}
+            workflow={shown ? shown.steps.filter(step => !step.parentStepId).map(step => step.title) : []}
+            workflowTitle="Снимок шагов выбранного рана"
             cycle={stage.cycle}
             sourceTitle="Основа разработки"
             sourceText="Первоначальная постановка и Development Brief этапа 1."
@@ -127,10 +122,11 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
             testId={`new-task-progress-stage-${stage.number}`}
             {...(isSelected && shown ? {
               detailsSummary: 'Лента и результаты этапа',
-              details: <DevelopmentRunFeed runId={shown.runId} onDone={() => void load()} />
+              details: <NewDevelopmentRunFeed runId={shown.runId} onDone={() => void load()} />
             } : {})}
           >
             {stage.cycle && <div className="new-task-sent-reworks new-task-sent-reworks--title"><b>Реализуемые доработки</b></div>}
+            {shown && shown.steps.length === 0 && <p className="new-task-muted">Снимок шагов рана отсутствует.</p>}
             {shown
               ? <MetricTiles items={[
                 { label: 'Прогресс', value: shown.steps.length ? `${Math.round(doneSteps(shown) / shown.steps.length * 100)}%` : '—' },
@@ -150,12 +146,34 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
       </StageRail>
     </>}
     {section === 'model' && (selectedRun
-      ? <DevelopmentRunFeed runId={selectedRun.runId} onDone={() => void load()} />
+      ? <NewDevelopmentRunFeed runId={selectedRun.runId} onDone={() => void load()} />
       : <EmptyState compact icon="⏱" title="Запусков ещё нет" description="Лента модели появится после первого development-рана." />)}
     {section === 'checks' && <ChecksSection stages={stages} />}
     {section === 'kb' && <KbSection projectId={props.projectId} taskId={props.taskId} />}
     {section === 'resources' && <ResourcesSection report={report} />}
-    {section === 'timeline' && <TaskTimeline projectId={props.projectId} taskId={props.taskId} />}
+    {section === 'timeline' && <TimelineSection projectId={props.projectId} taskId={props.taskId} />}
+  </div>
+}
+
+function TimelineSection({ projectId, taskId }: { projectId: string; taskId: string }): JSX.Element {
+  const resource = useNewTaskResource(projectId + ':' + taskId, async () => {
+    if (!window.ci) throw new Error('История недоступна')
+    return window.ci.getTaskTimeline(projectId, taskId)
+  })
+  return <div className="new-task-process">
+    {resource.error && <ErrorState compact message="Не удалось загрузить временную шкалу" detail={resource.error} onRetry={() => void resource.refresh()} />}
+    {!resource.data && resource.loading && <Skeleton variant="list" count={3} />}
+    {resource.data && !resource.data.stages.length && <EmptyState compact icon="⏱" title="Этапов пока нет" description="Время появится после первого запуска." />}
+    {resource.data?.stages.map(stage => <section className="new-task-section" key={stage.id}>
+      <h3>{stage.title}</h3>
+      <MetricTiles items={[{ label: 'Календарное время', value: fmtDuration(stage.calendarDuration) }, { label: 'Активное время', value: fmtDuration(stage.activeDuration) },
+        { label: 'Очередь', value: fmtDuration(stage.queueDuration) }, { label: 'Попытки', value: String(stage.attemptCount) }]} />
+      {stage.attempts.map(attempt => <details key={attempt.id}><summary>Попытка {attempt.number} · {attempt.status} · {fmtDuration(attempt.calendarDuration)}</summary>
+        <p>{attempt.machine ?? 'Машина не указана'} · {attempt.model ?? 'Модель не указана'}</p>
+        <p>{attempt.reason?.message}</p>
+        <p>{attempt.startedAt ? formatDateTime(attempt.startedAt) : 'Время запуска не указано'}</p>
+      </details>)}
+    </section>)}
   </div>
 }
 

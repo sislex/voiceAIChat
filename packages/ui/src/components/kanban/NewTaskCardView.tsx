@@ -186,7 +186,7 @@ function WorkflowList({ steps }: { steps: TaskCardViewModel['workflow'] }): JSX.
 }
 
 /** Одна доработка очереди: чекбокс выбора, содержание и действия черновика. */
-function DraftRow({ cycle, selected, onToggle, callbacks }: { cycle: TaskReworkCycleViewModel; selected: boolean; onToggle(): void; callbacks: TaskCardCallbacks }): JSX.Element {
+function DraftRow({ cycle, selected, onToggle, callbacks, pending, canSubmit }: { cycle: TaskReworkCycleViewModel; selected: boolean; onToggle(): void; callbacks: TaskCardCallbacks; pending?: boolean; canSubmit: boolean }): JSX.Element {
   // Заголовок строки — первая строка описания, остальное уходит в тело: иначе
   // однострочная доработка показывалась бы дважды подряд.
   const [title, ...rest] = cycle.description.split('\n')
@@ -204,9 +204,9 @@ function DraftRow({ cycle, selected, onToggle, callbacks }: { cycle: TaskReworkC
         {pluralRu(cycle.criteria.length, 'критерий', 'критерия', 'критериев')} · ⌘ {pluralRu(cycle.makeSources.reduce((sum, source) => sum + (source.mode === 'whole_project' ? 1 : source.paths.length), 0), 'Make-файл', 'Make-файла', 'Make-файлов')} · {pluralRu(cycle.attachments.length, 'вложение', 'вложения', 'вложений')}
       </small>
       <footer className="new-task-rework-actions">
-        <Button size="sm" variant="primary" onClick={() => void callbacks.onSubmitDraft?.(cycle.id)}>Отправить на доработку</Button>
-        <Button size="sm" variant="secondary" onClick={() => callbacks.onEditDraft?.(cycle.id)}>Изменить</Button>
-        <Button size="sm" variant="danger" onClick={() => void callbacks.onDeleteDraft?.(cycle.id)}>Удалить</Button>
+        <Button size="sm" variant="primary" disabled={!canSubmit || pending} onClick={() => void callbacks.onSubmitDraft?.(cycle.id)}>Отправить на доработку</Button>
+        <Button size="sm" variant="secondary" disabled={pending} onClick={() => callbacks.onEditDraft?.(cycle.id)}>Изменить</Button>
+        <Button size="sm" variant="danger" disabled={pending} onClick={() => void callbacks.onDeleteDraft?.(cycle.id)}>Удалить</Button>
       </footer>
     </div>
   </article>
@@ -232,7 +232,7 @@ function CycleRow({ cycle, callbacks }: { cycle: TaskReworkCycleViewModel; callb
         {cycle.attachments.length > 0 && <span>{pluralRu(cycle.attachments.length, 'вложение', 'вложения', 'вложений')}</span>}
       </div>
       <footer>
-        <Button size="sm" variant="ghost" onClick={() => callbacks.onChangeTab('preparation')}>Результат подготовки</Button>
+        <Button size="sm" variant="ghost" onClick={() => callbacks.onOpenPreparationCycle ? callbacks.onOpenPreparationCycle(cycle.id) : callbacks.onChangeTab('preparation')}>Результат подготовки</Button>
         <Button size="sm" variant="ghost" onClick={() => callbacks.onChangeTab('progress')}>Ход выполнения →</Button>
       </footer>
     </div>
@@ -269,7 +269,7 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
   const saveMakeLink = (draft: TaskCardMakeLinkDraft): void => {
     if (!makeEditor) return
     const done = makeEditor.linkId ? callbacks.onReplaceMake?.(makeEditor.linkId, draft) : callbacks.onLinkMake?.(draft)
-    void Promise.resolve(done).then(() => setMakeEditor(null))
+    void Promise.resolve(done).then(() => setMakeEditor(null)).catch(() => { /* The container shows the error and reconciles actual links. */ })
   }
 
   const makeBlock = makeEditor
@@ -380,12 +380,12 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
       {model.drafts.length > 0 && <div className="new-task-bulk-bar">
         <label><input type="checkbox" checked={allSelected} onChange={() => setSelectedDrafts(allSelected ? [] : selectable)} /> Выбрать все доступные</label>
         <span>Выбрано: {selected.length}</span>
-        <Button size="sm" variant="primary" disabled={!selected.length || !model.actions.canRework} title={model.actions.canRework ? undefined : 'Отправка доступна после успешной разработки'} onClick={() => void callbacks.onSubmitDrafts?.(selected)}>Отправить выбранные на доработку</Button>
+        <Button size="sm" variant="primary" loading={props.reworkPending} disabled={!selected.length || !model.actions.canRework} title={model.actions.canRework ? undefined : 'Отправка доступна после успешной разработки'} onClick={() => void callbacks.onSubmitDrafts?.(selected)}>Отправить выбранные на доработку</Button>
       </div>}
       {model.drafts.length === 0
         ? <EmptyState title="Очередь пуста" description="Добавьте доработку — она сохранится черновиком и отправится отдельным циклом." />
         : <div className="new-task-rework-list" role="list">
-          {model.drafts.map((cycle) => <DraftRow key={cycle.id} cycle={cycle} selected={selected.includes(cycle.id)} onToggle={() => setSelectedDrafts((all) => all.includes(cycle.id) ? all.filter((id) => id !== cycle.id) : [...all, cycle.id])} callbacks={callbacks} />)}
+          {model.drafts.map((cycle) => <DraftRow key={cycle.id} cycle={cycle} pending={props.reworkPending} canSubmit={model.actions.canRework} selected={selected.includes(cycle.id)} onToggle={() => setSelectedDrafts((all) => all.includes(cycle.id) ? all.filter((id) => id !== cycle.id) : [...all, cycle.id])} callbacks={callbacks} />)}
         </div>}
     </section>
     <div className="new-task-history-separator" role="separator" aria-label="История запущенных циклов"><span>История запущенных циклов</span></div>
@@ -436,6 +436,7 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         )}
       </nav>
       <main className="new-task-body" ref={bodyRef}>
+        {props.reworkError && !props.reworkOpen && <ErrorState compact message={props.reworkError} onRetry={callbacks.onRetryHistory} />}
         {model.loadState === 'loading' && <div role="status" aria-label="Карточка загружается"><Skeleton height={120} /><Skeleton height={200} /></div>}
         {model.loadState === 'error' && <ErrorState message="Не удалось загрузить карточку" detail={model.error ?? 'Повторите попытку позже.'} onRetry={callbacks.onRetryHistory} />}
         {model.loadState === 'empty' && <EmptyState title="Данные задачи отсутствуют" description="Закройте карточку и обновите доску." />}
