@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-09-12
-checked: 5a464d55
+checked: e1ce913f
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -156,13 +156,16 @@ stdout CLI, поэтому разбор stream-json/JSONL, usage и `session_id`
 сервере: `turns.ts`, CI-раннер и парсеры `packages/shared` не отличают удалённый
 ход от локального.
 
-`LlmRequest.attachments` решает проблему серверных абсолютных путей в prompt: сервер
-по-прежнему собирает prompt с путями из своей ФС, но вместе с запросом передаёт
-байты вложений и исходный `serverPath`. Исполнитель создаёт временный каталог рана,
-кладёт туда файлы, переписывает prompt по карте `serverPath → runnerPath` и удаляет
-каталог после завершения или отмены рана. Аналогично `cwd` стал «желаемым»: сервер
-его больше не проверяет через `existsSync`, а исполнитель сам решает, можно ли
-сделать `chdir`; несуществующий путь просто игнорируется.
+`LlmRequest.attachments` carries file bytes together with the authoritative
+`serverPath` used in the prompt. `prepareLlmAttachments` in
+`apps/llm-runner/src/cli/attachments.ts` materializes those bytes in a temporary
+`voicechat-llm-run-*` directory and rewrites every mentioned `serverPath` to the
+local copy. Both embedded `ClaudeCli`/`CodexCli` and the HTTP `RunManager` call
+the same helper and clean the directory after completion, cancellation, client
+disconnect, or a synchronous spawn failure. A producer must mention the exact
+`serverPath` in its prompt; `runnerName` alone does not create a path that the
+model can discover. `cwd` remains a desired path: the HTTP runner validates it
+on its own host and simply omits an unavailable directory from `spawn`.
 
 Общее место разбора — `llm/sinks.ts`: приёмник строк (`createClaudeSink` /
 `createCodexSink`) отделён от способа их получить, им пользуются и локальные
@@ -747,9 +750,9 @@ Make-контекст приклеиваются к сообщению **каж�
 `contextBlocks.ts`/`shared` и зови из обоих мест. Иначе инспектор перестаёт
 отвечать на вопрос, ради которого сделан.
 
-## Генерация картинок для студии (2026-09-03)
+## Генерация картинок для студии (2026-09-12)
 
-`apps/server/src/llm/imageStudioGenerator.ts` — один ход codex без сессии.
+`apps/server/src/imageStudioBridge/generator.ts` — один ход codex без сессии.
 Три обязательных условия, без любого из них модель отвечает текстом и ран
 падает «AI не вернул файл изображения» (сниппет ответа уходит в лог сервера с
 префиксом `[image-studio]`): (1) исполнение разрешено —
@@ -765,6 +768,13 @@ Make-контекст приклеиваются к сообщению **каж�
 генерация может получить до 4 референсов (`references` в generate) — файлы
 галереи уходят вложениями reference-N-<имя> с подсказкой «повтори стиль и
 палитру, не копируя композицию».
+
+Localized retouch sends the crop, monochrome mask, and optional references as
+inline attachments. The generated prompt names their exact `/studio/...`
+`serverPath` values so attachment preparation can substitute paths that the
+selected local or HTTP runner can actually read. The Image Studio service then
+composites the returned crop through the original mask and preserves every
+pixel outside it.
 Обычный ход чата студии (assistantKind `images`) получает блок «Студия
 картинок» через `deps.studioContext` в turns.ts: список галереи (до 30 файлов
 с промптами) и правило «покажи результат fenced-блоком image с абсолютным

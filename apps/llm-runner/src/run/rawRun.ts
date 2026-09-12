@@ -10,16 +10,15 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import type { Readable } from 'node:stream'
-import type { LlmAttachment, LlmRunBody, LlmRunFrame, LlmRunKind } from '@voicechat/shared'
+import type { LlmRunBody, LlmRunFrame, LlmRunKind } from '@voicechat/shared'
 import { killCliChild } from '../cli/childKill.js'
 import { claudeArgs, type SpawnFn } from '../cli/claudeCli.js'
 import { cliProfileEnv } from '../cli/cliProfiles.js'
 import { codexInvocation } from '../cli/codexCli.js'
+import { prepareLlmAttachments } from '../cli/attachments.js'
 
 /**
  * Приёмник кадров рана. Абстракция над `http.ServerResponse`: тест подсовывает
@@ -61,54 +60,6 @@ interface ActiveRun {
   child: ChildProcess
   /** Погасить CLI (SIGTERM → SIGKILL). */
   kill(): void
-}
-
-interface PreparedRun {
-  body: LlmRunBody
-  cleanup(): void
-}
-
-function safeRunnerName(att: LlmAttachment, index: number): string {
-  const base = basename((att.runnerName || '').trim() || att.serverPath.trim())
-  const name = !base || base === '.' || base === '..' ? `attachment-${index + 1}` : base
-  return `${index + 1}-${name}`
-}
-
-function replacePromptPaths(prompt: string, pairs: Array<{ serverPath: string; runnerPath: string }>): string {
-  return [...pairs]
-    .sort((a, b) => b.serverPath.length - a.serverPath.length)
-    .reduce((acc, pair) => acc.split(pair.serverPath).join(pair.runnerPath), prompt)
-}
-
-function prepareRun(body: LlmRunBody): PreparedRun {
-  const attachments = body.attachments?.filter((att) => att.serverPath && att.dataBase64) ?? []
-  if (!attachments.length) return { body, cleanup: () => {} }
-
-  const dir = mkdtempSync(join(tmpdir(), 'voicechat-llm-run-'))
-  const pairs: Array<{ serverPath: string; runnerPath: string; preserveServerPath: boolean }> = []
-  for (const [index, att] of attachments.entries()) {
-    const runnerPath = join(dir, safeRunnerName(att, index))
-    writeFileSync(runnerPath, Buffer.from(att.dataBase64, 'base64'))
-    pairs.push({ serverPath: att.serverPath, runnerPath, preserveServerPath: att.preserveServerPath === true })
-  }
-
-  const replaceable = pairs.filter((pair) => !pair.preserveServerPath)
-  const preserved = pairs.filter((pair) => pair.preserveServerPath)
-  const prompt = replacePromptPaths(body.prompt, replaceable)
-  const visualCopies = preserved.length
-    ? [
-        '',
-        '## Визуальные копии вложений',
-        'Авторитетные пути ниже существуют на выбранной удалённой машине и должны передаваться remote-инструментам без изменений.',
-        'Для непосредственного визуального анализа в этом LLM-ране доступны временные копии:',
-        ...preserved.map((pair) => `- ${pair.serverPath} → ${pair.runnerPath}`)
-      ].join('\n')
-    : ''
-
-  return {
-    body: { ...body, prompt: `${prompt}${visualCopies}` },
-    cleanup: () => rmSync(dir, { recursive: true, force: true })
-  }
 }
 
 function usableCwd(cwd: string | undefined): string | undefined {
@@ -182,9 +133,9 @@ export class RunManager {
       throw new CodexThreadInUseError()
     }
     const kind: LlmRunKind = body.kind === 'codex' ? 'codex' : 'claude'
-    let prepared: PreparedRun
+    let prepared: ReturnType<typeof prepareLlmAttachments<LlmRunBody>>
     try {
-      prepared = prepareRun(reservedBody)
+      prepared = prepareLlmAttachments(reservedBody)
     } catch (err) {
       this.releaseCodexThread(reservedBody, id)
       throw err
@@ -196,9 +147,9 @@ export class RunManager {
       prepared.cleanup()
       this.releaseCodexThread(reservedBody, id)
     }
-    const cwd = usableCwd(prepared.body.cwd)
+    const cwd = usableCwd(prepared.request.cwd)
     const runBody: LlmRunBody = {
-      ...prepared.body,
+      ...prepared.request,
       ...(cwd ? { cwd } : { cwd: undefined })
     }
     const invocation =
