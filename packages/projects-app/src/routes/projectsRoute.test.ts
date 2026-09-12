@@ -7,6 +7,7 @@ const routes: ProjectsRoute[] = [
   { kind: 'settings', projectId: 'p1', tab: 'llm' },
   { kind: 'settings', projectId: 'p1', tab: 'general' },
   { kind: 'releases', projectId: 'p1' },
+  { kind: 'releases', projectId: 'p1', releaseId: 'rel-1' },
   { kind: 'code', projectId: 'p1' },
   { kind: 'code', projectId: 'p1', workspaceId: 'ws:ws 1' },
   { kind: 'assistant', projectId: 'p1' },

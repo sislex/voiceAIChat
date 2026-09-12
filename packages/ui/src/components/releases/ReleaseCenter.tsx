@@ -4,8 +4,8 @@ import { formatDateTime, formatRelativeTime, isoDate } from '../../lib/dateForma
 import { compareReleaseBranches, DEFAULT_RELEASE_TIMEOUTS, normalizeReleaseVersionInput, releaseFailureSummary, releaseVersion, suggestNextReleaseVersion, type ProductionReadiness, type ProjectRelease, type ProjectReleaseSummary, type ReleaseBranch, type ReleaseMachine, type ReleaseStep, type ReleaseTimeouts } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
-import { useConfirm, useToast, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
-import { RELEASES_TAB_KEY } from '@voicechat/ui-foundation/persistence'
+import { useConfirm, useToast, EmptyState, ErrorState, ProgressTrack, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
+import { RELEASES_APP_ENVIRONMENT_KEY, RELEASES_MODE_KEY, RELEASES_TAB_KEY } from '@voicechat/ui-foundation/persistence'
 
 interface Props {
   projectId:string; baseBranch:string; owner:boolean; releaseTimeouts?:ReleaseTimeouts; api?:RendererApi
@@ -15,6 +15,10 @@ interface Props {
   production?:ProductionReadiness&{machineName?:string|null;healthCheckCommand?:string}
   /** Opens project settings where production is configured. */
   onOpenSettings?:()=>void
+  /** Deep link: open this release's detail on mount. */
+  initialReleaseId?:string
+  /** The detail opened or closed — the host mirrors it into the URL. */
+  onOpenRelease?:(releaseId:string|null)=>void
 }
 type ReleaseFilter='all'|'ready'|'failed'|'production'
 /** Typical duration of the last finished runs of the same kind — the ETA of a running one. */
@@ -73,7 +77,9 @@ function StepLog({log,live}:{log:string;live:boolean}):JSX.Element{
   const ref=useRef<HTMLPreElement>(null)
   const stick=useRef(true)
   useEffect(()=>{const node=ref.current;if(node&&live&&stick.current)node.scrollTop=node.scrollHeight},[log,live])
-  return <pre ref={ref} onScroll={event=>{const node=event.currentTarget;stick.current=node.scrollHeight-node.scrollTop-node.clientHeight<24}}>{log}</pre>
+  // Lines that name a failure are tinted: a 400-line regression log is read by its red lines.
+  const lines=useMemo(()=>log.split('\n'),[log])
+  return <pre ref={ref} onScroll={event=>{const node=event.currentTarget;stick.current=node.scrollHeight-node.scrollTop-node.clientHeight<24}}>{lines.map((line,index)=>/\b(error|fail(ed|ure)?|fatal|ошибк[аи]|не удалось|×)\b/i.test(line)?<span key={index} className="release-log-error">{line}{index<lines.length-1?'\n':''}</span>:<span key={index}>{line}{index<lines.length-1?'\n':''}</span>)}</pre>
 }
 function StepFeed({steps,now}:{steps:ReleaseStep[];now:number}):JSX.Element{
   return <ol className="release-run-feed">{steps.map(step=>{
@@ -82,6 +88,7 @@ function StepFeed({steps,now}:{steps:ReleaseStep[];now:number}):JSX.Element{
     return <li key={step.id} className="release-run-step" data-status={step.status}>
       <details open={open}>
         <summary><span className="release-run-dot"/><strong>{labels[step.kind]??step.kind}</strong><span className="release-run-status">{stepStatusLabels[step.status]??step.status}</span><time>{elapsed==null?'':`${fmtDuration(elapsed)} `}(лимит {fmtDuration(step.limitMs??null)})</time></summary>
+        {step.status==='running'&&step.limitMs!=null&&elapsed!=null&&<div className="release-step-progress"><ProgressTrack compact value={Math.min(elapsed,step.limitMs)} max={step.limitMs} label={`${labels[step.kind]??step.kind}: прошло ${fmtDuration(elapsed)} из лимита ${fmtDuration(step.limitMs)}`} tone={elapsed>step.limitMs*0.8?'warning':'running'}/></div>}
         {step.status==='failed'&&<p className="release-step-summary">{releaseFailureSummary(step.kind,step.log)}</p>}
         {step.log&&<StepLog log={step.log} live={step.status==='running'}/>}
       </details>
@@ -100,6 +107,9 @@ interface ReleaseDetailActions{
 function ReleaseDetail({release,onBack,github,productionSha,actions}:{release:ProjectRelease;onBack:()=>void;github:string|null;productionSha:string|null;actions?:ReleaseDetailActions}):JSX.Element{
   const toast=useToast()
   const copySha=async():Promise<void>=>{try{await navigator.clipboard.writeText(release.sha);toast.success('SHA скопирован')}catch{toast.error('Не удалось скопировать SHA')}}
+  const copyLink=async():Promise<void>=>{try{await navigator.clipboard.writeText(window.location.href);toast.success('Ссылка на релиз скопирована')}catch{toast.error('Не удалось скопировать ссылку')}}
+  // Esc returns to the list like in every other drill-down of the app.
+  useEffect(()=>{const onKey=(event:KeyboardEvent):void=>{if(event.key==='Escape'&&!(event.target instanceof HTMLInputElement||event.target instanceof HTMLTextAreaElement||event.target instanceof HTMLSelectElement)){event.preventDefault();onBack()}};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[onBack])
   const deploy=Boolean(release.previousReleaseId)
   const visibleSteps=deploy?release.steps.filter(step=>['switching','building','health_check'].includes(step.kind)):release.steps.filter(step=>['checkout','knowledge_base','regression'].includes(step.kind))
   const live=!terminal.has(release.status)
@@ -109,6 +119,7 @@ function ReleaseDetail({release,onBack,github,productionSha,actions}:{release:Pr
       <button className="vc-btn vc-btn--secondary" onClick={onBack}>← К списку</button>
       <div><h2>{release.branch}</h2><p>{release.sha?<button type="button" className="release-sha" title="Скопировать полный SHA" onClick={()=>void copySha()}>SHA {release.sha.slice(0,12)}</button>:'SHA ещё не зафиксирован'} · <span className="release-status" data-status={release.status}>{statusLabels[release.status]??release.status}</span>{deploy&&<span className="release-attempt"> · попытка {release.attempt}</span>}{live&&<span className="release-live"> · обновляется каждые 2 с</span>}</p></div>
       <span className="release-detail-actions">
+        <button className="vc-btn vc-btn--ghost" title="Скопировать ссылку на этот релиз" onClick={()=>void copyLink()}>Ссылка</button>
         {actions?.onOpenSource&&<button className="vc-btn vc-btn--secondary" onClick={actions.onOpenSource}>Сборка релиза</button>}
         {release.status==='failed'&&deploy&&actions?.onRedeploy&&<button className="vc-btn vc-btn--primary" disabled={actions.busy} onClick={actions.onRedeploy}>Повторить деплой</button>}
         {release.status==='failed'&&!deploy&&actions?.onRebuild&&<button className="vc-btn vc-btn--primary" disabled={actions.busy} onClick={actions.onRebuild}>Удалить и собрать заново</button>}
@@ -126,11 +137,12 @@ function ReleaseDetail({release,onBack,github,productionSha,actions}:{release:Pr
       <a href={`${github}/tree/${release.branch}`} target="_blank" rel="noreferrer">Ветка {release.branch} ↗</a>
       {productionSha&&productionSha!==release.sha&&<a href={`${github}/compare/${productionSha.slice(0,12)}...${release.sha.slice(0,12)}`} target="_blank" rel="noreferrer">Изменения относительно production ↗</a>}
     </p>}
+    <p className="release-steps-summary">{visibleSteps.filter(step=>step.status==='passed').length} из {visibleSteps.length} шагов пройдено{visibleSteps.some(step=>step.status==='skipped')?` · пропущено ${visibleSteps.filter(step=>step.status==='skipped').length}`:''}{visibleSteps.some(step=>step.status==='failed')?' · есть ошибка':''}</p>
     <StepFeed steps={visibleSteps} now={now}/>
   </section>
 }
 
-function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT_RELEASE_TIMEOUTS,api=window.api,gitUrl,production,onOpenSettings}:Props):JSX.Element {
+function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT_RELEASE_TIMEOUTS,api=window.api,gitUrl,production,onOpenSettings,initialReleaseId,onOpenRelease}:Props):JSX.Element {
   const [filter,setFilter]=useState<ReleaseFilter>('all')
   const [query,setQuery]=useState('')
   const [tab,setTabState]=useState<Tab>(storedTab)
@@ -244,6 +256,7 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   },[api,projectId,refreshReleases,refresh])
   const openDetail=useCallback(async(releaseId:string)=>{
     const request=++detailRequest.current
+    onOpenRelease?.(releaseId)
     setDetailReleaseId(releaseId);setDetail(null);setDetailError('');setDetailStatus('loading')
     try{
       const next=await api['releases:get']({projectId,releaseId})
@@ -251,8 +264,11 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
       if(!next)throw new Error('Релиз не найден')
       setDetail(next);setDetailStatus('ready')
     }catch(reason){if(request===detailRequest.current){setDetailError(reason instanceof Error?reason.message:String(reason));setDetailStatus('error')}}
-  },[api,projectId])
-  const closeDetail=useCallback(()=>{detailRequest.current+=1;setDetailReleaseId('');setDetail(null);setDetailError('');setDetailStatus('idle');void refresh()},[refresh])
+  },[api,projectId,onOpenRelease])
+  const closeDetail=useCallback(()=>{detailRequest.current+=1;onOpenRelease?.(null);setDetailReleaseId('');setDetail(null);setDetailError('');setDetailStatus('idle');void refresh()},[refresh,onOpenRelease])
+  // Deep link: the address names a release — open it once the component is up.
+  const openedInitial=useRef(false)
+  useEffect(()=>{if(initialReleaseId&&!openedInitial.current){openedInitial.current=true;void openDetail(initialReleaseId)}},[initialReleaseId,openDetail])
   useEffect(()=>{
     if(liveBridge||!detail||terminal.has(detail.status))return
     let cancelled=false
@@ -274,6 +290,14 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   // request, so the buttons say so up front instead of after a round trip.
   const activePreparation=preparations.find(item=>!terminal.has(item.status))
   const activeDeployment=deployments.find(item=>!terminal.has(item.status))
+  // The browser tab tells what is running while the person is in another app.
+  useEffect(()=>{
+    const active=activeDeployment??activePreparation
+    if(!active||typeof document==='undefined')return
+    const base=document.title.replace(/^[⏳✓] .*? · /,'')
+    document.title=`⏳ ${active.previousReleaseId?'Деплой':'Сборка'} ${active.branch} · ${base}`
+    return()=>{document.title=base}
+  },[activeDeployment?.id,activeDeployment?.status,activePreparation?.id,activePreparation?.status])
   const redeploy=Boolean(current&&selected&&current.branch===selected)
   // How many prepared versions lie between production and the chosen one: a
   // jump over several releases deserves a second look before the click.
@@ -381,12 +405,13 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
 }
 
 export function ReleaseCenter(props:Props):JSX.Element {
-  const [mode,setMode]=useState<'legacy'|'applications'>('legacy')
+  const [mode,setModeState]=useState<'legacy'|'applications'>(()=>{try{return window.localStorage?.getItem(RELEASES_MODE_KEY)==='applications'?'applications':'legacy'}catch{return 'legacy'}})
+  const setMode=(next:'legacy'|'applications'):void=>{try{window.localStorage?.setItem(RELEASES_MODE_KEY,next)}catch{}setModeState(next)}
   return <div className="release-shell">
     <nav className="release-mode" role="group" aria-label="Вид выпуска">
       <button type="button" className={mode==='legacy'?'release-mode-button release-mode-button--active':'release-mode-button'} aria-pressed={mode==='legacy'} onClick={()=>setMode('legacy')}>Весь проект</button>
       <button type="button" className={mode==='applications'?'release-mode-button release-mode-button--active':'release-mode-button'} aria-pressed={mode==='applications'} onClick={()=>setMode('applications')}>Приложения</button>
     </nav>
-    {mode==='legacy'?<LegacyReleaseCenter {...props}/>:<ApplicationReleaseCenter {...props} api={props.api??window.api}/>}
+    {mode==='legacy'?<LegacyReleaseCenter {...props}/>:<ApplicationReleaseCenter {...props} api={props.api??window.api} environmentStorageKey={RELEASES_APP_ENVIRONMENT_KEY}/>}
   </div>
 }

@@ -17,6 +17,8 @@ interface Props {
   baseBranch: string
   owner: boolean
   api: RendererApi
+  /** localStorage key remembering the last environment; absent — always start at staging. */
+  environmentStorageKey?: string
 }
 const requirementLabels = {
   minVersion: 'Минимальная версия',
@@ -63,13 +65,20 @@ export function ApplicationReleaseCenter({
   projectId,
   baseBranch,
   owner,
-  api
+  api,
+  environmentStorageKey
 }: Props): JSX.Element {
   const confirm = useConfirm()
   const [catalog, setCatalog] = useState<ApplicationDefinition[]>([])
   const [applicationId, setApplicationId] = useState('make')
-  const [environment, setEnvironment] =
-    useState<ApplicationEnvironmentName>('staging')
+  const [environment, setEnvironmentState] =
+    useState<ApplicationEnvironmentName>(() => {
+      try { return environmentStorageKey && window.localStorage?.getItem(environmentStorageKey) === 'production' ? 'production' : 'staging' } catch { return 'staging' }
+    })
+  const setEnvironment = (next: ApplicationEnvironmentName): void => {
+    try { if (environmentStorageKey) window.localStorage?.setItem(environmentStorageKey, next) } catch { /* private mode */ }
+    setEnvironmentState(next)
+  }
   const [overview, setOverview] = useState(empty)
   const [selection, setSelection] = useState<string[]>([])
   const [version, setVersion] = useState(''),
