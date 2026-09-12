@@ -137,6 +137,52 @@ describe('previewMcp — инструменты browser', () => {
     await app.close()
   })
 
+  it('records actual completed browser actions under the signed stage without input or page secrets', async () => {
+    const url = 'http://agent-1.machine.internal:5173/#/releases'
+    const entry = { userId: U, conversationId: CONV, ciCheck: { runId: 'r1', stepId: 's1', url } }
+    const token = createPreviewTurnTokens(SECRET).issue(entry)
+    const logBrowserEvidence = vi.fn()
+    await makeApp(undefined, {
+      logBrowserEvidence,
+      browserExecutor: async () => ({ ok: true, result: { ok: true, page: { url, title: 'secret title' } } })
+    })
+    expect((await call('open', { url }, `?k=${SECRET}&turn=${token}`)).isError).not.toBe(true)
+    expect(logBrowserEvidence).toHaveBeenCalledWith(entry, { action: 'open', ok: true, target: true, requestedTarget: true })
+    await call('type', { selector: '#password', text: 'private-password' }, `?k=${SECRET}&turn=${token}`)
+    expect(JSON.stringify(logBrowserEvidence.mock.calls)).not.toContain('private-password')
+    expect(JSON.stringify(logBrowserEvidence.mock.calls)).not.toContain('secret title')
+    await call('read', {}, `?k=${SECRET}&turn=${TURN}`)
+    expect(logBrowserEvidence).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses actual session URL and viewport when diagnostics omit page metadata', async () => {
+    const url = 'http://agent-1.machine.internal:5173/'
+    const token = createPreviewTurnTokens(SECRET).issue({ userId: U, conversationId: CONV, ciCheck: { runId: 'r1', stepId: 's1', url } })
+    const logBrowserEvidence = vi.fn()
+    const meta = { id: 's', conversationId: CONV, incarnation: 'i', state: 'ready' as const, activeTabId: 't', tabs: [], viewport: { width: 320, height: 800, deviceScaleFactor: 1 }, currentUrl: url, title: '' }
+    await makeApp(undefined, {
+      logBrowserEvidence,
+      browserExecutor: async () => ({ ok: true, result: { ok: true, styles: { width: '320px' } } }),
+      browserControl: async () => ({ ok: true, result: meta })
+    })
+    await call('styles', { selector: 'body' }, `?k=${SECRET}&turn=${token}`)
+    expect(logBrowserEvidence).toHaveBeenLastCalledWith(expect.anything(), { action: 'styles', ok: true, target: true, width: 320 })
+    meta.currentUrl = 'http://other.test/'
+    await call('styles', { selector: 'body' }, `?k=${SECRET}&turn=${token}`)
+    expect(logBrowserEvidence).toHaveBeenLastCalledWith(expect.anything(), { action: 'styles', ok: true, target: false, width: 320 })
+  })
+
+  it('records infrastructure failure without converting it into a successful observation', async () => {
+    const url = 'http://agent-1.machine.internal:5173/'
+    const token = createPreviewTurnTokens(SECRET).issue({ userId: U, conversationId: CONV, ciCheck: { runId: 'r1', stepId: 's1', url } })
+    const logBrowserEvidence = vi.fn()
+    await makeApp(undefined, { logBrowserEvidence, browserExecutor: async () => { throw new Error('private connection details') } })
+    const result = await call('open', { url }, `?k=${SECRET}&turn=${token}`)
+    expect(result.isError).toBe(true)
+    expect(result.text).not.toContain('private connection details')
+    expect(logBrowserEvidence).toHaveBeenCalledWith(expect.anything(), { action: 'open', ok: false, target: false, requestedTarget: true, infrastructureError: true })
+  })
+
   it('неверный секрет → 403', async () => {
     await makeApp()
     const res = await app.inject({

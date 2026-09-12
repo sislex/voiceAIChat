@@ -60,6 +60,10 @@ export class HttpReaderCore implements ReaderCore {
     return this.fast<PreviewEnvironment[]>('listPreviews')
   }
 
+  async logBrowserEvidence(entry: PreviewToolEntry, event: import('@voicechat/shared').CiBrowserEvidenceEvent): Promise<void> {
+    await this.fast('logBrowserEvidence', entry, event)
+  }
+
   async logBrowserShot(userId: string, conversationId: string, pngBase64: string): Promise<void> {
     await this.slow('logBrowserShot', userId, conversationId, pngBase64)
   }
