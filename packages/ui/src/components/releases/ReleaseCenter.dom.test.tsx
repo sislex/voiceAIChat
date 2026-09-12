@@ -2,7 +2,7 @@
 // and validation, production markers, step status labels, settings panel and
 // the mobile card layout hooks (data-label attributes).
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/uiRender'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
@@ -241,5 +241,34 @@ describe('ReleaseCenter — версия, production и мобильная ра�
     expect(screen.getByText('· готовых: 2')).toBeInTheDocument()
     await userEvent.keyboard('{ArrowLeft}')
     expect(screen.getByRole('tab', { name: 'Релизы' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('живёт событиями release.updated: перечитывает список и подробности, объявляет завершение тостом', async () => {
+    const listeners: Array<(m: { projectId: string; releaseId: string; status: 'ready' | 'released' | 'failed' | 'checking' }) => void> = []
+    ;(window as { board?: unknown }).board = { onReleaseUpdated: (cb: (typeof listeners)[number]) => { listeners.push(cb); return () => undefined }, onReconnect: () => () => undefined }
+    const value = api()
+    const running: ProjectRelease = { ...prepared, id: 'prep-302', branch: 'release/0.1.302', version: '0.1.302', status: 'checking', steps: [{ id: 'reg', kind: 'regression', status: 'running', model: null, attempt: 1, log: 'vitest…', startedAt: 1, finishedAt: null }] }
+    let list = [summary(running, { durationMs: null }), summary(deployment), summary(prepared)]
+    value['releases:list'] = vi.fn(async () => list)
+    value['releases:get'] = vi.fn(async ({ releaseId }) => [running, deployment, prepared].find((item) => item.id === releaseId) ?? null)
+    try {
+      render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+      await screen.findByText('release/0.1.302')
+      expect(value['releases:list']).toHaveBeenCalledTimes(1)
+      expect(listeners).toHaveLength(1)
+      // The build finishes: the server pushes one frame, the list is re-read once and the outcome is announced.
+      running.status = 'ready'
+      running.steps[0]!.status = 'passed'
+      list = [summary({ ...running, status: 'ready' }), summary(deployment), summary(prepared)]
+      listeners[0]!({ projectId: 'p1', releaseId: 'prep-302', status: 'ready' })
+      await waitFor(() => expect(value['releases:list']).toHaveBeenCalledTimes(2))
+      expect(await screen.findByText('Сборка release/0.1.302 готова')).toBeInTheDocument()
+      // Frames of other projects are ignored.
+      listeners[0]!({ projectId: 'other', releaseId: 'x', status: 'failed' })
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      expect(value['releases:list']).toHaveBeenCalledTimes(2)
+    } finally {
+      delete (window as { board?: unknown }).board
+    }
   })
 })

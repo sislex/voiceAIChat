@@ -275,6 +275,19 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(preparation?.failure).toBeNull()
   })
 
+  it('сообщает подписчику о каждой смене статуса и шага релиза — Release Center живёт без опроса',async()=>{
+    const updates:Array<{projectId:string;releaseId:string;status:string}>=[]
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.37\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.37","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}
+    await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.37',version:'0.1.37',sha:'fixed-sha',status:'ready'})
+    const attempt=await new ReleaseManager(db,runtime,{onChange:(update)=>updates.push(update)}).start('owner',ci(),prod(),'release/0.1.37')
+    await settled(attempt.id)
+    await vi.waitFor(()=>expect(updates.some(update=>update.status==='released')).toBe(true))
+    expect(updates.every(update=>update.projectId===projectId&&update.releaseId===attempt.id)).toBe(true)
+    // Каждый статус пути деплоя виден подписчику в порядке прохождения.
+    const statuses=updates.map(update=>update.status).filter((value,index,all)=>all.indexOf(value)===index)
+    expect(statuses).toEqual(expect.arrayContaining(['switching','building','health_check','released']))
+  })
+
   it('resumes an active health check after server restart and verifies the expected commit and version',async()=>{
     const release=await db.releases.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'health_check'})
     await db.releases.setProjectReleaseStep(release.id,'health_check','running','waiting','owner')

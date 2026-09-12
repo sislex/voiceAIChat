@@ -1264,7 +1264,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         subscribePreparationRuns: kanban.service.board.subscribePreparationRuns,
         subscribeTaskRepositories: kanban.service.board.subscribeTaskRepositories,
         subscribeQaStages: kanban.service.board.subscribeQaStages,
-        subscribeImprovements: kanban.service.board.subscribeImprovements
+        subscribeImprovements: kanban.service.board.subscribeImprovements,
+        subscribeReleases: kanban.service.board.subscribeReleases
       },
       preparationNotifications: {
         canAccess: async (projectId) => await db.projects.getProject(user.name, projectId) !== null,

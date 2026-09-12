@@ -209,6 +209,12 @@ export class ReleasesRepo extends BaseRepo {
     return row?.project_id===projectId?await this.mapProjectRelease(row):null
   }
 
+  /** Status only, without membership check: the live feed needs it after a step update. */
+  async getProjectReleaseStatus(id:string):Promise<ProjectRelease['status']|null> {
+    const row=(await this.sql.get(`SELECT status FROM project_releases WHERE id=?`, [id])) as {status:string}|undefined
+    return (row?.status as ProjectRelease['status']|undefined)??null
+  }
+
   async setProjectReleaseSha(id:string,sha:string):Promise<void> {
     await this.sql.run(`UPDATE project_releases SET commit_sha=? WHERE id=?`, [sha, id])
   }

@@ -816,6 +816,12 @@ export type ServerMessage =
    */
   | { t: 'qa.stage.updated'; projectId: string; taskId: string; stage: QaRunStage }
   /**
+   * Release Center: подготовка или деплой релиза сменили статус либо шаг. Кадр
+   * несёт адрес и новый статус — список и подробности перечитываются REST-ом,
+   * поэтому опрос раз в 2–5 с больше не нужен, пока соединение живо.
+   */
+  | { t: 'release.updated'; projectId: string; releaseId: string; status: import('./release').ReleaseStatus }
+  /**
    * Очередь «Улучшения» проекта изменилась. Отдельно от `board.changed`: доска
    * инвалидируется на каждое движение любой задачи, и панель улучшений ходила за
    * своим списком ровно столько же раз, хотя предложения меняются редко.
@@ -945,6 +951,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'machine.status',
   'preparation.run.updated',
   'qa.stage.updated',
+  'release.updated',
   'project.improvements.updated',
   'task.repositories.updated',
   'task-preparation.notifications.invalidate',
