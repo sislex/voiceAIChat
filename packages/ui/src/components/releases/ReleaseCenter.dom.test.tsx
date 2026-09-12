@@ -1,13 +1,13 @@
 // Release Center behaviour added in the improvement cycles: version suggestion
 // and validation, production markers, step status labels, settings panel and
 // the mobile card layout hooks (data-label attributes).
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/uiRender'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { ProjectRelease, ProjectReleaseSummary, ReleaseMachine } from '@voicechat/shared'
-import { ReleaseCenter } from './ReleaseCenter'
+import { ReleaseCenter, githubWebUrl } from './ReleaseCenter'
 
 const machines: ReleaseMachine[] = [{ agentId: 'mac', name: 'MacBook', ownership: 'mine', access: 'owner', online: true, path: '/app', reposRoot: '', eligible: true, unavailableReason: null }]
 const prepared: ProjectRelease = {
@@ -22,7 +22,7 @@ const deployment: ProjectRelease = {
   ...prepared, id: 'deploy-300', status: 'released', previousReleaseId: prepared.id, releasedAt: 1_700_000_010_000,
   steps: [{ id: 'health', kind: 'health_check', status: 'passed', model: null, attempt: 2, log: 'healthy', startedAt: 6000, finishedAt: 7000 }]
 }
-const summary = (release: ProjectRelease): ProjectReleaseSummary => ({ id: release.id, branch: release.branch, sha: release.sha, status: release.status, previousReleaseId: release.previousReleaseId, createdAt: release.createdAt, durationMs: 4000 })
+const summary = (release: ProjectRelease, over: Partial<ProjectReleaseSummary> = {}): ProjectReleaseSummary => ({ id: release.id, branch: release.branch, sha: release.sha, status: release.status, previousReleaseId: release.previousReleaseId, createdAt: release.createdAt, durationMs: 4000, attempt: release.attempt, ...over })
 function api() {
   const value = createFakeApi()
   value['releases:machines'] = vi.fn(async () => ({ machines, lastAgentId: 'mac' }))
@@ -34,6 +34,9 @@ function api() {
 }
 
 describe('ReleaseCenter — версия, production и мобильная раскладка', () => {
+  // The remembered tab must not leak between tests: a deploy-tab test would
+  // otherwise open the next one on «Деплой».
+  beforeEach(() => window.localStorage.removeItem('vc.releases.tab'))
   it('подсказывает следующую версию и подставляет её кнопкой', async () => {
     const value = api()
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
@@ -118,5 +121,66 @@ describe('ReleaseCenter — версия, production и мобильная ра�
     const group = screen.getByRole('group', { name: 'Вид выпуска' })
     expect(within(group).getByRole('button', { name: 'Весь проект' })).toHaveAttribute('aria-pressed', 'true')
     expect(group.parentElement).toHaveClass('release-shell')
+  })
+
+  it('показывает причину ошибки и номер попытки прямо в списке и в карточке последнего деплоя', async () => {
+    const value = api()
+    const failedDeploy: ProjectRelease = { ...deployment, id: 'deploy-fail', status: 'failed', attempt: 3, createdAt: deployment.createdAt + 1 }
+    value['releases:list'] = vi.fn(async () => [summary(failedDeploy, { failure: 'Health-check: фактическая длительность 1200 с, лимит 1200 с.' }), summary(deployment), summary(prepared), summary(older, { status: 'failed', failure: 'Regression завершилась с ошибкой' })])
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    const row = (await screen.findByText('release/0.1.299')).closest('tr')!
+    expect(within(row).getByText('Regression завершилась с ошибкой')).toHaveClass('release-failure')
+    await userEvent.click(screen.getByRole('tab', { name: 'Деплой' }))
+    const last = screen.getByRole('button', { name: /Последний деплой/ })
+    expect(last).toHaveTextContent('попытка 3')
+    expect(last).toHaveTextContent('Health-check: фактическая длительность')
+    // Production is still the older successful deploy — its own card stays visible.
+    expect(screen.getByRole('button', { name: /Сейчас в production/ })).toHaveTextContent('release/0.1.300')
+  })
+
+  it('блокирует новую сборку и деплой, пока предыдущие ещё идут', async () => {
+    const value = api()
+    value['releases:list'] = vi.fn(async () => [summary({ ...deployment, id: 'deploy-live', status: 'health_check', createdAt: deployment.createdAt + 1 }), summary(deployment), summary({ ...prepared, id: 'prep-live', branch: 'release/0.1.302', status: 'checking' }), summary(prepared)])
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    const input = await screen.findByLabelText('Новая версия')
+    await userEvent.type(input, '0.1.303')
+    expect(screen.getByRole('button', { name: 'Собрать новый релиз' })).toBeDisabled()
+    expect(screen.getByText(/Идёт сборка release\/0\.1\.302/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Деплой' }))
+    expect(screen.getByRole('button', { name: /Задеплоить/ })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('Идёт деплой release/0.1.300 (Health-check)')
+  })
+
+  it('длинные списки раскрываются постранично', async () => {
+    const value = api()
+    const many = Array.from({ length: 45 }, (_, index) => summary({ ...prepared, id: `prep-${index}`, branch: `release/0.2.${index}`, createdAt: prepared.createdAt - index }))
+    value['releases:list'] = vi.fn(async () => many)
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    await screen.findByText('release/0.2.0')
+    expect(screen.getAllByRole('row')).toHaveLength(21)
+    await userEvent.click(screen.getByRole('button', { name: 'Показать ещё (25)' }))
+    expect(screen.getAllByRole('row')).toHaveLength(41)
+    await userEvent.click(screen.getByRole('button', { name: 'Показать ещё (5)' }))
+    expect(screen.queryByRole('button', { name: /Показать ещё/ })).toBeNull()
+  })
+
+  it('в подробностях есть ссылки на GitHub: коммит, ветка и сравнение с production', async () => {
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner gitUrl="git@github.com:sislex/voiceAIChat.git" api={api()} />)
+    await userEvent.click(await screen.findByText('release/0.1.299'))
+    expect(await screen.findByRole('link', { name: 'Коммит на GitHub ↗' })).toHaveAttribute('href', `https://github.com/sislex/voiceAIChat/commit/${'b'.repeat(40)}`)
+    expect(screen.getByRole('link', { name: 'Изменения относительно production ↗' })).toHaveAttribute('href', `https://github.com/sislex/voiceAIChat/compare/${'a'.repeat(12)}...${'b'.repeat(12)}`)
+    expect(githubWebUrl('https://github.com/sislex/voiceAIChat')).toBe('https://github.com/sislex/voiceAIChat')
+    expect(githubWebUrl('https://gitlab.com/x/y.git')).toBeNull()
+  })
+
+  it('помнит последнюю открытую вкладку', async () => {
+    window.localStorage.removeItem('vc.releases.tab')
+    const first = render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Деплой' }))
+    expect(window.localStorage.getItem('vc.releases.tab')).toBe('deploy')
+    first.unmount()
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+    expect(await screen.findByRole('tab', { name: 'Деплой' })).toHaveAttribute('aria-selected', 'true')
+    window.localStorage.removeItem('vc.releases.tab')
   })
 })

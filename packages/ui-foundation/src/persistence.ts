@@ -54,6 +54,8 @@ export const kanbanFilterKey = (userId: string, projectId: string): string =>
 /** Ключи предпочтений редактора Make: автосохранение, формат при сохранении и раскладка. */
 /** Which task card the user last chose: the new "Проект 19" card or the legacy modal. */
 export const TASK_CARD_VERSION_KEY = 'vc.taskCard.version'
+/** Last opened tab of the Release Center («releases» | «deploy»). */
+export const RELEASES_TAB_KEY = 'vc.releases.tab'
 export const MAKE_AUTOSAVE_KEY = 'vc.make.autosave'
 export const MAKE_FORMAT_ON_SAVE_KEY = 'vc.make.formatOnSave'
 export const MAKE_SPLIT_KEY = 'vc.make.split'
@@ -170,7 +172,8 @@ export const PREFERENCE_KEYS = [
   IMAGE_STUDIO_FIT_KEY,
   IMAGE_STUDIO_FILTERS_KEY,
   IMAGE_STUDIO_NEGATIVE_OPEN_KEY,
-  TASK_CARD_VERSION_KEY
+  TASK_CARD_VERSION_KEY,
+  RELEASES_TAB_KEY
 ] as const
 
 /**

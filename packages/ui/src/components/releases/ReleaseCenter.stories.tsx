@@ -48,7 +48,10 @@ const failedDeploy = release({ branch: 'release/0.1.301', id: 'deploy-301-fail',
   step({ kind: 'building', startedAt: T0 - 2_999_000, finishedAt: T0 - 2_998_900, limitMs: 600_000 }),
   step({ kind: 'health_check', status: 'failed', startedAt: T0 - 2_998_900, finishedAt: T0 - 1_798_900, log: 'Health-check: фактическая длительность 1200 с, лимит 1200 с. Production отвечает SHA 4b3a3af6, version=0.1.297; ожидаются 13f2651e, version=0.1.301', limitMs: 1_200_000 })
 ] })
-const summary = (item: ProjectRelease, durationMs: number | null = 240_000): ProjectReleaseSummary => ({ id: item.id, branch: item.branch, sha: item.sha, status: item.status, previousReleaseId: item.previousReleaseId, createdAt: item.createdAt, durationMs })
+const summary = (item: ProjectRelease, durationMs: number | null = 240_000): ProjectReleaseSummary => {
+  const failed = item.steps.find((step) => step.status === 'failed')
+  return { id: item.id, branch: item.branch, sha: item.sha, status: item.status, previousReleaseId: item.previousReleaseId, createdAt: item.createdAt, durationMs, attempt: item.attempt, failure: failed ? failed.log.split('\n')[0]!.slice(0, 240) : null }
+}
 
 function fakeApi(over: { releases?: ProjectRelease[]; fail?: boolean } = {}): RendererApi {
   const all = over.releases ?? [building302, ready301, ready300, failed299, deployed301, failedDeploy]
@@ -66,7 +69,7 @@ function fakeApi(over: { releases?: ProjectRelease[]; fail?: boolean } = {}): Re
 const meta: Meta<typeof ReleaseCenter> = {
   title: 'Releases/ReleaseCenter',
   component: ReleaseCenter,
-  args: { projectId: 'p1', baseBranch: 'main', owner: true, api: fakeApi() },
+  args: { projectId: 'p1', baseBranch: 'main', owner: true, gitUrl: 'https://github.com/sislex/voiceAIChat.git', api: fakeApi() },
   parameters: { layout: 'fullscreen' },
   decorators: [(Story) => <div className="toolpage projpage" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}><Story /></div>]
 }
