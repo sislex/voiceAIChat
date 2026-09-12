@@ -156,6 +156,40 @@ export function suggestNextReleaseVersion(branches: readonly string[], fallback 
   const [major, minor, patch] = releaseVersion(best)!.split('.').map(Number) as [number, number, number]
   return `${major}.${minor}.${patch + 1}`
 }
+/** What the Release Center needs to know about production before offering «Задеплоить». */
+export interface ProductionReadiness {
+  ready: boolean
+  mode: 'legacy' | 'managed'
+  /** Human-readable names of the missing settings, in the order of the settings form. */
+  missing: string[]
+}
+/**
+ * Mirrors `releaseProductionTarget` on the server: the deploy button used to
+ * answer with a 400 after the click, now the tab explains what to configure.
+ */
+export function productionReadiness(detail: {
+  productionAgentId?: string | null
+  productionEnvironmentMode?: 'legacy' | 'managed'
+  productionDeployCommand?: string
+  productionHealthCheckCommand?: string
+  productionCheckoutPath?: string
+  gitUrl?: string | null
+  machines?: ReadonlyArray<{ agentId: string }>
+}): ProductionReadiness {
+  const mode = detail.productionEnvironmentMode === 'managed' ? 'managed' : 'legacy'
+  const missing: string[] = []
+  if (!detail.gitUrl) missing.push('gitUrl проекта')
+  if (!detail.productionAgentId) missing.push('production-машина')
+  else if (detail.machines && !detail.machines.some((machine) => machine.agentId === detail.productionAgentId)) missing.push('production-машина не привязана к проекту')
+  if (mode === 'legacy' && !detail.productionCheckoutPath?.trim()) missing.push('production checkout')
+  if (!detail.productionDeployCommand?.trim()) missing.push('команда деплоя')
+  if (!detail.productionHealthCheckCommand?.trim()) missing.push('команда health-check')
+  return { ready: missing.length === 0, mode, missing }
+}
+/** «release/1.2.3», «v1.2.3» and spaces pasted into the version field become «1.2.3». */
+export function normalizeReleaseVersionInput(value: string): string {
+  return value.trim().replace(/^release\//i, '').replace(/^v/i, '').trim()
+}
 export function assertReleaseBranch(branch: string): string {
   const version = releaseVersion(branch)
   if (!version) throw new Error('Разрешены только ветки release/x.y.z')

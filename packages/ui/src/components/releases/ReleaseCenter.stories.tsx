@@ -89,7 +89,7 @@ function fakeApi(over: { releases?: ProjectRelease[]; fail?: boolean } = {}): Re
 const meta: Meta<typeof ReleaseCenter> = {
   title: 'Releases/ReleaseCenter',
   component: ReleaseCenter,
-  args: { projectId: 'p1', baseBranch: 'main', owner: true, gitUrl: 'https://github.com/sislex/voiceAIChat.git', api: fakeApi() },
+  args: { projectId: 'p1', baseBranch: 'main', owner: true, gitUrl: 'https://github.com/sislex/voiceAIChat.git', production: { ready: true, mode: 'legacy', missing: [], machineName: 'Prod 89.125.68.35', healthCheckCommand: 'curl -fsS http://127.0.0.1:8787/api/health' }, onOpenSettings: () => undefined, api: fakeApi() },
   parameters: { layout: 'fullscreen' },
   decorators: [(Story) => <div className="toolpage projpage" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}><Story /></div>]
 }
@@ -123,3 +123,7 @@ export const Applications: Story = {
   play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Приложения' })) }
 }
 export const ApplicationsMobile: Story = { ...Applications, parameters: { viewport: { defaultViewport: 'mobile1' } } }
+export const ProductionNotConfigured: Story = {
+  args: { production: { ready: false, mode: 'legacy', missing: ['production-машина', 'команда деплоя'] } },
+  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('tab', { name: 'Деплой' })) }
+}
