@@ -6,7 +6,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { userEvent, within } from '@storybook/test'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { RendererApi } from '@shared/ipc'
-import type { ProjectRelease, ProjectReleaseSummary, ReleaseMachine } from '@voicechat/shared'
+import { APPLICATION_CATALOG, type ApplicationReleaseManifest, type ApplicationReleaseOverview, type ProjectRelease, type ProjectReleaseSummary, type ReleaseMachine } from '@voicechat/shared'
 import { ReleaseCenter } from './ReleaseCenter'
 
 const T0 = Date.UTC(2026, 8, 12, 8, 0)
@@ -53,9 +53,29 @@ const summary = (item: ProjectRelease, durationMs: number | null = 240_000): Pro
   return { id: item.id, branch: item.branch, sha: item.sha, status: item.status, previousReleaseId: item.previousReleaseId, createdAt: item.createdAt, durationMs, attempt: item.attempt, failure: failed ? failed.log.split('\n')[0]!.slice(0, 240) : null }
 }
 
+const appManifest = (id: string, version: string): ApplicationReleaseManifest => ({
+  schemaVersion: 1, applicationId: id, version, apiVersion: '1.0.0', commit: 'c'.repeat(40), dataVersion: '1.0.0', capabilities: [],
+  requires: id === 'make' ? [{ applicationId: 'core', minVersion: '0.1.0', maxVersionExclusive: '1.0.0', minApiVersion: '1.0.0', maxApiVersionExclusive: '2.0.0' }] : [],
+  artifacts: [{ service: id === 'core' ? 'voicechat' : id, kind: 'oci', reference: `registry.chat-ai.dev/${id}@sha256:${'d'.repeat(64)}` }]
+})
+const applicationOverview: ApplicationReleaseOverview = {
+  environment: { schemaVersion: 1, revision: 12, applications: [{ manifest: appManifest('core', '0.1.301'), healthy: true, installedAt: T0 - 3_600_000 }, { manifest: appManifest('make', '1.1.0'), healthy: true, installedAt: T0 - 86_400_000 }] },
+  activeDeploymentId: null,
+  releases: [
+    { id: 'app-make-120', projectId: 'p1', input: { applicationId: 'make', version: '1.2.0', image: 'registry.chat-ai.dev/make', baseBranch: 'main', requires: [] }, branch: 'release/make/1.2.0', status: 'ready', manifest: appManifest('make', '1.2.0'), createdAt: T0 - 1_200_000, finishedAt: T0 - 900_000, triggeredBy: 'admin', log: 'gate passed\nimage pushed' },
+    { id: 'app-make-110', projectId: 'p1', input: { applicationId: 'make', version: '1.1.0', image: 'registry.chat-ai.dev/make', baseBranch: 'main', requires: [] }, branch: 'release/make/1.1.0', status: 'ready', manifest: appManifest('make', '1.1.0'), createdAt: T0 - 90_000_000, finishedAt: T0 - 89_000_000, triggeredBy: 'admin', log: 'gate passed' },
+    { id: 'app-make-130', projectId: 'p1', input: { applicationId: 'make', version: '1.3.0', image: 'registry.chat-ai.dev/make', baseBranch: 'main', requires: [] }, branch: 'release/make/1.3.0', status: 'failed', manifest: null, createdAt: T0 - 600_000, finishedAt: T0 - 500_000, triggeredBy: 'admin', log: 'contract check failed: make-contracts 2.0 требует core API ≥ 2.0.0' }
+  ],
+  deployments: [
+    { id: 'app-deploy-1', projectId: 'p1', environment: 'staging', requestId: 'r1', status: 'released', releases: [appManifest('make', '1.1.0')], previous: { schemaVersion: 1, revision: 11, applications: [{ manifest: appManifest('make', '1.0.0'), healthy: true, installedAt: T0 - 172_800_000 }] }, result: null, rollbackOf: null, createdAt: T0 - 86_400_000, finishedAt: T0 - 86_300_000, triggeredBy: 'admin', log: 'health ok' }
+  ]
+}
+
 function fakeApi(over: { releases?: ProjectRelease[]; fail?: boolean } = {}): RendererApi {
   const all = over.releases ?? [building302, ready301, ready300, failed299, deployed301, failedDeploy]
   const api = createFakeApi()
+  api['releases:applicationCatalog'] = async () => [...APPLICATION_CATALOG]
+  api['releases:applicationOverview'] = async () => applicationOverview
   api['releases:machines'] = async () => ({ machines, lastAgentId: 'mac' })
   api['releases:branches'] = async () => all.filter((item) => !item.previousReleaseId && item.sha).map((item) => ({ branch: item.branch, version: item.version, sha: item.sha }))
   api['releases:list'] = async () => { if (over.fail) throw new Error('release service unavailable'); return all.map((item) => summary(item, item.status === 'checking' ? null : 240_000)) }
@@ -99,3 +119,7 @@ export const Settings: Story = {
 export const Empty: Story = { args: { api: fakeApi({ releases: [] }) } }
 export const LoadError: Story = { args: { api: fakeApi({ fail: true }) } }
 export const ReadOnly: Story = { args: { owner: false } }
+export const Applications: Story = {
+  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Приложения' })) }
+}
+export const ApplicationsMobile: Story = { ...Applications, parameters: { viewport: { defaultViewport: 'mobile1' } } }
