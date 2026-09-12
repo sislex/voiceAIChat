@@ -3,16 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor
 } from '@testing-library/react'
+import { render } from '../../test/uiRender'
 import {
   APPLICATION_CATALOG,
   type ApplicationReleaseManifest,
   type ApplicationReleaseOverview
 } from '@voicechat/shared'
-import { ApplicationReleaseCenter } from './ApplicationReleaseCenter'
+import { ApplicationReleaseCenter, sortApplicationReleases } from './ApplicationReleaseCenter'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 afterEach(cleanup)
 const manifest = (
@@ -205,5 +205,34 @@ describe('релизы отдельных приложений', () => {
         }) as HTMLButtonElement
       ).disabled
     ).toBe(true)
+  })
+
+  it('показывает имена приложений, статусы-пилюли и подсказку, почему установка недоступна', async () => {
+    setup()
+    const item = (await screen.findByRole('checkbox')).closest('li')!
+    expect(item).toHaveTextContent('Make 1.1.0')
+    expect(item.querySelector('.release-status')).toHaveTextContent('Готов к выпуску')
+    expect(screen.getByText('Make в Staging')).toBeInTheDocument()
+    expect(screen.getByText('Нет подтверждённой версии')).toBeInTheDocument()
+    expect(screen.getByText('Выберите хотя бы один готовый выпуск.')).toBeInTheDocument()
+    expect(screen.getByText('Установок пока нет')).toBeInTheDocument()
+  })
+  it('установка в production требует подтверждения, staging — нет', async () => {
+    const { api } = setup()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Окружение' }), { target: { value: 'production' } })
+    await waitFor(() => expect(api['releases:applicationOverview']).toHaveBeenCalledWith({ projectId: 'p1', environment: 'production' }))
+    fireEvent.click(await screen.findByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Установить выбранные версии' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Установить в production?')
+    expect(dialog).toHaveTextContent('Make 1.1.0')
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(api['releases:applicationDeploy']).not.toHaveBeenCalled()
+  })
+  it('сортирует выпуски по приложению из каталога и версии по убыванию', () => {
+    const record = (id: string, version: string, createdAt = 1) => ({ id: `${id}-${version}`, projectId: 'p1', input: { applicationId: id, version, image: '', baseBranch: 'main', requires: [] }, branch: '', status: 'ready' as const, manifest: null, createdAt, finishedAt: null, triggeredBy: 'admin', log: '' })
+    const sorted = sortApplicationReleases([record('make', '1.2.0'), record('core', '0.1.9'), record('make', '1.10.0'), record('core', '0.1.10')], [...APPLICATION_CATALOG])
+    expect(sorted.map((item) => item.id)).toEqual(['core-0.1.10', 'core-0.1.9', 'make-1.10.0', 'make-1.2.0'])
   })
 })
