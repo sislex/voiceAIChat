@@ -74,6 +74,15 @@ describe('стили открытой карточки задачи', () => {
     'vc-attempts', 'vc-attempts__title', 'vc-attempts__list', 'vc-attempts__row',
     'vc-attempts__row--current', 'vc-attempts__num', 'vc-attempts__status', 'vc-attempts__at',
     'merge-chip', 'merge-badge',
+    // Новая карточка «Проект 19»: рейка этапов, бейджи, снимок workflow,
+    // проверки, попытки, очередь доработок и редактор связи с Make.
+    'new-task-stage-rail', 'new-task-stage-card', 'new-task-stage-card--selected', 'new-task-stage-index',
+    'new-task-stage-content', 'new-task-stage-heading', 'new-task-stage-details', 'new-task-stage-panel',
+    'new-task-workflow-snapshot', 'new-task-sent-reworks', 'new-task-source-box', 'new-task-attempts',
+    'new-task-attempt--selected', 'new-task-checks', 'new-task-check-ok', 'new-task-check-bad', 'new-task-metric-tiles',
+    'new-task-run-head', 'new-task-live-dot--live', 'new-task-workflow-time--live', 'new-task-subtabs',
+    'new-task-make-empty', 'new-task-make-editor', 'new-task-design-files', 'new-task-queue-head', 'new-task-bulk-bar',
+    'new-task-history-separator', 'new-task-cycle-row', 'new-task-cycle-num', 'new-task-chips', 'new-task-note',
     // Карточка на доске и шапка колонки.
     'jcard-epic', 'jcard-epic-dot', 'jcard-flag', 'jcard-due', 'jcard-pts',
     'jcard-updated', 'jcard-updated--fresh', 'jcard-updated--stale',
@@ -144,6 +153,21 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.task-chat-panel--surface')).toMatch(/display:\s*flex/)
     expect(rule('.task-chat-panel--surface > .main')).toMatch(/min-height:\s*0/)
     expect(rule('.task-chat-panel--surface .scroll')).toMatch(/overscroll-behavior:\s*contain/)
+  })
+
+  it('рейка этапов новой карточки держит номер и содержимое в двух колонках', () => {
+    // Без сетки кружок с номером падал под заголовок, и «рейка» превращалась в
+    // простой список карточек — терялась вертикальная линия между этапами.
+    expect(rule('.new-task-stage-card')).toMatch(/grid-template-columns:\s*34px/)
+    expect(rule('.new-task-stage-index span')).toMatch(/flex:\s*1/)
+    expect(rule('.new-task-metric-tiles')).toMatch(/repeat\(4,/)
+  })
+
+  it('полоса вкладок новой карточки не сжимается телом', () => {
+    // На высоте окна 813px тело требовало 580px, и flex-колонка ужимала полосу
+    // вкладок до 1px — вкладки исчезали, хотя в DOM были.
+    expect(rule('.new-task-tabs')).toMatch(/flex:\s*none/)
+    expect(rule('.new-task-body')).toMatch(/min-height:\s*0/)
   })
 
   it('панель «Общего» скрывается атрибутом hidden', () => {

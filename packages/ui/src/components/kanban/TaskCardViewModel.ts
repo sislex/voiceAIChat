@@ -55,6 +55,18 @@ export interface TaskCardWorkflowStepViewModel {
    * нет намеренно: оценка «≈ 15 мин» ничем не подкреплена и вводит в заблуждение.
    */
   durationMs?: number
+  /**
+   * When the current stage started: the view ticks the elapsed time itself, so
+   * the model stays a plain snapshot and the timer survives re-renders.
+   */
+  startedAt?: number | null
+}
+
+/** Link (or replacement) of a Make design collected by the inline editor. */
+export interface TaskCardMakeLinkDraft {
+  conversationId: string
+  mode: TaskCardMakeMode
+  paths: string[]
 }
 
 export interface TaskReworkCycleViewModel {
@@ -162,8 +174,12 @@ export interface TaskCardCallbacks {
   loadAttachment?(attachmentId: string): Promise<string>
   /** Снять связь карточки с Make-макетом. */
   onUnlinkMake?(linkId: string): void | Promise<void>
-  /** Перевести связь на другой Make-проект. */
-  onReplaceMake?(linkId: string, conversationId: string): void | Promise<void>
+  /** Перевести связь на другой Make-проект или другой набор его файлов. */
+  onReplaceMake?(linkId: string, draft: TaskCardMakeLinkDraft): void | Promise<void>
+  /** Связать задачу с Make-дизайном прямо из карточки. */
+  onLinkMake?(draft: TaskCardMakeLinkDraft): void | Promise<void>
+  /** Отправить несколько черновиков одним циклом доработки. */
+  onSubmitDrafts?(cycleIds: string[]): void | Promise<void>
   /** Черновики доработок: правка, удаление и отправка выбранного набора. */
   onEditDraft?(cycleId: string): void
   onDeleteDraft?(cycleId: string): void | Promise<void>
