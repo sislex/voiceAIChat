@@ -8826,15 +8826,52 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 
 /* Таблица версий должна оставаться читаемой и на узком окне desktop. */
-.application-release-center { display: grid; gap: 1rem; min-width: 0; }
-.application-release-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; margin-block: .75rem; }
-.application-release-controls label { display: grid; gap: .35rem; flex: 1 1 14rem; }
-.application-release-controls input, .application-release-controls select { min-height: 2.4rem; width: 100%; }
-.application-release-form { display: grid; gap: .75rem; }
-.application-release-table { overflow-x: auto; }
-.application-release-table table { width: 100%; border-collapse: collapse; }
-.application-release-table th, .application-release-table td { text-align: left; padding: .5rem; }
-.application-release-table input { width: 7rem; }
-.application-release-list { display: grid; gap: 1rem; padding-left: 1.5rem; }
-.application-release-center pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow-y: auto; }
+.application-release-center { min-width: 0; }
+/* Two controls side by side on wide screens, stacked on a phone; the form
+   inputs inherit the release-create field sizing. */
+.application-release-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.application-release-controls label { display: grid; gap: 6px; flex: 1 1 220px; min-width: 0; max-width: 100%; }
+.application-release-controls input, .application-release-controls select { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 9px; background: var(--surface); color: var(--text); font: inherit; }
+.application-release-form { display: grid; gap: 12px; }
+.application-release-form h3 { margin: 0; font-size: 15px; }
+.application-release-form .vc-btn { justify-self: start; }
+.application-release-table { flex: none; }
+.application-release-table .release-table { min-width: 560px; }
+.application-release-table input { width: 7rem; max-width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; padding: 7px; background: var(--surface); color: var(--text); font: inherit; }
+.application-release-installed { margin: 0; }
+.application-release-ok { color: var(--success) !important; }
+.application-release-bad { color: var(--danger) !important; }
+.application-release-details { padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.application-release-details summary { cursor: pointer; font-weight: 600; }
+.application-release-details ul { margin: 10px 0 0; padding-left: 18px; }
+.application-release-section { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.application-release-section h3 { margin: 0; font-size: 16px; }
+.application-release-section p { margin: 4px 0 0; color: var(--text-dim); font-size: 12px; }
+.application-release-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.application-release-item { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-left-width: 4px; border-radius: 12px; background: var(--surface); }
+.application-release-item[data-status='released'] { border-left-color: var(--success); }
+.application-release-item[data-status='failed'], .application-release-item[data-status='uncertain'] { border-left-color: var(--danger); }
+.application-release-item[data-status='preparing'], .application-release-item[data-status='deploying'] { border-left-color: var(--accent); }
+.application-release-item > label, .application-release-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.application-release-item > label strong, .application-release-item-head strong { flex: 1; min-width: 0; }
+.application-release-item > label input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.application-release-meta { margin: 0; color: var(--text-dim); font-size: 12px; }
+.application-release-item details summary { cursor: pointer; color: var(--accent); font-size: 12px; font-weight: 600; }
+.application-release-item details p { margin: 8px 0 0; font-size: 12px; color: var(--text-dim); }
+.application-release-item .vc-btn { justify-self: start; }
+.application-release-issues, .application-release-compatible { padding: 10px 12px; border-radius: var(--radius-medium); font-size: 13px; }
+.application-release-issues { background: var(--danger-soft); color: var(--danger); }
+.application-release-issues ul { margin: 0; padding-left: 18px; }
+.application-release-compatible { background: var(--success-soft); color: var(--success); }
+.application-release-compatible p { margin: 0; }
+.application-release-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.application-release-center pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow-y: auto; margin: 8px 0 0; padding: 10px; border-radius: 8px; background: var(--bg); font-size: 12px; }
 .application-release-center code { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .application-release-table .release-table { min-width: 0; }
+  .application-release-table .release-table tbody tr { grid-template-columns: 1fr; }
+  .application-release-table .release-table th[data-label] { display: block; padding: 0; border: 0; text-align: left; }
+  .application-release-table .release-table td[data-label]::before { content: attr(data-label); display: block; color: var(--text-dim); font-size: 11px; }
+  .application-release-table input { width: 100%; }
+  .application-release-actions .vc-btn { width: 100%; }
+}
