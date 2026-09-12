@@ -31,3 +31,23 @@ function toDate(value: number | string | Date | null | undefined): Date | null {
   const date = value instanceof Date ? value : new Date(value)
   return Number.isNaN(date.getTime()) ? null : date
 }
+
+/**
+ * Coarse relative time for lists («5 мин назад», «вчера»): the exact timestamp
+ * stays in a tooltip, the row itself answers «how long ago» at a glance.
+ */
+export function formatRelativeTime(value: number | string, now: number = Date.now()): string {
+  const at = typeof value === 'number' ? value : Date.parse(value)
+  if (!Number.isFinite(at)) return ''
+  const diff = now - at
+  const future = diff < 0
+  const seconds = Math.round(Math.abs(diff) / 1000)
+  const text = seconds < 45 ? 'только что'
+    : seconds < 3600 ? `${Math.max(1, Math.round(seconds / 60))} мин`
+    : seconds < 86_400 ? `${Math.round(seconds / 3600)} ч`
+    : seconds < 172_800 ? 'вчера'
+    : seconds < 30 * 86_400 ? `${Math.round(seconds / 86_400)} дн.`
+    : formatDate(at)
+  if (text === 'только что' || text === 'вчера' || seconds >= 30 * 86_400) return text
+  return future ? `через ${text}` : `${text} назад`
+}
