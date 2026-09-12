@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-09-12
-checked: e1ce913f
+checked: 3ae08249
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -222,6 +222,18 @@ codex `model: ''` намеренно.
 контейнер запущен», 401/403 → «проверьте токен `VC_LLM_RUNNER_TOKEN`», обрыв
 потока без `exit` → «соединение оборвалось до конца ответа — ход остановлен»
 (ход обязан закрыться, иначе он висит до перезапуска сервера).
+
+The runner sends a blank NDJSON line every 15 seconds while a run is open
+(`DEFAULT_HEARTBEAT_MS` in `apps/llm-runner/src/run/rawRun.ts`). This keeps the
+HTTP response body active when the CLI produces no stdout/stderr, avoiding a
+body inactivity timeout during long reasoning or tool calls. Existing
+`parseLlmRunFrame` clients ignore blank lines, so heartbeats do not become model
+output, usage, or completion events. The interval stops on completion, process
+error, or client disconnect. A blocked heartbeat write arms the existing orphan
+timer; further heartbeats pause until drain and cannot postpone that deadline.
+Cancellation still sends SIGTERM/SIGKILL and closes the stream after CLI exit.
+Tests cover ten minutes of silent Claude/Codex output, actual HTTP keepalive
+bytes, backpressure, disconnect, errors, and cancellation without spawning a CLI.
 
 Env (реестра исполнителей пока нет, срез 2 плана `docs/plans/llm-runners.md`):
 `VC_LLM_RUNNER_URL` — общий адрес, `VC_LLM_RUNNER_CLAUDE_URL` /

@@ -9,6 +9,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 export interface PreviewToolEntry {
   userId: string
   conversationId: string
+  ciCheck?: { runId: string; stepId: string; url: string }
 }
 
 export interface PreviewTurnTokens {
@@ -21,7 +22,7 @@ export interface PreviewTurnTokens {
 /** Сколько живёт токен: ран длиннее суток — это уже не ран. */
 export const PREVIEW_TURN_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 
-interface Payload { u: string; c: string; e: number }
+interface Payload { u: string; c: string; e: number; check?: PreviewToolEntry['ciCheck'] }
 
 function sign(secret: string, payload: string): string {
   return createHmac('sha256', secret).update(payload).digest('base64url')
@@ -32,7 +33,7 @@ export function createPreviewTurnTokens(secret: string, opts: { ttlMs?: number; 
   const now = opts.now ?? Date.now
   return {
     issue(entry) {
-      const payload = Buffer.from(JSON.stringify({ u: entry.userId, c: entry.conversationId, e: now() + ttlMs } satisfies Payload)).toString('base64url')
+      const payload = Buffer.from(JSON.stringify({ u: entry.userId, c: entry.conversationId, e: now() + ttlMs, ...(entry.ciCheck ? { check: entry.ciCheck } : {}) } satisfies Payload)).toString('base64url')
       return `${payload}.${sign(secret, payload)}`
     },
     verify(token) {
@@ -45,7 +46,8 @@ export function createPreviewTurnTokens(secret: string, opts: { ttlMs?: number; 
       let parsed: Payload
       try { parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Payload } catch { return undefined }
       if (typeof parsed.u !== 'string' || typeof parsed.c !== 'string' || typeof parsed.e !== 'number' || parsed.e <= now()) return undefined
-      return { userId: parsed.u, conversationId: parsed.c }
+      if (parsed.check && (typeof parsed.check.runId !== 'string' || typeof parsed.check.stepId !== 'string' || typeof parsed.check.url !== 'string')) return undefined
+      return { userId: parsed.u, conversationId: parsed.c, ...(parsed.check ? { ciCheck: parsed.check } : {}) }
     }
   }
 }

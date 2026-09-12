@@ -686,6 +686,47 @@ export function InteractionCard(props: {
   )
 }
 
+export function BrowserLogArtifact({ line }: { line: CiLogLine }): JSX.Element {
+  const match = line.stream === 'system' ? /^Снимок страницы проверки: \/api\/ci\/runs\/([a-zA-Z0-9_-]+)\/browser-shots\/(\d+\.png)\s*$/.exec(line.chunk) : null
+  const [url, setUrl] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const alive = useRef(true)
+  const objectUrl = useRef<string | null>(null)
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false; if (objectUrl.current) URL.revokeObjectURL(objectUrl.current) }
+  }, [line.seq])
+  const load = async (): Promise<void> => {
+    if (!match || loading) return
+    setLoading(true); setError(null)
+    try {
+      const next = await window.ci?.getBrowserShot?.(match[1], match[2])
+      if (!next) throw new Error('Screenshot transport is unavailable')
+      if (!alive.current) { URL.revokeObjectURL(next); return }
+      objectUrl.current = next
+      setUrl(next)
+    } catch (err) { if (alive.current) setError(err instanceof Error ? err.message : String(err)) }
+    finally { if (alive.current) setLoading(false) }
+  }
+  if (match) return <div>
+    {url ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Browser-check screenshot" style={{ maxWidth: '100%', height: 'auto' }} /></a>
+      : <Button size="sm" loading={loading} onClick={() => void load()}>Открыть снимок {match[2]}</Button>}
+    {error && <p role="alert">{error}</p>}
+  </div>
+  if (line.stream === 'system' && line.chunk.startsWith('Browser-check evidence: ')) {
+    try {
+      const evidence = JSON.parse(line.chunk.slice('Browser-check evidence: '.length)) as import('@shared/ci').CiBrowserEvidence
+      if (['passed', 'blocked', 'infrastructure_error'].includes(evidence.status) && Array.isArray(evidence.viewports) && Array.isArray(evidence.missing)) {
+        return <details><summary>Browser-check: {evidence.status} · {evidence.viewports.join(', ')} px</summary>
+          <pre style={{ maxWidth: '100%', overflow: 'auto' }}>{JSON.stringify(evidence, null, 2)}</pre>
+        </details>
+      }
+    } catch { /* Old or partial log lines remain readable. */ }
+  }
+  return <AnsiText>{line.chunk}</AnsiText>
+}
+
 function StepLog({ lines, autoscroll }: StepLogProps): JSX.Element {
   const ref = useRef<HTMLDivElement | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -703,7 +744,7 @@ function StepLog({ lines, autoscroll }: StepLogProps): JSX.Element {
         </div>
       )}
       {shown.map((l, i) => (
-        <div key={`${l.seq}-${i}`} className={`ci-log-line ci-log-line--${l.stream}`}><AnsiText>{l.chunk}</AnsiText></div>
+        <div key={`${l.runId}-${l.stepId}-${l.seq}-${i}`} className={`ci-log-line ci-log-line--${l.stream}`}><BrowserLogArtifact line={l} /></div>
       ))}
     </div>
   )

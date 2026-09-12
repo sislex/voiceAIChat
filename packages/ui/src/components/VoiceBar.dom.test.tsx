@@ -1,13 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { VoiceBar } from './VoiceBar'
+import { useSyncExternalStore } from 'react'
+import { createTestStore } from '../test/appHarness'
+import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { readFileSync } from 'node:fs'
 import '../styles/app.css'
 
 const appCss = readFileSync('src/styles/app.css', 'utf8')
+
+// @testCase T8
+it('keeps the documented persistence keys and worktree gate entry point available', () => {
+  const uiKnowledge = readFileSync('../../docs/kb/ui.md', 'utf8')
+  expect(uiKnowledge).toContain('vc.chat.drafts.v1')
+  expect(uiKnowledge).toContain('vc.chat.compact')
+  expect(uiKnowledge).toContain('chatImprovements.browser.mts')
+  const briefKnowledge = readFileSync('../../docs/kb/features/task-preparation.md', 'utf8')
+  expect(briefKnowledge).toContain('decisions[].questionId')
+  const scripts = JSON.parse(readFileSync('../../package.json', 'utf8')).scripts
+  expect(scripts['gate:fast']).toContain('application-gate.mjs --worktree')
+})
 
 function setup(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {}) {
   const props = makeProps(state, overrides)
@@ -48,6 +63,65 @@ describe('VoiceBar — выбранная область', () => {
     await userEvent.click(screen.getByLabelText('Убрать выбранную область'))
     expect(onRemovePreviewElement).toHaveBeenCalledOnce()
   })
+})
+
+// @testCase T1
+it('restores the conversation draft in the actual composer after switching and remounting', async () => {
+  localStorage.clear()
+  const api = createFakeApi(['A', 'B'])
+  const store = createTestStore({ api })
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  function Composer(): JSX.Element {
+    const chat = useSyncExternalStore(store.runtime.chat.subscribe, store.runtime.chat.getState)
+    return <VoiceBar {...makeProps('idle')} draft={chat.draft} onDraftChange={store.actions.setDraft} />
+  }
+  const view = render(<Composer />)
+  fireEvent.change(screen.getByLabelText('Поле ввода сообщения'), { target: { value: 'Draft A' } })
+  await act(() => store.actions.selectConversation(b))
+  fireEvent.change(screen.getByLabelText('Поле ввода сообщения'), { target: { value: 'Draft B' } })
+  await act(() => store.actions.selectConversation(a))
+  expect(screen.getByLabelText('Поле ввода сообщения')).toHaveValue('Draft A')
+  view.unmount()
+  render(<Composer />)
+  expect(screen.getByLabelText('Поле ввода сообщения')).toHaveValue('Draft A')
+  store.runtime.dispose()
+  localStorage.clear()
+})
+
+// @testCase T2
+it('paste and external drop share file handling, leave text paste alone, and expose removal', () => {
+  const file = new File(['image'], 'paste.png', { type: 'image/png' })
+  const props = setup('idle', { attachments: [{ localId: 'image', name: file.name, previewUrl: 'blob:preview', status: 'ready' }] })
+  const input = screen.getByLabelText('Поле ввода сообщения')
+  fireEvent.paste(input, { clipboardData: { files: [file] } })
+  fireEvent.drop(input.closest('.voicebar')!.querySelector('[class*="tinput"]') ?? input, { dataTransfer: { files: [file] } })
+  expect(props.onAddFiles).toHaveBeenNthCalledWith(1, [file])
+  expect(props.onAddFiles).toHaveBeenNthCalledWith(2, [file])
+  expect(fireEvent.paste(input, { clipboardData: { files: [] } })).toBe(true)
+  expect(props.onAddFiles).toHaveBeenCalledTimes(2)
+  expect(screen.getByTestId('attachment-image-preview')).toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText('Убрать вложение paste.png'))
+  expect(props.onRemoveAttachment).toHaveBeenCalledWith('image')
+})
+
+// @testCase T6
+it('recording timer runs only during enabled capture and resets on stop', () => {
+  vi.useFakeTimers()
+  try {
+    const props = makeProps('listening')
+    const { rerender } = render(<VoiceBar {...props} captureActive={false} />)
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    rerender(<VoiceBar {...props} captureActive />)
+    act(() => vi.advanceTimersByTime(2100))
+    expect(screen.getByRole('timer')).toHaveTextContent('0:02')
+    expect(screen.getByText(/Отпустите пробел/)).toBeInTheDocument()
+    rerender(<VoiceBar {...props} state="idle" />)
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    rerender(<VoiceBar {...props} voiceInputEnabled={false} />)
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+  } finally { vi.useRealTimers() }
 })
 
 describe('VoiceBar — состояния', () => {

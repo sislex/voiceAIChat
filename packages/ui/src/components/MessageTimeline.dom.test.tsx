@@ -4,6 +4,17 @@ import { MessageTimeline } from './MessageTimeline'
 import type { ClaudeLogEntry } from '@shared/types'
 import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures/index'
 
+// @testCase T5
+it('folds completed activity above five actions and keeps live activity open', () => {
+  const activity = Array.from({ length: 6 }, (_, i) => makeActivity({ summary: 'Action ' + i, at: 0 }))
+  const { rerender } = render(<MessageTimeline text="Answer" activity={activity} mode="minimal" />)
+  expect(screen.queryAllByTestId('activity-section')).toHaveLength(0)
+  fireEvent.click(screen.getByText('Показать все 6 действий'))
+  expect(screen.getAllByTestId('activity-section')).toHaveLength(6)
+  rerender(<MessageTimeline text="Answer" activity={activity} mode="brief" live />)
+  expect(screen.getAllByTestId('activity-section')).toHaveLength(6)
+})
+
 describe('MessageTimeline', () => {
   it('minimal: только текст, без действий', () => {
     const activity: ClaudeLogEntry[] = [makeActivity({ summary: 'Bash: ls', at: 3, ts: 1000 })]

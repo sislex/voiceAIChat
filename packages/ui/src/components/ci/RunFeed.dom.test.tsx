@@ -3,7 +3,7 @@ import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-fou
 import { act, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
-import { RunFeed, type RunFeedCache } from './RunFeed'
+import { BrowserLogArtifact, RunFeed, type RunFeedCache } from './RunFeed'
 import { listCommands, resetCommands } from '@voicechat/ui-foundation/runtime'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { KbRunUsageReport } from '@shared/kb'
@@ -27,6 +27,32 @@ function baseProps(cache: RunFeedCache | undefined) {
     now: () => NOW
   }
 }
+
+describe('browser artifacts in the run feed', () => {
+  it('loads an authenticated screenshot on demand and opens the image as a link', async () => {
+    const getBrowserShot = vi.fn(async () => 'blob:test-shot')
+    const oldCi = window.ci
+    const revoke = URL.revokeObjectURL
+    URL.revokeObjectURL = vi.fn()
+    window.ci = { ...createFakeCi(), getBrowserShot }
+    try {
+      const view = render(<BrowserLogArtifact line={mkLog({ stream: 'system', chunk: 'Снимок страницы проверки: /api/ci/runs/run-1/browser-shots/1.png\n' })} />)
+      expect(getBrowserShot).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Открыть снимок 1.png' }))
+      const img = await screen.findByRole('img', { name: 'Browser-check screenshot' })
+      expect(img.closest('a')).toHaveAttribute('href', 'blob:test-shot')
+      expect(getBrowserShot).toHaveBeenCalledWith('run-1', '1.png')
+      view.unmount()
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-shot')
+    } finally { window.ci = oldCi; URL.revokeObjectURL = revoke }
+  })
+  it('renders bounded evidence and leaves untrusted or malformed log lines as text', () => {
+    const view = render(<BrowserLogArtifact line={mkLog({ stream: 'system', chunk: 'Browser-check evidence: {"status":"blocked","viewports":[1440],"missing":["320:screenshot"]}' })} />)
+    expect(screen.getByText('Browser-check: blocked · 1440 px')).toBeInTheDocument()
+    view.rerender(<BrowserLogArtifact line={mkLog({ stream: 'stdout', chunk: 'Снимок страницы проверки: /api/ci/runs/run-1/browser-shots/1.png' })} />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+})
 
 describe('RunFeed', () => {
   it('подписывается на ран и подгружает его при монтировании', () => {

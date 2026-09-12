@@ -143,6 +143,15 @@ export interface LocalAttachment {
   upload: UploadInfo | null
 }
 
+export interface FailedSubmit extends PendingSubmit {
+  draftKey?: string
+  error: string
+  retrying: boolean
+  execTarget: string | null
+  previewElement?: PreviewElementPayload
+  editorContext?: EditorContextPayload
+}
+
 export interface PendingSubmit {
   operationId: string
   conversationId: string | null
@@ -203,6 +212,7 @@ export interface ChatState {
   liveActivity: ClaudeLogEntry[]
   streamingReply: string
   /** Независимые отправки, ожидающие HTTP/realtime-подтверждения, по operationId. */
+  failedSubmits: Record<string, FailedSubmit>
   pendingSubmits: Record<string, PendingSubmit>
   /** @deprecated Последняя операция для совместимости представления статуса. */
   pendingSubmit: PendingSubmit | null
@@ -293,6 +303,8 @@ export interface ChatActions {
   setShowDoneTaskChats(show: boolean): Promise<void>
   exportConversation(format: 'md' | 'json'): void
   setDraft(value: string): void
+  retryFailedSubmit(id: string): Promise<boolean>
+  deleteFailedSubmit(id: string): void
   submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean>
   /** Отправить предложенное сервером исправление (ход пропускает preflight копии). */
   submitFix(prompt: string): Promise<boolean>
@@ -361,6 +373,7 @@ export interface ChatVoicePort {
 export interface ChatDeps {
   chat: ChatClient
   prefs: PreferencesPort
+  draftStorageKey?: string
   download: DownloadPort
   voice: ChatVoicePort
   /** Настройки принадлежат settingsStore — здесь только чтение снимка. */
@@ -403,6 +416,7 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
     consoleLog: [],
     liveActivity: [],
     streamingReply: '',
+    failedSubmits: {},
     pendingSubmits: {},
     pendingSubmit: null,
     preparingReply: false,
@@ -460,7 +474,31 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   const core = createStoreCore<ChatState>(
     initialState(initialSelection, deps.prefs.get(DONE_TASK_CHATS_KEY) === '1')
   )
-  const { getState, setState } = core
+  const { getState } = core
+  const drafts = new Map<string, string>()
+  const revisions = new Map<string, number>()
+  try {
+    const raw: unknown = JSON.parse(deps.draftStorageKey ? deps.prefs.get(deps.draftStorageKey) ?? '{}' : '{}')
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const [id, text] of Object.entries(raw)) if (typeof text === 'string') drafts.set(id, text)
+    }
+  } catch { /* Storage failure must never prevent editing. */ }
+  function saveDraft(id: string, text: string): void {
+    if (text) drafts.set(id, text)
+    else drafts.delete(id)
+    try { if (deps.draftStorageKey) deps.prefs.set(deps.draftStorageKey, JSON.stringify(Object.fromEntries(drafts))) } catch { /* Memory remains usable. */ }
+  }
+  function setState(patch: Partial<ChatState>): void {
+    const previous = getState()
+    if (patch.activeId !== undefined && patch.activeId !== previous.activeId) {
+      patch = { ...patch, draft: patch.activeId ? drafts.get(patch.activeId) ?? '' : patch.draft ?? '', attachments: [] }
+    } else if (patch.draft !== undefined) {
+      if (previous.activeId) saveDraft(previous.activeId, patch.draft)
+      const key = previous.activeId ?? '__unsaved__'
+      revisions.set(key, (revisions.get(key) ?? 0) + 1)
+    }
+    core.setState(patch)
+  }
   const fail = deps.fail ?? (() => {})
   const setError = deps.setError ?? (() => {})
 
@@ -549,8 +587,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       consoleLog: [],
       liveActivity: [],
       streamingReply: '',
-      pendingSubmits: {},
-      pendingSubmit: null,
+
       preparingReply: false,
       lastTurnMeta: null,
       liveUsage: null
@@ -1278,10 +1315,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   async function uploadLocalAttachment(localId: string): Promise<void> {
     const item = getState().attachments.find((attachment) => attachment.localId === localId)
     if (!item) return
+    const conversation = activeConversation()
+    const selectedTarget = conversation?.execTarget ?? deps.getSettings().execTarget
     try {
       const dataBase64 = await fileToBase64(item.file)
-      const conversation = activeConversation()
-      const selectedTarget = conversation?.execTarget ?? deps.getSettings().execTarget
       const agentId = selectedTarget && selectedTarget !== 'none' ? selectedTarget : undefined
       const upload = await client['uploads:add']({
         name: item.file.name,
@@ -1413,10 +1450,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       pendingSubmits,
       pendingSubmit: remaining[remaining.length - 1] ?? null,
       // Ошибка/отмена этой обычной операции не должна оставить её карточку.
-      ...(pending.queueOnly ? {} : { preparingReply: false })
+      ...(pending.queueOnly || pending.conversationId !== state.activeId ? {} : { preparingReply: false })
     }
-    if (restoreDraft && !state.draft && pending.text) patch.draft = pending.text
-    if (restoreDraft && state.attachments.length === 0 && pending.attachments.length > 0) {
+    if (restoreDraft && state.activeId === pending.conversationId && !state.draft && pending.text) patch.draft = pending.text
+    if (restoreDraft && state.activeId === pending.conversationId && state.attachments.length === 0 && pending.attachments.length > 0) {
       patch.attachments = pending.attachments
     }
     if (pending.conversationId) {
@@ -1438,6 +1475,89 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     nextTurnSkipsProjectSync = true
     setState({ draft: prompt })
     return submitText()
+  }
+
+  async function sendCaptured(pending: FailedSubmit, revision: number): Promise<boolean> {
+    let conversationId = pending.conversationId
+    const selection = selectToken
+    const ready = pending.attachments.flatMap((item) => item.upload ? [item.upload] : [])
+    try {
+      let createdMessage: Message | undefined
+      if (!conversationId) {
+        pendingDraftKey ??= globalThis.crypto?.randomUUID?.() ?? `draft-${now()}-${Math.random()}`
+        pending = { ...pending, draftKey: pending.draftKey ?? pendingDraftKey }
+        const created = await client['conversations:createDraft']({
+          idempotencyKey: pending.draftKey!,
+          title: titleFromText(pending.text || ready.map((file) => file.name).join(', ')),
+          message: { role: 'u1', text: pending.messageText, time: formatTime(now()),
+            attachments: ready.map((file) => ({ uploadId: file.id, path: file.path, name: file.name, mimeType: file.mimeType, size: file.size })),
+            ...(pending.previewElement || pending.editorContext ? { meta: { previewElement: pending.previewElement, editorContext: pending.editorContext } } : {}) }
+        })
+        conversationId = created.conversation.id
+        createdMessage = created.messages.find((message) => message.role !== 'ai')
+        pending = { ...pending, conversationId, messageId: createdMessage?.id ?? pending.messageId, execTarget: created.conversation.execTarget ?? pending.execTarget }
+        pendingDraftKey = null
+        cacheMessages(conversationId, created.messages, true)
+        if (selection === selectToken && getState().activeId === null) {
+          const draft = (revisions.get('__unsaved__') ?? 0) === revision ? '' : getState().draft
+          core.setState({ activeId: conversationId, ...chatScopedReset(), activeConversation: created.conversation, messages: created.messages, conversations: withConversation(getState().conversations, created.conversation), draft })
+          if (draft) saveDraft(conversationId, draft)
+        }
+      }
+      const message = createdMessage ?? await client['messages:add']({
+        conversationId, messageId: pending.messageId, role: 'u1', text: pending.messageText,
+        time: formatTime(now()), execTarget: pending.execTarget,
+        attachments: ready.map((file) => ({ uploadId: file.id, path: file.path, name: file.name, mimeType: file.mimeType, size: file.size, ...(file.agentId ? { agentId: file.agentId } : {}) })),
+        ...(pending.previewElement || pending.editorContext ? { meta: { ...(pending.previewElement ? { previewElement: pending.previewElement } : {}), ...(pending.editorContext ? { editorContext: pending.editorContext } : {}) } } : {})
+      })
+      const resolvedPending = { ...pending, conversationId, messageId: message.id }
+      if (getState().pendingSubmits[pending.operationId]) setState({
+        pendingSubmits: { ...getState().pendingSubmits, [pending.operationId]: resolvedPending },
+        ...(getState().pendingSubmit?.operationId === pending.operationId ? { pendingSubmit: resolvedPending } : {})
+      })
+      if (pending.queueOnly) {
+        setState({ queuedTurns: { ...getState().queuedTurns, [conversationId]: (getState().queuedTurns[conversationId] ?? []).map((item) => item.id === pending.operationId ? { ...item, messageId: message.id, conversationId: message.conversationId, attachmentDetails: message.attachments } : item) } })
+      } else applyCachedMessages(conversationId, [message])
+      if (getState().activeId === conversationId) {
+        const submittedIds = new Set(pending.attachments.map((item) => item.localId))
+        core.setState({ attachments: getState().attachments.filter((item) => !submittedIds.has(item.localId)) })
+      }
+      for (const attachment of pending.attachments) {
+        if (attachment.previewUrl && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(attachment.previewUrl)
+      }
+      if (!createdMessage && (revisions.get(conversationId) ?? 0) === revision) {
+        saveDraft(conversationId, '')
+        if (getState().activeId === conversationId) core.setState({ draft: '' })
+      }
+      const { [pending.operationId]: removed, ...failedSubmits } = getState().failedSubmits
+      setState({ failedSubmits })
+      const segments = [{ speakerId: 1, text: withEditorContext(withPreviewElementContext(pending.text || 'См. приложенные файлы.', pending.previewElement), pending.editorContext) }]
+      if (getState().activeId === conversationId) {
+        if (!pending.queueOnly && ready.length === 0 && !pending.previewElement && await maybeOpenUtility(pending.text)) { clearPendingSubmit(pending.operationId); return true }
+        if (getState().activeId !== conversationId) {
+          turn.send?.(conversationId, segments, pending.attachmentIds, true, pending.execTarget, message.id)
+        } else {
+          if (!pending.queueOnly) voice.dispatch('submit_text')
+          if (pending.queueOnly && turn.enabled && turn.send) turn.send(conversationId, segments, pending.attachmentIds, true, pending.execTarget, message.id)
+          else beginReply(segments, pending.attachmentIds, pending.execTarget, createdMessage ? undefined : message.id)
+        }
+      } else {
+        turn.send?.(conversationId, segments, pending.attachmentIds, true, pending.execTarget, message.id)
+      }
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setState({ failedSubmits: { ...getState().failedSubmits, [pending.operationId]: { ...pending, error: message, retrying: false } } })
+      clearPendingSubmit(pending.operationId, true)
+      throw error
+    }
+  }
+
+  async function retryFailedSubmit(id: string): Promise<boolean> {
+    const failed = getState().failedSubmits[id]
+    if (!failed || failed.retrying) return false
+    setState({ failedSubmits: { ...getState().failedSubmits, [id]: { ...failed, retrying: true } } })
+    return sendCaptured(failed, (failed.conversationId ? drafts.get(failed.conversationId)?.trim() : getState().activeId === null ? getState().draft.trim() : undefined) === failed.text ? revisions.get(failed.conversationId ?? '__unsaved__') ?? 0 : -1).catch(() => false)
   }
 
   function submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
@@ -1487,9 +1607,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       }
     }
     setState(patch)
-    const pending = performSubmitText(operationId, queueOnly, previewElement, editorContext)
+    const pending = sendCaptured({ ...pendingSubmit, execTarget: activeConversationExecTarget(), previewElement, editorContext, error: '', retrying: false }, revisions.get(state.activeId ?? '__unsaved__') ?? 0)
     // Композер освобождается сразу после синхронного захвата операции.
-    setState({ draft: '', attachments: [] })
+    core.setState({ draft: '', attachments: [] })
     void pending.then((sent) => {
       if (!sent && getState().pendingSubmits[operationId]) clearPendingSubmit(operationId, true)
     }, () => {
@@ -2001,6 +2121,12 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         setState({ draft: value })
       },
       submitText,
+      retryFailedSubmit,
+      deleteFailedSubmit(id) {
+        if (getState().failedSubmits[id]?.retrying) return
+        const { [id]: removed, ...failedSubmits } = getState().failedSubmits
+        setState({ failedSubmits })
+      },
       submitFix,
       publishDiagnosticMessage,
       submitVoiceSegments,

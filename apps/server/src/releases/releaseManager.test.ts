@@ -288,6 +288,21 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(statuses).toEqual(expect.arrayContaining(['switching','building','health_check','released']))
   })
 
+  it('кэширует список release-веток и забывает кэш после записи в origin',async()=>{
+    let calls=0
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{if(command.includes('ls-remote'))calls+=1;return {exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.10\n'}}}
+    const manager=new ReleaseManager(db,runtime,{branchListTtlMs:60_000})
+    await manager.listBranches(ci());await manager.listBranches(ci())
+    expect(calls).toBe(1)
+    expect(await manager.listBranches(ci(),{fresh:true})).toHaveLength(1)
+    expect(calls).toBe(2)
+    // Удаление ветки пишет в origin — следующий список читается заново.
+    const release=await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.10',version:'0.1.10',sha:'fixed-sha',status:'failed'})
+    await manager.deleteBranch('owner',ci(),release.id,'release/0.1.10')
+    await manager.listBranches(ci())
+    expect(calls).toBe(3)
+  })
+
   it('resumes an active health check after server restart and verifies the expected commit and version',async()=>{
     const release=await db.releases.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'health_check'})
     await db.releases.setProjectReleaseStep(release.id,'health_check','running','waiting','owner')

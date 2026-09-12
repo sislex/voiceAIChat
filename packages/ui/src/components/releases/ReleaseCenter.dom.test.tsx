@@ -2,12 +2,12 @@
 // and validation, production markers, step status labels, settings panel and
 // the mobile card layout hooks (data-label attributes).
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/uiRender'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { ProjectRelease, ProjectReleaseSummary, ReleaseMachine } from '@voicechat/shared'
-import { ReleaseCenter, githubWebUrl } from './ReleaseCenter'
+import { ReleaseCenter, githubWebUrl, typicalDurationMs } from './ReleaseCenter'
 
 const machines: ReleaseMachine[] = [{ agentId: 'mac', name: 'MacBook', ownership: 'mine', access: 'owner', online: true, path: '/app', reposRoot: '', eligible: true, unavailableReason: null }]
 const prepared: ProjectRelease = {
@@ -36,7 +36,7 @@ function api() {
 describe('ReleaseCenter — версия, production и мобильная раскладка', () => {
   // The remembered tab must not leak between tests: a deploy-tab test would
   // otherwise open the next one on «Деплой».
-  beforeEach(() => window.localStorage.removeItem('vc.releases.tab'))
+  beforeEach(() => { window.localStorage.removeItem('vc.releases.tab'); window.localStorage.removeItem('vc.releases.mode') })
   it('подсказывает следующую версию и подставляет её кнопкой', async () => {
     const value = api()
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
@@ -270,5 +270,132 @@ describe('ReleaseCenter — версия, production и мобильная ра�
     } finally {
       delete (window as { board?: unknown }).board
     }
+  })
+
+  it('ненастроенный production объясняет, чего не хватает, и ведёт в настройки', async () => {
+    const open = vi.fn()
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} production={{ ready: false, mode: 'legacy', missing: ['production-машина', 'команда деплоя'] }} onOpenSettings={open} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Деплой' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Не хватает: production-машина, команда деплоя.')
+    expect(screen.getByRole('button', { name: /Задеплоить/ })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть настройки проекта' }))
+    expect(open).toHaveBeenCalledOnce()
+  })
+
+  it('настроенный production показывает машину и режим', async () => {
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} production={{ ready: true, mode: 'managed', missing: [], machineName: 'Prod 89', healthCheckCommand: 'curl health' }} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Деплой' }))
+    expect(screen.getByText('Prod 89')).toBeInTheDocument()
+    expect(screen.getByText(/Managed MachineStorage · health-check: curl health/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Задеплоить/ })).toBeEnabled()
+  })
+
+  it('фильтры и поиск сужают список релизов', async () => {
+    const value = api()
+    value['releases:list'] = vi.fn(async () => [summary(deployment), summary(prepared), summary(older, { status: 'failed', failure: 'FAIL' })])
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    await screen.findByText('release/0.1.300')
+    await userEvent.click(screen.getByRole('button', { name: /^Ошибки/ }))
+    expect(screen.queryByText('release/0.1.300')).toBeNull()
+    expect(screen.getByText('release/0.1.299')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'В production' }))
+    expect(screen.getByText('release/0.1.300')).toBeInTheDocument()
+    expect(screen.queryByText('release/0.1.299')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Все' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск по версии или SHA' }), '0.1.29')
+    expect(screen.queryByText('release/0.1.300')).toBeNull()
+    await userEvent.clear(screen.getByRole('searchbox', { name: 'Поиск по версии или SHA' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск по версии или SHA' }), 'zzz')
+    expect(screen.getByText('Под фильтр ничего не попало.')).toBeInTheDocument()
+  })
+
+  it('оценка длительности идущего рана берётся из прошлых успешных', async () => {
+    expect(typicalDurationMs([{ id: 'a', branch: 'b', sha: '', status: 'released', previousReleaseId: 'x', createdAt: 1, durationMs: 600_000 }, { id: 'b', branch: 'b', sha: '', status: 'failed', previousReleaseId: 'x', createdAt: 1, durationMs: 100 }, { id: 'c', branch: 'b', sha: '', status: 'released', previousReleaseId: 'x', createdAt: 1, durationMs: 300_000 }])).toBe(450_000)
+    expect(typicalDurationMs([])).toBeNull()
+    const value = api()
+    value['releases:list'] = vi.fn(async () => [summary({ ...prepared, id: 'prep-live', branch: 'release/0.1.301', status: 'checking' }, { durationMs: 60_000 }), summary(prepared, { durationMs: 240_000 }), summary(older, { durationMs: 300_000 })])
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    const row = (await screen.findByText('release/0.1.301')).closest('tr')!
+    expect(row).toHaveTextContent('обычно ≈ 4 мин 30 с, осталось ≈ 3 мин 30 с')
+  })
+
+  it('скачивает лог строки, нормализует ввод версии и сбрасывает лимиты к умолчаниям', async () => {
+    const value = api()
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    const row = (await screen.findByText('release/0.1.300')).closest('tr')!
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() })
+    await userEvent.click(within(row).getByRole('button', { name: 'Лог' }))
+    await waitFor(() => expect(value['releases:get']).toHaveBeenCalledWith({ projectId: 'p1', releaseId: 'prep-300' }))
+    await waitFor(() => expect(click).toHaveBeenCalled())
+    click.mockRestore()
+    // «release/0.1.305» pasted into the version field is a plain version.
+    await userEvent.type(screen.getByLabelText('Новая версия'), 'release/0.1.305')
+    expect(screen.getByText('Ветка release/0.1.305 от main.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Собрать новый релиз' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    const form = screen.getByRole('form', { name: 'Лимиты этапов релиза' })
+    const health = within(form).getByLabelText('Health-check, сек.')
+    await userEvent.clear(health)
+    expect(within(form).getByRole('button', { name: 'Сохранить' })).toBeDisabled()
+    await userEvent.click(within(form).getByRole('button', { name: 'Сбросить к умолчаниям' }))
+    expect(health).toHaveValue(1800)
+    expect(within(form).getByRole('button', { name: 'Сохранить' })).toBeEnabled()
+  })
+
+  it('переход через несколько версий назван в подсказке деплоя', async () => {
+    const value = api()
+    const mid: ProjectRelease = { ...older, id: 'prep-2995', branch: 'release/0.1.298', version: '0.1.298', sha: 'c'.repeat(40) }
+    value['releases:branches'] = vi.fn(async () => [prepared, older, mid].map((item) => ({ branch: item.branch, version: item.version, sha: item.sha })))
+    value['releases:list'] = vi.fn(async () => [summary(deployment), summary(prepared), summary(older), summary(mid)])
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Деплой' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Релиз' }), 'release/0.1.298')
+    expect(screen.getByRole('status')).toHaveTextContent('откат production с release/0.1.300 на release/0.1.298 (минуя 1 версию)')
+  })
+
+  it('глубокая ссылка открывает подробности, адрес зеркалит открытие и закрытие, Esc возвращает к списку', async () => {
+    const opened = vi.fn()
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} initialReleaseId="prep-299" onOpenRelease={opened} />)
+    expect(await screen.findByRole('heading', { name: 'release/0.1.299' })).toBeInTheDocument()
+    expect(opened).toHaveBeenCalledWith('prep-299')
+    expect(screen.getByText(/1 из 2 шагов пройдено · пропущено 1/)).toBeInTheDocument()
+    const writeText = vi.fn(async () => undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    await userEvent.click(screen.getByRole('button', { name: 'Ссылка' }))
+    expect(writeText).toHaveBeenCalledWith(window.location.href)
+    await userEvent.keyboard('{Escape}')
+    expect(await screen.findByRole('columnheader', { name: 'Время сборки' })).toBeInTheDocument()
+    expect(opened).toHaveBeenLastCalledWith(null)
+  })
+
+  it('идущий шаг показывает прогресс к лимиту, строки с ошибками в логе подсвечены', async () => {
+    const value = api()
+    const running: ProjectRelease = { ...prepared, id: 'prep-live', branch: 'release/0.1.301', version: '0.1.301', status: 'checking', steps: [
+      { id: 'kb', kind: 'knowledge_base', status: 'passed', model: null, attempt: 1, log: 'kb ok', startedAt: 1000, finishedAt: 2000, limitMs: 600_000 },
+      { id: 'reg', kind: 'regression', status: 'running', model: null, attempt: 1, log: 'vitest run\nFAIL src/a.test.ts\n✓ src/b.test.ts', startedAt: Date.now() - 60_000, finishedAt: null, limitMs: 600_000 }
+    ] }
+    value['releases:list'] = vi.fn(async () => [summary(running, { durationMs: 60_000 }), summary(deployment), summary(prepared)])
+    value['releases:get'] = vi.fn(async ({ releaseId }) => [running, deployment, prepared].find((item) => item.id === releaseId) ?? null)
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    await userEvent.click(await screen.findByText('release/0.1.301'))
+    expect(await screen.findByRole('progressbar', { name: /Regression: прошло/ })).toBeInTheDocument()
+    expect(screen.getByText('FAIL src/a.test.ts')).toHaveClass('release-log-error')
+    expect(screen.getByText('✓ src/b.test.ts')).not.toHaveClass('release-log-error')
+    // The browser tab names the running build.
+    expect(document.title).toMatch(/^⏳ Сборка release\/0\.1\.301/)
+  })
+
+  it('помнит режим «Приложения» и окружение', async () => {
+    window.localStorage.removeItem('vc.releases.mode'); window.localStorage.removeItem('vc.releases.appEnvironment')
+    const first = render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Приложения' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Окружение' }), { target: { value: 'production' } })
+    expect(window.localStorage.getItem('vc.releases.mode')).toBe('applications')
+    expect(window.localStorage.getItem('vc.releases.appEnvironment')).toBe('production')
+    first.unmount()
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+    expect(await screen.findByRole('combobox', { name: 'Окружение' })).toHaveValue('production')
+    window.localStorage.removeItem('vc.releases.mode'); window.localStorage.removeItem('vc.releases.appEnvironment')
   })
 })

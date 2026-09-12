@@ -49,6 +49,7 @@ import { EnginesObserver, type ObserverEngine } from './components/EnginesObserv
 import { PersonalizationPage } from './components/SettingsPage'
 import type { TaskUpdateFields } from './components/kanban/TaskModal'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
+import { productionReadiness } from '@shared/release'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
 import { KanbanAssistant } from './components/KanbanAssistant'
 import { CiCommands } from './components/ci/CiCommands'
@@ -2654,6 +2655,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         speakingMessageId={voice.speakingMessageId}
         onSpeakMessage={voiceActions.replayMessage}
         onDeleteMessage={chatActions.deleteMessage}
+        failedSubmits={Object.values(chat.failedSubmits)}
+        onRetryFailedSubmit={(id) => { void chatActions.retryFailedSubmit(id) }}
+        onDeleteFailedSubmit={chatActions.deleteFailedSubmit}
         onEditMessage={chatActions.editMessage}
         onAnswerQuestions={(text) => void chatActions.answerQuestions(text)}
         onAnswerCiInteraction={(runId, interactionId, text) => void projectsActions.answerCiInteraction(runId, interactionId, { text })}
@@ -2712,6 +2716,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
+            captureActive={voice.captureActive}
             defaultCollapsed={compactChat && !isEmptyPreparedChat}
             allowCollapse={compactChat && !isEmptyPreparedChat}
             layout={isEmptyPreparedChat ? 'centered' : 'docked'}
@@ -2888,7 +2893,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                       onRetry={() => void loadGitWorkspaces(routeProjectId)}
                     />
             ) : routeReleases ? (
-            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} releaseTimeouts={projects.projectDetail!.releaseTimeouts} gitUrl={projects.projectDetail!.gitUrl} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} releaseTimeouts={projects.projectDetail!.releaseTimeouts} gitUrl={projects.projectDetail!.gitUrl} production={{ ...productionReadiness(projects.projectDetail!), machineName: projects.projectDetail!.machines.find((machine) => machine.agentId === projects.projectDetail!.productionAgentId)?.name ?? null, ...(projects.projectDetail!.productionHealthCheckCommand ? { healthCheckCommand: projects.projectDetail!.productionHealthCheckCommand } : {}) }} onOpenSettings={() => navigate(buildProjectsRoute({ kind: 'settings', projectId: routeProjectId }))} initialReleaseId={projectsRoute?.kind === 'releases' ? projectsRoute.releaseId : undefined} onOpenRelease={(releaseId) => navigate(buildProjectsRoute({ kind: 'releases', projectId: routeProjectId, ...(releaseId ? { releaseId } : {}) }), { replace: true })} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             projects.projectDetail?.id === routeProjectId ? (
               <Suspense fallback={<div role="status">Загрузка настроек проекта…</div>}><ProjectSettings

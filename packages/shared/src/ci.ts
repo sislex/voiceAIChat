@@ -79,6 +79,76 @@ export function normalizeCiProcessStages(value: unknown): CiProcessStage[] {
  * действие в relay некому выполнить, поэтому режим выбирается заранее, а не
  * угадывается по наличию клиента.
  */
+export const CI_BROWSER_VIEWPORTS = [1440, 1024, 390, 320] as const
+export const CI_BROWSER_ACTIONS = ['open', 'read', 'find', 'click', 'type', 'set', 'press', 'viewport', 'a11y', 'accessibility', 'styles', 'evaluate', 'errors', 'console', 'network', 'screenshot', 'audit'] as const
+export type CiBrowserAction = typeof CI_BROWSER_ACTIONS[number]
+
+/** Server-observed metadata only: never retain page text, inputs or credentials. */
+export interface CiBrowserEvidenceEvent {
+  action: CiBrowserAction
+  ok: boolean
+  target: boolean
+  requestedTarget?: boolean
+  infrastructureError?: boolean
+  width?: number
+}
+export interface CiBrowserEvidence {
+  status: 'passed' | 'blocked' | 'infrastructure_error'
+  viewports: number[]
+  missing: string[]
+  failedActions: number
+  observationCount: number
+  observations: CiBrowserEvidenceEvent[]
+}
+
+export function ciBrowserCheckPrompt(check: CiBrowserCheck, agentId: string | null): string {
+  if (check.mode === 'off') return ''
+  const url = ciBrowserCheckUrl(check, agentId)
+  return [
+    'Mandatory browser-check for model_work:',
+    `Mode: ${check.mode}. Exact URL: ${url ?? 'unavailable (no assigned machine)'}`,
+    `Start the dev environment in the assigned workspace on port ${check.devServerPort}; wait until the port is ready, then open the exact URL using mcp__browser__open.`,
+    `Check widths ${CI_BROWSER_VIEWPORTS.join(', ')} px using viewport. At each width use read, a11y, styles, evaluate (page overflow), errors, console, network and screenshot on the target screen.`,
+    'Exercise the implemented interactions and keyboard navigation with click/type/set and press. For Release Center check both “Весь проект” and “Приложения”. After navigation read the page again.',
+    'Report scenarios and outcomes, DOM/accessibility/style/overflow/runtime/console/network findings. Show screenshots in the run feed.',
+    'Successful completion requires server-observed browser tool results. Narrative claims are not evidence. Missing checks are blocked; unavailable dev server or browser is infrastructure_error. Do not report success in either case.'
+  ].join('\n')
+}
+
+/** A minimum execution gate; completeness alone never proves absence of product defects. */
+export function evaluateCiBrowserEvidence(events: CiBrowserEvidenceEvent[]): CiBrowserEvidence {
+  const missing: string[] = []
+  let opened = false
+  let width = 0
+  const seen = new Map<number, Set<string>>()
+  let keyboard = false
+  let interaction = false
+  for (const event of events) {
+    if (!event.ok) continue
+    if (event.action === 'open' && event.requestedTarget) opened = true
+    if (event.width) width = event.width
+    if (!opened || !event.target) continue
+    const actions = seen.get(width) ?? new Set<string>()
+    actions.add(event.action)
+    seen.set(width, actions)
+    if (event.action === 'press') keyboard = true
+    if (['click', 'type', 'set'].includes(event.action)) interaction = true
+  }
+  if (!opened) missing.push('open:exact_target')
+  const required = ['read', 'a11y', 'styles', 'evaluate', 'errors', 'console', 'network', 'screenshot']
+  for (const viewport of CI_BROWSER_VIEWPORTS) {
+    for (const action of required) if (!seen.get(viewport)?.has(action)) missing.push(`${viewport}:${action}`)
+  }
+  if (!keyboard) missing.push('keyboard')
+  if (!interaction) missing.push('interaction')
+  const failedActions = events.filter(e => !e.ok).length
+  return {
+    status: !missing.length ? 'passed' : events.some(e => e.infrastructureError) ? 'infrastructure_error' : 'blocked',
+    viewports: CI_BROWSER_VIEWPORTS.filter(v => seen.has(v)),
+    missing, failedActions, observationCount: events.length, observations: events.slice(-256)
+  }
+}
+
 export type CiBrowserCheckMode = 'off' | 'chromium' | 'user_panel'
 export const CI_BROWSER_CHECK_MODES: CiBrowserCheckMode[] = ['off', 'chromium', 'user_panel']
 export const CI_BROWSER_CHECK_MODE_LABELS: Record<CiBrowserCheckMode, string> = {
