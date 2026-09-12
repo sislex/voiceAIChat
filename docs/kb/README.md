@@ -19,23 +19,23 @@
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 149 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 312 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ✓ |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: f0c96cc2 fix(image-studio): deliver attachments to local CLI |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 84 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 107 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 15 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1397 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1398 коммит(ов) в areas после сверки: f0c96cc2 fix(image-studio): deliver attachments to local CLI … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 37 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 38 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 14 коммит(ов) в areas после сверки: 679cb84f feat(kanban): copy task permalinks … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-11 | ⚠ 2 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 321 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 22 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: f0c96cc2 fix(image-studio): deliver attachments to local CLI |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ⚠ 10 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 224 коммит(ов) в areas после сверки: 2607fd04 feat: route task tabs and tighten brief validation … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-12 | ⚠ 2 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-12 | ⚠ 3 коммит(ов) в areas после сверки: f0c96cc2 fix(image-studio): deliver attachments to local CLI … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 7 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-12 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: f0c96cc2 fix(image-studio): deliver attachments to local CLI |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 2 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 199 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
@@ -74,9 +74,10 @@
 
 ## Журнал сессий
 
-Всего записей: 791. Последние:
+Всего записей: 792. Последние:
 
 - [2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md](log/2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md) — release-task-modal-test-timeout
+- [2026-09-12-alexeys-macbook-air-2-release-center-improvement-cycles.md](log/2026-09-12-alexeys-macbook-air-2-release-center-improvement-cycles.md) — release-center-improvement-cycles
 - [2026-09-12-alexeys-macbook-air-2-new-task-card-functional-tabs.md](log/2026-09-12-alexeys-macbook-air-2-new-task-card-functional-tabs.md) — new-task-card-functional-tabs
 - [2026-09-12-alexeys-macbook-air-2-kanban-visible-export.md](log/2026-09-12-alexeys-macbook-air-2-kanban-visible-export.md) — kanban-visible-export
 - [2026-09-12-alexeys-macbook-air-2-kanban-task-permalinks.md](log/2026-09-12-alexeys-macbook-air-2-kanban-task-permalinks.md) — kanban-task-permalinks
@@ -85,7 +86,6 @@
 - [2026-09-12-alexeys-macbook-air-2-image-studio-history-objects.md](log/2026-09-12-alexeys-macbook-air-2-image-studio-history-objects.md) — image-studio-history-objects
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md) — web-reader-ten-cycle-10
 - [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-09.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-09.md) — web-reader-ten-cycle-09
-- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-08.md) — web-reader-ten-cycle-08
 
 ## Исторические планы
 
