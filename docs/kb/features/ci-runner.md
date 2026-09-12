@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-09-12
-checked: c8fcb5e8
+checked: 4aae694e
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -167,37 +167,46 @@ a full-size Blob URL, revoked when its log component unmounts. Cleanup
 падения сервера; профиль Chromium остаётся в томе, поэтому входы на
 проверяемом сайте переживают сброс.
 
-### Required browser evidence (CHAT-446)
+### Обязательное свидетельство browser-check
 
-`model_work` snapshots the task browser setting once. `ciBrowserCheckPrompt`
-uses `ciBrowserCheckUrl` to pass the assigned machine, port and exact hash route
-to development, including the transition from an approved plan. The prompt
-requires a running dev environment and widths 1440, 1024, 390 and 320.
-The Chromium Claude allow-list includes `viewport` and `evaluate`, so these required
-checks can execute without an interactive CLI permission prompt.
+`model_work` один раз фиксирует настройку браузерной проверки задачи. Функции
+`ciBrowserCheckPrompt` и `ciBrowserCheckUrl` из `packages/shared/src/ci.ts`
+передают в development точный URL назначенной машины с портом и hash-маршрутом,
+в том числе при переходе от одобренного плана. Промпт требует поднять
+dev-окружение и проверить ширины 1440, 1024, 390 и 320 px. Для Chromium в
+allow-list Claude CLI добавлены `viewport` и `evaluate`, поэтому обязательные
+проверки не ждут интерактивного разрешения.
 
-Reader turn tokens bind evidence to a run, model-work step and target URL.
-The MCP handler records completed actions through `ReaderCore.logBrowserEvidence`
-(including the remote RPC implementation). Core checks run access, actor,
-conversation and the running model-work step before storing `browser.observed`
-events. Only action metadata, target-match booleans and viewport widths are
-persisted; page content, typed values, raw tool errors and credentials are omitted.
+Подписанный turn-токен связывает наблюдения Reader с пользователем, разговором,
+раном, текущим шагом `model_work` и точным целевым URL
+(`packages/web-reader-contracts/src/turnToken.ts`). MCP записывает только
+фактически завершившиеся browser-действия через
+`ReaderCore.logBrowserEvidence`; если ответ инструмента не содержит URL или
+viewport, сборщик запрашивает состояние доверенной browser-сессии, а не считает
+запрошенный адрес фактически открытым. Core дополнительно проверяет доступ к
+рану, автора, разговор и то, что указанный шаг ещё выполняется. В
+`browser.observed` сохраняются только вид действия, успех, совпадение с целью и
+ширина; содержимое страницы, введённые значения, сырые ошибки и секреты
+отбрасываются. Реализация проходит через
+`apps/web-reader/src/mcp/previewMcp.ts`,
+`apps/server/src/readerBridge/localCore.ts` и
+`apps/server/src/db/repos/ci.ts`.
 
-Before returning success, the model hook evaluates those durable events for its
-own step. It requires opening the exact URL, keyboard and interactive actions,
-and read/a11y/styles/evaluate/errors/console/network/screenshot at each width.
-Model-authored log lines and final prose cannot satisfy this check. A retry with
-a new step cannot reuse the previous step's evidence. `browser.checked` records
-the structured result; the run log displays expandable evidence. Missing evidence
-returns `browser_check:blocked`; unavailable session status, transport exceptions
-or missing Reader configuration return `browser_check:infrastructure_error`. The existing
-CI step/run status remains `failed`, with the specific browser diagnosis retained
-in the stage outcome and run progress; downstream commands do not run.
+Перед успешным завершением хук оценивает durable-события только своего шага:
+нужно открыть точный URL, выполнить клавиатурное и интерактивное действие, а на
+каждой обязательной ширине — `read`, `a11y`, `styles`, `evaluate`,
+`errors`, `console`, `network` и `screenshot`. Текст модели и строки лога
+не являются доказательством; новый retry-шаг не переиспользует наблюдения
+старого. Итог сохраняется событием `browser.checked` и показывается в ленте.
+Неполный набор даёт `browser_check:blocked`, а недоступность сессии, транспорта
+или Reader — `browser_check:infrastructure_error`; шаг и ран остаются
+`failed`, конкретная причина сохраняется в outcome/progress, последующие
+команды не запускаются.
 
-This gate establishes a minimum set of tool executions, not a semantic QA
-verdict. Scenario outcomes, findings, visual assessment and remediation still
-require review. Browser availability must be verified in deployment; HTTP 200
-from the dev server alone is not browser evidence.
+Этот gate подтверждает минимальный набор выполненных инструментальных действий,
+но не отсутствие дефектов. Сценарные результаты, визуальная оценка и исправление
+находок по-прежнему требуют содержательного анализа; один HTTP 200 dev-сервера
+не считается браузерным свидетельством.
 
 ## Защита диска и очистка development-рана
 
