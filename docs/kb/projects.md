@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-12
-checked: d4776edc
+updated: 2026-09-13
+checked: 257578f9
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1815,14 +1815,15 @@ Make-проект проекта: `tasks:unlinkDesign` + `tasks:linkDesign`) и 
 **Функциональные вкладки по макету (2026-09-12, CHAT-445).** Вкладки, кроме
 «Общего» и «Доработок», `TaskCardContainer` отдаёт через `renderPanel`, но уже не
 голыми legacy-панелями, а панелями новой карточки из `components/kanban/NewTask*Panel.tsx`:
-each panel owns its forms, results and selected-run presentation, using the shared
-`NewTaskStages.tsx` primitives and existing domain APIs. Whole legacy panels are
-no longer mounted. `NewDevelopmentRunFeed` owns development subscriptions and
-logs; the small `InteractionCard` remains shared with the legacy feed.
-`useNewTaskResource` preserves loaded data on refresh failures, isolates resource
-keys and ignores stale requests. `useNewTaskAction` prevents concurrent duplicate
-actions and refreshes actual state after both success and failure. Historical
-attempt selection does not redirect answers or cancellation to the active run.
+каждая владеет своими формами, результатами и представлением выбранного рана,
+переиспользуя существующие доменные API и общие примитивы `NewTaskStages.tsx`.
+Целые legacy-панели больше не монтируются. `NewDevelopmentRunFeed` самостоятельно
+подписывается на development-ран и показывает его лог; с legacy-лентой разделяется
+только небольшой примитив `InteractionCard`. `useNewTaskResource` сохраняет
+последние загруженные данные при ошибке обновления, изолирует ресурсы по ключу и
+игнорирует запоздалые ответы, а `useNewTaskAction` блокирует параллельные повторы
+действия и после успеха или ошибки перечитывает фактическое состояние. Выбор
+исторической попытки не перенаправляет ответ или отмену на активный ран.
 
 Этапы рейки — чистая функция `assignToCycles` (`taskCycles.ts`): этап 1 — исходная
 постановка, дальше по одному этапу на каждый **отправленный** цикл доработки
@@ -1834,10 +1835,10 @@ attempt selection does not redirect answers or cancellation to the active run.
 `preparationStageStatus`); тон бейджа — `stageStatusTone`. Панель одна на вкладку и
 стоит в выбранном этапе; остальные этапы показывают сводку и кнопку «Показать».
 
-Preparation owns machine/model setup, cycle attempts, questions and answers,
-readiness gates, the Development Brief and run steps. Submitted rework history
-opens the corresponding preparation cycle; answers target the selected active
-attempt only. «Ход выполнения» — под-разделы
+«Подготовка» владеет выбором машины и модели, попытками каждого цикла,
+вопросами и ответами, readiness-гейтами, Development Brief и шагами рана. Из
+истории отправленных доработок открывается соответствующий цикл подготовки;
+ответы адресуются только выбранной активной попытке. «Ход выполнения» — под-разделы
 `SubTabs` (Обзор · Работа модели · Проверки · База знаний · Ресурсы · Временная шкала),
 данные — `ci.getTaskReport` (метрики этапа: шаги, проверки-команды, время, попытки
 починки), лента выбранного рана — `NewDevelopmentRunFeed` со своей подпиской, кнопка
@@ -1862,28 +1863,20 @@ attempt only. «Ход выполнения» — под-разделы
 тело `min-height: 0`: раньше на высоте окна ~800px тело требовало 580px и flex-колонка
 ужимала вкладки до 1px (закреплено в `taskCardStyles.test.ts`).
 
-**CHAT-445 implementation details and regression coverage.** Make replacement is
-not atomic: `unlinkDesign` precedes `linkDesign`. The container immediately keeps
-the confirmed unlink result and reloads actual links on failure; retry does not
-attempt to unlink an already removed source. Multi-draft submission updates the
-oldest selected draft, deletes the other selected drafts and submits once. A
-failure reloads the queue and is displayed instead of claiming successful submission.
-Unselected drafts remain untouched. Completed workflow stages use recorded timing;
-only a running or input-waiting stage with `startedAt` continues counting.
-Development cycle snapshots use the selected report's recorded root-step titles;
-missing steps are explicitly reported. Other panels label the current task workflow
-as current, rather than presenting it as a saved historical snapshot.
+**Детали реализации и регрессии CHAT-445.** Замена Make-связи не атомарна:
+`tasks:unlinkDesign` выполняется перед `tasks:linkDesign`. Контейнер сразу сохраняет
+подтверждённый результат отвязки, а при сбое перечитывает фактические связи; повтор
+не пытается отвязать уже удалённый источник. Групповая отправка черновиков также
+последовательна: самый старый выбранный черновик обновляется объединёнными данными,
+остальные выбранные удаляются, затем выполняется единственный submit. При частичном
+сбое очередь перечитывается и ошибка показывается пользователю; невыбранные
+черновики не меняются.
 
-Preparation prompts require exactly one JSON object with `schemaVersion=2`, without
-Markdown or introductory/concluding prose. `preparationJsonObject` permits only
-an unambiguous single balanced object inside textual framing and removes optional
-`decisions[].questionId=null`. It never searches past a damaged first object;
-multiple objects, array wrappers and incompatible field types are rejected.
-Strict runtime validation and the existing readiness quality gate still run
-after normalization. Requirements are not inferred or added. Allowed null values
-such as `storybookStoryId` and question answers remain intact. Preparation tests
-cover prose/fences, ambiguity, malformed JSON, incompatible fields, preservation
-of requirements and normalization idempotence.
+Завершённые этапы workflow показывают записанную длительность; счётчик продолжает
+идти только у этапа со `startedAt` в состоянии выполнения или ожидания ввода.
+Снимок development-цикла берёт названия корневых шагов из выбранного отчёта и явно
+сообщает об отсутствии шагов. Другие панели помечают workflow текущей задачи как
+текущий, а не выдают его за сохранённый исторический снимок.
 
 `NewTaskPanels.stories.tsx` provides `kanban-newtaskcard-functionalpanels--*`
 stories for all eleven tabs. The DOM suite covers both themes and widths, cycle
