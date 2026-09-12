@@ -183,14 +183,47 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   },[api,projectId])
   const refresh=useCallback(async()=>{await Promise.all([refreshReleases(),refreshBranches()])},[refreshBranches,refreshReleases])
   useEffect(()=>{void refresh()},[refresh])
-  // A running build or deploy in the list keeps the summary live too: before,
-  // only the opened detail polled, and the table showed stale «Сборка» forever.
+  // Live updates come over WS (`release.updated`); polling stays only as a
+  // fallback for hosts without the board bridge (desktop, old servers).
+  const liveBridge=typeof window!=='undefined'&&Boolean(window.board?.onReleaseUpdated)
   const anyActive=useMemo(()=>[...releaseItems,...deploymentItems].some(item=>!terminal.has(item.status)),[releaseItems,deploymentItems])
   useEffect(()=>{
-    if(!anyActive||detail||detailStatus==='loading')return
+    if(liveBridge||!anyActive||detail||detailStatus==='loading')return
     const id=window.setInterval(()=>void refreshReleases(),5000)
     return()=>window.clearInterval(id)
-  },[anyActive,detail,detailStatus,refreshReleases])
+  },[liveBridge,anyActive,detail,detailStatus,refreshReleases])
+  const toast=useToast()
+  // Terminal transitions of a run the user watched are announced once: the
+  // deploy takes ten minutes, and nobody keeps staring at the table for that long.
+  const knownStatuses=useRef(new Map<string,string>())
+  useEffect(()=>{
+    const known=knownStatuses.current
+    for(const item of [...releaseItems,...deploymentItems]){
+      const previous=known.get(item.id)
+      if(previous&&previous!==item.status&&terminal.has(item.status)){
+        const what=item.previousReleaseId?`Деплой ${item.branch}`:`Сборка ${item.branch}`
+        if(item.status==='failed')toast.error(`${what}: ошибка${item.failure?` — ${item.failure}`:''}`)
+        else toast.success(item.status==='released'?`${item.branch} опубликован в production`:`${what} готова`)
+      }
+      known.set(item.id,item.status)
+    }
+  },[releaseItems,deploymentItems,toast])
+  useEffect(()=>{
+    const bridge=typeof window==='undefined'?undefined:window.board
+    if(!bridge?.onReleaseUpdated)return
+    let timer:number|null=null
+    const off=bridge.onReleaseUpdated((update)=>{
+      if(update.projectId!==projectId)return
+      // Steps change several times a second during regression: coalesce to one list read.
+      if(timer===null)timer=window.setTimeout(()=>{timer=null;void refreshReleases()},300)
+      setDetail(current=>{
+        if(current&&current.id===update.releaseId)void api['releases:get']({projectId,releaseId:update.releaseId}).then(next=>{if(next)setDetail(value=>value&&value.id===next.id?next:value)}).catch(()=>undefined)
+        return current
+      })
+    })
+    const offReconnect=bridge.onReconnect?.(()=>void refresh())
+    return()=>{off();offReconnect?.();if(timer!==null)window.clearTimeout(timer)}
+  },[api,projectId,refreshReleases,refresh])
   const openDetail=useCallback(async(releaseId:string)=>{
     const request=++detailRequest.current
     setDetailReleaseId(releaseId);setDetail(null);setDetailError('');setDetailStatus('loading')
@@ -203,7 +236,7 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   },[api,projectId])
   const closeDetail=useCallback(()=>{detailRequest.current+=1;setDetailReleaseId('');setDetail(null);setDetailError('');setDetailStatus('idle');void refresh()},[refresh])
   useEffect(()=>{
-    if(!detail||terminal.has(detail.status))return
+    if(liveBridge||!detail||terminal.has(detail.status))return
     let cancelled=false
     const update=async()=>{try{const next=await api['releases:get']({projectId,releaseId:detail.id});if(next&&!cancelled)setDetail(next)}catch{}}
     const id=window.setInterval(()=>void update(),2000)

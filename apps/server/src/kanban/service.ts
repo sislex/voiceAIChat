@@ -3,7 +3,7 @@
 // изменилась» от соседей (Make правит карточки через свой порт). Сегодня реализацию отдаёт
 // `createKanbanModule` в том же процессе; в режиме отдельного сервиса ядро получит те же ленты
 // по SSE, как `MakeHub`.
-import type { PreviewEnvironment, QaRunStage, ServerMessage } from '@voicechat/shared'
+import type { PreviewEnvironment, QaRunStage, ReleaseStatus, ServerMessage } from '@voicechat/shared'
 
 export interface KanbanRunFeed {
   /** Кадры ранов (`ci.*`, `qa.*`, …) с владельцем — сессия отдаёт их только своему пользователю. */
@@ -20,6 +20,8 @@ export interface KanbanBoardFeed {
   subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => Promise<void>): () => void
   subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: QaRunStage }) => Promise<void>): () => void
   subscribeImprovements(cb: (projectId: string) => void): () => void
+  /** Релиз (подготовка или деплой) сменил статус или шаг. */
+  subscribeReleases(cb: (update: { projectId: string; releaseId: string; status: ReleaseStatus }) => Promise<void>): () => void
 }
 
 export interface KanbanNotificationFeed {
