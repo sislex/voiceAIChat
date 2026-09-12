@@ -137,6 +137,8 @@ export interface VoiceBarProps {
   onChangePermissionMode?: (mode: PermissionMode) => void
   /** Глобальная доступность голосового ввода. */
   voiceInputEnabled?: boolean
+  /** Real capture confirmation; isolated stories may model recording directly. */
+  captureActive?: boolean
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
@@ -191,6 +193,7 @@ export function VoiceBar({
   permissionMode = 'plan',
   onChangePermissionMode,
   voiceInputEnabled = true,
+  captureActive = state === 'listening',
   aiAssistPrompts = [],
   onAiAssistPromptsChange,
   generateAiAssist,
@@ -206,6 +209,16 @@ export function VoiceBar({
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
   const isSpeaking = state === 'speaking'
+  const recording = voiceInputEnabled && isListening && captureActive
+  const [recordedSeconds, setRecordedSeconds] = useState(0)
+  useEffect(() => {
+    setRecordedSeconds(0)
+    if (!recording) return
+    const started = Date.now()
+    const timer = window.setInterval(() => setRecordedSeconds(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [recording])
+  const recordingStatus = recording ? <p className="recording-status"><span role="timer" aria-live="off">{Math.floor(recordedSeconds / 60)}:{String(recordedSeconds % 60).padStart(2, '0')}</span> · Отпустите пробел, чтобы отправить</p> : null
   type RequestPhase = 'sending' | 'processing' | 'streaming' | 'stopping' | 'stopped' | 'error'
   const [requestPhase, setRequestPhase] = useState<RequestPhase | null>(null)
   const [queueExpanded, setQueueExpanded] = useState(false)
@@ -474,6 +487,7 @@ export function VoiceBar({
       <div className="voicebar voicebar--collapsed">
         <div className="vinner">
           {renderTurnQueue()}
+          {recordingStatus}
           <div className="vcollapsed">
             <button
               className="vcollapsed-peek"
@@ -575,6 +589,7 @@ export function VoiceBar({
           </div>
         )}
 
+        {recordingStatus}
         {isListening && (
           <div className="spkline" data-testid="spkline">
             Обнаружено говорящих:
