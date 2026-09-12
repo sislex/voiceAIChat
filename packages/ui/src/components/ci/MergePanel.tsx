@@ -23,6 +23,15 @@ export function MergePanel(props: {
   onStartMerge?: (agentId: string | null) => void
   /** Открыть панель кода этой задачи: смотреть diff и коммитить — не работа merge-панели. */
   onOpenCode?: () => void
+  /**
+   * Embedding in the new card: the stage rail owns the selected run and the
+   * attempt list, so the panel takes the selection from outside, reports the
+   * runs it loaded and hides its own history.
+   */
+  selectedRunId?: string | null
+  onSelectRun?: (runId: string) => void
+  onRunsChange?: (runs: MergeRun[]) => void
+  hideHistory?: boolean
 }): JSX.Element {
   const [machines, setMachines] = useState<CiTaskMachine[]>([])
   const [agentId, setAgentId] = useState('')
@@ -38,6 +47,10 @@ export function MergePanel(props: {
   const [showDeleted, setShowDeleted] = useState(false)
   const [runs, setRuns] = useState<MergeRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [runsLoaded, setRunsLoaded] = useState(false)
+  const onRunsChange = props.onRunsChange
+  // Only a loaded list goes to the rail: the initial empty state is not knowledge.
+  useEffect(() => { if (runsLoaded) onRunsChange?.(runs) }, [runs, runsLoaded, onRunsChange])
   useEffect(() => {
     let cancelled = false
     const key = `${props.projectId}:${props.taskId}`
@@ -77,7 +90,7 @@ export function MergePanel(props: {
             if (identityRef.current === key && value) setRepos(value)
           } else {
             const value = await window.ci?.listMergeRuns(props.projectId, props.taskId)
-            if (identityRef.current === key && value) setRuns(value)
+            if (identityRef.current === key && value) { setRuns(value); setRunsLoaded(true) }
           }
         } catch { /* сохраняем последний успешный снимок при фоновой ошибке */ }
       } while (state.pending && identityRef.current === key)
@@ -127,7 +140,7 @@ export function MergePanel(props: {
       offReconnect?.()
     }
   }, [props.projectId, props.taskId, loadResource, upsertRun])
-  const activeRunId = selectedRunId ?? props.runId ?? runs[0]?.id ?? null
+  const activeRunId = (props.selectedRunId !== undefined ? props.selectedRunId : selectedRunId) ?? props.runId ?? runs[0]?.id ?? null
   const activeRun = runs.find((run) => run.id === activeRunId)
   const visibleRepos = showDeleted ? repos : repos.filter((repo) => repo.state === 'active')
   const machinesKey = `${props.projectId}:${props.taskId}`
@@ -194,13 +207,13 @@ export function MergePanel(props: {
             <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
           </>
           : <EmptyState compact icon="🔀" title="Merge-ранов у задачи ещё не было" description="Ран появится после запуска слияния ветки задачи в main." testId="merge-runs-empty" />}
-      {runs.length > 1 && (
+      {runs.length > 1 && !props.hideHistory && (
         <section className="merge-history">
           <h3 className="ci-task-title">Попытки</h3>
           <ul>
             {runs.map((run) => (
               <li key={run.id}>
-                <button type="button" className={`merge-history-item${run.id === activeRunId ? ' merge-history-item--active' : ''}`} onClick={() => setSelectedRunId(run.id)}>
+                <button type="button" className={`merge-history-item${run.id === activeRunId ? ' merge-history-item--active' : ''}`} onClick={() => { setSelectedRunId(run.id); props.onSelectRun?.(run.id) }}>
                   <StatusPill tone={mergePillTone(run.status)} testId={`merge-history-status-${run.id}`}>{MERGE_STATUS_LABEL[run.status] ?? run.status}</StatusPill>
                   <span>{formatDateTime(run.createdAt)}</span>
                   <span title={run.agentId}>{run.machineName ?? run.agentId}</span>

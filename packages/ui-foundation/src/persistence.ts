@@ -52,6 +52,8 @@ export const kanbanFilterKey = (userId: string, projectId: string): string =>
   `voicechat.kanban.filters.v3.${encodeURIComponent(userId)}.${encodeURIComponent(projectId)}`
 
 /** Ключи предпочтений редактора Make: автосохранение, формат при сохранении и раскладка. */
+/** Which task card the user last chose: the new "Проект 19" card or the legacy modal. */
+export const TASK_CARD_VERSION_KEY = 'vc.taskCard.version'
 export const MAKE_AUTOSAVE_KEY = 'vc.make.autosave'
 export const MAKE_FORMAT_ON_SAVE_KEY = 'vc.make.formatOnSave'
 export const MAKE_SPLIT_KEY = 'vc.make.split'
@@ -167,7 +169,8 @@ export const PREFERENCE_KEYS = [
   IMAGE_STUDIO_GRID_BG_KEY,
   IMAGE_STUDIO_FIT_KEY,
   IMAGE_STUDIO_FILTERS_KEY,
-  IMAGE_STUDIO_NEGATIVE_OPEN_KEY
+  IMAGE_STUDIO_NEGATIVE_OPEN_KEY,
+  TASK_CARD_VERSION_KEY
 ] as const
 
 /**

@@ -52,6 +52,66 @@ function mergeDetail(current: CiRunDetail | null, incoming: CiRunDetail): CiRunD
   }
 }
 
+/**
+ * Live feed of one development run. The new card mounts it inside the selected
+ * stage of the "Ход выполнения" rail, so it owns its own cache and realtime
+ * subscription instead of sharing the picker of `TaskRunFeed`.
+ */
+export function DevelopmentRunFeed({ runId, onDone }: { runId: string; onDone?: () => void }): JSX.Element {
+  const [cache, setCache] = useState<RunFeedCache | undefined>(undefined)
+  const patch = (update: (current: RunFeedCache) => RunFeedCache): void => {
+    setCache((current) => update(current ?? { detail: null, log: [], conclusion: null }))
+  }
+  const load = (): void => {
+    patch((current) => ({ ...current, loading: true, error: null }))
+    Promise.all([window.ci?.getRun(runId), window.ci?.getRunLog(runId)]).then(([detail, log]) => {
+      if (!detail) throw new Error('CI bridge недоступен')
+      patch((current) => ({ ...current, detail: mergeDetail(current.detail, detail), log: mergeLog(current.log, log ?? []), loading: false, error: null }))
+    }).catch((error) => patch((current) => ({ ...current, loading: false, error: error instanceof Error ? error.message : String(error) })))
+  }
+  useEffect(() => {
+    setCache(undefined)
+    const bridge = window.ci
+    if (!bridge) return
+    bridge.subscribe(runId)
+    const offSnapshot = bridge.onSnapshot((message) => {
+      if (message.runId === runId) patch((current) => ({ ...current, detail: mergeDetail(current.detail, message.detail), log: mergeLog(current.log, message.log) }))
+    })
+    const offRun = bridge.onRun((message) => {
+      if (message.runId !== runId) return
+      patch((current) => ({ ...current, detail: current.detail ? { ...current.detail, run: message.run } : { run: message.run, steps: [], fixAttempts: [], interactions: [] } }))
+    })
+    const offStep = bridge.onStep((message) => {
+      if (message.runId !== runId) return
+      patch((current) => current.detail ? { ...current, detail: { ...current.detail, steps: mergeSteps(current.detail.steps, [message.step]) } } : current)
+    })
+    const offLog = bridge.onLog((message) => {
+      if (message.runId === runId) patch((current) => ({ ...current, log: mergeLog(current.log, [message.line]) }))
+    })
+    const offDone = bridge.onDone((message) => {
+      if (message.runId !== runId) return
+      patch((current) => ({ ...current, conclusion: message.conclusion ?? current.conclusion, detail: current.detail ? { ...current.detail, run: message.run } : { run: message.run, steps: [], fixAttempts: [], interactions: [] } }))
+      onDone?.()
+    })
+    return () => {
+      bridge.unsubscribe(runId)
+      offSnapshot(); offRun(); offStep(); offLog(); offDone()
+    }
+  }, [runId])
+  return <RunFeed
+    runId={runId}
+    cache={cache}
+    onSubscribe={() => undefined}
+    onUnsubscribe={() => undefined}
+    onLoad={load}
+    onRetry={(id) => { void window.ci?.retryRun(id).then(() => onDone?.()) }}
+    onRetryFromStep={(id, selection) => { void window.ci?.retryRunFromStep(id, selection).then(() => load()) }}
+    onDiscardAndRetry={(id) => { void window.ci?.discardChangesAndRetry(id).then(() => onDone?.()) }}
+    onCancel={(id) => { void window.ci?.cancelRun(id) }}
+    onAnswerInteraction={(id, interactionId, answer) => { void window.ci?.answerInteraction(id, interactionId, answer).then(() => load()) }}
+  />
+}
+
 export function TaskRunFeed(props: TaskRunFeedProps): JSX.Element {
   const [choices, setChoices] = useState<RunChoice[]>([])
   const [selected, setSelected] = useState<string | null>(null)

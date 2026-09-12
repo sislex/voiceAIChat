@@ -41,8 +41,59 @@ describe('TaskCardContainer — новая карточка', () => {
     expect(await screen.findByLabelText('Машина выполнения')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: /Ход выполнения/ }))
-    // Панель хода выполнения — TaskTimeline: без данных он показывает пустое состояние.
+    // Ход выполнения — рейка development-циклов; без ранов первый этап ждёт.
+    expect(await screen.findByText('Этапы выполнения')).toBeInTheDocument()
+    expect(screen.getByText('Development-ран этого этапа ещё не запускался.')).toBeInTheDocument()
+    // Временная шкала старой карточки доступна разделом.
+    fireEvent.click(screen.getByRole('button', { name: 'Временная шкала' }))
     expect(await screen.findByText('Этапов пока нет')).toBeInTheDocument()
+  })
+
+  it('запоминает выбранную версию карточки в браузере', async () => {
+    window.localStorage.removeItem('vc.taskCard.version')
+    const { unmount } = render(<TaskCardContainer {...props({ initialVersion: undefined })} />)
+    // Без сохранённого выбора открывается старая карточка.
+    expect(await screen.findByTestId('task-modal')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Новая' }))
+    expect(await screen.findByRole('tab', { name: 'Общее' })).toBeInTheDocument()
+    expect(window.localStorage.getItem('vc.taskCard.version')).toBe('new')
+    unmount()
+    render(<TaskCardContainer {...props({ initialVersion: undefined })} />)
+    expect(await screen.findByRole('tab', { name: 'Общее' })).toBeInTheDocument()
+    window.localStorage.removeItem('vc.taskCard.version')
+  })
+
+  it('связывает Make-дизайн из карточки и обновляет задачу', async () => {
+    const link = vi.spyOn(api, 'tasks:linkDesign')
+    vi.spyOn(api, 'projects:designSources').mockResolvedValue([{ conversationId: 'make-19', title: 'Проект 19', owner: 'me', own: true, updatedAt: 1 }])
+    const p = props()
+    render(<TaskCardContainer {...p} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Связать дизайн' }))
+    await screen.findByLabelText('Make-проект')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить связь' }))
+    await waitFor(() => expect(link).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'task-1', mode: 'whole_project', paths: [] })))
+    await waitFor(() => expect(p.onUpdate).toHaveBeenCalledWith('task-1', {}))
+  })
+
+  it('отправляет несколько черновиков одним циклом: слияние, удаление лишних, отправка', async () => {
+    const update = vi.spyOn(api, 'tasks:updateReworkDraft')
+    const remove = vi.spyOn(api, 'tasks:deleteReworkDraft')
+    const submit = vi.spyOn(api, 'tasks:submitReworkDraft')
+    render(<TaskCardContainer {...props()} />)
+    for (const text of ['Первая правка', 'Вторая правка']) {
+      fireEvent.click((await screen.findAllByRole('button', { name: /На доработку/ }))[0]!)
+      fireEvent.change(screen.getByLabelText('Описание доработки'), { target: { value: text } })
+      fireEvent.click(screen.getByRole('button', { name: 'Сохранить как черновик' }))
+      await waitFor(() => expect(screen.queryByLabelText('Описание доработки')).toBeNull())
+    }
+    fireEvent.click(screen.getByRole('tab', { name: /Доработки/ }))
+    fireEvent.click(await screen.findByLabelText('Выбрать все доступные'))
+    fireEvent.click(screen.getByRole('button', { name: 'Отправить выбранные на доработку' }))
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ description: expect.stringContaining('Вторая правка') }) }))
+    expect(remove).toHaveBeenCalledTimes(1)
+    // Один цикл в истории, очередь пуста.
+    await waitFor(() => expect(screen.getByText('1 цикл')).toBeInTheDocument())
   })
 
   // @testCase TC-REG-TASK-CHAT-LEGACY-NEW
@@ -73,7 +124,7 @@ describe('TaskCardContainer — новая карточка', () => {
     render(<TaskCardContainer {...props()} />)
 
     // Форма доработки: описание → сохранение черновика.
-    fireEvent.click(await screen.findByRole('button', { name: /На доработку/ }))
+    fireEvent.click((await screen.findAllByRole('button', { name: /На доработку/ }))[0]!)
     fireEvent.change(screen.getByLabelText('Описание доработки'), { target: { value: 'Починить статус синхронизации' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить как черновик' }))
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
@@ -94,7 +145,7 @@ describe('TaskCardContainer — новая карточка', () => {
   it('удаляет черновик через мост', async () => {
     const remove = vi.spyOn(api, 'tasks:deleteReworkDraft')
     render(<TaskCardContainer {...props()} />)
-    fireEvent.click(await screen.findByRole('button', { name: /На доработку/ }))
+    fireEvent.click((await screen.findAllByRole('button', { name: /На доработку/ }))[0]!)
     fireEvent.change(screen.getByLabelText('Описание доработки'), { target: { value: 'Лишняя доработка' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить как черновик' }))
     fireEvent.click(await screen.findByRole('tab', { name: /Доработки/ }))
