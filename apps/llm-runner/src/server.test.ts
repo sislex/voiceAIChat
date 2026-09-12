@@ -117,6 +117,47 @@ describe('исполнитель: аутентификация', () => {
 })
 
 describe('POST /v1/run', () => {
+  it('flushes keepalive bytes over HTTP before a silent CLI produces output', async () => {
+    const { child, stdout, stderr } = fakeChild()
+    const runs = new RunManager({ spawn: vi.fn(() => child) as unknown as SpawnFn, heartbeatMs: 20 })
+    app = await buildRunner({ config: config(), runs, health: async () => health })
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const abort = new AbortController()
+    const deadline = setTimeout(() => abort.abort(), 2_000)
+    try {
+      const res = await fetch(`http://127.0.0.1:${boundPort(app)}/v1/run`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ ...runBody, kind: 'codex' }),
+        signal: abort.signal
+      })
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      for (let i = 0; i < 3; i++) {
+        const chunk = await reader.read()
+        expect(chunk.done).toBe(false)
+        expect(decoder.decode(chunk.value)).toMatch(/^\n+$/)
+      }
+      expect(runs.size).toBe(1)
+      stdout.end('after silence\n')
+      stderr.end()
+      await tick()
+      child.emit('close', 0)
+      let remaining = ''
+      for (;;) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        remaining += decoder.decode(chunk.value, { stream: true })
+      }
+      expect(remaining.split('\n').map(parseLlmRunFrame).filter(Boolean)).toEqual([
+        { t: 'out', s: 'after silence' }, { t: 'exit', code: 0 }
+      ])
+    } finally {
+      clearTimeout(deadline)
+      abort.abort()
+    }
+  })
+
   it('строки stdout доходят до клиента по одной, пока CLI жив', async () => {
     const { child, stdout, stderr } = fakeChild()
     const spawn = vi.fn(() => child) as unknown as SpawnFn
