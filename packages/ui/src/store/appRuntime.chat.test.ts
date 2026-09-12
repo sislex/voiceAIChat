@@ -21,6 +21,103 @@ function makeStore(seed: string[] = []): { store: TestStore; api: FakeApi } {
   return { store, api }
 }
 
+// @testCase T1
+it('keeps drafts per conversation through remount and does not clear newer text on acknowledgement', async () => {
+  localStorage.clear()
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  store.actions.setDraft('draft A')
+  await store.actions.selectConversation(b)
+  store.actions.setDraft('draft B')
+  await store.actions.selectConversation(a)
+  expect(store.getState().draft).toBe('draft A')
+  const add = api['messages:add'].bind(api)
+  let finish!: () => void
+  vi.spyOn(api, 'messages:add').mockImplementationOnce((input) => new Promise((resolve) => { finish = () => { void add(input).then(resolve) } }))
+  const sending = store.actions.submitText()
+  store.actions.setDraft('new A')
+  await store.actions.selectConversation(b)
+  finish()
+  await sending
+  expect(store.getState().draft).toBe('draft B')
+  await store.actions.selectConversation(a)
+  expect(store.getState().draft).toBe('new A')
+  store.runtime.dispose()
+  const next = createTestStore({ api })
+  await next.actions.init(a)
+  expect(next.getState().draft).toBe('new A')
+  next.runtime.dispose()
+  localStorage.clear()
+})
+
+// @testCase T1
+it('removes acknowledged stored drafts and tolerates malformed or unavailable storage', async () => {
+  localStorage.setItem('vc.chat.drafts.v1', '{broken')
+  const { store } = makeStore(['A'])
+  await store.actions.init()
+  store.actions.setDraft('send')
+  await store.actions.submitText()
+  expect(JSON.parse(localStorage.getItem('vc.chat.drafts.v1')!)).toEqual({})
+  store.runtime.dispose()
+  const api = createFakeApi(['A'])
+  const unavailable = createTestStore({ api, prefs: {
+    get: () => null, set: () => { throw new Error('Quota') }, remove: () => {}
+  } })
+  await unavailable.actions.init()
+  expect(() => unavailable.actions.setDraft('still editable')).not.toThrow()
+  expect(unavailable.getState().draft).toBe('still editable')
+  unavailable.runtime.dispose()
+  localStorage.clear()
+})
+
+// @testCase T2
+it('captures an upload recipient before encoding and never restores a removed attachment', async () => {
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  let finish!: (value: ArrayBuffer) => void
+  const file = new File(['data'], 'context.txt', { type: 'text/plain' })
+  Object.defineProperty(file, 'arrayBuffer', { value: () => new Promise<ArrayBuffer>((resolve) => { finish = resolve }) })
+  const uploadSpy = vi.spyOn(api, 'uploads:add')
+  const uploading = store.actions.addAttachment(file)
+  store.actions.removeAttachment(store.getState().attachments[0].localId)
+  await store.actions.selectConversation(b)
+  finish(new Uint8Array([1]).buffer)
+  await uploading
+  expect(uploadSpy).toHaveBeenCalledWith(expect.objectContaining({ conversationId: a }))
+  expect(store.getState().attachments).toEqual([])
+  store.runtime.dispose()
+})
+
+// @testCase T4
+it('retries a failed submission to its captured recipient and rejects parallel retries', async () => {
+  localStorage.clear()
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  store.actions.setDraft('retry me')
+  const file = new File(['data'], 'context.txt', { type: 'text/plain' })
+  Object.defineProperty(file, 'arrayBuffer', { value: async () => new Uint8Array([1, 2]).buffer })
+  await store.actions.addAttachment(file)
+  vi.spyOn(api, 'messages:add').mockRejectedValueOnce(new Error('Offline'))
+  await expect(store.actions.submitText()).rejects.toThrow('Offline')
+  const failed = Object.values(store.getState().failedSubmits)[0]!
+  await store.actions.selectConversation(b)
+  store.actions.setDraft('keep B')
+  const retried = store.actions.retryFailedSubmit(failed.operationId)
+  expect(await store.actions.retryFailedSubmit(failed.operationId)).toBe(false)
+  expect(await retried).toBe(true)
+  expect(api['messages:add']).toHaveBeenLastCalledWith(expect.objectContaining({ conversationId: a, text: failed.messageText, messageId: failed.messageId, attachments: [expect.objectContaining({ uploadId: failed.attachmentIds[0], name: 'context.txt' })] }))
+  expect(store.getState().draft).toBe('keep B')
+  expect(store.getState().failedSubmits).toEqual({})
+  store.runtime.dispose()
+  localStorage.clear()
+})
+
 describe('voiceStore — интеграция стора с api-моком и машиной состояний', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => {

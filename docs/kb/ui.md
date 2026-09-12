@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-12
-checked: 5a464d55
+checked: d9864647
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -1536,6 +1536,12 @@ have no stories or none are selected». Сам `iframe.html` от query не з�
 **Капчур указателя — только при старте жеста** (roadmap-2 п.4). Раньше `createDragEngine.begin` брал `setPointerCapture` сразу на pointerdown; по спецификации при захвате целью `click` становится захвативший элемент, поэтому кнопка внутри строки (открыть файл в дереве Make) не получала `onClick` — в headless Chromium это ломало E2E, а в обычном Chrome работало лишь благодаря его снисходительности. Теперь элемент запоминается в `gesture.target`, а капчур берётся в `start()` после порога/удержания.
 
 ## Разговор и ход модели
+
+Text drafts are owned by `packages/chat-app/src/store/chatStore.ts`; the UI domain file re-exports that package. `AppRuntime` supplies `CHAT_DRAFTS_KEY` (`vc.chat.drafts.v1`) from `ui-foundation/persistence.ts` through the preferences port. Drafts are keyed by conversation id, retained while HTTP is pending, restored on selection, and removed after persistence acknowledgement only when the captured revision still matches. The composer can immediately accept newer input. Storage errors leave the in-memory draft usable. Failed submissions retain their original recipient, message id, text and upload ids in `failedSubmits`; retry and local deletion are exposed in `ChatColumn`. A retry reuses the message id and concurrent retry clicks are ignored.
+
+`VoiceBar` sends clipboard files and external drops through the same `onAddFiles` callback as the file picker. Existing processing/ready/error previews and removal remain the attachment UI. Upload targeting is captured before file encoding; removed attachment ids are not reinserted by completion. `ChatColumn` provides literal case-insensitive local search through its header and a focus-scoped `mod+f` binding registered with `useHotkeys`; screen commands expose search and density. Rendered matches carry `data-chat-match`, navigation selects individual occurrences, and highlighting does not change stored Markdown or code text. The unread button counts answers rather than token chunks and returns to the end on click.
+
+AI messages offer original Markdown and rendered-text copying, and `Markdown` has independent top-right code-copy controls. Clipboard failure produces an alert rather than a success mark. `MessageTimeline` folds completed activity above five actions behind “Показать все N действий”; live activity remains expanded. Compact density uses `CHAT_COMPACT_KEY` (`vc.chat.compact`), defaults to the shared mobile breakpoint when no choice exists, and reduces bubble spacing and hides identity chips. The recording timer and release-Space hint are gated by `captureActive` after microphone acquisition as well as voice state and the unchanged global voice-input gate. Coverage lives beside `ChatColumn`, `VoiceBar`, `MessageTimeline`, in `appRuntime.chat.test.ts`, and in `src/test/chatImprovements.browser.mts` for the 390px Storybook browser check.
 
 `newConversation`, `selectConversation`, rename/delete/search работают через `window.api`. Обычный `newConversation()` открывает локальный черновик без id и записи в SQLite; повторные нажатия только сбрасывают состояние. Единственная точка персистенции такого чата — `ensureConversation()` при первой отправке: `POST /api/conversations/draft` одной SQLite-транзакцией создаёт разговор, применяет выбранный `projectId` и проектные машину/папку/навыки, сохраняет первую реплику и возвращает разговор с сообщениями. Клиент сохраняет ключ идемпотентности до успешного ответа, поэтому повтор после сетевого сбоя не создаёт дубль, а текст и вложения очищаются только после успеха. Заголовок берётся из текста первой реплики, при одних вложениях — из их имён; после ответа маршрут становится `/chat/:id`, а строка появляется в Sidebar. Специальный `web-recorder` по-прежнему создаётся сразу, как и независимые lifecycle чатов задач, kanban-ассистента и возобновлённых CLI-сессий.
 

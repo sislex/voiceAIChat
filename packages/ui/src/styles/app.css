@@ -792,6 +792,16 @@
 }
 /* Строка занимает место между лентой и композером: кнопка не перекрывает
    читаемое сообщение и не получает фокус сама при появлении. */
+.chat-search { display: flex; align-items: center; gap: 4px; padding: 8px; min-width: 0; flex-shrink: 0; }
+.chat-search input { flex: 1; min-width: 0; width: 100%; }
+.chat-search [role='status'] { white-space: nowrap; }
+.chat-match-current { outline: 2px solid var(--text); }
+.main--compact .msg { margin-block: 6px; }
+.main--compact .bub { position: relative; padding: 8px 12px; }
+.main--compact .msg > .chip, .main--compact .msg-engine { display: none; }
+.chat-menu { position: relative; }
+.chat-menu > button { position: absolute; z-index: 10; right: 0; min-width: 180px; }
+.recording-status { margin: 4px 0; font-size: 12px; }
 .new-message-row {
   flex: none;
   display: flex;

@@ -19,18 +19,18 @@
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 153 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 316 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 2 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 3 коммит(ов) в areas после сверки: d9864647 fix(llm-runner): keep silent CLI response streams alive … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 85 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 108 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 19 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1405 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1406 коммит(ов) в areas после сверки: d9864647 fix(llm-runner): keep silent CLI response streams alive … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 44 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 15 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-11 | ⚠ 6 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-12 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 322 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 22 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: d9864647 fix(llm-runner): keep silent CLI response streams alive |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ⚠ 15 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 227 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-12 | ⚠ 3 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 152 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-12 | ⚠ 8 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-12 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-12, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 793. Последние:
+Всего записей: 794. Последние:
 
 - [2026-09-12-germany-4-8-60-runner-stream-heartbeat.md](log/2026-09-12-germany-4-8-60-runner-stream-heartbeat.md) — runner-stream-heartbeat
 - [2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md](log/2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md) — release-task-modal-test-timeout
@@ -85,7 +85,7 @@
 - [2026-09-12-alexeys-macbook-air-2-kanban-board-diagnostics.md](log/2026-09-12-alexeys-macbook-air-2-kanban-board-diagnostics.md) — kanban-board-diagnostics
 - [2026-09-12-alexeys-macbook-air-2-image-studio-local-attachments.md](log/2026-09-12-alexeys-macbook-air-2-image-studio-local-attachments.md) — image-studio-local-attachments
 - [2026-09-12-alexeys-macbook-air-2-image-studio-history-objects.md](log/2026-09-12-alexeys-macbook-air-2-image-studio-history-objects.md) — image-studio-history-objects
-- [2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-ten-cycle-10.md) — web-reader-ten-cycle-10
+- [2026-09-12-alexeys-macbook-air-2-chat450-composer.md](log/2026-09-12-alexeys-macbook-air-2-chat450-composer.md) — chat450-composer
 
 ## Исторические планы
 

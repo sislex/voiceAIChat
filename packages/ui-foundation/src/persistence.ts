@@ -6,6 +6,9 @@
 
 /** Ключ localStorage для последнего выбранного в сайдбаре проекта. */
 export const SIDEBAR_PROJECT_KEY = 'vc.sidebar.project'
+/** Conversation drafts and the explicit density preference survive reloads. */
+export const CHAT_DRAFTS_KEY = 'vc.chat.drafts.v1'
+export const CHAT_COMPACT_KEY = 'vc.chat.compact'
 /** Ключ localStorage для фильтра «Показывать чаты завершённых задач». */
 export const DONE_TASK_CHATS_KEY = 'vc.sidebar.doneTaskChats'
 /** Ключ localStorage для межвкладочного обновления meta сообщения. */
