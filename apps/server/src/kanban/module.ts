@@ -202,7 +202,13 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
   // @testCase TC-7
   // @testCase TC-8
   const parseTaskPreparation = (text: string): DevelopmentReadiness => {
-    const value: unknown = preparationJsonObject(text)
+    const raw = text.trim()
+    const compatiblePrefix = /^(?:Подготовка завершена\.|Исправленный Development Brief:)\s*\{/.test(raw)
+    const compatibleEscapedFence = raw.startsWith('```json\\n{') && raw.endsWith('}\\n```')
+    if ((!raw.startsWith('{') || !raw.endsWith('}')) && !compatiblePrefix && !compatibleEscapedFence) {
+      throw new Error('Модель должна вернуть ровно один JSON-объект без текста вне JSON')
+    }
+    const value: unknown = preparationJsonObject(raw)
     const issues: string[] = []
     const record = (input: unknown): Record<string, unknown> | null =>
       input !== null && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : null
