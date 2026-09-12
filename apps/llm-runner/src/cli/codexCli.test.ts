@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { CodexCli, type SpawnFn } from './codexCli'
 import type { LlmStreamHandlers } from '@voicechat/shared'
@@ -31,6 +33,11 @@ const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
 const argsOf = (spawn: unknown): string[] =>
   (spawn as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
 
+function attachmentRe(name: string): RegExp {
+  const directory = tmpdir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`${directory}[/\\\\]+voicechat-llm-run-[^\\s]+[/\\\\]1-${name.replace('.', '\\.')}`)
+}
+
 describe('CodexCli', () => {
   // @testCase TC-INT-1
   it('передаёт gpt-6-astra без подмены; prompt идёт через stdin', async () => {
@@ -45,6 +52,25 @@ describe('CodexCli', () => {
     expect(args[args.length - 1]).toBe('-')
     await tick()
     expect(input).toBe('привет')
+  })
+
+  it('локально раскладывает вложения и удаляет их после завершения', async () => {
+    const { child, stdin, stdout } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send({
+      prompt: 'Открой /studio/selection.png', sessionId: null, model: '',
+      attachments: [{ serverPath: '/studio/selection.png', runnerName: 'selection.png', dataBase64: Buffer.from('pixels').toString('base64') }]
+    }, makeHandlers())
+    await tick()
+    expect(input).not.toContain('/studio/selection.png')
+    const path = input.match(attachmentRe('selection.png'))?.[0]
+    expect(path).toBeTruthy()
+    expect(readFileSync(path!, 'utf8')).toBe('pixels')
+    stdout.write(JSON.stringify({ type: 'turn.completed', usage: {} }) + '\n')
+    await tick()
+    expect(existsSync(path!)).toBe(false)
   })
 
   it('пустая модель → без -m; permissionMode=plan → sandbox read-only', () => {

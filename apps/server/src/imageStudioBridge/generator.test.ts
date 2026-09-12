@@ -75,5 +75,35 @@ describe('llmImageStudioGenerator', () => {
     await expect(generate({ prompt: 'перекрась', source, sourceName: 'кот.png' })).rejects.toThrow('AI не вернул файл изображения')
     expect(seen?.attachments?.[0]?.runnerName).toBe('кот.png')
     expect(seen?.attachments?.[0]?.dataBase64).toBe(source.toString('base64'))
+    expect(seen?.prompt).toContain('/studio/кот.png')
+  })
+
+  it('называет в промпте серверные пути всех вложений для подмены исполнителем', async () => {
+    let seen: LlmRequest | undefined
+    const generate = llmImageStudioGenerator({
+      client: fakeClient((req) => {
+        seen = req
+        return imageBlock({ path: '/home/u/ретушь.png' })
+      }),
+      userId: 'u1',
+      model: 'gpt-5',
+      readGenerated: async () => ({ dataBase64: Buffer.from('retouched').toString('base64') })
+    })
+    await generate({
+      prompt: 'выровняй тон',
+      source: Buffer.from('crop'),
+      sourceName: 'selection.png',
+      mask: Buffer.from('mask'),
+      targetSize: { width: 120, height: 80 },
+      references: [{ name: 'образец.png', data: Buffer.from('reference') }]
+    })
+    expect(seen?.prompt).toContain('/studio/selection.png')
+    expect(seen?.prompt).toContain('/studio/mask.png')
+    expect(seen?.prompt).toContain('/studio/reference-1-образец.png')
+    expect(seen?.attachments?.map((item) => item.serverPath)).toEqual([
+      '/studio/selection.png',
+      '/studio/mask.png',
+      '/studio/reference-1-образец.png'
+    ])
   })
 })
