@@ -797,6 +797,13 @@ export function createCiRest(httpBase: string): RendererCiRest {
     forceStartRun: (projectId, taskId, agentId) => req<CiRun>(REST.ciRunForceStart(projectId, taskId), { method: 'POST', body: JSON.stringify({ agentId }) }),
     getRun: (runId) => req<CiRunDetail>(REST.ciRun(runId)),
     getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),
+    getBrowserShot: async (runId, name) => {
+      if (!/^\d+\.png$/.test(name)) throw new Error('Invalid screenshot name')
+      const response = await credentialedFetch(httpBase + REST.ciRunBrowserShot(runId, name), { headers: authHeaders() })
+      if (!response.ok) throw new Error(`Screenshot → ${response.status}`)
+      if (!response.headers.get('content-type')?.startsWith('image/png')) throw new Error('Invalid screenshot format')
+      return URL.createObjectURL(await response.blob())
+    },
     getRunKbUsage: (runId) => req<KbRunUsageReport>(REST.ciRunKbUsage(runId)),
     getTaskKbUsage: (projectId, taskId) => req<KbTaskUsageReport>(REST.taskKbUsage(projectId, taskId)),
     getRunReport: (runId) => req<CiRunReport>(REST.ciRunReport(runId)),

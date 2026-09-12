@@ -4031,7 +4031,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         if (selected === path) setSelected(null)
         await run(() => api['imgstudio:delete']({ conversationId, path }), 'Удалено')
       })()}
-      onClose={() => { setViewing(null); setCompare(false); setCompareWith(null); setCompareGrid(null) }}
+      onClose={() => {
+        // Clear the route in the same action, before delayed route effects can reopen the image.
+        if (inThisStudio) navigate(`/images/${conversationId}`, { replace: true })
+        setViewing(null); setCompare(false); setCompareWith(null); setCompareGrid(null)
+      }}
     />}
   </div>
 }

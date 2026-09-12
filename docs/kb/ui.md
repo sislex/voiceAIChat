@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-12
-checked: 5a464d55
+checked: d9864647
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -1095,6 +1095,11 @@ USD за 1M токенов, источник и дату тарифа; форм�
 пользователя не остаётся.
 
 ## Маршруты (hash-роутер)
+
+Image Studio clears the image filename from its route synchronously when the viewer
+closes. Deferring this exclusively to the viewing-state effect can let a pending
+route effect reopen a directly linked image; the full gallery DOM suite covers
+this interaction between route updates and closing.
 
 Навигация — собственный `lib/useHashRoute.ts` без зависимостей: hash выбран потому,
 что desktop грузит рендерер по `file://`, где path-роутинг не работает. Маршруты:

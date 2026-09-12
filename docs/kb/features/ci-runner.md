@@ -2,7 +2,7 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-09
+updated: 2026-09-12
 checked: c8fcb5e8
 areas:
   - packages/shared/src/ci.ts
@@ -152,8 +152,9 @@ relay. В фазе плана браузер не подключается — �
 системную строку со ссылкой `GET /api/ci/runs/:runId/browser-shots/:name`
 (`REST.ciRunBrowserShot`, роут — в `routes/browserShots.ts`, доступ решает `getCiRun`,
 имя обязано быть номером). Base64 в лог не кладётся: лента реплеится целиком
-после каждого reconnect. `RunFeed` ссылку **не линкует** — она остаётся текстом,
-кадр открывается копированием адреса; картинок в ленте по-прежнему нет. Уборка
+после каждого reconnect. `RunFeed` recognizes the exact screenshot log marker and
+loads the PNG on demand through the authenticated CI bridge. The image links to
+a full-size Blob URL, revoked when its log component unmounts. Cleanup
 идёт при старте и раз в сутки: каталоги исчезнувших ранов удаляются сразу,
 остальные — через 7 дней (снимки вердикта QA живут 30, но их по одному на ран).
 
@@ -165,6 +166,38 @@ relay. В фазе плана браузер не подключается — �
 Сброс стоит на старте, а не в конце прошлого рана, чтобы работать и после
 падения сервера; профиль Chromium остаётся в томе, поэтому входы на
 проверяемом сайте переживают сброс.
+
+### Required browser evidence (CHAT-446)
+
+`model_work` snapshots the task browser setting once. `ciBrowserCheckPrompt`
+uses `ciBrowserCheckUrl` to pass the assigned machine, port and exact hash route
+to development, including the transition from an approved plan. The prompt
+requires a running dev environment and widths 1440, 1024, 390 and 320.
+The Chromium Claude allow-list includes `viewport` and `evaluate`, so these required
+checks can execute without an interactive CLI permission prompt.
+
+Reader turn tokens bind evidence to a run, model-work step and target URL.
+The MCP handler records completed actions through `ReaderCore.logBrowserEvidence`
+(including the remote RPC implementation). Core checks run access, actor,
+conversation and the running model-work step before storing `browser.observed`
+events. Only action metadata, target-match booleans and viewport widths are
+persisted; page content, typed values, raw tool errors and credentials are omitted.
+
+Before returning success, the model hook evaluates those durable events for its
+own step. It requires opening the exact URL, keyboard and interactive actions,
+and read/a11y/styles/evaluate/errors/console/network/screenshot at each width.
+Model-authored log lines and final prose cannot satisfy this check. A retry with
+a new step cannot reuse the previous step's evidence. `browser.checked` records
+the structured result; the run log displays expandable evidence. Missing evidence
+returns `browser_check:blocked`; unavailable session status, transport exceptions
+or missing Reader configuration return `browser_check:infrastructure_error`. The existing
+CI step/run status remains `failed`, with the specific browser diagnosis retained
+in the stage outcome and run progress; downstream commands do not run.
+
+This gate establishes a minimum set of tool executions, not a semantic QA
+verdict. Scenario outcomes, findings, visual assessment and remediation still
+require review. Browser availability must be verified in deployment; HTTP 200
+from the dev server alone is not browser evidence.
 
 ## Защита диска и очистка development-рана
 
