@@ -179,6 +179,10 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).toContain("+refs/heads/release/1.2.3:refs/voicechat/releases/attempt-7")
     expect(command).toContain("git rev-parse 'refs/voicechat/releases/attempt-7'")
     expect(command).toContain("git update-ref -d 'refs/voicechat/releases/attempt-7'")
+    // Preconditions explain themselves instead of failing silently.
+    expect(command).toContain('Production checkout содержит незакоммиченные изменения')
+    expect(command).toContain('смотрит на другой remote.origin.url')
+    expect(command).toContain('SHA ветки release/1.2.3 в origin изменился после подготовки: ожидался fixed-sha')
     expect(command).not.toContain('FETCH_HEAD')
   })
 

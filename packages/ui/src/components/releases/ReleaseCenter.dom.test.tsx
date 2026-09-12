@@ -183,4 +183,63 @@ describe('ReleaseCenter — версия, production и мобильная ра�
     expect(await screen.findByRole('tab', { name: 'Деплой' })).toHaveAttribute('aria-selected', 'true')
     window.localStorage.removeItem('vc.releases.tab')
   })
+
+  it('упавший деплой повторяется из подробностей той же веткой', async () => {
+    const value = api()
+    const failedDeploy: ProjectRelease = { ...deployment, id: 'deploy-fail', status: 'failed', attempt: 2, createdAt: deployment.createdAt + 1 }
+    value['releases:list'] = vi.fn(async () => [summary(failedDeploy, { failure: 'Health-check не дождался' }), summary(deployment), summary(prepared)])
+    value['releases:get'] = vi.fn(async ({ releaseId }) => [failedDeploy, deployment, prepared].find((item) => item.id === releaseId) ?? null)
+    value['releases:deploy'] = vi.fn(async ({ branch }) => ({ ...deployment, id: 'deploy-new', branch, status: 'queued' as const, attempt: 3 }))
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Деплой' }))
+    await userEvent.click(screen.getByRole('button', { name: /Последний деплой/ }))
+    expect(await screen.findByText('попытка 2', { exact: false })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить деплой' }))
+    expect(value['releases:deploy']).toHaveBeenCalledWith({ projectId: 'p1', branch: 'release/0.1.300' })
+    expect(await screen.findByText('попытка 3', { exact: false })).toBeInTheDocument()
+    // The deploy detail links back to the preparation it was made from.
+    await userEvent.click(screen.getByRole('button', { name: 'Сборка релиза' }))
+    expect(await screen.findByText('Машина сборки')).toBeInTheDocument()
+  })
+
+  it('упавшую сборку можно удалить и собрать заново одним подтверждённым действием', async () => {
+    const value = api()
+    const failed: ProjectRelease = { ...older, status: 'failed', steps: [{ id: 'reg', kind: 'regression', status: 'failed', model: null, attempt: 1, log: 'FAIL tests', startedAt: 1, finishedAt: 2 }] }
+    value['releases:list'] = vi.fn(async () => [summary(deployment), summary(prepared), summary(failed, { failure: 'FAIL tests' })])
+    value['releases:get'] = vi.fn(async ({ releaseId }) => [deployment, prepared, failed].find((item) => item.id === releaseId) ?? null)
+    value['releases:delete'] = vi.fn(async () => ({ deleted: true as const }))
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    await userEvent.click(await screen.findByText('release/0.1.299'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Удалить и собрать заново' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Собрать release/0.1.299 заново?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Удалить и собрать' }))
+    await screen.findByText('Сборка начата')
+    expect(value['releases:delete']).toHaveBeenCalledWith({ projectId: 'p1', releaseId: 'prep-299', branch: 'release/0.1.299' })
+    expect(value['releases:createBranch']).toHaveBeenCalledWith({ projectId: 'p1', branch: 'release/0.1.299', baseBranch: 'main', agentId: 'mac' })
+  })
+
+  it('SHA копируется кнопкой с тостом, даты в списке относительные с полной датой в title', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+    const cell = (await screen.findByText('release/0.1.300')).closest('tr')!.querySelector('td[data-label="Дата"] time')!
+    expect(cell).toHaveAttribute('title')
+    expect(cell.textContent).not.toBe('')
+    await userEvent.click(screen.getByText('release/0.1.300'))
+    await userEvent.click(await screen.findByRole('button', { name: /SHA aaaaaaaaaaaa/ }))
+    expect(writeText).toHaveBeenCalledWith('a'.repeat(40))
+    expect(await screen.findByText('SHA скопирован')).toBeInTheDocument()
+  })
+
+  it('вкладки переключаются стрелками и показывают число готовых релизов', async () => {
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+    const releases = await screen.findByRole('tab', { name: 'Релизы' })
+    releases.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'Деплой' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('· готовых: 2')).toBeInTheDocument()
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(screen.getByRole('tab', { name: 'Релизы' })).toHaveAttribute('aria-selected', 'true')
+  })
 })
