@@ -7424,7 +7424,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .release-failure{display:block;margin-top:3px;color:var(--danger)!important;font-size:12px}
 .release-links{display:flex;flex-wrap:wrap;gap:14px;margin:0;font-size:13px}.release-links a{color:var(--accent);font-weight:600;text-decoration:none}.release-links a:hover{text-decoration:underline}
 .release-more{align-self:center}
-.release-production{border-color:var(--success);background:var(--success-soft)}.release-create input,.release-create select,.release-deploy select{border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--surface);color:var(--text);font:inherit}
+.release-production{border-color:var(--success);background:var(--success-soft)}
+.release-sha{border:0;padding:0;background:transparent;color:inherit;font:inherit;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}.release-sha:hover{color:var(--accent)}
+.release-attempt,.release-count{color:var(--text-dim)}
+.release-detail-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.release-table time{white-space:nowrap}.release-create input,.release-create select,.release-deploy select{border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--surface);color:var(--text);font:inherit}
 .release-table-wrap{flex:1;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;border:1px solid var(--border);border-radius:12px;background:var(--surface)}.release-table-wrap>.vc-state{min-height:180px}.release-table-wrap>.vc-skel-list{padding:0}
 .release-table{width:100%;min-width:680px;border-collapse:separate;border-spacing:0}.release-table th,.release-table td{padding:12px 14px;border-bottom:1px solid var(--border);text-align:left}.release-table th{position:sticky;z-index:1;top:0;font-size:12px;color:var(--text-dim);background:var(--panel)}.release-table tbody tr{cursor:pointer}.release-table tbody tr:hover,.release-table tbody tr:focus{background:var(--surface-hover);outline:none}.release-table td small{display:block;margin-top:3px;color:var(--text-dim)}
 .release-status{display:inline-flex;padding:4px 8px;border-radius:999px;background:var(--panel);font-size:12px;font-weight:700}.release-status[data-status='ready'],.release-status[data-status='released']{background:var(--success-soft);color:var(--success)}.release-status[data-status='failed']{background:var(--danger-soft);color:var(--danger)}
@@ -7437,7 +7441,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .release-mode{margin-top:10px;width:calc(100% - 24px);justify-content:stretch}.release-mode-button{flex:1}
 .release-center>header,.release-detail>header,.release-pane>header{align-items:flex-start;flex-wrap:wrap}
 .release-pane>header>span{flex-wrap:wrap}
-.release-detail>header{display:grid;grid-template-columns:1fr 1fr}.release-detail>header>div{grid-column:1/-1;order:-1}
+.release-detail>header{display:grid;grid-template-columns:1fr}.release-detail>header>div{order:-1}.release-detail-actions{justify-content:stretch}.release-detail-actions .vc-btn{flex:1}
 .release-metrics{grid-template-columns:1fr 1fr}
 .release-last-deploy{grid-template-columns:1fr;gap:6px}
 /* Tables become card rows: every cell prints its column name, so nothing is
