@@ -29,7 +29,8 @@ describe('NewTaskCardView', () => {
     expect(screen.queryByText('Исходное ТЗ')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
     expect(screen.getByText('Исходное ТЗ')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '↩ На доработку · цикл 2' }))
+    // Кнопка возврата стоит и в шапке, и в боковой колонке — как в макете.
+    fireEvent.click(screen.getAllByRole('button', { name: '↩ На доработку · цикл 2' })[0]!)
     expect(cb.onStartRework).toHaveBeenCalledOnce()
   })
   // @testCase TC-UI-NEW-TASK-VOICEBAR
@@ -162,13 +163,83 @@ describe('NewTaskCardView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Открыть превью' }))
     expect(cb.onOpenMake).toHaveBeenCalledWith('make-19')
 
-    // Заменить показывает выбор из остальных Make-проектов проекта.
-    fireEvent.click(screen.getByRole('button', { name: 'Заменить' }))
-    fireEvent.change(screen.getByLabelText('Новый макет'), { target: { value: 'make-20' } })
-    expect(cb.onReplaceMake).toHaveBeenCalledWith('make-1', 'make-20')
-
     fireEvent.click(screen.getByRole('button', { name: 'Удалить связь' }))
     expect(cb.onUnlinkMake).toHaveBeenCalledWith('make-1')
+
+    // Заменить открывает тот же редактор связи с текущими значениями: другой
+    // проект и объём связи выбираются там же, где создаётся новая связь.
+    fireEvent.click(screen.getByRole('button', { name: 'Заменить' }))
+    expect(screen.getByRole('region', { name: 'Заменить дизайн Make' })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Make-проект'), { target: { value: 'make-20' } })
+    fireEvent.click(screen.getByLabelText('Весь Make-проект'))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить связь' }))
+    expect(cb.onReplaceMake).toHaveBeenCalledWith('make-1', { conversationId: 'make-20', mode: 'whole_project', paths: [] })
+  })
+
+  it('связывает Make-дизайн из пустого блока: проект, отдельные файлы, сохранение', async () => {
+    const link = vi.fn().mockResolvedValue(undefined)
+    const cb = callbacks({ onLinkMake: link, onLoadMakeFiles: async () => ['index.html', 'styles.css'] })
+    const choices = { state: 'ready' as const, items: [{ conversationId: 'make-19', title: 'Проект 19', owner: 'me', own: true, updatedAt: 1 }] }
+    render(<NewTaskCardView model={{ ...model, makeSources: [] }} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} makeSourcesState={choices} onVersionChange={vi.fn()} callbacks={cb} />)
+    expect(screen.getByText('Дизайн не связан')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Связать дизайн' }))
+    // Пока файлы не выбраны, режим «выбранные файлы» сохранить нельзя.
+    fireEvent.click(screen.getByLabelText('Выбранные файлы'))
+    expect(await screen.findByLabelText('styles.css')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Сохранить связь' })).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('styles.css'))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить связь' }))
+    expect(link).toHaveBeenCalledWith({ conversationId: 'make-19', mode: 'files', paths: ['styles.css'] })
+  })
+
+  it('без колбэка связи пустой блок Make не предлагает кнопку', () => {
+    render(<NewTaskCardView model={{ ...model, makeSources: [] }} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks()} />)
+    expect(screen.queryByRole('button', { name: 'Связать дизайн' })).toBeNull()
+  })
+
+  it('очередь доработок: выбор нескольких черновиков и отправка набором', () => {
+    const submitMany = vi.fn()
+    const cb = callbacks({ onSubmitDrafts: submitMany, onSubmitDraft: vi.fn() })
+    const withDrafts = {
+      ...model,
+      drafts: [
+        { id: 'd1', sequence: 2, description: 'Первая правка', criteria: [], makeSources: [], attachments: [], createdBy: 'alex', createdAt: 1, preparationRunId: null, status: 'draft' as const },
+        { id: 'd2', sequence: 3, description: 'Вторая правка', criteria: [], makeSources: [], attachments: [], createdBy: 'alex', createdAt: 2, preparationRunId: null, status: 'draft' as const }
+      ]
+    }
+    render(<NewTaskCardView model={withDrafts} activeTab="reworks" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    const bulk = screen.getByRole('button', { name: 'Отправить выбранные на доработку' })
+    expect(bulk).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('Выбрать Первая правка'))
+    expect(screen.getByText('Выбрано: 1')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Выбрать все доступные'))
+    expect(screen.getByText('Выбрано: 2')).toBeTruthy()
+    fireEvent.click(bulk)
+    expect(submitMany).toHaveBeenCalledWith(['d1', 'd2'])
+    // «Добавить» есть всегда: черновик копится заранее, ворота стоят на отправке.
+    fireEvent.click(screen.getByRole('button', { name: '＋ Добавить' }))
+    expect(cb.onStartRework).toHaveBeenCalled()
+  })
+
+  it('история циклов ведёт к подготовке и ходу выполнения', () => {
+    const cb = callbacks()
+    const withCycle = { ...model, cycles: [{ id: 'c1', sequence: 1, description: 'Отправленный цикл', criteria: ['A'], makeSources: [], attachments: [], createdBy: 'alex', createdAt: 1, preparationRunId: null, status: 'submitted' as const }] }
+    render(<NewTaskCardView model={withCycle} activeTab="reworks" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    expect(screen.getByText('1 цикл')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Результат подготовки' }))
+    expect(cb.onChangeTab).toHaveBeenCalledWith('preparation')
+    fireEvent.click(screen.getByRole('button', { name: 'Ход выполнения →' }))
+    expect(cb.onChangeTab).toHaveBeenCalledWith('progress')
+  })
+
+  it('workflow показывает длительность пройденного этапа и живой счётчик текущего', () => {
+    const timed = { ...model, workflow: [
+      { id: 'development', semanticType: 'development' as const, label: 'Разработка', state: 'passed' as const, durationMs: 125_000 },
+      { id: 'component_qa', semanticType: 'component_qa' as const, label: 'Component QA', state: 'current' as const, startedAt: Date.now() - 65_000 }
+    ] }
+    render(<NewTaskCardView model={timed} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks()} />)
+    expect(screen.getByLabelText('Заняло 2м 05с')).toBeTruthy()
+    expect(screen.getByLabelText(/^Прошло 1м 0[5-9]с$/)).toHaveClass('new-task-workflow-time--live')
   })
 
   it('превью картинки грузится по требованию, а не при открытии карточки', async () => {
