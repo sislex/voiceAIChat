@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { fakeCore } from './test/fakeCore.js'
 import { ImageStudioStore } from './studio.js'
 import { registerImageStudioRoutes } from './routes.js'
+import sharp from 'sharp'
 
 
 /** Байты валидного однопиксельного PNG — sniffing в store пропускает только настоящие картинки. */
@@ -90,6 +91,38 @@ describe('студия картинок: роуты', () => {
 })
 
 describe('студия картинок: параллельность, отмена и происхождение', () => {
+  it('выделение ретушируется, извлекается, возвращается и откатывается новыми версиями', async () => {
+    const portrait = await sharp({ create: { width: 6, height: 4, channels: 4, background: '#ffffffff' } }).png().toBuffer()
+    await store.writeBuffer(convId, 'портрет.png', portrait)
+    const retouchApp = Fastify()
+    retouchApp.decorateRequest('user', null)
+    retouchApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
+    registerImageStudioRoutes(retouchApp, {
+      core: fixture.core,
+      store,
+      generator: async () => async ({ targetSize }) => sharp({ create: { width: targetSize?.width ?? 1, height: targetSize?.height ?? 1, channels: 4, background: '#ff0000ff' } }).png().toBuffer()
+    })
+    await retouchApp.ready()
+    const selection = { kind: 'rectangle', x: 1, y: 1, width: 3, height: 2 }
+    const retouched = await retouchApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/retouch`, payload: { path: 'портрет.png', prompt: 'естественная ретушь кожи', selection } })
+    expect(retouched.statusCode).toBe(200)
+    expect(retouched.json().file).toMatchObject({ source: 'портрет.png', operation: 'retouch', selection })
+
+    const extracted = await retouchApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/extract`, payload: { path: 'портрет.png', selection } })
+    expect(extracted.statusCode).toBe(200)
+    const objectPath = extracted.json().file.path as string
+    expect(extracted.json().file).toMatchObject({ source: 'портрет.png', operation: 'extract', selection })
+    const placed = await retouchApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/place`, payload: { objectPath } })
+    expect(placed.statusCode).toBe(200)
+    expect(placed.json().file).toMatchObject({ source: 'портрет.png', operation: 'place' })
+
+    const restored = await retouchApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/restore-version`, payload: { currentPath: placed.json().file.path, targetPath: 'портрет.png' } })
+    expect(restored.statusCode).toBe(200)
+    expect(restored.json().file).toMatchObject({ source: placed.json().file.path, operation: 'restore', restoredFrom: 'портрет.png' })
+    expect((await store.list(convId)).map((file) => file.path)).toEqual(expect.arrayContaining(['портрет.png', objectPath, placed.json().file.path, restored.json().file.path]))
+    await retouchApp.close()
+  })
+
   it('остановка во время проверки владельца не запускает новый LLM', async () => {
     const slowApp = Fastify()
     let release = () => {}

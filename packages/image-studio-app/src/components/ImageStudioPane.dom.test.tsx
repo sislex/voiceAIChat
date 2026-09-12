@@ -20,8 +20,8 @@ async function findToast(text: string): Promise<HTMLElement> {
   })
 }
 
-function makeApi(initial: Array<{ path: string; prompt?: string; size?: number }> = [], options: { trash?: Array<{ name: string; deletedAt: number; size?: number }> } = {}) {
-  let files: ImageStudioFile[] = initial.map((file, index) => ({ path: file.path, size: file.size ?? 10, updatedAt: index + 1, ...(file.prompt ? { prompt: file.prompt } : {}) }))
+function makeApi(initial: Array<Partial<ImageStudioFile> & Pick<ImageStudioFile, 'path'>> = [], options: { trash?: Array<{ name: string; deletedAt: number; size?: number }> } = {}) {
+  let files: ImageStudioFile[] = initial.map((file, index) => ({ ...file, size: file.size ?? 10, updatedAt: file.updatedAt ?? index + 1 }))
   let trash = [...(options.trash ?? [])]
   const generate = vi.fn(async ({ prompt }: { prompt: string }) => {
     const file = { path: 'изображение.png', size: prompt.length, updatedAt: Date.now() }
@@ -61,7 +61,11 @@ function makeApi(initial: Array<{ path: string; prompt?: string; size?: number }
       'imgstudio:delete': vi.fn(async ({ path }: { path: string }) => { files = files.filter((file) => file.path !== path); return [...files] }),
       'imgstudio:rename': vi.fn(async ({ from, to }: { from: string; to: string }) => { files = files.map((file) => file.path === from ? { ...file, path: to } : file); return [...files] }),
       'imgstudio:generate': generate,
-      'imgstudio:edit': edit
+      'imgstudio:edit': edit,
+      'imgstudio:retouch': vi.fn(async ({ path }: { path: string }) => { const file: ImageStudioFile = { path: path.replace('.png', '-ретушь.png'), size: 10, updatedAt: Date.now(), source: path, operation: 'retouch' }; files = [file, ...files]; return { file, files: [...files] } }),
+      'imgstudio:extract': vi.fn(async ({ path }: { path: string }) => { const file: ImageStudioFile = { path: path.replace('.png', '-объект.png'), size: 10, updatedAt: Date.now(), source: path, operation: 'extract', selection: { kind: 'rectangle', x: 1, y: 1, width: 2, height: 2 } }; files = [file, ...files]; return { file, files: [...files] } }),
+      'imgstudio:place': vi.fn(async ({ basePath }: { basePath: string }) => { const file: ImageStudioFile = { path: basePath.replace('.png', '-с-объектом.png'), size: 10, updatedAt: Date.now(), source: basePath, operation: 'place' }; files = [file, ...files]; return { file, files: [...files] } }),
+      'imgstudio:restoreVersion': vi.fn(async ({ currentPath, targetPath }: { currentPath: string; targetPath: string }) => { const file: ImageStudioFile = { path: currentPath.replace('.png', '-восстановлено.png'), size: 10, updatedAt: Date.now(), source: currentPath, restoredFrom: targetPath, operation: 'restore' }; files = [file, ...files]; return { file, files: [...files] } })
     }
   }
 }
@@ -3289,6 +3293,23 @@ describe('ImageStudioPane', () => {
     fireEvent.click(within(viewer).getByRole('button', { name: 'Ещё действия с картинкой' }))
     fireEvent.click(await within(viewer).findByRole('menuitem', { name: 'Свойства и заметка' }))
     await waitFor(() => expect(within(screen.getByTestId('image-studio-viewer')).queryByText(/^Заметка:$/)).toBeNull())
+  })
+
+  it('история создаёт неразрушающий откат и открывает инструменты объектов', async () => {
+    const { api } = makeApi([
+      { path: 'портрет-2.png', source: 'портрет.png', operation: 'edit', updatedAt: 2 },
+      { path: 'портрет.png', operation: 'upload', updatedAt: 1 }
+    ])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть портрет-2.png в полный размер' }))
+    const viewer = await screen.findByTestId('image-studio-viewer')
+    fireEvent.click(within(viewer).getByRole('button', { name: 'Ещё действия с картинкой' }))
+    expect(await within(viewer).findByRole('menuitem', { name: 'Выделить объект или ретушировать' })).toBeInTheDocument()
+    fireEvent.click(within(viewer).getByRole('menuitem', { name: 'История версий' }))
+    const history = await within(viewer).findByRole('region', { name: 'История версий портрет-2.png' })
+    expect(within(history).getByText(/^загрузка/)).toBeInTheDocument()
+    fireEvent.click(within(history).getByRole('button', { name: 'Откатиться сюда' }))
+    await waitFor(() => expect(api['imgstudio:restoreVersion']).toHaveBeenCalledWith({ conversationId: 'c1', currentPath: 'портрет-2.png', targetPath: 'портрет.png' }))
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {

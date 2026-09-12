@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-10
-checked: 83b7e546
+updated: 2026-09-12
+checked: 5a464d55
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -616,6 +616,34 @@ LLM и ретушь обычного чата остаются у ядра.
 пути `/api/image-studio/*` и `/g/*`. Интеграция
 `apps/server/src/imageStudioBridge/remote.integration.test.ts` проверяет embedded и remote
 на реальных HTTP-портах с разными каталогами данных ядра и студии.
+
+### Image Studio selections, version graph, and MCP (2026-09-12)
+
+Localized image operations live in `apps/image-studio/src/selection.ts`. Sharp
+validates the source raster with a 64-megapixel ceiling, converts rectangle,
+lasso, or monochrome mask selections into a bounded crop, and composites model
+output through that mask. The final compositor copies every pixel outside the
+selection from the decoded source. Extraction emits a transparent PNG; placement
+resizes the extracted object when requested and alpha-composites it on a base
+image. Foreground discovery and the magic wand analyze a copy capped at 1000 px
+on its longest side, then map their result back to natural image coordinates.
+
+The file sidecars form a version graph through `source`, `operation`,
+`restoredFrom`, and optional selection bounds. Restore is non-destructive: the
+historical bytes are copied into a new node whose parent is the currently viewed
+node. Renaming a file rewrites references from descendants and restored nodes.
+The same store methods back the UI routes and MCP tools, so assistant changes and
+manual changes appear in one history.
+
+`POST /mcp/image-studio` is a stateless Streamable HTTP MCP endpoint scoped by
+the signed `k`, `user`, and `conv` query values. It verifies that the user owns
+an `images` conversation before exposing `image_list`, `image_open`,
+`image_find_objects`, `image_generate`, `image_edit`, `image_retouch`,
+`image_extract`, `image_place`, `image_restore`, `image_rename`, and
+`image_delete`. `image_open` returns actual image content to the model. Plan
+mode appends `ro=1`: list, open, and object discovery stay available while every
+mutating handler refuses the call. Model-backed generation and retouch share a
+per-conversation active slot.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 

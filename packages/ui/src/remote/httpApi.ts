@@ -147,6 +147,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/generate`, { method: 'POST', body: JSON.stringify(b) }),
     'imgstudio:edit': ({ conversationId, ...b }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/edit`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:retouch': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/retouch`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:extract': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/extract`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:place': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/place`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:restoreVersion': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/restore-version`, { method: 'POST', body: JSON.stringify(b) }),
     'make:projectFiles': ({ conversationId, path }) =>
       req(`${REST.makeProjectFiles(conversationId)}${path ? `?path=${encodeURIComponent(path)}` : ''}`),
     'make:projectLinks': ({ conversationId }) => req(REST.makeProjectLinks(conversationId)),

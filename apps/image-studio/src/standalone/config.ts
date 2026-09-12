@@ -4,6 +4,7 @@ export interface ImageStudioStandaloneConfig {
   dataDir: string
   coreUrl: string
   internalToken: string
+  mcpSecret: string
   version: string | null
 }
 
@@ -14,6 +15,7 @@ export function loadImageStudioStandaloneConfig(env: NodeJS.ProcessEnv = process
     dataDir: env.VC_IMAGE_STUDIO_DATA_DIR ?? env.VC_DATA_DIR ?? 'data',
     coreUrl: env.VC_CORE_URL ?? 'http://127.0.0.1:8787',
     internalToken: env.VC_INTERNAL_TOKEN ?? '',
+    mcpSecret: env.VC_MCP_SECRET ?? '',
     version: env.VC_RELEASE_VERSION || null
   }
 }

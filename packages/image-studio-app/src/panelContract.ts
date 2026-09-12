@@ -4,6 +4,7 @@ import type { RendererApi } from '@shared/ipc'
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
   'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel' |
+  'imgstudio:retouch' | 'imgstudio:extract' | 'imgstudio:place' | 'imgstudio:restoreVersion' |
   'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish' | 'imgstudio:run' | 'imgstudio:transfer' |
   'imgstudio:trash' | 'imgstudio:restore' | 'imgstudio:purge'> &
   Partial<Pick<RendererApi, 'prompt:suggest'>>

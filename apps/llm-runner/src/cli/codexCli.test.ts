@@ -134,6 +134,23 @@ describe('CodexCli', () => {
     expect(input).toContain('src/App.tsx')
   })
 
+  it('подключает Image Studio MCP и объясняет цепочку объекта', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send({
+      prompt: 'измени предмет', sessionId: null, model: '',
+      imageStudioMcpUrl: 'http://image-studio:8796/mcp/image-studio?k=s&conv=c1&user=admin'
+    }, makeHandlers())
+    const args = argsOf(spawn)
+    expect(args).toContain('mcp_servers.image_studio.url="http://image-studio:8796/mcp/image-studio?k=s&conv=c1&user=admin"')
+    expect(args).toContain('mcp_servers.image_studio.default_tools_approval_mode="approve"')
+    await tick()
+    expect(input).toContain('image_extract')
+    expect(input).toContain('image_place')
+  })
+
   it('projectMachines: другие машины проекта и инструмент machines названы в промпте', async () => {
     const { child, stdin } = fakeChild()
     let input = ''

@@ -1675,6 +1675,32 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const files = await api['imgstudio:list']({ conversationId })
       return { file: files.find((entry) => entry.path === next)!, files }
     },
+    'imgstudio:retouch': async ({ conversationId, path, prompt }) => {
+      const next = path.replace(/(\.[a-z]+)$/i, '-ретушь$1')
+      await api['imgstudio:upload']({ conversationId, path: next, dataBase64: Buffer.from(`retouched:${prompt}`).toString('base64'), source: path })
+      const files = await api['imgstudio:list']({ conversationId })
+      return { file: files.find((entry) => entry.path === next)!, files }
+    },
+    'imgstudio:extract': async ({ conversationId, path }) => {
+      const next = path.replace(/(\.[a-z]+)$/i, '-объект.png')
+      await api['imgstudio:upload']({ conversationId, path: next, dataBase64: Buffer.from('object').toString('base64'), source: path })
+      const files = await api['imgstudio:list']({ conversationId })
+      return { file: files.find((entry) => entry.path === next)!, files }
+    },
+    'imgstudio:place': async ({ conversationId, basePath }) => {
+      const next = basePath.replace(/(\.[a-z]+)$/i, '-с-объектом.png')
+      await api['imgstudio:upload']({ conversationId, path: next, dataBase64: Buffer.from('placed').toString('base64'), source: basePath })
+      const files = await api['imgstudio:list']({ conversationId })
+      return { file: files.find((entry) => entry.path === next)!, files }
+    },
+    'imgstudio:restoreVersion': async ({ conversationId, currentPath, targetPath }) => {
+      const source = (studioFiles.get(conversationId) ?? []).find((entry) => entry.path === targetPath)
+      if (!source) throw new Error('версия не найдена')
+      const next = currentPath.replace(/(\.[a-z]+)$/i, '-восстановлено.png')
+      await api['imgstudio:upload']({ conversationId, path: next, dataBase64: source.dataBase64, source: currentPath })
+      const files = await api['imgstudio:list']({ conversationId })
+      return { file: files.find((entry) => entry.path === next)!, files }
+    },
     'tasks:activity': async ({ taskId }) => activityOf(taskId),
     'tasks:commentAdd': async ({ taskId, text }) => {
       const activity = activityOf(taskId)
