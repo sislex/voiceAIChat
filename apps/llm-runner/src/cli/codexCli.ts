@@ -5,7 +5,7 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { KANBAN_ASSISTANT_HINT, MAKE_ASSISTANT_HINT, kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
+import { IMAGE_STUDIO_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, MAKE_ASSISTANT_HINT, kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
 import { cliProfileEnv } from './cliProfiles.js'
 import { killCliChild } from './childKill.js'
@@ -112,6 +112,10 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
   if (req.makeMcpUrl) {
     args.push(...mcpServerArgs('make', req.makeMcpUrl))
     prompt = MAKE_ASSISTANT_HINT + '\n\n' + prompt
+  }
+  if (req.imageStudioMcpUrl) {
+    args.push(...mcpServerArgs('image_studio', req.imageStudioMcpUrl))
+    prompt = IMAGE_STUDIO_ASSISTANT_HINT + '\n\n' + prompt
   }
 
   // Связанные с задачей Make-проекты: независимые read-only MCP-серверы.

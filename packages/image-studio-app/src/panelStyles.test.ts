@@ -44,6 +44,12 @@ describe('app.css — лайтбокс студии', () => {
     ).toBe('auto')
   })
 
+  it('история и редактор выделения имеют собственные прокручиваемые области', () => {
+    expect(decl('.image-studio-selection', 'overscroll-behavior')).toBe('contain')
+    expect(decl('.image-studio-history ol', 'overflow')).toBe('auto')
+    expect(decl('.image-studio-viewer-menu', 'overflow')).toBe('auto')
+  })
+
   it('центрируется только сцена, а не всё тело лайтбокса', () => {
     // `align-items: center` на `.imgbody` уводил по центру панель свойств,
     // подсказки и строку меты — поймано глазами в браузере.

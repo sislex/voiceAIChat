@@ -76,7 +76,7 @@ import { registerServiceProxy } from './makeBridge/proxy.js'
 import type { MachinesService } from './machines/service.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
-import { createImageStudioModule } from '@voicechat/image-studio'
+import { createImageStudioModule, IMAGE_STUDIO_MCP_PATH } from '@voicechat/image-studio'
 import { LocalImageStudioCore } from './imageStudioBridge/localCore.js'
 import { createRemoteImageStudio } from './imageStudioBridge/remote.js'
 import { registerImageStudioProxy } from './imageStudioBridge/proxy.js'
@@ -618,13 +618,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
   })
   const imageStudioRemote = opts.config.imageStudioMode === 'remote'
-  if (imageStudioRemote && !(opts.config.imageStudioUrl && opts.config.internalToken)) {
-    throw new Error('VC_IMAGE_STUDIO_MODE=remote требует VC_IMAGE_STUDIO_URL и VC_INTERNAL_TOKEN')
+  if (imageStudioRemote && !(opts.config.imageStudioUrl && opts.config.internalToken && opts.config.mcpSecret)) {
+    throw new Error('VC_IMAGE_STUDIO_MODE=remote требует VC_IMAGE_STUDIO_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
   }
+  const imageStudioMcpBaseUrl = imageStudioRemote
+    ? `${opts.config.imageStudioUrl!.replace(/\/+$/, '')}${IMAGE_STUDIO_MCP_PATH}?k=${mcpSecret}`
+    : buildPublicMcpUrl(opts.config, IMAGE_STUDIO_MCP_PATH, mcpSecret)
   // В remote ядро не открывает файлы галерей: единственный владелец — процесс студии.
   const imageStudio = imageStudioRemote
     ? { service: createRemoteImageStudio({ studioUrl: opts.config.imageStudioUrl!, token: opts.config.internalToken! }) }
-    : createImageStudioModule({ dataDir: opts.config.dataDir, core: imageStudioCore })
+    : createImageStudioModule({ dataDir: opts.config.dataDir, core: imageStudioCore, mcpSecret })
   if ('register' in imageStudio) imageStudio.register(app)
   if (imageStudioRemote) registerImageStudioProxy(app, { studioUrl: opts.config.imageStudioUrl! })
 
@@ -1089,6 +1092,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
     makeMcpBaseUrl,
+    imageStudioMcpBaseUrl,
     kanbanMcpBaseUrl,
     widgetContexts,
     make: make.service,

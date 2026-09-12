@@ -23,6 +23,8 @@ export function registerImageStudioInternal(app: FastifyInstance, core: ImageStu
       const data = await core.generate(body.userId, {
         prompt: body.prompt,
         ...(body.source ? { source: Buffer.from(body.source.dataBase64, 'base64'), sourceName: body.source.name } : {}),
+        ...(body.mask ? { mask: Buffer.from(body.mask.dataBase64, 'base64') } : {}),
+        ...(body.targetSize ? { targetSize: body.targetSize } : {}),
         ...(body.references ? { references: body.references.map((ref) => ({ name: ref.name, data: Buffer.from(ref.dataBase64, 'base64') })) } : {}),
         onCancel: (fn) => { cancel = fn; if (reply.raw.destroyed) fn() }
       })

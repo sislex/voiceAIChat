@@ -15,12 +15,23 @@ export function llmImageStudioGenerator(opts: {
   cwd?: string
   readGenerated(path: string): Promise<{ dataBase64: string } | null>
 }): ImageStudioGenerator {
-  return async ({ prompt, source, sourceName, references, onCancel }) => {
+  return async ({ prompt, source, sourceName, mask, targetSize, references, onCancel }) => {
     const attachments: LlmAttachment[] = [
       ...(source ? [{ serverPath: `/studio/${sourceName ?? 'source.png'}`, runnerName: sourceName ?? 'source.png', dataBase64: source.toString('base64') }] : []),
+      ...(mask ? [{ serverPath: '/studio/mask.png', runnerName: 'mask.png', dataBase64: mask.toString('base64') }] : []),
       ...(references ?? []).map((ref, index) => ({ serverPath: `/studio/reference-${index + 1}-${ref.name}`, runnerName: `reference-${index + 1}-${ref.name}`, dataBase64: ref.data.toString('base64') }))
     ]
-    const lines = source
+    const lines = source && mask && targetSize
+      ? [
+          `Retouch the attached ${sourceName ?? 'selection.png'} strictly according to the user prompt below.`,
+          'mask.png marks editable pixels in white; black pixels are context and must remain visually compatible.',
+          `Return exactly one raster image sized ${targetSize.width}×${targetSize.height}. Do not draw the mask, guides, or a service background.`,
+          ...(references?.length ? ['Use reference-*.png only as visual references.'] : []),
+          'Save the result as a separate PNG and expose its absolute path through the standard fenced image block.',
+          `User prompt: ${prompt}`,
+          IMAGE_HINT
+        ]
+      : source
       ? [
           `Отредактируй приложенное изображение ${sourceName ?? 'source.png'} строго по промпту ниже, сохранив его размер и общий стиль, если промпт не требует иного.`,
           'Правь картинку скриптом (например, Python/Pillow или ImageMagick) — сгенерируй и выполни его.',

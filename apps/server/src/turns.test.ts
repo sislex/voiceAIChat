@@ -405,6 +405,25 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
+  it('у студии картинок подключает MCP текущего пользователя и делает его read-only в плане', async () => {
+    const db = await freshDb()
+    const conv = await db.chat.createConversation(U, 'Студия', 'images')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, imageStudioMcpBaseUrl: 'http://127.0.0.1:8787/mcp/image-studio?k=secret' })
+    const run = async (): Promise<void> => new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'отретушируй лицо' }] })
+    })
+    await run()
+    expect(rec.last()?.imageStudioMcpUrl).toContain(`conv=${conv.id}&user=admin`)
+    expect(rec.last()?.imageStudioMcpUrl).not.toContain('ro=1')
+    await db.chat.setConversationExecTarget(U, conv.id, 'none', undefined, undefined, undefined, undefined, 'plan')
+    await run()
+    expect(rec.last()?.imageStudioMcpUrl).toContain('ro=1')
+    await turns.idle()
+    db.close()
+  })
+
   // @testCase TC-SRV-01
   it('Make у не-admin без машины (Claude): сохраняет development, запрещает встроенные инструменты и не добавляет ro', async () => {
     const db = await freshDb()

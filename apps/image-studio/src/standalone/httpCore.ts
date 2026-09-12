@@ -19,6 +19,8 @@ export class HttpImageStudioCore implements ImageStudioCore {
     const payload: ImageStudioGenerateRequest = {
       userId, prompt: input.prompt,
       ...(input.source ? { source: { name: input.sourceName ?? 'source.png', dataBase64: input.source.toString('base64') } } : {}),
+      ...(input.mask ? { mask: { name: 'mask.png', dataBase64: input.mask.toString('base64') } } : {}),
+      ...(input.targetSize ? { targetSize: input.targetSize } : {}),
       ...(input.references ? { references: input.references.map((ref) => ({ name: ref.name, dataBase64: ref.data.toString('base64') })) } : {})
     }
     const res = await (this.opts.fetchImpl ?? fetch)(`${this.opts.coreUrl.replace(/\/+$/, '')}${INTERNAL_IMAGE_STUDIO_GENERATE_PATH}`, {

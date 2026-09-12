@@ -10,6 +10,8 @@ import { IMAGE_STUDIO_VIEWER_BG_KEY } from '@voicechat/ui-foundation/persistence
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
+import type { ImageStudioSelection } from '@shared/imageStudio'
+import { ImageStudioSelectionEditor } from './ImageStudioSelectionEditor'
 
 interface Props {
   viewing: string
@@ -32,6 +34,14 @@ interface Props {
   /** Закрыть вьюер и выбрать файл для правки (фокус уйдёт в промпт). */
   onPickForEdit: (path: string) => void
   onVariate: (path: string) => void
+  /** Safe model edit: pixels outside the selection are copied from the source. */
+  onRetouch: (path: string, selection: ImageStudioSelection, prompt: string) => Promise<void>
+  /** Save the selected object as a transparent, independently editable file. */
+  onExtract: (path: string, selection: ImageStudioSelection) => Promise<void>
+  /** Place an extracted object or one of its edited descendants back on its base. */
+  onPlace: (objectPath: string, basePath: string) => Promise<void>
+  /** Non-destructive rollback creates a new version from historical pixels. */
+  onRestoreVersion: (currentPath: string, targetPath: string) => Promise<void>
   /** Обрезка: rect в натуральных пикселях картинки. */
   onCrop: (path: string, rect: CropRect) => void
   /** Разметка: фигуры в CSS-пикселях + размер, в котором рисовали. */
@@ -92,7 +102,7 @@ const GUIDE_MODES = ['thirds', 'center', 'golden', 'none'] as const
 type GuideMode = (typeof GUIDE_MODES)[number]
 const GUIDE_LABELS: Record<GuideMode, string> = { thirds: 'трети', center: 'центр', golden: 'золотое сечение', none: 'выключены' }
 
-export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onChannels, starred, onToggleStar, status, onCycleStatus, sets, versions, onFacts, onLocate, autoSlideshow, onAutoSlideshowUsed, autoProps, onAutoPropsUsed, onDelete, onClose, position }: Props): JSX.Element {
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onRetouch, onExtract, onPlace, onRestoreVersion, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onChannels, starred, onToggleStar, status, onCycleStatus, sets, versions, onFacts, onLocate, autoSlideshow, onAutoSlideshowUsed, autoProps, onAutoPropsUsed, onDelete, onClose, position }: Props): JSX.Element {
   /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
   const [wipe, setWipe] = useState(50)
   /**
@@ -176,6 +186,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   }, [autoProps, onAutoPropsUsed])
   /** Меню «Ещё» шапки: вид, а не состояние картинки — держим здесь. */
   const [more, setMore] = useState(false)
+  const [selectionOpen, setSelectionOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const moreButtonRef = useRef<HTMLButtonElement | null>(null)
   const moreMenuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -252,6 +264,13 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   }, [onStep, onDelete, viewing, onToggleStar])
   const meta = files.find((file) => file.path === viewing)
   const sourceInGallery = meta?.source && files.some((file) => file.path === meta.source)
+  const extraction = versionChain(files, viewing).map((path) => files.find((file) => file.path === path)).find((file) => file?.operation === 'extract' && file.selection && file.source)
+  const showNaturalSize = (): void => {
+    const img = imgRef.current
+    if (!img || !img.naturalWidth || !img.clientWidth) return
+    const natural = Math.min(4, Math.max(1, Math.round(img.naturalWidth / img.clientWidth * 100) / 100))
+    setZoom(natural <= 1 ? { scale: 1, x: 0, y: 0 } : { scale: natural, x: 0, y: 0 })
+  }
 
   useEffect(() => { setZoom({ scale: 1, x: 0, y: 0 }) }, [viewing])
   useEffect(() => { if (!compare) setBlend(false) }, [compare])
@@ -282,18 +301,13 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         <IconButton size="sm" aria-label="Предыдущая картинка" title="Предыдущая (←)" onClick={() => { onCompareChange(false); onStep(-1) }}>‹</IconButton>
         <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => { onCompareChange(false); onStep(1) }}>›</IconButton>
       </>}
-      {!compare && !cropping && !annotating && <>
+      {!phone && !compare && !cropping && !annotating && <>
         <IconButton size="sm" aria-label="Уменьшить масштаб" title="Уменьшить (колесо мыши тоже)" disabled={zoom.scale <= 1} onClick={() => zoomBy(-0.25)}>−</IconButton>
         <IconButton size="sm" aria-label={`Масштаб ${Math.round(zoom.scale * 100)} процентов, сбросить к 100`} title="Сбросить масштаб" disabled={zoom.scale === 1} onClick={() => setZoom({ scale: 1, x: 0, y: 0 })}>{`${Math.round(zoom.scale * 100)}%`}</IconButton>
         <IconButton size="sm" aria-label="Увеличить масштаб" title="Увеличить (колесо мыши тоже)" disabled={zoom.scale >= 4} onClick={() => zoomBy(0.25)}>+</IconButton>
         {/* 1:1 — пиксель картинки в пиксель экрана: разглядеть шум и артефакты
             иначе нельзя, вписанная в окно картинка их сглаживает. */}
-        <IconButton size="sm" aria-label="Натуральный размер, один к одному" title="1:1 — натуральный размер" onClick={() => {
-          const img = imgRef.current
-          if (!img || !img.naturalWidth || !img.clientWidth) return
-          const natural = Math.min(4, Math.max(1, Math.round(img.naturalWidth / img.clientWidth * 100) / 100))
-          setZoom(natural <= 1 ? { scale: 1, x: 0, y: 0 } : { scale: natural, x: 0, y: 0 })
-        }}>1:1</IconButton>
+        <IconButton size="sm" aria-label="Натуральный размер, один к одному" title="1:1 — натуральный размер" onClick={showNaturalSize}>1:1</IconButton>
       </>}
       {/* Режимные кнопки остаются в шапке, пока режим включён: выход из
           разметки или обрезки не должен требовать захода в меню. */}
@@ -313,12 +327,12 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           {SLIDESHOW_STEPS.map((step) => <option key={step} value={step}>{step / 1000} с</option>)}
         </select>
       </>}
-      {onToggleStar && <IconButton size="sm" aria-label={starred ? `Убрать ${viewing} из избранного` : `В избранное ${viewing}`} title={starred ? 'Убрать из избранного' : 'В избранное'} aria-pressed={starred} onClick={() => onToggleStar(viewing)}>{starred ? '★' : '☆'}</IconButton>}
-      <IconButton size="sm" aria-label={fullscreen ? 'Выйти из полного экрана' : 'Показать на весь экран'} title={fullscreen ? 'Обычный размер' : 'Полный экран'} aria-pressed={fullscreen} onClick={() => {
+      {!phone && onToggleStar && <IconButton size="sm" aria-label={starred ? `Убрать ${viewing} из избранного` : `В избранное ${viewing}`} title={starred ? 'Убрать из избранного' : 'В избранное'} aria-pressed={starred} onClick={() => onToggleStar(viewing)}>{starred ? '★' : '☆'}</IconButton>}
+      {!phone && <IconButton size="sm" aria-label={fullscreen ? 'Выйти из полного экрана' : 'Показать на весь экран'} title={fullscreen ? 'Обычный размер' : 'Полный экран'} aria-pressed={fullscreen} onClick={() => {
         const node = frameRef.current
         if (document.fullscreenElement) { void document.exitFullscreen?.().catch(() => undefined); return }
         void node?.requestFullscreen?.().catch(() => undefined)
-      }}>⛶</IconButton>
+      }}>⛶</IconButton>}
       {/* В шапке было двадцать пять иконок подряд: подписей нет, порядок
           случайный, нужную ищут перебором. Частое осталось снаружи, остальное
           живёт в меню — том же по устройству, что у карточки галереи. */}
@@ -351,9 +365,18 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           }}
         >
           {(sourceInGallery || compareWith || (compareGrid?.length ?? 0) > 2) && <button type="button" role="menuitem" onClick={() => { setMore(false); onCompareChange(!compare) }}>{compare ? 'Скрыть исходник' : 'Сравнить с исходником'}</button>}
+          {phone && !compare && !cropping && !annotating && <>
+            <button type="button" role="menuitem" disabled={zoom.scale <= 1} onClick={() => { setMore(false); zoomBy(-0.25) }}>Уменьшить масштаб</button>
+            <button type="button" role="menuitem" disabled={zoom.scale >= 4} onClick={() => { setMore(false); zoomBy(0.25) }}>Увеличить масштаб</button>
+            <button type="button" role="menuitem" onClick={() => { setMore(false); showNaturalSize() }}>Натуральный размер 1:1</button>
+          </>}
+          {phone && onToggleStar && <button type="button" role="menuitem" onClick={() => { setMore(false); onToggleStar(viewing) }}>{starred ? 'Убрать из избранного' : 'Добавить в избранное'}</button>}
           <button type="button" role="menuitem" onClick={() => { setMore(false); stopSlideshow(); setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>{annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'}</button>
           <button type="button" role="menuitem" onClick={() => { setMore(false); stopSlideshow(); setCropping((prev) => !prev); setCropBox(null); setAnnotating(false); setStrokes([]); onCompareChange(false) }}>{cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'}</button>
           <button type="button" role="menuitem" onClick={() => { setMore(false); onPickForEdit(viewing) }}>Править по промпту</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); stopSlideshow(); setSelectionOpen(true); setHistoryOpen(false); setCropping(false); setAnnotating(false); onCompareChange(false) }}>Выделить объект или ретушировать</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); setHistoryOpen((open) => !open); setSelectionOpen(false) }}>{historyOpen ? 'Скрыть историю версий' : 'История версий'}</button>
+          {extraction?.source && <button type="button" role="menuitem" disabled={busy} onClick={() => { setMore(false); void onPlace(viewing, extraction.source!) }}>Вернуть объект в исходник</button>}
           <button type="button" role="menuitem" disabled={busy} onClick={() => { setMore(false); onVariate(viewing) }}>Вариация</button>
           {'EyeDropper' in globalThis && <button type="button" role="menuitem" onClick={() => {
             setMore(false)
@@ -397,6 +420,14 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         if (Math.abs(delta) > 48) { onCompareChange(false); onStep(delta > 0 ? -1 : 1) }
       }}>
       {(() => {
+        if (selectionOpen && previews[viewing]) return <ImageStudioSelectionEditor
+          path={viewing}
+          src={previews[viewing]}
+          busy={busy}
+          onCancel={() => setSelectionOpen(false)}
+          onRetouch={async (selection, prompt) => { await onRetouch(viewing, selection, prompt); setSelectionOpen(false) }}
+          onExtract={async (selection) => { await onExtract(viewing, selection); setSelectionOpen(false) }}
+        />
         // Сетка сравнения: три-четыре картинки рядом, подписи под каждой.
         if (compare && compareGrid && compareGrid.length > 2) {
           return <div className="image-studio-compare-grid" role="group" aria-label={`Сравнение ${compareGrid.length} картинок`}>
@@ -591,6 +622,29 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           <p className="image-studio-origin"><span className="image-studio-dim">Выделите область мышью и нажмите «Вырезать».</span></p>
         </div>
       })()}
+      {historyOpen && <section className="image-studio-history" aria-label={`История версий ${viewing}`}>
+        <header><strong>История изменений</strong><span className="image-studio-dim">Откат создаёт новую версию и сохраняет последующие варианты.</span></header>
+        <ol>
+          {(versions?.length ? versions : [{ path: viewing, depth: 0 }]).map((node) => {
+            const file = files.find((candidate) => candidate.path === node.path)
+            const operation = file?.operation === 'upload' ? 'загрузка'
+              : file?.operation === 'generate' ? 'генерация'
+                : file?.operation === 'retouch' ? 'ретушь выделения'
+                  : file?.operation === 'extract' ? 'извлечён объект'
+                    : file?.operation === 'place' ? 'объект возвращён'
+                      : file?.operation === 'restore' ? `откат к ${file.restoredFrom ?? 'версии'}`
+                        : file?.operation === 'transform' ? 'локальная обработка'
+                          : file?.operation === 'edit' ? 'правка моделью' : 'версия'
+            return <li key={node.path} data-depth={node.depth} style={{ paddingLeft: Math.min(node.depth * 10, 50) }}>
+              <button type="button" className="image-studio-history-preview" onClick={() => onView(node.path)} aria-current={node.path === viewing ? 'true' : undefined}>
+                {previews[node.path] && <img src={previews[node.path]} alt="" />}
+                <span><strong>{node.path}</strong><small>{operation}{file ? ` · ${new Date(file.updatedAt).toLocaleString('ru-RU')}` : ''}</small></span>
+              </button>
+              {node.path !== viewing && <button type="button" className="image-studio-cancel" disabled={busy} onClick={() => void onRestoreVersion(viewing, node.path)}>Откатиться сюда</button>}
+            </li>
+          })}
+        </ol>
+      </section>}
       {annotating && <p className="image-studio-origin image-studio-annotate-controls">
         {ANNOTATE_TOOLS.map((item) => <button key={item.tool} type="button" className="image-studio-cancel" aria-pressed={tool === item.tool} style={tool === item.tool ? { fontWeight: 700 } : undefined} onClick={() => setTool(item.tool)}>{item.label}</button>)}
         {tool === 'text' && <input className="image-studio-filename" aria-label="Текст метки" placeholder="Текст метки — затем кликните по картинке" value={labelText} onChange={(event) => setLabelText(event.target.value)} />}

@@ -11,6 +11,8 @@ import {
   parseStreamJsonLine,
   previewToolHint,
   MAKE_ASSISTANT_HINT,
+  IMAGE_STUDIO_ASSISTANT_HINT,
+  IMAGE_STUDIO_TOOLS,
   KANBAN_ASSISTANT_HINT,
   KANBAN_TOOLS
 } from '@voicechat/shared'
@@ -195,6 +197,11 @@ export function claudeArgs(req: LlmRequest): string[] {
     mcpServers.make = { type: 'http', url: req.makeMcpUrl }
     allowed.push('mcp__make__make_list_files', 'mcp__make__make_read_file', 'mcp__make__make_write_file', 'mcp__make__make_delete_file', 'mcp__make__make_rename_file', 'mcp__make__make_check')
     systemHints.push(MAKE_ASSISTANT_HINT)
+  }
+  if (req.imageStudioMcpUrl) {
+    mcpServers.image_studio = { type: 'http', url: req.imageStudioMcpUrl }
+    allowed.push(...IMAGE_STUDIO_TOOLS.map((tool) => `mcp__image_studio__${tool}`))
+    systemHints.push(IMAGE_STUDIO_ASSISTANT_HINT)
   }
   for (const source of req.makeSources ?? []) {
     mcpServers[source.name] = { type: 'http', url: source.mcpUrl }
