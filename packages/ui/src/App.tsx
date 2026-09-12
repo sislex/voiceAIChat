@@ -2888,7 +2888,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                       onRetry={() => void loadGitWorkspaces(routeProjectId)}
                     />
             ) : routeReleases ? (
-            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} releaseTimeouts={projects.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} releaseTimeouts={projects.projectDetail!.releaseTimeouts} gitUrl={projects.projectDetail!.gitUrl} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             projects.projectDetail?.id === routeProjectId ? (
               <Suspense fallback={<div role="status">Загрузка настроек проекта…</div>}><ProjectSettings

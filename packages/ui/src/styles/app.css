@@ -7420,7 +7420,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .release-settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .release-settings-grid label{display:grid;gap:6px;font-size:13px}
 .release-settings-grid input{box-sizing:border-box;width:100%;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--surface);color:var(--text);font:inherit}
-.release-settings-actions{display:flex;justify-content:flex-end;gap:8px}.release-create input,.release-create select,.release-deploy select{border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--surface);color:var(--text);font:inherit}
+.release-settings-actions{display:flex;justify-content:flex-end;gap:8px}
+.release-failure{display:block;margin-top:3px;color:var(--danger)!important;font-size:12px}
+.release-links{display:flex;flex-wrap:wrap;gap:14px;margin:0;font-size:13px}.release-links a{color:var(--accent);font-weight:600;text-decoration:none}.release-links a:hover{text-decoration:underline}
+.release-more{align-self:center}
+.release-production{border-color:var(--success);background:var(--success-soft)}.release-create input,.release-create select,.release-deploy select{border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--surface);color:var(--text);font:inherit}
 .release-table-wrap{flex:1;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;border:1px solid var(--border);border-radius:12px;background:var(--surface)}.release-table-wrap>.vc-state{min-height:180px}.release-table-wrap>.vc-skel-list{padding:0}
 .release-table{width:100%;min-width:680px;border-collapse:separate;border-spacing:0}.release-table th,.release-table td{padding:12px 14px;border-bottom:1px solid var(--border);text-align:left}.release-table th{position:sticky;z-index:1;top:0;font-size:12px;color:var(--text-dim);background:var(--panel)}.release-table tbody tr{cursor:pointer}.release-table tbody tr:hover,.release-table tbody tr:focus{background:var(--surface-hover);outline:none}.release-table td small{display:block;margin-top:3px;color:var(--text-dim)}
 .release-status{display:inline-flex;padding:4px 8px;border-radius:999px;background:var(--panel);font-size:12px;font-weight:700}.release-status[data-status='ready'],.release-status[data-status='released']{background:var(--success-soft);color:var(--success)}.release-status[data-status='failed']{background:var(--danger-soft);color:var(--danger)}

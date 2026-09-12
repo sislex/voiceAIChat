@@ -70,8 +70,14 @@ export function releaseDeployCommand(target:ProductionTarget,version:string,expe
   return at(target,`export VC_RELEASE_VERSION=${quote(version)} VC_RELEASE_VERSION_SOURCE='release-manager' && echo ${quote(expectedMetadata)} && ${refreshLauncher}${target.deployCommand}`)
 }
 
-/** Свободное место на диске production в КиБ (roadmap-3 п.1): без запаса docker падает на распаковке слоёв с «no space left on device». */
-export const RELEASE_MIN_FREE_KB = 5 * 1024 * 1024
+/**
+ * Свободное место на диске production в КиБ (roadmap-3 п.1): без запаса docker падает на распаковке слоёв с «no space left on device».
+ * 5 ГБ не хватило: деплой 0.1.301 (2026-09-12) упал на распаковке слоя browser-runner при 5,7 ГБ свободных —
+ * сборка всех образов сразу пишет несколько гигабайт слоёв и кэша.
+ */
+export const RELEASE_MIN_FREE_KB = 10 * 1024 * 1024
+/** Как часто живой лог health-check переписывается последним ответом production. */
+export const HEALTH_LOG_INTERVAL_MS = 30_000
 export function diskFreeCommand(target:ProductionTarget):string { return at(target,"df -Pk / | awk 'NR==2{print $4}'") }
 export function dockerPruneCommand(target:ProductionTarget):string {
   return at(target,"docker builder prune -af --filter until=24h >/dev/null 2>&1; docker image prune -f >/dev/null 2>&1; df -Pk / | awk 'NR==2{print $4}'")
@@ -124,7 +130,7 @@ export const releaseRegressionCleanupCommand=(target:ReleaseProjectTarget,releas
 export class ReleaseManager {
   private readonly preparing=new Set<string>()
   private readonly deploying=new Set<string>()
-  constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime){}
+  constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime,private readonly options:{healthLogIntervalMs?:number}={}){}
 
   isOnline(agentId:string):boolean{return this.runtime.isOnline?.(agentId)!==false}
   runPreflight(target:ReleaseProjectTarget,command:string):Promise<ReleaseCommandResult>{return this.runtime.exec(target,command,30_000)}
@@ -279,8 +285,14 @@ export class ReleaseManager {
 
   private async monitorHealth(actor:string,target:ProductionTarget,release:ProjectRelease):Promise<void> {
     let last='Production ещё не ответил'
-    const limit=(await this.db.releases.getProjectRelease(actor,target.projectId,release.id))?.steps.find(step=>step.kind==='health_check')?.limitMs??DEFAULT_RELEASE_TIMEOUTS.healthCheckMs
+    const current=await this.db.releases.getProjectRelease(actor,target.projectId,release.id)
+    const limit=current?.steps.find(step=>step.kind==='health_check')?.limitMs??DEFAULT_RELEASE_TIMEOUTS.healthCheckMs
+    const header=current?.steps.find(step=>step.kind==='health_check')?.log||`Ожидание production: version=${release.version}, commit=${release.sha}`
     const started=Date.now()
+    // The step log is rewritten with the latest probe answer every half minute:
+    // a 20-minute wait used to show nothing until the final verdict.
+    const logEvery=this.options.healthLogIntervalMs??HEALTH_LOG_INTERVAL_MS
+    let logged=started
     for(let attempt=0;Date.now()-started<limit;attempt+=1){
       try{
         const result=await this.runtime.exec(target,at(target,target.healthCheckCommand),15_000)
@@ -292,9 +304,13 @@ export class ReleaseManager {
         }
         last=metadata?`Production отвечает SHA ${metadata.commit}, version=${metadata.version??'не указана'}; ожидаются ${release.sha}, version=${release.version}`:(result.output||'Health-check не вернул метаданные релиза')
       }catch(error){last=error instanceof Error?error.message:String(error)}
+      if(Date.now()-logged>=logEvery){
+        logged=Date.now()
+        await this.db.releases.setProjectReleaseStep(release.id,'health_check','running',`${header}\nПрошло ${Math.round((Date.now()-started)/1000)} с из ${Math.round(limit/1000)} с. ${last}`,actor).catch(()=>undefined)
+      }
       if(Date.now()-started<limit)await sleep(Math.min(2_000,Math.max(0,limit-(Date.now()-started))))
     }
-    await this.db.releases.setProjectReleaseStep(release.id,'health_check','failed',`Health-check: фактическая длительность ${Math.round((Date.now()-started)/1000)} с, лимит ${Math.round(limit/1000)} с. ${last}`,actor)
+    await this.db.releases.setProjectReleaseStep(release.id,'health_check','failed',`Health-check: фактическая длительность ${Math.round((Date.now()-started)/1000)} с, лимит ${Math.round(limit/1000)} с. ${last}\nСборка контейнеров идёт в фоне после шага «Сборка»: причину смотрите в /var/log/voicechat-deploy.log на production-машине (ошибка docker build не возвращается сюда).`,actor)
     await this.db.releases.setProjectReleaseStatus(release.id,'failed',actor)
   }
 
