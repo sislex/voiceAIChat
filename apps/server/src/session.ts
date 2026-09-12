@@ -59,6 +59,7 @@ export interface SessionDeps {
     subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => Promise<void>): () => void
     subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }) => Promise<void>): () => void
     subscribeImprovements(cb: (projectId: string) => void): () => void
+    subscribeReleases?(cb: (update: { projectId: string; releaseId: string; status: import('@voicechat/shared').ReleaseStatus }) => Promise<void>): () => void
   }
   /** Адресная инвалидизация HTTP-снимка уведомлений подготовки. */
   preparationNotifications?: {
@@ -123,6 +124,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubPreparationRuns: (() => void) | null = null
   let unsubTaskRepositories: (() => void) | null = null
   let unsubQaStages: (() => void) | null = null
+  let unsubReleases: (() => void) | null = null
   let unsubImprovements: (() => void) | null = null
   let unsubPreparationNotifications: (() => void) | null = null
   let boardProjectId: string | null = null
@@ -241,6 +243,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
           if (!await deps.board?.getBoard(update.projectId, false)) return
           ctx.send({ t: 'qa.stage.updated', projectId: update.projectId, taskId: update.taskId, stage: update.stage })
         })
+        // Release Center открыт у участников проекта — тот же гейт видимости доски.
+        unsubReleases = deps.board.subscribeReleases?.(async (update) => {
+          if (!await deps.board?.getBoard(update.projectId, false)) return
+          ctx.send({ t: 'release.updated', projectId: update.projectId, releaseId: update.releaseId, status: update.status })
+        }) ?? null
       }
     },
     async onMessage(msg, ctx) {
@@ -450,6 +457,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubTaskRepositories = null
       unsubQaStages?.()
       unsubQaStages = null
+      unsubReleases?.()
+      unsubReleases = null
       unsubImprovements?.()
       unsubImprovements = null
       unsubPreparationNotifications?.()

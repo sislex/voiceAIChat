@@ -11,6 +11,9 @@ export type TaskRepositoriesListener = (update: TaskRepositoriesUpdate) => void
 /** Изменилось состояние QA-этапа задачи: панель перечитает снимок сама. */
 export interface QaStageUpdate { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }
 export type QaStageListener = (update: QaStageUpdate) => void
+/** Релиз сменил статус или шаг: Release Center перечитает список/подробности вместо опроса. */
+export interface ReleaseUpdate { projectId: string; releaseId: string; status: import('@voicechat/shared').ReleaseStatus }
+export type ReleaseListener = (update: ReleaseUpdate) => void
 
 export interface NotificationInvalidation {
   projectId: string
@@ -42,6 +45,7 @@ export class BoardHub {
   private readonly taskRepositoriesListeners = new Set<TaskRepositoriesListener>()
   private readonly qaStageListeners = new Set<QaStageListener>()
   private readonly improvementsListeners = new Set<BoardListener>()
+  private readonly releaseListeners = new Set<ReleaseListener>()
 
   /** Уведомить подписчиков об изменении доски проекта. */
   emit(projectId: string): void {
@@ -88,6 +92,15 @@ export class BoardHub {
   onImprovementsChange(cb: BoardListener): () => void {
     this.improvementsListeners.add(cb)
     return () => this.improvementsListeners.delete(cb)
+  }
+
+  emitRelease(update: ReleaseUpdate): void {
+    for (const listener of this.releaseListeners) listener(update)
+  }
+
+  onReleaseChange(cb: ReleaseListener): () => void {
+    this.releaseListeners.add(cb)
+    return () => this.releaseListeners.delete(cb)
   }
 
   emitTaskRepositories(update: TaskRepositoriesUpdate): void {

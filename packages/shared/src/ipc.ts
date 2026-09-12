@@ -1030,6 +1030,8 @@ export interface RendererBoardBridge {
   onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage }) => void): () => void
   /** Адресная инвалидация очереди «Улучшения» проекта. */
   onImprovementsUpdated(cb: (m: { projectId: string }) => void): () => void
+  /** Release Center: релиз сменил статус или шаг — перечитать список/подробности. Необязателен у старых мостов. */
+  onReleaseUpdated?(cb: (m: { projectId: string; releaseId: string; status: import('./release').ReleaseStatus }) => void): () => void
   /** Успешное восстановление WS после уже состоявшегося подключения. */
   onReconnect(cb: () => void): () => void
 }

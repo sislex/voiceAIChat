@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-12
-checked: fdb5c5ab
+checked: d4776edc
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -788,7 +788,7 @@ Per-connection подписка в `session.ts` принимает `board.subscr
 
 Тот же hub имеет отдельный лёгкий канал `emitPreparationRun` /
 `onPreparationRunChange`: сессия фильтрует его по владельцу соединения и отправляет
-`preparation.run.updated` с `projectId`, `taskId`, `runId`, не перечитывая доску.
+`preparation.run.updated` с `projectId`, `taskId`, `runId`, не перечитывая доску. Тем же путём (BoardHub → KanbanService → standalone-шина → remote-мост → session) идёт `release.updated {projectId, releaseId, status}` для Release Center — см. [releases.md](features/releases.md).
 Текстовые дельты подготовки используют только этот адресный канал и не создают
 `board.changed` для каждого фрагмента лога.
 

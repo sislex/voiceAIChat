@@ -41,6 +41,7 @@ export function createRemoteKanban(opts: RemoteKanbanOptions): RemoteKanban {
   const taskRepositories = new Listeners<[{ projectId: string; taskId: string }]>()
   const qaStages = new Listeners<[{ projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }]>()
   const improvements = new Listeners<[string]>()
+  const releases = new Listeners<[{ projectId: string; releaseId: string; status: import('@voicechat/shared').ReleaseStatus }]>()
   const notifications = new Listeners<[{ projectId: string; userId?: string; kind?: 'membership' }]>()
 
   const service: KanbanService = {
@@ -54,7 +55,8 @@ export function createRemoteKanban(opts: RemoteKanbanOptions): RemoteKanban {
       subscribePreparationRuns: (cb) => preparationRuns.add(cb),
       subscribeTaskRepositories: (cb) => taskRepositories.add(cb),
       subscribeQaStages: (cb) => qaStages.add(cb),
-      subscribeImprovements: (cb) => improvements.add(cb)
+      subscribeImprovements: (cb) => improvements.add(cb),
+      subscribeReleases: (cb) => releases.add(cb)
     },
     notifications: { subscribe: (cb) => notifications.add(cb) },
     previews: { list: () => rpc<PreviewEnvironment[]>('previews') }
@@ -70,6 +72,7 @@ export function createRemoteKanban(opts: RemoteKanbanOptions): RemoteKanban {
         case 'taskRepositories': taskRepositories.emit(event.update); break
         case 'qaStage': qaStages.emit(event.update); break
         case 'improvements': improvements.emit(event.projectId); break
+        case 'release': releases.emit(event.update); break
         case 'notification': notifications.emit(event.event); break
       }
     },

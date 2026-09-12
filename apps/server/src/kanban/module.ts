@@ -751,7 +751,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       if (result.timedOut) throw new Error(`Release-preflight базы знаний не уложился в ${Math.round(limitMs / 1000)} с`)
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
-  })
+  }, { onChange: (update) => boardHub.emitRelease(update) })
   const managedEnvironments = new ManagedEnvironmentResolver(db, releaseManager, (agentId) => machines.policyOf(agentId)?.allowedDirs ?? [])
   await releaseManager.reconcile(async (release) => {
     const project = await db.projects.getProject(release.triggeredBy, release.projectId)
@@ -1174,7 +1174,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb),
       subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb),
       subscribeQaStages: (cb) => boardHub.onQaStageChange(cb),
-      subscribeImprovements: (cb) => boardHub.onImprovementsChange(cb)
+      subscribeImprovements: (cb) => boardHub.onImprovementsChange(cb),
+      subscribeReleases: (cb) => boardHub.onReleaseChange(cb)
     },
     notifications: { subscribe: (cb) => notificationHub.onChange(cb) },
     previews: { list: async () => featurePreviews.list() }
