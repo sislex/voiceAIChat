@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-11
-checked: a7b7d1bb
+updated: 2026-09-12
+checked: 5a464d55
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -771,3 +771,12 @@ Make-контекст приклеиваются к сообщению **каж�
 путём — иначе он не попадёт в галерею»; сам захват делает
 `captureStudioImages` после done (сквозной цикл проверен живьём: модель
 нарисовала в чате → файл появился в галерее с бейджем «новое»).
+
+Since 2026-09-12, an `images` turn also receives the conversation-scoped Image
+Studio MCP URL. Claude registers it as the `image_studio` HTTP server and allows
+the shared `IMAGE_STUDIO_TOOLS`; Codex receives the equivalent `-c mcp_servers`
+arguments. Both runners prepend `IMAGE_STUDIO_ASSISTANT_HINT`, which tells the
+model to list and visually open files first, use localized retouch for people
+and objects, extract/edit/place isolated objects, and restore versions without
+destroying history. Plan turns receive the same endpoint with `ro=1`, enforced
+again by every mutating MCP handler.

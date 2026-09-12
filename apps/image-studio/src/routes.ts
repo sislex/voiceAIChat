@@ -4,10 +4,11 @@
 // несуществующий неотличимы (404), как везде в Make/чатах.
 import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
+import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation, type ImageStudioSelection } from '@voicechat/shared'
 import type { ImageStudioCore, ImageStudioGenerator } from './core.js'
 import { SlidingWindowLimiter } from '@voicechat/shared'
 import { ImageStudioError, type ImageStudioStore } from './studio.js'
+import { extractImageStudioSelection, ImageStudioSelectionError, placeImageStudioObject, retouchImageStudioSelection } from './selection.js'
 
 export interface ImageStudioRoutesDeps {
   core: Pick<ImageStudioCore, 'conversation' | 'renameConversation'>
@@ -19,6 +20,7 @@ export interface ImageStudioRoutesDeps {
 }
 
 function sendStudioError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof ImageStudioSelectionError) return reply.code(400).send({ error: error.message })
   if (error instanceof ImageStudioError) {
     const code = error.code === 'not_found' ? 404 : error.code === 'quota' || error.code === 'too_big' ? 413 : 400
     return reply.code(code).send({ error: error.message })
@@ -62,6 +64,12 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     return true
   }
 
+  const derivedName = async (conversationId: string, source: string, suffix: string): Promise<string> => {
+    const dot = source.lastIndexOf('.')
+    const stem = dot > 0 ? source.slice(0, dot) : source
+    return store.freeName(conversationId, `${stem}-${suffix}.png`)
+  }
+
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/files', async (req, reply) => {
     if (!await own(uid(req), req.params.id, reply)) return reply
     return store.list(req.params.id)
@@ -82,7 +90,9 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       await store.writeBuffer(req.params.id, req.body?.path ?? '', Buffer.from(req.body?.dataBase64 ?? '', 'base64'))
       // Клиентские обработки (кроп, разметка, поворот…) сообщают исходник —
       // без этого цепочка версий рвётся на первом же локальном действии.
-      if (req.body?.source) await store.setMeta(req.params.id, req.body.path ?? '', { source: req.body.source })
+      await store.setMeta(req.params.id, req.body.path ?? '', req.body?.source
+        ? { source: req.body.source, operation: 'transform' }
+        : { operation: 'upload' })
       return await store.list(req.params.id)
     } catch (error) { return sendStudioError(reply, error) }
   })
@@ -123,7 +133,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       if (run.cancelled) throw new Error('Генерация отменена')
       const name = await store.freeName(req.params.id, (req.body?.name ?? '').trim() || 'изображение.png')
       const file = await store.writeBuffer(req.params.id, name, data)
-      await store.setMeta(req.params.id, name, { prompt, tookMs: Date.now() - startedAt })
+      await store.setMeta(req.params.id, name, { prompt, tookMs: Date.now() - startedAt, operation: 'generate' })
       // Первый успешный промпт даёт чату говорящее имя вместо «Картинки N».
       const conversation = await core.conversation(userId, req.params.id)
       if (conversation && /^Картинки \d+$/.test(conversation.title)) {
@@ -146,14 +156,101 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       if (!source) return reply.code(404).send({ error: 'файл не найден' })
       const startedAt = Date.now()
       const data = await (await deps.generator!(userId))({ prompt, source, sourceName: sourcePath || 'source.png', onCancel: run.onCancel })
-      // Правка не затирает оригинал: результат — новый файл рядом. Откат — это
-      // просто удаление новой версии, истории снимков студии не нужно.
+      // Every edit creates a new node. The explicit restore route below adds a
+      // new node too, so undo never destroys a later branch.
       if (run.cancelled) throw new Error('Генерация отменена')
       const name = await store.freeName(req.params.id, sourcePath || 'правка.png')
       const file = await store.writeBuffer(req.params.id, name, data)
-      await store.setMeta(req.params.id, name, { prompt, source: sourcePath, tookMs: Date.now() - startedAt })
+      await store.setMeta(req.params.id, name, { prompt, source: sourcePath, tookMs: Date.now() - startedAt, operation: 'edit' })
       return { file: { ...file, prompt, source: sourcePath }, files: await store.list(req.params.id) }
     })
+  })
+
+  app.post<{ Params: { id: string }; Body: { path?: string; prompt?: string; selection?: ImageStudioSelection; references?: string[] } }>('/api/image-studio/:id/retouch', { bodyLimit: 6 * 1024 * 1024 }, async (req, reply) => {
+    const userId = uid(req)
+    if (!await own(userId, req.params.id, reply)) return reply
+    const sourcePath = req.body?.path ?? ''
+    const prompt = (req.body?.prompt ?? '').trim()
+    if (!prompt) return reply.code(400).send({ error: 'Опишите, что изменить в выделении' })
+    if (!req.body?.selection) return reply.code(400).send({ error: 'Сначала выделите область' })
+    if (!deps.generator) return reply.code(503).send({ error: 'Ретушь недоступна в этой конфигурации' })
+    return withRun(req.params.id, reply, async (run) => {
+      const source = await store.readBuffer(req.params.id, sourcePath)
+      if (!source) return reply.code(404).send({ error: 'файл не найден' })
+      const references: Buffer[] = []
+      for (const name of (req.body?.references ?? []).slice(0, 4)) {
+        const reference = await store.readBuffer(req.params.id, name)
+        if (!reference) return reply.code(404).send({ error: `Референс «${name}» не найден` })
+        references.push(reference)
+      }
+      const startedAt = Date.now()
+      const result = await retouchImageStudioSelection({
+        original: source,
+        selection: req.body!.selection!,
+        prompt,
+        references,
+        generate: async ({ crop, mask, width, height, references: refs }) => (await deps.generator!(userId))({
+          prompt, source: crop, sourceName: 'selection.png', mask, targetSize: { width, height },
+          references: refs.map((data, index) => ({ name: `reference-${index + 1}.png`, data })),
+          onCancel: run.onCancel
+        })
+      })
+      if (run.cancelled) throw new Error('Генерация отменена')
+      const name = await derivedName(req.params.id, sourcePath, 'ретушь')
+      const file = await store.writeBuffer(req.params.id, name, result.image)
+      await store.setMeta(req.params.id, name, { prompt, source: sourcePath, tookMs: Date.now() - startedAt, operation: 'retouch', selection: result.bounds })
+      return { file: { ...file, prompt, source: sourcePath, operation: 'retouch', selection: result.bounds }, files: await store.list(req.params.id) }
+    })
+  })
+
+  app.post<{ Params: { id: string }; Body: { path?: string; selection?: ImageStudioSelection } }>('/api/image-studio/:id/extract', { bodyLimit: 6 * 1024 * 1024 }, async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    if (!req.body?.selection) return reply.code(400).send({ error: 'Сначала выделите объект' })
+    const sourcePath = req.body.path ?? ''
+    try {
+      const source = await store.readBuffer(req.params.id, sourcePath)
+      if (!source) return reply.code(404).send({ error: 'файл не найден' })
+      const result = await extractImageStudioSelection(source, req.body.selection)
+      const name = await derivedName(req.params.id, sourcePath, 'объект')
+      const file = await store.writeBuffer(req.params.id, name, result.image)
+      await store.setMeta(req.params.id, name, { source: sourcePath, operation: 'extract', selection: result.bounds })
+      return { file: { ...file, source: sourcePath, operation: 'extract', selection: result.bounds }, files: await store.list(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { basePath?: string; objectPath?: string; x?: number; y?: number; width?: number; height?: number } }>('/api/image-studio/:id/place', async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    const objectPath = req.body?.objectPath ?? ''
+    try {
+      const origin = await store.extractionOrigin(req.params.id, objectPath)
+      const basePath = req.body?.basePath || origin?.path || ''
+      const base = await store.readBuffer(req.params.id, basePath)
+      const object = await store.readBuffer(req.params.id, objectPath)
+      if (!base || !object) return reply.code(404).send({ error: 'Исходник или объект не найден' })
+      const x = req.body?.x ?? origin?.bounds.x ?? 0
+      const y = req.body?.y ?? origin?.bounds.y ?? 0
+      const image = await placeImageStudioObject({ base, object, x, y, width: req.body?.width ?? origin?.bounds.width, height: req.body?.height ?? origin?.bounds.height })
+      const name = await derivedName(req.params.id, basePath, 'с-объектом')
+      const file = await store.writeBuffer(req.params.id, name, image)
+      const selection = { kind: 'rectangle' as const, x, y, width: req.body?.width ?? origin?.bounds.width ?? 1, height: req.body?.height ?? origin?.bounds.height ?? 1 }
+      await store.setMeta(req.params.id, name, { source: basePath, operation: 'place', selection })
+      return { file: { ...file, source: basePath, operation: 'place', selection }, files: await store.list(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { currentPath?: string; targetPath?: string } }>('/api/image-studio/:id/restore-version', async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    const currentPath = req.body?.currentPath ?? ''
+    const targetPath = req.body?.targetPath ?? ''
+    try {
+      if (!await store.readBuffer(req.params.id, currentPath)) return reply.code(404).send({ error: 'Текущая версия не найдена' })
+      const target = await store.readBuffer(req.params.id, targetPath)
+      if (!target) return reply.code(404).send({ error: 'Версия для восстановления не найдена' })
+      const name = await derivedName(req.params.id, currentPath, 'восстановлено')
+      const file = await store.writeBuffer(req.params.id, name, target)
+      await store.setMeta(req.params.id, name, { source: currentPath, operation: 'restore', restoredFrom: targetPath })
+      return { file: { ...file, source: currentPath, operation: 'restore', restoredFrom: targetPath }, files: await store.list(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/trash', async (req, reply) => {

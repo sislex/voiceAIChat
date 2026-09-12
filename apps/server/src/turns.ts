@@ -98,6 +98,8 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** Base URL for Image Studio tools; the current user and conversation are appended per turn. */
+  imageStudioMcpBaseUrl?: string
   /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
   kanbanMcpBaseUrl?: string
   /** Снимок «что открыто» для инструментов канбана: пишется на старте хода. */
@@ -837,6 +839,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
 
     }
+    let imageStudioMcpUrl: string | undefined
+    if (conv?.assistantKind === 'images' && deps.imageStudioMcpBaseUrl) {
+      imageStudioMcpUrl = `${deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
+    }
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
     let kanbanMcpUrl: string | undefined
@@ -972,6 +978,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
         ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {}),
         ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {}),
+        ...(imageStudioMcpUrl ? { imageStudioMcpUrl: permissionMode === 'plan' ? `${imageStudioMcpUrl}&ro=1` : imageStudioMcpUrl } : {}),
         ...(makeSources.length ? { makeSources } : {}),
         // Канбан read-only (&ro=1) только при явном «Плане» этого разговора; принудительный
         // plan хода без машины инструментов доски не касается — см. kanbanExplicitPlan.

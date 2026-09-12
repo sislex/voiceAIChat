@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-11
-checked: f60d8269
+updated: 2026-09-12
+checked: 5a464d55
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -3277,6 +3277,30 @@ blob-URL (голый `<img src>` получил бы 401), кэш по `updatedA
 с именем файла, а не alt загрузившейся картинки. Во время хода ассистента
 (`turnActive`) галерея поллится раз в 4 с: сервер сам подхватывает картинки,
 которые модель показала fenced-блоком в чате этого разговора.
+
+**Version history and object editing (2026-09-12).** Every upload, generation,
+full edit, localized retouch, extraction, placement, and restore records an
+operation in the file sidecar. `source` links the resulting file to its parent;
+the viewer follows these links in both directions and presents the complete
+branch as scrollable thumbnails. Restoring historical pixels always creates a
+new version with `operation: restore` and `restoredFrom`, so existing descendants
+and alternative branches remain available.
+
+The viewer's object editor supports rectangle, freehand lasso, and a connected
+color magic wand. It can also suggest large foreground components on a simple
+background. A selection can be sent to the model for localized retouch or
+extracted as a transparent PNG. An extracted image, including a later full-image
+edit of it, can be placed back onto the original canvas; its original bounds are
+used unless the caller supplies a new position and size. The UI exposes presets
+for skin, hair, object removal, and object replacement, while the prompt remains
+editable for arbitrary people and product work.
+
+At phone widths the viewer title may shrink, object controls wrap, and secondary
+actions move into the scrollable More menu. The viewer body, version strip, and
+selection controls have independent vertical or horizontal scroll containment.
+`e2e/imageStudioLayout.e2e.test.ts` exercises the complete upload → selection →
+extract → history restore flow at 390 px and 320 px in Chromium and checks that
+the page never gains horizontal overflow.
 
 Обвязка панели (итерация улучшений 2026-09-03): Cmd/Ctrl+Enter в промпте
 запускает то же действие, что и кнопка; промпт получает автофокус при открытии

@@ -31,6 +31,10 @@ function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: 
     'imgstudio:rename': async ({ from, to }: { from: string; to: string }) => { files = files.map((file) => file.path === from ? { ...file, path: to } : file); return [...files] },
     'imgstudio:generate': async ({ prompt }: { prompt: string }) => { const file = { path: 'новая.png', size: prompt.length, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
     'imgstudio:edit': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-2.png'), size: 10, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:retouch': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-ретушь.png'), size: 10, updatedAt: Date.now(), source: path, operation: 'retouch' as const }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:extract': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-объект.png'), size: 10, updatedAt: Date.now(), source: path, operation: 'extract' as const }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:place': async ({ basePath }: { basePath: string }) => { const file = { path: basePath.replace('.png', '-с-объектом.png'), size: 10, updatedAt: Date.now(), source: basePath, operation: 'place' as const }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:restoreVersion': async ({ currentPath, targetPath }: { currentPath: string; targetPath: string }) => { const file = { path: currentPath.replace('.png', '-восстановлено.png'), size: 10, updatedAt: Date.now(), source: currentPath, restoredFrom: targetPath, operation: 'restore' as const }; files = [file, ...files]; return { file, files: [...files] } },
     'imgstudio:cancel': async () => ({ cancelled: false }),
     'imgstudio:trash': async () => ({ items: [...(opts.trash ?? []), ...trashed.map((item) => ({ name: item.file.path, deletedAt: item.deletedAt }))] }),
     'imgstudio:restore': async ({ name }: { name: string }) => {

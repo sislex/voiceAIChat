@@ -17,6 +17,7 @@ let page: Page
 let dataDir = ''
 let base = ''
 let conversationId = ''
+let sessionToken = ''
 
 async function screenshot(name: string): Promise<void> {
   if (!artifacts) return
@@ -58,6 +59,7 @@ describe('Студия картинок: адаптивная раскладка
     })
     expect(login.ok).toBe(true)
     const { token } = await login.json() as { token: string }
+    sessionToken = token
     const api = async (path: string, method: string, body: unknown): Promise<Response> => {
       const response = await fetch(`${base}${path}`, {
         method, headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body)
@@ -68,6 +70,9 @@ describe('Студия картинок: адаптивная раскладка
     await api('/api/settings', 'PUT', { onboarded: true, theme: 'green' })
     const created = await (await api('/api/conversations', 'POST', { title: 'Студия — проверка', assistantKind: 'images' })).json() as { id?: string; conversation?: { id: string } }
     conversationId = created.id ?? created.conversation!.id
+    const portrait = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="160"><rect width="200" height="160" fill="white"/><circle cx="100" cy="64" r="38" fill="#d39b78"/><rect x="62" y="102" width="76" height="54" rx="18" fill="#315d91"/></svg>').toString('base64')
+    await api(`/api/image-studio/${conversationId}/file`, 'POST', { path: 'портрет.svg', dataBase64: portrait })
+    await api(`/api/image-studio/${conversationId}/file`, 'POST', { path: 'портрет-2.svg', dataBase64: portrait, source: 'портрет.svg' })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 950 }, reducedMotion: 'reduce' })
     await page.addInitScript(token => localStorage.setItem('vc.session.token', token), token)
@@ -145,5 +150,55 @@ describe('Студия картинок: адаптивная раскладка
     await expect.poll(() => input.evaluate(element => element.scrollHeight <= element.clientHeight + 1)).toBe(true)
     await page.setViewportSize({ width: 1440, height: 950 })
     await expect.poll(() => input.evaluate(element => element.clientHeight)).toBe(initial)
+  })
+
+  it('на телефоне история, выделение и извлечение объекта остаются доступны прокруткой', async () => {
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 720 })
+      await page.getByRole('tab', { name: 'Галерея', exact: true }).click()
+      await page.getByRole('button', { name: 'Действия портрет-2.svg' }).click()
+      await page.getByRole('menuitem', { name: 'Открыть на весь экран' }).click()
+      const viewer = page.getByTestId('image-studio-viewer')
+      await viewer.getByRole('button', { name: 'Ещё действия с картинкой' }).click()
+      await viewer.getByRole('menuitem', { name: 'История версий' }).click()
+      const history = viewer.getByRole('region', { name: 'История версий портрет-2.svg' })
+      const restore = history.getByRole('button', { name: 'Откатиться сюда' }).first()
+      await restore.scrollIntoViewIfNeeded()
+      await expect.poll(() => restore.isVisible()).toBe(true)
+      await viewer.getByRole('button', { name: 'Ещё действия с картинкой' }).click()
+      await viewer.getByRole('menuitem', { name: 'Выделить объект или ретушировать' }).click()
+      const selection = viewer.getByRole('region', { name: 'Выделение объекта: портрет-2.svg' })
+      await expect.poll(() => selection.evaluate((element) => {
+        const rect = element.getBoundingClientRect()
+        return rect.left >= -1 && rect.right <= innerWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1
+      })).toBe(true)
+      const extract = selection.getByRole('button', { name: 'Извлечь объект отдельно' })
+      await extract.scrollIntoViewIfNeeded()
+      await expect.poll(() => extract.isVisible()).toBe(true)
+      const stage = selection.locator('.image-studio-selection-stage')
+      const box = await stage.boundingBox()
+      if (!box) throw new Error('Selection stage is not visible')
+      await page.mouse.move(box.x + box.width * .3, box.y + box.height * .25)
+      await page.mouse.down()
+      await page.mouse.move(box.x + box.width * .7, box.y + box.height * .8)
+      await page.mouse.up()
+      await expect.poll(() => extract.isEnabled()).toBe(true)
+      await page.evaluate((token) => localStorage.setItem('vc.session.token', token), sessionToken)
+      const responsePending = page.waitForResponse((response) => response.url().includes('/extract'))
+      await extract.click()
+      const response = await responsePending
+      expect(response.ok(), await response.text()).toBe(true)
+      await screenshot(`mobile-${width}-after-extract`)
+      await selection.waitFor({ state: 'detached' })
+      await screenshot(`mobile-${width}-extracted-view`)
+      await expect.poll(async () => /портрет-2-объект(?:-\d+)?\.png/.test(await viewer.innerText())).toBe(true)
+      const close = viewer.getByRole('button', { name: 'Закрыть' })
+      await expect.poll(async () => {
+        const rect = await close.boundingBox()
+        return !!rect && rect.x >= 0 && rect.x + rect.width <= width + 1
+      }).toBe(true)
+      await close.click()
+    }
+    await screenshot('mobile-selection-history')
   })
 })

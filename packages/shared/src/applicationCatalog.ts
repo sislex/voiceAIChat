@@ -294,7 +294,9 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       configuration: ["VC_DATA_DIR"],
       frontend: { entry: "src/frontend.tsx" },
       browserPaths: [`packages/${pkg}/src`],
-      e2eFiles: ["e2e/applicationFrontend.e2e.test.ts"],
+      e2eFiles: id === "image-studio-ui"
+        ? ["e2e/applicationFrontend.e2e.test.ts", "e2e/imageStudioLayout.e2e.test.ts"]
+        : ["e2e/applicationFrontend.e2e.test.ts"],
       contractPaths: [`packages/${pkg}/src/panelContract.ts`],
       contractChecks: [
         {
