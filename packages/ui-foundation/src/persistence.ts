@@ -56,6 +56,9 @@ export const kanbanFilterKey = (userId: string, projectId: string): string =>
 export const TASK_CARD_VERSION_KEY = 'vc.taskCard.version'
 /** Last opened tab of the Release Center («releases» | «deploy»). */
 export const RELEASES_TAB_KEY = 'vc.releases.tab'
+/** Release Center mode («legacy» | «applications») and the environment of the applications mode. */
+export const RELEASES_MODE_KEY = 'vc.releases.mode'
+export const RELEASES_APP_ENVIRONMENT_KEY = 'vc.releases.appEnvironment'
 export const MAKE_AUTOSAVE_KEY = 'vc.make.autosave'
 export const MAKE_FORMAT_ON_SAVE_KEY = 'vc.make.formatOnSave'
 export const MAKE_SPLIT_KEY = 'vc.make.split'
@@ -173,7 +176,9 @@ export const PREFERENCE_KEYS = [
   IMAGE_STUDIO_FILTERS_KEY,
   IMAGE_STUDIO_NEGATIVE_OPEN_KEY,
   TASK_CARD_VERSION_KEY,
-  RELEASES_TAB_KEY
+  RELEASES_TAB_KEY,
+  RELEASES_MODE_KEY,
+  RELEASES_APP_ENVIRONMENT_KEY
 ] as const
 
 /**

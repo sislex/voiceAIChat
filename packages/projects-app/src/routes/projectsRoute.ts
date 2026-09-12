@@ -14,7 +14,8 @@ export type ProjectsRoute =
   | { kind: 'index' }
   | { kind: 'board'; projectId: string }
   | { kind: 'settings'; projectId: string; tab?: ProjectSettingsTab }
-  | { kind: 'releases'; projectId: string }
+  /** Release Center; with `releaseId` the detail of that release (or deploy attempt) is open. */
+  | { kind: 'releases'; projectId: string; releaseId?: string }
   /** Панель кода: без `workspaceId` — список рабочих копий, с ним — сама панель. */
   | { kind: 'code'; projectId: string; workspaceId?: string }
   | { kind: 'assistant'; projectId: string }
@@ -46,6 +47,7 @@ export function parseProjectsRoute(value: string): ProjectsRoute | null {
   if (parts.length === 3 && (parts[2] === 'releases' || parts[2] === 'assistant')) {
     return { kind: parts[2], projectId }
   }
+  if (parts[2] === 'releases' && parts.length === 4 && parts[3]) return { kind: 'releases', projectId, releaseId: parts[3] }
   if (parts[2] === 'code') {
     if (parts.length === 3) return { kind: 'code', projectId }
     if (parts.length === 4 && parts[3]) return { kind: 'code', projectId, workspaceId: parts[3] }
@@ -64,7 +66,8 @@ export function buildProjectsRoute(route: ProjectsRoute): string {
   const base = `/projects/${enc(route.projectId)}`
   if (route.kind === 'board') return base
   if (route.kind === 'settings') return route.tab ? `${base}/settings/${route.tab}` : `${base}/settings`
-  if (route.kind === 'releases' || route.kind === 'assistant') return `${base}/${route.kind}`
+  if (route.kind === 'releases') return route.releaseId ? `${base}/releases/${enc(route.releaseId)}` : `${base}/releases`
+  if (route.kind === 'assistant') return `${base}/assistant`
   if (route.kind === 'code') return route.workspaceId ? `${base}/code/${enc(route.workspaceId)}` : `${base}/code`
   const task = `${base}/task/${enc(route.taskId)}`
   if (route.kind === 'task') return task
