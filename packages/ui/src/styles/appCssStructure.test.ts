@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { cssRules } from '@voicechat/ui-foundation/test/cssRules'
 
 const css = readFileSync(fileURLToPath(new URL('./app.css', import.meta.url)), 'utf8')
 
@@ -34,6 +35,20 @@ function topLevelSelectors(): string[] {
 }
 
 describe('структура app.css', () => {
+  // @testCase TC5
+  it('scopes mobile snap, independent scrolling and floating creation to the inclusive 720px breakpoint', () => {
+    const rules = cssRules(css)
+    const mobile = rules.atRuleBodies('@media (max-width: 720px)').join('\n')
+    expect(mobile).toContain('scroll-snap-type: x mandatory')
+    expect(mobile).toContain('.jboard .jcol-content:not([hidden])')
+    expect(mobile).toContain('.jboard-mobile-create')
+    const desktop = new Set(topLevelSelectors())
+    expect(desktop.has('.jboard-mobile-create')).toBe(false)
+    expect(desktop.has('.jboard .jcol-content:not([hidden])')).toBe(false)
+    expect(rules.decl('.jboard', 'scroll-snap-type')).toBeNull()
+    expect(rules.decl('.jboard', 'overflow-y')).toBe('auto')
+  })
+
   it('скобки сбалансированы', () => {
     let depth = 0
     let min = 0
