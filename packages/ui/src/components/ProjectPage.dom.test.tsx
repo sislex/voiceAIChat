@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
@@ -115,6 +115,7 @@ describe('ProjectPage — крайние случаи раздела', () => {
 
 
 describe('ReleaseCenter — список, деплой и лента', () => {
+  beforeEach(() => window.localStorage.removeItem('vc.releases.tab'))
   const prepared: ProjectRelease = {
     id: 'prepare-1', projectId: 'p1', version: '1.2.3', branch: 'release/1.2.3', sha: 'a'.repeat(40), status: 'ready', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: 1_700_000_000_000, releasedAt: null,
     steps: [
