@@ -215,6 +215,15 @@ export class IdentityRepo extends BaseRepo {
   }
 
   /** Одноразовый код сброса от администратора (п.10): хранится хеш, действует `ttlMs`. */
+  async resetCodeStatus(name: string): Promise<{ code: string; expiresAt: number }> {
+    const row = await this.sql.get<{ expiresAt: number }>(`SELECT reset_code_expires AS expiresAt FROM users WHERE name = ? AND reset_code_hash IS NOT NULL AND reset_code_expires > ?`, [name, Date.now()])
+    return { code: '', expiresAt: row?.expiresAt ?? 0 }
+  }
+
+  async revokeResetCode(name: string): Promise<void> {
+    await this.sql.run(`UPDATE users SET reset_code_hash = NULL, reset_code_expires = NULL WHERE name = ?`, [name])
+  }
+
   async setResetCode(name: string, code: string, ttlMs: number): Promise<void> {
     await this.sql.run(`UPDATE users SET reset_code_hash = ?, reset_code_expires = ? WHERE name = ?`, [hashPassword(code), Date.now() + ttlMs, name])
   }
@@ -298,8 +307,17 @@ export class IdentityRepo extends BaseRepo {
   }
 
   async setUserRole(name: string, role: UserRole): Promise<UserRow | null> {
-    await this.sql.run(`UPDATE users SET role = ? WHERE name = ?`, [role, name])
-    return await this.getUser(name)
+    return this.sql.transaction(async () => {
+      // Lock administrators before counting so concurrent demotions cannot remove both.
+      await this.sql.run(`UPDATE users SET role = role WHERE role = 'admin'`)
+      const current = await this.getUser(name)
+      if (current?.role === 'admin' && role !== 'admin') {
+        const count = await this.sql.get<{ total: number }>(`SELECT COUNT(*) AS total FROM users WHERE role = 'admin'`)
+        if (Number(count?.total) <= 1) throw Object.assign(new Error('В системе должен остаться хотя бы один администратор'), { statusCode: 409 })
+      }
+      await this.sql.run(`UPDATE users SET role = ? WHERE name = ?`, [role, name])
+      return this.getUser(name)
+    })
   }
 
   async setUserPassword(name: string, password: string): Promise<void> {
@@ -355,11 +373,15 @@ export class IdentityRepo extends BaseRepo {
     if (Math.random() < 0.01) await this.sql.run(`DELETE FROM security_events WHERE id < (SELECT COALESCE(MAX(id), 0) - 50000 FROM security_events)`)
   }
 
-  async listSecurityEvents(filter: { user?: string; limit?: number } = {}): Promise<SecurityEvent[]> {
-    const limit = Math.min(Math.max(filter.limit ?? 200, 1), 1000)
-    const rows = (filter.user
-      ? await this.sql.all(`SELECT * FROM security_events WHERE user_name = ? ORDER BY id DESC LIMIT ?`, [filter.user, limit])
-      : await this.sql.all(`SELECT * FROM security_events ORDER BY id DESC LIMIT ?`, [limit])) as Array<{ id: number; at: number; user_name: string; type: SecurityEventType; ip: string; user_agent: string; details: string }>
+  async listSecurityEvents(filter: { user?: string; limit?: number; loginsOnly?: boolean; pricesOnly?: boolean } = {}): Promise<SecurityEvent[]> {
+    const limit = filter.loginsOnly ? 50 : Math.min(Math.max(filter.limit ?? 200, 1), 1000)
+    const where: string[] = []
+    const params: (string | number)[] = []
+    if (filter.user) { where.push('user_name = ?'); params.push(filter.user) }
+    if (filter.loginsOnly) where.push("type IN ('login', 'login_failed', 'login_locked', 'login_2fa_failed')")
+    if (filter.pricesOnly) where.push("type = 'model_price_changed'")
+    params.push(limit)
+    const rows = await this.sql.all(`SELECT * FROM security_events ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`, params) as Array<{ id: number; at: number; user_name: string; type: SecurityEventType; ip: string; user_agent: string; details: string }>
     return rows.map((r) => ({ id: r.id, at: r.at, user: r.user_name, type: r.type, ip: r.ip, userAgent: r.user_agent, details: r.details }))
   }
 

@@ -4,8 +4,11 @@ import { createAdminStore } from './adminStore'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done 
-  it('отказ сводки расхода не оставляет администратора без списка людей', async () => {
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+it('отказ сводки расхода не оставляет администратора без списка людей', async () => {
     const client = {
       listUsers: vi.fn(async () => [{ name: 'bob', role: 'developer', blocked: false, createdAt: 1, conversationCount: 0, agents: [] }]),
       usageSummary: vi.fn(async () => { throw new Error('HTTP 503') }),
@@ -25,9 +28,6 @@ function deferred<T>() {
     expect(store.getState().adminUsageSummary).toEqual([])
     store.dispose()
   })
-})
-  return { promise, resolve }
-}
 
 describe('adminStore', () => {
   it('ignores a stale selected-user response and clears on dispose', async () => {

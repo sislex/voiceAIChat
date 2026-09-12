@@ -18,10 +18,11 @@ import { AgentFleetUpdate } from './AgentFleetUpdate'
 import type { SessionsClient } from '@voicechat/sessions-app'
 import { AdminSessions } from './AdminSessions'
 import type { RoleCommandPolicies } from '@shared/commandPolicy'
-import { Button, Dialog } from '@voicechat/ui-kit'
+import { Button, Dialog, ConfirmProvider } from '@voicechat/ui-kit'
 import type { LoadStatus } from './loadState'
 import type { ProfileTab } from '@voicechat/profile-app'
 import type { AdminRoute } from './routes'
+import { copyText } from './clipboard'
 import { UsersPage } from './users/UsersPage'
 import { InvitesPanel } from './users/InvitesPanel'
 import { EnginesPage } from './pages/EnginesPage'
@@ -55,6 +56,8 @@ export interface UsersAdminProps {
   onNavigate?: (route: AdminRoute) => void
   /** Сохранение файла делает хост: у модуля нет доступа к странице. */
   onExportCsv?: (filename: string, csv: string) => void
+  onLoadUsersPage?: (input: { limit?: number; offset?: number; q?: string; role?: string; state?: string; sort?: string; asc?: string }) => Promise<AdminUserInfo[]>
+  onBulkUsers?: (names: string[], action: 'block' | 'unblock' | 'revoke') => Promise<void>
   users: AdminUserInfo[]
   usageSummary?: UserUsageSummary[]
   /** Метрики Make (п.38): место, публикации, просмотры — секция дашборда для админа. */
@@ -90,7 +93,7 @@ export interface UsersAdminProps {
   onSelect: (name: string) => void
   onCreate: (name: string, password: string, role: import('@shared/types').UserRole, mustChangePassword?: boolean) => void
   /** Код сброса пароля (auth-roadmap п.10): возвращает код для передачи пользователю. */
-  onResetCode?: (name: string) => Promise<{ code: string; expiresAt: number } | null>
+  onResetCode?: (name: string, action?: 'status' | 'revoke') => Promise<{ code: string; expiresAt: number } | null>
   /** Месячный лимит расхода LLM в USD (auth-roadmap п.17). */
   onSetLlmLimit?: (name: string, llmLimitUsd: number | null) => void
   onUpdateRole?: (name: string, role: import('@shared/types').UserRole) => void
@@ -135,6 +138,7 @@ export interface UsersAdminProps {
   onUpdateEngine: (id: string, patch: AdminLlmEngineInput) => void
   onDeleteEngine: (id: string) => void
   onCheckEngineHealth: (id: string) => void
+  onLoadPriceHistory?: () => Promise<SecurityEvent[]>
   modelPrices?: ModelPrice[]
   onSaveModelPrice?: (input: ModelPriceInput) => void
   onDeleteModelPrice?: (provider: string, model: string) => void
@@ -152,6 +156,8 @@ const PAGE_TITLE: Record<AdminRoute['page'], string> = {
 }
 
 export function UsersAdmin({
+  onLoadUsersPage,
+  onBulkUsers,
   users,
   usageSummary = NO_USAGE_SUMMARY,
   makeStats = null,
@@ -205,6 +211,7 @@ export function UsersAdmin({
   onUpdateEngine,
   onDeleteEngine,
   onCheckEngineHealth,
+  onLoadPriceHistory,
   modelPrices = [],
   onSaveModelPrice = () => undefined,
   onDeleteModelPrice = () => undefined,
@@ -215,11 +222,13 @@ export function UsersAdmin({
   onNavigate,
   onExportCsv,
   variant = 'modal', latestAgentVersion, onUpdateMachine }: UsersAdminProps): JSX.Element {
+  const [activeReset, setActiveReset] = useState<{ name: string; expiresAt: number } | null>(null)
+  const [copied, setCopied] = useState(false)
   const [limitDraft, setLimitDraft] = useState<string>('')
   const [resetInfo, setResetInfo] = useState<{ name: string; code: string; expiresAt: number } | null>(null)
   const [inner, setInner] = useState<AdminRoute>({ page: 'users' })
   const [period, setPeriod] = useState<'month' | '7d' | '30d' | 'all'>('month')
-  const [securityGroup, setSecurityGroup] = useState<'all' | 'auth' | 'account' | 'machines'>('all')
+  const [securityGroup, setSecurityGroup] = useState<'all' | 'auth' | 'account' | 'machines' | 'login'>('all')
   const current = route ?? inner
   const page = current.page
   const tab: ProfileTab = current.page === 'users' ? (current.tab ?? 'overview') : 'overview'
@@ -254,10 +263,21 @@ export function UsersAdmin({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedName, tab, period, securityGroup, users])
 
+  useEffect(() => {
+    let cancelled = false
+    setActiveReset(null)
+    setResetInfo(null)
+    setCopied(false)
+    if (selectedName && onResetCode) void Promise.resolve(onResetCode(selectedName, 'status')).then((result) => {
+      if (!cancelled && result) setActiveReset({ name: selectedName, expiresAt: result.expiresAt })
+    })
+    return () => { cancelled = true }
+  }, [selectedName, onResetCode])
+
   const currentUser = users.find((user) => user.name === selectedName) ?? null
 
   return (
-    <AdminFrame variant={variant} title={PAGE_TITLE[page]} showTitle={page !== 'users'} onClose={onClose}>
+    <ConfirmProvider><AdminFrame variant={variant} title={PAGE_TITLE[page]} showTitle={page !== 'users'} onClose={onClose}>
       {page !== 'users' && (
         <p className="ua-back">
           <Button size="sm" variant="ghost" onClick={() => navigate({ page: 'users' })}>← К пользователям</Button>
@@ -267,6 +287,8 @@ export function UsersAdmin({
       {page === 'users' && (
         <>
           <UsersPage
+            {...(onLoadUsersPage ? { onLoadUsersPage } : {})}
+            {...(onBulkUsers ? { onBulkUsers } : {})}
             users={users}
             usageSummary={usageSummary}
             selected={selectedName}
@@ -298,7 +320,7 @@ export function UsersAdmin({
             onSetBlocked={onSetBlocked}
             onDelete={onDelete}
             onSaveLlmAccess={onSaveLlmAccess}
-            {...(onResetCode ? { onResetCode: (name: string) => void onResetCode(name).then((result) => { if (result) setResetInfo({ name, ...result }) }) } : {})}
+            {...(onResetCode ? { onResetCode: (name: string) => void onResetCode(name).then((result) => { if (result) { setCopied(false); setResetInfo({ name, ...result }); setActiveReset({ name, expiresAt: result.expiresAt }) } }) } : {})}
             {...(onUpdateMachine ? { onUpdateMachine: (id: string) => void onUpdateMachine(id) } : {})}
             {...(sessionsClient && currentUser ? { sessionsSlot: <AdminSessions client={sessionsClient} user={currentUser.name} /> } : {})}
             {...(currentUser ? {
@@ -345,8 +367,15 @@ export function UsersAdmin({
                   {resetInfo && currentUser && resetInfo.name === currentUser.name && (
                     <p className="uusage-note" role="status" data-testid="admin-reset-code">
                       Код сброса для <b>{currentUser.name}</b>: <code>{resetInfo.code}</code> — действует до {new Date(resetInfo.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}; передайте лично, повторно не показывается.
+                      <Button size="sm" onClick={() => void copyText(resetInfo.code).then(setCopied)}>{copied ? 'Скопировано' : 'Копировать код'}</Button>
                     </p>
                   )}
+                  {activeReset && activeReset.name === selectedName && activeReset.expiresAt > Date.now() && <section aria-label="Активные коды сброса">
+                    <h3>Активные коды сброса</h3>
+                    <p>Код для {activeReset.name} · до {new Date(activeReset.expiresAt).toLocaleString('ru-RU')}
+                      <Button size="sm" onClick={() => void onResetCode?.(activeReset.name, 'revoke').then((result) => { if (result) { setActiveReset(null); setResetInfo(null) } })}>Отозвать код</Button>
+                    </p>
+                  </section>}
                   <InvitesPanel
                     invites={invites}
                     {...(onLoadInvites ? { onLoadInvites } : {})}
@@ -379,7 +408,7 @@ export function UsersAdmin({
       )}
 
       {page === 'prices' && isAdmin && (
-        <ModelPricesPage modelPrices={modelPrices} onSaveModelPrice={onSaveModelPrice} onDeleteModelPrice={onDeleteModelPrice} />
+        <ModelPricesPage {...(onLoadPriceHistory ? { onLoadPriceHistory } : {})} modelPrices={modelPrices} onSaveModelPrice={onSaveModelPrice} onDeleteModelPrice={onDeleteModelPrice} />
       )}
 
       {page === 'projectTypes' && isAdmin && onReviewProjectType && (
@@ -397,7 +426,7 @@ export function UsersAdmin({
           {...(onSaveRoleCommandPolicies ? { onSaveRoleCommandPolicies } : {})}
         />
       )}
-    </AdminFrame>
+    </AdminFrame></ConfirmProvider>
   )
 }
 

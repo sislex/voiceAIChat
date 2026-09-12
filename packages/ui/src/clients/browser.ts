@@ -78,13 +78,14 @@ function saveBlob(filename: string, blob: Blob): void {
 
 export function createAdminClient(api: RendererApi): AdminClient {
   return {
-      listUsers: () => api['admin:users'](),
+      listUsers: (input) => api['admin:users'](input),
       usageSummary: (range) => api['admin:usageSummary'](range),
       userSessions: ({ name }) => api['admin:userSessions']({ name }).then((r) => r.sessions),
+      revokeUserSessions: (input) => api['admin:revokeUserSessions'](input).then(() => undefined),
       revokeSession: ({ sid }) => api['admin:revokeSession']({ sid }).then(() => undefined),
       securityEvents: (input) => api['admin:securityEvents'](input).then((r) => r.events),
       listInvites: () => api['admin:invites']().then((r) => r.invites),
-      resetCode: ({ name }) => api['admin:resetCode']({ name }),
+      resetCode: (input) => api['admin:resetCode'](input),
       setUserLlmLimit: (input) => api['admin:setUserLlmLimit'](input),
       signupConfig: () => api['admin:signupConfig'](),
       setSignupConfig: (input) => api['admin:setSignupConfig'](input),

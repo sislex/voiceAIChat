@@ -443,7 +443,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // и его состояние держит сам модуль, стору админки хранить их незачем.
   const adminSessionsClient = useMemo(() => ({
     list: () => adminActions.loadAdminSessions(),
-    revoke: (sid: string) => adminActions.revokeAdminSession(sid)
+    revoke: (sid: string) => adminActions.revokeAdminSession(sid),
+    revokeOthers: () => adminActions.revokeOtherAdminSessions()
   }), [adminActions])
   const projectsActions = useProjectsActions()
   // Возможности типа открытого проекта. Пока detail грузится, берём их из
@@ -3204,12 +3205,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           currentUserName={session.currentUser?.name ?? ''}
           onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
           onCreate={(name, password, role, mustChangePassword) => void adminActions.createUserAccount(name, password, role, mustChangePassword)}
-          onResetCode={(name) => adminActions.issueResetCode(name)}
+          onResetCode={adminActions.issueResetCode}
           onSetLlmLimit={(name, usd) => void adminActions.setUserLlmLimit(name, usd)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
           onSetBlocked={(name, blocked, reason) => void adminActions.setUserBlocked(name, blocked, reason)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
+          onLoadPriceHistory={adminActions.loadPriceHistory}
+          onLoadUsersPage={adminActions.loadUsersPage}
+          onBulkUsers={adminActions.bulkUsers}
           sessionsClient={adminSessionsClient}
           security={admin.adminSecurity}
           onLoadSecurity={(limit, group) => void adminActions.loadAdminSecurity(limit, group)}

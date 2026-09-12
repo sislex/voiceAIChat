@@ -7,8 +7,8 @@
 import type { AdminUserInfo, UserUsageSummary } from '@shared/admin'
 import { ACTIVE_WINDOW_MS, spendUsd } from '@shared/admin'
 
-export type UserSort = 'activity' | 'name' | 'spend'
-export type UserState = 'all' | 'online' | 'blocked'
+export type UserSort = 'activity' | 'name' | 'spend' | 'login'
+export type UserState = 'all' | 'online' | 'blocked' | 'inactive'
 
 export interface UsersFilter {
   query: string
@@ -35,13 +35,15 @@ export function userSpend(name: string, summary: readonly UserUsageSummary[]): n
 export function filterUsers(users: readonly AdminUserInfo[], filter: UsersFilter, now: number, summary: readonly UserUsageSummary[] = []): AdminUserInfo[] {
   const query = filter.query.trim().toLowerCase()
   const found = users.filter((user) => {
-    if (query && !`${user.name} ${user.email ?? ''}`.toLowerCase().includes(query)) return false
+    if (query && !`${user.name} ${user.email ?? ''} ${user.role}`.toLowerCase().includes(query)) return false
     if (filter.role !== 'all' && user.role !== filter.role) return false
     if (filter.state === 'online' && !isActive(user, now)) return false
     if (filter.state === 'blocked' && !user.blocked) return false
+    if (filter.state === 'inactive' && (user.lastLogin ?? user.createdAt) > now - 30 * 86_400_000) return false
     return true
   })
   const sorted = [...found].sort((a, b) => {
+    if (filter.sort === 'login') return (b.lastLogin ?? 0) - (a.lastLogin ?? 0) || a.name.localeCompare(b.name)
     if (filter.sort === 'name') return a.name.localeCompare(b.name, 'ru')
     if (filter.sort === 'spend') return userSpend(b.name, summary) - userSpend(a.name, summary)
     // Никогда не входившие уходят вниз, а не наверх: null в сравнении дал бы
