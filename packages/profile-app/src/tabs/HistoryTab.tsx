@@ -22,6 +22,7 @@ export interface HistoryTabProps {
 const GROUPS: Array<{ id: SecurityGroup; label: string }> = [
   { id: 'all', label: 'Все события' },
   { id: 'auth', label: 'Входы и сессии' },
+  { id: 'login', label: 'Последние 50 входов' },
   { id: 'account', label: 'Изменения учётки' },
   { id: 'machines', label: 'Машины' }
 ]

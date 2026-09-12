@@ -16,6 +16,76 @@ beforeEach(() => { ({ app, db } = harness) })
 
 
 describe('REST: админ-роуты (только admin)', () => {
+  it('rejects removing the final administrator and allows demotion when another exists', async () => {
+    const denied = await inj({ method: 'PATCH', url: '/api/admin/users/admin', payload: { role: 'observer' } })
+    expect(denied.statusCode).toBe(409)
+    expect(denied.json().error).toBe('В системе должен остаться хотя бы один администратор')
+    expect((await db.identity.getUser('admin'))?.role).toBe('admin')
+    await db.identity.createUser('second-admin', '', 'admin')
+    expect((await inj({ method: 'PATCH', url: '/api/admin/users/second-admin', payload: { role: 'observer' } })).statusCode).toBe(200)
+  })
+
+  it('serializes concurrent administrator demotions', async () => {
+    await db.identity.createUser('second-admin', '', 'admin')
+    const results = await Promise.allSettled([
+      db.identity.setUserRole('admin', 'observer'),
+      db.identity.setUserRole('second-admin', 'observer')
+    ])
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+    expect((await db.identity.listUsers()).filter((user) => user.role === 'admin')).toHaveLength(1)
+  })
+
+  it('paginates after filtering and keeps the legacy full response', async () => {
+    for (const name of ['alice', 'bob', 'carol']) await db.identity.createUser(name, '', 'tester')
+    const all = (await inj({ method: 'GET', url: '/api/admin/users' })).json()
+    expect(all).toHaveLength(4)
+    const first = (await inj({ method: 'GET', url: '/api/admin/users?limit=2&offset=0&q=tester&sort=name' })).json()
+    const second = (await inj({ method: 'GET', url: '/api/admin/users?limit=2&offset=2&q=tester&sort=name' })).json()
+    expect([...first, ...second].map((user: { name: string }) => user.name)).toEqual(['alice', 'bob', 'carol'])
+    for (const query of ['limit=0', 'limit=201', 'offset=-1', 'limit=nope']) expect((await inj({ method: 'GET', url: `/api/admin/users?${query}` })).statusCode).toBe(400)
+  })
+
+  it('records price changes and validates decimal precision', async () => {
+    const price = { provider: 'codex', model: 'test-model', inputPerMillion: 1.25, cachedInputPerMillion: 0, cacheWritePerMillion: 0, outputPerMillion: 2.5, sourceUrl: 'https://example.com/pricing', effectiveAt: Date.now() }
+    expect((await inj({ method: 'PUT', url: '/api/admin/model-prices', payload: { ...price, inputPerMillion: 0.123 } })).statusCode).toBe(400)
+    expect((await inj({ method: 'PUT', url: '/api/admin/model-prices', payload: price })).statusCode).toBe(200)
+    const events = (await inj({ method: 'GET', url: '/api/admin/security?group=prices' })).json().events
+    expect(events[0]).toMatchObject({ type: 'model_price_changed', user: 'admin' })
+    expect(events[0].details).toContain('input=1.25')
+    expect(events[0].at).toBeGreaterThan(0)
+  })
+
+  it('marks the current administrator session and revokes another device', async () => {
+    await db.identity.createSession('current-admin', 'admin', { ip: '10.0.0.1', userAgent: 'test', ttlMs: 60_000 })
+    await db.identity.createSession('other-admin', 'admin', { ip: '10.0.0.2', userAgent: 'test', ttlMs: 60_000 })
+    const token = signToken({ name: 'admin', role: 'admin' }, SECRET, 'current-admin')
+    const headers = { authorization: `Bearer ${token}` }
+    const result = await app.inject({ method: 'GET', url: '/api/admin/users/admin/sessions', headers })
+    expect(result.statusCode).toBe(200)
+    expect(result.json().sessions.find((session: { sid: string }) => session.sid === 'current-admin').current).toBe(true)
+    expect((await app.inject({ method: 'DELETE', url: '/api/admin/users/admin/sessions', payload: { exceptCurrent: true }, headers })).statusCode).toBe(200)
+    expect(await db.identity.getSession('current-admin')).not.toBeNull()
+    expect(await db.identity.getSession('other-admin')).toBeNull()
+  })
+
+  it('lists reset-code expiry without exposing the secret and revokes it', async () => {
+    await db.identity.createUser('bob', '', 'tester')
+    const issued = (await inj({ method: 'POST', url: '/api/admin/users/bob/reset-code' })).json()
+    expect(issued.code).toHaveLength(8)
+    const status = (await inj({ method: 'GET', url: '/api/admin/users/bob/reset-code' })).json()
+    expect(status.code).toBe('')
+    expect(status.expiresAt).toBeGreaterThan(Date.now())
+    expect((await inj({ method: 'DELETE', url: '/api/admin/users/bob/reset-code' })).statusCode).toBe(200)
+    expect(await db.identity.redeemResetCode('bob', issued.code, 'changed-password')).toBe(false)
+  })
+
+  it('selects the last fifty logins before limiting the audit journal', async () => {
+    for (let i = 0; i < 55; i++) await db.identity.logSecurityEvent({ user: 'admin', type: 'login', ip: `10.0.0.${i}`, userAgent: 'test-device' })
+    for (let i = 0; i < 60; i++) await db.identity.logSecurityEvent({ user: 'admin', type: 'password_changed' })
+    const events = (await inj({ method: 'GET', url: '/api/admin/security?user=admin&group=login&limit=2' })).json().events
+    expect(events).toHaveLength(50)
+    expect(events[0]).toMatchObject({ type: 'login', ip: '10.0.0.54', userAgent: 'test-device' })
+  })
   it('запуск деплоя доступен только admin и не принимает shell-параметры', async () => {
     await db.identity.createUser('user', '', 'developer')
     const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)

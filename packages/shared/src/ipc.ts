@@ -412,10 +412,11 @@ export interface IpcInvokeMap {
    */
   'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
   // --- Админ-страница пользователей (только admin) ---
-  'admin:users': { arg: void; result: AdminUserInfo[] }
+  'admin:users': { arg: { limit?: number; offset?: number; q?: string; role?: string; state?: string; sort?: string; asc?: string } | void; result: AdminUserInfo[] }
   /** Сессии пользователя и их отзыв администратором (auth-roadmap п.4). */
   'admin:userSessions': { arg: { name: string }; result: { sessions: SessionInfo[] } }
   'admin:revokeSession': { arg: { sid: string }; result: { ok: true } }
+  'admin:revokeUserSessions': { arg: { name: string; exceptCurrent?: boolean }; result: { ok: true } }
   /** Журнал безопасности (auth-roadmap п.7). */
   'admin:securityEvents': { arg: { user?: string; limit?: number; group?: string }; result: { events: SecurityEvent[] } }
   /** Инвайты (auth-roadmap п.8). */
@@ -423,7 +424,7 @@ export interface IpcInvokeMap {
   'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }; result: InviteInfo }
   'admin:inviteDelete': { arg: { token: string }; result: { ok: true } }
   /** Одноразовый код сброса пароля (auth-roadmap п.10). */
-  'admin:resetCode': { arg: { name: string }; result: { code: string; expiresAt: number } }
+  'admin:resetCode': { arg: { name: string; action?: 'status' | 'revoke' }; result: { code: string; expiresAt: number } }
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
   'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
   /** Обновить агента на машине любого пользователя (machines-roadmap п.16). */
@@ -1420,6 +1421,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:users',
   'admin:userSessions',
   'admin:revokeSession',
+  'admin:revokeUserSessions',
   'admin:securityEvents',
   'admin:invites',
   'admin:inviteCreate',

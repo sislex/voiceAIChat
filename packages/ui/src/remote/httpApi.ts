@@ -404,11 +404,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'cx:transcript': ({ id, limit }) =>
       req(`${REST.cxTranscript}?id=${encodeURIComponent(id)}${limit ? `&limit=${limit}` : ''}`),
     'cx:resume': ({ id }) => req(REST.cxResume, { method: 'POST', body: JSON.stringify({ id }) }),
-    'admin:users': () => req(REST.adminUsers),
+    'admin:users': (input) => {
+      const query = new URLSearchParams()
+      for (const [key, value] of Object.entries(input ?? {})) if (value !== undefined) query.set(key, String(value))
+      return req(`${REST.adminUsers}${query.size ? `?${query}` : ''}`)
+    },
     'admin:userSessions': ({ name }) => req(REST.adminSessions(name)),
+    'admin:revokeUserSessions': ({ name, exceptCurrent }) => req(REST.adminSessions(name), { method: 'DELETE', body: JSON.stringify({ exceptCurrent }) }),
     'admin:revokeSession': ({ sid }) => req(REST.adminSessionRevoke(sid), { method: 'DELETE' }),
     'admin:invites': () => req(REST.adminInvites),
-    'admin:resetCode': ({ name }) => req(REST.adminUserResetCode(name), { method: 'POST' }),
+    'admin:resetCode': ({ name, action }) => req(REST.adminUserResetCode(name), { method: action === 'status' ? 'GET' : action === 'revoke' ? 'DELETE' : 'POST' }),
     'admin:signupConfig': () => req(REST.adminSignup),
     'admin:setSignupConfig': (body) => req(REST.adminSignup, { method: 'PUT', body: JSON.stringify(body) }),
     'admin:setUserLlmLimit': ({ name, llmLimitUsd }) => req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ llmLimitUsd }) }),

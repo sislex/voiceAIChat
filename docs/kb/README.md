@@ -13,7 +13,7 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 11 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 33 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-11 | ⚠ 4 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 3 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-12 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: c1910313 feat(kanban): add due date windows … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 86 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 109 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 22 коммит(ов) в areas после сверки: 4aae694e Merge main into CHAT-446 (task eb76ca8f-4825-4401-9f05-473efce03123) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1410 коммит(ов) в areas после сверки: 4aae694e Merge main into CHAT-446 (task eb76ca8f-4825-4401-9f05-473efce03123) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1411 коммит(ов) в areas после сверки: fff2eeb5 docs(kb): update after merge eb76ca8f-4825-4401-9f05-473efce03123 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 45 коммит(ов) в areas после сверки: 1593d89c feat(chat): improve composer, feed navigation and failed send recovery … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 4aae694e Merge main into CHAT-446 (task eb76ca8f-4825-4401-9f05-473efce03123) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 18 коммит(ов) в areas после сверки: 4aae694e Merge main into CHAT-446 (task eb76ca8f-4825-4401-9f05-473efce03123) … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 152 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-12 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-13 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-12, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,9 +74,10 @@
 
 ## Журнал сессий
 
-Всего записей: 797. Последние:
+Всего записей: 798. Последние:
 
 - [2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md](log/2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md) — chat450-kb-update
+- [2026-09-13-alexeys-macbook-air-2-chat-453-access.md](log/2026-09-13-alexeys-macbook-air-2-chat-453-access.md) — chat-453-access
 - [2026-09-12-germany-4-8-60-runner-stream-heartbeat.md](log/2026-09-12-germany-4-8-60-runner-stream-heartbeat.md) — runner-stream-heartbeat
 - [2026-09-12-germany-4-8-60-chat-446-browser-check.md](log/2026-09-12-germany-4-8-60-chat-446-browser-check.md) — chat-446-browser-check
 - [2026-09-12-germany-4-8-60-browser-check-evidence-and-image-route.md](log/2026-09-12-germany-4-8-60-browser-check-evidence-and-image-route.md) — browser-check-evidence-and-image-route
@@ -85,7 +86,6 @@
 - [2026-09-12-alexeys-macbook-air-2-new-task-card-functional-tabs.md](log/2026-09-12-alexeys-macbook-air-2-new-task-card-functional-tabs.md) — new-task-card-functional-tabs
 - [2026-09-12-alexeys-macbook-air-2-kanban-visible-export.md](log/2026-09-12-alexeys-macbook-air-2-kanban-visible-export.md) — kanban-visible-export
 - [2026-09-12-alexeys-macbook-air-2-kanban-task-permalinks.md](log/2026-09-12-alexeys-macbook-air-2-kanban-task-permalinks.md) — kanban-task-permalinks
-- [2026-09-12-alexeys-macbook-air-2-kanban-board-diagnostics.md](log/2026-09-12-alexeys-macbook-air-2-kanban-board-diagnostics.md) — kanban-board-diagnostics
 
 ## Исторические планы
 

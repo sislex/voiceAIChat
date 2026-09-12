@@ -32,6 +32,7 @@ import { accessSummary } from './model'
 import { PERIOD_LABEL } from './format'
 
 export interface ProfilePanelProps extends ProfileCallbacks {
+  roleHelp?: Partial<Record<import('./contracts').ProfileRole, string>>
   user: ProfileUser
   capabilities?: ProfileCapabilities
   /** Активная вкладка снаружи — вкладки живут в адресе страницы. */
@@ -71,10 +72,12 @@ const TAB_LABEL: Record<ProfileTab, string> = {
   access: 'Доступ',
   machines: 'Машины',
   usage: 'Использование',
-  history: 'История'
+  history: 'История',
+  sessions: 'Сессии и устройства'
 }
 
 export function ProfilePanel({
+  roleHelp,
   user,
   capabilities = READ_ONLY,
   tab,
@@ -125,6 +128,7 @@ export function ProfilePanel({
   return (
     <section className="vcp" data-testid="profile-panel">
       <ProfileHead
+        {...(roleHelp ? { roleHelp } : {})}
         user={user}
         capabilities={capabilities}
         now={now}
@@ -147,7 +151,8 @@ export function ProfilePanel({
           { id: 'access', label: TAB_LABEL.access },
           { id: 'machines', label: TAB_LABEL.machines, count: user.machinesTotal ?? user.machines.length },
           { id: 'usage', label: TAB_LABEL.usage },
-          { id: 'history', label: TAB_LABEL.history }
+          { id: 'history', label: TAB_LABEL.history },
+          ...(sessionsSlot ? [{ id: 'sessions', label: TAB_LABEL.sessions }] : [])
         ]}
       />
 
@@ -176,6 +181,7 @@ export function ProfilePanel({
             {...(onSetBlocked ? { onBlock: () => setBlockRequest(!user.blocked) } : {})}
           />
         )}
+        {active === 'sessions' && sessionsSlot}
         {active === 'access' && (
           <AccessTab providers={providers} denied={effectiveDenied} capabilities={capabilities} onChange={setDraft} />
         )}
@@ -189,7 +195,6 @@ export function ProfilePanel({
               {...(onUpdateMachine ? { onUpdateMachine } : {})}
               updatingId={updatingMachineId}
             />
-            {sessionsSlot}
           </>
         )}
         {!usageLoading && active === 'usage' && (
@@ -216,10 +221,11 @@ export function ProfilePanel({
       >
         {/* Отмена возвращает права сервера, а не предыдущую правку черновика:
             «отменить» человек читает как «вернуть как было», а не «шаг назад». */}
-        <Button size="sm" onClick={() => setDraft(null)}>Отменить</Button>
+        <Button size="sm" disabled={draft === null} onClick={() => setDraft(null)}>Отменить</Button>
         <Button
           size="sm"
           variant="primary"
+          disabled={draft === null}
           onClick={() => {
             if (draft) onSaveAccess?.(draft)
             setDraft(null)

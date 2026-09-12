@@ -134,6 +134,7 @@ declare module 'fastify' {
     corsAllowed: boolean
     /** Пользователь сессии (устанавливается preHandler для защищённых путей). */
     user: SessionUser | null
+    sessionSid?: string | null
   }
 }
 
@@ -477,6 +478,7 @@ export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret
     }
     const { user } = verdict
     req.user = user
+    req.sessionSid = sidOf(req)
     const permission = projectPermissionForRequest(req.method, url)
     if (permission) {
       const projectId = /^\/api\/projects\/([^/]+)/.exec(url)?.[1]

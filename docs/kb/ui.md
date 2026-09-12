@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-12
-checked: 4aae694e
+updated: 2026-09-13
+checked: fff2eeb5
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -1057,16 +1057,34 @@ Esc перехватит `useDialogStack`).
 
 ## Админка пользователей и стоимости моделей
 
+CHAT-453 access controls use the existing admin/profile/sessions modules.
+User-list query parameters live in the hash route (`q`, `role`, `state`, `sort`,
+`asc`); the host supplies server page reads through the admin client. The list
+requests 40 users per page and drops stale responses after query changes.
+Bulk block/unblock/session revocation asks once with `useConfirm`, lists the
+selected logins and requires typing the count for more than five accounts.
+The current and built-in administrator accounts are not selectable for bulk actions.
+At widths up to 720px users form vertical cards and the filter controls expand
+from the search row. Role help is supplied from shared `ROLE_DESCRIPTIONS`.
+
+The dedicated Sessions and devices tab mounts `AdminSessions` only when opened.
+It uses `sessions-app` for active devices, individual revocation and revoking
+other sessions; the server marks the requesting session as current. The history
+filter offers the last 50 login results and exports the visible events to CSV.
+The reset-code section shows active expiry, copying of a newly issued code and
+revocation. The prices page validates two decimal places, warns about zero rates,
+and shows actor/timestamp audit entries below the table.
+
 Маршрут `#/users` рендерит `UsersAdmin` из
-`packages/ui/src/components/UsersAdmin.tsx`. Выбранный пользователь открывает
+`packages/admin-app/src/UsersAdmin.tsx`. Выбранный пользователь открывает
 табы доступа, машин, «Использование моделей» и истории; таб расхода показывает
 токены, число ответов и две независимые стоимости — «По данным CLI» и «По
 прайсу» — в итогах, разбивке по моделям и временным бакетам. Если для ответа нет
 ни цены CLI, ни строки тарифа, компонент показывает «—» для отсутствующей суммы
 и объясняет неполноту в tooltip, а не выдаёт ноль за известную цену.
 
-Только администратор видит ниже пользовательской карточки реестр LLM-исполнителей
-и «Стоимость моделей». Последний виджет выводит провайдера, модель, четыре цены
+Administrators open the runner registry and model prices on separate routes
+`#/users/engines` and `#/users/prices`. Последний виджет выводит провайдера, модель, четыре цены
 USD за 1M токенов, источник и дату тарифа; форма позволяет добавить строку или
 перенести её в черновик для правки, удаление передаёт пару provider/model. Стор
 загружает прайсы при открытии админки и после сохранения либо удаления перечитывает

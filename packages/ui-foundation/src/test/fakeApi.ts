@@ -42,7 +42,7 @@ const fakeSignup: { enabled: boolean; role: import('@shared/types').UserRole; ma
 /** Инвайты для админки (auth-roadmap п.8). */
 const fakeInvites: Array<{ token: string; role: import('@shared/types').UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string; email: string | null; emailedAt: number | null }> = []
 /** Сессии для админки (auth-roadmap п.4) — по умолчанию одна у admin. */
-const adminSessions: Array<{ sid: string; user: string; createdAt: number; lastSeen: number; expiresAt: number; ip: string; userAgent: string }> = [{ sid: 's-admin-1', user: 'admin', createdAt: 1, lastSeen: 2, expiresAt: 9_999_999_999_999, ip: '127.0.0.1', userAgent: 'Test/1.0' }]
+const adminSessions: Array<{ current?: boolean; sid: string; user: string; createdAt: number; lastSeen: number; expiresAt: number; ip: string; userAgent: string }> = [{ sid: 's-admin-1', user: 'admin', createdAt: 1, lastSeen: 2, expiresAt: 9_999_999_999_999, ip: '127.0.0.1', userAgent: 'Test/1.0' }]
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   /** Вид доски на «сервере»: по проекту, как в таблице board_views. */
   const boardViews = new Map<string, BoardView>()
@@ -946,6 +946,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'admin:inviteCreate': async ({ role, ttlHours, maxUses, note, email }) => { const inv = { token: `inv${fakeInvites.length + 1}`, role, createdBy: 'admin', createdAt: 1, expiresAt: 1 + (ttlHours ?? 72) * 3_600_000, maxUses: maxUses ?? 1, uses: 0, note: note ?? '', email: email ?? null, emailedAt: email ? 1 : null }; fakeInvites.push(inv); return inv },
     'admin:inviteDelete': async ({ token }) => { const i = fakeInvites.findIndex((x) => x.token === token); if (i >= 0) fakeInvites.splice(i, 1); return { ok: true as const } },
     'admin:securityEvents': async ({ user }) => ({ events: [{ id: 1, at: 1, user: user ?? 'admin', type: 'login' as const, ip: '127.0.0.1', userAgent: 'Test/1.0', details: '' }] }),
+    'admin:revokeUserSessions': async ({ name, exceptCurrent }) => { for (let i = adminSessions.length - 1; i >= 0; i--) if (adminSessions[i]!.user === name && !(exceptCurrent && adminSessions[i]!.current)) adminSessions.splice(i, 1); return { ok: true as const } },
     'admin:revokeSession': async ({ sid }) => { const i = adminSessions.findIndex((s) => s.sid === sid); if (i >= 0) adminSessions.splice(i, 1); return { ok: true as const } },
     'admin:updateMachine': async () => ({ ok: true as const, os: 'linux' }),
     'admin:machineStats': async () => ({ generatedAt: 1, machines: [], totals: { machines: 0, online: 0, commands24h: 0, errors24h: 0 } }),
