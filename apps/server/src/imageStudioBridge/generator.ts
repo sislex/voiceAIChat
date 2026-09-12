@@ -16,24 +16,27 @@ export function llmImageStudioGenerator(opts: {
   readGenerated(path: string): Promise<{ dataBase64: string } | null>
 }): ImageStudioGenerator {
   return async ({ prompt, source, sourceName, mask, targetSize, references, onCancel }) => {
+    const sourcePath = `/studio/${sourceName ?? 'source.png'}`
+    const maskPath = '/studio/mask.png'
+    const referencePaths = (references ?? []).map((ref, index) => `/studio/reference-${index + 1}-${ref.name}`)
     const attachments: LlmAttachment[] = [
-      ...(source ? [{ serverPath: `/studio/${sourceName ?? 'source.png'}`, runnerName: sourceName ?? 'source.png', dataBase64: source.toString('base64') }] : []),
-      ...(mask ? [{ serverPath: '/studio/mask.png', runnerName: 'mask.png', dataBase64: mask.toString('base64') }] : []),
-      ...(references ?? []).map((ref, index) => ({ serverPath: `/studio/reference-${index + 1}-${ref.name}`, runnerName: `reference-${index + 1}-${ref.name}`, dataBase64: ref.data.toString('base64') }))
+      ...(source ? [{ serverPath: sourcePath, runnerName: sourceName ?? 'source.png', dataBase64: source.toString('base64') }] : []),
+      ...(mask ? [{ serverPath: maskPath, runnerName: 'mask.png', dataBase64: mask.toString('base64') }] : []),
+      ...(references ?? []).map((ref, index) => ({ serverPath: referencePaths[index]!, runnerName: `reference-${index + 1}-${ref.name}`, dataBase64: ref.data.toString('base64') }))
     ]
     const lines = source && mask && targetSize
       ? [
-          `Retouch the attached ${sourceName ?? 'selection.png'} strictly according to the user prompt below.`,
-          'mask.png marks editable pixels in white; black pixels are context and must remain visually compatible.',
+          `Retouch the attached ${sourcePath} strictly according to the user prompt below.`,
+          `${maskPath} marks editable pixels in white; black pixels are context and must remain visually compatible.`,
           `Return exactly one raster image sized ${targetSize.width}×${targetSize.height}. Do not draw the mask, guides, or a service background.`,
-          ...(references?.length ? ['Use reference-*.png only as visual references.'] : []),
+          ...(referencePaths.length ? [`Use ${referencePaths.join(', ')} only as visual references.`] : []),
           'Save the result as a separate PNG and expose its absolute path through the standard fenced image block.',
           `User prompt: ${prompt}`,
           IMAGE_HINT
         ]
       : source
       ? [
-          `Отредактируй приложенное изображение ${sourceName ?? 'source.png'} строго по промпту ниже, сохранив его размер и общий стиль, если промпт не требует иного.`,
+          `Отредактируй приложенное изображение ${sourcePath} строго по промпту ниже, сохранив его размер и общий стиль, если промпт не требует иного.`,
           'Правь картинку скриптом (например, Python/Pillow или ImageMagick) — сгенерируй и выполни его.',
           'Сохрани результат отдельным PNG в текущей директории и обязательно укажи его абсолютный путь через штатный fenced-блок image.',
           `Промпт пользователя: ${prompt}`,
@@ -41,7 +44,7 @@ export function llmImageStudioGenerator(opts: {
         ]
       : [
           'Нарисуй изображение строго по промпту ниже: напиши и выполни скрипт (например, Python/Pillow или ImageMagick), который его отрисует.',
-          ...(references?.length ? ['Приложенные файлы reference-*.png — визуальные референсы: повтори их стиль, палитру и настроение, не копируя композицию буквально.'] : []),
+          ...(referencePaths.length ? [`Приложенные файлы ${referencePaths.join(', ')} — визуальные референсы: повтори их стиль, палитру и настроение, не копируя композицию буквально.`] : []),
           'Сохрани результат отдельным PNG в текущей директории и обязательно укажи его абсолютный путь через штатный fenced-блок image.',
           `Промпт пользователя: ${prompt}`,
           IMAGE_HINT

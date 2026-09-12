@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-12
-checked: 5a464d55
+checked: e1ce913f
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -644,6 +644,11 @@ an `images` conversation before exposing `image_list`, `image_open`,
 mode appends `ro=1`: list, open, and object discovery stay available while every
 mutating handler refuses the call. Model-backed generation and retouch share a
 per-conversation active slot.
+
+The core generator names the exact `/studio/...` paths of the source crop,
+mask, and references in its prompt. These names match attachment `serverPath`
+values, allowing the shared LLM-runner attachment preparer to replace them with
+temporary readable files for both embedded and HTTP CLI execution.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
