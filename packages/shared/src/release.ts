@@ -100,6 +100,10 @@ export interface ProjectReleaseSummary {
   previousReleaseId: string | null
   createdAt: number
   durationMs: number | null
+  /** Deploy attempt number of the branch; preparations are attempt 1. */
+  attempt?: number
+  /** Short cause of a failed step, so the list explains a red row without opening it. */
+  failure?: string | null
 }
 
 export interface ProjectRelease {

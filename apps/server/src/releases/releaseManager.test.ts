@@ -214,7 +214,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const release=await settled(attempt.id)
     expect(commands.some(command=>command.includes('npm run deploy:prod'))).toBe(false)
     expect(release?.status).toBe('failed')
-    expect(release?.steps.find(step=>step.kind==='building')?.log).toMatch(/свободно 2\.9 ГБ, нужно не меньше 5\.0 ГБ/)
+    expect(release?.steps.find(step=>step.kind==='building')?.log).toMatch(/свободно 2\.9 ГБ, нужно не меньше 10\.0 ГБ/)
   })
 
   it('refreshes the installed production launcher from the verified release checkout',async()=>{
@@ -245,6 +245,30 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     // Проверка здоровья истекает по лимиту 1 с; на асинхронной базе финал дописывается позже — ждём статус, а не паузу.
     const stored=await vi.waitFor(async()=>{const r=await db.releases.getProjectRelease('owner',projectId,attempt.id);expect(r?.status).toBe('failed');return r},{timeout:5_000})
     expect(stored?.steps.find(step=>step.kind==='health_check')?.log).toContain('version=0.1.0')
+  })
+
+  it('пишет живой лог health-check с последним ответом production, пока ждёт нужную версию',async()=>{
+    const limits={checkoutMs:1_000,knowledgeBaseMs:1_000,regressionMs:1_000,switchingMs:1_000,buildingMs:1_000,healthCheckMs:1_500}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.36\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.0","commit":"old-sha"}'}:{exitCode:0,output:'ok'}}
+    await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.36',version:'0.1.36',sha:'fixed-sha',status:'ready'})
+    const attempt=await new ReleaseManager(db,runtime,{healthLogIntervalMs:0}).start('owner',ci(),{...prod(),limits},'release/0.1.36')
+    // Ещё до вердикта шаг показывает, что именно отвечает production и сколько прошло.
+    await vi.waitFor(async()=>{
+      const r=await db.releases.getProjectRelease('owner',projectId,attempt.id)
+      const step=r?.steps.find(step=>step.kind==='health_check')
+      expect(step?.status).toBe('running')
+      expect(step?.log).toContain('Production отвечает SHA old-sha')
+      expect(step?.log).toMatch(/Прошло \d+ с из \d+ с/)
+    },{timeout:3_000})
+    const stored=await vi.waitFor(async()=>{const r=await db.releases.getProjectRelease('owner',projectId,attempt.id);expect(r?.status).toBe('failed');return r},{timeout:5_000})
+    // Финальная ошибка подсказывает, где искать причину сборки контейнеров.
+    expect(stored?.steps.find(step=>step.kind==='health_check')?.log).toContain('/var/log/voicechat-deploy.log')
+    // Сводка списка несёт причину и номер попытки без запроса деталей.
+    const summary=(await db.releases.listProjectReleaseSummaries('owner',projectId)).find(item=>item.id===attempt.id)
+    expect(summary?.attempt).toBe(2)
+    expect(summary?.failure).toMatch(/^Health-check: фактическая длительность/)
+    const preparation=(await db.releases.listProjectReleaseSummaries('owner',projectId)).find(item=>item.previousReleaseId===null)
+    expect(preparation?.failure).toBeNull()
   })
 
   it('resumes an active health check after server restart and verifies the expected commit and version',async()=>{
