@@ -49,6 +49,7 @@ import { EnginesObserver, type ObserverEngine } from './components/EnginesObserv
 import { PersonalizationPage } from './components/SettingsPage'
 import type { TaskUpdateFields } from './components/kanban/TaskModal'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
+import { productionReadiness } from '@shared/release'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
 import { KanbanAssistant } from './components/KanbanAssistant'
 import { CiCommands } from './components/ci/CiCommands'
@@ -2888,7 +2889,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                       onRetry={() => void loadGitWorkspaces(routeProjectId)}
                     />
             ) : routeReleases ? (
-            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} releaseTimeouts={projects.projectDetail!.releaseTimeouts} gitUrl={projects.projectDetail!.gitUrl} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} releaseTimeouts={projects.projectDetail!.releaseTimeouts} gitUrl={projects.projectDetail!.gitUrl} production={{ ...productionReadiness(projects.projectDetail!), machineName: projects.projectDetail!.machines.find((machine) => machine.agentId === projects.projectDetail!.productionAgentId)?.name ?? null, ...(projects.projectDetail!.productionHealthCheckCommand ? { healthCheckCommand: projects.projectDetail!.productionHealthCheckCommand } : {}) }} onOpenSettings={() => navigate(buildProjectsRoute({ kind: 'settings', projectId: routeProjectId }))} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             projects.projectDetail?.id === routeProjectId ? (
               <Suspense fallback={<div role="status">Загрузка настроек проекта…</div>}><ProjectSettings
