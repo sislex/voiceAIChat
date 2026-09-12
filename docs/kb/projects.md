@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-12
-checked: 679cb84f
+checked: fdb5c5ab
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1812,11 +1812,57 @@ Make-проект проекта: `tasks:unlinkDesign` + `tasks:linkDesign`) и 
 байты идут мостом `tasks:readAttachment` (`GET …/attachments/:attachmentId`) —
 прямой `<img src>` на `/api` получил бы 401, как и в студии картинок.
 
-Вкладки, кроме «Общего» и «Доработок», карточка не рисует сама: `TaskCardContainer`
-отдаёт их через `renderPanel`, подставляя те же компоненты, что и старая карточка
-(`TaskPreparationTab`, `CiTaskSettings`, `TaskTimeline`, `ComponentQaPanel`,
-`QaStageRunPanel`, `ManualQaPanel`, `MergePanel`, `TaskRunFeed`). Второй копии их
-логики в новой оболочке нет и заводить её не надо.
+**Функциональные вкладки по макету (2026-09-12, CHAT-445).** Вкладки, кроме
+«Общего» и «Доработок», `TaskCardContainer` отдаёт через `renderPanel`, но уже не
+голыми legacy-панелями, а панелями новой карточки из `components/kanban/NewTask*Panel.tsx`:
+каждая рисует «рейку этапов» макета (`NewTaskStages.tsx`: `StageRail`, `StageCard`,
+`StageBadge`, `WorkflowSnapshot`, `CycleReworks`, `CheckList`, `MetricTiles`,
+`AttemptList`) и **внутри выбранного этапа монтирует функциональную legacy-панель**
+(`TaskPreparationTab`, `ComponentQaPanel`, `QaStageRunPanel`, `ManualQaPanel`,
+`MergePanel`, `CiTaskSettings`, `TaskRunFeed`/`DevelopmentRunFeed`) — все действия
+(запуск, отмена, повтор, ответ модели, «на доработку», переход к следующему этапу,
+merge) идут через тот же код, второй копии логики нет. Для встраивания у legacy-панелей
+появились опциональные пропсы `runId`/`selectedRunId` (показать конкретную попытку),
+`onStateChange`/`onRunsChange` (отдать список попыток рейке — одна загрузка на обе)
+и `hideHistory` (рейка заменяет встроенный список попыток); список отдаётся **только
+после загрузки**, иначе свежесмонтированная панель обнуляла бы статусы рейки.
+
+Этапы рейки — чистая функция `assignToCycles` (`taskCycles.ts`): этап 1 — исходная
+постановка, дальше по одному этапу на каждый **отправленный** цикл доработки
+(черновики этапов не образуют, цикл без ранов показывается как «Ожидает»). Раны
+относятся к циклу по времени (последний цикл, отправленный до старта рана), у
+подготовки `preparationRunId` цикла пересиливает время. Словарь статусов один на все
+вкладки (`StageStatus` + `STAGE_STATUS_LABEL`, конвертеры `ciStageStatus`,
+`qaRunStageStatus`, `qaStageRunStatus`, `mergeStageStatus`, `qaSessionStageStatus`,
+`preparationStageStatus`); тон бейджа — `stageStatusTone`. Панель одна на вкладку и
+стоит в выбранном этапе; остальные этапы показывают сводку и кнопку «Показать».
+
+По вкладкам: «Подготовка» — этапы подготовки с формой запуска прямо в этапе без
+попыток (фильтр `runFilter` по диапазону времени цикла, а не по id — новый ран
+попадает в этап до перерисовки рейки); «Ход выполнения» — под-разделы
+`SubTabs` (Обзор · Работа модели · Проверки · База знаний · Ресурсы · Временная шкала),
+данные — `ci.getTaskReport` (метрики этапа: шаги, проверки-команды, время, попытки
+починки), лента выбранного рана — `DevelopmentRunFeed` со своей подпиской, кнопка
+«В очередь на разработку» по `canStartCiRun`; QA-вкладки — «история проходов»,
+проверки «Запуск прохода / Результат» из статуса; «Ручное QA» — блок «Тестовое
+окружение» (`appUrl`/`storybookUrl` сессии) и проходы по QA-сессиям; «Merge» —
+проверки «Актуальность main» (нет конфликтов) и «CI и конфликты»; «Лента рана» —
+шапка «движок · этап» с живой точкой и «Остановить ран» (отмена через
+`ci.cancelRun`/`cancelMerge` после подтверждения `useConfirm`). «Общее» получило
+редактор связи с Make (`onLinkMake`/`onReplaceMake` с `{conversationId, mode, paths}`,
+список файлов — `tasks:reworkMakeFiles`) и время этапов workflow из
+`ci.getTaskTimeline` (`TIMELINE_TYPE`: `preparation → task_preparation`, остальные —
+по имени); у текущего этапа — живой счётчик от `stage.startedAt`. «Доработки» —
+очередь с выбором нескольких черновиков: «Отправить выбранные» сливает их в самый
+старый (`mergeDraftInputs`: описания «№ N — …», объединённые критерии и Make-источники,
+`uploadIds` всех вложений — id вложения совпадает с id загрузки), удаляет остальные и
+отправляет один цикл, потому что сервер после первой отправки переводит задачу в
+подготовку и второй `submit` отвечает 409. Make-связи новая карточка грузит сама
+через `tasks:designs` — в задаче доски поля `designs` нет. Выбранная версия карточки
+хранится в `localStorage` (`TASK_CARD_VERSION_KEY = 'vc.taskCard.version'`), дефолт
+без записи — legacy; `initialVersion` пропа сильнее. Полоса вкладок — `flex: none`,
+тело `min-height: 0`: раньше на высоте окна ~800px тело требовало 580px и flex-колонка
+ужимала вкладки до 1px (закреплено в `taskCardStyles.test.ts`).
 
 **Черновики доработок (2026-09-08).** У `task_rework_cycles` появилась колонка
 `status` (`draft` | `submitted`; миграция в `database.ts` проставляет старым

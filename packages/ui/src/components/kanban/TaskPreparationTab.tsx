@@ -25,6 +25,16 @@ export interface TaskPreparationTabProps {
   onCancel?: (runId: string) => Promise<TaskPreparationRun | void>
   onAnswer?: (questionId: string, answer: string) => Promise<unknown>
   onExport?: (runId: string, format: 'md' | 'json') => Promise<void>
+  /**
+   * Embedding hooks for the new card: it draws the preparation history as a rail
+   * of cycles and mounts this panel once inside the selected stage. `runFilter`
+   * narrows the attempts to that stage, `onRunsChange` reports the full list so
+   * the rail can badge the other stages without a second request, `hideHistory`
+   * drops the built-in attempt list the rail replaces.
+   */
+  runFilter?: (run: TaskPreparationRun) => boolean
+  onRunsChange?: (runs: TaskPreparationRun[]) => void
+  hideHistory?: boolean
 }
 
 const STATUS_LABEL: Record<TaskPreparationRun['status'], string> = {
@@ -77,8 +87,11 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
    */
   const loadRunsRef = useRef(props.loadRuns)
   const loadRunRef = useRef(props.loadRun)
+  const onRunsChangeRef = useRef(props.onRunsChange)
   loadRunsRef.current = props.loadRuns
   loadRunRef.current = props.loadRun
+  onRunsChangeRef.current = props.onRunsChange
+  useEffect(() => { if (!loading) onRunsChangeRef.current?.(runs) }, [runs, loading])
   /** Наличие моста меняет только первичный `loading`, поэтому хватает флага. */
   const hasLoadRuns = Boolean(props.loadRuns)
 
@@ -208,7 +221,10 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
 
   useEffect(() => { void loadMachines(); void loadModels() }, [loadMachines, loadModels])
 
-  const selected = runs.find((run) => run.id === selectedId) ?? runs[0] ?? null
+  // The stage rail shows one cycle at a time; without a filter the panel is the
+  // legacy tab and sees every attempt.
+  const visibleRuns = props.runFilter ? runs.filter(props.runFilter) : runs
+  const selected = visibleRuns.find((run) => run.id === selectedId) ?? visibleRuns[0] ?? null
   const selectedMachine = machines?.machines.find((machine) => machine.agentId === selection.machineId)
   const modelOptions = allowedModels(props.llmAccess ?? [], selection.provider)
   const engineOptions = (props.llmEngines ?? []).filter((engine) => engine.kind === selection.provider)
@@ -340,16 +356,16 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
         {selected.canRetry && props.onRetry && <Button variant="primary" size="sm" loading={pending === 'retry'} onClick={() => void act('retry')}>Повторить подготовку</Button>}
         {props.onExport && <><Button size="sm" onClick={() => void props.onExport?.(selected.id, 'md')}>Скачать Markdown</Button><Button size="sm" onClick={() => void props.onExport?.(selected.id, 'json')}>Скачать JSON</Button></>}
       </div>
-      <h4>Предыдущие попытки</h4>
+      {!props.hideHistory && <><h4>Предыдущие попытки</h4>
       <ol className="task-progress-list" data-testid="task-preparation-history">
-        {runs.map((run) => (
+        {visibleRuns.map((run) => (
           <li key={run.id}>
             <button type="button" aria-pressed={selected.id === run.id} onClick={() => setSelectedId(run.id)}>
               Попытка {run.attempt} · {formatDateTime(run.createdAt)} · {run.provider ?? 'claude'} · {run.model || 'по умолчанию'} · {STATUS_LABEL[run.status]}
             </button>
           </li>
         ))}
-      </ol>
+      </ol></>}
       </>}
     </div>
   )

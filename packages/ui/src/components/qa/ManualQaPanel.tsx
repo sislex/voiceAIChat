@@ -4,8 +4,14 @@ import { canCompleteQa, qaProgress } from '@shared/qa'
 import { Button, QaScore } from '@voicechat/ui-kit'
 import { ErrorState, Skeleton } from '@voicechat/ui-kit'
 
-export function ManualQaPanel(props: { projectId: string; taskId: string; activeRun?: boolean; onFixStarted?: (runId: string) => void }): JSX.Element {
+export function ManualQaPanel(props: {
+  projectId: string; taskId: string; activeRun?: boolean; onFixStarted?: (runId: string) => void
+  /** The new card draws sessions as a rail around this panel and needs the same state. */
+  onStateChange?: (state: QaTaskState) => void
+}): JSX.Element {
   const [state, setState] = useState<QaTaskState | null>(null)
+  const onStateChange = props.onStateChange
+  useEffect(() => { if (state) onStateChange?.(state) }, [state, onStateChange])
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')

@@ -6,8 +6,21 @@ import { AttemptHistory, Button, EmptyState, ErrorState, FeedItem, FeedLog, Metr
 import { COMPONENT_QA_SCENARIO_LABEL, qaRunTone, qaScenarioTone, qaStepTone } from './qaTone'
 import { useQaStageUpdates } from './useQaStageUpdates'
 
-export function ComponentQaPanel(props:{projectId:string;taskId:string;active:boolean;onFixStarted?:(id:string)=>void}):JSX.Element {
+/**
+ * Embedding props for the new card: `runId` shows a specific attempt instead of
+ * the latest one, `onStateChange` hands the whole state to the stage rail (one
+ * request for both), `hideHistory` drops the built-in attempt list the rail
+ * replaces. Gate actions (fix, complete) stay bound to the latest run: the
+ * server only accepts them for it.
+ */
+export interface ComponentQaPanelProps {
+  projectId:string;taskId:string;active:boolean;onFixStarted?:(id:string)=>void
+  runId?:string|null;onStateChange?:(state:ComponentQaTaskState)=>void;hideHistory?:boolean
+}
+export function ComponentQaPanel(props:ComponentQaPanelProps):JSX.Element {
   const [state,setState]=useState<ComponentQaTaskState|null>(null)
+  const onStateChange=props.onStateChange
+  useEffect(()=>{if(state)onStateChange?.(state)},[state,onStateChange])
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
   const load=useCallback(async()=>{
@@ -34,7 +47,8 @@ export function ComponentQaPanel(props:{projectId:string;taskId:string;active:bo
     <span className="vc-sr-only" aria-live="polite">Загрузка Component QA…</span>
     <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
   </section>
-  const run=state.latestRun
+  const run=(props.runId?state.runs.find((item)=>item.id===props.runId):undefined)??state.latestRun
+  const latest=run!=null&&run.id===state.latestRun?.id
   const act=async(action:()=>Promise<unknown>)=>{setBusy(true);try{await action();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}}
   return <section className="component-qa-panel" aria-label="Component QA">
     <PanelHeading
@@ -113,10 +127,10 @@ export function ComponentQaPanel(props:{projectId:string;taskId:string;active:bo
       {state.activeRun&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.cancelComponent!(props.projectId,props.taskId,state.activeRun!.id))}>Отменить</Button>}
       {run?.canRetry&&<Button size="sm" disabled={busy||props.active||state.activeRun!=null} onClick={()=>void act(()=>window.qa!.startComponent!(props.projectId,props.taskId))}>Повторить</Button>}
       {run?.storybookUrl&&<Button size="sm" onClick={()=>window.open(run.storybookUrl!,'_blank')}>Открыть Storybook</Button>}
-      {run&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(async()=>{const fix=await window.qa!.fixComponent!(props.projectId,props.taskId,run.id);props.onFixStarted?.(fix.id)})}>Отправить на доработку</Button>}
-      {run&&<Button size="sm" disabled={busy||!state.canComplete} onClick={()=>void act(()=>window.qa!.completeComponent!(props.projectId,props.taskId,run.id))}>Перейти к созданию интеграционных автотестов</Button>}
+      {run&&latest&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(async()=>{const fix=await window.qa!.fixComponent!(props.projectId,props.taskId,run.id);props.onFixStarted?.(fix.id)})}>Отправить на доработку</Button>}
+      {run&&latest&&<Button size="sm" disabled={busy||!state.canComplete} onClick={()=>void act(()=>window.qa!.completeComponent!(props.projectId,props.taskId,run.id))}>Перейти к созданию интеграционных автотестов</Button>}
     </div>
-    {state.runs.length>1&&<AttemptHistory
+    {state.runs.length>1&&!props.hideHistory&&<AttemptHistory
       testId="component-qa-history"
       selectedId={run?.id}
       attempts={state.runs.map((item)=>({
