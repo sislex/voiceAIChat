@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { ClaudeCli, type SpawnFn } from './claudeCli'
 import type { LlmStreamHandlers } from '@voicechat/shared'
@@ -28,6 +30,11 @@ function makeHandlers(): LlmStreamHandlers & { calls: Record<string, unknown[]> 
 }
 
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
+
+function attachmentRe(name: string): RegExp {
+  const directory = tmpdir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`${directory}[/\\\\]+voicechat-llm-run-[^\\s]+[/\\\\]1-${name.replace('.', '\\.')}`)
+}
 
 describe('ClaudeCli', () => {
   it('стримит дельты, ловит session_id и финальный текст', async () => {
@@ -63,6 +70,24 @@ describe('ClaudeCli', () => {
     expect(h.calls.delta).toEqual(['При', 'вет'])
     expect(h.calls.done).toEqual(['Привет'])
     expect(h.calls.error).toHaveLength(0)
+  })
+
+  it('локально раскладывает вложения и удаляет их после завершения', async () => {
+    const { child, stdout } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send({
+      prompt: 'Открой /studio/selection.png', sessionId: null, model: 'sonnet',
+      attachments: [{ serverPath: '/studio/selection.png', runnerName: 'selection.png', dataBase64: Buffer.from('pixels').toString('base64') }]
+    }, makeHandlers())
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const prompt = args[args.indexOf('-p') + 1]
+    expect(prompt).not.toContain('/studio/selection.png')
+    const path = prompt.match(attachmentRe('selection.png'))?.[0]
+    expect(path).toBeTruthy()
+    expect(readFileSync(path!, 'utf8')).toBe('pixels')
+    stdout.write(JSON.stringify({ type: 'result', is_error: false, result: 'Готово' }) + '\n')
+    await tick()
+    expect(existsSync(path!)).toBe(false)
   })
 
   it('добавляет --resume при наличии sessionId и --model', () => {

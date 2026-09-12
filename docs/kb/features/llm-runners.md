@@ -2,8 +2,8 @@
 id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
-updated: 2026-08-18
-checked: 9475d08b
+updated: 2026-09-12
+checked: e1ce913f
 areas:
   - apps/llm-runner/src
   - packages/shared/src/llm.ts
@@ -129,16 +129,20 @@ Codex парсит сервер (`packages/shared/src/streamJson.ts`, `codexStre
 передачу результата image-инструментам и разные сообщения для отсутствующего и
 неподдерживаемого файла.
 
-`LlmRequest.cwd` и `LlmRequest.attachments` теперь трактуются исполнителем, а не
-сервером. `cwd` приходит как желаемый каталог: `RunManager` проверяет его уже на
-хосте исполнителя и при несуществующем пути просто не передаёт `cwd` в `spawn`,
-вместо того чтобы уронить запуск `ENOENT`/`EACCES`. Вложения сервер шлёт байтами
-(`serverPath`, `runnerName`, `dataBase64`), а `prepareRun()` раскладывает их во
-временный каталог `voicechat-llm-run-*`, подменяет в prompt все вхождения
-`serverPath` на локальные пути этого каталога и удаляет каталог при нормальном
-завершении, отмене, обрыве клиента и даже если `spawn` бросил исключение. Так
-удалённый CLI видит реальные файлы своей машины, хотя prompt собирался по путям
-ФС сервера.
+`LlmRequest.cwd` is interpreted by the HTTP runner: `RunManager` validates the
+desired directory on its own host and omits an unavailable path from `spawn`
+instead of failing with `ENOENT` or `EACCES`.
+
+Attachment preparation is shared by all execution paths. The producer sends
+`serverPath`, `runnerName`, and `dataBase64`, and must mention the exact
+`serverPath` in the prompt. `prepareLlmAttachments()` materializes the files in
+a temporary `voicechat-llm-run-*` directory and replaces those prompt paths
+with readable local paths. Embedded `ClaudeCli` and `CodexCli` invoke the helper
+directly; HTTP `RunManager` uses it before building argv. Every path removes the
+directory on completion, failure, or cancellation, while the HTTP path also
+covers client disconnects and orphan expiry. `preserveServerPath` keeps a remote
+machine path authoritative and appends a separate visual-copy mapping for the
+model.
 
 ## Ран не переживает своего клиента
 
