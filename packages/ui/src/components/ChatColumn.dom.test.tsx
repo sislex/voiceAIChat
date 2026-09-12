@@ -25,6 +25,54 @@ function renderCol(props: Partial<Parameters<typeof ChatColumn>[0]> = {}): void 
   )
 }
 
+// @testCase T3
+it('search highlights occurrences, navigates and only captures find inside the chat', async () => {
+  renderCol({ messages: [makeAiMessage({ text: '**find** find find' })] })
+  const outside = document.createElement('input')
+  document.body.append(outside)
+  outside.focus()
+  expect(fireEvent.keyDown(outside, { key: 'f', ctrlKey: true })).toBe(true)
+  screen.getByTestId('scroll').focus()
+  fireEvent.keyDown(screen.getByTestId('scroll'), { key: 'f', metaKey: true })
+  const input = screen.getByLabelText('Найти в беседе')
+  fireEvent.change(input, { target: { value: 'find' } })
+  expect(document.querySelectorAll('[data-chat-match]')).toHaveLength(3)
+  expect(screen.getByText('1 / 3')).toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText('Следующее совпадение'))
+  expect(screen.getByText('2 / 3')).toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText('Предыдущее совпадение'))
+  expect(screen.getByText('1 / 3')).toBeInTheDocument()
+  fireEvent.change(input, { target: { value: 'absent' } })
+  expect(screen.getByText('0 / 0')).toBeInTheDocument()
+  outside.remove()
+})
+
+// @testCase T4
+it('failed messages expose retry and local removal and disable both during retry', () => {
+  const failed = { operationId: 'op', conversationId: 'a', text: 'Failed', attachmentIds: ['upload'], error: 'Offline', retrying: false }
+  const retry = vi.fn()
+  const remove = vi.fn()
+  renderCol({ conversationId: 'a', failedSubmits: [failed], onRetryFailedSubmit: retry, onDeleteFailedSubmit: remove })
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Удалить' }))
+  expect(retry).toHaveBeenCalledWith('op')
+  expect(remove).toHaveBeenCalledWith('op')
+})
+
+// @testCase T7
+it('compact preference survives remount and search remains accessible', async () => {
+  localStorage.removeItem('vc.chat.compact')
+  renderCol()
+  fireEvent.click(screen.getByText('Компактная лента'))
+  expect(screen.getByRole('main')).toHaveClass('main--compact')
+  cleanup()
+  renderCol()
+  expect(screen.getByRole('main')).toHaveClass('main--compact')
+  fireEvent.click(screen.getByText('Поиск'))
+  await expectNoViolations()
+  localStorage.removeItem('vc.chat.compact')
+})
+
 describe('ChatColumn — контекст веб-превью в истории', () => {
   it('показывает старые сообщения без meta и раскрывает полный контекст нового', async () => {
     const previewElement = { tag: 'section', id: 'hero', classes: ['wide'], dataAttributes: { 'data-kind': 'hero' }, selector: '#hero', ancestors: ['html', 'body', 'section#hero'], rect: { x: 0, y: 0, top: 0, right: 800, bottom: 300, left: 0, width: 800, height: 300 }, pageUrl: 'https://example.test/page', viewport: { width: 1280, height: 720 }, outerHTML: '<section id="hero">Title</section>', text: 'Title', styles: { font: '16px sans-serif', color: 'black', backgroundColor: 'white', margin: '0', padding: '8px', border: 'none', width: '800px', height: '300px', position: 'static', display: 'block', flex: '0 1 auto', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'normal', justifyContent: 'normal', gap: 'normal', grid: 'none', gridTemplateColumns: 'none', gridTemplateRows: 'none', gridArea: 'auto' } }
@@ -59,6 +107,27 @@ describe('ChatColumn — кнопка озвучки ответа', () => {
     renderCol({ canSpeak: true, onSpeakMessage: vi.fn(), speakingMessageId: 'a1' })
     expect(screen.getByLabelText('Остановить озвучку')).toBeInTheDocument()
   })
+})
+
+// @testCase T5
+it('copies original Markdown, rendered text and each code block independently', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.assign(navigator, { clipboard: { writeText } })
+  const source = '**bold**\n\n```js\none()\n```\n\n```txt\ntwo\n```'
+  renderCol({ messages: [makeAiMessage({ text: source })] })
+  fireEvent.click(screen.getByLabelText('Копировать ответ'))
+  await vi.waitFor(() => expect(writeText).toHaveBeenLastCalledWith(source))
+  fireEvent.click(screen.getByText('Копировать текст'))
+  await vi.waitFor(() => expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining('bold')))
+  expect(writeText.mock.lastCall![0]).not.toContain('**')
+  const buttons = screen.getAllByLabelText('Копировать код')
+  fireEvent.click(buttons[0])
+  await vi.waitFor(() => expect(writeText).toHaveBeenLastCalledWith('one()\n'))
+  fireEvent.click(screen.getAllByLabelText('Копировать код')[1])
+  await vi.waitFor(() => expect(writeText).toHaveBeenLastCalledWith('two\n'))
+  writeText.mockRejectedValue(new Error('Denied'))
+  fireEvent.click(screen.getAllByLabelText('Копировать код')[1])
+  expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось скопировать код')
 })
 
 describe('ChatColumn — копирование сообщений', () => {
@@ -740,6 +809,7 @@ describe('ChatColumn — автопрокрутка ленты', () => {
     expect(screen.queryByRole('button', { name: 'К новому сообщению' })).not.toBeInTheDocument()
   })
 
+  // @testCase T3
   it('ручная прокрутка вверх сохраняет scrollTop при новых токенах и показывает кнопку', () => {
     const { rerender } = render(col({ conversationId: 'scroll-reading', streamingReply: 'О' }))
     const scroll = screen.getByTestId('scroll')
@@ -752,8 +822,16 @@ describe('ChatColumn — автопрокрутка ленты', () => {
     rerender(col({ conversationId: 'scroll-reading', streamingReply: 'Ответ растёт' }))
 
     expect(box.scrollTop).toBe(480)
+    expect(screen.getByText('↓ Новые сообщения (1)')).toBeInTheDocument()
+    rerender(col({ conversationId: 'scroll-reading', streamingReply: 'Ответ растёт дальше' }))
+    expect(screen.getByText('↓ Новые сообщения (1)')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'К новому сообщению' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'К новому сообщению' }).closest('.new-message-row')?.nextElementSibling).toHaveClass('chat-composer')
+    rerender(col({ conversationId: 'scroll-reading', streamingReply: '' }))
+    rerender(col({ conversationId: 'scroll-reading', streamingReply: '', messages: [...messages, makeAiMessage({ id: 'final' })] }))
+    expect(screen.getByText('↓ Новые сообщения (1)')).toBeInTheDocument()
+    rerender(col({ conversationId: 'scroll-reading', streamingReply: '', messages: [...messages, makeAiMessage({ id: 'final' }), makeAiMessage({ id: 'second' })] }))
+    expect(screen.getByText('↓ Новые сообщения (2)')).toBeInTheDocument()
   })
 
   it('кнопка возвращает вниз, включает follow и исчезает', async () => {

@@ -21,6 +21,7 @@ describe('useHotkeys', () => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   })
 
+  // @testCase T6
   it('пробел (down/up) вызывает push start и end по разу', () => {
     const onPushStart = vi.fn()
     const onPushEnd = vi.fn()
