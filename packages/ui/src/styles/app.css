@@ -8684,7 +8684,23 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    доработок по Make-проекту «Проект 19». Токены общие с остальной карточкой. */
 .new-task-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .new-task-eyebrow { display: block; margin-bottom: 4px; color: var(--text-dim); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.new-task-process { display: grid; gap: 14px; }
+.new-task-process { display: grid; gap: 14px; min-width: 0; }
+.new-task-process label, .new-task-settings label { display: grid; gap: 6px; min-width: 0; font-size: 12px; }
+.new-task-process select, .new-task-process textarea, .new-task-settings select, .new-task-settings textarea {
+  width: 100%; min-width: 0; box-sizing: border-box; padding: 9px; border: 1px solid var(--border);
+  border-radius: var(--radius-medium); background: var(--surface-sunken); color: var(--text); font: inherit;
+}
+.new-task-process textarea { min-height: 80px; resize: vertical; }
+.new-task-process pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.new-task-process a, .new-task-process code { overflow-wrap: anywhere; }
+.new-task-feed-steps { display: grid; gap: 8px; }
+.new-task-feed-steps > details { border: 1px solid var(--border); border-radius: var(--radius-medium); padding: 12px; background: var(--surface); }
+.new-task-feed-steps summary { cursor: pointer; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .new-task-process .task-preparation-grid { grid-template-columns: minmax(0, 1fr); }
+  .new-task-process .new-task-heading-actions { flex-wrap: wrap; }
+  .new-task-process .vc-btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; height: auto; min-height: 32px; }
+}
 .new-task-subtabs { margin: -18px -18px 4px; padding: 0 14px; }
 .new-task-stage-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .new-task-stage-heading h3 { margin: 0; font-size: 17px; }

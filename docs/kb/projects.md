@@ -1815,17 +1815,14 @@ Make-проект проекта: `tasks:unlinkDesign` + `tasks:linkDesign`) и 
 **Функциональные вкладки по макету (2026-09-12, CHAT-445).** Вкладки, кроме
 «Общего» и «Доработок», `TaskCardContainer` отдаёт через `renderPanel`, но уже не
 голыми legacy-панелями, а панелями новой карточки из `components/kanban/NewTask*Panel.tsx`:
-каждая рисует «рейку этапов» макета (`NewTaskStages.tsx`: `StageRail`, `StageCard`,
-`StageBadge`, `WorkflowSnapshot`, `CycleReworks`, `CheckList`, `MetricTiles`,
-`AttemptList`) и **внутри выбранного этапа монтирует функциональную legacy-панель**
-(`TaskPreparationTab`, `ComponentQaPanel`, `QaStageRunPanel`, `ManualQaPanel`,
-`MergePanel`, `CiTaskSettings`, `TaskRunFeed`/`DevelopmentRunFeed`) — все действия
-(запуск, отмена, повтор, ответ модели, «на доработку», переход к следующему этапу,
-merge) идут через тот же код, второй копии логики нет. Для встраивания у legacy-панелей
-появились опциональные пропсы `runId`/`selectedRunId` (показать конкретную попытку),
-`onStateChange`/`onRunsChange` (отдать список попыток рейке — одна загрузка на обе)
-и `hideHistory` (рейка заменяет встроенный список попыток); список отдаётся **только
-после загрузки**, иначе свежесмонтированная панель обнуляла бы статусы рейки.
+each panel owns its forms, results and selected-run presentation, using the shared
+`NewTaskStages.tsx` primitives and existing domain APIs. Whole legacy panels are
+no longer mounted. `NewDevelopmentRunFeed` owns development subscriptions and
+logs; the small `InteractionCard` remains shared with the legacy feed.
+`useNewTaskResource` preserves loaded data on refresh failures, isolates resource
+keys and ignores stale requests. `useNewTaskAction` prevents concurrent duplicate
+actions and refreshes actual state after both success and failure. Historical
+attempt selection does not redirect answers or cancellation to the active run.
 
 Этапы рейки — чистая функция `assignToCycles` (`taskCycles.ts`): этап 1 — исходная
 постановка, дальше по одному этапу на каждый **отправленный** цикл доработки
@@ -1837,12 +1834,13 @@ merge) идут через тот же код, второй копии логи�
 `preparationStageStatus`); тон бейджа — `stageStatusTone`. Панель одна на вкладку и
 стоит в выбранном этапе; остальные этапы показывают сводку и кнопку «Показать».
 
-По вкладкам: «Подготовка» — этапы подготовки с формой запуска прямо в этапе без
-попыток (фильтр `runFilter` по диапазону времени цикла, а не по id — новый ран
-попадает в этап до перерисовки рейки); «Ход выполнения» — под-разделы
+Preparation owns machine/model setup, cycle attempts, questions and answers,
+readiness gates, the Development Brief and run steps. Submitted rework history
+opens the corresponding preparation cycle; answers target the selected active
+attempt only. «Ход выполнения» — под-разделы
 `SubTabs` (Обзор · Работа модели · Проверки · База знаний · Ресурсы · Временная шкала),
 данные — `ci.getTaskReport` (метрики этапа: шаги, проверки-команды, время, попытки
-починки), лента выбранного рана — `DevelopmentRunFeed` со своей подпиской, кнопка
+починки), лента выбранного рана — `NewDevelopmentRunFeed` со своей подпиской, кнопка
 «В очередь на разработку» по `canStartCiRun`; QA-вкладки — «история проходов»,
 проверки «Запуск прохода / Результат» из статуса; «Ручное QA» — блок «Тестовое
 окружение» (`appUrl`/`storybookUrl` сессии) и проходы по QA-сессиям; «Merge» —
@@ -1863,6 +1861,37 @@ merge) идут через тот же код, второй копии логи�
 без записи — legacy; `initialVersion` пропа сильнее. Полоса вкладок — `flex: none`,
 тело `min-height: 0`: раньше на высоте окна ~800px тело требовало 580px и flex-колонка
 ужимала вкладки до 1px (закреплено в `taskCardStyles.test.ts`).
+
+**CHAT-445 implementation details and regression coverage.** Make replacement is
+not atomic: `unlinkDesign` precedes `linkDesign`. The container immediately keeps
+the confirmed unlink result and reloads actual links on failure; retry does not
+attempt to unlink an already removed source. Multi-draft submission updates the
+oldest selected draft, deletes the other selected drafts and submits once. A
+failure reloads the queue and is displayed instead of claiming successful submission.
+Unselected drafts remain untouched. Completed workflow stages use recorded timing;
+only a running or input-waiting stage with `startedAt` continues counting.
+Development cycle snapshots use the selected report's recorded root-step titles;
+missing steps are explicitly reported. Other panels label the current task workflow
+as current, rather than presenting it as a saved historical snapshot.
+
+Preparation prompts require exactly one JSON object with `schemaVersion=2`, without
+Markdown or introductory/concluding prose. `preparationJsonObject` permits only
+an unambiguous single balanced object inside textual framing and removes optional
+`decisions[].questionId=null`. It never searches past a damaged first object;
+multiple objects, array wrappers and incompatible field types are rejected.
+Strict runtime validation and the existing readiness quality gate still run
+after normalization. Requirements are not inferred or added. Allowed null values
+such as `storybookStoryId` and question answers remain intact. Preparation tests
+cover prose/fences, ambiguity, malformed JSON, incompatible fields, preservation
+of requirements and normalization idempotence.
+
+`NewTaskPanels.stories.tsx` provides `kanban-newtaskcard-functionalpanels--*`
+stories for all eleven tabs. The DOM suite covers both themes and widths, cycle
+isolation and action routing; container tests cover Make, selected draft batches,
+partial failures and version persistence without task writes. The Playwright
+script `NewTaskPanels.browser.mjs` checks the same 44 tab/theme/width combinations
+and writes screenshots to `.generated_images`. Real deployed preview availability
+still requires manual verification.
 
 **Черновики доработок (2026-09-08).** У `task_rework_cycles` появилась колонка
 `status` (`draft` | `submitted`; миграция в `database.ts` проставляет старым
