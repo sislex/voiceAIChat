@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-12
-checked: 4aae694e
+updated: 2026-09-13
+checked: fff2eeb5
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -3271,6 +3271,45 @@ changed_in_project / both / missing_*` считаются сравнением �
 показывается словами, кнопки записи нет).
 
 ## Студия картинок: сплит «чат + галерея разговора»
+
+**Image Studio gallery and task controls (CHAT-455).** The panel keeps its
+existing gallery, selection, viewer, canvas processing, and preference storage.
+Ungrouped results use row windowing from 200 files, without first expanding
+pagination. The window uses the grid's position inside the scrolling pane,
+measured row pitch, and gap-adjusted spacers; it clamps stale scroll positions
+after filtering. Smaller and grouped galleries retain pagination.
+
+Recent prompt history retains 50 distinct prompts. Favorites are independently
+searchable and survive history eviction. Per-prompt style, size, negative text,
+and no-text preferences are stored alongside the existing history key; legacy
+string histories still load. Storage failures do not block rendering.
+
+Modern host ports submit generation through `imgstudio:enqueue` and poll
+`imgstudio:tasks`. The task count, state, and explicit cancellation are shown
+in the toolbar. Running and saving use an indeterminate progress element.
+Unmounting stops polling, not server work. Hosts without these ports retain the
+legacy generate/edit behavior. Recorded size/style/negative settings describe
+prompt instructions, not guaranteed output properties; absent model and seed
+metadata are not invented.
+
+The publication editor manages selected files, captions, pointer drag order,
+keyboard move-up controls, and a text watermark. Draft preview opens a temporary
+server-rendered page using the same HTML and image path as publication, without
+publishing or modifying the saved settings. The viewer edits persistent tags and proposes words from the
+prompt; gallery search includes tags and inclusive local calendar dates.
+Viewer pinch zoom suppresses image switching, and keyboard navigation ignores
+inputs. Canvas crop presets include 1:1, 4:5, and 16:9; existing transforms and
+source-linked version uploads remain the processing path.
+
+At widths up to 720 px, normal and dense grids have two columns. On phones,
+the composer opens through the shared Dialog as a bottom sheet, and viewer
+padding includes safe-area insets. New stories include
+`imagestudio-imagestudiopane--virtual-gallery-500`,
+`imagestudio-imagestudiopane--queue-states`, and
+`imagestudio-imagestudiopane--publication-editor`. Browser regression coverage
+lives in `e2e/imageStudioLayout.e2e.test.ts`; test-case markers associate checks
+with the task's QA workflow.
+
 
 С 2026-09-09 серверная часть студии живёт в workspace `apps/image-studio`: в compose
 это отдельный процесс, в dev/desktop — встроенный модуль. UI, маршруты `#/images`,

@@ -109,8 +109,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
     'imgstudio:cancel': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/cancel`, { method: 'POST', body: '{}' }),
-    'imgstudio:publish': ({ conversationId, password }) =>
-      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: JSON.stringify(password !== undefined ? { password } : {}) }),
+    'imgstudio:publish': ({ conversationId, ...body }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: JSON.stringify(body) }),
     'imgstudio:publication': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/publication`),
     'imgstudio:unpublish': ({ conversationId }) =>
@@ -125,6 +125,23 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/restore`, { method: 'POST', body: JSON.stringify({ name }) }),
     'imgstudio:purge': ({ conversationId, name }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/trash/purge`, { method: 'POST', body: JSON.stringify(name !== undefined ? { name } : {}) }),
+    'imgstudio:preview': async ({ conversationId, settings }) => {
+      const result = await req<{ url: string }>(`/api/image-studio/${encodeURIComponent(conversationId)}/preview`, { method: 'POST', body: JSON.stringify({ settings }) })
+      return { url: httpBase + result.url }
+    },
+    'imgstudio:archive': async ({ conversationId, paths }) => {
+      const ticket = await req<{ url: string }>(`/api/image-studio/${encodeURIComponent(conversationId)}/archive`, { method: 'POST', body: JSON.stringify({ paths }) })
+      const link = document.createElement('a')
+      link.href = httpBase + ticket.url
+      link.download = 'gallery.zip'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    },
+    'imgstudio:enqueue': ({ conversationId, ...body }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks`, { method: 'POST', body: JSON.stringify(body) }),
+    'imgstudio:tasks': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks`),
+    'imgstudio:cancelTask': ({ conversationId, taskId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
+    'imgstudio:tags': ({ conversationId, ...body }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tags`, { method: 'POST', body: JSON.stringify(body) }),
     'imgstudio:list': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/files`),
     'imgstudio:read': async ({ conversationId, path }) => {
       // Байты картинки — через авторизованный fetch: <img src> без токена

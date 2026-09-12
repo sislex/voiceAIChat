@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
+import sharp from 'sharp'
 
 const ROOT = resolve(__dirname, '..')
 const PASSWORD = 'image-studio-layout-test'
@@ -73,6 +74,8 @@ describe('Студия картинок: адаптивная раскладка
     const portrait = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="160"><rect width="200" height="160" fill="white"/><circle cx="100" cy="64" r="38" fill="#d39b78"/><rect x="62" y="102" width="76" height="54" rx="18" fill="#315d91"/></svg>').toString('base64')
     await api(`/api/image-studio/${conversationId}/file`, 'POST', { path: 'портрет.svg', dataBase64: portrait })
     await api(`/api/image-studio/${conversationId}/file`, 'POST', { path: 'портрет-2.svg', dataBase64: portrait, source: 'портрет.svg' })
+    const raster = await sharp(Buffer.from(portrait, 'base64')).png().toBuffer()
+    await api(`/api/image-studio/${conversationId}/file`, 'POST', { path: 'portrait.png', dataBase64: raster.toString('base64') })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 950 }, reducedMotion: 'reduce' })
     await page.addInitScript(token => localStorage.setItem('vc.session.token', token), token)
@@ -201,4 +204,94 @@ describe('Студия картинок: адаптивная раскладка
     }
     await screenshot('mobile-selection-history')
   })
+
+  // @testCase TC08
+  it('saves actual canvas crops, rotation and color correction as linked versions', async () => {
+    await page.setViewportSize({ width: 1440, height: 950 })
+    const source = 'portrait.png'
+    for (const [label, ratio] of [['1:1', 1], ['4:5', 4 / 5], ['16:9', 16 / 9]] as const) {
+      await page.getByRole('button', { name: `Открыть ${source} в полный размер`, exact: true }).click()
+      const viewer = page.getByTestId('image-studio-viewer')
+      await viewer.getByRole('button', { name: 'Ещё действия с картинкой' }).click()
+      await viewer.getByRole('menuitem', { name: 'Обрезать (выделите область)' }).click()
+      await viewer.getByRole('button', { name: label, exact: true }).click()
+      const box = await viewer.locator('.image-studio-crop-stage').boundingBox()
+      if (!box) throw new Error('Crop stage missing')
+      await page.mouse.move(box.x + 10, box.y + 10)
+      await page.mouse.down()
+      await page.mouse.move(box.x + box.width * .55, box.y + box.height * .6)
+      await page.mouse.up()
+      const pending = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/file'))
+      await viewer.getByRole('button', { name: 'Вырезать выделенное' }).click()
+      const response = await pending
+      expect(response.ok()).toBe(true)
+      const body = response.request().postDataJSON()
+      expect(body.source).toBe(source)
+      expect(body.path).not.toBe(source)
+      const image = await sharp(Buffer.from(body.dataBase64, 'base64')).metadata()
+      expect(image.width! / image.height!).toBeCloseTo(ratio, 1)
+      const files = await response.json()
+      expect(files.find((file: { path: string }) => file.path === body.path)).toMatchObject({ source, operation: 'transform' })
+      await viewer.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    }
+    for (const label of ['Повернуть на 90°', 'Чёрно-белое']) {
+      await page.getByRole('button', { name: `Действия ${source}`, exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Инструменты обработки' }).click()
+      const pending = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/file'))
+      await page.getByRole('button', { name: label, exact: true }).click()
+      const response = await pending
+      expect(response.ok()).toBe(true)
+      const body = response.request().postDataJSON()
+      expect(body.source).toBe(source)
+      const decoded = await sharp(Buffer.from(body.dataBase64, 'base64')).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+      if (label.includes('90')) expect([decoded.info.width, decoded.info.height]).toEqual([160, 200])
+      else for (let index = 0; index < decoded.data.length; index += 3) {
+        expect(decoded.data[index]).toBe(decoded.data[index + 1])
+        expect(decoded.data[index]).toBe(decoded.data[index + 2])
+      }
+    }
+  })
+
+  // @testCase TC01
+  it('keeps 500 images windowed and uses two columns and a bottom composer at 390px', async () => {
+    const headers = { 'content-type': 'application/json', authorization: `Bearer ${sessionToken}` }
+    const created = await fetch(base + '/api/conversations', { method: 'POST', headers, body: JSON.stringify({ title: 'Windowed gallery', assistantKind: 'images' }) })
+    const body = await created.json() as { id?: string; conversation?: { id: string } }
+    const id = body.id ?? body.conversation!.id
+    const dataBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="teal"/></svg>').toString('base64')
+    for (let index = 0; index < 500; index++) {
+      const response = await fetch(`${base}/api/image-studio/${id}/file`, { method: 'POST', headers, body: JSON.stringify({ path: `window-${String(index).padStart(3, '0')}.svg`, dataBase64 }) })
+      expect(response.ok).toBe(true)
+    }
+    await page.evaluate(() => { localStorage.setItem('vc.imgstudio.order', 'name'); localStorage.setItem('vc.imgstudio.composer', '0') })
+    await page.goto(`${base}/`)
+    await page.goto(`${base}/#/images/${id}`)
+    for (const width of [721, 720, 390]) {
+      await page.setViewportSize({ width, height: 844 })
+      const galleryTab = page.getByRole('tab', { name: 'Галерея', exact: true })
+      if (await galleryTab.isVisible()) await galleryTab.click()
+      const grid = page.getByRole('list', { name: 'Галерея изображений' })
+      await screenshot(`before-grid-${width}`)
+      await grid.waitFor()
+      await page.getByRole('combobox', { name: 'Порядок картинок' }).selectOption('name')
+      const pane = page.locator('.image-studio').first()
+      await expect.poll(() => grid.locator('.image-studio-card').count()).toBeLessThan(100)
+      if (width <= 720) expect(await grid.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2)
+      const height = await pane.evaluate(element => element.scrollHeight)
+      for (const fraction of [0, .25, .5, .75, 1]) {
+        await pane.evaluate((element, top) => { element.scrollTop = top }, height * fraction)
+        await expect.poll(() => grid.locator('.image-studio-card').count()).toBeGreaterThan(0)
+        expect(await grid.locator('.image-studio-card').count()).toBeLessThan(100)
+      }
+      await screenshot(`before-last-${width}`)
+      await expect.poll(() => grid.locator('[data-path]').evaluateAll(elements => elements.map(element => element.getAttribute('data-path')))).toContain('window-499.svg')
+      await screenshot(`windowed-${width}`)
+    }
+    await page.getByRole('button', { name: /Рисование/ }).click()
+    const composer = page.getByRole('dialog', { name: 'Рисование', exact: true })
+    await composer.waitFor()
+    await expect.poll(async () => { const box = await composer.boundingBox(); return !!box && box.y > 0 && box.y + box.height <= 845 }).toBe(true)
+    await screenshot('composer-390')
+    await composer.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  }, 120_000)
 })

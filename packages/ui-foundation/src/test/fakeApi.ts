@@ -1643,6 +1643,20 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'imgstudio:trash': async () => ({ items: [] }),
     'imgstudio:restore': async ({ name }) => ({ name, files: [] }),
     'imgstudio:purge': async () => ({ removed: 0, items: [] }),
+    'imgstudio:preview': async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/' }),
+    'imgstudio:archive': async () => undefined,
+    'imgstudio:tasks': async () => [],
+    'imgstudio:cancelTask': async () => ({ cancelled: false }),
+    'imgstudio:enqueue': async ({ conversationId, prompt, path, ...options }) => {
+      const result = path ? await api['imgstudio:edit']({ conversationId, prompt, path }) : await api['imgstudio:generate']({ conversationId, prompt, ...options })
+      return { id: crypto.randomUUID(), conversationId, prompt, state: 'completed', createdAt: Date.now(), updatedAt: Date.now(), file: result.file }
+    },
+    'imgstudio:tags': async ({ conversationId, path, tags }) => {
+      const files = studioFiles.get(conversationId) ?? []
+      const file = files.find(item => item.path === path)
+      if (file) Object.assign(file, { tags })
+      return api['imgstudio:list']({ conversationId })
+    },
     'imgstudio:list': async ({ conversationId }) => (studioFiles.get(conversationId) ?? []).map(({ dataBase64: _b64, ...file }) => file),
     'imgstudio:read': async ({ conversationId, path }) => {
       const file = (studioFiles.get(conversationId) ?? []).find((entry) => entry.path === path)
