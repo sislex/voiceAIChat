@@ -760,6 +760,12 @@ export interface IpcInvokeMap {
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
   /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
   /** Студия картинок: галерея разговора, генерация и правка по промпту. */
+  'imgstudio:preview': { arg: { conversationId: string; settings: import('./imageStudio').ImageStudioPublicationSettings }; result: { url: string } }
+  'imgstudio:archive': { arg: { conversationId: string; paths: string[] }; result: void }
+  'imgstudio:enqueue': { arg: { conversationId: string } & import('./imageStudio').ImageStudioTaskInput; result: import('./imageStudio').ImageStudioTask }
+  'imgstudio:tasks': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioTask[] }
+  'imgstudio:cancelTask': { arg: { conversationId: string; taskId: string }; result: { cancelled: boolean } }
+  'imgstudio:tags': { arg: { conversationId: string; path: string; tags: string[] }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:list': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:read': { arg: { conversationId: string; path: string }; result: { path: string; dataBase64: string } }
   'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string; source?: string }; result: import('./imageStudio').ImageStudioFile[] }
@@ -772,8 +778,8 @@ export interface IpcInvokeMap {
   'imgstudio:place': { arg: { conversationId: string; basePath: string; objectPath: string; x?: number; y?: number; width?: number; height?: number }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:restoreVersion': { arg: { conversationId: string; currentPath: string; targetPath: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
-  'imgstudio:publish': { arg: { conversationId: string; password?: string | null }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
-  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean } }
+  'imgstudio:publish': { arg: { conversationId: string; password?: string | null; settings?: import('./imageStudio').ImageStudioPublicationSettings }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
+  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean; settings?: import('./imageStudio').ImageStudioPublicationSettings } }
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
   'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
@@ -1582,6 +1588,12 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:deleteAttachment',
   'tasks:readAttachment',
   'tasks:reworkMakeFiles',
+  'imgstudio:preview',
+  'imgstudio:archive',
+  'imgstudio:enqueue',
+  'imgstudio:tasks',
+  'imgstudio:cancelTask',
+  'imgstudio:tags',
   'imgstudio:list',
   'imgstudio:read',
   'imgstudio:upload',

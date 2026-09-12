@@ -50,6 +50,178 @@ afterEach(async () => {
 })
 
 describe('студия картинок: роуты', () => {
+  // @testCase TC04
+  it('owns queued work after the submitter disconnects, serializes and cancels it', async () => {
+    await app.close()
+    app = Fastify()
+    app.decorateRequest('user', null)
+    app.addHook('preHandler', async req => { (req as unknown as { user: { name: string } }).user = { name: U } })
+    const finish: Array<() => void> = []
+    const cancel = vi.fn()
+    const generator = vi.fn(async ({ onCancel }: { onCancel?: (fn: () => void) => void }) => new Promise<Buffer>((resolve, reject) => {
+      finish.push(() => resolve(PNG_BYTES))
+      onCancel?.(() => { cancel(); reject(new Error('cancelled')) })
+    }))
+    registerImageStudioRoutes(app, { core: fixture.core, store, generator: async () => generator })
+    const address = await app.listen({ port: 0, host: '127.0.0.1' })
+    const enqueue = async (prompt: string) => {
+      const response = await fetch(`${address}/api/image-studio/${convId}/tasks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt }) })
+      expect(response.status).toBe(202)
+      return response.json() as Promise<{ id: string }>
+    }
+    const first = await enqueue('one')
+    const second = await enqueue('two')
+    const third = await enqueue('three')
+    expect(generator).toHaveBeenCalledTimes(1)
+    const waiting = await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/tasks/${second.id}` })
+    expect(waiting.json()).toEqual({ cancelled: true })
+    expect((await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/tasks/${first.id}` })).json()).toEqual({ cancelled: true })
+    await vi.waitFor(() => expect(generator).toHaveBeenCalledTimes(2))
+    expect(cancel).toHaveBeenCalledTimes(1)
+    finish[1]!()
+    await vi.waitFor(async () => {
+      const tasks = (await app.inject({ url: `/api/image-studio/${convId}/tasks` })).json()
+      expect(tasks.map((task: { state: string }) => task.state)).toEqual(['cancelled', 'cancelled', 'completed'])
+      expect(tasks[2].id).toBe(third.id)
+    })
+    expect(await store.list(convId)).toHaveLength(1)
+    expect((await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/tasks/${third.id}` })).json()).toEqual({ cancelled: false })
+  })
+
+  // @testCase TC06
+  it('streams selected ZIP entries over real HTTP and consumes its download ticket once', async () => {
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    await store.writeBuffer(convId, 'other.png', Buffer.concat([PNG_BYTES, Buffer.from('other')]))
+    const address = await app.listen({ port: 0, host: '127.0.0.1' })
+    const ticket = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/archive`, payload: { paths: ['кот.png', 'кот.png', 'other.png'] } })
+    expect(ticket.statusCode).toBe(200)
+    const response = await fetch(address + ticket.json().url)
+    expect(response.headers.get('content-type')).toContain('application/zip')
+    expect(response.headers.get('content-disposition')).toContain('attachment')
+    expect(response.headers.get('content-length')).toBeNull()
+    const reader = response.body!.getReader()
+    const chunks: Buffer[] = []
+    for (;;) { const chunk = await reader.read(); if (chunk.done) break; chunks.push(Buffer.from(chunk.value)) }
+    const zip = Buffer.concat(chunks)
+    const entries: Array<{ name: string; data: Buffer }> = []
+    let offset = 0
+    while (zip.readUInt32LE(offset) === 0x04034b50) {
+      const size = zip.readUInt32LE(offset + 18)
+      const nameLength = zip.readUInt16LE(offset + 26)
+      const start = offset + 30 + nameLength
+      entries.push({ name: zip.subarray(offset + 30, start).toString(), data: zip.subarray(start, start + size) })
+      offset = start + size
+    }
+    expect(entries.map(entry => entry.name)).toEqual(['кот.png', 'other.png'])
+    expect(entries[0]!.data).toEqual(PNG_BYTES)
+    expect(zip.readUInt32LE(zip.length - 22)).toBe(0x06054b50)
+    expect((await fetch(address + ticket.json().url)).status).toBe(404)
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/archive`, payload: { paths: ['../secret.png'] } })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'POST', url: '/api/image-studio/missing/archive', payload: { paths: ['кот.png'] } })).statusCode).toBe(404)
+  })
+
+  // @testCase TC06
+  it('stops reading later ZIP entries after the download is aborted', async () => {
+    await store.writeBuffer(convId, 'large.png', Buffer.concat([PNG_BYTES, Buffer.alloc(4 * 1024 * 1024)]))
+    await store.writeBuffer(convId, 'waiting.png', PNG_BYTES)
+    await store.writeBuffer(convId, 'last.png', PNG_BYTES)
+    const read = store.readBuffer.bind(store)
+    let release!: () => void
+    const waiting = new Promise<void>(resolve => { release = resolve })
+    const spy = vi.spyOn(store, 'readBuffer').mockImplementation(async (id, path) => {
+      if (path === 'waiting.png') await waiting
+      return read(id, path)
+    })
+    const address = await app.listen({ port: 0, host: '127.0.0.1' })
+    const ticket = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/archive`, payload: { paths: ['large.png', 'waiting.png', 'last.png'] } })
+    const controller = new AbortController()
+    try {
+      const response = await fetch(address + ticket.json().url, { signal: controller.signal })
+      const reader = response.body!.getReader()
+      const first = await reader.read()
+      expect(first.done).toBe(false)
+      controller.abort()
+      await reader.cancel().catch(() => undefined)
+    } finally { release() }
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(spy).toHaveBeenCalledWith(convId, 'large.png')
+    expect(spy).not.toHaveBeenCalledWith(convId, 'last.png')
+    spy.mockRestore()
+  })
+
+  // @testCase TC07
+  it.each(['top-left', 'top-right', 'bottom-left', 'bottom-right'])('publishes order and captions and watermarks %s without changing originals', async position => {
+    const original = await sharp({ create: { width: 320, height: 240, channels: 3, background: '#278347' } }).png().toBuffer()
+    for (const name of ['a.png', 'b.png', 'private.png']) await store.writeBuffer(convId, name, original)
+    const settings = { items: [{ path: 'b.png', caption: '<script>Юникод &</script>' }, { path: 'a.png', caption: 'second' }], watermark: { text: 'Автор <&>', position } }
+    const preview = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/preview`, payload: { settings } })
+    expect(preview.statusCode).toBe(200)
+    expect(await store.publication(convId)).toBeNull()
+    const previewPage = await app.inject({ url: preview.json().url })
+    expect(previewPage.body.indexOf('alt="b.png"')).toBeLessThan(previewPage.body.indexOf('alt="a.png"'))
+    const previewImage = await app.inject({ url: preview.json().url + 'file?path=b.png' })
+    const result = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { settings } })
+    expect(result.statusCode).toBe(200)
+    const url = result.json().url
+    const page = await app.inject({ url })
+    expect(page.body.indexOf('alt="b.png"')).toBeLessThan(page.body.indexOf('alt="a.png"'))
+    expect(page.body).toContain('&lt;script&gt;Юникод &amp;&lt;/script&gt;')
+    expect(page.body).not.toContain('private.png')
+    expect((await app.inject({ url: url + 'file?path=private.png' })).statusCode).toBe(404)
+    const image = await app.inject({ url: url + 'file?path=b.png' })
+    expect(image.headers['content-type']).toContain('image/png')
+    expect(image.rawPayload).toEqual(previewImage.rawPayload)
+    const decoded = await sharp(image.rawPayload).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+    expect(decoded.info.width).toBe(320)
+    expect(decoded.info.height).toBe(240)
+    const originalPixels = await sharp(original).raw().toBuffer()
+    expect(decoded.data.equals(originalPixels)).toBe(false)
+    let changed = 0
+    for (let y = 0; y < 240; y++) for (let x = 0; x < 320; x++) {
+      const offset = (y * 320 + x) * 3
+      if (!decoded.data.subarray(offset, offset + 3).equals(originalPixels.subarray(offset, offset + 3))) {
+        changed++
+        if (position.startsWith('bottom')) expect(y).toBeGreaterThan(200)
+        else expect(y).toBeLessThan(30)
+        if (position.endsWith('right')) expect(x).toBeGreaterThan(200)
+        else expect(x).toBeLessThan(120)
+      }
+    }
+    expect(changed).toBeGreaterThan(10)
+    expect(await store.readBuffer(convId, 'b.png')).toEqual(original)
+    expect((await app.inject({ url: `/api/image-studio/${convId}/publication` })).json().settings).toEqual(settings)
+  })
+
+  // @testCase TC05
+  it('passes recorded prompt parameters through the generator and stores only known metadata', async () => {
+    const parameters = { style: 'акварель', negative: 'текст', size: '1024×1024', noText: true }
+    const result = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/tasks`, payload: { prompt: 'Кот', parameters } })
+    expect(result.statusCode).toBe(202)
+    await vi.waitFor(async () => {
+      const tasks = (await app.inject({ url: `/api/image-studio/${convId}/tasks` })).json()
+      expect(tasks[0].state).toBe('completed')
+      expect(tasks[0].file.parameters).toEqual(parameters)
+      expect(tasks[0].file.model).toBeUndefined()
+      expect(tasks[0].file.seed).toBeUndefined()
+    })
+    expect(generated[0]!.prompt).toContain('Стиль: акварель.')
+    expect(generated[0]!.prompt).toContain('Размер изображения: 1024x1024')
+    expect(generated[0]!.prompt).toContain('Не должно быть на изображении: текст.')
+    expect((await store.list(convId))[0]!.parameters).toEqual(parameters)
+  })
+
+  // @testCase TC09
+  it('keeps legacy metadata readable and validates tags and queued parameter support', async () => {
+    await store.writeBuffer(convId, 'legacy.png', PNG_BYTES)
+    await store.setMeta(convId, 'legacy.png', { prompt: 'legacy', source: 'original.png', operation: 'transform' })
+    const result = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/tags`, payload: { path: 'legacy.png', tags: [' cat ', 'cat', '', 'Юникод'] } })
+    expect(result.statusCode).toBe(200)
+    expect(result.json()[0]).toMatchObject({ prompt: 'legacy', source: 'original.png', operation: 'transform', tags: ['cat', 'Юникод'] })
+    expect(result.json()[0].parameters).toBeUndefined()
+    const invalid = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/tasks`, payload: { prompt: 'x', parameters: { seed: 123 } } })
+    expect(invalid.statusCode).toBe(400)
+  })
+
   it('галерея: загрузка, чтение с mime, переименование, удаление', async () => {
     const up = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/file`, payload: { path: 'логотип.png', dataBase64: PNG_BYTES.toString('base64') } })
     expect(up.statusCode).toBe(200)
