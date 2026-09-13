@@ -478,7 +478,7 @@ export interface IpcInvokeMap {
   /** Живые приглашения проекта (владельцу). */
   'projects:invitations': { arg: { id: string }; result: import('./projects').ProjectInvitation[] }
   'projects:invite': {
-    arg: { id: string; invitee: string; role?: import('./projects').ProjectRole }
+    arg: { id: string; invitee: string; role?: import('./projects').ProjectRole; ttlDays?: number }
     /** `link` — одноразовая ссылка приглашения; в списках её нет. */
     result: { invitation: import('./projects').ProjectInvitation; mailed: boolean; link: string }
   }
