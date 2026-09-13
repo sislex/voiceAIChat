@@ -9,6 +9,7 @@ beforeEach(() => { window.ci = createFakeCi() })
 afterEach(() => { delete (window as { ci?: unknown }).ci })
 
 describe('NewTaskFeedPanel', () => {
+  // @testCase TC-INT-02
   it('шапка рана: живая точка, движок и остановка при активном ране', () => {
     const stop = vi.fn()
     render(<NewTaskFeedPanel projectId="p1" taskId="t1" onStopRun={stop} ciSummary={{ id: 'run-1', taskId: 't1', status: 'running', error: null, slotProgress: { phase: 'model', done: 1, total: 3 }, durationMs: null, modelActive: true, awaitingInput: false, executionLlm: { source: 'run', provider: 'codex', model: 'gpt-5', llmEngineId: null, stage: null, base: { provider: 'codex', model: 'gpt-5', llmEngineId: null } } as never }} />)

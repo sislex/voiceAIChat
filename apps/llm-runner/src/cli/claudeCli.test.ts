@@ -358,7 +358,7 @@ describe('ClaudeCli', () => {
     expect(hint).toContain('изолированный Chromium')
     const allowed = args[args.indexOf('--allowedTools') + 1]
     // Смотреть страницу — снимок, ошибки и ожидание — без автоодобрения бесполезно.
-    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network', 'frames', 'styles', 'reset-session', 'downloads', 'read-download', 'cancel-download', 'delete-download', 'dialogs', 'handle-dialog', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
+    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network', 'viewport', 'evaluate', 'frames', 'styles', 'reset-session', 'downloads', 'read-download', 'cancel-download', 'delete-download', 'dialogs', 'handle-dialog', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
   })
 
   it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {

@@ -1206,6 +1206,18 @@ export class CiRepo extends BaseRepo {
     await this.sql.run(`INSERT INTO ci_events (id, project_id, run_id, command_id, type, actor_type, actor_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [this.newId(), args.projectId, args.runId ?? null, args.commandId ?? null, args.type, args.actorType, args.actorId ?? null, JSON.stringify(args.payload ?? {}), this.now()])
   }
 
+  /** Only trusted Reader events participate; model-authored log lines cannot satisfy the gate. */
+  async getCiBrowserEvidence(userId: string, runId: string, stepId: string): Promise<import('@voicechat/shared').CiBrowserEvidenceEvent[]> {
+    if (!await this.getCiRun(userId, runId)) return []
+    const rows = await this.sql.all(`SELECT payload FROM ci_events WHERE run_id = ? AND type = 'browser.observed' ORDER BY created_at ASC LIMIT 10000`, [runId]) as Array<{ payload: string }>
+    return rows.flatMap(row => {
+      try {
+        const value = JSON.parse(row.payload)
+        return value.stepId === stepId && value.event ? [value.event] : []
+      } catch { return [] }
+    })
+  }
+
   // --- Метрики (на лету, окно metrics_window) ---
 
   async ciCommandMetrics(userId: string, projectId: string): Promise<CiCommandMetric[]> {

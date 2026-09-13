@@ -172,7 +172,8 @@ export function claudeArgs(req: LlmRequest): string[] {
         allowed.push(
           'mcp__browser__screenshot', 'mcp__browser__errors', 'mcp__browser__wait', 'mcp__browser__console',
           'mcp__browser__network', 'mcp__browser__scroll', 'mcp__browser__press', 'mcp__browser__hover',
-          'mcp__browser__set', 'mcp__browser__a11y', 'mcp__browser__back', 'mcp__browser__forward'
+          'mcp__browser__set', 'mcp__browser__a11y', 'mcp__browser__back', 'mcp__browser__forward',
+          'mcp__browser__viewport', 'mcp__browser__evaluate'
         )
       }
     }
