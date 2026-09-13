@@ -45,8 +45,8 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
 
 // @testCase TC-BRIEF-03
 // @testCase T13
-// @testCase T8
-it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects prefixed briefs on every attempt: %s', async prefix => {
+// @testCase TC-11
+it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects a prefixed brief without saving partial requirements: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
   original.decisions = [{ id: 'D1', text: 'Keep requirements', rationale: 'Confirmed scope', questionId: null }]
@@ -653,6 +653,7 @@ describe('подготовка к разработке: диагностика �
     expect(run.error).toContain('ровно один JSON-объект')
   })
 
+  // @testCase TC-12
   // @testCase T10
   it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
     const { project, task } = await taskInBacklog()
@@ -672,6 +673,8 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase T9
   // @testCase T11
+  // @testCase TC-11
+  // @testCase TC-13
   it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()
@@ -689,6 +692,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase T11
+  // @testCase TC-13
   it('rejects unknown test-type enumerations without repairing requirements', async () => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -821,6 +825,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC-SCHEMA-NORMALIZATION
+  // @testCase TC-12
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -857,6 +862,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('sources[0].kind имеет недопустимое значение: knowledge_base')
   })
 
+  // @testCase TC-12
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -884,6 +890,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC7
+  // @testCase TC-12
   it('не подменяет неоднозначный статус источника на available', async () => {
     const { project, task } = await taskInBacklog()
     const malformed = JSON.parse(compatibleReadiness())
@@ -958,8 +965,8 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-7
   // @testCase TC6
   // @testCase TC-BRIEF-02
-  // @testCase T8
-  it('rejects Markdown fences with escaped newlines', async () => {
+  // @testCase TC-11
+  it('rejects an escaped Markdown fence before field normalization', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ text: `\`\`\`json\\n${compatibleReadiness()}\\n\`\`\`` })
 
