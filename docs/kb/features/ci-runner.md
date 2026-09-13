@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-09-13
-checked: 2c5f182e
+checked: 5d1e1a59
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -2216,19 +2216,24 @@ $14–15, то есть замер попал в тот же порядок, ч�
 
 ## Контракт и UI
 
-The run feed has step filters (all, failed/timeout/interrupted, commands,
-model work), case-insensitive log search, match navigation and expand/collapse
-controls. Physical lines are assembled from transport chunks before numbering;
-permalinks use `#step-<id>-L<n>` and reveal collapsed parent steps. Line numbers
-select a range (Shift selects its end); copying excludes ANSI escapes. Each
-step has an independent follow toggle and a bounded scroll viewport. Browser
-artifacts retain their authenticated loader.
+Лента рана фильтрует шаги (все, упавшие/timeout/interrupted, команды, ходы
+модели), ищет по логу без учёта регистра, переходит между совпадениями и умеет
+сворачивать/разворачивать все шаги. `CiLogLine` — транспортный chunk, а не
+физическая строка: `logRows` в `packages/ui/src/components/ci/ciFormat.ts`
+сначала склеивает chunks шага и снимает ANSI, и только затем делит текст для
+нумерации и поиска. Построчные ссылки имеют вид `#step-<id>-L<n>` и раскрывают
+свёрнутых родителей. Номер строки начинает диапазон, Shift выбирает его конец;
+копирование не включает ANSI. У каждого шага своё слежение за концом и
+ограниченная область прокрутки. Browser artifacts сохраняют authenticated loader.
 
-Pending questions display elapsed waiting time. “Ответить позже” saves partial
-answers in sessionStorage under the run/interaction identity and hides the
-form without answering the server. Reopening restores the draft. Plan approval
-shows a prefix/suffix text diff against the preceding plan interaction.
-Both TaskRunFeed and DevelopmentRunFeed subscribe to interaction updates.
+Ожидающий вопрос показывает длительность ожидания. «Ответить позже» сохраняет
+частичный ответ в sessionStorage по идентификаторам рана и interaction и скрывает
+форму, не отвечая серверу; повторное открытие восстанавливает черновик. Одобрение
+плана показывает prefix/suffix diff с предыдущей plan interaction. Вопросы
+приходят отдельными realtime-событиями: и `TaskRunFeed`, и `DevelopmentRunFeed`
+в `packages/ui/src/components/ci/TaskRunFeed.tsx` обязаны подписываться на
+`onInteraction`, заменять interaction с тем же id в своём cache и снимать
+подписку при unmount.
 
 Run details and snapshots include an optional project queue summary: visible
 waiting/busy task identities, project-local ordering, and server-wide occupied
@@ -2252,12 +2257,14 @@ bridge, is aborted after at most 30 seconds and displays the first 50 output
 lines. Built-in steps and PROD_DIR-routed commands are identified separately and
 are not executed by this local check. The cleanup warning remains.
 
-Retry requests accept an optional stepId for a root model-work or catalogue
-command step. The feed offers a preview of retained history and the subsequent
-steps before submitting the selection. Retry preserves the workspace and uses
-current slot configuration; removed or repeated command IDs fail explicitly
-instead of silently selecting a different occurrence. Full retry remains
-available for those configurations.
+`retry-from-step` принимает необязательный `stepId` корневого model-work или
+каталожного command-шагa. Перед отправкой лента показывает, какие шаги останутся
+в истории и какие выполнятся снова. Это продолжение того же `runId` в той же
+рабочей директории; точка возобновления строится по текущей конфигурации слотов,
+а не по сохранённой копии старого workflow (см. `retryFromFailed` в
+`apps/server/src/ci/runManager.ts`). Если command id удалён из слота или встречается
+там несколько раз, точку нельзя определить однозначно и сервер требует полный
+повтор вместо молчаливого выбора другого вхождения.
 
 
 Типы — `packages/shared/src/ci.ts`; REST-пути и WS-сообщения `ci.*` — в
