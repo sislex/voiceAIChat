@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
 updated: 2026-09-13
-checked: 181c142e
+checked: 2f962970
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -9,6 +9,7 @@ areas:
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/database.qa.test.ts
+  - apps/server/src/db/repos/ci.ts
   - apps/server/src/routes/qa.ts
   - apps/server/src/server.ts
   - packages/ui/src/components/qa/QaStageRunPanel.tsx
@@ -539,8 +540,12 @@ development-ран на этом workspace и успешный `task_preparation
 `readiness_json`. Нарушения не бросают ошибку, а сохраняются аудируемым
 `blocked`-раном с точными причинами (`task_not_in_integration_tests`,
 `missing_pushed_development_workspace`, `successful_development_run_not_found`,
-`missing_readiness_snapshot`), карточка остаётся на месте. Если предусловия
-целы, обязательных automatable-кейсов нет, а каждый обязательный
+`missing_readiness_snapshot`), карточка остаётся на месте. Любой такой отказ
+старта сохраняется с `failureClassification='infrastructure'`, а первый блокер —
+как `failureReason`; поэтому автопроход останавливается на инфраструктуре, не
+создавая bug-задачу и не расходуя fix-cycle. После восстановления предусловий
+повторный старт создаёт новую попытку `queued`. Если предусловия целы,
+обязательных automatable-кейсов нет, а каждый обязательный
 неавтоматизируемый кейс снабжён `notAutomatedReason` и
 `alternativeManualVerification`, тем же вызовом создаётся `skipped`-ран и
 `moveTask` в той же транзакции переводит карточку в `automated_qa` (после
@@ -691,10 +696,12 @@ pushed development-workspace, на его `agent_id`, с `CI=1` и общим л
 историй трёх этапов с переходами по гейту и восстановление прерванных ранов в
 `interrupted`.
 
-Integration tests добавили три db-кейса там же (общая фикстура
+Integration tests добавили db-кейсы там же (общая фикстура
 `integrationFixture` ставит карточку в `integration_tests` и подменяет
 `readiness_json`): один активный ран и физическая идемпотентность повторного
-старта, `skipped`-ветка с переездом в `automated_qa`, пометка предыдущего рана
+старта, инфраструктурная блокировка для отсутствующего, повреждённого или
+JSON-null readiness-снимка с успешной новой попыткой после восстановления,
+`skipped`-ветка с переездом в `automated_qa`, пометка предыдущего рана
 `stale/sha_changed` после смены SHA workspace. В `packages/shared/src/qa.test.ts`
 — два кейса: `validateIntegrationTestDiff` отсеивает нетестовые пути, и
 `integrationTestGate` привязан к SHA и семантической версии, переиспользуя
