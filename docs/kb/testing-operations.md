@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-13
-checked: 7cb7a533
+checked: ab010033
 areas:
   - package.json
   - scripts
@@ -553,7 +553,7 @@ positive tests». `terminate()` безопасен в любом состоян�
 
 ## Диагностика по слоям
 
-Browser Runner's `sessionDiagnostics.test.ts` fixture issues `/broken`, `/bad` (HTTP 503) and `/slow` concurrently. Observing one `state: failed` request does not mean the HTTP 503 has arrived. The `failedOnly` regression waits for both entries before checking their statuses; it does not assume event order.
+Фикстура Browser Runner в `apps/browser-runner/src/sessionDiagnostics.test.ts` запускает `/broken`, `/bad` (HTTP 503) и `/slow` независимо. Сокетная ошибка `/broken` и HTTP-ответ 503 приходят в диагностику без гарантированного порядка, поэтому появление одной записи `state: failed` ещё не означает, что `/bad` уже зарегистрирован. Регрессия `failedOnly` сначала через `expect.poll` дожидается обеих записей и только затем проверяет их статусы; предположение о порядке событий делало прежний тест плавающим.
 
 1. `/api/health` — процесс и HTTP доступны.
 2. `/api/session/me` — bearer token и пользователь.
