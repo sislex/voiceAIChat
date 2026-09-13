@@ -2682,6 +2682,7 @@
   background: var(--panel);
 }
 .uhead-machine {
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: var(--space-100);
@@ -2694,6 +2695,7 @@
   text-overflow: ellipsis;
 }
 .uhead-status {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2733,6 +2735,14 @@
   cursor: help;
 }
 /* Переключатель утилит и ссылка в «Машины» — к правому краю шапки. */
+.term-toolbar, .mst-filters, .fsselection, .cons-history-actions { display: flex; flex-wrap: wrap; gap: var(--space-100); padding: var(--space-100); }
+.uhead-machine .sel { min-width: 0; max-width: 100%; }
+@media (max-width: 720px) {
+  .uhead-machine { width: 100%; flex-wrap: nowrap; }
+  .uhead-ver { display: none; }
+  .uhead-switch { width: 100%; margin-left: 0; }
+  .uhead-switch .vc-btn { flex: 1; min-width: 0; padding-inline: var(--space-050); }
+}
 .uhead-switch {
   display: inline-flex;
   gap: var(--space-050);

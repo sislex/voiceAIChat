@@ -21,7 +21,8 @@ import { createStoreCore, type Store } from '../createStore'
 /** Сколько команд консоли помним по одной машине (дальше вытесняются старые). */
 import type { UtilityKind } from '@voicechat/ui-foundation/components/machine'
 
-const CONSOLE_HISTORY_MAX = 100
+import { machineHistory, COMMAND_HISTORY_LIMIT } from '../../lib/machineHistory'
+const CONSOLE_HISTORY_MAX = COMMAND_HISTORY_LIMIT
 /** Потолок роста транскрипта наблюдателя. */
 const TRANSCRIPT_CAP = 4000
 
@@ -94,6 +95,7 @@ export interface OperationsActions {
   closeUtility(): void
   fsList(agentId: string, path: string): Promise<FsResult>
   fsRead(agentId: string, path: string): Promise<FsResult>
+  fsReadPrefix(agentId: string, path: string): Promise<FsResult>
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   fsRemove(agentId: string, path: string): Promise<FsResult>
   fsTrash(agentId: string, path: string): Promise<FsResult>
@@ -108,6 +110,7 @@ export interface OperationsActions {
   agentExec(agentId: string, command: string, signal?: AbortSignal): Promise<AgentExecResult>
   readServerFile(path: string): Promise<ServerFileInfo | null>
   pushConsoleCommand(agentId: string, command: string): void
+  clearConsoleHistory(agentId: string): void
   // --- Наблюдатели ---
   openObserver(): Promise<void>
   closeObserver(): void
@@ -356,6 +359,10 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
         const pid = projectId()
         return pid ? client.fs.list(agentId, path, pid) : client.fs.list(agentId, path)
       },
+      fsReadPrefix(agentId, path) {
+        if (!client.fs?.readPrefix) return Promise.reject(new Error('Ограниченное чтение недоступно: обновите клиент'))
+        return client.fs.readPrefix(agentId, path, projectId())
+      },
       fsRead(agentId, path) {
         if (!client.fs) return noFs()
         const pid = projectId()
@@ -388,11 +395,16 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
         return pid ? client.fs.exec(agentId, command, signal, pid) : client.fs.exec(agentId, command, signal)
       },
       readServerFile: (path) => (client.files ? client.files.read(path) : Promise.resolve(null)),
+      clearConsoleHistory(agentId) {
+        machineHistory.clear?.(agentId)
+        setState({ consoleHistory: { ...getState().consoleHistory, [agentId]: [] } })
+      },
       pushConsoleCommand(agentId, command) {
         // Подряд повторённую команду не дублируем — под ↑ она и так первая.
         const cmd = command.trim()
         if (!agentId || !cmd) return
-        const prev = getState().consoleHistory[agentId] ?? []
+        const prev = getState().consoleHistory[agentId] ?? machineHistory.get(agentId)
+        machineHistory.push(agentId, cmd)
         if (prev[prev.length - 1] === cmd) return
         setState({
           consoleHistory: { ...getState().consoleHistory, [agentId]: [...prev, cmd].slice(-CONSOLE_HISTORY_MAX) }

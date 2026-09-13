@@ -3,6 +3,9 @@ import type { AgentExecResult, AgentInfo } from '@shared/agentProtocol'
 import type { ConsoleHistoryStore, SwitchUtility, UtilityVariant } from '@voicechat/ui-foundation/components/machine'
 import { MachineUtilityHeader } from './MachineUtilityHeader'
 import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
+import { machineHistory } from '../lib/machineHistory'
+import { completeCommand } from '../lib/machineListing'
+import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { RefreshIndicator } from '@voicechat/ui-kit'
@@ -10,7 +13,7 @@ import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 
 /** Сколько команд помнит сама консоль, когда историю не держит стор. */
-const LOCAL_HISTORY_MAX = 100
+const LOCAL_HISTORY_MAX = 200
 
 export interface MachineConsoleProps {
   agents: AgentInfo[]
@@ -83,6 +86,7 @@ export function MachineConsole({
   const [agentId, setAgentId] = useState<string | null>(
     initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
   )
+  useEffect(() => { if (initialAgentId) setAgentId(initialAgentId) }, [initialAgentId])
   const [cmd, setCmd] = useState('')
   const [history, setHistory] = useState<HistoryItem[]>([])
   /** Команда, которая идёт прямо сейчас; null — простой (её же ждёт «Стоп»). */
@@ -92,15 +96,27 @@ export function MachineConsole({
   /** Позиция в истории при листании ↑/↓; null — набираем свою строку. */
   const [histPos, setHistPos] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
+  const [search, setSearch] = useState<string | null>(null)
+  const [completions, setCompletions] = useState<string[]>([])
   /** Строка, которую затёрло листание: по ↓ за конец истории возвращаем её. */
   const draft = useRef('')
   const abort = useRef<AbortController | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const runGeneration = useRef(0)
+  useEffect(() => {
+    setCmd('')
+    setHistory([])
+    setRunning(null)
+    setSearch(null)
+    setCompletions([])
+    setHistPos(null)
+    return () => { runGeneration.current += 1; abort.current?.abort() }
+  }, [agentId])
   const selectedAgent = agents.find((agent) => agent.id === agentId)
   const agentOnline = selectedAgent?.online ?? false
   // «Только чтение» (машина предоставлена проектом, п.18): команды запрещены сервером — не даём и вводить.
   const readOnlyShare = selectedAgent?.access === 'read'
-  const commands = agentId ? historyStore?.get(agentId) ?? localCommands[agentId] ?? [] : []
+  const commands = agentId ? localCommands[agentId] ?? (historyStore?.get(agentId)?.length ? historyStore.get(agentId) : machineHistory.get(agentId)) : []
 
   /** Строка снова «своя», а не взятая из истории. */
   const resetNav = (): void => {
@@ -111,18 +127,22 @@ export function MachineConsole({
   /** Выполнить команду и дописать результат в историю (та же дорога у «Повторить»). */
   const runCommand = async (command: string): Promise<void> => {
     if (!command || !agentId || !agentOnline || readOnlyShare || running !== null) return
-    if (historyStore) historyStore.push(agentId, command)
-    else setLocalCommands((m) => ({ ...m, [agentId]: remember(m[agentId] ?? [], command) }))
+    historyStore?.push(agentId, command)
+    machineHistory.push(agentId, command)
+    setLocalCommands((m) => ({ ...m, [agentId]: remember(commands, command) }))
+    const generation = ++runGeneration.current
     const ctrl = new AbortController()
     abort.current = ctrl
     setRunning(command)
     try {
       const res = await exec(agentId, command, ctrl.signal)
+      if (generation !== runGeneration.current) return
       setHistory((h) => [
         ...h,
         { command, output: res.output, exitCode: res.exitCode }
       ])
     } catch (err) {
+      if (generation !== runGeneration.current) return
       // Отмена — не ошибка выполнения: помечаем строку прерванной, чтобы было
       // видно, что вывода нет по нашей воле, а не из-за падения команды.
       setHistory((h) => [
@@ -137,8 +157,10 @@ export function MachineConsole({
             }
       ])
     } finally {
-      abort.current = null
-      setRunning(null)
+      if (generation === runGeneration.current) {
+        abort.current = null
+        setRunning(null)
+      }
     }
   }
 
@@ -193,6 +215,7 @@ export function MachineConsole({
    * работает как обычно (свернуть разворот, закрыть окно).
    */
   const clearInput = (): boolean => {
+    if (search !== null) { setSearch(null); input.current?.focus(); return true }
     if (!cmd && histPos === null) return false
     setCmd('')
     resetNav()
@@ -200,6 +223,18 @@ export function MachineConsole({
   }
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
+      e.preventDefault()
+      setSearch(cmd)
+      return
+    }
+    if (e.key === 'Tab' && agentId) {
+      e.preventDefault()
+      const matches = completeCommand(agentId, initialCwd ?? '', cmd)
+      setCompletions(matches)
+      if (matches.length === 1) setCmd(matches[0])
+      return
+    }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
       step(-1)
@@ -253,6 +288,10 @@ export function MachineConsole({
         onAgentChange={(id) => {
           // У другой машины своя история — листание начинаем заново.
           setAgentId(id)
+          setCmd('')
+          setSearch(null)
+          setCompletions([])
+          setHistory([])
           resetNav()
         }}
         kind="console"
@@ -334,6 +373,24 @@ export function MachineConsole({
           ))}
         </div>
       )}
+      <div className="cons-history-actions">
+        <Button size="sm" onClick={() => setSearch('')}>Поиск истории (Ctrl/Cmd+R)</Button>
+        <Button size="sm" disabled={!agentId} onClick={() => {
+          if (!agentId) return
+          machineHistory.clear?.(agentId)
+          historyStore?.clear?.(agentId)
+          setLocalCommands((m) => ({ ...m, [agentId]: [] }))
+          setSearch(null)
+          resetNav()
+        }}>Очистить историю</Button>
+      </div>
+      {search !== null && <section aria-label="Поиск истории">
+        <input autoFocus aria-label="Обратный поиск" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setSearch(null); input.current?.focus() } }} />
+        {commands.filter((command) => command.includes(search)).length === 0 && <p role="status">Нет совпадений</p>}
+        {[...commands].reverse().filter((command) => command.includes(search)).map((command, index) => <Button key={index} size="sm" onClick={() => { fillFromHistory(command); setSearch(null) }}>{command}</Button>)}
+        <Button size="sm" onClick={() => setSearch(null)}>Закрыть поиск</Button>
+      </section>}
+      {completions.length > 1 && <div aria-label="Варианты пути">{completions.map((value) => <Button key={value} size="sm" onClick={() => { setCmd(value); setCompletions([]); input.current?.focus() }}>{value}</Button>)}</div>}
       <form className="consbar" onSubmit={submit}>
         <span className="consprompt">$</span>
         <input

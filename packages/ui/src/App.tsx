@@ -2147,6 +2147,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     ? {
         list: operationsActions.fsList,
         read: operationsActions.fsRead,
+        readPrefix: operationsActions.fsReadPrefix,
         write: operationsActions.fsWrite,
         remove: operationsActions.fsRemove,
         trash: operationsActions.fsTrash,
@@ -2164,7 +2165,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // каждый рендер (как machineOps) — в зависимости эффектов его не кладут.
   const consoleHistory: ConsoleHistoryStore = {
     get: (agentId) => operations.consoleHistory[agentId] ?? [],
-    push: operationsActions.pushConsoleCommand
+    push: operationsActions.pushConsoleCommand,
+    clear: operationsActions.clearConsoleHistory
   }
 
   // Закрывает мобильный сайдбар и выполняет действие пункта меню.

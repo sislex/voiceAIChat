@@ -321,6 +321,7 @@ export const REST = {
   agentUpdate: (id: string) => `/api/agents/${encodeURIComponent(id)}/update`,
   // --- Файловый проводник по машине ---
   agentFs: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs`,
+  agentFsPreview: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/preview`,
   agentFsFile: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/file`,
   agentFsRename: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/rename`,
   agentFsMkdir: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/mkdir`,

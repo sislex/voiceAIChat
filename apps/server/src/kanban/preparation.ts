@@ -2,29 +2,18 @@
 // (`kanban/module.ts`) и её тестов. Вынесены из `server.ts` вместе с канбан-кластером.
 import { DEFAULT_CODEX_MODEL, type AcceptanceCriterionSnapshot, type LlmProvider } from '@voicechat/shared'
 
-/** Remove prose only when it surrounds one complete, unambiguous object.
- * A damaged first candidate must never be skipped in favour of a later one.
+/** Only explicitly known, content-free wrappers may be removed.
+ * JSON.parse consumes the whole remainder, so requirements outside it cannot disappear.
  */
 export function preparationJsonObject(text: string): Record<string, unknown> {
-  const raw = text.trim()
-  const start = raw.indexOf('{')
-  if (start < 0 || ['[', ']', '}'].some(char => raw.slice(0, start).includes(char))) throw new Error('Expected one JSON object')
-  let depth = 0
-  let quoted = false
-  let escaped = false
-  let end = -1
-  for (let i = start; i < raw.length; i++) {
-    const c = raw[i]
-    if (quoted) {
-      if (escaped) escaped = false
-      else if (c === String.fromCharCode(92)) escaped = true
-      else if (c === '"') quoted = false
-    } else if (c === '"') quoted = true
-    else if (c === '{') depth++
-    else if (c === '}' && --depth === 0) { end = i + 1; break }
-  }
-  if (end < 0 || ['{', '}', '[', ']'].some(char => raw.slice(end).includes(char))) throw new Error('Модель должна вернуть ровно один JSON-объект: неоднозначное обрамление')
-  const value = JSON.parse(raw.slice(start, end)) as Record<string, unknown>
+  let raw = text.trim()
+  raw = raw.replace(/^(?:Подготовка завершена\.|Исправленный Development Brief:)\s*(?=\{)/, '')
+  const fence = String.fromCharCode(96).repeat(3)
+  if (raw.startsWith(fence + 'json\\n') && raw.endsWith('\\n' + fence)) raw = raw.slice(fence.length + 6, -(fence.length + 2))
+  else if (raw.startsWith(fence + 'json\n') && raw.endsWith('\n' + fence)) raw = raw.slice(fence.length + 5, -(fence.length + 1))
+  raw = raw.trim()
+  if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')
+  const value = JSON.parse(raw) as Record<string, unknown>
   // Null means no reference only for this optional field; other nulls survive.
   if (Array.isArray(value.decisions)) for (const decision of value.decisions) {
     if (decision && typeof decision === 'object' && !Array.isArray(decision) && decision.questionId === null) delete decision.questionId

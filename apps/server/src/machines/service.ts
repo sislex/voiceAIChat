@@ -41,7 +41,7 @@ export interface MachinesService {
   cancelAll(agentId: string): void
   gitAccess(agentId: string, request: GitAccessRequest): Promise<GitAccessResult>
   fsList(agentId: string, path: string): Promise<FsResult>
-  fsRead(agentId: string, path: string): Promise<FsResult>
+  fsRead(agentId: string, path: string, mode?: 'prefix'): Promise<FsResult>
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   fsMkdir(agentId: string, path: string): Promise<FsResult>
   fsDelete(agentId: string, path: string): Promise<FsResult>
