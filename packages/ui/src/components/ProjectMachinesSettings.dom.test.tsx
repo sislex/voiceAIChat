@@ -4,12 +4,25 @@ import userEvent from '@testing-library/user-event'
 import type { ProjectMachine } from '@shared/projects'
 import { render } from '../test/uiRender'
 import { makeAgent } from '../test/fixtures/index'
+import { installStoryBridges } from '../test/storyBridges'
 import { ProjectMachinesSettings, machineReadiness } from './ProjectMachinesSettings'
 
 const own: ProjectMachine = { agentId: 'a1', name: 'Mac', owner: 'alice', ownership: 'mine', online: true, sharedWithProject: true, isMyDefault: true, canUse: true, load: 0, path: '/old', reposRoot: '/repos', sshHost: 'mac.local', sshUser: 'alice' }
 const other: ProjectMachine = { ...own, agentId: 'a2', name: 'CI', owner: 'bob', ownership: 'other', isMyDefault: false }
 const offline: ProjectMachine = { ...own, agentId: 'a3', name: 'PC', owner: 'alice', online: false, sharedWithProject: false, isMyDefault: false, path: '', reposRoot: '' }
 const setup = (onSave = vi.fn(async () => undefined), onSetDefault = vi.fn()) => render(<ProjectMachinesSettings projectId="p1" machines={[own, other, offline]} agents={[makeAgent({ id: 'a1', name: 'Mac' }), makeAgent({ id: 'a3', name: 'PC', online: false })]} onShare={vi.fn()} onSave={onSave} onSetDefault={onSetDefault} />)
+
+it('checks the directory on the selected machine and explains failures', async () => {
+  const bridges = installStoryBridges()
+  const list = vi.fn().mockResolvedValueOnce({ root: '/', cwd: 'old', entries: [] }).mockRejectedValueOnce(new Error('ENOENT'))
+  bridges.fs.list = list
+  setup()
+  await userEvent.click(screen.getByRole('button', { name: 'Проверить путь: Папка проекта — Mac' }))
+  expect(await screen.findByText('✓ Каталог доступен')).toBeInTheDocument()
+  expect(list).toHaveBeenCalledWith('a1', '/old', 'p1')
+  await userEvent.click(screen.getByRole('button', { name: 'Проверить путь: Корень Feature Run — Mac' }))
+  expect(await screen.findByText(/ENOENT/)).toHaveTextContent('Проверьте путь и разрешения')
+})
 
 it('показывает две таблицы, подписи и readonly-конфигурацию чужой машины', () => {
   setup()

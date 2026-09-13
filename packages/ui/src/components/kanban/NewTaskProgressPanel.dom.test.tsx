@@ -33,6 +33,7 @@ beforeEach(() => {
 afterEach(() => { delete (window as { ci?: unknown }).ci })
 
 describe('NewTaskProgressPanel', () => {
+  // @testCase TC-INT-02
   it('строит этапы по циклам с метриками и лентой выбранного рана', async () => {
     render(<NewTaskProgressPanel projectId="p1" taskId="t1" cycles={[cycle]} workflow={['Разработка']} />)
     expect(await screen.findByText('2 этапа')).toBeTruthy()

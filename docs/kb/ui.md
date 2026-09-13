@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-13
-checked: 5deeeb9b
+checked: ab87ad4c
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -90,10 +90,7 @@ catalog/build/matrix/deploy инструменты, что у backend: [рели
 `.projpage`, `.proj-detail`, `.settpane`, `.vc-dialog` — чтобы новые контролы не
 появлялись мелкими. Проверяется `scripts/mobile-shots.mts`, порог падающий.
 
-**Фильтры доски на телефоне свёрнуты** в один пункт «Фильтры» с числом активных
-(`FilterShell` в `KanbanBoard`, порог тот же `MOBILE_QUERY`). Развёрнутыми они
-занимали пол-экрана до первой карточки — особенно после увеличения целей нажатия.
-Число активных обязательно: иначе непонятно, почему на доске мало карточек.
+At widths up to and including 720px, `FilterShell` exposes one button, `Фильтры (N активных)`, opening the shared `Dialog size="full"` with a bottom entrance animation and a `Сбросить все` footer. The dialog also contains the existing board density controls. Duplicate summary/priority filter rows and active-filter chips are hidden on mobile; the dialog retains the filter controls and total active count. Reset clears global and column-assignee filters together. The shared dialog restores focus; its existing search convention still applies: Escape in a nonempty search field clears the query first.
 
 **Даты выводятся через `lib/dateFormat`** (`formatDate`, `formatDateTime`,
 `isoDate`, локаль `ru-RU`). До этого в коде жили четыре способа сразу, и без явной
@@ -1170,9 +1167,13 @@ suite галереи.
 
 Рабочая область `KanbanBoard` заполняет остаток полностраничного `ToolFrame`: `.toolpage` имеет `height: 100%` и `overflow: hidden`, а цепочка `.toolpage > .jboard-wrap` → `.jboard` использует `flex: 1`, `min-height: 0` и `min-width: 0`. `.jboard-wrap` обрезает выход за границы, поэтому переносимая по строкам шапка проекта и соседняя `.jboard-filters` остаются вне прокрутки доски и автоматически отнимают свою фактическую высоту без пиксельных offsets. На мобильной ширине корневая `.app` использует `100dvh`, поэтому изменение браузерных панелей и ориентации пересчитывает доступную высоту.
 
-`.jboard` растягивается на остаток области и является единым viewport по обеим осям (`overflow-x: auto; overflow-y: auto`). Обычная `.jcol` сохраняет ширину 272 px, имеет `min-height: 100%` и растёт по содержимому без ограничения максимальной высоты; поэтому короткие колонки заполняют доступную высоту, а самая длинная задаёт общий вертикальный overflow. `.jcol-body` остаётся flex-колонкой с `flex: 1`, но имеет видимое переполнение и не является scroll-контейнером. При вертикальной прокрутке `.jboard` заголовки, карточки и композеры всех колонок движутся синхронно; горизонтальная прокрутка большого числа колонок сохраняется. Свимлейны используют тот же вертикальный viewport `.jboard`, а `.jcol--incell` явно сбрасывает минимальную высоту и сохраняет автоматическую высоту с видимым переполнением.
+On desktop, `.jboard` растягивается на остаток области и является единым viewport по обеим осям (`overflow-x: auto; overflow-y: auto`). Обычная `.jcol` сохраняет ширину 272 px, имеет `min-height: 100%` и растёт по содержимому без ограничения максимальной высоты; поэтому короткие колонки заполняют доступную высоту, а самая длинная задаёт общий вертикальный overflow. `.jcol-body` остаётся flex-колонкой с `flex: 1`, но имеет видимое переполнение и не является scroll-контейнером. При вертикальной прокрутке `.jboard` заголовки, карточки и композеры всех колонок движутся синхронно; горизонтальная прокрутка большого числа колонок сохраняется. Свимлейны используют тот же вертикальный viewport `.jboard`, а `.jcol--incell` явно сбрасывает минимальную высоту и сохраняет автоматическую высоту с видимым переполнением.
 
-Во время pointer-переноса карточки `KanbanBoard.tsx` направляет обе оси `autoScroll` на `.jboard`; `[data-drop-body]` используется только для вычисления целевой ячейки и позиции вставки. Для переноса колонок используется только горизонтальная ось `.jboard`, поэтому он не меняет общий `scrollTop`. Стабильные React-ключи сохраняют DOM общей поверхности и её `scrollLeft`/`scrollTop` при drop, открытии карточки и обычном обновлении данных. Pointer-контракт остаётся единым для мыши, пальца и стилуса, клавиатурный перенос не менялся. Источник инвариантов высоты и overflow — `packages/ui/src/styles/app.css`; общий viewport, сохранение позиций и обе оси DnD закреплены в `packages/ui/src/styles/boardScroll.test.ts` и `packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx`.
+On mobile (≤720px), the board uses mandatory horizontal snap, arrows and `Колонка N из M`. The visible column id is stored in `sessionStorage` under `kanbanColumnKey(scrollScopeId)`; the caller supplies a board-specific scope (the project id is the application fallback), so different boards do not share navigation state. A missing, removed or unreadable saved id falls back to the first available column, and storage failures do not block navigation. Ordinary columns keep their headers above independently scrolling `.jcol-content`; swimlanes retain their shared vertical viewport. Desktop instead keeps one `.jboard` viewport for both axes and scrolls all column headers and cards together.
+
+One safe-area-aware FAB opens the existing composer in a Dialog for the visible mobile column, including swimlane and collapsed-column views. Desktop column creation remains available. Density is read from and written to `localStorage` through `kanbanDensityKey(userId, projectId)`, preserving the `voicechat.kanban.density.v1` user/project namespace. `KANBAN_DENSITY_KEY` and the mobile-column base key are registered in `PREFERENCE_KEYS` in `packages/ui-foundation/src/persistence.ts`, so preference tooling knows about both namespaces. Mobile cards retain their key, title, stage status and avatar; their action menu opens all card details, including all labels. Filtered empty mobile columns use `EmptyState` with a global reset action. `MobileScroll` contains six columns and 30 cards with `mobile1`; `MobileFilters` exercises the filter dialog. `kanbanMobile.browser.mjs` checks 390px and the 720/721px boundary against Storybook. The general Storybook axe suite is split across `stories.a11y.0.dom.test.tsx`, `stories.a11y.1.dom.test.tsx` and `stories.a11y.2.dom.test.tsx`, using `storiesA11yShard.tsx`; `KanbanBoard.dom.test.tsx` also renders both new stories' data with a mobile media query and checks the open filter dialog.
+
+On mobile, pointer autoscroll targets `.jboard` horizontally and the target column content vertically. Mandatory snap is suspended during pointer drag, targets expose `data-drop-target`, and hit testing is refreshed after each autoscroll frame. The engine remains `packages/ui-foundation/src/lib/dnd.ts` with its 200ms hold, 6px mouse threshold and scale 1.02. On desktop, `KanbanBoard.tsx` directs both `autoScroll` axes to `.jboard`; `[data-drop-body]` используется только для вычисления целевой ячейки и позиции вставки. Для переноса колонок используется только горизонтальная ось `.jboard`, поэтому он не меняет общий `scrollTop`. Стабильные React-ключи сохраняют DOM общей поверхности и её `scrollLeft`/`scrollTop` при drop, открытии карточки и обычном обновлении данных. Pointer-контракт остаётся единым для мыши, пальца и стилуса, клавиатурный перенос не менялся. Источник инвариантов высоты и overflow — `packages/ui/src/styles/app.css`; общий viewport, сохранение позиций и обе оси DnD закреплены в `packages/ui/src/styles/boardScroll.test.ts` и `packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx`.
 
 ## Отдельный режим Web Reader
 
@@ -1275,6 +1276,69 @@ diff-UI (своя вёрстка, свои токены, своя доступн
 
 ## Отдельный режим «Make — веб-проект с ассистентом»
 
+**Make workspace flow (2026-09-13, CHAT-454).** The editor keeps independent
+in-memory drafts by conversation and path. Closing dirty tabs asks for confirmation,
+and `beforeunload` considers inactive drafts too. The session tab-order key is
+`makeTabsKey(conversationId)` in the shared preference registry. A completed write
+updates its own draft; switching files while the request is pending cannot mark
+the newly selected file saved. DOM regressions in `MakePane.dom.test.tsx` exercise
+these cases. Failed writes retain the source and show an error; a successful write
+records its timestamp. Existing autosave and format-on-save preferences are retained.
+
+The tree exposes file/folder creation, rename/move, and confirmed deletion through
+context menus and visible action buttons. `MakeProjectState.directories` lists real
+folders, including empty ones; moving directories remaps nested tabs and drafts.
+Snapshots preserve empty directories. File creation uses the optional `createOnly`
+flag; `kind: 'directory'` uses the existing write port. Directory operations retain
+normal project access checks and reject descendant moves and name collisions.
+
+Search returns each occurrence with its line, column, and per-file `matchIndex`.
+The UI groups matches by file. Replacement previews return a content fingerprint
+(`previewToken`) and before/after lines. The HTTP apply request requires that token;
+changed files or parameters invalidate it. Single replacement also supplies `path`
+and `matchIndex`. Dry runs neither write files nor emit change events. Working file
+writes, renames, deletions, and replacements are serialized per project. Unsaved UI
+drafts must be saved or discarded before replacement.
+
+`make:snapshotDiff` accepts optional `compareSnapshotId`; omitting it retains the
+snapshot-versus-working-tree comparison. The History panel compares any selected
+pair, opens text diffs, and opens separate read-only tabs identified by snapshot and
+path. Historical tabs never enter working draft storage, formatting, or autosave.
+Snapshot reads distinguish missing files from unsupported binary content.
+
+Preview controls expose desktop, 390, 768, and custom width/height, plus rotation.
+`makeScheme` travels in the iframe and separate-window URL. The inspector rewrites
+accessible CSS media conditions recursively while preserving other conditions,
+and emulates `matchMedia` consumers; loaded stylesheets are reapplied. Opening a
+preview separately with the explicit scheme no longer skips emulation. Publication
+statistics reuse existing day bars and referrers. QR generation uses the existing
+`qrcode` dependency locally; copying uses the existing clipboard fallback.
+
+At widths <=720 px, Files/Code/Preview segments choose the visible workspace panel.
+Phones use the existing highlighted textarea editor; reported device memory <=2 GB
+also selects that editor. Missing memory information is allowed. Package DOM tests
+cover tabs, save failures, historical files, and low-memory read-only input.
+`e2e/make.e2e.test.ts` exercises the complete 390 px flow, 720/721 boundaries,
+computed CSS and matchMedia, single and bulk replacement, and decoding the QR back
+to the publication URL without external QR requests. The required checks are
+`npm run gate:app -- make`, `npm run gate:app -- make-ui`, and `npm run gate:fast`.
+The existing `MakePane.stories.tsx` defines `Preview`, `Code`, `HistoryEmpty`,
+`Mobile`, and `BinaryFile` stories under `Make/MakePane`; the new flow is covered by
+package DOM tests and the real-browser scenario rather than inferred story IDs.
+Make UI is a separately built artifact: build `@voicechat/make-app` when testing its
+new code against the web host; rebuilding the web host alone retains the old panel.
+
+Owner replies live separately in `.owner-replies.json`, outside the project file
+listing. Ordinary workspace comments and public comment serialization never include
+them. Make routes add `canReply` and `ownerReply` only when
+`MakeCore.conversationOwner(id)` equals the authenticated user; project viewer or
+editor access does not grant reply access. The existing comment-update port carries
+the optional reply field. Workspace and route regressions in
+`apps/make/src/workspace.test.ts` check persistence, direct-file denial, owner versus
+editor/viewer access, and event payloads. `MakeCommentsPanel.dom.test.tsx` checks
+filtering and retention of the reply draft after a failed write.
+
+
 **Make interface localization (2026-09-11).** The Make panel and shared-project view
 have a Russian/English selector. Russian remains the default; the choice is stored
 under `vc.make.locale` and synchronized across panels/tabs. `vc_make_locale` supplies
@@ -1324,7 +1388,7 @@ that API before the new Make UI; older panels still work with the new host.
 
 Правая панель — `MakePane` (`packages/make-app/src/components/MakePane.tsx`, сториз `Make/MakePane`,
 тест `MakePane.dom.test.tsx`). Данные — `window.api['make:*']` (REST) и `window.make.onChanged`
-(WS `make.changed`). Три режима:
+(WS `make.changed`). Five modes: Preview, Code, Components, Project, and History.
 
 - **Превью** — same-origin iframe на `REST.makePreview(conv)` + `index.html?rev=N`
   (`sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"`).
@@ -1337,9 +1401,11 @@ that API before the new Make UI; older panels still work with the new host.
   `MAKE_INSPECTOR_SCRIPT`, панель шлёт в iframe `{type:'vc-make.inspect', enabled}`, обратно
   приходит `vc-make.selected {selector, tag, text, html}` — карточка над превью с кнопками
   «Стили» и «В чат» (`onInsertToChat` → `chatActions.setDraft('Измени элемент <selector> …')`).
-- **Код** — дерево файлов (группировка по первому каталогу), textarea-редактор (Tab → два
-  пробела, Ctrl/Cmd+S — сохранить), статус «сохранено/не сохранено», «+ Файл», ✎/✕ у файла.
-  Имена вводятся через `Dialog` (`make-ask`), не `window.prompt`.
+- **Code** — nested file/folder groups, independent draft tabs, and the shared editor
+  wrapper (Monaco or highlighted lite input). Save status distinguishes drafts,
+  errors, pending writes, and successful persistence. Names use `Dialog` (`make-ask`).
+- **Components** — project stories and their runner/controls.
+- **Project** — linked repository components and project Storybook through host ports.
 - **История** — снимки (`MakeSnapshot`) с «Вернуть», «+ Снимок», «Сбросить проект».
 
 `make.changed` от сервера: панель поднимает `previewRev` (iframe перезагружается), обновляет

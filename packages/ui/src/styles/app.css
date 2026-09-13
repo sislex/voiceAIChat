@@ -2682,6 +2682,7 @@
   background: var(--panel);
 }
 .uhead-machine {
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: var(--space-100);
@@ -2694,6 +2695,7 @@
   text-overflow: ellipsis;
 }
 .uhead-status {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2733,6 +2735,14 @@
   cursor: help;
 }
 /* Переключатель утилит и ссылка в «Машины» — к правому краю шапки. */
+.term-toolbar, .mst-filters, .fsselection, .cons-history-actions { display: flex; flex-wrap: wrap; gap: var(--space-100); padding: var(--space-100); }
+.uhead-machine .sel { min-width: 0; max-width: 100%; }
+@media (max-width: 720px) {
+  .uhead-machine { width: 100%; flex-wrap: nowrap; }
+  .uhead-ver { display: none; }
+  .uhead-switch { width: 100%; margin-left: 0; }
+  .uhead-switch .vc-btn { flex: 1; min-width: 0; padding-inline: var(--space-050); }
+}
 .uhead-switch {
   display: inline-flex;
   gap: var(--space-050);
@@ -4538,7 +4548,28 @@ button.conscmd:hover {
 /* Тестовые пользователи окружений: строка = логин/пароль/роль/заметка/удалить. */
 .proj-test-users { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
 .proj-test-users li { display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr auto; gap: 6px; align-items: center; }
-@media (max-width: 720px) { .proj-test-users li { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .proj-test-users li { grid-template-columns: minmax(0, 1fr); } }
+.project-settings-form { min-width: 0; }
+.project-settings-form .proj-settings-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; }
+.project-settings-form .proj-settings-tabs button { flex-shrink: 0; white-space: nowrap; }
+.project-settings-form .proj-muted { opacity: 1; color: var(--text-dim); }
+.project-settings-form .vc-actionbar { position: sticky; left: auto; right: auto; bottom: 0; max-width: 100%; transform: none; flex-wrap: wrap; box-sizing: border-box; padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom)); }
+.project-settings-form .vc-actionbar[aria-hidden="true"] { display: none; }
+.project-command-check { min-width: 0; margin-bottom: var(--space-3); }
+.project-command-check pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
+.project-settings-form textarea { font-family: var(--font-mono, monospace); resize: vertical; }
+.project-check-ok { color: var(--success); }
+.project-settings-form [aria-invalid="true"] { border-color: var(--danger); }
+@media (max-width: 720px) {
+  .project-settings-form .proj-meta-edit, .project-settings-form .feature-policy { display: flex; flex-direction: column; min-width: 0; }
+  .project-settings-form input, .project-settings-form select, .project-settings-form textarea { min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .project-settings-form .proj-machines-table { width: 100% !important; min-width: 0 !important; }
+  .project-settings-form .proj-machines-table thead, .project-settings-form .proj-machines-table colgroup { display: none; }
+  .project-settings-form .proj-machines-table tr, .project-settings-form .proj-machines-table td { display: block; width: 100%; }
+  .project-settings-form .proj-machines-table tr { margin-bottom: var(--space-4); }
+  .project-settings-form .proj-machines-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: var(--space-2); color: var(--text-dim); }
+  .project-settings-form .vc-actionbar { padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom)); }
+}
 [data-theme='dark'] .proj-hint { color: #96a0b5; }
 .proj-default-skills .proj-tags { margin-top: 4px; }
 /* Чипы навыков по умолчанию — Atlassian-«subtle» вид */
@@ -7237,6 +7268,25 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media (prefers-reduced-motion: reduce) { .feature-preview__loader, .feature-preview__bar--indeterminate::after { animation: none; } .feature-preview__bar > span { transition: none; } }
 @media (max-width: 520px) { .feature-preview__meta { grid-template-columns: minmax(0, 1fr); } .feature-preview__actions > * { max-width: 100%; } .feature-preview__progress { grid-template-columns: auto minmax(0, 1fr); } .feature-preview__progress .vc-btn { grid-column: 1 / -1; width: 100%; } }
 
+/* QA owns responsive presentation; other ResultTable consumers keep their layout. */
+:is(.component-qa-panel,.qa-stage-panel,.manual-qa) { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+:is(.component-qa-panel,.qa-stage-panel,.manual-qa) pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+.qa-refresh,.qa-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 8px; }
+.qa-filters label { display: grid; gap: 4px; min-width: 0; }
+.qa-filters input { max-width: 100%; min-width: 0; }
+.qa-stage-actions fieldset { min-width: 0; max-width: 100%; }
+.qa-stage-actions fieldset label { display: block; overflow-wrap: anywhere; }
+.qa-image { display: inline-block; max-width: 100%; }
+@media (max-width: 600px) {
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results { display: block; width: 100%; }
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results caption { display: block; width: 100%; box-sizing: border-box; }
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results tbody,
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results tr { display: block; width: 100%; }
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results :is(th[scope=row],td) { display: block; width: auto; overflow-wrap: anywhere; }
+  :is(.component-qa-panel,.qa-stage-panel) [data-label]::before { content: attr(data-label) ': '; font-weight: 600; }
+  :is(.component-qa-actions,.qa-stage-actions,.manual-qa-final-actions) { position: sticky; bottom: 0; background: var(--bg); padding: 8px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 1; }
+}
 .manual-qa { display: grid; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 /* Разделитель отбивает ручное QA от секции превью над ним. Когда превью нет,
    `.manual-qa` оказывается первой во вкладке — и линия висела бы сама по себе,
@@ -8086,6 +8136,37 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jboard-mobile-filter-meta { display: inline-flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; color: var(--text-dim); font-size: 10px; font-weight: 500; }
 .jboard-mobile-filter-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Mobile columns own their vertical viewport; desktop keeps the shared viewport. */
+@media (max-width: 720px) {
+  .jboard { scroll-snap-type: x mandatory; scroll-padding-inline: 12px; overflow-y: hidden; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px) + var(--vc-toast-inset, 0px)); }
+  .jboard[data-dragging="pointer"] { scroll-snap-type: none; }
+  .jboard .jcol[data-column-id] { scroll-snap-align: start; flex-basis: calc(100vw - 48px); width: calc(100vw - 48px); min-height: 0; }
+  .jboard:not(.jboard--lanes) > .jcol { height: 100%; }
+  .jboard .jcol-content:not([hidden]) { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; }
+  .jboard .jcol-head { position: sticky; top: 0; z-index: 3; background: var(--panel); }
+  .jboard .jcol[data-drop-target] { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .jboard--lanes { overflow-y: auto; }
+  .jboard-wrap > .jboard-summary,
+  .jboard-wrap > .jpriority-overview,
+  .jboard-wrap > .jactive-filters { display: none; }
+  .jboard-mobile-navigation { display: flex; align-items: center; justify-content: space-between; flex: none; padding-inline: 12px; }
+  .jboard-mobile-create { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px) + var(--vc-toast-inset, 0px)); z-index: 46; box-shadow: var(--shadow-md); }
+  .jboard-filters-shell { display: flex; align-items: center; gap: 8px; padding: 4px 12px; flex: none; }
+  .jboard-mobile-filters { animation: jboard-filter-enter 180ms ease-out; }
+  .jboard-mobile-filters .jboard-filters { position: static; display: flex; flex-direction: column; align-items: stretch; }
+  .jcard--mobile { max-width: none; }
+  .jcard--mobile > :not(.jcard-top):not(.jcard-foot):not(.jcard-mobile-status):not(.vc-sr-only) { display: none; }
+  .jcard--mobile .jcard-foot-left,
+  .jcard--mobile .jcard-foot-right > :not(.jcard-assignee):not(.javatar--none) { display: none; }
+  .jcard--mobile .jcard-reveal { opacity: 1; }
+  .jcard--mobile .jcard-grip { display: inline-flex; min-width: 40px; min-height: 40px; align-items: center; justify-content: center; }
+  .jcard-mobile-status { color: var(--text-dim); font-size: 12px; }
+}
+@keyframes jboard-filter-enter { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .jboard-mobile-filters { animation: none; }
+}
+
 /* Ярлык типа рядом с именем проекта в шапке страницы. */
 .projpage-type {
   margin-left: var(--space-2, 8px); font-size: 11px; font-weight: 500;
@@ -8707,7 +8788,23 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    доработок по Make-проекту «Проект 19». Токены общие с остальной карточкой. */
 .new-task-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .new-task-eyebrow { display: block; margin-bottom: 4px; color: var(--text-dim); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.new-task-process { display: grid; gap: 14px; }
+.new-task-process { display: grid; gap: 14px; min-width: 0; }
+.new-task-process label, .new-task-settings label { display: grid; gap: 6px; min-width: 0; font-size: 12px; }
+.new-task-process select, .new-task-process textarea, .new-task-settings select, .new-task-settings textarea {
+  width: 100%; min-width: 0; box-sizing: border-box; padding: 9px; border: 1px solid var(--border);
+  border-radius: var(--radius-medium); background: var(--surface-sunken); color: var(--text); font: inherit;
+}
+.new-task-process textarea { min-height: 80px; resize: vertical; }
+.new-task-process pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.new-task-process a, .new-task-process code { overflow-wrap: anywhere; }
+.new-task-feed-steps { display: grid; gap: 8px; }
+.new-task-feed-steps > details { border: 1px solid var(--border); border-radius: var(--radius-medium); padding: 12px; background: var(--surface); }
+.new-task-feed-steps summary { cursor: pointer; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .new-task-process .task-preparation-grid { grid-template-columns: minmax(0, 1fr); }
+  .new-task-process .new-task-heading-actions { flex-wrap: wrap; }
+  .new-task-process .vc-btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; height: auto; min-height: 32px; }
+}
 .new-task-subtabs { margin: -18px -18px 4px; padding: 0 14px; }
 .new-task-stage-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .new-task-stage-heading h3 { margin: 0; font-size: 17px; }

@@ -1,23 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
-import type { ProjectDetail, ProjectInvitation } from '@shared/projects'
+import type { ProjectInvitation } from '@shared/projects'
 import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@shared/projectTypes'
-import { ProjectSettings, type ProjectSettingsProps } from './ProjectSettings'
+import { ProjectSettings, projectFieldError, type ProjectSettingsProps } from './ProjectSettings'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
+import { installStoryBridges } from '../test/storyBridges'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 
-function detail(over: Partial<ProjectDetail> = {}): ProjectDetail {
-  return {
-    id: 'p1', name: 'Проект', description: '',
-    typeId: BUILTIN_PROJECT_TYPE_IDS.software, typeChain: builtinProjectTypeChain(),
-    gitUrl: null, technologies: [], skills: [],
-    defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1,
-    role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual',
-    members: [{ username: 'admin', role: 'owner', addedAt: 1 }], machines: [], defaultAgentId: null,
-    ...over
-  } as ProjectDetail
-}
+import { makeSettingsProject as detail } from '../test/fixtures/projectSettings'
 
 function props(over: Partial<ProjectSettingsProps> = {}): ProjectSettingsProps {
   return {
@@ -28,6 +20,108 @@ function props(over: Partial<ProjectSettingsProps> = {}): ProjectSettingsProps {
     ...over
   }
 }
+
+describe('Project settings draft', () => {
+  it('has accessible invalid and dirty form states', async () => {
+    render(<ProjectSettings {...props()} />)
+    fireEvent.change(screen.getByLabelText('Git-репозиторий'), { target: { value: 'bad-url' } })
+    await expectNoViolations()
+  })
+  it('checks legacy checkout and health without deploying', async () => {
+    const bridges = installStoryBridges()
+    const exec = vi.fn().mockResolvedValueOnce({ exitCode: 0, output: 'true', timedOut: false }).mockResolvedValueOnce({ exitCode: 1, output: 'connection refused', timedOut: false })
+    bridges.fs.exec = exec
+    render(<ProjectSettings {...props({ activeTab: 'workflow', detail: detail({
+      productionAgentId: 'a1', productionCheckoutPath: "/srv/project's checkout",
+      gitUrl: 'git@example.com:team/repo.git', productionHealthCheckCommand: 'curl -fsS http://localhost/health',
+      machines: [{ agentId: 'a1', path: '/srv/project', reposRoot: '/srv/repos', online: true }]
+    }) })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить production' }))
+    expect(await screen.findByText(/connection refused/)).toBeInTheDocument()
+    expect(screen.getByText(/✓ Checkout:/)).toBeInTheDocument()
+    expect(exec).toHaveBeenCalledTimes(2)
+    expect(exec.mock.calls[0][1]).toContain("'/srv/project'\\''s checkout'")
+    expect(exec.mock.calls[1][1]).toContain('curl -fsS')
+  })
+
+  it('runs a draft command on the project machine and limits displayed output', async () => {
+    const bridges = installStoryBridges()
+    const exec = vi.fn().mockResolvedValue({ exitCode: 0, timedOut: false, output: Array.from({ length: 60 }, (_, i) => 'line-' + (i + 1)).join('\n') })
+    bridges.fs.exec = exec
+    const onUpdate = vi.fn()
+    render(<ProjectSettings {...props({ activeTab: 'workflow', onUpdate, detail: detail({
+      defaultAgentId: 'a1', testCommand: 'npm test',
+      machines: [{ agentId: 'a1', path: '/srv/project', reposRoot: '/srv/repos', online: true }]
+    }) })} />)
+    fireEvent.change(screen.getByLabelText('Команда тестирования'), { target: { value: 'npm run test:unit' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить на машине: Команда тестирования' }))
+    expect(await screen.findByText(/line-50/)).not.toHaveTextContent('line-51')
+    expect(exec.mock.calls[0][0]).toBe('a1')
+    expect(exec.mock.calls[0][1]).toContain('npm run test:unit')
+    expect(exec.mock.calls[0][3]).toBe('p1')
+    expect(onUpdate).not.toHaveBeenCalled()
+  })
+
+  it('starts a login check without passing the password to the host action', async () => {
+    const check = vi.fn().mockResolvedValue(undefined)
+    render(<ProjectSettings {...props({ onCheckTestLogin: check, detail: detail({ previewUrl: 'https://test.example', testUsers: [{ name: 'tester', password: 'secret' }] }) })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить вход: tester' }))
+    expect(check).toHaveBeenCalledWith('p1', 'tester')
+  })
+
+  it.each([
+    ['gitUrl', 'https://github.com/team/repo.git', false],
+    ['gitUrl', 'git@github.com:team/repo.git', false],
+    ['gitUrl', 'file:///repo', true],
+    ['ciBaseBranch', 'has space', true],
+    ['ciBranchTemplate', 'feature/{task_number}/{slug}', false],
+    ['ciBranchTemplate', '{unknown}', true],
+    ['ciBranchTemplate', '{slug}/{slug}', true],
+    ['testCommand', '   ', true]
+  ])('validates %s = %s', (field, value, invalid) => {
+    expect(Boolean(projectFieldError(String(field), String(value)))).toBe(invalid)
+  })
+
+  it('collects fields, blocks invalid saves, cancels and warns before leaving', async () => {
+    const onUpdate = vi.fn()
+    render(<ProjectSettings {...props({ onUpdate })} />)
+    fireEvent.change(screen.getByLabelText('Название проекта'), { target: { value: 'Draft' } })
+    fireEvent.change(screen.getByLabelText('Git-репозиторий'), { target: { value: 'invalid' } })
+    expect(screen.getByLabelText('Git-репозиторий')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
+    expect(onUpdate).not.toHaveBeenCalled()
+    const unload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(unload)
+    expect(unload.defaultPrevented).toBe(true)
+    const resume = vi.fn()
+    const leave = new CustomEvent('voicechat:before-navigate', { cancelable: true, detail: { target: '#/projects', resume } })
+    fireEvent(window, leave)
+    expect(leave.defaultPrevented).toBe(true)
+    await userEvent.click(await screen.findByRole('button', { name: 'Отмена' }))
+    expect(resume).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Отменить' }))
+    expect(screen.getByLabelText('Название проекта')).toHaveValue('Проект')
+    const cleanUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanUnload)
+    expect(cleanUnload.defaultPrevented).toBe(false)
+    fireEvent.change(screen.getByLabelText('Название проекта'), { target: { value: 'Saved' } })
+    fireEvent.change(screen.getByLabelText('Git-репозиторий'), { target: { value: 'git@example.com:team/repo.git' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+    expect(onUpdate).toHaveBeenCalledWith('p1', { name: 'Saved', gitUrl: 'git@example.com:team/repo.git' })
+  })
+
+  it('keeps the draft after a failed save and across server updates', async () => {
+    const p = props({ onUpdate: vi.fn().mockRejectedValue(new Error('Save failed')) })
+    const view = render(<ProjectSettings {...p} />)
+    fireEvent.change(screen.getByLabelText('Название проекта'), { target: { value: 'Draft' } })
+    view.rerender(<ProjectSettings {...p} detail={detail({ description: 'Server update' })} />)
+    expect(screen.getByLabelText('Название проекта')).toHaveValue('Draft')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(await screen.findByText('Save failed')).toBeInTheDocument()
+    expect(screen.getByLabelText('Название проекта')).toHaveValue('Draft')
+  })
+})
 
 const kbSelect = (): HTMLSelectElement => screen.getByLabelText('CI: база знаний в ране') as HTMLSelectElement
 
@@ -55,6 +149,8 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     render(<ProjectSettings {...props({ onUpdate })} />)
     await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
     await userEvent.selectOptions(kbSelect(), 'off')
+    expect(onUpdate).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     expect(onUpdate).toHaveBeenCalledWith('p1', { ciKbContextMode: 'off' })
   })
 
@@ -128,11 +224,14 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     await userEvent.clear(input)
     await userEvent.type(input, 'https://new.example/app')
     await userEvent.tab()
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     expect(onUpdate).toHaveBeenCalledWith('p1', { previewUrl: 'https://new.example/app' })
     await userEvent.clear(input)
     await userEvent.type(input, 'file:///tmp/app')
     await userEvent.tab()
-    expect(input).toHaveValue('https://old.example/')
+    expect(input).toHaveValue('file:///tmp/app')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
   })
 
   it('переводит legacy production в managed только после preflight и отдельного подтверждения', async () => {
@@ -177,6 +276,9 @@ describe('ProjectSettings — тестовые пользователи', () => 
     await userEvent.type(screen.getByLabelText('Логин тестового пользователя 1'), 'tester')
     await userEvent.type(screen.getByLabelText('Пароль тестового пользователя 1'), 'test-pass')
     await userEvent.tab()
+    expect(onUpdate).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Пароль тестового пользователя 1')).toHaveAttribute('type', 'password')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     const last = onUpdate.mock.calls.at(-1)
     expect(last?.[1]).toEqual({ testUsers: [{ name: 'tester', password: 'test-pass' }] })
   })
@@ -188,6 +290,7 @@ describe('ProjectSettings — тестовые пользователи', () => 
       detail: detail({ testUsers: [{ name: 'tester', password: 'p' }, { name: 'viewer', password: '' }] })
     })} />)
     await userEvent.click(screen.getByRole('button', { name: 'Удалить тестового пользователя 1' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     expect(onUpdate).toHaveBeenCalledWith('p1', { testUsers: [{ name: 'viewer', password: '' }] })
   })
 
@@ -213,8 +316,10 @@ describe('ProjectSettings — тип проекта', () => {
     await userEvent.selectOptions(screen.getByLabelText('Тип проекта'), BUILTIN_PROJECT_TYPE_IDS.general)
     // Молчаливое переключение выглядело бы как поломка: исчезают целые разделы.
     expect(onUpdate).not.toHaveBeenCalled()
-    expect(await screen.findByText(/Станут недоступны/)).toBeInTheDocument()
+    expect(await screen.findByText(/Станут недоступны/)).toHaveTextContent('Код, Merge')
+    expect(screen.getByText(/Вкладки карточки:/)).toHaveTextContent('Лента рана')
     await userEvent.click(screen.getByRole('button', { name: 'Сменить тип' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('p1', { typeId: BUILTIN_PROJECT_TYPE_IDS.general }))
   })
 
@@ -226,7 +331,7 @@ describe('ProjectSettings — тип проекта', () => {
     await waitFor(() => expect(onUpdate).not.toHaveBeenCalled())
   })
 
-  it('расширение возможностей не спрашивает ничего', async () => {
+  it('расширение возможностей показывает предпросмотр до сохранения', async () => {
     const onUpdate = vi.fn()
     render(<ProjectSettings {...props({
       projectTypes: types,
@@ -234,6 +339,10 @@ describe('ProjectSettings — тип проекта', () => {
       detail: detail({ typeId: BUILTIN_PROJECT_TYPE_IDS.general, typeChain: builtinProjectTypeChain(BUILTIN_PROJECT_TYPE_IDS.general) })
     })} />)
     await userEvent.selectOptions(screen.getByLabelText('Тип проекта'), BUILTIN_PROJECT_TYPE_IDS.software)
+    expect(await screen.findByText(/Включатся:/)).toBeInTheDocument()
+    expect(onUpdate).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Сменить тип' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('p1', { typeId: BUILTIN_PROJECT_TYPE_IDS.software }))
     expect(screen.queryByText(/Станут недоступны/)).not.toBeInTheDocument()
   })
@@ -331,9 +440,10 @@ describe('ProjectSettings — приглашения участников', () =
     await open({ onInvite })
     await userEvent.type(screen.getByLabelText('Логин или email'), '  bob@example.com  ')
     await userEvent.selectOptions(screen.getByLabelText('Роль'), 'owner')
+    await userEvent.selectOptions(screen.getByLabelText('Срок действия'), '30')
     await userEvent.click(screen.getByRole('button', { name: 'Пригласить' }))
     // Адрес обрезан, роль передана.
-    expect(onInvite).toHaveBeenCalledWith('p1', 'bob@example.com', 'owner')
+    expect(onInvite).toHaveBeenCalledWith('p1', 'bob@example.com', 'owner', 30)
     // Поле очищено — иначе повторное нажатие шлёт дубль.
     expect(screen.getByLabelText('Логин или email')).toHaveValue('')
   })
@@ -357,10 +467,10 @@ describe('ProjectSettings — приглашения участников', () =
     expect(onRevokeInvitation).toHaveBeenCalledWith('p1', 'inv1')
   })
 
-  it('приглашённому по логину «отправить снова» не показываем — письма нет', async () => {
+  it('приглашённому по логину можно перевыпустить ссылку', async () => {
     await open({ invitations: [invitation({ email: null, invitedUsername: 'bob' })], onResendInvitation: vi.fn() })
     expect(screen.getByText('bob')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Отправить снова' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Отправить снова' })).toBeInTheDocument()
   })
 
   it('участник формы приглашения не видит', async () => {

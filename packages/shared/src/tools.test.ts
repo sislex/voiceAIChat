@@ -37,7 +37,8 @@ describe('detectOpenUtility', () => {
   it('распознаёт консоль и проводник', () => {
     expect(detectOpenUtility('открой консоль')).toEqual({ kind: 'console' })
     expect(detectOpenUtility('Открой проводник')).toEqual({ kind: 'explorer' })
-    expect(detectOpenUtility('запусти терминал')).toEqual({ kind: 'console' })
+    expect(detectOpenUtility('запусти терминал')).toEqual({ kind: 'terminal' })
+    expect(parseToolBlock(toolBlock({ kind: 'terminal', agentId: 'm1', path: '/home/dev' }))?.tool).toEqual({ kind: 'terminal', agentId: 'm1', path: '/home/dev' })
     expect(detectOpenUtility('open files')).toEqual({ kind: 'explorer' })
   })
 

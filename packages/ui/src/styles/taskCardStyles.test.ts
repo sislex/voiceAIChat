@@ -30,6 +30,16 @@ function rule(selector: string): string {
 }
 
 describe('стили открытой карточки задачи', () => {
+  // @testCase TC5
+  it('keeps mobile identity, stage and avatar while hiding secondary rows and retaining touch controls', () => {
+    expect(rule('.jcard--mobile > :not(.jcard-top):not(.jcard-foot):not(.jcard-mobile-status):not(.vc-sr-only)')).toContain('display: none')
+    expect(css).toContain('.jcard-foot-right > :not(.jcard-assignee):not(.javatar--none)')
+    expect(rule('.jcard--mobile .jcard-reveal')).toContain('opacity: 1')
+    expect(rule('.jcard--mobile .jcard-grip')).toContain('min-width: 40px')
+    expect(rule('.jcard--mobile .jcard-grip')).toContain('min-height: 40px')
+    expect(rule('.jcard--mobile')).toContain('max-width: none')
+  })
+
   it.each([
     // Общий язык лент: раскрываемая строка, шеврон, точка статуса.
     'vc-feed', 'vc-feed-item', 'vc-feed-caret', 'vc-feed-status', 'vc-feed-dot',

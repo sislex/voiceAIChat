@@ -82,7 +82,6 @@ export function MachineUtilityHeader({
   agentId,
   onAgentChange,
   kind,
-  consoleLabel = 'Терминал',
   gitAvailable = false,
   dir,
   onSwitch,
@@ -147,10 +146,10 @@ export function MachineUtilityHeader({
           <Button
             size="sm"
             aria-pressed={kind === 'console'}
-            title={kind === 'console' ? `Открыто сейчас: ${consoleLabel.toLowerCase()}` : `Открыть ${consoleLabel.toLowerCase()} ${carry}`}
+            title={kind === 'console' ? 'Открыто сейчас: консоль' : `Открыть консоль ${carry}`}
             onClick={() => kind !== 'console' && onSwitch('console')}
           >
-            &gt;_ {consoleLabel}
+            &gt;_ Консоль
           </Button>
           <Button
             size="sm"
@@ -160,6 +159,7 @@ export function MachineUtilityHeader({
           >
             📁 Проводник
           </Button>
+          <Button size="sm" aria-pressed={kind === 'terminal'} title={`Открыть терминал ${carry}`} onClick={() => kind !== 'terminal' && onSwitch('terminal')}>Терминал</Button>
           {/* Панель кода — про рабочую копию задачи или разговора, а не про
               произвольную папку, поэтому кнопка появляется только когда цель известна. */}
           {gitAvailable && (

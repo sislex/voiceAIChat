@@ -41,12 +41,7 @@ export const HistoryEmpty: Story = {
   }
 }
 
-/**
- * The phone-width preset is intended for desktop users. The width switcher is hidden on phones by
- * .make-devices { display: none }, so the story must not click an absent button. Without the
- * visibility check, mobile showcase visits displayed an element-not-found error. jsdom cannot
- * expose this because it has no layout or active media queries.
- */
+/** Phone-width preview. Presets are available on desktop and phone layouts. */
 export const Mobile: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)

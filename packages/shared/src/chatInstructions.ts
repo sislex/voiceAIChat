@@ -133,7 +133,7 @@ export function stripDisabledInstructionBlocks(text: string, effective: readonly
   if (!kinds.has('console') || !kinds.has('explorer')) {
     const parsed = parseToolBlock(out)
     // Битый JSON parseToolBlock не разбирает — такой блок UI и так не откроет.
-    if (parsed && !kinds.has(parsed.tool.kind)) out = parsed.body
+    if (parsed && !kinds.has(parsed.tool.kind === 'terminal' ? 'console' : parsed.tool.kind)) out = parsed.body
   }
   return out.trimEnd()
 }

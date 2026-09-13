@@ -1371,6 +1371,7 @@ export class CiRepo extends BaseRepo {
   mapComponentQaRun(row: Record<string, unknown>): ComponentQaRun {
     const status = row.status as ComponentQaRun['status']
     return {
+      machineId:row.qa_machine_id==null?null:String(row.qa_machine_id),
       id:String(row.id), projectId:String(row.project_id), taskId:String(row.task_id),
       developmentRunId:String(row.development_run_id), linkedFixRunId:row.linked_fix_run_id as string|null,
       branch:String(row.branch), commitSha:String(row.commit_sha), attempt:Number(row.attempt), status,
@@ -1390,7 +1391,7 @@ export class CiRepo extends BaseRepo {
   }
 
   async getComponentQaRun(userId: string, runId: string): Promise<ComponentQaRun | null> {
-    const row = (await this.sql.get(`SELECT r.* FROM component_qa_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string,unknown>|undefined
+    const row = (await this.sql.get(`SELECT r.*,w.agent_id AS qa_machine_id FROM component_qa_runs r LEFT JOIN ci_runs d ON d.id=r.development_run_id LEFT JOIN ci_workspaces w ON w.id=d.workspace_id JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string,unknown>|undefined
     return row ? this.mapComponentQaRun(row) : null
   }
 
@@ -1477,6 +1478,7 @@ export class CiRepo extends BaseRepo {
   private mapIntegrationTestRun(row:Record<string,unknown>):IntegrationTestRun {
     const status=row.status as IntegrationTestRun['status']
     return {
+      machineId:row.qa_machine_id==null?null:String(row.qa_machine_id),
       id:String(row.id),projectId:String(row.project_id),taskId:String(row.task_id),
       developmentRunId:row.development_run_id==null?'':String(row.development_run_id),linkedFixRunId:row.linked_fix_run_id as string|null,
       branch:String(row.branch),commitSha:String(row.commit_sha),attempt:Number(row.attempt),status,
@@ -1492,7 +1494,7 @@ export class CiRepo extends BaseRepo {
   }
 
   async getIntegrationTestRun(userId:string,runId:string):Promise<IntegrationTestRun|null> {
-    const row=(await this.sql.get(`SELECT r.* FROM integration_test_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string,unknown>|undefined
+    const row=(await this.sql.get(`SELECT r.*,w.agent_id AS qa_machine_id FROM integration_test_runs r LEFT JOIN ci_runs d ON d.id=r.development_run_id LEFT JOIN ci_workspaces w ON w.id=d.workspace_id JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string,unknown>|undefined
     return row?this.mapIntegrationTestRun(row):null
   }
 
@@ -1500,7 +1502,7 @@ export class CiRepo extends BaseRepo {
     if(!(await this.repos.projects.isProjectMember(userId,projectId))) return null
     const input=await this.repos.tasks.currentIntegrationInputs(projectId,taskId)
     if(!input.task) return null
-    const allRuns=((await this.sql.all(`SELECT * FROM integration_test_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`, [taskId])) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
+    const allRuns=((await this.sql.all(`SELECT r.*,w.agent_id AS qa_machine_id FROM integration_test_runs r LEFT JOIN ci_runs d ON d.id=r.development_run_id LEFT JOIN ci_workspaces w ON w.id=d.workspace_id WHERE r.task_id=? ORDER BY r.attempt DESC,r.created_at DESC`, [taskId])) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
     const activeRun=allRuns.find((run)=>run.status==='queued'||run.status==='running')??null
     const latestRun=allRuns[0]??null
     // Историческим попыткам оставляем только хвост лога: полный текст каждой

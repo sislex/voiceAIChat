@@ -152,6 +152,7 @@ export interface TaskReworkDraft {
 export interface TaskCardCallbacks {
   onClose(): void
   onChangeTab(tab: TaskCardTab): void
+  onOpenPreparationCycle?(cycleId: string): void
   onOpenRun(runId: string): void
   onOpenMake(conversationId: string): void
   onStartRework(): void
