@@ -55,6 +55,28 @@ const tokenFromMail = (): string => {
 }
 
 describe('приглашения: сторона проекта', () => {
+  it.each([1, 7, 30])('preserves a %i day lifetime when issuing and resending links', async (ttlDays) => {
+    const p = await project()
+    const response = await inj(aliceTok, { method: 'POST', url: `/api/projects/${p.id}/invitations`, payload: { invitee: 'bob', role: 'owner', ttlDays } })
+    expect(response.statusCode).toBe(200)
+    const created = response.json()
+    expect(created.invitation.role).toBe('owner')
+    expect(created.invitation.expiresAt - created.invitation.createdAt).toBe(ttlDays * 86400000)
+    const resent = await inj(aliceTok, { method: 'POST', url: `/api/projects/${p.id}/invitations/${created.invitation.id}/resend` })
+    expect(resent.statusCode).toBe(200)
+    expect(resent.json().link).not.toBe(created.link)
+    expect(resent.json().invitation.expiresAt - resent.json().invitation.createdAt).toBe(ttlDays * 86400000)
+    const oldToken = created.link.split('/').at(-1)
+    expect((await inj(null, { method: 'GET', url: `/api/session/invitation/${oldToken}` })).statusCode).toBe(404)
+  })
+
+  it.each([0, -1, 31, 1.5, '7'])('rejects invalid invitation lifetime %s', async (ttlDays) => {
+    const p = await project()
+    const response = await inj(aliceTok, { method: 'POST', url: `/api/projects/${p.id}/invitations`, payload: { invitee: 'bob', ttlDays } })
+    expect(response.statusCode).toBe(400)
+    expect(await db.projects.listProjectInvitations('alice', p.id)).toEqual([])
+  })
+
   it('владелец приглашает по адресу — уходит письмо со ссылкой', async () => {
     const p = await project('Редизайн')
     const res = await inj(aliceTok, { method: 'POST', url: `/api/projects/${p.id}/invitations`, payload: { invitee: 'new@example.com' } })

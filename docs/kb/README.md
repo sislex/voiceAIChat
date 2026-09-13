@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 86 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 109 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 22 коммит(ов) в areas после сверки: 4aae694e Merge main into CHAT-446 (task eb76ca8f-4825-4401-9f05-473efce03123) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1416 коммит(ов) в areas после сверки: 69f44610 Merge main into CHAT-448 (task 77c39c80-3a91-4827-ac99-815dd56cffe1) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1417 коммит(ов) в areas после сверки: 46e3ce37 docs(kb): update after merge 77c39c80-3a91-4827-ac99-815dd56cffe1 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 49 коммит(ов) в areas после сверки: 69f44610 Merge main into CHAT-448 (task 77c39c80-3a91-4827-ac99-815dd56cffe1) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 8 коммит(ов) в areas после сверки: 69f44610 Merge main into CHAT-448 (task 77c39c80-3a91-4827-ac99-815dd56cffe1) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 24 коммит(ов) в areas после сверки: e2e9c233 fix(merge): автоисправление упавших проверок задачи 77c39c80-3a91-4827-ac99-815dd56cffe1 … |
@@ -33,7 +33,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 4aae694e Merge main into CHAT-446 (task eb76ca8f-4825-4401-9f05-473efce03123) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ⚠ 18 коммит(ов) в areas после сверки: 4aae694e Merge main into CHAT-446 (task eb76ca8f-4825-4401-9f05-473efce03123) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 228 коммит(ов) в areas после сверки: 1593d89c feat(chat): improve composer, feed navigation and failed send recovery … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 2 коммит(ов) в areas после сверки: 69f44610 Merge main into CHAT-448 (task 77c39c80-3a91-4827-ac99-815dd56cffe1) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 9 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-12 | ⚠ 14 коммит(ов) в areas после сверки: e2e9c233 fix(merge): автоисправление упавших проверок задачи 77c39c80-3a91-4827-ac99-815dd56cffe1 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 8 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
@@ -74,9 +74,10 @@
 
 ## Журнал сессий
 
-Всего записей: 800. Последние:
+Всего записей: 801. Последние:
 
 - [2026-09-13-germany-4-8-60-kanban-mobile-kb.md](log/2026-09-13-germany-4-8-60-kanban-mobile-kb.md) — kanban-mobile-kb
+- [2026-09-13-alexeys-macbook-air-2-chat458-project-settings.md](log/2026-09-13-alexeys-macbook-air-2-chat458-project-settings.md) — chat458-project-settings
 - [2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md](log/2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md) — chat450-kb-update
 - [2026-09-13-alexeys-macbook-air-2-chat-445-functional-tabs.md](log/2026-09-13-alexeys-macbook-air-2-chat-445-functional-tabs.md) — chat-445-functional-tabs
 - [2026-09-12-germany-4-8-60-runner-stream-heartbeat.md](log/2026-09-12-germany-4-8-60-runner-stream-heartbeat.md) — runner-stream-heartbeat
@@ -85,7 +86,6 @@
 - [2026-09-12-germany-4-8-60-browser-check-evidence-and-image-route.md](log/2026-09-12-germany-4-8-60-browser-check-evidence-and-image-route.md) — browser-check-evidence-and-image-route
 - [2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md](log/2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md) — release-task-modal-test-timeout
 - [2026-09-12-alexeys-macbook-air-2-release-center-improvement-cycles.md](log/2026-09-12-alexeys-macbook-air-2-release-center-improvement-cycles.md) — release-center-improvement-cycles
-- [2026-09-12-alexeys-macbook-air-2-new-task-card-functional-tabs.md](log/2026-09-12-alexeys-macbook-air-2-new-task-card-functional-tabs.md) — new-task-card-functional-tabs
 
 ## Исторические планы
 

@@ -4538,7 +4538,28 @@ button.conscmd:hover {
 /* Тестовые пользователи окружений: строка = логин/пароль/роль/заметка/удалить. */
 .proj-test-users { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
 .proj-test-users li { display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr auto; gap: 6px; align-items: center; }
-@media (max-width: 720px) { .proj-test-users li { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .proj-test-users li { grid-template-columns: minmax(0, 1fr); } }
+.project-settings-form { min-width: 0; }
+.project-settings-form .proj-settings-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; }
+.project-settings-form .proj-settings-tabs button { flex-shrink: 0; white-space: nowrap; }
+.project-settings-form .proj-muted { opacity: 1; color: var(--text-dim); }
+.project-settings-form .vc-actionbar { position: sticky; left: auto; right: auto; bottom: 0; max-width: 100%; transform: none; flex-wrap: wrap; box-sizing: border-box; padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom)); }
+.project-settings-form .vc-actionbar[aria-hidden="true"] { display: none; }
+.project-command-check { min-width: 0; margin-bottom: var(--space-3); }
+.project-command-check pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
+.project-settings-form textarea { font-family: var(--font-mono, monospace); resize: vertical; }
+.project-check-ok { color: var(--success); }
+.project-settings-form [aria-invalid="true"] { border-color: var(--danger); }
+@media (max-width: 720px) {
+  .project-settings-form .proj-meta-edit, .project-settings-form .feature-policy { display: flex; flex-direction: column; min-width: 0; }
+  .project-settings-form input, .project-settings-form select, .project-settings-form textarea { min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .project-settings-form .proj-machines-table { width: 100% !important; min-width: 0 !important; }
+  .project-settings-form .proj-machines-table thead, .project-settings-form .proj-machines-table colgroup { display: none; }
+  .project-settings-form .proj-machines-table tr, .project-settings-form .proj-machines-table td { display: block; width: 100%; }
+  .project-settings-form .proj-machines-table tr { margin-bottom: var(--space-4); }
+  .project-settings-form .proj-machines-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: var(--space-2); color: var(--text-dim); }
+  .project-settings-form .vc-actionbar { padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom)); }
+}
 [data-theme='dark'] .proj-hint { color: #96a0b5; }
 .proj-default-skills .proj-tags { margin-top: 4px; }
 /* Чипы навыков по умолчанию — Atlassian-«subtle» вид */
