@@ -511,7 +511,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
     }
     const sendAttempt = async (attempt: number, correction?: string): Promise<void> => {
-      const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный единственный JSON-объект без любого текста вне JSON.` : basePrompt
+      const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни ровно один JSON-объект без окружающего текста и без любого текста вне JSON.` : basePrompt
       const handle = await client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, makeSources: preparationMakeSources, ...remote, ...kbFields }, {
         onDelta: async (chunk) => { await db.tasks.appendTaskPreparationLog(run.id, chunk); preparationRunDelta(userId, projectId, taskId, run.id) },
         onSession: async () => {},
