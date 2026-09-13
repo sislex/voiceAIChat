@@ -57,6 +57,14 @@ export const projectAssistantChatKey = (projectId: string): string => `voicechat
 export const kanbanFilterKey = (userId: string, projectId: string): string =>
   `voicechat.kanban.filters.v3.${encodeURIComponent(userId)}.${encodeURIComponent(projectId)}`
 
+/** Keep the existing user/project density keys compatible. */
+export const KANBAN_DENSITY_KEY = 'voicechat.kanban.density.v1'
+export const KANBAN_COLUMN_KEY = 'voicechat.kanban.column.v1'
+export const kanbanDensityKey = (userId: string, projectId: string): string =>
+  `${KANBAN_DENSITY_KEY}.${encodeURIComponent(userId)}.${encodeURIComponent(projectId)}`
+export const kanbanColumnKey = (scopeId: string): string =>
+  `${KANBAN_COLUMN_KEY}.${encodeURIComponent(scopeId)}`
+
 /** Ключи предпочтений редактора Make: автосохранение, формат при сохранении и раскладка. */
 /** Which task card the user last chose: the new "Проект 19" card or the legacy modal. */
 export const TASK_CARD_VERSION_KEY = 'vc.taskCard.version'
@@ -153,6 +161,8 @@ export const makeStorybookCommandKey = (projectId: string): string =>
  * файла (такой не найти при переименовании, и он теряется тихо).
  */
 export const PREFERENCE_KEYS = [
+  KANBAN_DENSITY_KEY,
+  KANBAN_COLUMN_KEY,
   SIDEBAR_PROJECT_KEY,
   DONE_TASK_CHATS_KEY,
   MESSAGE_META_UPDATE_KEY,

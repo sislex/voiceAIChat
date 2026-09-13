@@ -1500,9 +1500,10 @@ DOM-узлы доски, колонок и карточек сохраняют �
 - **Цель считает доска, а не движок.** Ячейка (колонка × дорожка свимлейна) — по
   `[data-drop-body]`, внутри неё ближайшая по вертикали зона `[data-dropzone]`
   даёт `afterId`/`beforeId` (контракт `move` не изменился) и `data-slot` для
-  плейсхолдера. При переносе карточки `autoScroll` двигает `.jboard` по обеим
-  осям: горизонтальная сохраняет доступ к колонкам, вертикальная синхронно двигает
-  всю доску. `[data-drop-body]` остаётся целью hit-test, но не scroll-контейнером.
+  плейсхолдера. Desktop card autoscroll uses both axes of `.jboard`. Mobile card
+  autoscroll uses `.jboard` horizontally and the target `.jcol-content` vertically
+  (the drop body is the fallback in swimlanes). Hit testing is refreshed every
+  animation frame, and `data-drop-target` highlights the selected column.
   При переносе колонки автоскролл работает исключительно по горизонтальной оси
   `.jboard` и не меняет общий `scrollTop`.
 - **Отмена** — Esc и `pointercancel` (входящий звонок, системный жест): карточка
@@ -1514,7 +1515,7 @@ DOM-узлы доски, колонок и карточек сохраняют �
   стрелки ←→ между колонками и ↑↓ по позициям, Enter — положить, Esc — отмена.
   Взятая карточка остаётся на месте (иначе слетел бы фокус) и подсвечивается
   `.jcard--grabbed`. Каждый шаг проговаривается в `aria-live`
-  («Задача X, колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
+  («Задача X: колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
 - **Column keyboard ordering.** Each column grip is a named button with
   `Alt+ArrowLeft` and `Alt+ArrowRight` shortcuts. A move jumps to the adjacent
   displayed column while producing the complete persisted order, including
