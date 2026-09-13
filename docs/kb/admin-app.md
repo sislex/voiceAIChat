@@ -1,7 +1,7 @@
 ---
 title: Frontend-модуль Administration: граница, store и подключение
-updated: 2026-09-01
-checked: 65c889af
+updated: 2026-09-13
+checked: 09971e0d
 areas:
   - packages/admin-app
   - packages/ui/src/App.tsx
@@ -22,7 +22,7 @@ Workspace `@voicechat/admin-app` находится в `packages/admin-app`. П�
 
 Источник интерфейсов — `packages/admin-app/src/contracts.ts`. `AdminClient` описывает существующие admin users/access/history/usage, engines/health и model-prices операции без привязки к HTTP, IPC или браузеру. Пакет не обращается к `window`, `fetch`, WebSocket, Electron API или browser storage.
 
-Host adapter `createAdminClient` в `packages/ui/src/clients/browser.ts` переводит методы `AdminClient` в существующие `RendererApi` bridges. REST bridge остаётся в `packages/ui/src/remote/httpApi.ts`; backend и REST-контракты не менялись. В IPC map добавлен `admin:updateUserRole`, который использует существующее серверное обновление пользователя.
+Host adapter `createAdminClient` в `packages/ui/src/clients/browser.ts` переводит методы `AdminClient` в существующие `RendererApi` bridges. REST bridge в `packages/ui/src/remote/httpApi.ts` передаёт параметры серверной выборки пользователей, массовый отзыв сессий, операции с кодом сброса и выборки журнала. Формы маршрутов централизованы в `packages/shared/src/adminRoute.ts`, а IPC-контракт — в `packages/shared/src/ipc.ts`.
 
 `SessionPort` отделяет обновление собственной учётной записи от admin state. После изменения роли текущего пользователя store просит host перечитать сессию и личный LLM access. Если admin-роль потеряна, состояние немедленно очищается и host закрывает административный экран.
 
@@ -32,17 +32,23 @@ Host adapter `createAdminClient` в `packages/ui/src/clients/browser.ts` пер�
 
 Выбор пользователя защищён возрастающим request token: ответы предыдущего выбора не применяются после быстрого переключения. `closeUsers`, `reset` и `dispose` очищают административные данные; runtime также сбрасывает домен при logout, expiration и смене пользователя. Пустой deny-list означает полный доступ и доступен как стабильная модульная константа `EMPTY_LLM_ACCESS`.
 
-Мутации пользователей, engines и model prices выполняются через client, после чего соответствующий список перечитывается. Engine health хранится отдельно по id и запускается только явным admin REST-действием, а не Operations realtime. Удаление engine убирает health result только после успешного удаления. UI подтверждает блокировку и destructive actions; предлагаемые роли — `admin`, `developer`, `tester`, `observer`, без legacy `user`.
+Мутации пользователей, engines и model prices выполняются через client, после чего соответствующий список перечитывается. Список пользователей загружается серверными страницами: начальная загрузка ограничена, `loadUsersPage` обслуживает фильтры и «Показать ещё», а stale-ответы после смены query отбрасываются. При deep link выбранный пользователь при необходимости дочитывается точным поиском. `bulkUsers` последовательно блокирует, разблокирует или отзывает сессии выбранных людей и затем обновляет список.
+
+Engine health хранится отдельно по id и запускается только явным admin REST-действием, а не Operations realtime. Удаление engine убирает health result только после успешного удаления. UI подтверждает блокировку и destructive actions; предлагаемые роли — `admin`, `developer`, `tester`, `observer`, без legacy `user`. Описания ролей приходят из `ROLE_DESCRIPTIONS` в `packages/shared/src/auth.ts`; сервер транзакционно не позволяет снять роль у последнего администратора.
 
 ## Маршруты и ленивое подключение
 
-`src/routes.ts` разбирает и строит `#/users`, deep links пользователя и вкладок `access`, `machines`, `usage`, `history`, а также `#/users/engines` и `#/users/prices`. Повреждённый encoding и чужие маршруты возвращают `null`.
+`src/routes.ts` разбирает и строит `#/users`, query-параметры поиска, роли, состояния и сортировки, deep links пользователя и вкладок `access`, `machines`, `usage`, `history`, `sessions`, а также `#/users/engines` и `#/users/prices`. Повреждённый encoding и чужие маршруты возвращают `null`; параметры списка сохраняются в hash URL, поэтому представление можно переслать ссылкой.
 
 `packages/ui/src/App.tsx` загружает `UsersAdmin` динамическим `import('@voicechat/admin-app')` и показывает fallback через `Suspense`. Перед открытием host проверяет `session.currentUser.role === 'admin'`; прямой переход non-admin безопасно возвращает на корневой маршрут. Обычный bootstrap не вызывает admin endpoints: `AppRuntime.openAdmin` загружает домен только при фактическом открытии раздела.
 
 ## UI и проверки
 
-`src/styles.css` импортирует только стили `@voicechat/ui-kit`, использует theme tokens и имеет mobile breakpoint; пакет не зависит от полного host `app.css`. Storybook общего UI подхватывает `AdminApp.stories.tsx`; обязательная матрица включает overview, empty usage и access matrix с wildcard-доступом модели.
+`src/styles.css` импортирует только стили `@voicechat/ui-kit`, использует theme tokens и имеет mobile breakpoint; пакет не зависит от полного host `app.css`. При ширине до 720 px список становится вертикальными карточками с меню действий, а фильтры раскрываются из строки поиска. Массовые действия используют один `useConfirm`, перечисляют логины и для выборки больше пяти требуют ввести её размер.
+
+Карточка пользователя переиспользует `@voicechat/profile-app` и отдельной вкладкой монтирует `AdminSessions` на базе `@voicechat/sessions-app`: доступны завершение одной сессии и всех, кроме текущей. История умеет запросить последние 50 результатов входа и экспортировать видимые записи в CSV. Код сброса показывается открытым только сразу после выдачи; затем UI хранит лишь срок, позволяет скопировать выданный код и отозвать активный. Страница тарифов проверяет точность до двух знаков, предупреждает о нулевой цене и загружает историю изменений из security journal.
+
+Storybook общего UI подхватывает `AdminApp.stories.tsx`; матрица дополнена поиском и фильтрами, массовыми действиями, карточкой с сессиями и мобильными карточками.
 
 Пакет имеет собственные команды `typecheck` и `test`, JSDOM setup, DOM/a11y, routes, store и architecture tests. Архитектурный тест запрещает host stores, platform apps, прямые transport API, browser storage и глубокие импорты host source. Пакет входит в канонический `npm run verify:frontend`; общий gate дополнительно проверяет публичные exports, CSS-изоляцию, Storybook-матрицу и role-gated lazy import Administration. `affected-check` запускает дорогие frontend build gates только для frontend-влияния.
 
