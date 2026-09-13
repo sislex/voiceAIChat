@@ -78,6 +78,22 @@ describe('mapWithLimit', () => {
 })
 
 describe('gridWindow', () => {
+  // @testCase TC01
+  it('keeps a bounded, nonempty window through all 500 files and after filtering', () => {
+    for (const columns of [2, 3, 6]) {
+      for (let scroll = 0; scroll < 60_000; scroll += 317) {
+        const win = gridWindow(500, columns, 240, scroll, 720)
+        expect(win.to - win.from).toBeGreaterThan(0)
+        expect(win.to - win.from).toBeLessThanOrEqual(columns * 9)
+        expect(win.from % columns).toBe(0)
+        expect(win.padTop + Math.ceil((win.to - win.from) / columns) * 240 + win.padBottom).toBe(Math.ceil(500 / columns) * 240)
+      }
+      const filtered = gridWindow(200, columns, 240, 60_000, 720)
+      expect(filtered.from).toBeLessThan(filtered.to)
+      expect(filtered.to).toBe(200)
+    }
+  })
+
   it('рисует только строки вокруг видимой области и держит распорки', () => {
     // 100 файлов, 4 колонки, строка 200px, экран 600px (3 строки), запас 1 экран.
     const win = gridWindow(100, 4, 200, 4000, 600)

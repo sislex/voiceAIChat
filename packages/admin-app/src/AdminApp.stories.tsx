@@ -2,6 +2,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { fn } from '@storybook/test'
 import { UsersAdmin } from './UsersAdmin'
+import { makeSessions } from '@voicechat/sessions-app'
 
 const NOW = Date.now()
 
@@ -69,6 +70,11 @@ type Story = StoryObj<typeof UsersAdmin>
 
 /** Список, метрики и карточка выбранного человека — главный экран раздела. */
 export const Overview: Story = {}
+
+export const SearchAndFilters: Story = { args: { selected: null, route: { page: 'users', list: { query: 'tester', state: 'blocked', sort: 'login' } } } }
+export const BulkActions: Story = { args: { selected: null, route: { page: 'users' }, onBulkUsers: fn(async () => {}) } }
+export const SessionsAndDevices: Story = { args: { route: { page: 'users', userName: 'alex', tab: 'sessions' }, sessionsClient: { list: async () => makeSessions(), revoke: fn(async () => {}), revokeOthers: fn(async () => {}) } } }
+export const MobileCards: Story = { parameters: { viewport: { defaultViewport: 'mobile1' } }, args: { selected: null, route: { page: 'users' }, onBulkUsers: fn(async () => {}) } }
 
 /** Новый период без ответов модели: честное пустое состояние вместо нулей. */
 export const EmptyUsage: Story = { args: { usage: null, route: { page: 'users', userName: 'alex', tab: 'usage' } } }

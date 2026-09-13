@@ -18,15 +18,16 @@ UI-модуль: список устройств, с которых выполн
 
 `SessionsClient` — единственный вход в приложение. Обязательны `list` и `revoke`,
 остальное необязательно: `store.capabilities` вычисляется по наличию методов, и
-панель прячет действия, которых хост не умеет (так админка получает режим
-только для чтения, а web — полный набор).
+the panel hides actions absent from the client. Admin supplies list and
+revocation capabilities; renaming and granting trust remain owner actions.
 
 ## Как подключён здесь
 
 - Хост-приложение: `packages/ui/src/components/SessionsDialogHost.tsx` собирает
   клиент из моста `window.session`, окно грузится лениво (`App.tsx`).
-- Админка: `packages/admin-app/src/AdminSessions.tsx` даёт ту же панель в режиме
-  `readOnly` для выбранного пользователя.
+- Admin: `packages/admin-app/src/AdminSessions.tsx` mounts the shared panel on
+  the selected user's Sessions tab, allowing revocation and revoking other
+  sessions. Rename and trust capabilities are intentionally not supplied.
 - Стили подключает хост: `import '@voicechat/sessions-app/styles.css'`.
 
 ## Правила

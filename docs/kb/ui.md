@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-13
-checked: 5f1f5dc8
+checked: e3867eac
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -1054,16 +1054,34 @@ Esc перехватит `useDialogStack`).
 
 ## Админка пользователей и стоимости моделей
 
+CHAT-453 access controls use the existing admin/profile/sessions modules.
+User-list query parameters live in the hash route (`q`, `role`, `state`, `sort`,
+`asc`); the host supplies server page reads through the admin client. The list
+requests 40 users per page and drops stale responses after query changes.
+Bulk block/unblock/session revocation asks once with `useConfirm`, lists the
+selected logins and requires typing the count for more than five accounts.
+The current and built-in administrator accounts are not selectable for bulk actions.
+At widths up to 720px users form vertical cards and the filter controls expand
+from the search row. Role help is supplied from shared `ROLE_DESCRIPTIONS`.
+
+The dedicated Sessions and devices tab mounts `AdminSessions` only when opened.
+It uses `sessions-app` for active devices, individual revocation and revoking
+other sessions; the server marks the requesting session as current. The history
+filter offers the last 50 login results and exports the visible events to CSV.
+The reset-code section shows active expiry, copying of a newly issued code and
+revocation. The prices page validates two decimal places, warns about zero rates,
+and shows actor/timestamp audit entries below the table.
+
 Маршрут `#/users` рендерит `UsersAdmin` из
-`packages/ui/src/components/UsersAdmin.tsx`. Выбранный пользователь открывает
+`packages/admin-app/src/UsersAdmin.tsx`. Выбранный пользователь открывает
 табы доступа, машин, «Использование моделей» и истории; таб расхода показывает
 токены, число ответов и две независимые стоимости — «По данным CLI» и «По
 прайсу» — в итогах, разбивке по моделям и временным бакетам. Если для ответа нет
 ни цены CLI, ни строки тарифа, компонент показывает «—» для отсутствующей суммы
 и объясняет неполноту в tooltip, а не выдаёт ноль за известную цену.
 
-Только администратор видит ниже пользовательской карточки реестр LLM-исполнителей
-и «Стоимость моделей». Последний виджет выводит провайдера, модель, четыре цены
+Administrators open the runner registry and model prices on separate routes
+`#/users/engines` and `#/users/prices`. Последний виджет выводит провайдера, модель, четыре цены
 USD за 1M токенов, источник и дату тарифа; форма позволяет добавить строку или
 перенести её в черновик для правки, удаление передаёт пару provider/model. Стор
 загружает прайсы при открытии админки и после сохранения либо удаления перечитывает
@@ -3351,6 +3369,47 @@ changed_in_project / both / missing_*` считаются сравнением �
 показывается словами, кнопки записи нет).
 
 ## Студия картинок: сплит «чат + галерея разговора»
+
+**Image Studio gallery and task controls (CHAT-455).** The panel keeps its
+existing gallery, selection, viewer, canvas processing, and preference storage.
+Ungrouped results use row windowing from 200 files, without first expanding
+pagination. The window uses the grid's position inside the scrolling pane,
+measured row pitch, and gap-adjusted spacers; it clamps stale scroll positions
+after filtering. Smaller and grouped galleries retain pagination.
+
+Recent prompt history retains 50 distinct prompts. Favorites are independently
+searchable and survive history eviction. Per-prompt style, size, negative text,
+and no-text preferences are stored alongside the existing history key; legacy
+string histories still load. Storage failures do not block rendering.
+
+Modern host ports submit generation through `imgstudio:enqueue` and poll
+`imgstudio:tasks`. The task count, state, and explicit cancellation are shown
+in the toolbar. Running and saving use an indeterminate progress element.
+Unmounting stops polling, not server work. Hosts without these ports retain the
+legacy generate/edit behavior. Recorded size/style/negative settings describe
+prompt instructions, not guaranteed output properties; absent model and seed
+metadata are not invented. The task API validates these saved parameters
+without coercion: no-text must be a boolean, including an explicit false when
+the option is disabled. Invalid parameter values are rejected before queuing.
+
+The publication editor manages selected files, captions, pointer drag order,
+keyboard move-up controls, and a text watermark. Draft preview opens a temporary
+server-rendered page using the same HTML and image path as publication, without
+publishing or modifying the saved settings. The viewer edits persistent tags and proposes words from the
+prompt; gallery search includes tags and inclusive local calendar dates.
+Viewer pinch zoom suppresses image switching, and keyboard navigation ignores
+inputs. Canvas crop presets include 1:1, 4:5, and 16:9; existing transforms and
+source-linked version uploads remain the processing path.
+
+At widths up to 720 px, normal and dense grids have two columns. On phones,
+the composer opens through the shared Dialog as a bottom sheet, and viewer
+padding includes safe-area insets. New stories include
+`imagestudio-imagestudiopane--virtual-gallery-500`,
+`imagestudio-imagestudiopane--queue-states`, and
+`imagestudio-imagestudiopane--publication-editor`. Browser regression coverage
+lives in `e2e/imageStudioLayout.e2e.test.ts`; test-case markers associate checks
+with the task's QA workflow.
+
 
 С 2026-09-09 серверная часть студии живёт в workspace `apps/image-studio`: в compose
 это отдельный процесс, в dev/desktop — встроенный модуль. UI, маршруты `#/images`,
