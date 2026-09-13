@@ -201,16 +201,19 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     if (closing || !deps.generator) return reply.code(503).send({ error: 'Генерация недоступна' })
     const input = req.body
     if (!input || typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: 'Недопустимый промпт' })
-    if (input.parameters && (typeof input.parameters !== 'object' || Object.keys(input.parameters).some(key => !['style', 'negative', 'size', 'noText'].includes(key)))) return reply.code(400).send({ error: 'Неподдерживаемые параметры' })
-    const list = [...tasks.values()].filter(({ task }) => task.conversationId === id)
-    if (list.filter(({ task }) => ['queued', 'running', 'saving'].includes(task.state)).length >= 50) return reply.code(429).send({ error: 'Очередь заполнена' })
+    if (input.parameters !== undefined && (!input.parameters || typeof input.parameters !== 'object' || Array.isArray(input.parameters) || Object.keys(input.parameters).some(key => !['style', 'negative', 'size', 'noText'].includes(key)))) return reply.code(400).send({ error: 'Неподдерживаемые параметры' })
     try {
       if (input.path && !await store.readBuffer(id, input.path)) return reply.code(404).send({ error: 'файл не найден' })
       const prompt = input.prompt.trim()
       const parameters = input.parameters
-      if (parameters && (['style', 'negative', 'size'] as const).some(key => parameters[key] !== undefined && typeof parameters[key] !== 'string')) return reply.code(400).send({ error: 'Недопустимые параметры' })
+      if (parameters && ((['style', 'negative', 'size'] as const).some(key => parameters[key] !== undefined && typeof parameters[key] !== 'string') || (parameters.noText !== undefined && typeof parameters.noText !== 'boolean'))) return reply.code(400).send({ error: 'Недопустимые параметры' })
       const fullPrompt = [prompt, parameters?.style ? `Стиль: ${parameters.style}.` : '', parameters?.size ? `Размер изображения: ${parameters.size.replace('×', 'x')}` : '', parameters?.negative ? `Не должно быть на изображении: ${parameters.negative}.` : '', parameters?.noText ? 'Не добавляй на изображение никакой текст, надписи и водяные знаки.' : ''].filter(Boolean).join('\n')
       if (fullPrompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: 'Промпт с параметрами слишком длинный' })
+      // Recheck after source I/O: concurrent requests must reserve queue capacity
+      // without yielding between this snapshot and insertion.
+      if (closing) return reply.code(503).send({ error: 'Генерация недоступна' })
+      const list = [...tasks.values()].filter(({ task }) => task.conversationId === id)
+      if (list.filter(({ task }) => ['queued', 'running', 'saving'].includes(task.state)).length >= 50) return reply.code(429).send({ error: 'Очередь заполнена' })
       const now = Date.now()
       const task: ImageStudioTask = { id: randomUUID(), conversationId: id, prompt, state: 'queued', createdAt: now, updatedAt: now }
       for (const { task: old } of list.filter(({ task: old }) => !['queued', 'running', 'saving'].includes(old.state)).slice(0, -49)) tasks.delete(old.id)

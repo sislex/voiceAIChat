@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-13
-checked: fff2eeb5
+checked: 5deeeb9b
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -3290,7 +3290,9 @@ in the toolbar. Running and saving use an indeterminate progress element.
 Unmounting stops polling, not server work. Hosts without these ports retain the
 legacy generate/edit behavior. Recorded size/style/negative settings describe
 prompt instructions, not guaranteed output properties; absent model and seed
-metadata are not invented.
+metadata are not invented. The task API validates these saved parameters
+without coercion: no-text must be a boolean, including an explicit false when
+the option is disabled. Invalid parameter values are rejected before queuing.
 
 The publication editor manages selected files, captions, pointer drag order,
 keyboard move-up controls, and a text watermark. Draft preview opens a temporary
