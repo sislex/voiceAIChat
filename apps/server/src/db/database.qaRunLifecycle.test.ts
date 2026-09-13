@@ -62,9 +62,11 @@ const logOf = (id: string): string =>
   (rawOf().prepare(`SELECT log FROM component_qa_runs WHERE id=?`).get(id) as { log: string }).log
 
 describe.skipIf(ON_POSTGRES)('Component QA: контекст исполнения', () => {
+  // @testCase TC-06
   it('очередной ран отдаёт машину, каталог и команды', async () => {
     const { project, task } = await componentFixture()
     const run = await db.ci.startComponentQaRun('owner', project.id, task.id)
+    expect(run.machineId).toBe('agent-component')
     expect(await db.ci.componentQaExecutionContext(run.id)).toEqual({
       agentId: 'agent-component', workdir: '/repos/component', npmCacheDir: '/repos/.npm-cache/component', commands: ['npm run test:storybook'], ciBaseBranch: 'main'
     })

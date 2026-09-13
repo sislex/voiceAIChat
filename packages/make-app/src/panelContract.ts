@@ -1,3 +1,4 @@
+import type { MakeOwnerReplyPatch } from '@voicechat/make-contracts'
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import type { EditorContextPayload } from '@shared/types'
 import type { ConversationUsage } from '@shared/usageSummary'
@@ -9,7 +10,9 @@ export interface MakePaneProps {
   | 'projects:gitWorkspaces' | 'projects:components' | 'projects:componentStories'
   | 'projects:storybookSession' | 'projects:storybookAction'
   | 'projects:gitFile' | 'projects:gitSaveFile' | 'projects:componentTicket'
-  | 'projects:storybookOpen' | 'projects:storybookCloseTunnel'>
+  | 'projects:storybookOpen' | 'projects:storybookCloseTunnel'> & {
+    'make:commentUpdate': (args: Parameters<RendererApi['make:commentUpdate']>[0] & MakeOwnerReplyPatch) => ReturnType<RendererApi['make:commentUpdate']>
+  }
   make?: RendererMakeBridge
   /** Insert a request about the selected element into the chat composer. */
   onInsertToChat?: (text: string) => void

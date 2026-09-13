@@ -338,6 +338,7 @@ describe('createAutomatedQaRunner', () => {
     expect(completed).toHaveBeenCalledWith('run', 'owner', false, 'Development workspace недоступен', expect.objectContaining({ mode: 'command' }))
   })
 
+  // @testCase TC-03
   it('режим playwright прогоняет сценарий и отдаёт снимок в вердикте', async () => {
     const complete = vi.fn()
     const progress: Array<{ current: number; total: number; label: string }> = []
@@ -356,6 +357,7 @@ describe('createAutomatedQaRunner', () => {
       executor: { run: vi.fn() },
       scenarioRunner: {
         run: async (input) => {
+          expect(input.scenario).toEqual(scenario)
           const step = { id: 's1', title: 'Открыть доску', status: 'passed' as const, detail: '', durationMs: 5 }
           input.onStep?.(step, 0, 1)
           return { steps: [step], screenshotUrl: '/api/qa/runs/run/screenshot', pageErrors: [], blocked: null }
@@ -365,7 +367,7 @@ describe('createAutomatedQaRunner', () => {
     })
     await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(complete).toHaveBeenCalled())
-    expect(complete).toHaveBeenCalledWith('owner', 'run', expect.objectContaining({ mode: 'playwright', passed: true, screenshotUrl: '/api/qa/runs/run/screenshot' }))
+    expect(complete).toHaveBeenCalledWith('owner', 'run', expect.objectContaining({ mode: 'playwright', passed: true, screenshotUrl: '/api/qa/runs/run/screenshot', steps: [expect.objectContaining({scenarioId:'run:scenario:0',durationMs:5})] }))
     // Имя сценария в подписи прогресса: в наборе иначе непонятно, чей это шаг.
     expect(progress.at(-1)).toEqual({ current: 1, total: 1, label: 'http://localhost:5173: Открыть доску' })
   })

@@ -2341,6 +2341,7 @@ describe('voiceStore — машинные утилиты', () => {
     expect(fs.exec).toHaveBeenLastCalledWith('m1', 'sleep 1', ctrl.signal)
   })
 
+  // @testCase T1
   it('история команд консоли: по машине, без подряд идущих дублей, с капом', () => {
     const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     store.actions.pushConsoleCommand('m1', 'ls')
@@ -2351,11 +2352,11 @@ describe('voiceStore — машинные утилиты', () => {
     expect(store.getState().consoleHistory.m1).toEqual(['ls', 'pwd'])
     expect(store.getState().consoleHistory.m2).toEqual(['git status'])
 
-    for (let i = 0; i < 120; i += 1) store.actions.pushConsoleCommand('m3', `cmd${i}`)
+    for (let i = 0; i < 220; i += 1) store.actions.pushConsoleCommand('m3', `cmd${i}`)
     const m3 = store.getState().consoleHistory.m3 ?? []
-    expect(m3).toHaveLength(100)
+    expect(m3).toHaveLength(200)
     expect(m3[0]).toBe('cmd20')
-    expect(m3.at(-1)).toBe('cmd119')
+    expect(m3.at(-1)).toBe('cmd219')
   })
 
   it('openUtility предпочитает машину активного разговора', async () => {

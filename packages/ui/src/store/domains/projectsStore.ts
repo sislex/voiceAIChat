@@ -122,7 +122,7 @@ export interface ProjectsActions {
   loadProjectTypes(): Promise<ProjectTypeNode[]>
   loadProjectInvitations(id: string): Promise<void>
   /** Результат нужен вызывающему: ушло письмо или приглашение только в списке. */
-  inviteToProject(id: string, invitee: string, role: 'owner' | 'member'): Promise<{ mailed: boolean; email: string | null; link: string } | null>
+  inviteToProject(id: string, invitee: string, role: 'owner' | 'member', ttlDays?: number): Promise<{ mailed: boolean; email: string | null; link: string } | null>
   resendProjectInvitation(id: string, invitationId: string): Promise<void>
   revokeProjectInvitation(id: string, invitationId: string): Promise<void>
   loadMyInvitations(): Promise<void>
@@ -858,9 +858,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           fail(err, () => void actions.loadProjectInvitations(id))
         }
       },
-      async inviteToProject(id, invitee, role) {
+      async inviteToProject(id, invitee, role, ttlDays) {
         try {
-          const { invitation, mailed, link } = await client['projects:invite']({ id, invitee, role })
+          const { invitation, mailed, link } = await client['projects:invite']({ id, invitee, role, ...(ttlDays === undefined ? {} : { ttlDays }) })
           await actions.loadProjectInvitations(id)
           return { mailed, email: invitation.email, link }
         } catch (err) {

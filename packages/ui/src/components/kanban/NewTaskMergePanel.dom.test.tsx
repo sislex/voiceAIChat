@@ -34,15 +34,16 @@ describe('NewTaskMergePanel', () => {
     const first = screen.getByTestId('new-task-merge-stage-1')
     const second = screen.getByTestId('new-task-merge-stage-2')
     await waitFor(() => expect(first).toHaveTextContent('Влито в main'))
-    expect(first).toHaveTextContent('без конфликтов')
+    expect(first).toHaveTextContent('main bbbbbbbb')
     expect(second).toHaveTextContent('Merge · доработка 1')
-    expect(second).toHaveTextContent('1 конфликт')
+    expect(second).toHaveTextContent('src/App.tsx')
     expect(second).toHaveTextContent('Ошибка')
     // Панель merge стоит в выбранном (последнем) проходе.
-    expect(second.querySelector('[data-testid="task-merge-panel"]')).toBeTruthy()
-    expect(first.querySelector('[data-testid="task-merge-panel"]')).toBeNull()
+    expect(second.querySelector('[data-testid="new-merge-run-details"]')).toBeTruthy()
+    expect(first.querySelector('[data-testid="new-merge-run-details"]')).toBeNull()
   })
 
+  // @testCase TC-INT-02
   it('запуск merge с выбранной машиной проходит через панель', async () => {
     ci.listMergeRuns = vi.fn(async () => [])
     ci.getTaskMachines = vi.fn(async () => ({ machines: [{ agentId: 'agent-1', name: 'MacBook', online: true, personal: true, project: true, projectDefault: true }], selectedAgentId: 'agent-1', unavailableSelection: null }) as never)

@@ -49,11 +49,11 @@ export function ResultTable({
       <tbody>
         {rows.map((row, index) => (
           <tr key={row.id ?? index} data-tone={row.tone ?? 'neutral'}>
-            <th scope="row">
+            <th scope="row" data-label="Проверка">
               <span className="vc-results__name">{row.name}</span>
               {row.detail != null && <span className="vc-results__detail">{row.detail}</span>}
             </th>
-            <td className={`vc-results__result vc-results__result--${row.tone ?? 'neutral'}`}>{row.result}</td>
+            <td data-label={resultLabel} className={`vc-results__result vc-results__result--${row.tone ?? 'neutral'}`}>{row.result}</td>
           </tr>
         ))}
       </tbody>
