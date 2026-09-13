@@ -702,6 +702,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase T11
   // @testCase T9
+  // @testCase TC6
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })
@@ -710,6 +711,8 @@ describe('подготовка к разработке: диагностика �
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
     expect(run.status).toBe('success')
+    expect(claudeCalls[0].prompt).toContain('ровно один JSON-объект')
+    expect(claudeCalls[0].prompt).toContain('DevelopmentReadiness schemaVersion=2')
     expect(claudeCalls[1].prompt).toContain('schemaVersion должен быть равен 2')
     expect(run.readiness?.schemaVersion).toBe(2)
   })
@@ -852,6 +855,18 @@ describe('подготовка к разработке: диагностика �
     expect(run.readiness?.sources?.find((source) => source.id === 'S-10')).toMatchObject({ status: 'unavailable', critical: false, refs: ['index.html'] })
   })
 
+  // @testCase TC6
+  it('rejects an unknown test type with a precise schema diagnostic', async () => {
+    const { project, task } = await taskInBacklog()
+    const invalid = JSON.parse(compatibleReadiness())
+    invalid.testCases[0].testType = 'guess'
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify(invalid) : compatibleReadiness() })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(claudeCalls[1].prompt).toContain('testCases[0].testType имеет недопустимое значение')
+  })
+
+  // @testCase TC7
   it('не подменяет неоднозначный статус источника на available', async () => {
     const { project, task } = await taskInBacklog()
     const malformed = JSON.parse(compatibleReadiness())
@@ -924,8 +939,9 @@ describe('подготовка к разработке: диагностика �
 
 
   // @testCase TC-7
+  // @testCase TC6
   // @testCase TC-BRIEF-02
-  it('normalizes a single fenced object before strict validation', async () => {
+  it('нормализует один JSON-объект в Markdown-ограде перед строгой валидацией', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ text: `\`\`\`json\\n${compatibleReadiness()}\\n\`\`\`` })
 
@@ -936,6 +952,45 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(1)
   })
 
+  // @testCase TC7
+  it('normalizes an absent decision link without changing requirements and is idempotent', async () => {
+    const { project, task } = await taskInBacklog()
+    const original = JSON.parse(compatibleReadiness())
+    original.decisions = [{ id: 'D1', text: 'Hide every mobile label', rationale: 'Explicit requirement', questionId: null }]
+    original.scope = 'Preserve every requirement'
+    claudeAnswer = () => ({ text: JSON.stringify(original) })
+    const first = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(first.status).toBe('success')
+    expect(first.readiness?.decisions).toEqual([{ id: 'D1', text: 'Hide every mobile label', rationale: 'Explicit requirement' }])
+    expect(first.readiness?.scope).toEqual(['Preserve every requirement'])
+    expect(first.readiness?.functionalRequirements).toBe(original.functionalRequirements)
+    expect(first.readiness?.testCases).toEqual(original.testCases)
+    const other = await taskInBacklog()
+    claudeAnswer = () => ({ text: JSON.stringify(first.readiness) })
+    const second = await settled(adminTok, (await launch(adminTok, other.project.id, other.task.id)).id)
+    expect(second.status).toBe('success')
+    expect(second.readiness?.decisions).toEqual(first.readiness?.decisions)
+    expect(second.readiness?.scope).toEqual(first.readiness?.scope)
+    expect(second.readiness?.testCases).toEqual(first.readiness?.testCases)
+  })
+
+  // @testCase TC8
+  it('rejects both prefaced responses before accepting a standalone recovery object', async () => {
+    const { project, task } = await taskInBacklog()
+    const corrected = compatibleReadiness()
+    const responses = ['Development Brief готов.\n' + corrected, 'Структура исправлена.\n' + corrected, corrected]
+    claudeAnswer = (attempt) => ({ text: responses[attempt - 1] })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(3)
+    expect(claudeCalls[1].prompt).toContain('ровно один JSON-объект без окружающего текста')
+    expect(claudeCalls[2].prompt).toContain(responses[0])
+    expect(claudeCalls[2].prompt).toContain(responses[1])
+    expect(run.readiness?.functionalRequirements).toBe(JSON.parse(corrected).functionalRequirements)
+    expect(run.readiness?.scope).toEqual(JSON.parse(corrected).scope)
+  })
+
+  // @testCase TC6
   it('отклоняет неоднозначный ответ из нескольких JSON-объектов', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ text: `${compatibleReadiness()}\\n${compatibleReadiness()}` })
