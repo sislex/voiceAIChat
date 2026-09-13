@@ -9,34 +9,34 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 106 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 15 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 37 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 2 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 21 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 43 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 3 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-12 | ⚠ 9 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 7 коммит(ов) в areas после сверки: b697a709 feat(machines): complete CHAT-451 utility improvements … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 158 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 320 коммит(ов) в areas после сверки: b697a709 feat(machines): complete CHAT-451 utility improvements … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 2 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 70e9afe3 feat(admin): improve user and session access management (CHAT-453) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-12 | ⚠ 17 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 9 коммит(ов) в areas после сверки: 06c94c52 Merge main into CHAT-458 (task 9ae92e81-fdd5-42ba-a5d2-81821d817408) … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 166 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 326 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ✓ |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 113 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 26 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1425 коммит(ов) в areas после сверки: 5f1f5dc8 docs(kb): update after merge 613ffe79-e3f0-446d-955e-f7af7368f12d … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 13 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 29 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 119 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 34 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1438 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 21 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 33 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-13 | ✓ |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 326 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 334 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 23 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ⚠ 6 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-13 | ⚠ 3 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 229 коммит(ов) в areas после сверки: b697a709 feat(machines): complete CHAT-451 utility improvements … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 7 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 13 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-12 | ⚠ 19 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 12 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ⚠ 12 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-13 | ⚠ 11 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 235 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 6 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 21 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 20 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 201 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
@@ -74,18 +74,18 @@
 
 ## Журнал сессий
 
-Всего записей: 807. Последние:
+Всего записей: 816. Последние:
 
 - [2026-09-13-germany-4-8-60-kanban-mobile-kb.md](log/2026-09-13-germany-4-8-60-kanban-mobile-kb.md) — kanban-mobile-kb
 - [2026-09-13-germany-4-8-60-chat451-machine-console-kb.md](log/2026-09-13-germany-4-8-60-chat451-machine-console-kb.md) — chat451-machine-console-kb
 - [2026-09-13-alexeys-macbook-air-2-qa-panels-selective-retry.md](log/2026-09-13-alexeys-macbook-air-2-qa-panels-selective-retry.md) — qa-panels-selective-retry
 - [2026-09-13-alexeys-macbook-air-2-qa-panels-qa-workflow-kb.md](log/2026-09-13-alexeys-macbook-air-2-qa-panels-qa-workflow-kb.md) — qa-panels-qa-workflow-kb
+- [2026-09-13-alexeys-macbook-air-2-project-settings-kb.md](log/2026-09-13-alexeys-macbook-air-2-project-settings-kb.md) — project-settings-kb
 - [2026-09-13-alexeys-macbook-air-2-make-flow-strict-brief.md](log/2026-09-13-alexeys-macbook-air-2-make-flow-strict-brief.md) — make-flow-strict-brief
 - [2026-09-13-alexeys-macbook-air-2-make-drafts-private-replies.md](log/2026-09-13-alexeys-macbook-air-2-make-drafts-private-replies.md) — make-drafts-private-replies
-- [2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md](log/2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md) — chat450-kb-update
-- [2026-09-13-alexeys-macbook-air-2-chat-457-shell.md](log/2026-09-13-alexeys-macbook-air-2-chat-457-shell.md) — chat-457-shell
-- [2026-09-13-alexeys-macbook-air-2-chat-445-functional-tabs.md](log/2026-09-13-alexeys-macbook-air-2-chat-445-functional-tabs.md) — chat-445-functional-tabs
-- [2026-09-12-germany-4-8-60-runner-stream-heartbeat.md](log/2026-09-12-germany-4-8-60-runner-stream-heartbeat.md) — runner-stream-heartbeat
+- [2026-09-13-alexeys-macbook-air-2-image-studio-queue-validation-kb.md](log/2026-09-13-alexeys-macbook-air-2-image-studio-queue-validation-kb.md) — image-studio-queue-validation-kb
+- [2026-09-13-alexeys-macbook-air-2-image-studio-chat-455.md](log/2026-09-13-alexeys-macbook-air-2-image-studio-chat-455.md) — image-studio-chat-455
+- [2026-09-13-alexeys-macbook-air-2-image-studio-chat-455-queue-repair.md](log/2026-09-13-alexeys-macbook-air-2-image-studio-chat-455-queue-repair.md) — image-studio-chat-455-queue-repair
 
 ## Исторические планы
 
