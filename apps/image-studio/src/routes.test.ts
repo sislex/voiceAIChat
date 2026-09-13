@@ -210,6 +210,59 @@ describe('студия картинок: роуты', () => {
     expect((await store.list(convId))[0]!.parameters).toEqual(parameters)
   })
 
+  // @testCase TC04
+  it('enforces the queue limit when edit submissions finish source checks together', async () => {
+    await store.writeBuffer(convId, 'source.png', PNG_BYTES)
+    let release!: () => void
+    const checked = new Promise<void>(resolve => { release = resolve })
+    let arrivals = 0
+    const spy = vi.spyOn(store, 'readBuffer').mockImplementation(async () => {
+      arrivals++
+      await checked
+      // Resume all admissions together, independent of filesystem scheduling.
+      return PNG_BYTES
+    })
+    const submissions = Array.from({ length: 51 }, (_, index) =>
+      app.inject({ method: 'POST', url: `/api/image-studio/${convId}/tasks`, payload: { prompt: `edit ${index}`, path: 'source.png' } }).then(response => response)
+    )
+    try {
+      await vi.waitFor(() => expect(arrivals).toBe(51))
+      release()
+      const responses = await Promise.all(submissions)
+      expect(responses.filter(response => response.statusCode === 202)).toHaveLength(50)
+      expect(responses.filter(response => response.statusCode === 429)).toHaveLength(1)
+    } finally {
+      release()
+      await Promise.all(submissions)
+      // Drain accepted work before the fixture deletes its storage directory.
+      await vi.waitFor(async () => {
+        const tasks = (await app.inject({ url: `/api/image-studio/${convId}/tasks` })).json()
+        expect(tasks.every((task: { state: string }) => ['completed', 'failed', 'cancelled'].includes(task.state))).toBe(true)
+      }, { timeout: 5000 })
+      spy.mockRestore()
+    }
+  })
+
+  // @testCase TC09
+  it.each([[], null, false, { noText: 'false' }, { noText: 0 }, { noText: null }])('rejects malformed queued parameters %j before starting generation', async parameters => {
+    const response = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/tasks`, payload: { prompt: 'portrait', parameters } })
+    expect(response.statusCode).toBe(400)
+    expect((await app.inject({ url: `/api/image-studio/${convId}/tasks` })).json()).toEqual([])
+    expect(generated).toEqual([])
+  })
+
+  // @testCase TC05
+  it.each([true, false])('preserves the boolean noText parameter %s without coercion', async noText => {
+    const response = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/tasks`, payload: { prompt: 'portrait', parameters: { noText } } })
+    expect(response.statusCode).toBe(202)
+    await vi.waitFor(async () => {
+      const tasks = (await app.inject({ url: `/api/image-studio/${convId}/tasks` })).json()
+      expect(tasks[0]).toMatchObject({ state: 'completed', file: { parameters: { noText } } })
+    })
+    expect(generated).toHaveLength(1)
+    expect(generated[0]!.prompt.includes('Не добавляй на изображение никакой текст')).toBe(noText)
+  })
+
   // @testCase TC09
   it('keeps legacy metadata readable and validates tags and queued parameter support', async () => {
     await store.writeBuffer(convId, 'legacy.png', PNG_BYTES)

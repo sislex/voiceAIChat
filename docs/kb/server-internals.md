@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-13
-checked: fff2eeb5
+checked: 5deeeb9b
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -631,6 +631,16 @@ bounded recent completed history. Process shutdown cancels pending/running
 work; process-restart recovery is not provided. Supported generation settings
 are translated into prompt instructions before invoking the existing core
 generator, including the HTTP core adapter.
+
+Queue admission checks the current unfinished-task count after asynchronous
+source-file validation, with no await between counting and insertion. This
+keeps simultaneous edit submissions within the same 50-task limit; shutdown
+is rechecked at that boundary too. The task endpoint rejects non-object
+parameter values (including null and arrays), unknown keys, non-string
+style/negative/size values, and non-boolean noText values with HTTP 400 before
+creating a task. Boolean false remains false in recorded metadata and adds no
+no-text instruction. Regression tests in `apps/image-studio/src/routes.test.ts`
+synchronize 51 source checks and verify admission of exactly 50 requests.
 
 `POST .../archive` validates explicit selected paths and issues a one-use,
 60-second download ticket. `GET /g/archive/:ticket` rechecks gallery ownership
