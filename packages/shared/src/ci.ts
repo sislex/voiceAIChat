@@ -216,6 +216,12 @@ export const CI_KB_UPDATE_COMMAND_ID = 'ci-builtin-kb-update'
 export const CI_KB_UPDATE_COMMAND_NAME = 'Актуализировать базу знаний'
 
 /** Именованный переиспользуемый shell-скрипт из справочника. */
+export interface CiCommandContext {
+  agentId: string
+  workdir: string
+  env: Record<string, string>
+}
+
 export interface CiCommand {
   id: string
   scope: CiCommandScope
@@ -1012,6 +1018,13 @@ export interface CiExecutionLlmSnapshot {
 /** Полный снимок рана с шагами (ответ GET деталь рана). */
 export interface CiRunDetail {
   run: CiRun
+  /** Project-visible queue; occupied/limit are server-wide counts without foreign task data. */
+  queue?: {
+    limit: number
+    occupied: number
+    waiting: Array<{ runId: string; taskId: string; title: string; createdAt: number }>
+    busy: Array<{ runId: string; taskId: string; title: string; agentId: string | null; bypass: boolean }>
+  }
   /** Фактический снимок текущей/последней стадии, вычисленный только из истории рана. */
   executionLlm?: CiExecutionLlmSnapshot
   /** Отдельные выполнения автоматических этапов; отсутствует у legacy API/ранов. */

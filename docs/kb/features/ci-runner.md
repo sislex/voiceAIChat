@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-12
-checked: 4aae694e
+updated: 2026-09-13
+checked: 5d1e1a59
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -2215,6 +2215,57 @@ $14–15, то есть замер попал в тот же порядок, ч�
 мерялось: там $0.11 на ран и пересказ готового списка шагов.
 
 ## Контракт и UI
+
+Лента рана фильтрует шаги (все, упавшие/timeout/interrupted, команды, ходы
+модели), ищет по логу без учёта регистра, переходит между совпадениями и умеет
+сворачивать/разворачивать все шаги. `CiLogLine` — транспортный chunk, а не
+физическая строка: `logRows` в `packages/ui/src/components/ci/ciFormat.ts`
+сначала склеивает chunks шага и снимает ANSI, и только затем делит текст для
+нумерации и поиска. Построчные ссылки имеют вид `#step-<id>-L<n>` и раскрывают
+свёрнутых родителей. Номер строки начинает диапазон, Shift выбирает его конец;
+копирование не включает ANSI. У каждого шага своё слежение за концом и
+ограниченная область прокрутки. Browser artifacts сохраняют authenticated loader.
+
+Ожидающий вопрос показывает длительность ожидания. «Ответить позже» сохраняет
+частичный ответ в sessionStorage по идентификаторам рана и interaction и скрывает
+форму, не отвечая серверу; повторное открытие восстанавливает черновик. Одобрение
+плана показывает prefix/suffix diff с предыдущей plan interaction. Вопросы
+приходят отдельными realtime-событиями: и `TaskRunFeed`, и `DevelopmentRunFeed`
+в `packages/ui/src/components/ci/TaskRunFeed.tsx` обязаны подписываться на
+`onInteraction`, заменять interaction с тем же id в своём cache и снимать
+подписку при unmount.
+
+Run details and snapshots include an optional project queue summary: visible
+waiting/busy task identities, project-local ordering, and server-wide occupied
+slot count and limit. Queue ordering follows the board order used by the
+scheduler. Removing a queued run uses dequeue and reports a race with start;
+confirmed bypass uses the existing parallel start, promoting the queued run.
+An active feed refreshes its queue snapshot every five seconds.
+
+The feed loads getRunReport and refreshes active usage every 15 seconds. Its
+token bar and report table use the existing stage/model aggregates and retain
+estimated/unknown-cost semantics. The console uses the shared Dialog, command
+history, read-only path completion and confirmation for destructive shell
+commands. Mobile layouts use step cards, bounded logs, sticky bottom actions
+and a full-screen console.
+
+Task command settings receive commandContext (machine, command workdir and
+environment) from the server. Slot previews expand known environment references
+for display; execution keeps shell evaluation and passes the environment as
+quoted arguments. An explicit confirmed machine check uses the existing fs.exec
+bridge, is aborted after at most 30 seconds and displays the first 50 output
+lines. Built-in steps and PROD_DIR-routed commands are identified separately and
+are not executed by this local check. The cleanup warning remains.
+
+`retry-from-step` принимает необязательный `stepId` корневого model-work или
+каталожного command-шагa. Перед отправкой лента показывает, какие шаги останутся
+в истории и какие выполнятся снова. Это продолжение того же `runId` в той же
+рабочей директории; точка возобновления строится по текущей конфигурации слотов,
+а не по сохранённой копии старого workflow (см. `retryFromFailed` в
+`apps/server/src/ci/runManager.ts`). Если command id удалён из слота или встречается
+там несколько раз, точку нельзя определить однозначно и сервер требует полный
+повтор вместо молчаливого выбора другого вхождения.
+
 
 Типы — `packages/shared/src/ci.ts`; REST-пути и WS-сообщения `ci.*` — в
 `protocol.ts` (union'ы + `*_MESSAGE_TYPES`). Роуты — `routes/ci.ts`. Мост

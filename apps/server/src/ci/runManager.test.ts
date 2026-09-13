@@ -1181,6 +1181,26 @@ describe('ci run manager', () => {
     // FLAKY выполнялся дважды (упал, затем прошёл на повторе).
     expect(scripts.filter((x) => x === 'FLAKY build').length).toBe(2)
   })
+  it('selected earlier command restarts it and rejects foreign step identities', async () => {
+    const { project, task } = await setup()
+    await db.ci.updateCiSettings({ maxFixAttempts: 0 })
+    const ok = await db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'ok', script: 'echo ok' })
+    const flaky = await db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'flaky', script: 'FLAKY build' })
+    await db.ci.setCiSlotCommands('task', task.id, 'before_model', [ok.id, flaky.id])
+    const runId = await run(project.id, task.id)
+    const failed = await waitRun(runId)
+    const missing = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'claude', model: 'opus', stepId: 'foreign-step' } })
+    expect(missing.statusCode).toBe(409)
+    expect((await db.ci.getCiRunRaw(runId))?.status).toBe('failed')
+    expect(failed.run.status).toBe('failed')
+    const selected = (await db.ci.getCiRun('admin', runId))!.steps.find((step) => step.commandId === ok.id)!
+    const response = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'claude', model: 'opus', stepId: selected.id } })
+    expect(response.statusCode).toBe(202)
+    expect((await waitRun(runId)).run.status).toBe('success')
+    expect(scripts.filter((script) => script === 'echo ok')).toHaveLength(2)
+    expect(scripts.filter((script) => script === 'FLAKY build')).toHaveLength(2)
+  })
+
   // --- Автозадача «Пересборка прода» (мерж в прод-ветку без пересборки прода) ---
 
   /** Команда мержа ветки задачи в прод-ветку (шаг раннер узнаёт по названию/скрипту). */
