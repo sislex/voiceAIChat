@@ -202,7 +202,7 @@ export interface ProjectsActions {
   cancelCiRun(runId: string): Promise<void>
   dequeueCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
-  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null>
+  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null; stepId?: string }): Promise<CiRun | null>
   discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null>
   loadCiRun(runId: string): Promise<void>
   openCiRun(runId: string): void

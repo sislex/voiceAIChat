@@ -55,6 +55,35 @@ type Story = StoryObj<typeof RunFeed>
 /** В очереди: ран создан, шагов ещё нет — лента объясняет, чего ждать. */
 export const Queued: Story = { args: { cache: queuedRunCache() } }
 
+export const ProjectQueue: Story = {
+  args: { cache: { ...queuedRunCache(), detail: {
+    ...makeRunDetail(makeRun({ status: 'queued' }), []),
+    queue: { limit: 2, occupied: 2,
+      waiting: [{ runId: 'run-1', taskId: 'task-1', title: 'Improve run feed', createdAt: NOW - 90_000 }],
+      busy: [{ runId: 'busy', taskId: 'task-2', title: 'Build application', agentId: 'MacBook', bypass: false }]
+    }
+  } } }
+}
+export const StepFilters: Story = {
+  args: { cache: failedRunCache() },
+  play: async ({ canvasElement }) => { await userEvent.selectOptions(within(canvasElement).getByLabelText('Шаги'), 'failed') }
+}
+export const LogSearch: Story = {
+  args: HugeLogArgs(),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(canvas.getByRole('textbox', { name: 'Поиск по логу' }), 'packages')
+    await userEvent.click(canvas.getByRole('button', { name: 'Следующее' }))
+  }
+}
+function HugeLogArgs() { return { cache: { detail: makeRunDetail(makeRun(), [makeStep()]), log: makeLogSheet(60), conclusion: null } } }
+export const LinePermalink: Story = {
+  args: HugeLogArgs(),
+  play: async ({ canvasElement }) => { await userEvent.click(within(canvasElement).getByRole('link', { name: 'Строка 12' })) }
+}
+export const QuestionWithTimer: Story = { args: { cache: awaitingInputRunCache() } }
+export const Mobile390: Story = { args: HugeLogArgs(), parameters: { viewport: { defaultViewport: 'mobile1' } }, decorators: [(Story) => <div style={{ width: 390, maxWidth: '100%' }}><Story /></div>] }
+
 /** Выполняется: первый шаг зелёный, второй идёт с логом, третий ждёт очереди. */
 export const Running: Story = {}
 

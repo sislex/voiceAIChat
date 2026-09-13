@@ -59,6 +59,7 @@ export interface CiProjectLlmConfig {
 }
 
 export interface CiTaskConfig {
+  commandContext?: import('./ci').CiCommandContext | null
   config: CiSlotConfig
   overridden: boolean
   projectDefault: CiSlotConfig
@@ -205,6 +206,7 @@ export interface RendererCiRest {
       provider: 'claude' | 'codex'
       model: string
       llmEngineId?: string | null
+      stepId?: string
     }
   ): Promise<CiRun>
   discardChangesAndRetry(runId: string): Promise<CiRun>

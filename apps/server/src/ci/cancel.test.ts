@@ -238,7 +238,16 @@ describe('отмена рана в фазе модели', () => {
     const queued = await startRun(ci, projectId, taskIds[1])
     for (let i = 0; i < 100 && (await db.ci.getCiRunRaw(first))?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
 
+    const queue = await ci.queueSummary('admin', projectId)
+    expect(queue).toMatchObject({ limit: 1, occupied: 1 })
+    expect(queue?.waiting.map((item) => item.runId)).toContain(queued)
+    expect(queue?.busy.map((item) => item.runId)).toContain(first)
+    expect(await ci.queueSummary('outsider', projectId)).toBeUndefined()
+    const context = await ci.commandContext('admin', projectId, taskIds[0])
+    expect(context?.env.WORKSPACE).toBeTruthy()
+    expect(context?.env.BRANCH).toBeTruthy()
     expect(await ci.dequeue('admin', queued)).toMatchObject({ status: 'removed', run: { id: queued, status: 'cancelled' } })
+    expect((await ci.queueSummary('admin', projectId))?.waiting.map((item) => item.runId)).not.toContain(queued)
     const backlog = (await db.tasks.getBoard('admin', projectId))!.columns.find((c) => c.semanticType === 'backlog')!
     expect((await db.tasks.getBoard('admin', projectId))!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(backlog.id)
     // Повтор не возвращает ложную ошибку и не запускает ран снова.
