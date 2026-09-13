@@ -1890,13 +1890,17 @@ fi`
           modelError = error instanceof Error ? error.message : String(error)
         }
       } else {
-        const line = await deps.db.ci.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
+        if ((await deps.db.ci.getTaskBrowserCheck(task.id)).mode !== 'off') {
+          modelOk = false
+          modelError = 'browser_check:infrastructure_error — model_work hook is unavailable'
+        }
+        const line = await deps.db.ci.appendCiLog(runId, mwStep.id, 'system', modelError || 'Работа модели пропущена (хук не подключён)\n')
         broadcast({ t: 'ci.log', runId, line }, userId)
       }
       const stepStatus: CiStatus = modelOk ? 'success' : modelCancelled || signal.aborted ? 'cancelled' : 'failed'
       const mwFinished = now()
       const upd = (await deps.db.ci.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: mwFinished, durationMs: mwFinished - mwStart }))!
-      await deps.db.ci.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
+      await deps.db.ci.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : modelError || 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
       await emitStage(runId, userId)
       await emitStep(upd, userId)
       // Отмена пользователем: слот «после» и резюме не запускаем, карточку возвращаем.
@@ -1920,6 +1924,9 @@ fi`
           broadcast({ t: 'ci.log', runId, line }, userId)
           await deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: transport.kind, stepId: mwStep.id } })
           await progress(runId, done, total, `Инфраструктурная ошибка — ${CI_INFRA_LABEL[transport.kind]}`, userId)
+        } else if (modelError.startsWith('browser_check:')) {
+          await deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.browser_check_blocked', actorType: 'system', payload: { stepId: mwStep.id, reason: modelError } })
+          await progress(runId, done, total, modelError, userId)
         } else {
           await progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
         }

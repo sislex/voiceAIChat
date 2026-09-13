@@ -21,6 +21,7 @@ import type { BrowserActionOutcome, BrowserImageResult, BrowserControlCommand, B
 // по секрету процесса `?k=`, ход адресуется подписанным токеном `?turn=`
 // (`reader/turnToken.ts`) — его выдаёт TurnManager или хуки CI в любом процессе.
 
+import { CI_BROWSER_ACTIONS, type CiBrowserAction } from '@voicechat/shared'
 import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -40,6 +41,7 @@ export type { PreviewToolEntry } from '@voicechat/web-reader-contracts'
 
 export interface RegisterPreviewMcpOptions {
   secret: string
+  logBrowserEvidence?: (entry: import('@voicechat/web-reader-contracts').PreviewToolEntry, event: import('@voicechat/shared').CiBrowserEvidenceEvent) => Promise<void>
   /** Действие в панели браузера пользователя; в отдельном процессе ридера — RPC к ядру. */
   relay: Pick<PreviewActionRelay, 'request'>
   /** Проверка токенов ходов; по умолчанию — подписанные тем же `secret`. */
@@ -104,7 +106,45 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         content: [{ type: 'text' as const, text: 'Контекст хода недоступен: действие в превью не выполнено.' }],
         isError: true
       }
+      const observe = async (action: { kind: string; url?: string; width?: number; frame?: unknown }, ok: boolean, value?: unknown, infrastructureError = false): Promise<void> => {
+        if (!entry?.ciCheck || !CI_BROWSER_ACTIONS.includes(action.kind as CiBrowserAction)) return
+        const page = value && typeof value === 'object' && 'page' in value ? value.page : null
+        let pageUrl: unknown = page && typeof page === 'object' && 'url' in page ? page.url : null
+        // Navigation/resize and diagnostic results may omit page metadata. Query the
+        // trusted browser session; never infer the current page from the requested URL.
+        let observedWidth = action.kind === 'viewport' ? action.width : undefined
+        if (opts.browserControl) {
+          try {
+            const status = await opts.browserControl(entry.userId, entry.conversationId, { type: 'status' })
+            const metadata = status?.ok ? status.result : null
+            if (metadata && 'currentUrl' in metadata) {
+              pageUrl = metadata.currentUrl
+              if ('viewport' in metadata) observedWidth = metadata.viewport.width
+            } else if (status !== null && status !== undefined) { ok = false; infrastructureError = true }
+          } catch { ok = false; infrastructureError = true }
+        }
+        const matches = (url: unknown): boolean => {
+          try { return typeof url === 'string' && new URL(url).href === new URL(entry.ciCheck!.url).href } catch { return false }
+        }
+        await opts.logBrowserEvidence?.(entry, {
+          action: action.kind as CiBrowserAction, ok,
+          ...(infrastructureError ? { infrastructureError: true } : {}),
+          target: action.frame === undefined && matches(pageUrl),
+          ...(action.kind === 'open' ? { requestedTarget: action.frame === undefined && matches(action.url) } : {}),
+          ...(typeof observedWidth === 'number' ? { width: observedWidth } : {})
+        })
+      }
       const run = async (action: PreviewAction): Promise<ReturnType<typeof toolResult>> => {
+        let result: ReturnType<typeof toolResult>
+        let infrastructureError = false
+        try { result = await execute(action) }
+        catch { infrastructureError = true; result = toolResult({ ok: false, error: 'Browser infrastructure unavailable; retry the action after restoring the dev server or Reader.' }) }
+        let value: unknown
+        try { value = JSON.parse(result.content[0]?.text ?? '{}') } catch { /* No structured result. */ }
+        await observe(action, !result.isError, value, infrastructureError)
+        return result
+      }
+      const execute = async (action: PreviewAction): Promise<ReturnType<typeof toolResult>> => {
         if (!entry) return noContext
         if (action.kind === 'console' || action.kind === 'network') {
           try { normalizeBrowserDiagnosticOptions(action) } catch (error) { return toolResult({ ok: false, error: String(error) }) }
@@ -363,9 +403,10 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(selector ? { selector } : {}),
             ...(rect ? { rect } : {})
           }, opts.timeoutMs)
-          if (!outcome.ok) return toolResult(outcome)
+          if (!outcome.ok) { await observe({ kind: 'screenshot', frame }, false); return toolResult(outcome) }
           const result = outcome.result as BrowserImageResult | undefined
           const match = typeof result?.dataUrl === 'string' ? /^data:(image\/[a-z+]+);base64,(.+)$/.exec(result.dataUrl) : null
+          await observe({ kind: 'screenshot', frame }, Boolean(match), result)
           if (!match) {
             return { content: [{ type: 'text' as const, text: 'Снимок не получен: страница не вернула картинку.' }], isError: true }
           }

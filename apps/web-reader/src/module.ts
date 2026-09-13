@@ -59,6 +59,7 @@ export function createReaderModule(deps: ReaderDeps): void {
 
   registerPreviewMcp(app, {
     secret: deps.mcpSecret,
+    logBrowserEvidence: (entry, event) => core.logBrowserEvidence ? core.logBrowserEvidence(entry, event) : Promise.reject(new Error('Browser evidence storage is unavailable')),
     // Действие в панели пользователя: сокеты живут у ядра — через порт.
     relay: { request: (userId, conversationId, action, timeoutMs) => core.previewAction(userId, conversationId, action, timeoutMs) },
     ...(deps.actionTimeoutMs ? { timeoutMs: deps.actionTimeoutMs } : {}),
