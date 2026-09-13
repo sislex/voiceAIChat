@@ -1542,8 +1542,8 @@ export class CiRepo extends BaseRepo {
       const status:IntegrationTestRun['status']=skipped?'skipped':reasons.length?'blocked':'queued'
       const attempt=Number(((await this.sql.get(`SELECT COALESCE(MAX(attempt),0)+1 n FROM integration_test_runs WHERE task_id=?`, [taskId])) as {n:number}).n)
       const id=this.newId()
-      await this.sql.run(`INSERT INTO integration_test_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,readiness_run_id,snapshot_version,test_cases_json,blocker_reasons_json,summary,created_at,finished_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, projectId, taskId, input.dev?.id??null, input.workspace?.branch??'', currentSha, attempt, status, input.prep?.id??'', version, JSON.stringify(cases), JSON.stringify(reasons), skipped?'Нет обязательных automatable-кейсов':reasons.length?'Запуск заблокирован предусловиями':'', ts, status==='queued'?null:ts])
+      await this.sql.run(`INSERT INTO integration_test_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,readiness_run_id,snapshot_version,test_cases_json,blocker_reasons_json,summary,created_at,finished_at,failure_classification,failure_reason)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, projectId, taskId, input.dev?.id??null, input.workspace?.branch??'', currentSha, attempt, status, input.prep?.id??'', version, JSON.stringify(cases), JSON.stringify(reasons), skipped?'Нет обязательных automatable-кейсов':reasons.length?'Запуск заблокирован предусловиями':'', ts, status==='queued'?null:ts, reasons.length?'infrastructure':null, reasons[0]??null])
       if(skipped){
         const target=await this.repos.projects.getColumnIdBySemantic(projectId,'automated_qa')
         if(!target||!canTransitionWorkflow('integration_tests','automated_qa','automation')) throw new Error('automated_qa transition unavailable')
