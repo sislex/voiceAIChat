@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-09-13
-checked: 7cb7a533
+checked: ab010033
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -745,9 +745,9 @@ git-процесса встречаются на `index.lock`, и вторая �
 
 ### Просмотр и правка файлов
 
-File clicks open a preview without downloading. Images retain the 1 MiB automatic-preview limit; text larger than 204800 bytes offers «Показать первые 200 КБ». This calls optional `MachineOps.readPrefix` through `operationsStore`, `RendererFsBridge.readPrefix` and `GET /api/agents/:id/fs/preview?path=…&projectId=…`. The existing machine authorization applies. The registry forwards `fs.read-prefix` only to agents supporting `fs-preview` (0.17.0); it never falls back to full reading.
+Клик по файлу открывает предпросмотр без скачивания. Для изображений сохраняется лимит автоматического предпросмотра 1 МиБ; для текста больше 204800 байт появляется команда «Показать первые 200 КБ». Она вызывает отдельный `MachineOps.readPrefix` через `operationsStore`, `RendererFsBridge.readPrefix` и `GET /api/agents/:id/fs/preview?path=…&projectId=…`; маршрут проходит ту же авторизацию машины. Реестр отправляет `fs.read-prefix` только агенту с возможностью `fs-preview` (версия 0.17.0 и новее) и принципиально не подменяет ограниченный предпросмотр полным чтением на старом агенте (`apps/server/src/agents/registry.ts`, `packages/shared/src/version.ts`).
 
-`fsReadPrefix` checks the normalized path with the existing read policy, opens one file descriptor, and loops over bounded `readSync` calls from offset zero. At most 204800 bytes are read and encoded, even for a file over 32 MiB; the descriptor closes in `finally`. The result includes `bytesRead`, `fileSize` and `truncated`. Full `fsRead` remains unchanged with its 32 MiB limit. A streaming fatal UTF-8 decoder suppresses only an incomplete final sequence in a truncated preview; invalid interior encoding and NUL bytes remain unsupported. Truncated text cannot enter the editor or be saved. Request generations discard responses after a different preview, machine change or close. Поддерживаемые по расширению картинки (`avif`, `bmp`, `gif`,
+Ограниченный и полный режимы различаются на самом агенте (`apps/agent/src/fileOps.ts`). `fsReadPrefix` применяет существующую проверку нормализованного пути, открывает один дескриптор и циклами `readSync` читает от начала суммарно не более `FS_PREVIEW_BYTES` = 204800 байт — в том числе у файла больше 32 МиБ; дескриптор закрывается в `finally`, результат содержит `bytesRead`, `fileSize` и `truncated`. Обычный `fsRead` по-прежнему читает файл целиком через `readFileSync`, сохраняет предел `FS_MAX_BYTES` = 32 МиБ и те же проверки доступа. В UI потоковый fatal UTF-8 decoder отбрасывает только незавершённую конечную последовательность усечённого ответа; повреждение внутри текста и NUL по-прежнему считаются неподдерживаемым бинарным содержимым. Усечённый текст нельзя открыть в редакторе или сохранить, а поколения запросов отбрасывают опоздавший ответ после смены файла, машины или закрытия превью. Поддерживаемые по расширению картинки (`avif`, `bmp`, `gif`,
 `ico`, `jpeg/jpg`, `png`, `svg`, `webp`) показываются как `data:`-изображение.
 Остальные файлы декодируются как UTF-8 с фатальной проверкой: невалидная
 кодировка или нулевой байт означают бинарный файл и честный отказ от
