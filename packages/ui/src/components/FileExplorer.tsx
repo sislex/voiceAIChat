@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentInfo, FsEntry } from '@shared/agentProtocol'
+import { FS_PREVIEW_BYTES, type AgentInfo, type FsEntry } from '@shared/agentProtocol'
 import type { MachineOps, SwitchUtility, UtilityVariant } from '@voicechat/ui-foundation/components/machine'
 import { MachineUtilityHeader, READ_ONLY_HINT } from './MachineUtilityHeader'
-import { Button } from '@voicechat/ui-kit'
+import { Button, useConfirm, useToast } from '@voicechat/ui-kit'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { IconButton } from '@voicechat/ui-kit'
 import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
@@ -12,6 +13,7 @@ import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { CodeEditor } from '@voicechat/ui-foundation/components/CodeEditor'
 import { CodeDiff } from '@voicechat/ui-foundation/components/CodeDiff'
 import { isToolAllowed } from '@shared/version'
+import { completePath, rememberListing } from '../lib/machineListing'
 
 export interface FileExplorerProps {
   agents: AgentInfo[]
@@ -40,7 +42,7 @@ function fmtSize(n: number): string {
 }
 function parentOf(p: string): string {
   const up = p.replace(/[\\/]+$/, '').replace(/[\\/][^\\/]*$/, '')
-  return up || '/'
+  return /^[A-Za-z]:$/.test(up) ? up + '/' : up || '/'
 }
 function nameOf(p: string): string {
   return p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
@@ -55,7 +57,7 @@ const IMAGE_TYPES: Record<string, string> = {
   jpeg: 'image/jpeg', jpg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml', webp: 'image/webp'
 }
 
-type Preview = { path: string; name: string; size: number; kind: 'text' | 'image' | 'unavailable' }
+type Preview = { path: string; name: string; size: number; kind: 'text' | 'image' | 'unavailable'; truncated?: boolean }
 
 function extensionOf(name: string): string {
   return name.split('.').pop()?.toLowerCase() ?? ''
@@ -63,11 +65,11 @@ function extensionOf(name: string): string {
 function bytesFromBase64(dataBase64: string): Uint8Array {
   return Uint8Array.from(atob(dataBase64), (char) => char.charCodeAt(0))
 }
-function decodeUtf8(dataBase64: string): string | null {
+function decodeUtf8(dataBase64: string, truncated = false): string | null {
   try {
     const bytes = bytesFromBase64(dataBase64)
     if (bytes.includes(0)) return null
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: truncated })
   } catch {
     return null
   }
@@ -83,14 +85,14 @@ type SortDirection = 'asc' | 'desc'
 
 function breadcrumbs(cwd: string, root: string): Array<{ name: string; path: string; root: boolean }> {
   if (!cwd) return []
-  const normalizedRoot = root.replace(/[\\/]+$/, '') || '/'
-  const normalizedCwd = cwd.replace(/[\\/]+$/, '') || normalizedRoot
-  if (normalizedCwd !== normalizedRoot && !normalizedCwd.startsWith(`${normalizedRoot}/`)) {
+  const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '') || '/'
+  const normalizedCwd = cwd.replace(/\\/g, '/').replace(/\/+$/, '') || normalizedRoot
+  if (normalizedCwd !== normalizedRoot && !normalizedCwd.startsWith(normalizedRoot === '/' ? '/' : `${normalizedRoot}/`)) {
     return [{ name: normalizedCwd, path: normalizedCwd, root: true }]
   }
   const parts = normalizedCwd.slice(normalizedRoot.length).split('/').filter(Boolean)
   return [
-    { name: normalizedRoot, path: normalizedRoot, root: true },
+    { name: normalizedRoot, path: /^[A-Za-z]:$/.test(normalizedRoot) ? normalizedRoot + '/' : normalizedRoot, root: true },
     ...parts.map((name, index) => ({ name, path: `${normalizedRoot.replace(/\/$/, '')}/${parts.slice(0, index + 1).join('/')}`, root: false }))
   ]
 }
@@ -136,6 +138,7 @@ export function FileExplorer({
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [uploading, setUploading] = useState<string[]>([])
   const [uploadErrors, setUploadErrors] = useState<Array<{ name: string; error: string }>>([])
+  useEffect(() => { if (initialAgentId) setAgentId(initialAgentId) }, [initialAgentId])
   const [preview, setPreview] = useState<Preview | null>(null)
   const [previewText, setPreviewText] = useState('')
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -156,6 +159,15 @@ export function FileExplorer({
   const [copyError, setCopyError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmSave, setConfirmSave] = useState(false)
+  const confirm = useConfirm()
+  const toast = useToast()
+  const [selected, setSelected] = useState<string[]>([])
+  const selectionAnchor = useRef<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const listingRequest = useRef(0)
+  const currentAgent = useRef(agentId)
+  currentAgent.current = agentId
+  const previewRequest = useRef(0)
   const selectedRow = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -199,9 +211,14 @@ export function FileExplorer({
 
   const load = async (path: string): Promise<void> => {
     if (!agentId || !agentOnline) return
+    const request = ++listingRequest.current
     setStatus('loading')
     try {
       const res = await ops.list(agentId, path)
+      if (request !== listingRequest.current || agentId !== currentAgent.current) return
+      setSelected([])
+      selectionAnchor.current = null
+      rememberListing(agentId, res.cwd, res.entries ?? [])
       setRoot(res.root)
       setCwd(res.cwd)
       setAddress(res.cwd)
@@ -209,6 +226,7 @@ export function FileExplorer({
       setError(null)
       setStatus('ready')
     } catch (err) {
+      if (request !== listingRequest.current || agentId !== currentAgent.current) return
       setError(err instanceof Error ? err.message : String(err))
       setStatus('error')
     }
@@ -216,6 +234,10 @@ export function FileExplorer({
 
   // Путь файла открывает родительскую папку и выделяет нужную строку.
   useEffect(() => {
+    previewRequest.current += 1
+    setPreview(null)
+    setPreviewLoading(false)
+    setPreviewError(null)
     setEntries([])
     setSelectedName(initialFilePath ? nameOf(initialFilePath) : '')
     void load(initialDir ? initialDir : initialFilePath ? parentOf(initialFilePath) : '')
@@ -225,6 +247,35 @@ export function FileExplorer({
   useEffect(() => {
     selectedRow.current?.scrollIntoView?.({ block: 'nearest' })
   }, [visibleEntries, selectedName])
+
+  const selectEntry = (name: string, shift: boolean, toggle: boolean): void => {
+    const names = visibleEntries.map((entry) => entry.name)
+    const anchor = names.indexOf(selectionAnchor.current ?? name)
+    const index = names.indexOf(name)
+    if (shift && anchor >= 0) setSelected(names.slice(Math.min(anchor, index), Math.max(anchor, index) + 1))
+    else if (toggle) setSelected((prev) => prev.includes(name) ? prev.filter((value) => value !== name) : [...prev, name])
+    else setSelected([name])
+    if (!shift) selectionAnchor.current = name
+    setSelectedName(name)
+  }
+
+  const deleteSelected = async (): Promise<void> => {
+    if (!agentId || !writable || deleting || selected.length === 0) return
+    const paths = selected.map((name) => joinPath(cwd, name))
+    if (!await confirm({ title: 'Удалить выбранные файлы?', message: <ul>{paths.map((path) => <li key={path}>{path}</li>)}</ul>, confirmLabel: 'Удалить', variant: 'danger' })) return
+    setDeleting(true)
+    const results = await Promise.all(paths.map(async (path) => {
+      try { await (canTrash ? ops.trash!(agentId, path) : ops.remove(agentId, path)); return { path, ok: true } }
+      catch (error) { return { path, ok: false, error: String(error) } }
+    }))
+    setDeleting(false)
+    await load(cwd)
+    const failures = results.filter((result) => !result.ok)
+    if (failures.length) {
+      setError(results.map((result) => `${result.path}: ${result.ok ? 'удалён' : result.error}`).join('\n'))
+      setStatus('error')
+    } else toast.success('Выбранные файлы удалены')
+  }
 
   const run = async (op: Promise<unknown>): Promise<void> => {
     try {
@@ -276,48 +327,54 @@ export function FileExplorer({
     if (name) void run(ops.mkdir(agentId, joinPath(cwd, name)))
   }
 
-  const openFile = async (entry: FsEntry): Promise<void> => {
+  const openFile = async (entry: FsEntry, prefix = false): Promise<void> => {
     if (!agentId) return
+    const request = ++previewRequest.current
     const path = joinPath(cwd, entry.name)
     setEditing(false)
     setConfirmSave(false)
     setPreviewText('')
     setPreviewError(null)
     setPreviewErrorKind('read')
-    if (entry.size > PREVIEW_MAX_BYTES) {
+    if (!prefix && entry.size > (IMAGE_TYPES[extensionOf(entry.name)] ? PREVIEW_MAX_BYTES : FS_PREVIEW_BYTES)) {
+      setPreviewLoading(false)
       setPreview({ path, name: entry.name, size: entry.size, kind: 'unavailable' })
       return
     }
     setPreviewLoading(true)
     try {
-      const result = await ops.read(agentId, path)
+      if (prefix && (!ops.readPrefix || !isToolAllowed(selectedAgent?.version ?? '0.0.0', 'fs-preview'))) throw new Error('Ограниченное чтение недоступно: обновите агент и клиент')
+      const result = prefix ? await ops.readPrefix!(agentId, path) : await ops.read(agentId, path)
+      if (request !== previewRequest.current) return
       const dataBase64 = result.dataBase64
-      if (!dataBase64) throw new Error('машина не вернула содержимое файла')
+      if (dataBase64 === undefined) throw new Error('машина не вернула содержимое файла')
+      if (prefix && (result.bytesRead === undefined || typeof result.truncated !== 'boolean' || bytesFromBase64(dataBase64).length > FS_PREVIEW_BYTES)) throw new Error('Некорректный ответ ограниченного чтения')
       const imageType = IMAGE_TYPES[extensionOf(entry.name)]
       if (imageType) {
         setPreview({ path, name: entry.name, size: entry.size, kind: 'image' })
         setPreviewText(`data:${imageType};base64,${dataBase64}`)
       } else {
-        const text = decodeUtf8(dataBase64)
+        const text = decodeUtf8(dataBase64, result.truncated)
         if (text === null) setPreview({ path, name: entry.name, size: entry.size, kind: 'unavailable' })
         else {
-          setPreview({ path, name: entry.name, size: entry.size, kind: 'text' })
+          setPreview({ path, name: entry.name, size: result.fileSize ?? entry.size, kind: 'text', truncated: result.truncated })
           setPreviewText(text)
           setPreviewOriginal(text)
           setShowDiff(false)
         }
       }
     } catch (err) {
+      if (request !== previewRequest.current) return
       setPreview({ path, name: entry.name, size: entry.size, kind: 'unavailable' })
       setPreviewErrorKind('read')
       setPreviewError(err instanceof Error ? err.message : String(err))
     } finally {
-      setPreviewLoading(false)
+      if (request === previewRequest.current) setPreviewLoading(false)
     }
   }
 
   const savePreview = async (): Promise<void> => {
-    if (!agentId || !preview || preview.kind !== 'text' || !writable) return
+    if (!agentId || !preview || preview.kind !== 'text' || preview.truncated || !writable) return
     setSaving(true)
     setPreviewErrorKind('save')
     setPreviewError(null)
@@ -372,10 +429,17 @@ export function FileExplorer({
             aria-label="Адрес папки"
             title="Введите или вставьте путь и нажмите Enter"
             value={address}
+            list="machine-directory-options"
+            onKeyDown={(event) => {
+              if (event.key !== 'Tab' || !agentId) return
+              const matches = completePath(agentId, cwd, address, true)
+              if (matches.length === 1) { event.preventDefault(); setAddress(matches[0]) }
+            }}
             placeholder="Введите путь к папке"
             disabled={!agentOnline}
             onChange={(e) => setAddress(e.target.value)}
           />
+          <datalist id="machine-directory-options">{agentId && completePath(agentId, cwd, address, true).map((path) => <option key={path} value={path} />)}</datalist>
         </form>
         {/* Кнопок изменения файлов нет не «просто так»: скажем это на их месте,
             а полное объяснение — в подсказке (тот же текст, что у бейджа шапки). */}
@@ -449,6 +513,12 @@ export function FileExplorer({
           {sortDirection === 'asc' ? '↑' : '↓'}
         </IconButton>
       </div>
+      {selected.length > 0 && <div className="fsselection" role="group" aria-label="Выбранные файлы">
+        <span>Выбрано: {selected.length}</span>
+        <Button size="sm" onClick={() => { void copyText(selected.map((name) => joinPath(cwd, name)).join('\n')).then((ok) => ok ? toast.success('Пути скопированы') : toast.error('Не удалось скопировать пути')) }}>Копировать пути</Button>
+        {writable && <Button size="sm" variant="danger" loading={deleting} onClick={() => void deleteSelected()}>Удалить выбранные</Button>}
+        <Button size="sm" onClick={() => setSelected([])}>Снять выделение</Button>
+      </div>}
       {uploading.length > 0 && <p className="fsuploading" role="status">Загружаем: {uploading.join(', ')}</p>}
       {uploadErrors.length > 0 && (
         <ul className="fsupload-errors" role="alert">
@@ -469,7 +539,7 @@ export function FileExplorer({
           <div className="fspreview-head">
             <strong>{preview?.name ?? 'Предпросмотр файла'}</strong>
             {preview && <span className="fssize">{fmtSize(preview.size)}</span>}
-            <IconButton size="sm" title="Закрыть предпросмотр" aria-label="Закрыть предпросмотр" onClick={() => { setPreview(null); setPreviewError(null); setEditing(false); setConfirmSave(false) }}>×</IconButton>
+            <IconButton size="sm" title="Закрыть предпросмотр" aria-label="Закрыть предпросмотр" onClick={() => { previewRequest.current += 1; setPreviewLoading(false); setPreview(null); setPreviewError(null); setEditing(false); setConfirmSave(false) }}>×</IconButton>
           </div>
           {previewLoading && <p role="status">Читаем файл…</p>}
           {previewError && (
@@ -486,18 +556,20 @@ export function FileExplorer({
           {!previewLoading && !previewError && preview?.kind === 'image' && <img className="fspreview-image" src={previewText} alt={`Предпросмотр ${preview.name}`} />}
           {!previewLoading && !previewError && preview?.kind === 'unavailable' && (
             <div className="fspreview-unavailable">
-              <p>{preview.size > PREVIEW_MAX_BYTES ? `Файл больше ${fmtSize(PREVIEW_MAX_BYTES)}; предпросмотр не загружается.` : 'Предпросмотр недоступен: файл не является текстом UTF-8 или поддерживаемой картинкой.'}</p>
+              {!IMAGE_TYPES[extensionOf(preview.name)] && preview.size > FS_PREVIEW_BYTES && <Button size="sm" onClick={() => void openFile({ name: preview.name, size: preview.size, kind: 'file', mtime: 0 }, true)}>Показать первые 200 КБ</Button>}
+              <p>{preview.size > FS_PREVIEW_BYTES ? `Файл больше ${fmtSize(PREVIEW_MAX_BYTES)}; предпросмотр не загружается.` : 'Предпросмотр недоступен: файл не является текстом UTF-8 или поддерживаемой картинкой.'}</p>
               <Button size="sm" onClick={() => agentId && void ops.download(agentId, preview.path, preview.name)}>⬇ Скачать</Button>
             </div>
           )}
           {!previewLoading && !previewError && preview?.kind === 'text' && (
             <>
+              {preview.truncated && <p role="status">Показаны первые 200 КБ. Файл усечён; редактирование недоступно.</p>}
               {editing
                 ? (showDiff
                   ? <div className="fspreview-editor" data-testid="fs-diff"><CodeDiff path={preview.path} original={previewOriginal} modified={previewText} /></div>
                   : <div className="fspreview-editor"><CodeEditor path={preview.path} value={previewText} onChange={setPreviewText} ariaLabel="Содержимое файла" onSave={() => setConfirmSave(true)} /></div>)
                 : <pre className="fspreview-text">{previewText}</pre>}
-              {writable ? (
+              {writable && !preview.truncated ? (
                 <div className="fspreview-actions">
                   {editing && previewText !== previewOriginal && <Button size="sm" onClick={() => setShowDiff((v) => !v)}>{showDiff ? 'Скрыть изменения' : 'Показать изменения'}</Button>}
                   {editing ? (
@@ -623,11 +695,14 @@ export function FileExplorer({
               data-testid="fs-row"
               data-selected={entry.name === selectedName ? 'true' : undefined}
               aria-current={entry.name === selectedName ? 'true' : undefined}
-              onClick={() => setSelectedName(entry.name)}
+              onClick={(event) => selectEntry(entry.name, event.shiftKey, event.metaKey || event.ctrlKey)}
             >
+              <input type="checkbox" aria-label={`Выбрать ${entry.name}`} checked={selected.includes(entry.name)} onClick={(event) => event.stopPropagation()} onChange={() => selectEntry(entry.name, false, true)} />
               <button
                 className="fsname"
-                onClick={() => {
+                onClick={(event) => {
+                  if (event.shiftKey || event.metaKey || event.ctrlKey) return
+                  event.stopPropagation()
                   setSelectedName(entry.name)
                   if (entry.kind === 'dir') void load(abs)
                   else void openFile(entry)
@@ -637,6 +712,7 @@ export function FileExplorer({
               </button>
               <span className="fssize">{entry.kind === 'file' ? fmtSize(entry.size) : ''}</span>
               <span className="fsrow-actions">
+                {entry.kind === 'dir' && onSwitchUtility && agentOnline && !readOnlyShare && <IconButton size="sm" aria-label={`Открыть ${entry.name} в терминале`} title="Открыть папку в терминале" onClick={(event) => { event.stopPropagation(); if (agentId) onSwitchUtility('terminal', agentId, abs) }}>&gt;_</IconButton>}
                 {entry.kind === 'file' && (
                   <IconButton
                     size="sm"

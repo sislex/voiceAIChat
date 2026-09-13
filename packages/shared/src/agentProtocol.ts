@@ -19,6 +19,9 @@ export interface FsEntry {
   mtime: number
 }
 
+/** Maximum bytes read and returned by fs.read-prefix. */
+export const FS_PREVIEW_BYTES = 204800
+
 /** Результат операции проводника (по opId). */
 export interface FsResult {
   /** Абсолютный корень проводника на машине (каталог скрипта). */
@@ -29,6 +32,10 @@ export interface FsResult {
   entries?: FsEntry[]
   /** Содержимое файла в base64 (для fs.read). */
   dataBase64?: string
+  /** Prefix metadata; absent for legacy full reads. */
+  bytesRead?: number
+  fileSize?: number
+  truncated?: boolean
   /** Имя файла (для fs.read — для сохранения). */
   name?: string
   /** Куда перемещён элемент (для fs.trash) — по этому пути его можно вернуть fs.rename. */
@@ -325,6 +332,7 @@ export function evaluateAgentCommand(policy: AgentPolicy, command: string): Poli
 export type FsOp =
   | { t: 'fs.list'; opId: string; path: string }
   | { t: 'fs.read'; opId: string; path: string }
+  | { t: 'fs.read-prefix'; opId: string; path: string }
   | { t: 'fs.write'; opId: string; path: string; dataBase64: string }
   | { t: 'fs.delete'; opId: string; path: string }
   | { t: 'fs.delete-file-safe'; opId: string; path: string }

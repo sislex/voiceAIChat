@@ -109,8 +109,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
     'imgstudio:cancel': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/cancel`, { method: 'POST', body: '{}' }),
-    'imgstudio:publish': ({ conversationId, password }) =>
-      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: JSON.stringify(password !== undefined ? { password } : {}) }),
+    'imgstudio:publish': ({ conversationId, ...body }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: JSON.stringify(body) }),
     'imgstudio:publication': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/publication`),
     'imgstudio:unpublish': ({ conversationId }) =>
@@ -125,6 +125,23 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/restore`, { method: 'POST', body: JSON.stringify({ name }) }),
     'imgstudio:purge': ({ conversationId, name }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/trash/purge`, { method: 'POST', body: JSON.stringify(name !== undefined ? { name } : {}) }),
+    'imgstudio:preview': async ({ conversationId, settings }) => {
+      const result = await req<{ url: string }>(`/api/image-studio/${encodeURIComponent(conversationId)}/preview`, { method: 'POST', body: JSON.stringify({ settings }) })
+      return { url: httpBase + result.url }
+    },
+    'imgstudio:archive': async ({ conversationId, paths }) => {
+      const ticket = await req<{ url: string }>(`/api/image-studio/${encodeURIComponent(conversationId)}/archive`, { method: 'POST', body: JSON.stringify({ paths }) })
+      const link = document.createElement('a')
+      link.href = httpBase + ticket.url
+      link.download = 'gallery.zip'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    },
+    'imgstudio:enqueue': ({ conversationId, ...body }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks`, { method: 'POST', body: JSON.stringify(body) }),
+    'imgstudio:tasks': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks`),
+    'imgstudio:cancelTask': ({ conversationId, taskId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
+    'imgstudio:tags': ({ conversationId, ...body }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tags`, { method: 'POST', body: JSON.stringify(body) }),
     'imgstudio:list': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/files`),
     'imgstudio:read': async ({ conversationId, path }) => {
       // Байты картинки — через авторизованный fetch: <img src> без токена
@@ -166,7 +183,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.makeTaskLinks(conversationId), { method: 'POST', body: JSON.stringify(body) }),
     'make:linkableTasks': ({ conversationId }) => req(`${REST.makeTaskLinks(conversationId)}/tasks`),
     'make:read': ({ conversationId, path }) => req(`${REST.makeFile(conversationId)}?path=${encodeURIComponent(path)}`),
-    'make:write': ({ conversationId, path, content }) => req(REST.makeFile(conversationId), { method: 'PUT', body: JSON.stringify({ path, content }) }),
+    'make:write': ({ conversationId, ...body }) => req(REST.makeFile(conversationId), { method: 'PUT', body: JSON.stringify(body) }),
     'make:delete': ({ conversationId, path }) => req(`${REST.makeFile(conversationId)}?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
     'make:rename': ({ conversationId, from, to }) => req(REST.makeRename(conversationId), { method: 'POST', body: JSON.stringify({ from, to }) }),
     'make:snapshot': ({ conversationId, label }) => req(REST.makeSnapshots(conversationId), { method: 'POST', body: JSON.stringify({ label }) }),
@@ -179,8 +196,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:upload': ({ conversationId, path, dataBase64 }) => req(REST.makeUpload(conversationId), { method: 'POST', body: JSON.stringify({ path, dataBase64 }) }),
     'make:search': ({ conversationId, query, regex, matchCase }) => req(`${REST.makeSearch(conversationId)}?q=${encodeURIComponent(query)}${regex ? '&regex=1' : ''}${matchCase ? '&matchCase=1' : ''}`),
     'make:stories': ({ conversationId }) => req(REST.makeStories(conversationId)),
-    'make:replace': ({ conversationId, query, replacement, matchCase, regex, dryRun }) => req(REST.makeReplace(conversationId), { method: 'POST', body: JSON.stringify({ query, replacement, matchCase, regex, dryRun }) }),
-    'make:snapshotDiff': ({ conversationId, snapshotId }) => req(REST.makeSnapshotDiff(conversationId, snapshotId)),
+    'make:replace': ({ conversationId, ...body }) => req(REST.makeReplace(conversationId), { method: 'POST', body: JSON.stringify(body) }),
+    'make:snapshotDiff': ({ conversationId, snapshotId, compareSnapshotId }) => req(REST.makeSnapshotDiff(conversationId, snapshotId) + (compareSnapshotId ? `?compareSnapshotId=${encodeURIComponent(compareSnapshotId)}` : '')),
     'make:library': () => req(REST.makeLibrary),
     'make:libraryExport': ({ conversationId, name, paths }) => req(REST.makeLibraryExport(conversationId), { method: 'POST', body: JSON.stringify({ name, paths }) }),
     'make:libraryInsert': ({ conversationId, slug }) => req(REST.makeLibraryInsert(conversationId, slug), { method: 'POST' }),

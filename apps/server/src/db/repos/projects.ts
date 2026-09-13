@@ -254,13 +254,13 @@ export class ProjectsRepo extends BaseRepo {
   }
 
   /** Перевыпуск токена для повторной отправки письма: срок считается заново. */
-  async refreshProjectInvitationToken(userId: string, projectId: string, invitationId: string, ttlMs = 7 * 24 * 60 * 60_000): Promise<{ invitation: ProjectInvitation; token: string; email: string | null } | null> {
+  async refreshProjectInvitationToken(userId: string, projectId: string, invitationId: string, ttlMs?: number): Promise<{ invitation: ProjectInvitation; token: string; email: string | null } | null> {
     if (!(await this.isProjectOwner(userId, projectId))) return null
     const row = await this.invitationRow(invitationId)
     if (!row || row.project_id !== projectId || row.status !== 'pending') return null
     const token = randomBytes(24).toString('base64url')
     const ts = this.now()
-    await this.sql.run(`UPDATE project_invitations SET token_hash=?, expires_at=? WHERE id=?`, [this.invitationTokenHash(token), ts + ttlMs, invitationId])
+    await this.sql.run(`UPDATE project_invitations SET token_hash=?, expires_at=?, created_at=? WHERE id=?`, [this.invitationTokenHash(token), ts + (ttlMs ?? Math.max(24 * 60 * 60_000, row.expires_at - row.created_at)), ts, invitationId])
     const user = row.invited_username ? await this.repos.identity.getUser(row.invited_username) : null
     return { invitation: this.mapInvitation((await this.invitationRow(invitationId))!), token, email: row.email ?? user?.email ?? null }
   }

@@ -41,15 +41,15 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
     `${baseUrl(req)}/#/project-invite/${encodeURIComponent(token)}`
 
   /** Письмо приглашения. Без SMTP уходит в лог — так поток проверяется на стенде. */
-  const sendInvitation = async (req: FastifyRequest, to: string, projectName: string, invitedBy: string, token: string): Promise<void> => {
+  const sendInvitation = async (req: FastifyRequest, to: string, projectName: string, invitedBy: string, token: string, expiresAt: number): Promise<void> => {
     // Маршрут отдельный: `#/invite/<token>` уже занят регистрацией по админскому
     // инвайту (InviteRegister), и два разных смысла на одном адресе не развести.
     const link = inviteLink(req, token)
     await options.mailer.send({
       to,
       subject: `Приглашение в проект «${projectName}»`,
-      text: `${invitedBy} приглашает вас в проект «${projectName}».\n\nОткройте ссылку, чтобы принять приглашение (действует 7 дней):\n${link}\n\nЕсли вы не ждали приглашения — просто проигнорируйте письмо.`,
-      html: `<p><b>${invitedBy}</b> приглашает вас в проект «<b>${projectName}</b>».</p><p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#4f7cff;color:#fff;border-radius:8px;text-decoration:none">Принять приглашение</a></p><p style="color:#666;font-size:12px">Ссылка действует 7 дней. Или скопируйте адрес: ${link}<br>Если вы не ждали приглашения — просто проигнорируйте письмо.</p>`
+      text: `${invitedBy} приглашает вас в проект «${projectName}».\n\nОткройте ссылку, чтобы принять приглашение (действует до ${new Date(expiresAt).toISOString()}):\n${link}\n\nЕсли вы не ждали приглашения — просто проигнорируйте письмо.`,
+      html: `<p><b>${invitedBy}</b> приглашает вас в проект «<b>${projectName}</b>».</p><p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#4f7cff;color:#fff;border-radius:8px;text-decoration:none">Принять приглашение</a></p><p style="color:#666;font-size:12px">Ссылка действует до ${new Date(expiresAt).toISOString()}. Или скопируйте адрес: ${link}<br>Если вы не ждали приглашения — просто проигнорируйте письмо.</p>`
     })
   }
 
@@ -66,9 +66,12 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
       : notFound(reply)
   })
 
-  app.post<{ Params: { id: string }; Body: { invitee?: string; role?: ProjectRole } }>(
+  app.post<{ Params: { id: string }; Body: { invitee?: string; role?: ProjectRole; ttlDays?: number } }>(
     '/api/projects/:id/invitations',
     async (req, reply) => {
+      const ttlDays = req.body?.ttlDays ?? 7
+      if (!Number.isInteger(ttlDays) || ttlDays < 1 || ttlDays > 30) return badReq(reply, 'Срок приглашения: целое число от 1 до 30 дней')
+      if (req.body?.role !== undefined && !['owner', 'member'].includes(req.body.role)) return badReq(reply, 'Неизвестная роль')
       const invitee = (req.body?.invitee ?? '').trim()
       if (!invitee) return badReq(reply, 'Укажите логин или email')
       if (!byUser.hit(uid(req)).ok || !byIp.hit(req.ip).ok) {
@@ -77,14 +80,14 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
       const project = await db.projects.getProject(uid(req), req.params.id)
       if (!project) return notFound(reply)
       try {
-        const created = await db.projects.createProjectInvitation(uid(req), req.params.id, invitee, { role: req.body?.role === 'owner' ? 'owner' : 'member' })
+        const created = await db.projects.createProjectInvitation(uid(req), req.params.id, invitee, { role: req.body?.role === 'owner' ? 'owner' : 'member', ttlMs: ttlDays * 24 * 60 * 60_000 })
         if (!created) return notFound(reply)
         // Письмо не должно ронять создание: приглашение уже существует, а
         // владелец увидит его в списке и сможет отправить повторно.
         let mailed = false
         if (created.email) {
           try {
-            await sendInvitation(req, created.email, project.name, uid(req), created.token)
+            await sendInvitation(req, created.email, project.name, uid(req), created.token, created.invitation.expiresAt)
             mailed = true
           } catch (error) {
             app.log.warn({ err: error }, 'не удалось отправить приглашение')
@@ -112,7 +115,7 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
       let mailed = false
       if (refreshed.email) {
         try {
-          await sendInvitation(req, refreshed.email, project.name, uid(req), refreshed.token)
+          await sendInvitation(req, refreshed.email, project.name, uid(req), refreshed.token, refreshed.invitation.expiresAt)
           mailed = true
         } catch (error) {
           app.log.warn({ err: error }, 'не удалось повторно отправить приглашение')

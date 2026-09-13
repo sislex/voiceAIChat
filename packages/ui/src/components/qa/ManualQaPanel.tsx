@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResult, QaResultStatus, QaSession, QaTaskState } from '@shared/qa'
 import { canCompleteQa, qaProgress } from '@shared/qa'
-import { Button, QaScore } from '@voicechat/ui-kit'
+import { QaMetadata, QaRefresh, QaImage, useQaRefresh, downloadQaReport, md, reportLink } from './ComponentQaPanel'
+import { useQaStageUpdates } from './useQaStageUpdates'
+import { useHotkeys } from '../../lib/useHotkeys'
+import { Dialog, EmptyState, StatusPill, Button, QaScore } from '@voicechat/ui-kit'
 import { ErrorState, Skeleton } from '@voicechat/ui-kit'
 
 export function ManualQaPanel(props: {
@@ -18,6 +21,8 @@ export function ManualQaPanel(props: {
   const [preparationOpen, setPreparationOpen] = useState(true)
   const [additionalIssues, setAdditionalIssues] = useState('')
   const [pendingResults, setPendingResults] = useState<Record<string, (() => Promise<boolean>) | null>>({})
+  const [rework,setRework]=useState<{id:string;description:string}|null>(null)
+  const refresh=useQaRefresh(`${props.projectId}:${props.taskId}:manual`)
   const actionInFlight = useRef(false)
   const identityRef = useRef('')
   const [draft, setDraft] = useState<AcceptanceCriterionSnapshot>({
@@ -26,29 +31,25 @@ export function ManualQaPanel(props: {
   const load = async (): Promise<void> => {
     if (!window.qa) return
     const key = `${props.projectId}:${props.taskId}`
-    try {
-      const next = await window.qa.get(props.projectId, props.taskId)
-      if (identityRef.current !== key) return
-      setState(next)
-      setError('')
-    } catch (cause) {
-      if (identityRef.current === key) setError(cause instanceof Error ? cause.message : String(cause))
-    }
+    await refresh.request(()=>window.qa!.get(props.projectId,props.taskId),next=>{if(identityRef.current===key){setState(next);setError('')}},cause=>setError(cause instanceof Error?cause.message:String(cause)))
   }
   useEffect(() => {
     identityRef.current = `${props.projectId}:${props.taskId}`
     setState(null)
     setOpen(null)
     setPendingResults({})
+    setRework(null)
     setError('')
     void load()
   }, [props.projectId, props.taskId])
+  useEffect(()=>{if(!window.board?.onQaStageUpdated)return window.board?.onReconnect?.(()=>void load())},[props.projectId,props.taskId])
+  useQaStageUpdates({projectId:props.projectId,taskId:props.taskId,stage:'manual_qa',onUpdate:()=>void load(),active:!!state?.activeSession})
   useEffect(() => { setAdditionalIssues(state?.activeSession?.additionalIssues ?? '') }, [state?.activeSession?.id])
   useEffect(() => { if (state?.preparation?.status === 'success') setPreparationOpen(false); else if (state?.preparation) setPreparationOpen(true) }, [state?.preparation?.status, state?.preparation?.id])
   useEffect(() => {
     if (state?.preparation?.status !== 'running') return
-    const timer = window.setTimeout(() => { void load() }, 2_000)
-    return () => window.clearTimeout(timer)
+    const timer = window.setInterval(() => { void load() }, 2_000)
+    return () => window.clearInterval(timer)
   }, [state?.preparation?.status, state?.preparation?.attempt])
   const session = state?.activeSession ?? state?.sessions[0] ?? null
   const progress = useMemo(() => session ? qaProgress(session) : null, [session])
@@ -102,8 +103,14 @@ export function ManualQaPanel(props: {
         setState(latest)
         const latestSession = latest.activeSession
         if (!latestSession) throw new Error('Активная QA-сессия недоступна')
-        const run = await window.qa.requestFix(props.projectId, props.taskId, latestSession.id)
-        props.onFixStarted?.(run.id)
+        const failed=latestSession.results.filter(result=>result.status==='failed')
+        if(!failed.length) throw new Error('Нет проваленных сценариев для доработки')
+        const description=failed.map(result=>{
+          const criterion=latest.versions.find(item=>item.criterionId===result.criterionId&&item.version===result.criterionVersion) ?? latest.criteria.find(item=>item.id===result.criterionId&&item.currentVersion===result.criterionVersion)
+          return `## ${criterion?.title??result.criterionId}\nШаги:\n${criterion?.steps??result.executedSteps}\nКомментарий:\n${result.comment}\nФактический результат:\n${result.actualResult}`
+        }).join('\n\n')
+        const created=await window.api['tasks:createReworkDraft']({projectId:props.projectId,taskId:props.taskId,input:{description,criteria:[],makeSources:[],uploadIds:[]}})
+        setRework({id:created.id,description})
       }
       await load()
     } catch (cause) {
@@ -114,7 +121,17 @@ export function ManualQaPanel(props: {
     }
   }
 
+  if(!window.qa)return <EmptyState compact title="Ручное QA недоступно" description="Мост QA не подключён в этой сборке."/>
   return <section className="manual-qa" aria-label="Ручное QA">
+    <QaRefresh {...refresh} onRefresh={()=>void load()}/>
+    {session&&<><QaMetadata run={session}/><StatusPill tone={session.status==='passed'?'success':session.status==='failed'?'danger':'neutral'}>{session.status==='active'?'Выполняется':session.status==='passed'?'Пройден':session.status==='failed'?'Ошибка':'Устарел'}</StatusPill><Button size="sm" onClick={()=>downloadQaReport(session.id,manualQaReport(session,state!.criteria,state!.versions))}>Скачать отчёт</Button></>}
+    {rework&&<Dialog title="Проверить черновик доработки" padded onClose={()=>{if(!busy)setRework(null)}} footer={<Button loading={busy} onClick={async()=>{
+      if(actionInFlight.current)return
+      actionInFlight.current=true;setBusy(true)
+      try { await window.api['tasks:submitReworkDraft']({projectId:props.projectId,taskId:props.taskId,cycleId:rework.id});setRework(null);await load() }
+      catch(cause){setError(cause instanceof Error?cause.message:String(cause))}
+      finally{actionInFlight.current=false;setBusy(false)}
+    }}>Отправить черновик</Button>}><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{rework.description}</pre></Dialog>}
     {/* Заголовок секции не дублирует имя вкладки — оно уже стоит в полосе. */}
     {error && <ErrorState compact message="Не удалось загрузить ручное QA" detail={error} onRetry={() => void load()} />}
     {!state ? <>
@@ -125,7 +142,7 @@ export function ManualQaPanel(props: {
       {state.preparation && <details className="manual-qa-preparation" open={preparationOpen} onToggle={(event) => setPreparationOpen(event.currentTarget.open)}>
         <summary><strong>{state.preparation.status === 'running' ? (state.preparation.attempt > 1 ? 'Повторное создание сценариев' : 'Создаём сценарии') : state.preparation.status === 'success' ? 'Сценарии созданы' : 'Не удалось создать сценарии'}</strong> · попытка {state.preparation.attempt} · {new Date(state.preparation.createdAt).toLocaleString()} · {formatDuration((state.preparation.finishedAt ?? Date.now()) - state.preparation.createdAt)}</summary>
         {state.preparation.status === 'running' && <div className="manual-qa-summary" role="status"><span className="manual-qa-spinner" aria-hidden /> <span>Попытка {state.preparation.attempt} из {state.preparation.maxAttempts}</span></div>}
-        <pre className="merge-terminal merge-terminal--log">{state.preparation.log || 'Ожидаем вывод модели…'}</pre>
+        <details><summary>Лог подготовки</summary><pre className="merge-terminal merge-terminal--log">{state.preparation.log || 'Ожидаем вывод модели…'}</pre></details>
         {state.preparation.attempts.length > 0 && <details><summary>Диагностика попыток</summary><pre className="merge-terminal">{state.preparation.attempts.map((item) => `Попытка ${item.attempt}: ${item.status}${item.error ? ` — ${item.error}` : ''}\n${item.rawResponse}`).join('\n\n')}</pre></details>}
       </details>}
       {state.preparation?.status === 'failed' && <div className="err" role="alert">
@@ -180,17 +197,17 @@ export function ManualQaPanel(props: {
       {state.preparation?.status !== 'running' && (!state.criteria.length ? <p className="muted">Структурированные критерии ещё не добавлены.</p> :
         <div className="manual-qa-list" role="list">
           {state.criteria.filter((criterion) => criterion.active).map((criterion) =>
-            <CriterionCard key={`${props.taskId}:${criterion.id}`} criterion={criterion} result={session?.results.find((result) => result.criterionId === criterion.id) ?? null}
+            <CriterionCard key={`${props.taskId}:${session?.id}:${criterion.id}`} criterion={criterion} result={session?.results.find((result) => result.criterionId === criterion.id) ?? null}
               open={open === criterion.id} onToggle={() => setOpen(open === criterion.id ? null : criterion.id)}
               onUpdate={update} onPendingChange={(save) => setPendingResults((current) => ({ ...current, [criterion.id]: save }))} onAttach={async (result, file) => {
-                if (!window.qa || !['image/png','image/jpeg','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('Допустимы PNG, JPEG и WebP до 10 МБ'); return }
+                if (!window.qa || !['image/png','image/jpeg','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) throw new Error('Допустимы PNG, JPEG и WebP до 10 МБ')
                 setBusy(true)
                 try {
                   const dataBase64 = await fileBase64(file)
                   const upload = await window.api['uploads:add']({ name: file.name, mimeType: file.type, dataBase64 })
                   await window.qa.addAttachment(props.projectId, props.taskId, result.id, upload.id, file.name)
                   await load()
-                } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+                } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause }
                 finally { setBusy(false) }
               }} disabled={busy || session?.status !== 'active' || state.canEdit === false} />
           )}
@@ -224,6 +241,10 @@ function CriterionCard(props: {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [dirty, setDirty] = useState(false)
+  const card=useRef<HTMLDivElement>(null)
+  const inFlight=useRef<Promise<boolean>|null>(null)
+  const [uploadError,setUploadError]=useState('')
+  const uploading=useRef(false)
   useEffect(() => {
     if (dirty || saving) return
     setComment(props.result?.comment ?? '')
@@ -233,7 +254,7 @@ function CriterionCard(props: {
   const commentRequired = selected === 'failed' || selected === 'blocked'
   const commentId = `qa-comment-${props.criterion.id}`
   const errorId = `qa-error-${props.criterion.id}`
-  const save = async (status: QaResultStatus = selected, value: string = comment): Promise<boolean> => {
+  const performSave = async (status: QaResultStatus = selected, value: string = comment): Promise<boolean> => {
     if (!result || saving) return false
     if ((status === 'failed' || status === 'blocked') && !value.trim()) {
       setSaveError(status === 'blocked' ? 'Укажите причину блокировки' : 'Опишите фактический результат или отличие от ожидания')
@@ -258,13 +279,38 @@ function CriterionCard(props: {
       setSaving(false)
     }
   }
+  const save = (status:QaResultStatus=selected,value:string=comment):Promise<boolean>=>{
+    if(inFlight.current)return inFlight.current
+    const promise=performSave(status,value).finally(()=>{inFlight.current=null})
+    inFlight.current=promise
+    return promise
+  }
+  useEffect(()=>{
+    if(!dirty||saving||saveError||props.disabled)return
+    const timer=window.setTimeout(()=>void save(),700)
+    return ()=>clearTimeout(timer)
+  },[dirty,selected,comment,saving,saveError,props.disabled])
+  useHotkeys({enabled:false,onPushStart:()=>{},onPushEnd:()=>{},onEscape:()=>{},bindings:([
+    ['1','passed'],['2','failed'],['3','blocked']
+  ] as const).map(([combo,status])=>({combo,enabled:()=>props.open&&!props.disabled&&!saving&&!!card.current?.contains(document.activeElement),onDown:()=>choose(status)}))})
+  const attach=async(file:File)=>{
+    if(!result||props.disabled||uploading.current)return
+    uploading.current=true;setUploadError('')
+    try {await props.onAttach(result,file)}
+    catch(cause){setUploadError(cause instanceof Error?cause.message:String(cause))}
+    finally{uploading.current=false}
+  }
   const choose = (status: QaResultStatus): void => {
     setSelected(status)
     setDirty(status !== result?.status || comment !== (result?.comment ?? ''))
     props.onPendingChange(status !== result?.status || comment !== (result?.comment ?? '') ? () => save(status, comment) : null)
     setSaveError('')
   }
-  return <article className="manual-qa-card" role="listitem" data-status={selected}>
+  return <div ref={card} className="manual-qa-card" role="listitem" data-status={selected} onPaste={event=>{
+    if(props.disabled)return
+    const file=Array.from(event.clipboardData.items).find(item=>item.kind==='file'&&item.type.startsWith('image/'))?.getAsFile()
+    if(file){event.preventDefault();void attach(file)}
+  }}>
     <button className="manual-qa-card__head" aria-expanded={props.open} onClick={props.onToggle}>
       <span>Тест {props.criterion.order}. {props.criterion.title} {!props.criterion.required && <small>необязательный</small>}</span>
       <span>{resultStatusLabel(selected)} · v{props.criterion.currentVersion}</span>
@@ -286,14 +332,22 @@ function CriterionCard(props: {
       </div>
       <label htmlFor={commentId}>Комментарий{commentRequired ? ' (обязательно)' : ''}</label>
       <textarea id={commentId} value={comment} disabled={props.disabled || saving} aria-invalid={Boolean(saveError)} aria-describedby={saveError ? errorId : undefined} onChange={(event) => { const value = event.target.value; setComment(value); setDirty(true); props.onPendingChange(() => save(selected, value)); setSaveError('') }} placeholder="Фактический результат, наблюдения, шаг ошибки или причина блокировки" />
-      <div className="manual-qa-save-state" role="status">{saving ? 'Сохраняем…' : saveError ? 'Не сохранено' : dirty ? 'Есть несохранённые изменения' : result.draft ? 'Черновик' : `Сохранено: ${resultStatusLabel(result.status)}`}</div>
+      <div className="manual-qa-save-state" role="status">{uploadError ? 'Скриншот не сохранён' : saving ? 'Сохраняем…' : saveError ? 'Не сохранено' : dirty ? 'Есть несохранённые изменения' : result.status==='not_tested' ? 'Выберите результат' : result.draft ? 'Черновик' : `Сохранено: ${resultStatusLabel(result.status)}`}</div>
       {saveError && <div id={errorId} className="err" role="alert">{saveError}</div>}
       {!props.disabled && <Button size="sm" variant="primary" disabled={saving || !dirty} onClick={() => { void save() }}>{saveError ? 'Повторить сохранение' : 'Сохранить результат'}</Button>}
-      <label>Скриншоты<input type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={props.disabled || saving} onChange={(event) => { for (const file of Array.from(event.currentTarget.files ?? [])) void props.onAttach(result, file) }} /></label>
-      {result.attachments.length > 0 && <div>{result.attachments.map((attachment) => <a key={attachment.id} href={`/api/qa/attachments/${attachment.id}`} target="_blank" rel="noreferrer">{attachment.caption || attachment.name}</a>)}</div>}
+      <label>Скриншоты<input type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={props.disabled || saving} onChange={(event) => { void (async()=>{for (const file of Array.from(event.currentTarget.files ?? [])) await attach(file)})() }} /></label>
+      {uploadError&&<p role="alert">Скриншот не сохранён: {uploadError}</p>}
+      {result.attachments.length > 0 && <div>{result.attachments.map((attachment) => <QaImage key={attachment.id} url={`/api/qa/attachments/${attachment.id}`} name={attachment.caption || attachment.name}/>)}</div>}
       {result.issue && <div>Связанный дефект: {result.issue.classification} · {result.issue.reproduction}</div>}
     </div>}
-  </article>
+  </div>
+}
+
+export function manualQaReport(session:QaSession,criteria:AcceptanceCriterion[],versions:import('@shared/qa').AcceptanceCriterionVersion[]=[]):string {
+  return ['# Ручное QA',md(session.id),md(session.branch),md(session.commitSha),...session.results.map(result=>{
+    const criterion=versions.find(item=>item.criterionId===result.criterionId&&item.version===result.criterionVersion)??criteria.find(item=>item.id===result.criterionId&&item.currentVersion===result.criterionVersion)
+    return [`## ${md(criterion?.title??result.criterionId)}`,resultStatusLabel(result.status),md(criterion?.steps??result.executedSteps),md(result.comment),md(result.actualResult),...result.attachments.map(item=>reportLink(item.name,`/api/qa/attachments/${item.id}`))].join('\n\n')
+  })].join('\n\n')
 }
 
 function formatDuration(ms: number): string {

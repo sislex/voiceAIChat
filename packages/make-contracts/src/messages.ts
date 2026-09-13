@@ -1,5 +1,18 @@
 // Russian and English system messages used by Make clients and servers.
 export const makeSystemMessages = {
+  previewRequired: { en: 'Preview changes before applying replacement', ru: 'Просмотрите изменения перед применением замены' },
+  staleReplacement: { en: 'Replacement preview is stale; preview again', ru: 'Предпросмотр замены устарел; просмотрите изменения заново' },
+  invalidMatchIndex: { en: 'Invalid match index', ru: 'Недопустимый номер совпадения' },
+  staleSearch: { en: 'Search result is stale; search again', ru: 'Результат поиска устарел; повторите поиск' },
+  directoryText: { en: 'A directory cannot contain text', ru: 'Папка не может содержать текст' },
+  tooManyDirectories: { en: 'Too many directories', ru: 'Превышено допустимое количество папок' },
+  directoryDescendant: { en: 'Cannot move a directory into itself', ru: 'Нельзя переместить папку в себя или вложенную папку' },
+  invalidMatchPath: { en: 'Invalid match path', ru: 'Недопустимый путь совпадения' },
+  invalidFileOperation: { en: 'Invalid file operation', ru: 'Недопустимые параметры операции с файлом' },
+  invalidOwnerReply: {
+    ru: 'Ответ должен быть строкой не длиннее 2000 символов',
+    en: 'Invalid owner reply'
+  },
   starterReactApp: {
     ru: 'Примени подход React-проекта (index.html с import map на esm.sh, src/main.jsx, компоненты в src/components с файлами *.stories.jsx). Сделай приложение «список покупок»: добавление, отметка, удаление, фильтр, счётчик; компоненты Button, Input, ListItem, EmptyState — каждый со сториз для основных состояний.',
     en: 'Use the React project structure (index.html with an import map for esm.sh, src/main.jsx, components in src/components with *.stories.jsx files). Build a shopping-list app: add, check off, delete, filter, and count items; include Button, Input, ListItem, and EmptyState components, each with stories for its main states.'

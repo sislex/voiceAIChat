@@ -7,6 +7,7 @@ export interface MachineOps {
   list(agentId: string, path: string): Promise<FsResult>
   /** Содержимое файла (base64) — например, чтобы показать картинку в сообщении. */
   read(agentId: string, path: string): Promise<FsResult>
+  readPrefix?(agentId: string, path: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   remove(agentId: string, path: string): Promise<FsResult>
   /** Корзина машины (агент ≥ 0.15.0): элемент переезжает в `.voicechat_trash`, результат несёт trashedPath. */
@@ -35,6 +36,7 @@ export interface ConsoleHistoryStore {
   get(agentId: string): string[]
   /** Запомнить выполненную команду. */
   push(agentId: string, command: string): void
+  clear?(agentId: string): void
 }
 
 /** Открытый PTY-сеанс = вкладка терминала машины. */
@@ -66,6 +68,7 @@ export interface PtySessionStore {
   /** Всегда новый сеанс на машине — кнопка «Новый сеанс». */
   create(agentId: string, cwd?: string): string
   activate(ptyId: string): void
+  setCwd?(ptyId: string, cwd: string): void
   /** Убрать вкладку из списка; `pty.kill` шлёт вызывающий. */
   close(ptyId: string): void
 }
@@ -74,7 +77,7 @@ export interface PtySessionStore {
 export type UtilityVariant = 'embedded' | 'modal'
 
 /** Что открыто в утилите машины: консоль/терминал, файловый проводник или панель кода. */
-export type UtilityKind = 'console' | 'explorer' | 'git'
+export type UtilityKind = 'console' | 'terminal' | 'explorer' | 'git'
 
 /**
  * Переключить утилиту на другую (переключатель общей шапки — `MachineUtilityHeader`):

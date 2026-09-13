@@ -66,6 +66,26 @@ type Story = StoryObj<typeof ImageStudioPane>
 /** Галерея с правкой, оригиналом и загруженным руками файлом. */
 export const Default: Story = {}
 
+export const VirtualGallery500: Story = {
+  args: { api: storyApi(Array.from({ length: 500 }, (_, index) => ({ path: `image-${index}.png`, size: 100, updatedAt: index }))) as never },
+  render: args => <div style={{ height: 720, overflow: 'hidden' }}><ImageStudioPane {...args} /></div>
+}
+
+export const QueueStates: Story = {
+  args: { api: { ...storyApi(), 'imgstudio:tasks': async () => [
+    { id: 'running', conversationId: 'story-conv', prompt: 'Акварельный портрет', state: 'running', createdAt: 1, updatedAt: 1 },
+    { id: 'queued', conversationId: 'story-conv', prompt: 'Пейзаж', state: 'queued', createdAt: 2, updatedAt: 2 },
+    { id: 'failed', conversationId: 'story-conv', prompt: 'Логотип', state: 'failed', error: 'Генератор недоступен', createdAt: 3, updatedAt: 3 }
+  ], 'imgstudio:cancelTask': async () => ({ cancelled: false }) } as never }
+}
+
+export const PublicationEditor: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Настроить публикацию' }))
+    await within(canvasElement.ownerDocument.body).findByRole('dialog', { name: 'Настройки публикации' })
+  }
+}
+
 /** Пустая галерея: подсказка следующего шага и чипы-примеры промптов. */
 export const Empty: Story = { args: { api: storyApi([]) as never } }
 

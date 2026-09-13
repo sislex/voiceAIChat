@@ -1,8 +1,6 @@
 // Presentational building blocks of the "Проект 19" task card: the stage rail
-// with numbered circles, the status badge vocabulary, workflow snapshots and
-// the "sent reworks" box. No data loading here — panels compose these around
-// the functional legacy panels so both cards share one implementation of every
-// action.
+// with numbered circles, status badges, workflow chips and sent reworks.
+// Panels own loading and actions; these primitives only render supplied data.
 import type { ReactNode } from 'react'
 import { Badge, Button } from '@voicechat/ui-kit'
 import { formatDateTime } from '../../lib/dateFormat'
@@ -39,6 +37,7 @@ export interface StageCardProps {
   statusLabel?: string
   /** Workflow of the cycle: rendered as a chain of chips. */
   workflow?: string[]
+  workflowTitle?: string
   /** Cycle whose reworks this stage implements; null — the original statement. */
   cycle?: TaskReworkCycleViewModel | null
   /** Text of the "source" box when there is no cycle. */
@@ -81,7 +80,7 @@ export function StageCard(props: StageCardProps): JSX.Element {
           {props.onSelect && !props.selected && <Button size="sm" variant="ghost" onClick={props.onSelect}>Показать</Button>}
         </div>
       </header>
-      {props.workflow && props.workflow.length > 0 && <WorkflowSnapshot steps={props.workflow} />}
+      {props.workflow && props.workflow.length > 0 && <WorkflowSnapshot steps={props.workflow} title={props.workflowTitle ?? 'Текущий workflow задачи'} />}
       {props.cycle
         ? <CycleReworks cycle={props.cycle} />
         : (props.sourceTitle || props.sourceText) && <SourceBox title={props.sourceTitle ?? 'Источник этапа'} text={props.sourceText ?? ''} />}

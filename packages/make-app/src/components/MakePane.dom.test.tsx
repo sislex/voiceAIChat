@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../../ui/src/test/uiRender'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { MAKE_SCAFFOLD } from '@shared/make'
+import { makeTabsKey } from '@voicechat/ui-foundation/persistence'
 
 vi.mock('../lib/makeA11y', async (orig) => ({ ...(await orig<typeof import('../lib/makeA11y')>()), runAxeInFrame: vi.fn(async () => [{ id: 'image-alt', impact: 'critical', help: 'Images must have alternate text', helpUrl: 'https://dequeuniversity.com/rules/axe/image-alt', nodes: 1, target: 'img' }]) }))
 vi.mock('../lib/makeScreenshot', () => ({ captureIframeScreenshot: vi.fn(async (_t: unknown, name: string) => new File(['png'], name, { type: 'image/png' })) }))
@@ -11,6 +12,7 @@ import { MakePane } from './MakePane'
 import type { MakePresenceClient } from '@shared/make'
 
 const CONV = 'make-1'
+beforeEach(() => { sessionStorage.clear() })
 
 const openMore = async (): Promise<void> => { await userEvent.click(screen.getByRole('button', { name: 'Ещё' })) }
 
@@ -24,12 +26,141 @@ function renderPane(overrides: Partial<Parameters<typeof MakePane>[0]> = {}) {
 }
 
 describe('MakePane', () => {
+  // @testCase T1
+  it('confirms middle-click and close-others for all dirty tabs and restores session order', async () => {
+    const api = createFakeApi([])
+    await api['make:write']({ conversationId: CONV, path: 'a.txt', content: 'clean' })
+    renderPane({ api, autosaveDelayMs: 60_000 })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    fireEvent.change(await screen.findByLabelText('Содержимое index.html'), { target: { value: 'draft A' } })
+    const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
+    await userEvent.click(within(tree).getByRole('button', { name: /^styles[.]css/ }))
+    fireEvent.change(await screen.findByLabelText('Содержимое styles.css'), { target: { value: 'draft B' } })
+    await userEvent.click(within(tree).getByRole('button', { name: 'a.txt' }))
+    await screen.findByLabelText('Содержимое a.txt')
+    await waitFor(() => expect(JSON.parse(sessionStorage.getItem(makeTabsKey(CONV))!)).toEqual(['index.html', 'styles.css', 'a.txt']))
+    await userEvent.click(screen.getByRole('button', { name: 'Закрыть остальные' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('index.html, styles.css')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+    const tabs = screen.getByRole('tablist', { name: 'Открытые файлы' })
+    fireEvent(within(tabs).getByRole('tab', { name: /styles.css/ }).parentElement!, new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    await userEvent.click(within(await screen.findByRole('dialog')).getAllByRole('button', { name: 'Закрыть' }).at(-1)!)
+    expect(within(tabs).queryByRole('tab', { name: /styles.css/ })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Закрыть остальные' }))
+    await userEvent.click(within(await screen.findByRole('dialog')).getAllByRole('button', { name: 'Закрыть' }).at(-1)!)
+    await waitFor(() => expect(JSON.parse(sessionStorage.getItem(makeTabsKey(CONV))!)).toEqual(['a.txt']))
+    cleanup(); renderPane({ api })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    expect(await screen.findByLabelText('Содержимое a.txt')).toHaveValue('clean')
+  })
+
+  // @testCase T3
+  it('opens both historical versions as read-only tabs while retaining the working draft', async () => {
+    const api = createFakeApi([])
+    await api['make:write']({ conversationId: CONV, path: 'index.html', content: 'first' })
+    const first = (await api['make:snapshot']({ conversationId: CONV, label: 'first' })).snapshots[0]!.id
+    await api['make:write']({ conversationId: CONV, path: 'index.html', content: 'second' })
+    const second = (await api['make:snapshot']({ conversationId: CONV, label: 'second' })).snapshots[0]!.id
+    const write = vi.spyOn(api, 'make:write')
+    const compare = vi.spyOn(api, 'make:snapshotDiff')
+    renderPane({ api, autosaveDelayMs: 60_000 })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    fireEvent.change(await screen.findByLabelText('Содержимое index.html'), { target: { value: 'working draft' } })
+    await userEvent.click(screen.getByRole('tab', { name: 'История' }))
+    await userEvent.selectOptions(screen.getByLabelText('Первый снимок'), first)
+    await userEvent.selectOptions(screen.getByLabelText('Второй снимок'), second)
+    await userEvent.click(screen.getByRole('button', { name: 'Сравнить снимки' }))
+    const diff = await screen.findByTestId('make-pair-diff')
+    expect(compare).toHaveBeenCalledWith({ conversationId: CONV, snapshotId: first, compareSnapshotId: second })
+    await userEvent.click(within(within(diff).getByText('index.html').closest('li')!).getByRole('button', { name: 'Первый снимок' }))
+    const historical = await screen.findByLabelText(`Содержимое snapshot:${first}:index.html`)
+    expect(historical).toHaveValue('first')
+    expect(historical).toHaveAttribute('readonly')
+    fireEvent.change(historical, { target: { value: 'attempted overwrite' } })
+    fireEvent.keyDown(historical, { key: 's', ctrlKey: true })
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
+    expect(write).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('tab', { name: 'История' }))
+    await userEvent.click(within(within(screen.getByTestId('make-pair-diff')).getByText('index.html').closest('li')!).getByRole('button', { name: 'Второй снимок' }))
+    expect(await screen.findByLabelText(`Содержимое snapshot:${second}:index.html`)).toHaveValue('second')
+    await userEvent.click(within(screen.getByRole('tablist', { name: 'Открытые файлы' })).getByRole('tab', { name: /^index.html[^·]*$/ }))
+    expect(await screen.findByLabelText('Содержимое index.html')).toHaveValue('working draft')
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  // @testCase T6
+  it('keeps a failed save dirty and reports a timestamp only after retry succeeds', async () => {
+    const api = createFakeApi([])
+    const original = api['make:write']
+    const write = vi.spyOn(api, 'make:write').mockRejectedValueOnce(new Error('disk unavailable')).mockImplementation(original)
+    renderPane({ api, autosaveDelayMs: 60_000 })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const editor = await screen.findByLabelText('Содержимое index.html')
+    fireEvent.change(editor, { target: { value: 'new source' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await screen.findByText('Ошибка сохранения · есть изменения')
+    expect(editor).toHaveValue('new source')
+    expect(document.querySelector('.make-editor time')).toBeNull()
+    const unload = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(unload)
+    expect(unload.defaultPrevented).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(document.querySelector('.make-editor time')).not.toBeNull())
+    expect(write).toHaveBeenCalledTimes(2)
+    const clean = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(clean)
+    expect(clean.defaultPrevented).toBe(false)
+  })
+
+  // @testCase T1
+  it('preserves independent drafts and confirms closing inactive dirty tabs', async () => {
+    renderPane({ autosaveDelayMs: 60_000 })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    fireEvent.change(await screen.findByLabelText('Содержимое index.html'), { target: { value: '<h1>Draft A</h1>' } })
+    const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
+    await userEvent.click(within(tree).getByRole('button', { name: /^styles[.]css/ }))
+    fireEvent.change(await screen.findByLabelText('Содержимое styles.css'), { target: { value: 'body { color: red; }' } })
+    const tabs = screen.getByRole('tablist', { name: 'Открытые файлы' })
+    expect(within(tabs).getAllByLabelText('не сохранено')).toHaveLength(2)
+    await userEvent.click(within(tabs).getByRole('tab', { name: /index.html/ }))
+    expect(await screen.findByLabelText('Содержимое index.html')).toHaveValue('<h1>Draft A</h1>')
+    await userEvent.click(within(tabs).getByRole('button', { name: 'Закрыть styles.css' }))
+    expect(await screen.findByText('Отбросить несохранённые изменения?')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    await userEvent.click(within(tabs).getByRole('tab', { name: /styles.css/ }))
+    expect(await screen.findByLabelText('Содержимое styles.css')).toHaveValue('body { color: red; }')
+    const unload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(unload)
+    expect(unload.defaultPrevented).toBe(true)
+  })
+
+  // @testCase T6
+  it('does not mark another file saved when a write finishes after switching tabs', async () => {
+    const api = createFakeApi([])
+    const write = api['make:write']
+    let finish: (() => void) | undefined
+    api['make:write'] = async (args) => {
+      await new Promise<void>((resolve) => { finish = resolve })
+      return write(args)
+    }
+    renderPane({ api, autosaveDelayMs: 60_000 })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    fireEvent.change(await screen.findByLabelText('Содержимое index.html'), { target: { value: 'draft A' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
+    await userEvent.click(within(tree).getByRole('button', { name: /^styles[.]css/ }))
+    fireEvent.change(await screen.findByLabelText('Содержимое styles.css'), { target: { value: 'draft B' } })
+    finish!()
+    await waitFor(() => expect(screen.getByLabelText('Содержимое styles.css')).toHaveValue('draft B'))
+    await waitFor(() => expect(screen.getAllByText('не сохранено').length).toBeGreaterThan(0))
+    expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toBe(MAKE_SCAFFOLD['styles.css'])
+  })
+
   // @testCase TC-11
   it('открывается на превью с iframe проекта; пресеты ширины и обновление меняют src', async () => {
     renderPane()
     expect(await screen.findByRole('button', { name: 'Настройки проекта: HTML+CSS+JS · своя система' })).toBeInTheDocument()
     const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
-    expect(frame.getAttribute('src')).toBe(`/api/preview/make/${CONV}/index.html?rev=0`)
+    expect(frame.getAttribute('src')).toBe(`/api/preview/make/${CONV}/index.html?rev=0&makeScheme=auto`)
     expect(frame.getAttribute('sandbox')).toContain('allow-scripts')
     expect(frame.getAttribute('sandbox')).toContain('allow-downloads')
     await userEvent.click(screen.getByRole('button', { name: 'Телефон' }))
@@ -616,13 +747,18 @@ describe('MakePane', () => {
     expect((within(dialog).getByLabelText('Что публиковать') as HTMLSelectElement).value).not.toBe('')
   })
 
-  it('замена по проекту: ⇄ открывает поле, «Заменить все» после подтверждения меняет файлы', async () => {
+  // @testCase T2
+  it('requires a reviewed dry run before confirming project replacement', async () => {
     const { api } = renderPane()
     await screen.findByTitle('Превью проекта')
     await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
     await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск по файлам проекта' }), 'Новый проект')
     await userEvent.click(screen.getByRole('button', { name: 'Заменить по проекту' }))
     await userEvent.type(screen.getByLabelText('Заменить на'), 'Мой сайт')
+    expect(screen.getByRole('button', { name: 'Заменить все' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Предпросмотр' }))
+    await screen.findByTestId('make-replace-preview')
+    expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).not.toContain('Мой сайт')
     await userEvent.click(screen.getByRole('button', { name: 'Заменить все' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Заменить' }))
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toContain('Мой сайт'))
@@ -705,11 +841,13 @@ describe('MakePane', () => {
     await openMore()
     await userEvent.click(screen.getByRole('button', { name: 'Тема превью' }))
     expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: '' }), '*')
+    expect(frame.src).toContain('makeScheme=dark')
+    const currentPost = vi.spyOn(frame.contentWindow!, 'postMessage')
     await openMore()
     await userEvent.selectOptions(screen.getByLabelText('Язык превью'), 'en')
-    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }), '*')
+    expect(currentPost).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }), '*')
     fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.ready' }, source: frame.contentWindow }))
-    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }), '*')
+    expect(currentPost).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }), '*')
   })
 
   it('♿ запускает axe в превью, показывает нарушения и отдаёт их ассистенту', async () => {
@@ -948,7 +1086,7 @@ describe('MakePane: три ширины рядом (roadmap-4 п.21)', () => {
     await screen.findByTitle('Превью проекта')
     await userEvent.click(screen.getByRole('button', { name: 'Три ширины рядом' }))
     const main = screen.getByTitle('Превью проекта') as HTMLIFrameElement
-    const tablet = screen.getByTitle('Превью 820px') as HTMLIFrameElement
+    const tablet = screen.getByTitle('Превью 768px') as HTMLIFrameElement
     const phone = screen.getByTitle('Превью 390px') as HTMLIFrameElement
     expect(main.style.width).toBe('1200px')
     // MessageEvent.source must be a real Window; use jsdom iframe windows and replace their
@@ -988,7 +1126,7 @@ describe('MakePane: таблица коллекции моков (roadmap-4 п.2
     emit({ conversationId: CONV, rev: 1, paths: ['mock/api/users.json'] })
     await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
     const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
-    await userEvent.click(await within(tree).findByRole('button', { name: /^api\/users\.json/ }))
+    await userEvent.click(await within(tree).findByRole('button', { name: /^users\.json/ }))
     const table = await screen.findByTestId('make-mock-table')
     await userEvent.type(within(table).getByLabelText('name строки 1'), '!')
     expect(screen.getByText('не сохранено')).toBeInTheDocument()

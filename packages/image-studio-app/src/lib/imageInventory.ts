@@ -120,7 +120,7 @@ export function gridWindow(
   const rows = Math.ceil(total / safeColumns)
   if (viewportHeight <= 0 || rows === 0) return { from: 0, to: total, padTop: 0, padBottom: 0 }
   const visibleRows = Math.max(1, Math.ceil(viewportHeight / safeRow))
-  const firstRow = Math.max(0, Math.floor(Math.max(0, scrollTop) / safeRow) - visibleRows * overscan)
+  const firstRow = Math.min(Math.max(0, rows - visibleRows), Math.max(0, Math.floor(Math.max(0, scrollTop) / safeRow) - visibleRows * overscan))
   const lastRow = Math.min(rows, firstRow + visibleRows * (1 + 2 * overscan))
   return {
     from: firstRow * safeColumns,

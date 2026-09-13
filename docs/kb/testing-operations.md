@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-12
-checked: 4fd080ff
+updated: 2026-09-13
+checked: ab010033
 areas:
   - package.json
   - scripts
@@ -552,6 +552,8 @@ positive tests». `terminate()` безопасен в любом состоян�
 как тест принял решение» (`src/session.test.ts`).
 
 ## Диагностика по слоям
+
+Фикстура Browser Runner в `apps/browser-runner/src/sessionDiagnostics.test.ts` запускает `/broken`, `/bad` (HTTP 503) и `/slow` независимо. Сокетная ошибка `/broken` и HTTP-ответ 503 приходят в диагностику без гарантированного порядка, поэтому появление одной записи `state: failed` ещё не означает, что `/bad` уже зарегистрирован. Регрессия `failedOnly` сначала через `expect.poll` дожидается обеих записей и только затем проверяет их статусы; предположение о порядке событий делало прежний тест плавающим.
 
 1. `/api/health` — процесс и HTTP доступны.
 2. `/api/session/me` — bearer token и пользователь.

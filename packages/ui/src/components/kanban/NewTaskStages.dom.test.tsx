@@ -18,7 +18,7 @@ describe('NewTaskStages', () => {
     expect(screen.getByText('Успешно')).toBeTruthy()
     expect(screen.getByText('Выполняется')).toBeTruthy()
     expect(screen.getByText('Источник')).toBeTruthy()
-    expect(screen.getByText('Workflow этого цикла')).toBeTruthy()
+    expect(screen.getByText('Текущий workflow задачи')).toBeTruthy()
     // Первая строка описания — заголовок доработки, критерии — отдельной строкой.
     expect(screen.getByText('Компактный статус')).toBeTruthy()
     expect(screen.getByText('Критерии: Виден скринридеру')).toBeTruthy()

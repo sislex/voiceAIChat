@@ -28,7 +28,7 @@ export interface RendererQaBridge {
   listStageRuns?(projectId: string, taskId: string, stage: import('@shared/qa').QaRunStage): Promise<import('@shared/qa').AnyQaStageRun[]>
   startStageRun?(projectId: string, taskId: string, stage: import('@shared/qa').QaRunStage): Promise<import('@shared/qa').AnyQaStageRun>
   cancelStageRun?(runId: string): Promise<import('@shared/qa').AnyQaStageRun>
-  retryStageRun?(runId: string): Promise<import('@shared/qa').AnyQaStageRun>
+  retryStageRun?(runId: string, scenarioIds?: string[]): Promise<import('@shared/qa').AnyQaStageRun>
   answerStageRun?(runId: string, answer: string): Promise<import('@shared/qa').AnyQaStageRun>
 }
 
@@ -72,7 +72,7 @@ export function createQaRest(httpBase: string): RendererQaBridge {
     listStageRuns: (projectId, taskId, stage) => request(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/qa/runs/${stage}`),
     startStageRun: (projectId, taskId, stage) => request(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/qa/runs/${stage}`, { method: 'POST' }),
     cancelStageRun: (runId) => request(`/api/qa/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
-    retryStageRun: (runId) => request(`/api/qa/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' }),
+    retryStageRun: (runId, scenarioIds) => request(`/api/qa/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST', ...(scenarioIds === undefined ? {} : { body: JSON.stringify({ scenarioIds }) }) }),
     answerStageRun: (runId, answer) => request(`/api/qa/runs/${encodeURIComponent(runId)}/answer`, { method: 'POST', body: JSON.stringify({ answer }) })
   }
 }

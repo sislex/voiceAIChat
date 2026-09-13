@@ -35,6 +35,7 @@ export interface QaAutomationLink {
   commitSha: string
 }
 export interface TestCaseDefinition {
+  storybookStoryId?: string | null
   /** Stable across edits; versions are stored separately. */
   id: string
   title: string
@@ -295,6 +296,7 @@ export interface ComponentQaArtifact {
   path: string
 }
 export interface ComponentQaRun {
+  machineId?: string | null
   id: string
   projectId: string
   taskId: string
@@ -421,6 +423,7 @@ export interface IntegrationTestCommandResult {
   stderr: string
 }
 export interface IntegrationTestRun {
+  machineId?: string | null
   id: string; projectId: string; taskId: string; developmentRunId: string
   linkedFixRunId: string | null; branch: string; commitSha: string; attempt: number
   status: IntegrationTestRunStatus; readinessRunId: string; snapshotVersion: string
@@ -771,8 +774,18 @@ export function scenarioLabel(scenario: AutomatedQaScenario, index = 0): string 
 
 export const EMPTY_AUTOMATED_QA_SCENARIO: AutomatedQaScenario = { startUrl: '', steps: [] }
 
+/** IDs are scoped to the immutable source run, never to mutable project settings. */
+export function qaScenarioId(runId: string, index: number): string { return `${runId}:scenario:${index}` }
+
+export function failedQaScenarios(run: Pick<QaStageRun, 'id' | 'stage' | 'scenarios' | 'result'>): Array<{ id: string; index: number }> {
+  const verdict = parseAutomatedQaVerdict(run.result)
+  if (run.stage !== 'automated_qa' || verdict?.mode !== 'playwright' || !run.scenarios?.length) return []
+  return run.scenarios.flatMap((_, index) => verdict.steps.some(step => step.status === 'failed' && step.scenarioId === qaScenarioId(run.id, index)) ? [{ id: qaScenarioId(run.id, index), index }] : [])
+}
+
 export interface AutomatedQaStepResult {
   id: string
+  scenarioId?: string
   title: string
   status: 'passed' | 'failed' | 'skipped'
   /** Причина провала или короткий итог действия. */
