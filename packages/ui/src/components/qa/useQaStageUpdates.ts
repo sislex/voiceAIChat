@@ -10,7 +10,7 @@
 // WS). Иначе события хватает: сервер эмитит их на старте, завершении, отмене, ответе
 // и на каждом переходе рана.
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { QaRunStage } from '@shared/qa'
 import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 
@@ -21,7 +21,7 @@ export interface QaStageUpdatesOptions {
   projectId: string
   taskId: string
   /** Этап панели; кадры соседних этапов игнорируются. */
-  stage: QaRunStage
+  stage: QaRunStage | 'manual_qa'
   /** Перечитать снимок панели. */
   onUpdate: () => void
   /** Ран активен: без моста доски это единственный признак, что нужен опрос. */
@@ -31,6 +31,8 @@ export interface QaStageUpdatesOptions {
 }
 
 export function useQaStageUpdates({ projectId, taskId, stage, onUpdate, active, intervalMs = 2000 }: QaStageUpdatesOptions): void {
+  const update=useRef(onUpdate)
+  update.current=onUpdate
   const bridged = Boolean(typeof window !== 'undefined' && window.board?.onQaStageUpdated)
 
   useEffect(() => {
@@ -39,19 +41,19 @@ export function useQaStageUpdates({ projectId, taskId, stage, onUpdate, active, 
     let timer: number | null = null
     const schedule = (): void => {
       if (timer !== null) return
-      timer = window.setTimeout(() => { timer = null; onUpdate() }, DEBOUNCE_MS)
+      timer = window.setTimeout(() => { timer = null; update.current() }, DEBOUNCE_MS)
     }
     const off = bridge.onQaStageUpdated((event) => {
       if (event.projectId === projectId && event.taskId === taskId && event.stage === stage) schedule()
     })
     // Реконнект мог пропустить события — сверяемся полностью, а не ждём следующего.
-    const offReconnect = bridge.onReconnect?.(() => onUpdate())
+    const offReconnect = bridge.onReconnect?.(() => update.current())
     return () => {
       if (timer !== null) window.clearTimeout(timer)
       off?.()
       offReconnect?.()
     }
-  }, [projectId, taskId, stage, onUpdate])
+  }, [projectId, taskId, stage])
 
   usePolling(onUpdate, { enabled: !bridged && active, intervalMs })
 }

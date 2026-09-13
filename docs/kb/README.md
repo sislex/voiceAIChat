@@ -20,11 +20,11 @@
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 155 коммит(ов) в areas после сверки: b697a709 feat(machines): complete CHAT-451 utility improvements … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 320 коммит(ов) в areas после сверки: b697a709 feat(machines): complete CHAT-451 utility improvements … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 87 коммит(ов) в areas после сверки: b697a709 feat(machines): complete CHAT-451 utility improvements … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 110 коммит(ов) в areas после сверки: b697a709 feat(machines): complete CHAT-451 utility improvements … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 23 коммит(ов) в areas после сверки: b697a709 feat(machines): complete CHAT-451 utility improvements … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1419 коммит(ов) в areas после сверки: ab010033 Merge main into CHAT-451 (task 1c3609dc-8dc7-444e-9ae5-3e59b877a3c8) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 51 коммит(ов) в areas после сверки: ab010033 Merge main into CHAT-451 (task 1c3609dc-8dc7-444e-9ae5-3e59b877a3c8) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1420 коммит(ов) в areas после сверки: b30997da docs(kb): update after merge 1c3609dc-8dc7-444e-9ae5-3e59b877a3c8 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 10 коммит(ов) в areas после сверки: ab010033 Merge main into CHAT-451 (task 1c3609dc-8dc7-444e-9ae5-3e59b877a3c8) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 26 коммит(ов) в areas после сверки: ab010033 Merge main into CHAT-451 (task 1c3609dc-8dc7-444e-9ae5-3e59b877a3c8) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-13 | ✓ |
@@ -74,10 +74,11 @@
 
 ## Журнал сессий
 
-Всего записей: 802. Последние:
+Всего записей: 803. Последние:
 
 - [2026-09-13-germany-4-8-60-kanban-mobile-kb.md](log/2026-09-13-germany-4-8-60-kanban-mobile-kb.md) — kanban-mobile-kb
 - [2026-09-13-germany-4-8-60-chat451-machine-console-kb.md](log/2026-09-13-germany-4-8-60-chat451-machine-console-kb.md) — chat451-machine-console-kb
+- [2026-09-13-alexeys-macbook-air-2-qa-panels-selective-retry.md](log/2026-09-13-alexeys-macbook-air-2-qa-panels-selective-retry.md) — qa-panels-selective-retry
 - [2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md](log/2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md) — chat450-kb-update
 - [2026-09-13-alexeys-macbook-air-2-chat-445-functional-tabs.md](log/2026-09-13-alexeys-macbook-air-2-chat-445-functional-tabs.md) — chat-445-functional-tabs
 - [2026-09-12-germany-4-8-60-runner-stream-heartbeat.md](log/2026-09-12-germany-4-8-60-runner-stream-heartbeat.md) — runner-stream-heartbeat
@@ -85,7 +86,6 @@
 - [2026-09-12-germany-4-8-60-chat451-machines.md](log/2026-09-12-germany-4-8-60-chat451-machines.md) — chat451-machines
 - [2026-09-12-germany-4-8-60-chat-446-browser-check.md](log/2026-09-12-germany-4-8-60-chat-446-browser-check.md) — chat-446-browser-check
 - [2026-09-12-germany-4-8-60-browser-check-evidence-and-image-route.md](log/2026-09-12-germany-4-8-60-browser-check-evidence-and-image-route.md) — browser-check-evidence-and-image-route
-- [2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md](log/2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md) — release-task-modal-test-timeout
 
 ## Исторические планы
 

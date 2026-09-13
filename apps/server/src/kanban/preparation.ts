@@ -2,16 +2,9 @@
 // (`kanban/module.ts`) и её тестов. Вынесены из `server.ts` вместе с канбан-кластером.
 import { DEFAULT_CODEX_MODEL, type AcceptanceCriterionSnapshot, type LlmProvider } from '@voicechat/shared'
 
-/** Only explicitly known, content-free wrappers may be removed.
- * JSON.parse consumes the whole remainder, so requirements outside it cannot disappear.
- */
+/** Parse the entire response before normalizing compatible field values. */
 export function preparationJsonObject(text: string): Record<string, unknown> {
-  let raw = text.trim()
-  raw = raw.replace(/^(?:Подготовка завершена\.|Исправленный Development Brief:)\s*(?=\{)/, '')
-  const fence = String.fromCharCode(96).repeat(3)
-  if (raw.startsWith(fence + 'json\\n') && raw.endsWith('\\n' + fence)) raw = raw.slice(fence.length + 6, -(fence.length + 2))
-  else if (raw.startsWith(fence + 'json\n') && raw.endsWith('\n' + fence)) raw = raw.slice(fence.length + 5, -(fence.length + 1))
-  raw = raw.trim()
+  const raw = text.trim()
   if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')
   const value = JSON.parse(raw) as Record<string, unknown>
   // Null means no reference only for this optional field; other nulls survive.

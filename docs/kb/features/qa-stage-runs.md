@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-09-11
-checked: 55104903
+updated: 2026-09-13
+checked: b30997da
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -455,14 +455,38 @@ development/merge → «Лента рана», иначе «Общее»». По
 диспетчер: описанное ниже поведение относится к её ветке
 `GenericQaStageRunPanel`, то есть теперь только к вкладке «Automated QA».
 Панель монтируется на вкладку и делает только GET: открытие вкладки ран не запускает.
-Пока верхний ран активен, панель опрашивает историю раз в 1,5 с — так живут
-прогресс и лента после перезагрузки страницы. Показывает статус, попытку, ветку
-и первые 10 символов SHA, текущий шаг с `progress current/total/label` и
-`<progress>`, причины непройденного гейта, ошибку, `result` как JSON, потоковую
-ленту по `log`, историю попыток и форму ответа модели для integration-рана в
-`awaiting_input`. Действия — «Запустить» (когда активного рана нет),
-«Отменить», «Повторить»; действий «Вернуть в Development», «Запросить решение»,
-«Повторить с упавшего шага» и переходов к диагностике в панели нет.
+QA panels reread on addressed stage events (400 ms coalescing), reconnect and
+manual refresh. Polling remains a fallback without the board bridge. Request
+identity and sequence discard late responses; freshness changes after a
+successful read, and refresh errors preserve the previous snapshot. Existing
+runId/onRunsChange/onStateChange/hideHistory embedding contracts remain optional.
+
+Automated QA displays ordered step durations, step page errors and errors outside
+steps, an image preview Dialog and collapsed logs. Legacy unstructured results
+remain readable. retryStageRun(runId, scenarioIds?) carries an optional selection
+through REST and the database to the runner snapshot. IDs are source-run-scoped
+(runId:scenario:index), recorded explicitly on step results. Only nonempty,
+unique selections of failed scenarios in that source snapshot are accepted.
+Unknown, foreign, successful or duplicate IDs fail before launching. The
+optional argument's absence keeps full retry; legacy runs lacking explicit
+scenario links offer only full retry. A saved scenario snapshot also preserves
+Playwright mode if project settings have changed.
+
+Component QA intersects its status filter with case-insensitive title search,
+shows Storybook links only with a real base URL, and previews image artifacts.
+Integration separates automatable and excluded cases with counts and expandable
+exclusion reasons. File links use the existing hash route
+/projects/:id/code/:workspaceId and a file query parameter before the hash.
+The workspace must belong to the task and match the run SHA; missing bindings
+produce no fabricated link. GitPane opens the file via projects:gitFile.
+
+All panels use the common metadata grid, localized statuses, refresh controls
+and Markdown download. Reports contain all scenarios of the selected attempt,
+independent of filters. Actual machine IDs are obtained from the development
+workspace for Component/Integration; Automated stores its execution machine in
+the verdict. Missing historical metadata stays unavailable. Mobile table cells
+carry data-label and action rows are sticky. packages/ui/src/components/qa/qaPanels.browser.test.ts exercises
+all four panels in Chromium at 390px; DOM tests run axe on the panels and preview.
 
 На канбан-карточке (`TaskCard`) для колонок трёх QA-этапов запуск
 development-рана скрыт (`developmentAllowed` теперь исключает эти колонки), а

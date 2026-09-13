@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
-updated: 2026-09-04
-checked: a487f302
+updated: 2026-09-13
+checked: b30997da
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -306,6 +306,23 @@ QA-specific удаления вложений; безопасность и жи�
 
 ## Интерфейс
 
+CHAT-459 adds a 700 ms debounced autosave to each result card. A failed or
+blocked result still requires a comment; save errors stop automatic retries and
+keep local values visible. The revision check is preserved. Keys 1/2/3 select
+passed/failed/blocked only when the expanded editable card contains focus and
+focus is outside text inputs. Paste accepts image files through the existing
+authorized uploads and QA attachments bridges; plain text remains text. Upload
+errors are separate from successful result saves.
+
+The common QA metadata grid uses actual branch/SHA/timestamps; missing machine,
+model or duration remains explicitly unavailable. Component and Integration
+machine IDs come from their development run's workspace. Addressed qa.stage.updated events with stage manual_qa (session start, result save, attachment upload), manual refresh and
+reconnect reread the snapshot without replacing dirty card inputs. Freshness
+advances only on a successful current response. Each panel downloads Markdown
+for the selected attempt, including scenarios hidden by a local filter. Mobile
+ResultTable cells have data-label attributes; long logs start collapsed.
+
+
 `ManualQaPanel` из `packages/ui/src/components/qa/ManualQaPanel.tsx`
 встроен в модальное окно обычной задачи. Сверху находится раскрытая для running/
 failed и автоматически свёрнутая для success лента preparation-run: статус,
@@ -331,7 +348,7 @@ passed, failed, blocked и remaining. Итоговые «Следующий эт
 доработку» последовательно вызывают функции сохранения всех изменённых карточек,
 затем перечитывают QA state. Первое действие повторно проверяет свежую session
 через `canCompleteQa` и только после допуска вызывает `complete`; второе вызывает
-существующий `requestFix` и открывает ленту development-рана. Неуспешное
+`tasks:createReworkDraft` after saving and rereading the active session. One draft contains every failed result, the matching criterion version's steps and comments. A Dialog shows the draft for review; only the separate submit button calls `tasks:submitReworkDraft`. No failed results means no draft. Неуспешное
 сохранение не запускает итоговый маршрут и оставляет карточки доступными для
 исправления. Общий `busy` и синхронный ref-lock блокируют повторную отправку на
 время запроса. Причина недопуска называет failed/blocked-тест, отсутствие
@@ -342,5 +359,5 @@ read-only. На мобильной ширине детали и обе груп�
 
 Web-клиент получает `window.qa` через REST-мост
 `packages/ui/src/remote/qaBridge.ts`. В панели остаётся ручное создание сценария; отдельного UI версионирования,
-назначения тестировщика, просмотра версий/аудита, удаления вложений и push-
-обновлений нет.
+назначения тестировщика, просмотра версий/аудита и удаления вложений нет.
+Manual QA now receives addressed result/attachment updates and reconnect refreshes.
