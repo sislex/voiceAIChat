@@ -2,11 +2,13 @@ import { mt, useMakeLocale, formatMakeDate } from '../i18n'
 // Preview element comments (item 32): numbered list matching iframe inspector markers, a form for
 // the selected element, resolve/delete actions, and forwarding open issues to the assistant.
 import { useState } from 'react'
+import type { MakeOwnerCommentFields } from '@voicechat/make-contracts'
 import type { MakeComment } from '@shared/make'
 import { Button, IconButton, EmptyState } from '@voicechat/ui-kit'
 
 export interface MakeCommentsPanelProps {
-  comments: MakeComment[]
+  comments: Array<MakeComment & MakeOwnerCommentFields>
+  onReply?: (id: string, text: string) => Promise<void>
   /** Selected preview element to attach a new comment to. */
   selected: { selector: string; tag: string; text: string } | null
   onAdd: (text: string) => Promise<void>
@@ -26,10 +28,22 @@ export function commentsPrompt(comments: MakeComment[]): string {
   return mt("previewFeedbackValueValueFixEachItemFindThe", { p0: open.length, p1: lines.join('\n') })
 }
 
-export function MakeCommentsPanel({ comments, selected, onAdd, onResolve, onApprove, onRemove, onHighlight, onAskAssistant, onClose }: MakeCommentsPanelProps): JSX.Element {
+export function MakeCommentsPanel({ comments, selected, onAdd, onResolve, onApprove, onRemove, onHighlight, onAskAssistant, onClose, onReply }: MakeCommentsPanelProps): JSX.Element {
   useMakeLocale()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'new' | 'resolved'>('all')
+  const [replies, setReplies] = useState<Record<string, string>>({})
+  const [replying, setReplying] = useState<string | null>(null)
+  const [replyError, setReplyError] = useState<string | null>(null)
+  const visible = comments.filter((comment) => filter === 'all' || (filter === 'resolved' ? comment.resolved : !comment.resolved))
+  const reply = async (id: string, value: string): Promise<void> => {
+    if (!onReply || replying) return
+    setReplying(id); setReplyError(null)
+    try { await onReply(id, value); setReplies((drafts) => { const next = { ...drafts }; delete next[id]; return next }) }
+    catch { setReplyError(mt('replyFailed')) }
+    finally { setReplying(null) }
+  }
   const open = comments.filter((c) => !c.resolved && c.status !== 'pending')
   const pending = comments.filter((c) => c.status === 'pending')
   const submit = async (): Promise<void> => {
@@ -46,6 +60,12 @@ export function MakeCommentsPanel({ comments, selected, onAdd, onResolve, onAppr
         {onAskAssistant && open.length > 0 && <Button size="sm" variant="primary" onClick={() => onAskAssistant(commentsPrompt(comments))}>{mt("fixAll")}</Button>}
         <IconButton size="sm" aria-label={mt("closeComments")} title={mt("close")} onClick={onClose}>✕</IconButton>
       </div>
+      <select aria-label={mt('commentFilter')} value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+        <option value="all">{mt('allComments')}</option>
+        <option value="new">{mt('newComments')}</option>
+        <option value="resolved">{mt('resolved')}</option>
+      </select>
+      {replyError && <p role="alert">{replyError}</p>}
       <form className="make-comment-form" onSubmit={(e) => { e.preventDefault(); void submit() }}>
         {selected
           ? <code className="make-comment-target" title={selected.selector}>&lt;{selected.tag}&gt; {selected.text ? `«${selected.text.slice(0, 40)}»` : selected.selector}</code>
@@ -54,9 +74,9 @@ export function MakeCommentsPanel({ comments, selected, onAdd, onResolve, onAppr
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
         <Button size="sm" variant="secondary" type="submit" disabled={!selected || !text.trim() || busy} loading={busy}>{mt("add")}</Button>
       </form>
-      {comments.length === 0 ? <EmptyState title={mt("noCommentsYet")} description={mt("selectAnElementInThePreviewAndDescribeWhat")} /> : (
+      {visible.length === 0 ? <EmptyState title={mt("noCommentsYet")} description={mt("selectAnElementInThePreviewAndDescribeWhat")} /> : (
         <ul className="make-comment-list" role="list">
-          {comments.map((c) => {
+          {visible.map((c) => {
             const n = open.indexOf(c) + 1
             return (
               <li key={c.id} className={`make-comment${c.resolved ? ' resolved' : ''}${c.status === 'pending' ? ' make-comment--pending' : ''}`}>
@@ -64,6 +84,10 @@ export function MakeCommentsPanel({ comments, selected, onAdd, onResolve, onAppr
                 <div className="make-comment-body">
                   <code className="make-comment-el" title={c.selector}>{c.elementLabel || c.selector}</code>
                   <p>{c.text}</p>
+                  {c.canReply && onReply && <div>
+                    <label>{mt('privateReply')}<textarea aria-label={mt('privateReplyTo', { p0: c.text })} value={replies[c.id] ?? c.ownerReply ?? ''} onChange={(event) => setReplies((drafts) => ({ ...drafts, [c.id]: event.target.value }))} maxLength={2000} /></label>
+                    <Button size="sm" disabled={replying !== null || replies[c.id] === undefined} onClick={() => void reply(c.id, replies[c.id] ?? '')}>{mt('saveReply')}</Button>
+                  </div>}
                   <small>{c.status === 'pending' ? mt("awaitingModeration_f88224") : ''}{c.author === 'guest' ? mt("viewerValue", { p0: c.guestName ? ` ${c.guestName}` : '' }) : c.author} · {formatMakeDate(c.createdAt)}</small>
                 </div>
                 <span className="make-comment-actions">
