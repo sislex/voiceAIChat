@@ -1,7 +1,7 @@
 
 .image-studio { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 14px; overflow: auto; }
 .image-studio-toolbar { display: grid; gap: 8px; }
-.image-studio-toolbar textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); background: var(--panel, #fff); color: inherit; font: inherit; resize: vertical; }
+.image-studio-toolbar textarea, .image-studio-mobile-composer textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); background: var(--panel, #fff); color: inherit; font: inherit; resize: vertical; }
 .image-studio-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .image-studio-filename { font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); width: 170px; min-width: 0; }
 .image-studio-grid--dense { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
@@ -290,7 +290,12 @@
 .image-studio-history-preview small { color: var(--text-dim); }
 
 @media (max-width: 720px) {
+  .image-studio-grid, .image-studio-grid--dense { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .image-studio { padding: 8px; }
+  .image-studio-mobile-composer { margin-top: auto !important; height: auto !important; max-height: 85dvh !important; padding-bottom: env(safe-area-inset-bottom); border-radius: 16px 16px 0 0; }
+  .image-studio-mobile-composer textarea { width: 100%; box-sizing: border-box; }
+  .util-embed--img .imgbody { padding-bottom: env(safe-area-inset-bottom); }
+  .util-embed--img > .mdhead { padding-top: max(6px, env(safe-area-inset-top)); }
   .util-embed--img > .mdhead { gap: 4px; min-width: 0; padding: 6px; }
   .util-embed--img > .mdhead > .mdh { flex: 1 1 auto; min-width: 0; max-width: none; font-size: 12px; }
   .util-embed--img > .mdhead > .util-head-btns { flex: 0 0 auto; gap: 2px; }

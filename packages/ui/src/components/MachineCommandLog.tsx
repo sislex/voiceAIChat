@@ -29,6 +29,8 @@ function fmtDuration(ms: number): string {
 
 export function MachineCommandLog({ machineId, machineName, load, onOpenConversation }: MachineCommandLogProps): JSX.Element {
   const [q, setQ] = useState('')
+  const [resultFilter, setResultFilter] = useState('')
+  const [exportError, setExportError] = useState('')
   const [source, setSource] = useState<MachineCommandSource | ''>('')
   const [rows, setRows] = useState<MachineCommandRecord[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -45,9 +47,15 @@ export function MachineCommandLog({ machineId, machineName, load, onOpenConversa
     return () => { cancelled = true; clearTimeout(timer) }
   }, [machineId, q, source, load])
 
+  const visibleRows = rows?.filter((r) => r.command.toLocaleLowerCase().includes(q.trim().toLocaleLowerCase()) && (!source || r.source === source) && (resultFilter === 'success' ? r.exitCode === 0 && !r.error && !r.timedOut : resultFilter === 'error' ? Boolean(r.error || r.timedOut || (r.exitCode !== null && r.exitCode !== 0)) : resultFilter === 'long' ? r.durationMs >= 30_000 : true))
+  const exportTxt = (): void => {
+    if (!visibleRows?.length) return
+    try { saveTextFile(`commands-${machineName}.txt`, visibleRows.map((r) => `${new Date(r.startedAt).toISOString()} | ${r.userId} | ${r.command}\nexit ${r.exitCode ?? '—'} | ${r.durationMs} ms${r.error ? ` | ${r.error}` : ''}`).join('\n\n'), 'text/plain;charset=utf-8'); setExportError('') }
+    catch { setExportError('Не удалось экспортировать журнал') }
+  }
   const exportCsv = (): void => {
     if (!rows?.length) return
-    saveTextFile(`commands-${machineName}.csv`, commandsToCsv(rows))
+    saveTextFile(`commands-${machineName}.csv`, commandsToCsv(visibleRows ?? []))
   }
 
   return (
@@ -60,16 +68,20 @@ export function MachineCommandLog({ machineId, machineName, load, onOpenConversa
           <option value="chat">Чат (модель)</option>
           <option value="system">Система</option>
         </select>
+        <select aria-label="Результат команды" value={resultFilter} onChange={(event) => setResultFilter(event.target.value)}><option value="">Все результаты</option><option value="success">Успешные</option><option value="error">Ошибки</option><option value="long">Долгие (от 30 с)</option></select>
+        <Button size="sm" onClick={exportTxt} disabled={!visibleRows?.length}>Экспорт TXT</Button>
         <Button size="sm" onClick={exportCsv} disabled={!rows?.length}>Экспорт CSV</Button>
-        {rows && <span className="mcmdlog-count">{rows.length} записей</span>}
+        {rows && <span className="mcmdlog-count">{visibleRows?.length ?? 0} записей</span>}
       </div>
+      {exportError && <p role="alert">{exportError}</p>}
+      {rows && visibleRows?.length === 0 && <p role="status">Нет подходящих записей</p>}
       {error && <p role="alert" className="mcmdlog-error">Не удалось загрузить журнал: {error}</p>}
       {rows && rows.length === 0 && !error && <p className="mcmdlog-empty">Команд пока не было.</p>}
       {rows && rows.length > 0 && (
         <table className="mcmdlog-table">
           <thead><tr><th>Когда</th><th>Кто</th><th>Откуда</th><th>Команда</th><th>Код</th><th>Длительность</th></tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {visibleRows?.map((r) => (
               <tr key={r.id} className={r.error || (r.exitCode !== null && r.exitCode !== 0) ? 'mcmdlog-row mcmdlog-row--failed' : 'mcmdlog-row'} onClick={() => setExpanded((cur) => (cur === r.id ? null : r.id))} data-testid={`command-row-${r.id}`}>
                 <td title={new Date(r.startedAt).toISOString()}>{new Date(r.startedAt).toLocaleString('ru-RU')}</td>
                 <td>{r.userId}</td>

@@ -5,7 +5,7 @@
 // при добавлении возможностей. Тулы объявляют минимальную версию агента; если
 // подключённый агент старее — тула не выполняется (просим обновиться).
 
-export const AGENT_VERSION = '0.16.0'
+export const AGENT_VERSION = '0.17.0'
 
 /**
  * Минимальная версия агента для тула. 0.1.0 — базовый агент (умеет exec/bash);
@@ -30,6 +30,7 @@ export const TOOL_MIN_VERSION: Record<string, string> = {
   fs: '0.2.0',
   'fs-safe-delete': '0.12.0',
   'fs-trash': '0.15.0',
+  'fs-preview': '0.17.0',
   pty: '0.9.0',
   images: '0.5.0',
   tunnel: '0.10.0',

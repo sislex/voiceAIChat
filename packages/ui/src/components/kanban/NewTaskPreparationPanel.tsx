@@ -1,118 +1,130 @@
-// "Подготовка к разработке" of the new task card: preparation attempts drawn as
-// a rail of stages — the original statement first, then one stage per
-// submitted rework cycle. The functional part (start form, questions, gates,
-// Development Brief, cancel/retry/export) is the legacy `TaskPreparationTab`
-// mounted once inside the selected stage, so the two cards cannot drift apart.
-import { useCallback, useMemo, useState } from 'react'
-import { Badge } from '@voicechat/ui-kit'
-import type { TaskPreparationRun } from '@shared/qa'
-import { formatDateTime } from '../../lib/dateFormat'
-import { TaskPreparationTab, type TaskPreparationTabProps } from './TaskPreparationTab'
-import { AttemptList, StageCard, StageHeading, StageRail } from './NewTaskStages'
+import { useEffect, useMemo, useState } from 'react'
+import { Badge, Button, EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
+import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
+import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
+import type { TaskPreparationTabProps } from './TaskPreparationTab'
+import { PreparationRunSteps } from '../ci/RunFeed'
+import { AttemptList, CheckList, MetricTiles, StageCard, StageHeading, StageRail } from './NewTaskStages'
+import { useNewTaskAction, useNewTaskResource } from './useNewTaskResource'
 import type { TaskReworkCycleViewModel } from './TaskCardViewModel'
-import { assignToCycles, isLiveStageStatus, pluralRu, preparationStageStatus, stageStatusOf, type CycleStage, type StageStatus } from './taskCycles'
-
-/** Design wording of preparation states differs from the generic vocabulary. */
-const PREPARATION_LABEL: Partial<Record<StageStatus, string>> = {
-  success: 'Подготовлено', validating: 'Проверка результата', paused: 'На паузе',
-  blocked: 'Заблокировано', cancelled: 'Отменено', idle: 'Ожидает', waiting_for_answer: 'Ждёт ответа'
-}
+import { assignToCycles, pluralRu, preparationStageStatus } from './taskCycles'
 
 export interface NewTaskPreparationPanelProps {
   preparation: Omit<TaskPreparationTabProps, 'runFilter' | 'onRunsChange' | 'hideHistory'>
   cycles: TaskReworkCycleViewModel[]
-  /** Workflow labels of the task for the "Workflow этого цикла" chip chain. */
   workflow: string[]
+  initialCycleId?: string | null
 }
-
-const runStatus = (run: TaskPreparationRun): StageStatus => preparationStageStatus(run.status)
-
 export function NewTaskPreparationPanel(props: NewTaskPreparationPanelProps): JSX.Element {
-  const [runs, setRuns] = useState<TaskPreparationRun[]>([])
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const onRunsChange = useCallback((next: TaskPreparationRun[]) => setRuns(next), [])
-  const stages = useMemo(() => assignToCycles(props.cycles, runs, {
-    createdAt: (run) => run.createdAt,
-    pinnedCycleId: (run, all) => all.find((cycle) => cycle.preparationRunId === run.id)?.id ?? null
-  }), [props.cycles, runs])
-  // The live attempt wins, otherwise the newest stage: that is where the user acts.
-  const liveStage = props.preparation.liveRunId ? stages.find((stage) => stage.items.some((run) => run.id === props.preparation.liveRunId)) : undefined
-  const selected = stages.find((stage) => stage.key === selectedKey) ?? liveStage ?? stages[stages.length - 1]!
-  // Filter by time range, not by identity: a run started from the embedded form
-  // must land in the stage immediately, before the rail has re-rendered.
-  const runFilter = useMemo(() => {
-    const ordered = props.cycles.filter((cycle) => cycle.status !== 'draft').sort((a, b) => a.createdAt - b.createdAt)
-    const index = selected.cycle ? ordered.findIndex((cycle) => cycle.id === selected.cycle!.id) : -1
-    const from = selected.cycle?.createdAt ?? Number.NEGATIVE_INFINITY
-    const to = index >= 0 ? ordered[index + 1]?.createdAt ?? Number.POSITIVE_INFINITY : ordered[0]?.createdAt ?? Number.POSITIVE_INFINITY
-    return (run: TaskPreparationRun): boolean => {
-      const pinned = ordered.find((cycle) => cycle.preparationRunId === run.id)
-      if (pinned) return pinned.id === selected.cycle?.id
-      return run.createdAt >= from && run.createdAt < to
-    }
-  }, [props.cycles, selected.key])
-
+  const p = props.preparation
+  const identity = p.projectId + ':' + p.taskId
+  const history = useNewTaskResource(identity, async () => {
+    if (!p.loadRuns) throw new Error('История подготовки недоступна')
+    return p.loadRuns(p.taskId)
+  })
+  const setup = useNewTaskResource(identity, async () => {
+    if (!window.ci) throw new Error('Настройки подготовки недоступны')
+    const [machines, llm] = await Promise.all([window.ci.getTaskMachines(p.projectId, p.taskId), window.ci.getTaskPreparationLlm(p.projectId, p.taskId)])
+    return { machines, llm }
+  })
+  const [selection, setSelection] = useState<TaskPreparationLlmSelection | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(props.initialCycleId ?? null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [answer, setAnswer] = useState('')
+  const { busy, error, act } = useNewTaskAction(history.refresh)
+  const stages = useMemo(() => assignToCycles(props.cycles, history.data ?? [], {
+    createdAt: run => run.createdAt,
+    pinnedCycleId: (run, all) => all.find(cycle => cycle.preparationRunId === run.id)?.id ?? null
+  }), [props.cycles, history.data])
+  const selected = stages.find(stage => stage.key === selectedKey) ?? stages[stages.length - 1]!
+  const run = selected.items.find(item => item.id === selectedId) ?? selected.items[selected.items.length - 1] ?? null
+  const active = history.data?.find(item => item.canCancel)
+  const currentCycle = selected.key === stages[stages.length - 1]!.key
+  const machines = setup.data?.machines.machines ?? []
+  const preferred = machines.find(item => item.agentId === setup.data?.machines.effectiveAgentId && item.online && item.canUse !== false)
+    ?? machines.find(item => item.online && item.canUse !== false)
+  const chosen = selection ?? (setup.data ? { ...setup.data.llm, machineId: preferred?.agentId ?? '' } : null)
+  const models = chosen ? allowedModels(p.llmAccess ?? [], chosen.provider) : []
+  const ready = Boolean(chosen && machines.some(item => item.agentId === chosen.machineId && item.online && item.canUse !== false)
+    && models.some(item => item.id === chosen.model) && isProviderAllowed(p.llmAccess ?? [], chosen.provider))
+  useEffect(() => {
+    const offUpdate = window.board?.onPreparationRunUpdated?.(event => {
+      if (event.projectId === p.projectId && event.taskId === p.taskId) void history.refresh()
+    })
+    const offReconnect = window.board?.onReconnect?.(() => void history.refresh())
+    return () => { offUpdate?.(); offReconnect?.() }
+  }, [identity, history.refresh])
+  useEffect(() => { setAnswer('') }, [run?.id])
+  const accept = (next: TaskPreparationRun | void) => { if (next) setSelectedId(next.id) }
   return <div className="new-task-process" data-testid="new-task-preparation">
-    <StageHeading
-      eyebrow="История подготовки"
-      title="Этапы подготовки к разработке"
+    <StageHeading eyebrow="История подготовки" title="Этапы подготовки к разработке"
       description="Каждый новый набор доработок готовится отдельно, не перезаписывая исходный Development Brief."
-      badge={<Badge>{pluralRu(stages.length, 'этап', 'этапа', 'этапов')}</Badge>}
-    />
+      badge={<Badge>{pluralRu(stages.length, 'этап', 'этапа', 'этапов')}</Badge>} />
+    {(history.error || error) && <ErrorState compact message="Не удалось обновить подготовку" detail={error || history.error} onRetry={() => void history.refresh()} />}
+    {history.loading && !history.data && <Skeleton variant="list" count={3} />}
     <StageRail testId="new-task-preparation-rail">
       {stages.map((stage, index) => {
-        const status = stageStatusOf(stage, runStatus)
-        const isSelected = stage.key === selected.key
-        return <StageCard
-          key={stage.key}
-          number={stage.number}
-          status={status}
-          statusLabel={PREPARATION_LABEL[status] ?? undefined}
-          eyebrow={`Этап ${stage.number}`}
-          title={stage.cycle ? `Подготовка к разработке доработки ${stage.cycle.sequence}` : 'Подготовка задачи по первоначальному описанию'}
-          workflow={props.workflow}
-          cycle={stage.cycle}
-          sourceTitle="Источник этапа"
-          sourceText="Первоначальное описание, критерии приёмки, файлы задачи и Make-дизайн."
-          selected={isSelected}
-          onSelect={() => setSelectedKey(stage.key)}
-          connector={index < stages.length - 1}
-          testId={`new-task-preparation-stage-${stage.number}`}
-        >
-          {isSelected
-            ? <PreparationStageBody stage={stage} status={status} preparation={props.preparation} runFilter={runFilter} onRunsChange={onRunsChange} />
-            : <StageSummary stage={stage} />}
+        const shown = stage.key === selected.key ? run : stage.items[stage.items.length - 1]
+        return <StageCard key={stage.key} number={stage.number} status={shown ? preparationStageStatus(shown.status) : 'idle'}
+          statusLabel={shown ? (preparationStageStatus(shown.status) === 'success' ? 'Подготовлено' : undefined) : 'Ожидает'}
+          eyebrow={`Этап ${stage.number}`} title={stage.cycle ? `Подготовка к разработке доработки ${stage.cycle.sequence}` : 'Подготовка задачи по первоначальному описанию'}
+          workflow={props.workflow} cycle={stage.cycle} sourceTitle="Источник этапа" sourceText="Первоначальное описание, критерии приёмки, файлы задачи и Make-дизайн."
+          selected={stage.key === selected.key} onSelect={() => { setSelectedKey(stage.key); setSelectedId(null) }} connector={index < stages.length - 1}
+          testId={`new-task-preparation-stage-${stage.number}`}>
+          {stage.key === selected.key && <>
+            <AttemptList ariaLabel="Попытки подготовки" selectedId={run?.id ?? null} onSelect={setSelectedId}
+              attempts={stage.items.map(item => ({ id: item.id, label: `Попытка ${item.attempt}`, status: preparationStageStatus(item.status), at: item.createdAt }))} />
+            {currentCycle && (!run || run.canRetry) && <section className="new-task-section" aria-label="Настройка запуска подготовки">
+              <h3>Исполнитель подготовки</h3>
+              {setup.error && <ErrorState compact message="Не удалось загрузить настройки" detail={setup.error} onRetry={() => void setup.refresh()} />}
+              {!setup.data && setup.loading && <Skeleton variant="block" height={80} />}
+              {chosen && <div className="task-preparation-grid">
+                <label>Машина<select aria-label="Машина подготовки" value={chosen.machineId} onChange={event => setSelection({ ...chosen, machineId: event.target.value })}>
+                  <option value="" disabled>Выберите online-машину</option>
+                  {machines.map(item => <option key={item.agentId} value={item.agentId} disabled={!item.online || item.canUse === false}>{item.name}{item.online ? '' : ' (offline)'}</option>)}
+                </select></label>
+                <label>Исполнитель LLM<select aria-label="Исполнитель LLM" value={chosen.llmEngineId ?? ''} onChange={event => setSelection({ ...chosen, llmEngineId: event.target.value || null })}>
+                  <option value="">По умолчанию</option>{(p.llmEngines ?? []).filter(item => item.kind === chosen.provider).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select></label>
+                <label>Провайдер<select aria-label="Провайдер модели" value={chosen.provider} onChange={event => {
+                  const provider = event.target.value as 'claude' | 'codex'
+                  setSelection({ ...chosen, provider, model: allowedModels(p.llmAccess ?? [], provider)[0]?.id ?? '', llmEngineId: null })
+                }}>{(['claude', 'codex'] as const).map(provider => <option key={provider} value={provider} disabled={!isProviderAllowed(p.llmAccess ?? [], provider)}>{provider}</option>)}</select></label>
+                <label>Модель<select aria-label="Модель подготовки" value={chosen.model} onChange={event => setSelection({ ...chosen, model: event.target.value })}>
+                  <option value="" disabled>Выберите доступную модель</option>{models.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select></label>
+              </div>}
+              {!ready && <p role="status">Для запуска нужны доступные машина и модель.</p>}
+              {!run && <Button size="sm" variant="primary" loading={busy} disabled={!ready || Boolean(active) || !p.onStart || !history.data} onClick={() => void act(async () => accept(await p.onStart!(p.taskId, chosen!)))}>Запустить подготовку</Button>}
+              {run?.canRetry && p.onRetry && <Button size="sm" loading={busy} disabled={!ready || Boolean(active)} onClick={() => void act(async () => accept(await p.onRetry!(run.id, chosen!)))}>Повторить подготовку</Button>}
+            </section>}
+            {!run && <EmptyState compact icon="🧭" title="Подготовка этого этапа ещё не запускалась" description={currentCycle ? 'Выберите исполнителя и запустите подготовку.' : 'В этом историческом цикле попыток нет.'} />}
+            {run && <>
+              <h4>Попытка {run.attempt}</h4>
+              <MetricTiles items={[{ label: 'Длительность', value: run.durationMs == null ? '—' : `${Math.round(run.durationMs / 1000)} с` },
+                { label: 'Машина', value: run.machineName ?? run.machineId ?? '—' }, { label: 'Модель', value: `${run.provider ?? '—'} · ${run.model || 'по умолчанию'}` }]} />
+              {run.error && <ErrorState compact message="Подготовка остановлена" detail={run.error} />}
+              {(run.questions ?? []).map(question => <section key={question.questionId} className="new-task-section">
+                <h4>Уточнение</h4><p>{question.text}</p>
+                {question.status === 'open' && active?.id === run.id && p.onAnswer ? <>
+                  <textarea aria-label="Ответ на вопрос подготовки" value={answer} onChange={event => setAnswer(event.target.value)} />
+                  <Button loading={busy} disabled={!answer.trim()} onClick={() => void act(async () => { await p.onAnswer!(question.questionId, answer.trim()); setAnswer('') })}>Отправить ответ</Button>
+                </> : <p>{question.answer ?? 'Ответ не получен'}</p>}
+              </section>)}
+              <CheckList checks={(run.gateResults ?? []).map(gate => ({ id: gate.code, title: gate.code, ok: gate.status === 'pass', note: gate.explanation }))} />
+              {run.gateReasons.length > 0 && <ErrorState compact message="Условия готовности не выполнены" detail={run.gateReasons.join('; ')} />}
+              {run.readiness && <details className="new-task-stage-details"><summary>Development Brief и результат</summary>
+                <h4>{run.readiness.goal}</h4><p>{run.readiness.functionalRequirements}</p><pre>{JSON.stringify(run.readiness, null, 2)}</pre>
+              </details>}
+              <PreparationRunSteps steps={run.steps ?? []} fallback={run.log || 'Лента этой попытки пуста.'} />
+              <div className="new-task-heading-actions">
+                {run.canCancel && active?.id === run.id && p.onCancel && <Button size="sm" variant="danger" loading={busy} onClick={() => void act(async () => accept(await p.onCancel!(run.id)))}>Отменить</Button>}
+                {p.onExport && <><Button size="sm" onClick={() => void act(() => p.onExport!(run.id, 'md'))}>Скачать Markdown</Button><Button size="sm" onClick={() => void act(() => p.onExport!(run.id, 'json'))}>Скачать JSON</Button></>}
+              </div>
+            </>}
+          </>}
         </StageCard>
       })}
     </StageRail>
   </div>
-}
-
-function StageSummary({ stage }: { stage: CycleStage<TaskPreparationRun> }): JSX.Element {
-  const latest = stage.items[stage.items.length - 1]
-  return <p className="new-task-stage-summary">
-    {latest
-      ? `${pluralRu(stage.items.length, 'попытка', 'попытки', 'попыток')} · последняя ${formatDateTime(latest.createdAt)} · ${latest.provider ?? 'claude'} · ${latest.model || 'по умолчанию'}`
-      : 'Подготовка этого этапа ещё не запускалась.'}
-  </p>
-}
-
-function PreparationStageBody({ stage, status, preparation, runFilter, onRunsChange }: {
-  stage: CycleStage<TaskPreparationRun>
-  status: StageStatus
-  preparation: NewTaskPreparationPanelProps['preparation']
-  runFilter: (run: TaskPreparationRun) => boolean
-  onRunsChange: (runs: TaskPreparationRun[]) => void
-}): JSX.Element {
-  const panel = <TaskPreparationTab {...preparation} runFilter={runFilter} onRunsChange={onRunsChange} hideHistory />
-  // A finished stage collapses into "Development Brief и результат"; anything
-  // still moving or needing a decision stays open like in the Make mock.
-  if (status === 'success' && stage.items.length > 0) {
-    return <details className="new-task-stage-details" open={false}>
-      <summary>Development Brief и результат</summary>
-      <AttemptList ariaLabel="Попытки подготовки" attempts={stage.items.map((run) => ({ id: run.id, label: `Попытка ${run.attempt}`, status: runStatus(run), at: run.createdAt }))} />
-      {panel}
-    </details>
-  }
-  return <div className={'new-task-stage-panel' + (isLiveStageStatus(status) ? ' new-task-stage-live' : '')}>{panel}</div>
 }

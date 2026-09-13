@@ -321,6 +321,7 @@ export const REST = {
   agentUpdate: (id: string) => `/api/agents/${encodeURIComponent(id)}/update`,
   // --- Файловый проводник по машине ---
   agentFs: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs`,
+  agentFsPreview: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/preview`,
   agentFsFile: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/file`,
   agentFsRename: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/rename`,
   agentFsMkdir: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/mkdir`,
@@ -814,7 +815,7 @@ export type ServerMessage =
    * ран активен: на проде один открытый таск давал десятки запросов в минуту.
    * Кадр несёт только адрес — снимок панель читает своим REST-запросом.
    */
-  | { t: 'qa.stage.updated'; projectId: string; taskId: string; stage: QaRunStage }
+  | { t: 'qa.stage.updated'; projectId: string; taskId: string; stage: QaRunStage | 'manual_qa' }
   /**
    * Release Center: подготовка или деплой релиза сменили статус либо шаг. Кадр
    * несёт адрес и новый статус — список и подробности перечитываются REST-ом,

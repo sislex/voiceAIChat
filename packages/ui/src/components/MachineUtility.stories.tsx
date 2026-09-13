@@ -31,8 +31,41 @@ type Story = StoryObj<typeof MachineUtility>
  */
 export const ConsoleWithoutPty: Story = {}
 
+export const Mobile390: Story = {
+  args: { agents: [makeAgent({ id: 'm1', name: 'Very long machine name on a mobile screen', version: '0.17.0' })], tool: { kind: 'explorer', agentId: 'm1', dir: true } },
+  decorators: [(Story) => <div style={{ width: 390, maxWidth: '100%' }}><Story /></div>]
+}
+
+export const PrefixPreview: Story = {
+  args: {
+    tool: { kind: 'explorer', agentId: 'm1', dir: true },
+    agents: [makeAgent({ id: 'm1', version: '0.17.0' })],
+    ops: makeMachineOps({
+      list: async () => ({ root: '/r', cwd: '/r', entries: [{ name: 'large.txt', kind: 'file', size: 40000000, mtime: 0 }] }),
+      readPrefix: async () => ({ root: '/r', cwd: '/r', dataBase64: btoa('Prefix preview'), bytesRead: 14, fileSize: 40000000, truncated: true })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: '📄 large.txt' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Показать первые 200 КБ' }))
+    await expect(await canvas.findByText('Prefix preview')).toBeInTheDocument()
+  }
+}
+
+export const MultipleSelection: Story = {
+  args: { tool: { kind: 'explorer', agentId: 'm1', dir: true } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const boxes = await canvas.findAllByRole('checkbox')
+    await userEvent.click(boxes[0])
+    await userEvent.click(boxes[1])
+    await expect(canvas.getByText('Выбрано: 2')).toBeInTheDocument()
+  }
+}
+
 /** Живой терминал: есть мост PTY — вместо однострочной консоли поднимается xterm. */
-export const Terminal: Story = { args: { pty: createFakePty() } }
+export const Terminal: Story = { args: { tool: { kind: 'terminal', agentId: 'm1' }, pty: createFakePty() } }
 
 /** Проводник по машине: содержимое каталога, размеры и время изменения. */
 export const Explorer: Story = {

@@ -2,6 +2,18 @@
 // (`kanban/module.ts`) и её тестов. Вынесены из `server.ts` вместе с канбан-кластером.
 import { DEFAULT_CODEX_MODEL, type AcceptanceCriterionSnapshot, type LlmProvider } from '@voicechat/shared'
 
+/** Parse the entire response before normalizing compatible field values. */
+export function preparationJsonObject(text: string): Record<string, unknown> {
+  const raw = text.trim()
+  if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')
+  const value = JSON.parse(raw) as Record<string, unknown>
+  // Null means no reference only for this optional field; other nulls survive.
+  if (Array.isArray(value.decisions)) for (const decision of value.decisions) {
+    if (decision && typeof decision === 'object' && !Array.isArray(decision) && decision.questionId === null) delete decision.questionId
+  }
+  return value
+}
+
 export function parseQaPreparationResponse(text: string): AcceptanceCriterionSnapshot[] {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
   const start = text.indexOf('['), end = text.lastIndexOf(']')

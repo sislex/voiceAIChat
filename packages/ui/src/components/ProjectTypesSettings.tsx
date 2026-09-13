@@ -194,6 +194,7 @@ export function ProjectTypesSettings({ types, status = 'ready', error = null, on
                     </span>
                   )}
                 </div>
+                {node.status === 'published' && <p className="proj-hint">Опубликованный тип изменяет только администратор. Создайте свой подтип для других возможностей.{mine && node.usageCount ? ' Отозвать тип с чужими проектами нельзя.' : ''}</p>}
                 {node.description && <p className="ptypes-desc">{node.description}</p>}
                 <ul className="newproj-features" role="list">
                   {enabled.length

@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-12
-checked: d4776edc
+updated: 2026-09-13
+checked: 06c94c52
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -158,10 +158,10 @@ workflow в `migrate()` дописывала конвейер разработк
 остальные по имени; без общего правила выбор при создании и каталог показывали бы
 разный порядок.
 
-**Смена типа спрашивает подтверждение, если набор сужается** (`ConfirmDialog` с
-перечислением того, что станет недоступно). Молчаливое переключение выглядит как
-поломка: со страницы исчезают целые разделы. Расширение набора не спрашивает
-ничего. Каталог отдаёт `usageCount` — сколько проектов используют узел; кнопка
+**Type changes preview both enabled and disabled capabilities before saving.** The confirmation lists task tabs gated by git (Code, Merge), CI (Preparation, Improvements, Run feed) and QA (Component QA, Integration tests, Automated QA, Manual QA), matching TaskModal; stage-specific tabs may already be hidden for a particular task. Existing data remains. The selection enters the project draft; only Save persists it. Published-type refusal remains explained by the existing server policy and a catalog hint.
+
+`ConfirmDialog` previews every type change, including both expansion and
+reduction. Silent switching would make disappearing sections look like a failure. Каталог отдаёт `usageCount` — сколько проектов используют узел; кнопка
 удаления заблокирована с объяснением, а не отказом после нажатия.
 
 **Ярлык типа виден в шапке проекта** (`ToolFrame.titleExtra`). Слот отдельный и
@@ -316,8 +316,15 @@ owner-гейт срезал бы его на входе. Публичный пр
 подтверждённого `users.email`. Иначе утёкшая ссылка пускала бы в проект любого.
 Параметр роута — токен из письма **либо id приглашения** из списка в интерфейсе:
 приглашённому по логину письма нет вовсе, и id — его единственный способ
-ответить; id не секрет, доступ всё равно решает проверка адресата. Токен наружу
-отдаётся единственный раз, в письме: в API его нет даже в списке у владельца.
+ответить; id не секрет, доступ всё равно решает проверка адресата. The raw token is returned only in the newly issued link (creation or resend)
+and in email; owner invitation lists do not contain the token or link.
+
+Invitation creation accepts optional `ttlDays` (integer, 1–30; default 7).
+The UI offers 1, 7 or 30 days together with the role. Resending rotates the
+token and restarts the original lifetime; the former URL becomes invalid.
+Mail includes the actual expiry timestamp. Owners can also resend username-only
+invitations and copy the newly issued link. The server rejects self-demotion of
+the last owner before updating membership, independently of disabled UI controls.
 
 Рассылка ограничена по автору и по IP (`SlidingWindowLimiter`): раз проект теперь
 заводит любой пользователь, без лимита приложение становится спам-релеем. Ошибка
@@ -715,8 +722,41 @@ clients cannot persist truthy strings or numbers.
 «Участники» и «Машины». На вкладке «Общее» владелец задаёт `previewUrl` проекта — только абсолютный `http/https`; он служит адресом веб-превью по умолчанию для связанных разговоров, пока у разговора нет собственного `previewUrl`. Вкладка LLM объединяет проектную пару движок/модель,
 режим запуска, глубину уточнений и режим базы знаний для следующего CI-рана.
 Смена проектной пары сразу обновляет привязанные чаты; задачи получают её через
-`resolveTaskLlmConfig` по обычной цепочке наследования. Активная вкладка хранится
-локально в компоненте и не сбрасывается, когда сервер обновляет detail проекта.
+`resolveTaskLlmConfig` по обычной цепочке наследования.
+
+The active settings tab comes from `/projects/:id/settings/:tab`; stories and
+standalone tests fall back to local state. Server detail refreshes preserve the tab
+and unsaved project-field patches. `ProjectSettingsDraft` batches `onUpdate`
+fields into one save and retains them on rejection. Its sticky Save/Cancel bar
+reports validation errors; browser unload and hash-router navigation warn before
+discarding a draft. Switching settings tabs keeps the draft.
+
+Git URLs accept HTTPS, SSH URLs and SCP-style SSH syntax. CI branch names reject
+spaces and invalid Git ref syntax. Branch templates support `{task_number}` and
+legacy `{slug}`, each once, matching `ci/runManager.ts`. Edited command fields
+must be nonempty; existing empty optional overrides remain compatible with
+inheritance. Errors appear below fields and set `aria-invalid`.
+CI commands have multiline input, shell syntax preview, catalog suggestions from
+CI/CiCommands and an explicit machine check. Checks use the project default
+machine and its path, preserve the command exit code, support cancellation and
+display at most 50 output lines.
+
+Production checks require saved settings. Legacy checks verify checkout, exact
+origin and a clean worktree, then run the health-check command. Managed checks
+reuse managed preflight to obtain the canonical checkout before health-check.
+The result lists individual successes and failures with repair hints; no deploy
+command runs.
+
+Test-user passwords are masked. “Check login” opens a project-bound Web Reader
+conversation and asks its assistant to fetch credentials using `test-users`,
+exercise the login form and report the authentication result there. The MCP
+tool itself only returns credentials; it does not authenticate. Passwords are
+not copied into the request text. Unsaved credentials or a missing preview URL
+disable the action. Production-password warnings remain visible.
+
+At phone widths, tabs scroll horizontally, forms use one column and the save bar
+includes the bottom safe area. Stories cover validation, unsaved changes,
+production results and a 390px layout.
 
 ## Чаты завершённых задач скрыты из списка бесед
 
@@ -1500,9 +1540,10 @@ DOM-узлы доски, колонок и карточек сохраняют �
 - **Цель считает доска, а не движок.** Ячейка (колонка × дорожка свимлейна) — по
   `[data-drop-body]`, внутри неё ближайшая по вертикали зона `[data-dropzone]`
   даёт `afterId`/`beforeId` (контракт `move` не изменился) и `data-slot` для
-  плейсхолдера. При переносе карточки `autoScroll` двигает `.jboard` по обеим
-  осям: горизонтальная сохраняет доступ к колонкам, вертикальная синхронно двигает
-  всю доску. `[data-drop-body]` остаётся целью hit-test, но не scroll-контейнером.
+  плейсхолдера. Desktop card autoscroll uses both axes of `.jboard`. Mobile card
+  autoscroll uses `.jboard` horizontally and the target `.jcol-content` vertically
+  (the drop body is the fallback in swimlanes). Hit testing is refreshed every
+  animation frame, and `data-drop-target` highlights the selected column.
   При переносе колонки автоскролл работает исключительно по горизонтальной оси
   `.jboard` и не меняет общий `scrollTop`.
 - **Отмена** — Esc и `pointercancel` (входящий звонок, системный жест): карточка
@@ -1514,7 +1555,7 @@ DOM-узлы доски, колонок и карточек сохраняют �
   стрелки ←→ между колонками и ↑↓ по позициям, Enter — положить, Esc — отмена.
   Взятая карточка остаётся на месте (иначе слетел бы фокус) и подсвечивается
   `.jcard--grabbed`. Каждый шаг проговаривается в `aria-live`
-  («Задача X, колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
+  («Задача X: колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
 - **Column keyboard ordering.** Each column grip is a named button with
   `Alt+ArrowLeft` and `Alt+ArrowRight` shortcuts. A move jumps to the adjacent
   displayed column while producing the complete persisted order, including
@@ -1551,6 +1592,8 @@ DOM-узлы доски, колонок и карточек сохраняют �
 вкладке «Настройки» страницы проекта (`ProjectSettings`) — там же и удаление
 проекта: после него уводим на другой доступный проект, а если их не осталось —
 в пустое состояние.
+
+Machine rows show project-default/release and production roles separately from the user's personal default. Directory checks call `window.fs.list(agentId, path, projectId)` on the selected machine, accept an empty directory as success and explain access or missing-path errors. Editing a path clears its previous check result. On phones, settings render table rows as single-column cards.
 
 Каталог во вкладке «Настройки проекта → Машины» показывает для каждой машины
 текущую загрузку. Поле `ProjectMachine.load` — это одно целое число: количество
@@ -1815,17 +1858,15 @@ Make-проект проекта: `tasks:unlinkDesign` + `tasks:linkDesign`) и 
 **Функциональные вкладки по макету (2026-09-12, CHAT-445).** Вкладки, кроме
 «Общего» и «Доработок», `TaskCardContainer` отдаёт через `renderPanel`, но уже не
 голыми legacy-панелями, а панелями новой карточки из `components/kanban/NewTask*Panel.tsx`:
-каждая рисует «рейку этапов» макета (`NewTaskStages.tsx`: `StageRail`, `StageCard`,
-`StageBadge`, `WorkflowSnapshot`, `CycleReworks`, `CheckList`, `MetricTiles`,
-`AttemptList`) и **внутри выбранного этапа монтирует функциональную legacy-панель**
-(`TaskPreparationTab`, `ComponentQaPanel`, `QaStageRunPanel`, `ManualQaPanel`,
-`MergePanel`, `CiTaskSettings`, `TaskRunFeed`/`DevelopmentRunFeed`) — все действия
-(запуск, отмена, повтор, ответ модели, «на доработку», переход к следующему этапу,
-merge) идут через тот же код, второй копии логики нет. Для встраивания у legacy-панелей
-появились опциональные пропсы `runId`/`selectedRunId` (показать конкретную попытку),
-`onStateChange`/`onRunsChange` (отдать список попыток рейке — одна загрузка на обе)
-и `hideHistory` (рейка заменяет встроенный список попыток); список отдаётся **только
-после загрузки**, иначе свежесмонтированная панель обнуляла бы статусы рейки.
+каждая владеет своими формами, результатами и представлением выбранного рана,
+переиспользуя существующие доменные API и общие примитивы `NewTaskStages.tsx`.
+Целые legacy-панели больше не монтируются. `NewDevelopmentRunFeed` самостоятельно
+подписывается на development-ран и показывает его лог; с legacy-лентой разделяется
+только небольшой примитив `InteractionCard`. `useNewTaskResource` сохраняет
+последние загруженные данные при ошибке обновления, изолирует ресурсы по ключу и
+игнорирует запоздалые ответы, а `useNewTaskAction` блокирует параллельные повторы
+действия и после успеха или ошибки перечитывает фактическое состояние. Выбор
+исторической попытки не перенаправляет ответ или отмену на активный ран.
 
 Этапы рейки — чистая функция `assignToCycles` (`taskCycles.ts`): этап 1 — исходная
 постановка, дальше по одному этапу на каждый **отправленный** цикл доработки
@@ -1837,12 +1878,13 @@ merge) идут через тот же код, второй копии логи�
 `preparationStageStatus`); тон бейджа — `stageStatusTone`. Панель одна на вкладку и
 стоит в выбранном этапе; остальные этапы показывают сводку и кнопку «Показать».
 
-По вкладкам: «Подготовка» — этапы подготовки с формой запуска прямо в этапе без
-попыток (фильтр `runFilter` по диапазону времени цикла, а не по id — новый ран
-попадает в этап до перерисовки рейки); «Ход выполнения» — под-разделы
+«Подготовка» владеет выбором машины и модели, попытками каждого цикла,
+вопросами и ответами, readiness-гейтами, Development Brief и шагами рана. Из
+истории отправленных доработок открывается соответствующий цикл подготовки;
+ответы адресуются только выбранной активной попытке. «Ход выполнения» — под-разделы
 `SubTabs` (Обзор · Работа модели · Проверки · База знаний · Ресурсы · Временная шкала),
 данные — `ci.getTaskReport` (метрики этапа: шаги, проверки-команды, время, попытки
-починки), лента выбранного рана — `DevelopmentRunFeed` со своей подпиской, кнопка
+починки), лента выбранного рана — `NewDevelopmentRunFeed` со своей подпиской, кнопка
 «В очередь на разработку» по `canStartCiRun`; QA-вкладки — «история проходов»,
 проверки «Запуск прохода / Результат» из статуса; «Ручное QA» — блок «Тестовое
 окружение» (`appUrl`/`storybookUrl` сессии) и проходы по QA-сессиям; «Merge» —
@@ -1863,6 +1905,29 @@ merge) идут через тот же код, второй копии логи�
 без записи — legacy; `initialVersion` пропа сильнее. Полоса вкладок — `flex: none`,
 тело `min-height: 0`: раньше на высоте окна ~800px тело требовало 580px и flex-колонка
 ужимала вкладки до 1px (закреплено в `taskCardStyles.test.ts`).
+
+**Детали реализации и регрессии CHAT-445.** Замена Make-связи не атомарна:
+`tasks:unlinkDesign` выполняется перед `tasks:linkDesign`. Контейнер сразу сохраняет
+подтверждённый результат отвязки, а при сбое перечитывает фактические связи; повтор
+не пытается отвязать уже удалённый источник. Групповая отправка черновиков также
+последовательна: самый старый выбранный черновик обновляется объединёнными данными,
+остальные выбранные удаляются, затем выполняется единственный submit. При частичном
+сбое очередь перечитывается и ошибка показывается пользователю; невыбранные
+черновики не меняются.
+
+Завершённые этапы workflow показывают записанную длительность; счётчик продолжает
+идти только у этапа со `startedAt` в состоянии выполнения или ожидания ввода.
+Снимок development-цикла берёт названия корневых шагов из выбранного отчёта и явно
+сообщает об отсутствии шагов. Другие панели помечают workflow текущей задачи как
+текущий, а не выдают его за сохранённый исторический снимок.
+
+`NewTaskPanels.stories.tsx` provides `kanban-newtaskcard-functionalpanels--*`
+stories for all eleven tabs. The DOM suite covers both themes and widths, cycle
+isolation and action routing; container tests cover Make, selected draft batches,
+partial failures and version persistence without task writes. The Playwright
+script `NewTaskPanels.browser.mjs` checks the same 44 tab/theme/width combinations
+and writes screenshots to `.generated_images`. Real deployed preview availability
+still requires manual verification.
 
 **Черновики доработок (2026-09-08).** У `task_rework_cycles` появилась колонка
 `status` (`draft` | `submitted`; миграция в `database.ts` проставляет старым

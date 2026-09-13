@@ -135,15 +135,16 @@ describe('WsClient', () => {
     c.close()
   })
 
-  it('маршрутизирует адресное событие QA-этапа', async () => {
+  // @testCase TC-07
+  it.each(['integration_tests','manual_qa'] as const)('маршрутизирует адресное событие QA-этапа %s', async (stage) => {
     const c = new WsClient('ws://x/ws')
     const first = FakeWebSocket.last!
     const updates = vi.fn()
     makeBoardBridge(c).onQaStageUpdated(updates)
     first._open()
     await Promise.resolve()
-    first._emit({ t: 'qa.stage.updated', projectId: 'p1', taskId: 't1', stage: 'integration_tests' })
-    expect(updates).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', stage: 'integration_tests' })
+    first._emit({ t: 'qa.stage.updated', projectId: 'p1', taskId: 't1', stage })
+    expect(updates).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', stage })
     c.close()
   })
 
@@ -497,6 +498,17 @@ describe('мосты QA и тестовых окружений', () => {
 })
 
 describe('makeFsBridge', () => {
+  // @testCase T5
+  it('forwards a prefix request with project context and never fetches the full file', async () => {
+    const response = { root: '/', cwd: '/', dataBase64: 'YQ==', bytesRead: 1, fileSize: 40000000, truncated: true }
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => response })
+    vi.stubGlobal('fetch', fetch)
+    const fs = makeFsBridge('')
+    await expect(fs.readPrefix!('m1', '/big file.txt', 'p1')).resolves.toEqual(response)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch.mock.calls[0][0]).toBe('/api/agents/m1/fs/preview?path=%2Fbig%20file.txt&projectId=p1')
+  })
+
   it('мутации проводника несут x-vc-csrf при cookie-сессии (иначе сервер отвечает 403)', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     ;(globalThis as unknown as { fetch: unknown }).fetch = vi.fn(async (url: string, init?: RequestInit) => {

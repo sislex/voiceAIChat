@@ -32,7 +32,41 @@ export function isImageStudioConversation(value: { assistantKind?: string | null
   return value.assistantKind === IMAGE_STUDIO_KIND
 }
 
+export interface ImageStudioParameters {
+  /** These are prompt instructions, not a guarantee of output dimensions or style. */
+  style?: string
+  negative?: string
+  size?: string
+  noText?: boolean
+}
+
+export interface ImageStudioTask {
+  id: string
+  conversationId: string
+  prompt: string
+  state: 'queued' | 'running' | 'saving' | 'completed' | 'cancelled' | 'failed'
+  createdAt: number
+  updatedAt: number
+  error?: string
+  file?: ImageStudioFile
+}
+
+export interface ImageStudioTaskInput {
+  prompt: string
+  path?: string
+  name?: string
+  references?: string[]
+  parameters?: ImageStudioParameters
+}
+
+export interface ImageStudioPublicationSettings {
+  items: Array<{ path: string; caption: string }>
+  watermark: { text: string; position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' } | null
+}
+
 export interface ImageStudioFile {
+  tags?: string[]
+  parameters?: ImageStudioParameters
   /** Промпт, которым нарисован/поправлен файл (нет у загруженных руками). */
   prompt?: string
   /** Имя исходника, если файл — результат правки другой картинки. */

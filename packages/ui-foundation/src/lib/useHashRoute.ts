@@ -12,19 +12,34 @@ import { useCallback, useSyncExternalStore } from 'react'
 
 function currentPath(): string {
   if (typeof window === 'undefined') return '/'
-  const raw = window.location.hash.replace(/^#/, '')
+  // Publish only accepted locations so unrelated renders cannot bypass a pending guard.
+  const raw = (listeners.size ? acceptedHash : window.location.hash).replace(/^#/, '')
   return raw ? (raw.startsWith('/') ? raw : `/${raw}`) : '/'
 }
 
 // replaceState не порождает hashchange — подписчиков будим сами.
 const listeners = new Set<() => void>()
 
+let acceptedHash = ''
+function allowNavigation(target: string, resume: () => void): boolean {
+  return window.dispatchEvent(new CustomEvent('voicechat:before-navigate', { cancelable: true, detail: { target, resume } }))
+}
+function changed(): void {
+  const target = window.location.hash
+  const publish = (): void => { acceptedHash = target; listeners.forEach(cb => cb()) }
+  const resume = (): void => { window.history.replaceState(null, '', target); publish() }
+  if (target !== acceptedHash && !allowNavigation(target, resume)) {
+    window.history.replaceState(null, '', acceptedHash || '#/')
+    return
+  }
+  publish()
+}
 function subscribe(cb: () => void): () => void {
+  if (!listeners.size) { acceptedHash = window.location.hash; window.addEventListener('hashchange', changed) }
   listeners.add(cb)
-  window.addEventListener('hashchange', cb)
   return () => {
     listeners.delete(cb)
-    window.removeEventListener('hashchange', cb)
+    if (!listeners.size) window.removeEventListener('hashchange', changed)
   }
 }
 
@@ -48,16 +63,20 @@ export function useHashRoute(): HashRoute {
     const clean = to.replace(/^#/, '')
     const target = `#${clean.startsWith('/') ? clean : `/${clean}`}`
     if (window.location.hash === target) return
-    if (opts?.replace) {
-      try {
-        window.history.replaceState(null, '', target)
-        listeners.forEach((cb) => cb())
-        return
-      } catch {
-        // history недоступен (file:// в старых сборках) — обычный переход.
+    const proceed = (): void => {
+      acceptedHash = target
+      if (opts?.replace) {
+        try {
+          window.history.replaceState(null, '', target)
+          listeners.forEach((cb) => cb())
+          return
+        } catch {
+          // Older file:// hosts fall back to ordinary hash navigation.
+        }
       }
+      window.location.hash = target
     }
-    window.location.hash = target
+    if (allowNavigation(target, proceed)) proceed()
   }, [])
   return { path, segments: path.split('/').filter(Boolean), navigate }
 }

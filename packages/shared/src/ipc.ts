@@ -180,7 +180,7 @@ export interface IpcInvokeMap {
   /** Make: состояние проекта разговора (файлы, снимки, rev) и операции с файлами. */
   'make:state': { arg: { conversationId: string }; result: MakeProjectState }
   'make:read': { arg: { conversationId: string; path: string }; result: MakeFileContent }
-  'make:write': { arg: { conversationId: string; path: string; content: string }; result: MakeProjectState }
+  'make:write': { arg: { conversationId: string; path: string; content: string; kind?: 'file' | 'directory'; createOnly?: boolean }; result: MakeProjectState }
   'make:delete': { arg: { conversationId: string; path: string }; result: MakeProjectState }
   'make:rename': { arg: { conversationId: string; from: string; to: string }; result: MakeProjectState }
   'make:snapshot': { arg: { conversationId: string; label?: string }; result: MakeProjectState }
@@ -197,8 +197,8 @@ export interface IpcInvokeMap {
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
   /** Замена по всем текстовым файлам проекта; перед заменой — снимок. */
   /** `dryRun` — только предпросмотр (`preview`), файлы не меняются. `regex` — запрос как регулярное выражение с `$1`-подстановками. */
-  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] } }
-  'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
+  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean; previewToken?: string; path?: string; matchIndex?: number }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[]; previewToken?: string } }
+  'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string; compareSnapshotId?: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
   'make:library': { arg: Record<string, never>; result: { items: MakeLibraryItem[] } }
   /** Сохранить файлы проекта в библиотеку под именем. */
@@ -479,7 +479,7 @@ export interface IpcInvokeMap {
   /** Живые приглашения проекта (владельцу). */
   'projects:invitations': { arg: { id: string }; result: import('./projects').ProjectInvitation[] }
   'projects:invite': {
-    arg: { id: string; invitee: string; role?: import('./projects').ProjectRole }
+    arg: { id: string; invitee: string; role?: import('./projects').ProjectRole; ttlDays?: number }
     /** `link` — одноразовая ссылка приглашения; в списках её нет. */
     result: { invitation: import('./projects').ProjectInvitation; mailed: boolean; link: string }
   }
@@ -761,6 +761,12 @@ export interface IpcInvokeMap {
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
   /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
   /** Студия картинок: галерея разговора, генерация и правка по промпту. */
+  'imgstudio:preview': { arg: { conversationId: string; settings: import('./imageStudio').ImageStudioPublicationSettings }; result: { url: string } }
+  'imgstudio:archive': { arg: { conversationId: string; paths: string[] }; result: void }
+  'imgstudio:enqueue': { arg: { conversationId: string } & import('./imageStudio').ImageStudioTaskInput; result: import('./imageStudio').ImageStudioTask }
+  'imgstudio:tasks': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioTask[] }
+  'imgstudio:cancelTask': { arg: { conversationId: string; taskId: string }; result: { cancelled: boolean } }
+  'imgstudio:tags': { arg: { conversationId: string; path: string; tags: string[] }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:list': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:read': { arg: { conversationId: string; path: string }; result: { path: string; dataBase64: string } }
   'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string; source?: string }; result: import('./imageStudio').ImageStudioFile[] }
@@ -773,8 +779,8 @@ export interface IpcInvokeMap {
   'imgstudio:place': { arg: { conversationId: string; basePath: string; objectPath: string; x?: number; y?: number; width?: number; height?: number }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:restoreVersion': { arg: { conversationId: string; currentPath: string; targetPath: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
-  'imgstudio:publish': { arg: { conversationId: string; password?: string | null }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
-  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean } }
+  'imgstudio:publish': { arg: { conversationId: string; password?: string | null; settings?: import('./imageStudio').ImageStudioPublicationSettings }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
+  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean; settings?: import('./imageStudio').ImageStudioPublicationSettings } }
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
   'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
@@ -1028,7 +1034,7 @@ export interface RendererBoardBridge {
   /** Адресная инвалидация списка репозиториев задачи. */
   onTaskRepositoriesUpdated(cb: (m: { projectId: string; taskId: string }) => void): () => void
   /** Адресная инвалидация состояния QA-этапа: панель перечитывает снимок вместо опроса. */
-  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage }) => void): () => void
+  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage | 'manual_qa' }) => void): () => void
   /** Адресная инвалидация очереди «Улучшения» проекта. */
   onImprovementsUpdated(cb: (m: { projectId: string }) => void): () => void
   /** Release Center: релиз сменил статус или шаг — перечитать список/подробности. Необязателен у старых мостов. */
@@ -1187,6 +1193,7 @@ export interface RendererSessionBridge {
 export interface RendererFsBridge {
   list(agentId: string, path: string, projectId?: string): Promise<FsResult>
   read(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  readPrefix?(agentId: string, path: string, projectId?: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string, projectId?: string): Promise<FsResult>
   remove(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /** Корзина машины (агент ≥ 0.15.0): результат содержит trashedPath для отката. */
@@ -1584,6 +1591,12 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:deleteAttachment',
   'tasks:readAttachment',
   'tasks:reworkMakeFiles',
+  'imgstudio:preview',
+  'imgstudio:archive',
+  'imgstudio:enqueue',
+  'imgstudio:tasks',
+  'imgstudio:cancelTask',
+  'imgstudio:tags',
   'imgstudio:list',
   'imgstudio:read',
   'imgstudio:upload',

@@ -7,7 +7,7 @@ type StudioApi = Pick<RendererApi,
   'imgstudio:retouch' | 'imgstudio:extract' | 'imgstudio:place' | 'imgstudio:restoreVersion' |
   'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish' | 'imgstudio:run' | 'imgstudio:transfer' |
   'imgstudio:trash' | 'imgstudio:restore' | 'imgstudio:purge'> &
-  Partial<Pick<RendererApi, 'prompt:suggest'>>
+  Partial<Pick<RendererApi, 'prompt:suggest' | 'imgstudio:preview' | 'imgstudio:archive' | 'imgstudio:enqueue' | 'imgstudio:tasks' | 'imgstudio:cancelTask' | 'imgstudio:tags'>>
 
 
 export interface ImageStudioPaneProps {

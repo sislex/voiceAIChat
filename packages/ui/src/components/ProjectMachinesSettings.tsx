@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { Button } from '@voicechat/ui-kit'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { PROJECT_MACHINE_DIRECTORY_KINDS } from '@shared/projects'
 import type { ProjectMachine, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
@@ -8,6 +9,7 @@ import type { ProjectMachine, ProjectMachineDirectoryAssignments, ProjectMachine
 type Field = ProjectMachineDirectoryKind | 'path' | 'sshHost' | 'sshUser'
 export interface ProjectMachinesSettingsProps {
   projectId: string; machines: ProjectMachine[]; agents: AgentInfo[]
+  productionAgentId?: string | null; defaultAgentId?: string | null
   onShare: (projectId: string, agentId: string, shared: boolean) => void | Promise<void>
   /** Уровень доступа предоставленной машины (п.18): полный или только чтение. */
   onSetShareAccess?: (projectId: string, agentId: string, access: 'full' | 'read') => void | Promise<void>
@@ -118,6 +120,16 @@ function ConfigCells({ projectId, machine, readonly, onSave, onReset }: { projec
     taskWorkspace: machine.directories?.taskWorkspace.path ?? '', sshHost: machine.sshHost ?? '', sshUser: machine.sshUser ?? ''
   })
   const [draft, setDraft] = useState(values)
+  const [pathChecks, setPathChecks] = useState<Partial<Record<Field, string>>>({})
+  const checkPath = async (key: Field): Promise<void> => {
+    setPathChecks(current => ({ ...current, [key]: 'Проверка…' }))
+    try {
+      if (!window.fs) throw new Error('Мост файлов недоступен')
+      const result = await window.fs.list(machine.agentId, draft[key], projectId)
+      if (!Array.isArray(result.entries)) throw new Error('Ответ не содержит каталог')
+      setPathChecks(current => ({ ...current, [key]: '✓ Каталог доступен' }))
+    } catch (error) { setPathChecks(current => ({ ...current, [key]: '✕ ' + (error instanceof Error ? error.message : String(error)) + '. Проверьте путь и разрешения машины.' })) }
+  }
   const [status, setStatus] = useState<Partial<Record<Field, 'saving' | 'saved' | 'error'>>>({})
   useEffect(() => setDraft(values()), [machine.path, machine.reposRoot, machine.directories, machine.sshHost, machine.sshUser])
   const commit = async (key: Field): Promise<void> => {
@@ -138,8 +150,9 @@ function ConfigCells({ projectId, machine, readonly, onSave, onReset }: { projec
         {label} <span title={help} aria-label={`Подсказка: ${label} — ${machine.name ?? machine.agentId}`} tabIndex={0} style={{ cursor: 'help', color: 'var(--text-dim)' }}>ⓘ</span>
       </label>
       <input id={inputId} className="login-input" style={{ ...inputStyle, opacity: readonly ? 0.72 : 1 }} aria-label={`${label}: ${machine.name ?? machine.agentId}`} readOnly={readonly} value={draft[key]}
-        onChange={(e) => setDraft((v) => ({ ...v, [key]: e.target.value }))} onBlur={() => void commit(key)}
+        onChange={(e) => { setDraft((v) => ({ ...v, [key]: e.target.value })); setPathChecks(current => ({ ...current, [key]: undefined })) }} onBlur={() => void commit(key)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void commit(key) } }} />
+      {directoryKind && <><Button size="sm" disabled={!draft[key].trim() || !machine.online || machine.canUse === false || pathChecks[key] === 'Проверка…'} aria-label={`Проверить путь: ${label} — ${machine.name ?? machine.agentId}`} onClick={() => void checkPath(key)}>Проверить путь</Button>{pathChecks[key] && <p role="status">{pathChecks[key]}</p>}</>}
       {overridden && <span className="proj-muted" style={{ display: 'block', marginTop: 4 }}>Переопределено <button type="button" disabled={readonly} onClick={() => void onReset?.(projectId, machine.agentId, directoryKind!)}>Сбросить</button></span>}
       {directoryKind && machine.recommendations?.[directoryKind] && <span className="proj-muted" style={{ display: 'block', marginTop: 4, overflowWrap: 'anywhere' }}>Рекомендация: {machine.recommendations[directoryKind]}</span>}
       {status[key] === 'saving' && <span role="status">Сохранение…</span>}
@@ -148,7 +161,7 @@ function ConfigCells({ projectId, machine, readonly, onSave, onReset }: { projec
     </td>
   })}</>
 }
-function Table(p: { title: string; empty: string; projectId: string; machines: ProjectMachine[]; own: boolean; widths: Record<ColumnKey, number>; onResize: (key: ColumnKey, width: number) => void; onShare: ProjectMachinesSettingsProps['onShare']; onSetShareAccess?: ProjectMachinesSettingsProps['onSetShareAccess']; onSave: ProjectMachinesSettingsProps['onSave']; onSetDefault: ProjectMachinesSettingsProps['onSetDefault']; onConfigureStorage: ProjectMachinesSettingsProps['onConfigureStorage']; onResetDirectory: ProjectMachinesSettingsProps['onResetDirectory'] }): JSX.Element {
+function Table(p: { productionAgentId?: string | null; defaultAgentId?: string | null; title: string; empty: string; projectId: string; machines: ProjectMachine[]; own: boolean; widths: Record<ColumnKey, number>; onResize: (key: ColumnKey, width: number) => void; onShare: ProjectMachinesSettingsProps['onShare']; onSetShareAccess?: ProjectMachinesSettingsProps['onSetShareAccess']; onSave: ProjectMachinesSettingsProps['onSave']; onSetDefault: ProjectMachinesSettingsProps['onSetDefault']; onConfigureStorage: ProjectMachinesSettingsProps['onConfigureStorage']; onResetDirectory: ProjectMachinesSettingsProps['onResetDirectory'] }): JSX.Element {
   const [filter, setFilter] = useState<StatusFilter>('online')
   const filtered = p.machines.filter((machine) => filter === 'all' || (machine.online === true) === (filter === 'online'))
   return <section className="proj-section" style={sectionStyle}>
@@ -172,16 +185,17 @@ function Table(p: { title: string; empty: string; projectId: string; machines: P
             <strong style={{ overflowWrap: 'anywhere' }}>{m.name ?? m.agentId}</strong>
           </span>
           <span className="proj-muted" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11, fontWeight: 400, overflowWrap: 'anywhere' }}>{m.owner ?? '—'}</span>
+          <p className="proj-hint">{m.agentId === p.defaultAgentId ? 'По умолчанию · Релизная' : ''}{m.agentId === p.productionAgentId ? ' · Production' : ''}{m.isMyDefault && m.agentId !== p.defaultAgentId ? ' · Моя машина по умолчанию' : ''}</p>
           {p.own && (m.availableStorages?.length ?? 0) > 0 ? <select aria-label={`MachineStorage: ${m.name ?? m.agentId}`} value={m.storageId ?? ''} onChange={(event) => void p.onConfigureStorage?.(p.projectId, m.agentId, event.target.value, m.directories)} style={{ ...inputStyle, marginTop: 6 }}>
             <option value="" disabled>Выберите storage</option>{m.availableStorages!.map((storage) => <option key={storage.id} value={storage.id} disabled={storage.status !== 'ready'}>{storage.primary ? 'Основное · ' : ''}{storage.rootPath} ({storage.status})</option>)}
           </select> : <span className="proj-muted" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11, overflowWrap: 'anywhere' }}>{m.storage ? `Storage: ${m.storage.rootPath}` : 'Storage не выбрано · Настройки проекта → Машины'}</span>}
           <Tooltip className="proj-muted proj-machine-load" text="Количество активных CI-запусков, назначенных этой машине" ariaLabel={`Загрузка: ${m.load ?? 0}. Количество активных CI-запусков, назначенных этой машине`}>Загрузка: {m.load ?? 0} <span aria-hidden="true">ⓘ</span></Tooltip>
           {m.canUse === false && <span className="proj-offline" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11 }}>{m.unavailableReason ?? 'недоступна'}</span>}
         </td>
-        <td style={controlCellStyle}><Tooltip className={`proj-status-dot ${readiness.ready ? 'proj-status-dot--ready' : 'proj-status-dot--not-ready'}`} text={readiness.tooltip} /></td>
-        <td style={controlCellStyle}><input type="radio" name="project-machine-default" aria-label={`По умолчанию: ${m.name ?? m.agentId}`} checked={m.isMyDefault === true}
+        <td data-label="Готовность" style={controlCellStyle}><Tooltip className={`proj-status-dot ${readiness.ready ? 'proj-status-dot--ready' : 'proj-status-dot--not-ready'}`} text={readiness.tooltip} /></td>
+        <td data-label="Моя машина по умолчанию" style={controlCellStyle}><input type="radio" name="project-machine-default" aria-label={`По умолчанию: ${m.name ?? m.agentId}`} checked={m.isMyDefault === true}
           disabled={m.canUse === false || m.online !== true} onChange={() => void p.onSetDefault(p.projectId, m.agentId)} /></td>
-        <td style={controlCellStyle}>{p.own
+        <td data-label="Предоставить этому проекту" style={controlCellStyle}>{p.own
           ? <>
               <input type="checkbox" aria-label={`Предоставить текущему проекту: ${m.name ?? m.agentId}`} checked={m.sharedWithProject === true}
                 onChange={(e) => void p.onShare(p.projectId, m.agentId, e.target.checked)} />
@@ -207,6 +221,6 @@ export function ProjectMachinesSettings(p: ProjectMachinesSettingsProps): JSX.El
   const shared = p.machines.filter((m) => m.ownership === 'other' && m.sharedWithProject)
   const [widths, setWidths] = useState<Record<ColumnKey, number>>(() => initialColumnWidths([...mine, ...shared]))
   const resize = (key: ColumnKey, width: number): void => setWidths((current) => ({ ...current, [key]: Math.round(width) }))
-  return <div data-testid="project-machines-settings"><Table title="Мои машины" empty="Нет машин — добавьте машину в меню «Машины»." projectId={p.projectId} machines={mine} own widths={widths} onResize={resize} onShare={p.onShare} onSetShareAccess={p.onSetShareAccess} onSave={p.onSave} onSetDefault={p.onSetDefault} onConfigureStorage={p.onConfigureStorage} onResetDirectory={p.onResetDirectory} />
-    <Table title="Машины, предоставленные проекту" empty="Нет машин, предоставленных проекту." projectId={p.projectId} machines={shared} own={false} widths={widths} onResize={resize} onShare={p.onShare} onSetShareAccess={p.onSetShareAccess} onSave={p.onSave} onSetDefault={p.onSetDefault} onConfigureStorage={p.onConfigureStorage} onResetDirectory={p.onResetDirectory} /></div>
+  return <div data-testid="project-machines-settings"><Table productionAgentId={p.productionAgentId} defaultAgentId={p.defaultAgentId} title="Мои машины" empty="Нет машин — добавьте машину в меню «Машины»." projectId={p.projectId} machines={mine} own widths={widths} onResize={resize} onShare={p.onShare} onSetShareAccess={p.onSetShareAccess} onSave={p.onSave} onSetDefault={p.onSetDefault} onConfigureStorage={p.onConfigureStorage} onResetDirectory={p.onResetDirectory} />
+    <Table productionAgentId={p.productionAgentId} defaultAgentId={p.defaultAgentId} title="Машины, предоставленные проекту" empty="Нет машин, предоставленных проекту." projectId={p.projectId} machines={shared} own={false} widths={widths} onResize={resize} onShare={p.onShare} onSetShareAccess={p.onSetShareAccess} onSave={p.onSave} onSetDefault={p.onSetDefault} onConfigureStorage={p.onConfigureStorage} onResetDirectory={p.onResetDirectory} /></div>
 }

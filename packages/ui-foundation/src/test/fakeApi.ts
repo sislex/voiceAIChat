@@ -393,7 +393,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       for (const [path, content] of makeFiles(conversationId)) content.split('\n').forEach((text, i) => { re.lastIndex = 0; if (re.test(text)) matches.push({ path, line: i + 1, text: text.trim() }) })
       return { matches }
     },
-    'make:replace': async ({ conversationId, query, replacement, matchCase, regex, dryRun }) => {
+    'make:replace': async ({ conversationId, query, replacement, matchCase, regex, dryRun, previewToken }) => {
+      const token = JSON.stringify([query, replacement, matchCase, regex, [...makeFiles(conversationId)]])
+      if (previewToken !== undefined && previewToken !== token) throw new Error('Replacement preview is stale; preview again')
       const re = buildMakeSearchRegex(query, { regex, matchCase })
       let files = 0, replacements = 0
       const preview: MakeReplacePreviewLine[] = []
@@ -405,7 +407,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         if (dryRun) { preview.push(...previewMakeReplace(path, content, re, regex ? replacement : () => replacement)); continue }
         makeFiles(conversationId).set(path, regex ? content.replace(re, replacement) : content.replace(re, () => replacement))
       }
-      if (dryRun) return { files, replacements, state: makeState(conversationId), preview }
+      if (dryRun) return { files, replacements, state: makeState(conversationId), preview, previewToken: token }
       if (files > 0) makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1)
       return { files, replacements, state: makeState(conversationId) }
     },
@@ -417,16 +419,16 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         withPlay: [...content.matchAll(/^export\s+const\s+(\w+)\s*=\s*\{[^\n]*play/gm)].map((m) => m[1]!)
       }))
     }),
-    'make:snapshotDiff': async ({ conversationId, snapshotId }) => {
+    'make:snapshotDiff': async ({ conversationId, snapshotId, compareSnapshotId }) => {
       const snap = makeSnapContents.get(snapshotId)
-      const now = makeFiles(conversationId)
+      const now = compareSnapshotId ? makeSnapContents.get(compareSnapshotId)! : makeFiles(conversationId)
       const files: MakeSnapshotDiffEntry[] = []
       for (const [path, content] of now) {
         const old = snap?.get(path)
         files.push(old === undefined ? { path, status: 'added', before: null, after: content.length } : { path, status: old === content ? 'same' : 'changed', before: old.length, after: content.length })
       }
       for (const [path, old] of snap ?? []) if (!now.has(path)) files.push({ path, status: 'removed', before: old.length, after: null })
-      return { snapshotId, files: files.sort((a, b) => a.path.localeCompare(b.path)) }
+      return { snapshotId, compareSnapshotId, files: files.sort((a, b) => a.path.localeCompare(b.path)) }
     },
     'make:library': async () => ({ items: [...library.values()] }),
     'make:libraryExport': async ({ conversationId, name, paths }) => { const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); const item = { slug, name, files: paths, bytes: 0, sourceConversationId: conversationId, updatedAt: Date.now() }; library.set(slug, item); libraryFiles.set(slug, new Map(paths.map((p) => [p, makeFiles(conversationId).get(p) ?? '']))); return { item } },
@@ -1644,6 +1646,20 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'imgstudio:trash': async () => ({ items: [] }),
     'imgstudio:restore': async ({ name }) => ({ name, files: [] }),
     'imgstudio:purge': async () => ({ removed: 0, items: [] }),
+    'imgstudio:preview': async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/' }),
+    'imgstudio:archive': async () => undefined,
+    'imgstudio:tasks': async () => [],
+    'imgstudio:cancelTask': async () => ({ cancelled: false }),
+    'imgstudio:enqueue': async ({ conversationId, prompt, path, ...options }) => {
+      const result = path ? await api['imgstudio:edit']({ conversationId, prompt, path }) : await api['imgstudio:generate']({ conversationId, prompt, ...options })
+      return { id: crypto.randomUUID(), conversationId, prompt, state: 'completed', createdAt: Date.now(), updatedAt: Date.now(), file: result.file }
+    },
+    'imgstudio:tags': async ({ conversationId, path, tags }) => {
+      const files = studioFiles.get(conversationId) ?? []
+      const file = files.find(item => item.path === path)
+      if (file) Object.assign(file, { tags })
+      return api['imgstudio:list']({ conversationId })
+    },
     'imgstudio:list': async ({ conversationId }) => (studioFiles.get(conversationId) ?? []).map(({ dataBase64: _b64, ...file }) => file),
     'imgstudio:read': async ({ conversationId, path }) => {
       const file = (studioFiles.get(conversationId) ?? []).find((entry) => entry.path === path)

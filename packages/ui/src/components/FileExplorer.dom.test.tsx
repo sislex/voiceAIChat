@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render } from '../test/uiRender'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FileExplorer } from './FileExplorer'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -52,6 +53,71 @@ function makeOps(): MachineOps {
 }
 
 describe('FileExplorer (самодостаточный)', () => {
+  // @testCase T2
+  it('selects ranges and checkboxes, lists every path for confirmation, and cancels without mutations', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} ops={ops} variant="embedded" />)
+    await screen.findByRole('button', { name: '📄 a.txt' })
+    fireEvent.click(screen.getByRole('button', { name: '📁 sub' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('button', { name: '📄 a.txt' }), { shiftKey: true })
+    expect(screen.getByRole('checkbox', { name: 'Выбрать sub' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Выбрать a.txt' })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить выбранные' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('/r/sub')).toBeInTheDocument()
+    expect(within(dialog).getByText('/r/a.txt')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+    expect(ops.remove).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить выбранные' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }))
+    await waitFor(() => expect(ops.remove).toHaveBeenCalledTimes(2))
+  })
+
+  // @testCase T3
+  it('ignores a delayed preview after switching machines and never falls back for an old agent', async () => {
+    const ops = makeOps()
+    let finish!: (value: { root: string; cwd: string; dataBase64: string }) => void
+    ops.read = vi.fn(() => new Promise<{ root: string; cwd: string; dataBase64: string }>((resolve) => { finish = resolve }))
+    const view = render(<FileExplorer agents={[agent(), { ...agent(), id: 'm2' }]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    await userEvent.click(await screen.findByRole('button', { name: '📄 a.txt' }))
+    view.rerender(<FileExplorer agents={[agent(), { ...agent(), id: 'm2' }]} initialAgentId="m2" ops={ops} variant="embedded" />)
+    finish({ root: '/r', cwd: '/r', dataBase64: encodeBase64('old content') })
+    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('m2', ''))
+    expect(screen.queryByText('old content')).toBeNull()
+    view.unmount()
+    ops.list = vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', entries: [{ name: 'large.txt', kind: 'file', size: 40000000, mtime: 0 }] })
+    vi.mocked(ops.read).mockClear()
+    ops.readPrefix = vi.fn()
+    render(<FileExplorer agents={[{ ...agent(), version: '0.16.0' }]} ops={ops} variant="embedded" />)
+    await userEvent.click(await screen.findByRole('button', { name: '📄 large.txt' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Показать первые 200 КБ' }))
+    expect(await screen.findByText(/Ограниченное чтение недоступно/)).toBeInTheDocument()
+    expect(ops.read).not.toHaveBeenCalled()
+    expect(ops.readPrefix).not.toHaveBeenCalled()
+  })
+
+  // @testCase T3
+  it.each([2, 3, 4])('previews a file over 32 MB with an incomplete %s-byte UTF-8 suffix without replacement or download', async (width) => {
+    const ops = makeOps()
+    const symbol = width === 2 ? 'я' : width === 3 ? '€' : '😀'
+    const bytes = new TextEncoder().encode('a'.repeat(204799) + symbol).slice(0, 204800)
+    let binary = ''
+    for (const byte of bytes) binary += String.fromCharCode(byte)
+    ops.list = vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', entries: [{ name: 'big.txt', kind: 'file', size: 40000000, mtime: 0 }] })
+    ops.readPrefix = vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', dataBase64: btoa(binary), bytesRead: 204800, fileSize: 40000000, truncated: true })
+    render(<FileExplorer agents={[{ ...agent(), version: '0.17.0' }]} ops={ops} variant="embedded" />)
+    await userEvent.click(await screen.findByRole('button', { name: '📄 big.txt' }))
+    expect(ops.read).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Показать первые 200 КБ' }))
+    await waitFor(() => expect(ops.readPrefix).toHaveBeenCalledWith('m1', '/r/big.txt'))
+    const preview = screen.getByRole('region', { name: 'Предпросмотр файла' })
+    await waitFor(() => expect(preview.querySelector('pre')?.textContent).toBe('a'.repeat(204799)))
+    expect(preview.textContent).toContain('Файл усечён')
+    expect(preview.textContent).not.toContain('�')
+    expect(screen.queryByRole('button', { name: 'Редактировать' })).not.toBeInTheDocument()
+    expect(ops.download).not.toHaveBeenCalled()
+  })
+
   it('листит корень при монтировании', async () => {
     const ops = makeOps()
     render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
@@ -96,7 +162,7 @@ describe('FileExplorer (самодостаточный)', () => {
     render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={makeOps()} variant="embedded" onSwitchUtility={open} />)
     await screen.findByText(/a\.txt/)
     await userEvent.click(screen.getByRole('button', { name: /Терминал/ }))
-    expect(open).toHaveBeenCalledWith('console', 'm1', '/r')
+    expect(open).toHaveBeenCalledWith('terminal', 'm1', '/r')
   })
 
   it('без allowWrite кнопки мутаций скрыты, но объяснено почему', async () => {
