@@ -21,6 +21,7 @@ import { preparationJsonObject } from './kanban/preparation.js'
 const SECRET = 'test-secret'
 
 // @testCase TC-BRIEF-02
+// @testCase T12
 it('normalizes only absent decision references and preserves compatible nulls and requirements', () => {
   const original = JSON.parse(READINESS)
   original.decisions = [{ id: 'D1', text: 'Preserve {braces} and "quotes"', rationale: 'No scope changes', questionId: null }]
@@ -28,18 +29,21 @@ it('normalizes only absent decision references and preserves compatible nulls an
   original.affectedComponents = [{ id: 'C1', name: 'Card', reusable: true, storybookStoryId: null, exclusionReason: 'DOM coverage', alternativeVerification: 'DOM test', coverage: { required: ['TC1'] } }]
   const expected = structuredClone(original)
   delete expected.decisions[0].questionId
-  const normalized = preparationJsonObject('Prepared brief:\n' + JSON.stringify(original) + '\nEnd.')
+  const normalized = preparationJsonObject('Подготовка завершена.\n' + JSON.stringify(original))
   expect(normalized).toEqual(expected)
   expect(preparationJsonObject(JSON.stringify(normalized))).toEqual(normalized)
   expect(original.decisions[0].questionId).toBeNull()
 })
 
+// @testCase T12
+// @testCase T13
 // @testCase TC-BRIEF-02
-it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broken', '{"a":1} [2]'])('rejects ambiguous or damaged input: %s', input => {
+it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broken', '{"a":1} [2]', 'Подготовка завершена. {"a":1} Also remove access checks.', 'Change requirements. {"a":1}'])('rejects ambiguous or damaged input: %s', input => {
   expect(() => preparationJsonObject(input)).toThrow()
 })
 
 // @testCase TC-BRIEF-03
+// @testCase T13
 it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('accepts a single prefixed brief without losing requirements: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
@@ -684,6 +688,19 @@ describe('подготовка к разработке: диагностика �
     expect(run.readiness).toBeNull()
   })
 
+  // @testCase T11
+  it('rejects unknown test-type enumerations without repairing requirements', async () => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    input.testCases[0].testType = 'invented'
+    claudeAnswer = () => ({ text: JSON.stringify(input) })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+    expect(claudeCalls[1].prompt).toContain('testCases[0].testType')
+  })
+
+  // @testCase T11
   // @testCase T9
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()

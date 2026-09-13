@@ -2,8 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { AGENT_VERSION, compareVersions, isToolAllowed, requiredVersion } from './version'
 
 describe('AGENT_VERSION', () => {
-  it('публикует релиз с живым контекстом PTY для консоли с ассистентом', () => {
-    expect(AGENT_VERSION).toBe('0.16.0')
+  // @testCase T5
+  it('publishes the bounded file preview capability without changing full-read requirements', () => {
+    expect(AGENT_VERSION).toBe('0.17.0')
+    expect(requiredVersion('fs-preview')).toBe('0.17.0')
+    expect(isToolAllowed('0.16.0', 'fs-preview')).toBe(false)
+    expect(isToolAllowed('0.17.0', 'fs-preview')).toBe(true)
+    expect(requiredVersion('fs')).toBe('0.2.0')
   })
 
   it('http-proxy требует агента 0.13.0', () => {

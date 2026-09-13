@@ -1186,6 +1186,7 @@ export interface RendererSessionBridge {
 export interface RendererFsBridge {
   list(agentId: string, path: string, projectId?: string): Promise<FsResult>
   read(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  readPrefix?(agentId: string, path: string, projectId?: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string, projectId?: string): Promise<FsResult>
   remove(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /** Корзина машины (агент ≥ 0.15.0): результат содержит trashedPath для отката. */

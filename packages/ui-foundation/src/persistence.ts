@@ -5,6 +5,9 @@
 // хранилища не импортируют друг друга даже ради типа.
 
 /** Ключ localStorage для последнего выбранного в сайдбаре проекта. */
+export const MACHINE_FLEET_FILTER_KEY = 'vc.machines.filter'
+export const MACHINE_FLEET_SORT_KEY = 'vc.machines.sort'
+
 export const SIDEBAR_PROJECT_KEY = 'vc.sidebar.project'
 /** Conversation drafts and the explicit density preference survive reloads. */
 export const CHAT_DRAFTS_KEY = 'vc.chat.drafts.v1'

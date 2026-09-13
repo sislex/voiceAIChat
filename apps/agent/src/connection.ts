@@ -16,7 +16,7 @@ import {
 import type { AgentConfig } from './config.js'
 import { runCommand, cancelCommand } from './exec.js'
 import { startPty, writePty, resizePty, killPty } from './pty.js'
-import { fsDelete, fsDeleteFileSafe, fsTrash, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
+import { fsDelete, fsDeleteFileSafe, fsTrash, fsList, fsMkdir, fsRead, fsReadPrefix, fsRename, fsWrite } from './fileOps.js'
 import { createTelemetryCollector } from './telemetry.js'
 import { resolveShellInfo } from './platform.js'
 import { ensureImageDir, localAddresses, startImageHost, type ImageHost } from './imageHost.js'
@@ -300,6 +300,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           )
           break
         case 'fs.list':
+        case 'fs.read-prefix':
         case 'fs.read':
         case 'fs.write':
         case 'fs.delete':
@@ -313,6 +314,9 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
             switch (msg.t) {
               case 'fs.list':
                 result = fsList(root, policy, msg.path)
+                break
+              case 'fs.read-prefix':
+                result = fsReadPrefix(root, policy, msg.path)
                 break
               case 'fs.read':
                 result = fsRead(root, policy, msg.path)
