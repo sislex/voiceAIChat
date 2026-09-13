@@ -624,6 +624,11 @@ export async function registerAgentRoutes(
     '/api/agents/:id/fs/file',
     async (req, reply) => withFs(req, reply, (id) => registry.fsRead(id, req.query.path ?? ''))
   )
+  app.get<{ Params: { id: string }; Querystring: { path: string; projectId?: string } }>(
+    '/api/agents/:id/fs/preview',
+    { schema: { querystring: { type: 'object', required: ['path'], additionalProperties: false, properties: { path: { type: 'string', minLength: 1 }, projectId: { type: 'string' } } } } },
+    async (req, reply) => withFs(req, reply, (id) => registry.fsRead(id, req.query.path, 'prefix'))
+  )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string; dataBase64?: string } }>(
     '/api/agents/:id/fs/file',
     { bodyLimit: 48 * 1024 * 1024 }, // ~32 МБ файла + запас base64

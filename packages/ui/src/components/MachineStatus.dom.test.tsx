@@ -10,6 +10,30 @@ import {
 import { AGENT_VERSION } from '@shared/version'
 
 describe('MachineStatus', () => {
+  // @testCase T7
+  it('filters battery strictly below 20%, sorts, and restores preferences', () => {
+    const machines = [
+      agent({ id: 'low', name: 'Zulu', lastSeen: 9, telemetry: telemetry({ battery: { percent: 19, charging: false } }) }),
+      agent({ id: 'twenty', name: 'Alpha', lastSeen: 2, telemetry: telemetry({ battery: { percent: 20, charging: false } }) }),
+      agent({ id: 'unknown', name: 'Beta', lastSeen: null, telemetry: undefined })
+    ]
+    const props = { agents: machines, onSetPolicy: vi.fn(), onClose: vi.fn() }
+    const view = render(<MachineStatus {...props} />)
+    fireEvent.change(screen.getByLabelText('Фильтр машин'), { target: { value: 'battery' } })
+    expect(screen.getByTestId('machine-row-low')).toBeInTheDocument()
+    expect(screen.queryByTestId('machine-row-twenty')).toBeNull()
+    expect(screen.queryByTestId('machine-row-unknown')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Сортировка машин'), { target: { value: 'lastSeen' } })
+    view.unmount()
+    render(<MachineStatus {...props} />)
+    expect(screen.getByLabelText('Фильтр машин')).toHaveValue('battery')
+    expect(screen.getByLabelText('Сортировка машин')).toHaveValue('lastSeen')
+    fireEvent.change(screen.getByLabelText('Фильтр машин'), { target: { value: '' } })
+    expect(screen.getAllByTestId(/^machine-row-/).map((row) => row.dataset.testid)).toEqual(['machine-row-low', 'machine-row-twenty', 'machine-row-unknown'])
+    localStorage.removeItem('vc.machines.filter')
+    localStorage.removeItem('vc.machines.sort')
+  })
+
   it('онлайн-машина: статус «агент запущен» и телеметрия', () => {
     render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByText('агент запущен')).toBeInTheDocument()

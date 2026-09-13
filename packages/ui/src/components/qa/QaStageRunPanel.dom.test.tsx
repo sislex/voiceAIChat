@@ -1,10 +1,51 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { AnyQaStageRun, IntegrationTestRun, IntegrationTestTaskState } from '@shared/qa'
-import { QaStageRunPanel } from './QaStageRunPanel'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
+import { QaStageRunPanel, automatedQaReport, integrationQaReport } from './QaStageRunPanel'
 const run=(patch:Partial<IntegrationTestRun>={}):IntegrationTestRun=>({id:'r1',projectId:'p1',taskId:'t1',developmentRunId:'d1',linkedFixRunId:null,branch:'CHAT-229',commitSha:'a'.repeat(40),attempt:1,status:'running',readinessRunId:'prep',snapshotVersion:'v1',testCases:[],automationLinks:[],commands:[],log:'started',failureClassification:null,failureReason:null,blockerReasons:[],summary:'',createdAt:1,startedAt:1,finishedAt:null,staleReason:null,canCancel:true,canRetry:false,...patch})
 const state=(latestRun:IntegrationTestRun|null=run()):IntegrationTestTaskState=>({activeRun:latestRun?.status==='running'?latestRun:null,latestRun,runs:latestRun?[latestRun]:[],testCases:[],launchReasons:[],canStart:false,canComplete:false,gateReasons:[]})
 afterEach(()=>{delete window.qa})
+// @testCase TC-09
+it('exports Automated and Integration reports with errors and artifacts',()=>{
+ const result={mode:'playwright',summary:'Broken',steps:[{id:'s',title:'Step',status:'failed',detail:'Failure',pageErrors:['Console error']}],pageErrors:['Other error'],screenshotUrl:'/shot.png'}
+ const automated=automatedQaReport(stageRun(result))
+ expect(automated).toContain('Console error')
+ expect(automated).toContain('Other error')
+ expect(automated).toContain('/shot.png')
+ const integration=integrationQaReport(run({commands:[{commandId:'one',name:'Test',command:'test',status:'failed',exitCode:1,durationMs:1,stdout:'Output',stderr:'Failure',diagnostic:''}]}))
+ expect(integration).toContain('Output')
+ expect(integration).toContain('Failure')
+})
+// @testCase TC-02
+// @testCase TC-08
+it('groups automation and exclusions with workspace file navigation',async()=>{
+  const item={id:'tc',title:'Login',description:'',preconditions:'',steps:'Click',testData:'',expectedResult:'OK',required:true,testType:'integration' as const,automatable:true,automationLinks:[{testId:'tc',path:'src/login.test.ts',commitSha:'a'.repeat(40),updatedAt:1}],notAutomatedReason:'',alternativeManualVerification:'',comments:''}
+  window.qa={getIntegration:vi.fn().mockResolvedValue(state(run({testCases:[item,{...item,id:'manual',title:'Clipboard',automatable:false,notAutomatedReason:'Real clipboard required'}]})))} as unknown as typeof window.qa
+  window.api={...window.api,'projects:gitWorkspaces':vi.fn().mockResolvedValue([{id:'ws:one',taskId:'t1',expectedSha:'a'.repeat(40),released:false}])}
+  render(<QaStageRunPanel projectId="p1" taskId="t1" stage="integration_tests"/>)
+  expect(await screen.findByText('Автоматизируемые (1)')).toBeInTheDocument()
+  expect(screen.getByText('Исключённые (1)')).toBeInTheDocument()
+  expect(await screen.findByRole('link',{name:'src/login.test.ts'})).toHaveAttribute('href','?file=src%2Flogin.test.ts#/projects/p1/code/ws%3Aone')
+  fireEvent.click(screen.getByText('Причина исключения'))
+  expect(screen.getByText('Real clipboard required')).toBeVisible()
+  await expectNoViolations()
+})
+// @testCase TC-03
+it('shows ordered durations and retries selected failed scenarios only',async()=>{
+  const scenario={name:'Login',startUrl:'https://test',steps:[]}
+  const data={...stageRun({mode:'playwright',summary:'Failed',steps:[{id:'one',scenarioId:'aq1:scenario:0',title:'Passed step',status:'passed',detail:'',durationMs:10},{id:'two',scenarioId:'aq1:scenario:1',title:'Failed step',status:'failed',detail:'',durationMs:20,pageErrors:['Page broke']}],pageErrors:['Page broke','Outside steps']}),scenarios:[scenario,{...scenario,name:'Create'}]}
+  const retryStageRun=vi.fn()
+  window.qa={listStageRuns:vi.fn().mockResolvedValue([data]),retryStageRun} as unknown as typeof window.qa
+  render(<QaStageRunPanel projectId="p1" taskId="t1" stage="automated_qa"/>)
+  await screen.findByText('Failed step — провален')
+  expect(screen.getByText(/20 мс/)).toBeInTheDocument()
+  expect(screen.getAllByText('Page broke')).toHaveLength(1)
+  expect(screen.getByText('Outside steps')).toBeInTheDocument()
+  await expectNoViolations()
+  fireEvent.click(screen.getByRole('button',{name:'Повторить только упавшие шаги'}))
+  await waitFor(()=>expect(retryStageRun).toHaveBeenCalledWith('aq1',['aq1:scenario:1']))
+})
 it('shows the integration log and cancels the active run',async()=>{
   const cancelIntegration=vi.fn().mockResolvedValue(run({status:'cancelled'}))
   window.qa={getIntegration:vi.fn().mockResolvedValue(state()),cancelIntegration} as unknown as typeof window.qa
@@ -74,6 +115,7 @@ it('снимок сценария виден, а повтор обещает в�
   expect(screen.getByRole('button',{name:'Повторить те же сценарии'})).toBeInTheDocument()
 })
 
+// @testCase TC-07
 it('снимок перечитывается по WS-событию этапа, а не опросом по таймеру',async()=>{
   vi.useFakeTimers()
   const getIntegration=vi.fn().mockResolvedValue(state())

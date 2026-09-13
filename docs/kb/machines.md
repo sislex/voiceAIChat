@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-09-10
-checked: 8c54ade4
+updated: 2026-09-13
+checked: ab010033
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -390,6 +390,8 @@ online-машин, «Выбрать все», поле команды, свод�
 
 ## Журнал команд машины
 
+The UI combines command-text search, source and result filters (success, error, or duration at least 30 seconds). TXT export uses exactly the currently visible records in their displayed order. CSV remains available and uses the same filtered rows. Empty exports are disabled; TXT export failures are visible.
+
 Всё, что проходит через `AgentRegistry.exec`, попадает в `machine_commands` (`db.addMachineCommand`,
 по 5000 последних записей на машину): `registry.exec(agentId, command, timeoutMs, signal, meta)` принимает
 `ExecMeta {source: 'console'|'chat'|'system', userId?, conversationId?}` и после завершения (в том числе отказа
@@ -574,6 +576,10 @@ CI-рана) модель видит остальные машины проек�
 
 ## Живой PTY-терминал
 
+`ToolSpec.kind` now distinguishes `console` (one-shot commands) from `terminal` (PTY), including tool-block parsing and «открой терминал» detection. Explorer-to-PTY directory changes use POSIX, cmd.exe or PowerShell quoting according to the machine's reported shell.
+
+The terminal toolbar copies the xterm buffer, clears its screen, searches and selects buffer text, and toggles between fitted columns and a 1000-column horizontally scrollable view. Its action definitions supply both the registered commands and the local `?` help: Ctrl/Cmd+Shift+C/L/F/W. Fleet preferences use `vc.machines.filter` and `vc.machines.sort`: online/offline, outdated agent, battery strictly below 20% (unknown is excluded), name or most recent lastSeen.
+
 Отдельный опциональный канал, `docs/plans/PTY_CONSOLE.md`. Фронт — `@xterm/xterm`
 + `addon-fit` (`packages/ui/src/components/MachineTerminal.tsx`), на агенте —
 `@lydell/node-pty`, shell — `fish` с фолбэком zsh→bash→`$SHELL`. Клиентский WS
@@ -596,6 +602,8 @@ CI-рана) модель видит остальные машины проек�
 
 ## Однострочная консоль машины (MachineConsole)
 
+Command history now persists in localStorage under a separate key per agent, capped at 200 entries. `machineHistory` supplies a memory fallback when storage fails; `operationsStore` preserves the same cap. Arrow navigation does not execute commands. Ctrl/Cmd+R opens reverse substring search, and clearing affects only the selected machine. `machineListing` caches successful explorer listings by agent and directory. Console Tab and explorer path suggestions read this cache synchronously, without a network request; ambiguous shell syntax is left unchanged.
+
 Деградация терминала, когда моста PTY нет (`MachineUtility` выбирает по наличию
 `pty`): поле ввода → `POST /api/agents/:id/exec` → `registry.exec` → вывод одним
 куском в конце. Живого построчного вывода у неё нет: `AgentRegistry.execStream`
@@ -605,13 +613,13 @@ CI-рана) модель видит остальные машины проек�
 Что консоль умеет помимо запуска команды:
 
 - **История ↑/↓** — набранные команды по машине. Живёт в сторе
-  (`AppState.consoleHistory`, `pushConsoleCommand`, кап 100 на машину, подряд
+  (`AppState.consoleHistory`, `pushConsoleCommand`, кап 200 на машину, подряд
   повторённая не дублируется), а `MachineConsole` получает её контрактом
   `ConsoleHistoryStore` (`packages/ui-foundation/src/components/machine.ts`) пропом
-  `historyStore` — от `App.tsx` через `MachineUtility`/`ChatColumn`. В самом
-  компоненте историю держать нельзя: утилиту закрывают и открывают заново, и
-  локальный стейт умирает вместе с окном. Без пропа консоль помнит команды только
-  до закрытия (фолбэк для сториз и тестов). ↓ ниже последней команды возвращает
+  `historyStore` — от `App.tsx` через `MachineUtility`/`ChatColumn`. Both the store
+  and the standalone component persist through `machineHistory`; without the prop,
+  reopening still restores that agent's history. Failed storage uses an in-memory
+  fallback. ↓ ниже последней команды возвращает
   строку, которую затёрло листание, Esc её очищает.
 - **Esc** — в `variant="modal"` до input не доходит (общий стек окон
   `useDialogStack` глушит событие в фазе перехвата), поэтому его отдаёт
@@ -737,9 +745,9 @@ git-процесса встречаются на `index.lock`, и вторая �
 
 ### Просмотр и правка файлов
 
-Клик по файлу в `FileExplorer` вызывает `MachineOps.read`, не скачивание. До
-запроса проводник отсеивает файлы больше 1 МБ; для них показано объяснение и
-кнопка скачивания. Поддерживаемые по расширению картинки (`avif`, `bmp`, `gif`,
+Клик по файлу открывает предпросмотр без скачивания. Для изображений сохраняется лимит автоматического предпросмотра 1 МиБ; для текста больше 204800 байт появляется команда «Показать первые 200 КБ». Она вызывает отдельный `MachineOps.readPrefix` через `operationsStore`, `RendererFsBridge.readPrefix` и `GET /api/agents/:id/fs/preview?path=…&projectId=…`; маршрут проходит ту же авторизацию машины. Реестр отправляет `fs.read-prefix` только агенту с возможностью `fs-preview` (версия 0.17.0 и новее) и принципиально не подменяет ограниченный предпросмотр полным чтением на старом агенте (`apps/server/src/agents/registry.ts`, `packages/shared/src/version.ts`).
+
+Ограниченный и полный режимы различаются на самом агенте (`apps/agent/src/fileOps.ts`). `fsReadPrefix` применяет существующую проверку нормализованного пути, открывает один дескриптор и циклами `readSync` читает от начала суммарно не более `FS_PREVIEW_BYTES` = 204800 байт — в том числе у файла больше 32 МиБ; дескриптор закрывается в `finally`, результат содержит `bytesRead`, `fileSize` и `truncated`. Обычный `fsRead` по-прежнему читает файл целиком через `readFileSync`, сохраняет предел `FS_MAX_BYTES` = 32 МиБ и те же проверки доступа. В UI потоковый fatal UTF-8 decoder отбрасывает только незавершённую конечную последовательность усечённого ответа; повреждение внутри текста и NUL по-прежнему считаются неподдерживаемым бинарным содержимым. Усечённый текст нельзя открыть в редакторе или сохранить, а поколения запросов отбрасывают опоздавший ответ после смены файла, машины или закрытия превью. Поддерживаемые по расширению картинки (`avif`, `bmp`, `gif`,
 `ico`, `jpeg/jpg`, `png`, `svg`, `webp`) показываются как `data:`-изображение.
 Остальные файлы декодируются как UTF-8 с фатальной проверкой: невалидная
 кодировка или нулевой байт означают бинарный файл и честный отказ от
@@ -939,6 +947,8 @@ Windows уедет в `resolve()` как есть и снова даст ENOENT.
 
 ## Шапка утилиты машины (MachineUtilityHeader)
 
+The segmented switch exposes console, explorer and terminal independently (`console`, `explorer`, `terminal`). At 390px the machine name can truncate while status stays on the same row; version details hide. Icon buttons carry both accessible labels and titles. `MachineUtilityHeader.layout.test.tsx` checks real Chromium geometry; the DOM test applies axe and the labelled-icon guard.
+
 Одна шапка на все три виджета утилиты — `MachineConsole`, `MachineTerminal`,
 `FileExplorer` (`packages/ui/src/components/MachineUtilityHeader.tsx`, рядом с
 `MachineUtility.tsx`). Раньше каждый рисовал свой `.fsbar` со своим селектором
@@ -978,6 +988,10 @@ Windows уедет в `resolve()` как есть и снова даст ENOENT.
 `MachineUtility.dom.test.tsx` (переключение в обе стороны через `MachineUtility`).
 
 ## Связка проводника и терминала
+
+`FileExplorer` accepts `initialDir` (open inside a directory), `initialFilePath` (open the parent and select the file), and `onSwitchUtility` (carry agent and path). Folder rows can open the terminal on that same machine. If its active linked PTY exists, `MachineTerminal` sends a quoted `cd` and updates the tab cwd; otherwise it starts a session with cwd. Offline/read-only machines do not receive the directory command.
+
+Explorer selection supports Shift ranges, Ctrl/Cmd toggles and checkboxes. Copy joins selected paths with newlines. Group removal requires a dialog listing all paths, respects write permissions and existing trash support, and reports individual failures.
 
 Кнопки «проводник»/«консоль» в сайдбаре открываются не на «первой онлайн-машине», а
 на ЭФФЕКТИВНОЙ машине и папке активного чата: `openUtilityForActiveChat` берёт
