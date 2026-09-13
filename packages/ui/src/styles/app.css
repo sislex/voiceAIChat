@@ -7247,6 +7247,25 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media (prefers-reduced-motion: reduce) { .feature-preview__loader, .feature-preview__bar--indeterminate::after { animation: none; } .feature-preview__bar > span { transition: none; } }
 @media (max-width: 520px) { .feature-preview__meta { grid-template-columns: minmax(0, 1fr); } .feature-preview__actions > * { max-width: 100%; } .feature-preview__progress { grid-template-columns: auto minmax(0, 1fr); } .feature-preview__progress .vc-btn { grid-column: 1 / -1; width: 100%; } }
 
+/* QA owns responsive presentation; other ResultTable consumers keep their layout. */
+:is(.component-qa-panel,.qa-stage-panel,.manual-qa) { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+:is(.component-qa-panel,.qa-stage-panel,.manual-qa) pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+.qa-refresh,.qa-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 8px; }
+.qa-filters label { display: grid; gap: 4px; min-width: 0; }
+.qa-filters input { max-width: 100%; min-width: 0; }
+.qa-stage-actions fieldset { min-width: 0; max-width: 100%; }
+.qa-stage-actions fieldset label { display: block; overflow-wrap: anywhere; }
+.qa-image { display: inline-block; max-width: 100%; }
+@media (max-width: 600px) {
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results { display: block; width: 100%; }
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results caption { display: block; width: 100%; box-sizing: border-box; }
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results tbody,
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results tr { display: block; width: 100%; }
+  :is(.component-qa-panel,.qa-stage-panel) .vc-results :is(th[scope=row],td) { display: block; width: auto; overflow-wrap: anywhere; }
+  :is(.component-qa-panel,.qa-stage-panel) [data-label]::before { content: attr(data-label) ': '; font-weight: 600; }
+  :is(.component-qa-actions,.qa-stage-actions,.manual-qa-final-actions) { position: sticky; bottom: 0; background: var(--bg); padding: 8px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 1; }
+}
 .manual-qa { display: grid; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 /* Разделитель отбивает ручное QA от секции превью над ним. Когда превью нет,
    `.manual-qa` оказывается первой во вкладке — и линия висела бы сама по себе,

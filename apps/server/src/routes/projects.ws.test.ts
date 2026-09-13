@@ -146,6 +146,24 @@ describe('WS: живое обновление доски', () => {
     ws.close()
   })
 
+  // @testCase TC-03
+  it('routes selective retries to a new attempt and rejects invalid selections',async()=>{
+    const project=await createProject(),auth={authorization:`Bearer ${adminTok}`}
+    const board=(await db.tasks.getBoard('admin',project.id))!
+    const task=(await db.tasks.createTask('admin',project.id,{columnId:board.columns.find(item=>item.semanticType==='automated_qa')!.id,title:'Selective'}))!
+    const scenarios=[{name:'Original',startUrl:'https://original.test',steps:[{id:'s',title:'Click',action:{kind:'click' as const,selector:'#original'}}]}]
+    const source=await db.qa.startQaStageRun('admin',project.id,task.id,'automated_qa',scenarios)
+    await db.qa.updateQaStageRun(source.id,{status:'failed',result:{mode:'playwright',summary:'Failure',steps:[{id:'s',status:'failed',scenarioId:source.id+':scenario:0'}]}})
+    for(const scenarioIds of [[],['foreign'],null,['unknown:scenario:0']]){
+      const response=await app.inject({method:'POST',url:`/api/qa/runs/${source.id}/retry`,headers:auth,payload:{scenarioIds}})
+      expect(response.statusCode).toBe(400)
+    }
+    expect(await db.qa.listQaStageRuns('admin',project.id,task.id,'automated_qa')).toHaveLength(1)
+    const response=await app.inject({method:'POST',url:`/api/qa/runs/${source.id}/retry`,headers:auth,payload:{scenarioIds:[source.id+':scenario:0']}})
+    expect(response.statusCode).toBe(202)
+    expect(response.json().scenarios).toEqual(scenarios)
+    expect(response.json().id).not.toBe(source.id)
+  })
   it('обновляет нормализованный результат при недоступном workspace Automated QA', async () => {
     const p = await createProject()
     const auth = { authorization: `Bearer ${adminTok}` }

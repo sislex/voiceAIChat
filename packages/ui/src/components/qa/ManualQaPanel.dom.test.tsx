@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { QaTaskState } from '@shared/qa'
-import { ManualQaPanel } from './ManualQaPanel'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
+import { ManualQaPanel, manualQaReport } from './ManualQaPanel'
 
 function qaState(status: 'not_tested'|'passed'|'failed'|'blocked'|'not_applicable'|'stale' = 'not_tested'): QaTaskState {
   const criterion = { id:'c1',taskId:'t1',order:1,title:'Пользователь отменяет ран',description:'',preconditions:'Ран запущен',steps:'Нажать Отмена',testData:'seed-v1',expectedResult:'Ран остановлен',required:true,testType:'manual' as const,currentVersion:2,active:true,author:'owner',createdAt:1,updatedAt:2 }
@@ -12,6 +13,54 @@ function qaState(status: 'not_tested'|'passed'|'failed'|'blocked'|'not_applicabl
 }
 afterEach(() => { delete window.qa })
 describe('ManualQaPanel', () => {
+  // @testCase TC-09
+  it('exports every saved manual result with comments and attachment links',()=>{
+    const data=qaState('failed')
+    data.activeSession!.results[0].comment='Failure details'
+    const report=manualQaReport(data.activeSession!,data.criteria)
+    expect(report).toContain('Нажать Отмена')
+    expect(report).toContain('Не работает')
+    expect(report).toContain('Failure details')
+  })
+
+  // @testCase TC-04
+  // @testCase TC-07
+  it('autosaves keyboard selection, ignores text input and preserves dirty input on reconnect',async()=>{
+    const data=qaState(),saveResult=vi.fn().mockImplementation(async(_p,_t,_id,_revision,patch)=>({...data.activeSession!.results[0],...patch,revision:2}))
+    let reconnect:()=>void=()=>{}
+    window.board={onReconnect:(cb:()=>void)=>{reconnect=cb;return()=>{}}} as typeof window.board
+    window.qa={get:vi.fn().mockResolvedValue(data),saveResult} as unknown as typeof window.qa
+    render(<ManualQaPanel projectId="p1" taskId="t1"/>)
+    const head=await screen.findByRole('button',{name:/Тест 1/})
+    await expectNoViolations()
+    fireEvent.click(head);head.focus()
+    fireEvent.keyDown(window,{key:'1'});fireEvent.keyUp(window,{key:'1'})
+    await waitFor(()=>expect(saveResult).toHaveBeenCalledWith('p1','t1','r1',1,expect.objectContaining({status:'passed'})))
+    expect(await screen.findByText('Сохранено: Работает')).toBeInTheDocument()
+    const input=screen.getByLabelText('Комментарий')
+    input.focus();fireEvent.keyDown(window,{key:'2'});fireEvent.keyUp(window,{key:'2'})
+    expect(screen.getByRole('button',{name:'Не работает'})).toHaveAttribute('aria-pressed','false')
+    fireEvent.change(input,{target:{value:'Keep my draft'}})
+    reconnect()
+    await waitFor(()=>expect(window.qa!.get).toHaveBeenCalledTimes(2))
+    expect(input).toHaveValue('Keep my draft')
+    delete window.board
+  })
+  // @testCase TC-04
+  it('uploads pasted images through the authorized attachment bridge and ignores text',async()=>{
+    const data=qaState(),addAttachment=vi.fn().mockResolvedValue({})
+    const upload=vi.fn().mockResolvedValue({id:'upload1'})
+    window.api={...window.api,'uploads:add':upload}
+    window.qa={get:vi.fn().mockResolvedValue(data),addAttachment} as unknown as typeof window.qa
+    render(<ManualQaPanel projectId="p1" taskId="t1"/>)
+    const comment=await screen.findByLabelText('Комментарий')
+    fireEvent.paste(comment,{clipboardData:{items:[{kind:'string',type:'text/plain'}]}})
+    expect(upload).not.toHaveBeenCalled()
+    const file=new File(['png'],'screenshot.png',{type:'image/png'})
+    fireEvent.paste(comment,{clipboardData:{items:[{kind:'file',type:'image/png',getAsFile:()=>file}]}})
+    await waitFor(()=>expect(addAttachment).toHaveBeenCalledWith('p1','t1','r1','upload1','screenshot.png'))
+  })
+
   it('renders progress, criterion details, preview and history version', async () => {
     window.qa = { get: vi.fn().mockResolvedValue(qaState()), saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn() }
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
@@ -214,22 +263,34 @@ describe('ManualQaPanel', () => {
     expect(screen.getByText(/Не удалось сохранить изменения тестов/)).toBeTruthy()
   })
 
-  it('saves a failure before requesting fix', async () => {
+  // @testCase TC-05
+  it('saves failures into one reviewable draft before separate submission', async () => {
     const initial = qaState()
     const failed = qaState('failed')
     failed.activeSession!.results[0].comment = 'Кнопка не отвечает'
+    failed.criteria.push({...failed.criteria[0],id:'c2',title:'Second failure',steps:'Second steps'})
+    failed.activeSession!.results.push({...failed.activeSession!.results[0],id:'r2',criterionId:'c2',comment:'Second comment'})
     const saved = { ...failed.activeSession!.results[0], revision:2 }
     const get = vi.fn().mockResolvedValueOnce(initial).mockResolvedValue(failed)
     const saveResult = vi.fn().mockResolvedValue(saved)
-    const requestFix = vi.fn().mockResolvedValue({ id:'run-fix' })
+    const requestFix = vi.fn()
+    const createDraft=vi.fn().mockResolvedValue({id:'draft1'})
+    const submitDraft=vi.fn().mockResolvedValue({})
+    window.api={...window.api,'tasks:createReworkDraft':createDraft,'tasks:submitReworkDraft':submitDraft}
     const onFixStarted = vi.fn()
     window.qa={get,saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix}
     render(<ManualQaPanel projectId="p1" taskId="t1" onFixStarted={onFixStarted} />)
     fireEvent.click(await screen.findByRole('button',{name:'Не работает'}))
     fireEvent.change(screen.getByLabelText('Комментарий (обязательно)'), { target:{ value:'Кнопка не отвечает' } })
     fireEvent.click(screen.getByRole('button',{name:'Отправить на доработку'}))
-    await waitFor(() => expect(requestFix).toHaveBeenCalledTimes(1))
-    expect(saveResult.mock.invocationCallOrder[0]).toBeLessThan(requestFix.mock.invocationCallOrder[0])
-    expect(onFixStarted).toHaveBeenCalledWith('run-fix')
+    await waitFor(() => expect(createDraft).toHaveBeenCalledTimes(1))
+    expect(saveResult.mock.invocationCallOrder[0]).toBeLessThan(createDraft.mock.invocationCallOrder[0])
+    expect(createDraft).toHaveBeenCalledWith(expect.objectContaining({input:expect.objectContaining({description:expect.stringContaining('Кнопка не отвечает')})}))
+    expect(createDraft.mock.calls[0][0].input.description).toContain('Second comment')
+    expect(createDraft.mock.calls[0][0].input.description).toContain('Second steps')
+    expect(submitDraft).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button',{name:'Отправить черновик'}))
+    await waitFor(()=>expect(submitDraft).toHaveBeenCalledWith({projectId:'p1',taskId:'t1',cycleId:'draft1'}))
+    expect(requestFix).not.toHaveBeenCalled()
   })
 })

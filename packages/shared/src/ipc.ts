@@ -1027,7 +1027,7 @@ export interface RendererBoardBridge {
   /** Адресная инвалидация списка репозиториев задачи. */
   onTaskRepositoriesUpdated(cb: (m: { projectId: string; taskId: string }) => void): () => void
   /** Адресная инвалидация состояния QA-этапа: панель перечитывает снимок вместо опроса. */
-  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage }) => void): () => void
+  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage | 'manual_qa' }) => void): () => void
   /** Адресная инвалидация очереди «Улучшения» проекта. */
   onImprovementsUpdated(cb: (m: { projectId: string }) => void): () => void
   /** Release Center: релиз сменил статус или шаг — перечитать список/подробности. Необязателен у старых мостов. */

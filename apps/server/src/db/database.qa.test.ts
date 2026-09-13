@@ -388,6 +388,25 @@ describe.skipIf(ON_POSTGRES)('manual QA persistence and workflow', () => {
     expect(await db.tasks.listActiveTaskRepositories(task.id)).toHaveLength(2)
   })
 
+  // @testCase TC-03
+  it('validates selected failures against the source snapshot and preserves full retry',async()=>{
+    const project=await db.projects.createProject('owner',{name:'Selective QA'})
+    const board=(await db.tasks.getBoard('owner',project.id))!
+    const task=(await db.tasks.createTask('owner',project.id,{columnId:board.columns.find(column=>column.semanticType==='automated_qa')!.id,title:'Retry'}))!
+    const step={id:'step',title:'Click',action:{kind:'click' as const,selector:'#go'}}
+    const scenarios=[{name:'Success',startUrl:'https://original.test',steps:[step]},{name:'Failure',startUrl:'https://original.test/failure',steps:[step]}]
+    const source=await db.qa.startQaStageRun('owner',project.id,task.id,'automated_qa',scenarios)
+    await db.qa.updateQaStageRun(source.id,{status:'failed',result:{mode:'playwright',summary:'Failed',steps:[{id:'one',scenarioId:source.id+':scenario:0',status:'passed'},{id:'two',scenarioId:source.id+':scenario:1',status:'failed'}]}})
+    for(const ids of [[],['unknown'],['another:scenario:1'],[source.id+':scenario:0'],[source.id+':scenario:1',source.id+':scenario:1']]){
+      await expect(db.qa.retryQaStageRun('owner',source.id,ids)).rejects.toThrow('Недопустимый выбор')
+    }
+    expect(await db.qa.listQaStageRuns('owner',project.id,task.id,'automated_qa')).toHaveLength(1)
+    const selected=(await db.qa.retryQaStageRun('owner',source.id,[source.id+':scenario:1']))!
+    expect(selected.scenarios).toEqual([scenarios[1]])
+    await db.qa.cancelQaStageRun('owner',selected.id)
+    const full=(await db.qa.retryQaStageRun('owner',source.id))!
+    expect(full.scenarios).toEqual(scenarios)
+  })
   it('keeps three QA stage histories independent, idempotent and gate-driven', async () => {
     const project = await db.projects.createProject('owner', { name: 'QA stages' })
     const board = (await db.tasks.getBoard('owner', project.id))!

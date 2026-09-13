@@ -135,15 +135,16 @@ describe('WsClient', () => {
     c.close()
   })
 
-  it('маршрутизирует адресное событие QA-этапа', async () => {
+  // @testCase TC-07
+  it.each(['integration_tests','manual_qa'] as const)('маршрутизирует адресное событие QA-этапа %s', async (stage) => {
     const c = new WsClient('ws://x/ws')
     const first = FakeWebSocket.last!
     const updates = vi.fn()
     makeBoardBridge(c).onQaStageUpdated(updates)
     first._open()
     await Promise.resolve()
-    first._emit({ t: 'qa.stage.updated', projectId: 'p1', taskId: 't1', stage: 'integration_tests' })
-    expect(updates).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', stage: 'integration_tests' })
+    first._emit({ t: 'qa.stage.updated', projectId: 'p1', taskId: 't1', stage })
+    expect(updates).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', stage })
     c.close()
   })
 

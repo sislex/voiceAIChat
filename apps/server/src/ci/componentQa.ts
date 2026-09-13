@@ -1,7 +1,7 @@
 import type { ComponentQaCommandResult, ComponentQaRun, ComponentQaScenarioSnapshot } from '@voicechat/shared'
 import type { CommandExecutor } from './types.js'
 import type { AutomatedQaStepResult, AutomatedQaVerdict } from '@voicechat/shared'
-import { gateSignature, scenarioLabel } from '@voicechat/shared'
+import { gateSignature, scenarioLabel, qaScenarioId } from '@voicechat/shared'
 import type { AutomatedQaExecutionContext, CiStageExecutionContext } from '../db/database.js'
 import type { AutomatedQaScenarioRunner } from './automatedQaScenario.js'
 import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
@@ -223,8 +223,9 @@ export function createAutomatedQaRunner(deps: AutomatedQaRunnerDeps): ComponentQ
       const startedAt = now()
       const finish = async (verdict: AutomatedQaVerdict): Promise<void> => {
         if (controller.signal.aborted) return
-        if (verdict.passed) await deps.db.qa.completeQaStageRun(userId, runId, verdict as unknown as Record<string, unknown>)
-        else await deps.db.qa.updateQaStageRun(runId, { status: 'failed', currentStep: verdict.classification === 'infrastructure' ? 'blocked' : 'tests', error: verdict.summary, result: verdict as unknown as Record<string, unknown> })
+        const result = { ...verdict, machineId: context.agentId }
+        if (verdict.passed) await deps.db.qa.completeQaStageRun(userId, runId, result as unknown as Record<string, unknown>)
+        else await deps.db.qa.updateQaStageRun(runId, { status: 'failed', currentStep: verdict.classification === 'infrastructure' ? 'blocked' : 'tests', error: verdict.summary, result: result as unknown as Record<string, unknown> })
         await deps.completed?.(runId, userId, verdict.passed, verdict.summary, verdict)
       }
       const done = (): void => { controllers.delete(runId); deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) }
@@ -334,7 +335,7 @@ async function runScenario(
     // с меткой и без неё не совпадает, и панель показывает его дважды — под
     // шагом и в списке «вне шагов».
     collected.push(...outcome.steps.map((step) => ({
-      ...step, id: `${label}/${step.id}`, title: `${label}: ${step.title}`,
+      ...step, scenarioId: qaScenarioId(runId, index), id: `${index}/${step.id}`, title: `${label}: ${step.title}`,
       ...(step.pageErrors?.length ? { pageErrors: step.pageErrors.map((error) => `${label}: ${error}`) } : {})
     })))
     done += scenario.steps.length
