@@ -193,6 +193,11 @@ export class VoiceChatDb {
       await this.sql.exec(SCHEMA_SQL)
       await this.migrate()
     }
+    // Legacy Codex replies stored cumulative thread totals as per-message spend;
+    // rewrite them once, on both backends (see migrateCodexThreadUsage).
+    await this.runOnce('codex_thread_usage_v1', async () => {
+      await this.ctx.repos.chat.migrateCodexThreadUsage()
+    })
     await this.ctx.repos.ci.ensureKbUpdateCommand()
     await this.ctx.repos.ci.pruneDevelopmentAfterModelCommands()
     await this.ctx.repos.chat.setupMessagesFts()
