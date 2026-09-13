@@ -32,7 +32,8 @@ import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
 import { Avatar, PRIORITY_LABEL, PriorityIcon, TYPE_LABEL, columnRegionLabel, duePresentation, emptyColumnPresentation, epicColor, issueKey, matchesDueWindow, pluralTasks, wipPresentation } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
-import { Button } from '@voicechat/ui-kit'
+import { Button, useToast } from '@voicechat/ui-kit'
+import { usePreference, EMPTY_IDS, isStringList, userKey, readPreference, writePreference } from '../../lib/shellPreferences'
 import { Dialog } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
@@ -719,6 +720,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
   }, [scrollScopeId, board != null, swimlane])
   const currentUserId = props.currentUserId ?? props.currentUser ?? null
+  const [hiddenCards, setHiddenCards] = usePreference(currentUserId ?? 'local', 'hidden-cards', EMPTY_IDS, isStringList)
+  const hideToast = useToast()
   /** Прежняя запись вида в предпочтениях браузера — источник разового переноса. */
   const readLocalView = (key: string): Partial<BoardView> | null => {
     try {
@@ -1053,6 +1056,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   }
 
   const matches = (t: Task, ignorePriority = false): boolean => {
+    if (hiddenCards.includes(t.id)) return false
     const q = search.trim().toLowerCase()
     const searchable = [
       t.title,
@@ -1656,6 +1660,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onOpen={setOpenTaskId}
       onUpdate={props.onUpdateTask}
       onDelete={props.onDeleteTask}
+      onHide={id => {
+        setHiddenCards([...hiddenCards, id])
+        const key = userKey(currentUserId ?? 'local', 'hidden-cards')
+        hideToast.info('Карточка скрыта', { action: { label: 'Отменить', onClick: () => writePreference(key, readPreference(key, EMPTY_IDS, isStringList).filter(value => value !== id)) } })
+      }}
       onMoveTop={moveTop}
       onMoveBottom={moveBottom}
       onOpenChat={props.onOpenChat}
@@ -2569,6 +2578,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               ]}
               onChange={setAssignees}
             />
+            {hiddenCards.length > 0 && <Button size="sm" variant="ghost" onClick={() => setHiddenCards([])}>Показать скрытые карточки</Button>}
             {currentUserId && (
               <label className={`jquick jquick-checkbox${onlyMine ? ' on' : ''}`}>
                 <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />

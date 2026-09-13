@@ -76,6 +76,12 @@ async function mcp(name: string, args: Record<string, unknown> = {}): Promise<st
   return (await mcpReply(name, args)).content.filter(item => item.type === 'text').map(item => item.text ?? '').join('\n')
 }
 
+async function dismissModelShellTour(): Promise<void> {
+  // The model browser has its own storage, separate from the outer test page.
+  const state = JSON.parse(await mcp('evaluate', { code: 'Boolean(document.querySelector(".shell-tour"))' }))
+  if (state.value) await mcp('click', { selector: '.shell-tour button[aria-label="Пропустить знакомство"]' })
+}
+
 async function capture(name: string): Promise<void> {
   if (!artifacts) return
   await mkdir(artifacts, { recursive: true })
@@ -127,6 +133,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     turn = createPreviewTurnTokens(MCP_SECRET).issue({ userId: 'admin', conversationId })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     page.on('pageerror', error => browserTrace.push({ at: Date.now(), event: 'pageerror', message: error.message }))
     page.on('request', request => {
       if (!request.url().includes('/api/browser/')) return
@@ -372,6 +380,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await api(`/api/make/${chats.make}/file`, 'PUT', { path: 'index.html', content: `<!doctype html><title>Reader внутри Make</title><h1>Форма проекта Make</h1><label>Название <input id="make-value"></label><button id="make-save" onclick="document.getElementById('make-result').textContent=document.getElementById('make-value').value">Проверить</button><p id="make-result">Пусто</p>` })
     await mcp('open', { url: `${base}/#/make/${chats.make}` })
     await mcp('wait', { selector: '.make-frame' })
+    await dismissModelShellTour()
     let frame: string[] = []
     await expect.poll(async () => {
       const result = JSON.parse(await mcp('frames')) as { frames: Array<{ path: string[]; url: string }> }
@@ -444,6 +453,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await api(`/api/make/${chats.make}/file`, 'PUT', { path: 'index.html', content: `<!doctype html><title>Длинная проверка Make</title><h1>Проверка отчёта</h1><p>${text}</p><p id="result">Задача создана. Ошибка в подвале</p>` })
     await mcp('open', { url: `${base}/#/make/${chats.make}` })
     await mcp('wait', { selector: '.make-frame' })
+    await dismissModelShellTour()
     let frame: string[] = []
     await expect.poll(async () => {
       const result = JSON.parse(await mcp('frames')) as { frames: Array<{ path: string[]; url: string }> }
@@ -687,6 +697,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
       await mcp('click', { selector: 'button[type="submit"]' })
     }
     await mcp('wait', { selector: '.make-frame' })
+    await dismissModelShellTour()
     let frame: string[] = []
     await expect.poll(async () => { frame = JSON.parse(await mcp('frames')).frames.find((item: { url: string }) => item.url.includes(`/api/preview/make/${chats.make}/`))?.path ?? []; return frame.length }).toBeGreaterThan(0)
     await mcp('wait', { frame, text: 'Файл из Make' })

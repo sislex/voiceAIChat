@@ -50,6 +50,18 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
   return full
 }
 
+// @testCase TC8
+it('undoes hiding the actual card without changing task data', () => {
+  renderBoard({ currentUserId: 'chat457-undo' })
+  const card = document.querySelector('[data-task-id="t1"]')!
+  fireEvent.click(within(card as HTMLElement).getByRole('button', { name: /Действия/ }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Скрыть карточку' }))
+  expect(document.querySelector('[data-task-id="t1"]')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Отменить' }))
+  expect(document.querySelector('[data-task-id="t1"]')).toBeInTheDocument()
+  expect(board.tasks[0]!.title).toBe('A')
+})
+
 describe('KanbanBoard (изолированный)', () => {
   it('показывает и копирует диагностический снимок текущего представления', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)

@@ -115,6 +115,8 @@ describe.skipIf(!existsSync(WEB_DIST))('Проекты E2E', () => {
 
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     await page.goto(`${BASE}/`)
     await page.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
     await page.goto(`${BASE}/#/projects`)
@@ -215,6 +217,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Проекты E2E', () => {
     })
 
     const mate = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    await mate.addInitScript(name => localStorage.setItem(`vc:shell:${encodeURIComponent(name)}:tour`, 'true'), MATE)
     try {
       await mate.goto(`${BASE}/`)
       await mate.evaluate((t) => localStorage.setItem('vc.session.token', t), mateToken)

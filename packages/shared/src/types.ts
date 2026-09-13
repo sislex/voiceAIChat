@@ -1077,7 +1077,7 @@ export interface Settings {
   /** Режим консоли: показывать активность агента (команды, thinking, mode…). */
   showConsole: boolean
   /** Тема интерфейса. */
-  theme: 'light' | 'dark' | 'green'
+  theme: 'light' | 'dark' | 'green' | 'system'
   /** Пользователь прошёл (или пропустил) приветственный мастер. */
   onboarded: boolean
   /** Режим прав агента для Claude CLI. */
@@ -1497,7 +1497,7 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
 
   if (typeof input.model === 'string') patch.model = normalizeClaudeModel(input.model)
   oneOf('whisperModel', WHISPER_MODELS)
-  oneOf('theme', ['light', 'dark', 'green'] as const)
+  oneOf('theme', ['light', 'dark', 'green', 'system'] as const)
   oneOf('permissionMode', PERMISSION_MODES.map((mode) => mode.id))
   oneOf('llmProvider', ['claude', 'codex'] as const)
   oneOf('aiAssistProvider', ['claude', 'codex'] as const)

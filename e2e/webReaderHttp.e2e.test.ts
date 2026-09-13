@@ -68,6 +68,8 @@ describe('Web Reader: история действий модели без secure
     const created = await api('/api/conversations', 'POST', { title: 'Reader HTTP QA', assistantKind: 'web-recorder' })
     const id = created.id ?? created.conversation.id
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     page.setDefaultTimeout(12_000)
