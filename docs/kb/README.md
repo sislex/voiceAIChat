@@ -9,39 +9,39 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 2 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 21 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 43 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 3 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 22 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 44 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 3 коммит(ов) в areas после сверки: 2f962970 fix(ci): classify integration launch prerequisites as infrastructure … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 5 коммит(ов) в areas после сверки: 62166a80 Merge main into CHAT-465 (task d06a4009-0ece-45c2-9749-757d0083960a) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 70e9afe3 feat(admin): improve user and session access management (CHAT-453) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ✓ |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ✓ |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 166 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 326 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 1 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 2 коммит(ов) в areas после сверки: 62166a80 Merge main into CHAT-465 (task d06a4009-0ece-45c2-9749-757d0083960a) … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 167 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 327 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 1 коммит(ов) в areas после сверки: 916d276c feat(ci): improve run feed, console, queue and slot previews |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 119 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 34 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1443 коммит(ов) в areas после сверки: 334ed8db docs(kb): update after merge d9cdc9a3-3c04-4d21-9adc-4a6576b14d24 … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 23 коммит(ов) в areas после сверки: 5d1e1a59 Merge main into CHAT-460 (task d97b6730-116b-40ac-bef0-16d73ee33009) … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 35 коммит(ов) в areas после сверки: 5d1e1a59 Merge main into CHAT-460 (task d97b6730-116b-40ac-bef0-16d73ee33009) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-13 | ✓ |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 334 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 2 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 120 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 35 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1446 коммит(ов) в areas после сверки: 62166a80 Merge main into CHAT-465 (task d06a4009-0ece-45c2-9749-757d0083960a) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 2 коммит(ов) в areas после сверки: 62166a80 Merge main into CHAT-465 (task d06a4009-0ece-45c2-9749-757d0083960a) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 24 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 36 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-13 | ⚠ 1 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 335 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 23 коммит(ов) в areas после сверки: 997ae931 feat(ci): require browser evidence for model work … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ⚠ 12 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-13 | ⚠ 12 коммит(ов) в areas после сверки: 2f962970 fix(ci): classify integration launch prerequisites as infrastructure … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 235 коммит(ов) в areas после сверки: 7122c58d Merge main into CHAT-457 (task 557ed22e-1454-4d85-833d-95f9bbde08b6) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 8 коммит(ов) в areas после сверки: 5d1e1a59 Merge main into CHAT-460 (task d97b6730-116b-40ac-bef0-16d73ee33009) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 23 коммит(ов) в areas после сверки: 5d1e1a59 Merge main into CHAT-460 (task d97b6730-116b-40ac-bef0-16d73ee33009) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-13 | ⚠ 7 коммит(ов) в areas после сверки: 2f962970 fix(ci): classify integration launch prerequisites as infrastructure … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 22 коммит(ов) в areas после сверки: 5d1e1a59 Merge main into CHAT-460 (task d97b6730-116b-40ac-bef0-16d73ee33009) … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ⚠ 13 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-13 | ✓ |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 236 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 9 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 24 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-13 | ⚠ 9 коммит(ов) в areas после сверки: 62166a80 Merge main into CHAT-465 (task d06a4009-0ece-45c2-9749-757d0083960a) … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 23 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 201 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 153 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-13 | ⚠ 5 коммит(ов) в areas после сверки: 09e82a75 Merge main into CHAT-462 (task d3318ba1-49ab-452e-aba5-2f98ee1b6ad3) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-13 | ⚠ 7 коммит(ов) в areas после сверки: 62166a80 Merge main into CHAT-465 (task d06a4009-0ece-45c2-9749-757d0083960a) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-13, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 820. Последние:
+Всего записей: 821. Последние:
 
+- [2026-09-13-germany-4-8-60-machine-vpn-and-electron-deps.md](log/2026-09-13-germany-4-8-60-machine-vpn-and-electron-deps.md) — machine-vpn-and-electron-deps
 - [2026-09-13-germany-4-8-60-kanban-mobile-kb.md](log/2026-09-13-germany-4-8-60-kanban-mobile-kb.md) — kanban-mobile-kb
 - [2026-09-13-germany-4-8-60-integration-readiness-classification.md](log/2026-09-13-germany-4-8-60-integration-readiness-classification.md) — integration-readiness-classification
 - [2026-09-13-germany-4-8-60-feature-preview-launch-readiness.md](log/2026-09-13-germany-4-8-60-feature-preview-launch-readiness.md) — feature-preview-launch-readiness
@@ -85,7 +86,6 @@
 - [2026-09-13-alexeys-macbook-air-2-project-settings-kb.md](log/2026-09-13-alexeys-macbook-air-2-project-settings-kb.md) — project-settings-kb
 - [2026-09-13-alexeys-macbook-air-2-make-flow-strict-brief.md](log/2026-09-13-alexeys-macbook-air-2-make-flow-strict-brief.md) — make-flow-strict-brief
 - [2026-09-13-alexeys-macbook-air-2-make-drafts-private-replies.md](log/2026-09-13-alexeys-macbook-air-2-make-drafts-private-replies.md) — make-drafts-private-replies
-- [2026-09-13-alexeys-macbook-air-2-image-studio-queue-validation-kb.md](log/2026-09-13-alexeys-macbook-air-2-image-studio-queue-validation-kb.md) — image-studio-queue-validation-kb
 
 ## Исторические планы
 
