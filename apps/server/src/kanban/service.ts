@@ -18,7 +18,7 @@ export interface KanbanBoardFeed {
   subscribe(cb: (projectId: string) => void): () => void
   subscribePreparationRuns(cb: (update: { userId: string; projectId: string; taskId: string; runId: string }) => void): () => void
   subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => Promise<void>): () => void
-  subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: QaRunStage }) => Promise<void>): () => void
+  subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: QaRunStage | 'manual_qa' }) => Promise<void>): () => void
   subscribeImprovements(cb: (projectId: string) => void): () => void
   /** Релиз (подготовка или деплой) сменил статус или шаг. */
   subscribeReleases(cb: (update: { projectId: string; releaseId: string; status: ReleaseStatus }) => Promise<void>): () => void

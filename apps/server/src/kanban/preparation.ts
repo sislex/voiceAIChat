@@ -2,7 +2,7 @@
 // (`kanban/module.ts`) и её тестов. Вынесены из `server.ts` вместе с канбан-кластером.
 import { DEFAULT_CODEX_MODEL, type AcceptanceCriterionSnapshot, type LlmProvider } from '@voicechat/shared'
 
-/** Validate the entire response before normalizing optional, absent references. */
+/** Parse the entire response before normalizing compatible field values. */
 export function preparationJsonObject(text: string): Record<string, unknown> {
   const raw = text.trim()
   if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')

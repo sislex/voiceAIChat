@@ -9,7 +9,7 @@ export type PreparationRunListener = (update: PreparationRunUpdate) => void
 export interface TaskRepositoriesUpdate { projectId: string; taskId: string }
 export type TaskRepositoriesListener = (update: TaskRepositoriesUpdate) => void
 /** Изменилось состояние QA-этапа задачи: панель перечитает снимок сама. */
-export interface QaStageUpdate { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }
+export interface QaStageUpdate { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage | 'manual_qa' }
 export type QaStageListener = (update: QaStageUpdate) => void
 /** Релиз сменил статус или шаг: Release Center перечитает список/подробности вместо опроса. */
 export interface ReleaseUpdate { projectId: string; releaseId: string; status: import('@voicechat/shared').ReleaseStatus }

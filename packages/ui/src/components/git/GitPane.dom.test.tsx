@@ -9,6 +9,16 @@ import { makeGitBranches, makeGitChange, makeGitDiff, makeGitFile, makeGitStatus
 import { GitPane, type GitPaneApi } from './GitPane'
 import type { GitWorkspaceStatus } from '@shared/gitWorkspace'
 
+// @testCase TC-02
+it('opens the QA file link in its addressed workspace',async()=>{
+ const previous=window.location.href
+ window.history.replaceState(null,'','?file=src%2Ftest.ts#/projects/p1/code/ws%3Aone')
+ const bridge=api()
+ try{
+  render(<GitPane projectId="p1" workspaceId="ws:one" api={bridge}/>)
+  await waitFor(()=>expect(bridge['projects:gitFile']).toHaveBeenCalledWith({id:'p1',workspace:'ws:one',path:'src/test.ts'}))
+ }finally{window.history.replaceState(null,'',previous)}
+})
 function api(over: Partial<GitPaneApi> = {}, status: GitWorkspaceStatus = makeGitStatus()): GitPaneApi {
   return {
     'projects:gitStatus': vi.fn(async () => status),
