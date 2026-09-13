@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 113 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 26 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1424 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1425 коммит(ов) в areas после сверки: 5f1f5dc8 docs(kb): update after merge 613ffe79-e3f0-446d-955e-f7af7368f12d … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 13 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 29 коммит(ов) в areas после сверки: 5fda4284 Merge main into CHAT-454 (task 613ffe79-e3f0-446d-955e-f7af7368f12d) … |
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 806. Последние:
+Всего записей: 807. Последние:
 
 - [2026-09-13-germany-4-8-60-kanban-mobile-kb.md](log/2026-09-13-germany-4-8-60-kanban-mobile-kb.md) — kanban-mobile-kb
 - [2026-09-13-germany-4-8-60-chat451-machine-console-kb.md](log/2026-09-13-germany-4-8-60-chat451-machine-console-kb.md) — chat451-machine-console-kb
@@ -83,9 +83,9 @@
 - [2026-09-13-alexeys-macbook-air-2-make-flow-strict-brief.md](log/2026-09-13-alexeys-macbook-air-2-make-flow-strict-brief.md) — make-flow-strict-brief
 - [2026-09-13-alexeys-macbook-air-2-make-drafts-private-replies.md](log/2026-09-13-alexeys-macbook-air-2-make-drafts-private-replies.md) — make-drafts-private-replies
 - [2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md](log/2026-09-13-alexeys-macbook-air-2-chat450-kb-update.md) — chat450-kb-update
+- [2026-09-13-alexeys-macbook-air-2-chat-457-shell.md](log/2026-09-13-alexeys-macbook-air-2-chat-457-shell.md) — chat-457-shell
 - [2026-09-13-alexeys-macbook-air-2-chat-445-functional-tabs.md](log/2026-09-13-alexeys-macbook-air-2-chat-445-functional-tabs.md) — chat-445-functional-tabs
 - [2026-09-12-germany-4-8-60-runner-stream-heartbeat.md](log/2026-09-12-germany-4-8-60-runner-stream-heartbeat.md) — runner-stream-heartbeat
-- [2026-09-12-germany-4-8-60-kanban-mobile-10.md](log/2026-09-12-germany-4-8-60-kanban-mobile-10.md) — kanban-mobile-10
 
 ## Исторические планы
 

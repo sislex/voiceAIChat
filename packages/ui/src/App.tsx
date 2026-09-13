@@ -67,6 +67,13 @@ import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { NotificationContainer } from './components/ClarificationNotification'
 import { KbUsagePanel } from './components/kb/KbUsagePanel'
+import { useShortcuts } from './components/ShortcutSettings'
+import { MobileNavigation, type ShellSection } from './components/MobileNavigation'
+import { ShellTour } from './components/ShellTour'
+import { useShellTheme } from './lib/shellTheme'
+import { NotificationCenter } from './components/NotificationCenter'
+import { ConnectionStatus } from './components/ConnectionBanner'
+import { addNotification, safeStorageGet, safeStorageSet } from './lib/shellPreferences'
 import { CommandPalette } from './components/CommandPalette'
 import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
 import {
@@ -569,7 +576,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [voice.voice, chat.messages.length])
   const makeUsage = useMemo(() => (inMake ? summarizeConversationUsage(chat.messages) : null), [inMake, chat.messages])
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
-  const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem(KANBAN_ASSISTANT_OPEN_KEY) === '1')
+  const [assistantOpen, setAssistantOpen] = useState(() => safeStorageGet(KANBAN_ASSISTANT_OPEN_KEY) === '1')
   const [assistantConversationId, setAssistantConversationId] = useState<string | null>(null)
   const [assistantTaskId, setAssistantTaskId] = useState<string | null>(null)
   const [assistantField, setAssistantField] = useState<keyof SupportedTaskPatch | null>(null)
@@ -577,7 +584,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [clarificationNotifications, setClarificationNotifications] = useState<PreparationClarificationNotification[]>([])
   const [clarificationErrors, setClarificationErrors] = useState<Record<string, string>>({})
   const [clarificationNavigatingId, setClarificationNavigatingId] = useState<string | null>(null)
-  const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); globalThis.localStorage?.setItem(KANBAN_ASSISTANT_OPEN_KEY, open ? '1' : '0') }
+  const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); safeStorageSet(KANBAN_ASSISTANT_OPEN_KEY, open ? '1' : '0') }
   const rememberWidgetAction = useCallback((kind: string, label: string, targetId?: string): void => {
     setWidgetActions((items) => appendWidgetAction(items, { kind, label, ...(targetId ? { targetId } : {}) }))
   }, [])
@@ -587,7 +594,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (taskId) rememberWidgetAction(field ? 'field.select' : 'task.open', field ? `Выбрано поле ${field}` : 'Открыта карточка', taskId)
   }, [rememberWidgetAction])
   const [previewWidth, setPreviewWidth] = useState(() => {
-    const saved = Number(globalThis.localStorage?.getItem(PREVIEW_WIDTH_KEY))
+    const saved = Number(safeStorageGet(PREVIEW_WIDTH_KEY))
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
   useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null) }, [chat.activeId])
@@ -613,7 +620,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const registerReaderHost = useCallback((registration: ReaderHostRegistration | null) => {
     if (registration && registration.conversationId === chat.activeId) {
       previewRunnerRef.current = registration
-      globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
+      safeStorageSet(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
     }
     // Снятие регистрации размонтированным host не должно стирать регистрацию
     // нового: обнуляем только запись собственного разговора.
@@ -622,7 +629,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   useEffect(() => {
     const claimActiveTab = (): void => {
       const registration = previewRunnerRef.current
-      if (registration) globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
+      if (registration) safeStorageSet(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
     }
     window.addEventListener('focus', claimActiveTab)
     return () => window.removeEventListener('focus', claimActiveTab)
@@ -652,7 +659,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       void runReaderModelRequest({
         conversationId, activeConversationId: chat.activeId,
         registration: previewRunnerRef.current,
-        activeRegistrationId: globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null,
+        activeRegistrationId: safeStorageGet(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null,
         readerRoute: inReader || inPlaywrightReader, action
       }).then(outcome => bridge.result({ conversationId, requestId, ...outcome }))
     })
@@ -672,7 +679,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       const rect = container.getBoundingClientRect()
       const next = Math.min(75, Math.max(25, ((rect.right - pointer.clientX) / rect.width) * 100))
       setPreviewWidth(next)
-      globalThis.localStorage?.setItem(PREVIEW_WIDTH_KEY, String(next))
+      safeStorageSet(PREVIEW_WIDTH_KEY, String(next))
     }
     const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
@@ -691,7 +698,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     // Ширину настраивают один раз и надолго: без записи она сбрасывалась на 42%
     // при каждом заходе, и человек тянул разделитель заново.
     const surface = workshopSurfaceRef.current
-    if (surface) globalThis.localStorage?.setItem(workshopChatWidthKey(surface), String(Math.round(next)))
+    if (surface) safeStorageSet(workshopChatWidthKey(surface), String(Math.round(next)))
   }, [clampWorkshopChatWidth])
   const stopWorkshopResize = useCallback((): void => {
     const pointerId = workshopPointerIdRef.current
@@ -728,16 +735,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   useEffect(() => {
     workshopSurfaceRef.current = workshopSurface
     if (!workshopSurface) return
-    const saved = Number(globalThis.localStorage?.getItem(workshopChatWidthKey(workshopSurface)))
+    const saved = Number(safeStorageGet(workshopChatWidthKey(workshopSurface)))
     const valid = Number.isFinite(saved) && saved >= WORKSHOP_MIN_PERCENT && saved <= WORKSHOP_MAX_PERCENT
     setWorkshopChatWidth(valid ? saved : WORKSHOP_DEFAULT_CHAT_WIDTH)
-    setWorkshopChatCollapsed(globalThis.localStorage?.getItem(workshopChatCollapsedKey(workshopSurface)) === '1')
+    setWorkshopChatCollapsed(safeStorageGet(workshopChatCollapsedKey(workshopSurface)) === '1')
   }, [workshopSurface])
   const toggleWorkshopChat = useCallback((): void => {
     setWorkshopChatCollapsed((collapsed) => {
       const next = !collapsed
       const surface = workshopSurfaceRef.current
-      if (surface) globalThis.localStorage?.setItem(workshopChatCollapsedKey(surface), next ? '1' : '0')
+      if (surface) safeStorageSet(workshopChatCollapsedKey(surface), next ? '1' : '0')
       return next
     })
   }, [])
@@ -769,6 +776,33 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     })
   }, [api])
   const toast = useToast()
+  const shellUserId = session.currentUser?.name || (session.authRequired ? '' : 'local')
+  const [shortcuts] = useShortcuts(shellUserId)
+  useEffect(() => { toast.clear?.() }, [shellUserId, toast])
+  useEffect(() => {
+    if (!shellUserId) return
+    const receive = (event: Event): void => {
+      const value = (event as CustomEvent).detail
+      if (value && typeof value.text === 'string') addNotification(shellUserId, { ...value, source: 'toast', read: false })
+    }
+    window.addEventListener('vc:toast', receive)
+    return () => window.removeEventListener('vc:toast', receive)
+  }, [shellUserId])
+  useEffect(() => {
+    for (const invitation of projects.myInvitations) addNotification(shellUserId, {
+      id: `invitation:${invitation.id}`, text: `Приглашение в проект «${invitation.projectName}»`,
+      kind: 'info', source: 'invitation', time: Date.now(), read: false
+    })
+  }, [shellUserId, projects.myInvitations])
+  useEffect(() => window.ci?.onDone?.(event => addNotification(shellUserId, {
+    id: `run:${event.runId}:${event.run.status}`, text: `Ран завершён: ${event.run.status}`,
+    kind: 'info', source: 'run', time: Date.now(), read: false
+  })), [shellUserId])
+  useEffect(() => window.board?.onReleaseUpdated?.(event => addNotification(shellUserId, {
+    id: `release:${event.releaseId}:${event.status}`, text: `Релиз: ${event.status}`,
+    kind: 'info', source: 'release', time: Date.now(), read: false
+  })), [shellUserId])
+
   // Долгая команда машины завершилась: тост с переходом к логу/журналу; во вкладке в фоне — системное уведомление, если разрешено.
   useEffect(() => {
     const realtime = window.realtime
@@ -1132,12 +1166,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // иначе каждый неудачный тумблер оставлял бы необработанный промис.
   const applySettings = (patch: Partial<Settings>): void => { void settingsActions.updateSettings(patch).catch(() => {}) }
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = Number(globalThis.localStorage?.getItem(SIDEBAR_WIDTH_KEY))
+    const saved = Number(safeStorageGet(SIDEBAR_WIDTH_KEY))
     return Number.isFinite(saved) && saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH ? saved : 264
   })
   const changeSidebarWidth = (next: number): void => {
     setSidebarWidth(next)
-    globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next))
+    safeStorageSet(SIDEBAR_WIDTH_KEY, String(next))
   }
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   // Индекс чатов грузится тем, кто его показывает. На доске сайдбар открыт на
@@ -1167,9 +1201,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
   // Тема дублируется на <html>: модальные окна уходят порталом в document.body,
   // вне .app, и без этого теряли бы токены [data-theme='dark'].
-  useEffect(() => {
-    document.documentElement.dataset.theme = settingsState.settings.theme
-  }, [settingsState.settings.theme])
+  const theme = useShellTheme(settingsState.settings.theme)
 
   // Командная палитра (⌘K) и шпаргалка (?) — окна поверх всего остального.
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -1190,6 +1222,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const hotkeyBindings: HotkeyBinding[] = buildHotkeyBindings({
     onboarded: settingsState.settings.onboarded,
     voice: voice.voice,
+    shortcuts,
+    newChat: () => openCreateChat(),
     togglePalette: () => setPaletteOpen((v) => !v),
     openCheatSheet: () => setCheatSheetOpen(true)
   })
@@ -1292,9 +1326,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       voiceEnabled: VOICE_INPUT_ENABLED,
       voice: voice.voice,
       autoSpeak: settingsState.settings.autoSpeak,
-      theme: settingsState.settings.theme,
+      theme,
       web: session.authRequired,
       paletteOpen,
+      shortcuts,
       boardProjectId: projects.activeProjectId ?? projects.projects[0]?.id ?? null,
       chats: chat.conversations,
       projects: projects.projects,
@@ -1770,7 +1805,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         registrationId: registration.registrationId,
         capabilities: registration.capabilities,
         expectedConversationId: conversationId,
-        claimedRegistrationId: globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null
+        claimedRegistrationId: safeStorageGet(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null
       },
       ensurePreview: window.session?.ensurePreview,
       signal: controller.signal,
@@ -2179,7 +2214,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // логина мигает у уже вошедшего пользователя; не вошли — экран логина.
   if (session.authRequired && !session.currentUser && session.checking) {
     return (
-      <div className="login-screen auth-loading" data-theme={settingsState.settings.theme} role="status" aria-live="polite" data-testid="auth-loading">
+      <div className="login-screen auth-loading" data-theme={theme} role="status" aria-live="polite" data-testid="auth-loading">
         <span className="auth-loading__spinner" aria-hidden="true" />
         <span className="vc-sr-only">Проверка сессии…</span>
       </div>
@@ -2195,7 +2230,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <InviteScreen
         token={decodeURIComponent(projectInviteToken)}
         loadPreview={(token) => preview(token)}
-        theme={settingsState.settings.theme}
+        theme={theme}
         onLogin={() => { window.location.hash = '#/' }}
         onSignup={() => { window.location.hash = '#/signup' }}
         onDone={() => { window.location.hash = '#/' }}
@@ -2204,24 +2239,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }
   const resetEmailToken = /^#\/reset\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   if (session.authRequired && !session.currentUser && resetEmailToken && window.session?.resetPasswordByEmail) {
-    return <ResetPasswordScreen token={decodeURIComponent(resetEmailToken)} reset={window.session.resetPasswordByEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/' }} onBack={() => { window.location.hash = '#/' }} />
+    return <ResetPasswordScreen token={decodeURIComponent(resetEmailToken)} reset={window.session.resetPasswordByEmail} theme={theme} onDone={() => { window.location.hash = '#/' }} onBack={() => { window.location.hash = '#/' }} />
   }
   const verifyToken = /^#\/verify\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   if (session.authRequired && !session.currentUser && verifyToken && window.session?.verifyEmail) {
-    return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
+    return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
   }
   if (session.authRequired && !session.currentUser && signupOpen && window.session?.signup && window.session.signupResend) {
-    return <SignupScreen api={{ signup: window.session.signup, resend: window.session.signupResend }} theme={settingsState.settings.theme} onBack={() => setSignupOpen(false)} />
+    return <SignupScreen api={{ signup: window.session.signup, resend: window.session.signupResend }} theme={theme} onBack={() => setSignupOpen(false)} />
   }
   if (session.authRequired && !session.currentUser && inviteToken && window.session?.inviteInfo && window.session.register) {
-    return <InviteRegister token={decodeURIComponent(inviteToken)} api={{ inviteInfo: window.session.inviteInfo, register: window.session.register }} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} />
+    return <InviteRegister token={decodeURIComponent(inviteToken)} api={{ inviteInfo: window.session.inviteInfo, register: window.session.register }} theme={theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} />
   }
   if (session.authRequired && !session.currentUser) {
     return (
       <LoginScreen
         onLogin={(name, password, remember) => void runtime.login(name, password, remember)}
         error={session.authError}
-        theme={settingsState.settings.theme}
+        theme={theme}
         twoFactor={Boolean(session.twoFactorTicket)}
         onCode={(code) => void runtime.loginCode(code)}
         onCancelTwoFactor={() => runtime.cancelTwoFactor()}
@@ -2232,6 +2267,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     )
   }
 
+  const navigateShell = (section: ShellSection): void => {
+    const projectId = routeProjectId ?? projects.projects[0]?.id
+    setSidebarOpen(false)
+    navigate(section === 'chat' ? (chat.activeId ? `/chat/${chat.activeId}` : '/') : section === 'machines' ? '/machines' : projectId ? `/projects/${projectId}${section === 'releases' ? '/releases' : ''}` : '/projects')
+  }
   const openCreateProject = (): void => requireMachine(() => {
     setSidebarOpen(false)
     setNewProjectOpen(true)
@@ -2260,9 +2300,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         // Студия картинок живёт в той же раскладке, что и Make: чат + панель.
         inImageStudio && 'app--image-studio'
       ].filter(Boolean).join(' ')}
-      data-theme={settingsState.settings.theme}
+      data-theme={theme}
       style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
     >
+      <header className="shell-toolbar" aria-label="Оболочка приложения">
+        <nav className="shell-desktop-navigation" aria-label="Разделы приложения">
+          {(['chat', 'machines', 'board', 'releases'] as const).map((id, index) => <Button key={id} variant="ghost" size="sm" data-tour={id} onClick={() => navigateShell(id)}>{['Чат', 'Машины', 'Канбан', 'Релизы'][index]}</Button>)}
+        </nav>
+        <NotificationCenter key={shellUserId} userId={shellUserId} />
+      </header>
+      <ConnectionStatus key={shellUserId} bridge={window.realtime} />
+      <MobileNavigation active={utilitySeg === 'machines' ? 'machines' : routeReleases ? 'releases' : inProjects ? 'board' : inChat ? 'chat' : null} onNavigate={navigateShell} onMore={() => sidebarAvailable ? setSidebarOpen(true) : setPaletteOpen(true)} />
+      {session.currentUser?.name && settingsState.settings.onboarded && <ShellTour key={shellUserId} userId={shellUserId} onNavigate={navigateShell} />}
       {staleBuild && (
         <div className="stale-build" role="status" data-testid="stale-build">
           <span>Вышла новая версия приложения — обновите страницу, чтобы она заработала целиком.</span>
@@ -2330,6 +2379,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       />
       <Sidebar
         open={sidebarOpen}
+        onCloseMobile={() => setSidebarOpen(false)}
+        paletteShortcut={shortcuts.palette}
         width={sidebarWidth}
         onWidthChange={compactChat ? undefined : changeSidebarWidth}
         onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
@@ -2457,7 +2508,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <InviteScreen
           token={decodeURIComponent(projectInviteToken)}
           loadPreview={(token) => window.session!.projectInvitationPreview!(token)}
-          theme={settingsState.settings.theme}
+          theme={theme}
           onAccept={async (token) => {
             const projectId = await projectsActions.acceptInvitation(token)
             if (projectId) navigate(`/projects/${projectId}`)
@@ -2718,6 +2769,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
+            sendShortcut={shortcuts.send}
             captureActive={voice.captureActive}
             defaultCollapsed={compactChat && !isEmptyPreparedChat}
             allowCollapse={compactChat && !isEmptyPreparedChat}
@@ -3506,7 +3558,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette userId={shellUserId} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
       {globalSettingsSection && (

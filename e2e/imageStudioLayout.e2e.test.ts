@@ -75,7 +75,19 @@ describe('Студия картинок: адаптивная раскладка
     await api(`/api/image-studio/${conversationId}/file`, 'POST', { path: 'портрет-2.svg', dataBase64: portrait, source: 'портрет.svg' })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 950 }, reducedMotion: 'reduce' })
-    await page.addInitScript(token => localStorage.setItem('vc.session.token', token), token)
+    await page.addInitScript(() => {
+      const NativeWebSocket = window.WebSocket
+      const sockets: WebSocket[] = []
+      Object.assign(window, { shellTestSockets: sockets })
+      window.WebSocket = class extends NativeWebSocket {
+        constructor(url: string | URL, protocols?: string | string[]) { super(url, protocols); sockets.push(this) }
+      }
+    })
+    await page.addInitScript(token => {
+      localStorage.setItem('vc.session.token', token)
+      // This suite represents a returning user; tour completion is tested separately.
+      localStorage.setItem('vc:shell:admin:tour', 'true')
+    }, token)
     await page.goto(`${base}/#/images/${conversationId}`)
     await page.getByRole('textbox', { name: 'Промпт для изображения' }).waitFor()
   })
@@ -88,6 +100,79 @@ describe('Студия картинок: адаптивная раскладка
       await stopped
     }
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
+  })
+
+  // @testCase TC4
+  it('applies the saved system scheme before the first App content appears', async () => {
+    const response = await fetch(`${base}/api/settings`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${sessionToken}` }, body: JSON.stringify({ theme: 'system' }) })
+    expect(response.ok).toBe(true)
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.evaluate(() => { localStorage.setItem('vc.theme', 'system'); localStorage.setItem('vc.theme.admin', 'system') })
+    await page.addInitScript(() => {
+      new MutationObserver((_, observer) => {
+        if (document.querySelector('#root .app')) {
+          document.documentElement.dataset.firstAppTheme = document.documentElement.dataset.theme
+          observer.disconnect()
+        }
+      }).observe(document, { subtree: true, childList: true })
+    })
+    await page.reload()
+    await page.getByRole('textbox', { name: 'Промпт для изображения' }).waitFor()
+    expect(await page.locator('html').getAttribute('data-first-app-theme')).toBe('dark')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(() => page.locator('html').getAttribute('data-theme')).toBe('light')
+    await fetch(`${base}/api/settings`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${sessionToken}` }, body: JSON.stringify({ theme: 'green' }) })
+    await page.reload()
+    await page.getByRole('textbox', { name: 'Промпт для изображения' }).waitFor()
+  })
+
+  // @testCase TC1
+  it('keeps shell navigation usable at 390px and 200% zoom', async () => {
+    for (const zoom of [1, 2]) {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.evaluate(value => { document.documentElement.style.zoom = String(value) }, zoom)
+      const navigation = page.getByRole('navigation', { name: 'Основные разделы' })
+      await navigation.waitFor({ state: 'visible' })
+      expect(await navigation.getByRole('button').count()).toBe(5)
+      const box = await navigation.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.y + box!.height, 'bottom navigation must stay inside the viewport').toBeLessThanOrEqual(845)
+      expect(box!.x).toBeGreaterThanOrEqual(-1)
+      expect(box!.x + box!.width).toBeLessThanOrEqual(391)
+      const controls = await navigation.getByRole('button').all()
+      for (const control of controls) {
+        const bounds = await control.boundingBox()
+        expect(bounds!.width).toBeGreaterThan(20)
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(391)
+      }
+      await page.evaluate(() => {
+        const sockets = (window as unknown as { shellTestSockets: WebSocket[] }).shellTestSockets
+        for (const socket of sockets) if (socket.readyState === WebSocket.OPEN) socket.close(4000, 'Shell reconnect regression')
+      })
+      await page.getByText('Соединение потеряно — переподключаемся…').waitFor()
+      await page.getByRole('button', { name: 'Повторить', exact: true }).click()
+      try {
+        await page.locator('.connection-banner').waitFor({ state: 'hidden', timeout: 10_000 })
+        await page.getByText('Соединение восстановлено', { exact: true }).last().waitFor({ timeout: 10_000 })
+      } catch (error) {
+        await screenshot('shell-reconnect-failure')
+        console.error('Shell reconnect state', await page.evaluate(() => ({ sockets: (window as unknown as { shellTestSockets: WebSocket[] }).shellTestSockets.map(socket => socket.readyState), toasts: document.querySelector('[data-testid="toasts"]')?.textContent, banner: document.querySelector('.connection-banner')?.textContent })))
+        throw error
+      }
+      const recoveredNavigation = await navigation.boundingBox()
+      expect(recoveredNavigation!.y + recoveredNavigation!.height, 'reconnect must not move navigation below the viewport').toBeLessThanOrEqual(845)
+      const toastBounds = await page.getByTestId('toasts').boundingBox()
+      expect(toastBounds!.y + toastBounds!.height).toBeLessThanOrEqual(box!.y)
+      await screenshot(`shell-390-zoom-${zoom}`)
+      await navigation.getByRole('button', { name: 'Ещё', exact: true }).click()
+      await page.getByRole('dialog').waitFor()
+      await page.keyboard.press('Escape')
+      await page.getByText('Соединение восстановлено', { exact: true }).last().waitFor({ state: 'hidden', timeout: 10_000 })
+    }
+    await page.evaluate(() => { document.documentElement.style.zoom = '1' })
+    await page.setViewportSize({ width: 721, height: 844 })
+    expect(await page.getByRole('navigation', { name: 'Основные разделы' }).isVisible()).toBe(false)
+    await page.setViewportSize({ width: 1440, height: 950 })
   })
 
   it('десктоп использует всю ширину при любом сохранённом состоянии Sidebar', async () => {

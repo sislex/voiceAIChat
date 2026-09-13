@@ -300,6 +300,22 @@ describe('VoiceBar — состояния', () => {
     expect(readServerFile).toHaveBeenCalledWith('/uploads/screen.png')
   })
 
+  // @testCase TC7
+  it('uses the assigned send shortcut while preserving Enter, IME and recording', () => {
+    const props = makeProps('idle', { draft: 'Message', sendShortcut: 'mod+Enter' })
+    const view = render(<VoiceBar {...props} />)
+    const input = screen.getByLabelText('Поле ввода сообщения')
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', ctrlKey: true, isComposing: true })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', ctrlKey: true, repeat: true })
+    expect(props.onSubmitText).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', ctrlKey: true })
+    expect(props.onSubmitText).toHaveBeenCalledOnce()
+    view.rerender(<VoiceBar {...props} state="listening" />)
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', ctrlKey: true })
+    expect(props.onSubmitText).toHaveBeenCalledOnce()
+  })
+
   it('Enter в непустом инпуте вызывает onSubmitText', async () => {
     const props = setup('idle', { draft: 'привет' })
     const input = screen.getByLabelText('Поле ввода сообщения')
