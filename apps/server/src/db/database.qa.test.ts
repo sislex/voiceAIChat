@@ -499,6 +499,29 @@ describe.skipIf(ON_POSTGRES)('manual QA persistence and workflow', () => {
     expect(second.id).toBe(first.id)
     expect(first).toMatchObject({status:'queued',commitSha:'a'.repeat(40),developmentRunId:'dev-component'})
   })
+  it.each([null, '{invalid', 'null'])('blocks missing readiness as infrastructure and allows retry after repair (%s)',async (snapshot)=>{
+    const {project,task,raw}=await integrationFixture()
+    const original=await db.tasks.preparationReadiness('prep-component')
+    raw.prepare("UPDATE task_preparation_runs SET readiness_json=? WHERE id='prep-component'").run(snapshot)
+
+    const run=await db.ci.startIntegrationTestRun('owner',project.id,task.id)
+    expect(run).toMatchObject({
+      status:'blocked',failureClassification:'infrastructure',failureReason:'missing_readiness_snapshot',
+      blockerReasons:['missing_readiness_snapshot'],commands:[],canRetry:true,canCancel:false
+    })
+    expect(await db.ci.getIntegrationTestRun('owner',run.id)).toMatchObject({failureClassification:'infrastructure'})
+    expect(await db.ci.getIntegrationTestTaskState('owner',project.id,task.id)).toMatchObject({
+      canStart:false,canComplete:false,launchReasons:['missing_readiness_snapshot']
+    })
+    const board=(await db.tasks.getBoard('owner',project.id))!
+    const unchanged=board.tasks.find((item)=>item.id===task.id)!
+    expect(board.columns.find((item)=>item.id===unchanged.columnId)?.semanticType).toBe('integration_tests')
+
+    raw.prepare("UPDATE task_preparation_runs SET readiness_json=? WHERE id='prep-component'").run(JSON.stringify(original))
+    const retry=await db.ci.startIntegrationTestRun('owner',project.id,task.id)
+    expect(retry).toMatchObject({status:'queued',attempt:2,failureClassification:null,failureReason:null})
+    expect(retry.id).not.toBe(run.id)
+  })
   it('audits a valid no-automation branch as skipped and moves to Automated QA',async ()=>{
     const {project,task}=await integrationFixture(false)
     expect((await db.ci.startIntegrationTestRun('owner',project.id,task.id)).status).toBe('skipped')
