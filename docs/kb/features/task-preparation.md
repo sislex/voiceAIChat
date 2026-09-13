@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
 updated: 2026-09-13
-checked: 181c142e
+checked: 5fda4284
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/ipc.ts
@@ -43,23 +43,6 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
-
-**Strict full-response parsing (2026-09-13, CHAT-454).**
-`preparationJsonObject` in `apps/server/src/kanban/preparation.ts`, called by
-`kanban/module.ts`, parses the entire trimmed response as one JSON object. Prefixes,
-suffixes, Markdown fences (including escaped newlines), multiple objects, and array
-roots are rejected. The prompt explicitly rejects even the formerly accepted
-introductory phrases. It requires numeric `schemaVersion=2` and the complete typed
-DevelopmentReadiness contract. Only after parsing may an optional
-`decisions[].questionId=null` be omitted. String links, supported null values, and
-requirements survive unchanged. The normalized object still passes runtime schema
-validation and the complete readiness gate.
-
-`apps/server/src/taskPreparation.test.ts` includes T8–T10 markers for strict format,
-idempotent compatible normalization, incompatible types/enums, required UI tests,
-nonempty component coverage, and concrete Storybook exclusions. These checks verify
-preparation only; they do not establish that the development task itself was done.
-
 
 Расширенный контракт `DevelopmentReadiness` версии 2 находится в `packages/shared/src/qa.ts`. Он описывает цель, границы scope, требования и правила, ошибки, UI impact и состояния, изменения контрактов и данных, проверяемые критерии, тест-кейсы, ограничения, противоречия, вопросы, решения, предположения и исследованные источники. Preparation-run получает отдельный короткоживущий токен БЗ: флаг `coreReadOnly` в `apps/server/src/kb/kbMcp.ts` оставляет ему только `search`, `document` и `topics`, не регистрируя runtime-, пользовательские и операционные инструменты. Токен снимается при вопросе, успешном или терминально неуспешном завершении и отмене CLI.
 
