@@ -997,6 +997,9 @@ export interface RendererAgentsBridge {
  * инвалидаций board.changed. В desktop отсутствует → без живой синхронизации.
  */
 export interface RendererRealtimeBridge {
+  /** UI connection episode; machine status is a separate event. */
+  onDisconnected?(cb: () => void): () => void
+  retry?(): void
   /** Каждое успешное WS-подключение, включая reconnect. */
   onConnected(cb: () => void): () => void
   /** Открыт ли WS прямо сейчас (для самодиагностики транспорта). */

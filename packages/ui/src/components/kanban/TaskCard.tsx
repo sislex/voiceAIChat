@@ -36,6 +36,7 @@ export interface TaskCardProps {
   onOpen: (taskId: string, tab?: TaskModalTab, initialChatDraft?: string) => void
   onUpdate: (taskId: string, fields: { flagged?: boolean; autoPilot?: boolean }) => void
   onDelete: (taskId: string) => void
+  onHide?: (taskId: string) => void
   onMoveTop: (taskId: string) => void
   onMoveBottom: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке). */
@@ -339,6 +340,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             >
               {mobile && <button role="menuitem" onClick={() => { setMenuOpen(false); setDetailsOpen(true) }}>Все данные карточки</button>}
               <button role="menuitem" onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
+              {props.onHide && <button role="menuitem" onClick={() => { setMenuOpen(false); props.onHide?.(task.id) }}>Скрыть карточку</button>}
               {props.onCopyLink && (
                 <button role="menuitem" onClick={() => { setMenuOpen(false); void props.onCopyLink?.(task.id) }}>
                   Копировать ссылку

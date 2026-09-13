@@ -71,6 +71,30 @@ function compatibleReadiness(): string {
   })
 }
 
+// @testCase TC13
+it('normalizes all four diagnostic decisions without changing any other data', () => {
+  const original = JSON.parse(compatibleReadiness())
+  original.decisions = ['D1', 'D2', 'D3', 'D4'].map(id => ({ id, text: `Preserve requirement ${id}`, rationale: 'Confirmed scope', questionId: null }))
+  const expected = structuredClone(original)
+  for (const decision of expected.decisions) delete decision.questionId
+  const normalized = preparationJsonObject(JSON.stringify(original))
+  expect(normalized).toEqual(expected)
+  expect(preparationJsonObject(JSON.stringify(normalized))).toEqual(normalized)
+  expect(original.decisions.every((decision: { questionId: unknown }) => decision.questionId === null)).toBe(true)
+})
+
+// @testCase TC12
+it.each([4, true, [], {}])('rejects incompatible decision references without coercion: %j', async questionId => {
+  const input = JSON.parse(compatibleReadiness())
+  input.decisions = [{ id: 'D1', text: 'Keep scope', rationale: 'Confirmed', questionId }]
+  expect(preparationJsonObject(JSON.stringify(input))).toEqual(input)
+  const { project, task } = await taskInBacklog()
+  claudeAnswer = () => ({ text: JSON.stringify(input) })
+  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+  expect(run.status).toBe('blocked')
+  expect(run.readiness).toBeNull()
+})
+
 const READINESS = JSON.stringify({
   schemaVersion: 2,
   goal: 'Подготовить задачу к разработке',
@@ -655,6 +679,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-12
   // @testCase T10
+  // @testCase TC12
   it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -675,6 +700,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase T11
   // @testCase TC-11
   // @testCase TC-13
+  // @testCase TC11
   it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()

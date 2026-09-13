@@ -232,6 +232,7 @@ describe('SettingsModal — модели Codex', () => {
 })
 
 describe('SettingsModal — тема интерфейса', () => {
+  // @testCase TC4
   it('показывает зелёную тему и сохраняет её выбор', async () => {
     const onChange = vi.fn()
     renderModal('admin', { onChange })
@@ -239,7 +240,7 @@ describe('SettingsModal — тема интерфейса', () => {
 
     const select = screen.getByLabelText('Тема интерфейса')
     expect(within(select).getAllByRole('option').map((option) => (option as HTMLOptionElement).value))
-      .toEqual(['light', 'dark', 'green'])
+      .toEqual(['light', 'dark', 'green', 'system'])
 
     await userEvent.selectOptions(select, 'green')
     expect(onChange).toHaveBeenCalledWith({ theme: 'green' })

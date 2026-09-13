@@ -79,6 +79,8 @@ describe.skipIf(!existsSync(WEB_DIST))('Настройки E2E: релиз не 
 
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     await page.goto(`${BASE}/`)
     await page.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
     await page.reload()
