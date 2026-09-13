@@ -20,6 +20,27 @@ import { preparationJsonObject } from './kanban/preparation.js'
 
 const SECRET = 'test-secret'
 
+// @testCase TC-BRIEF-SCHEMA
+// @testCase TC-BRIEF-NORMALIZATION
+it.each([
+  '{"scope":["Keep DNS protection"],"scope":["Remove DNS protection"]}',
+  '{"sources":[{"status":"unavailable","status":"available"}]}',
+  '{"decisions":[{"questionId":"Q1","questionId":null}]}',
+  '{"scope":["Keep requirement"],"\\u0073cope":["Discard requirement"]}'
+])('rejects duplicate keys before requirements or provenance can be overwritten: %s', input => {
+  expect(() => preparationJsonObject(input)).toThrow('повторяющееся имя поля')
+})
+
+// @testCase TC-BRIEF-NORMALIZATION
+it('preserves repeated names in independent objects and punctuation inside strings', () => {
+  const input = {
+    scope: ['Keep {"scope": "nested text"} and escaped backslash \\'],
+    sources: [{ id: 'S1', status: 'available' }, { id: 'S2', status: 'unavailable' }],
+    decisions: [{ id: 'D1', text: '"id": is quoted content', rationale: 'Preserve it' }]
+  }
+  expect(preparationJsonObject(JSON.stringify(input))).toEqual(input)
+})
+
 // @testCase TC-BRIEF-02
 // @testCase T12
 // @testCase T9
@@ -43,6 +64,7 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
   expect(() => preparationJsonObject(input)).toThrow()
 })
 
+// @testCase TC-BRIEF-REGRESSION
 // @testCase TC-BRIEF-03
 // @testCase T13
 // @testCase TC-11
@@ -700,6 +722,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase T11
   // @testCase TC-11
   // @testCase TC-13
+  // @testCase TC-BRIEF-SCHEMA
   // @testCase TC11
   it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
@@ -833,6 +856,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
   })
 
+  // @testCase TC-BRIEF-SCHEMA
   // @testCase T10
   it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
@@ -1003,6 +1027,40 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(3)
   })
 
+  // @testCase TC-BRIEF-NORMALIZATION
+  it('preserves the whole brief through every compatible conversion and a second preparation', async () => {
+    const input = JSON.parse(compatibleReadiness())
+    input.scope = 'Keep direct DNS blocked'
+    input.businessRules = 'Never infer a successful test'
+    input.acceptanceCriteriaConflict = 'false'
+    input.testCases[0].required = 'true'
+    input.testCases[0].automatable = 'true'
+    input.sources.push({ id: 'S-unverified', kind: 'tests', status: ' UNAVAILABLE ', summary: 'Not executed', refs: 'network.integration.test.ts', critical: 'false' })
+    input.decisions = [{ id: 'D1', text: 'Retain all source evidence', rationale: 'Confirmed scope', questionId: null }]
+    input.affectedComponents = [{ id: 'service', name: 'Service', reusable: true, storybookStoryId: null, exclusionReason: 'No visual component', alternativeVerification: 'Integration tests', coverage: ['Existing unit tests', 'Required real network tests'] }]
+    const expected = structuredClone(input)
+    expected.scope = [input.scope]
+    expected.businessRules = [input.businessRules]
+    expected.acceptanceCriteriaConflict = false
+    expected.testCases[0].required = true
+    expected.testCases[0].automatable = true
+    expected.sources[2].status = 'unavailable'
+    expected.sources[2].refs = [input.sources[2].refs]
+    expected.sources[2].critical = false
+    delete expected.decisions[0].questionId
+    expected.affectedComponents[0].coverage = { required: input.affectedComponents[0].coverage }
+    for (const value of [input, expected]) {
+      const { project, task } = await taskInBacklog()
+      claudeAnswer = () => ({ text: JSON.stringify(value) })
+      const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+      expect(run.status).toBe('success')
+      expect(run.readiness?.confirmation).toMatchObject({ confirmed: true, attemptId: run.id })
+      const { confirmation: _confirmation, ...brief } = run.readiness!
+      expect(brief).toEqual(expected)
+    }
+  })
+
+  // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC7
   it('normalizes an absent decision link without changing requirements and is idempotent', async () => {
     const { project, task } = await taskInBacklog()

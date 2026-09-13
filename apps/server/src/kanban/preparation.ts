@@ -7,6 +7,22 @@ export function preparationJsonObject(text: string): Record<string, unknown> {
   const raw = text.trim()
   if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')
   const value = JSON.parse(raw) as Record<string, unknown>
+  // JSON.parse silently keeps the last duplicate key. Reject that ambiguity
+  // before normalization can hide a requirement or a source status.
+  const scopes: Array<Set<string> | null> = []
+  const tokens = /"(?:\\[\s\S]|[^"\\])*"|[{}\[\]]/g
+  for (const token of raw.matchAll(tokens)) {
+    const text = token[0]
+    if (text === '{') scopes.push(new Set())
+    else if (text === '[') scopes.push(null)
+    else if (text === '}' || text === ']') scopes.pop()
+    else if (/^\s*:/.test(raw.slice(token.index! + text.length))) {
+      const key = JSON.parse(text) as string
+      const keys = scopes[scopes.length - 1]
+      if (keys?.has(key)) throw new Error('Неоднозначный JSON: повторяющееся имя поля')
+      keys?.add(key)
+    }
+  }
   // Null means no reference only for this optional field; other nulls survive.
   if (Array.isArray(value.decisions)) for (const decision of value.decisions) {
     if (decision && typeof decision === 'object' && !Array.isArray(decision) && decision.questionId === null) delete decision.questionId
