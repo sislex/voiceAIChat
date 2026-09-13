@@ -4,7 +4,9 @@ import { AGENT_VERSION, compareVersions, isToolAllowed, requiredVersion } from '
 describe('AGENT_VERSION', () => {
   // @testCase T5
   it('publishes the bounded file preview capability without changing full-read requirements', () => {
-    expect(AGENT_VERSION).toBe('0.17.0')
+    expect(AGENT_VERSION).toBe('0.18.0')
+    expect(requiredVersion('vpn')).toBe('0.18.0')
+    expect(isToolAllowed('0.17.0', 'vpn')).toBe(false)
     expect(requiredVersion('fs-preview')).toBe('0.17.0')
     expect(isToolAllowed('0.16.0', 'fs-preview')).toBe(false)
     expect(isToolAllowed('0.17.0', 'fs-preview')).toBe(true)

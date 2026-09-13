@@ -141,6 +141,7 @@ export interface DiskUsage {
 
 /** Живая телеметрия машины-агента: ОС, загрузка, диск, батарея. */
 export interface AgentTelemetry {
+  vpn?: import('./vpn').VpnObservation
   /** Когда собрана (UNIX мс). */
   ts: number
   os: {
@@ -210,6 +211,7 @@ export interface AgentHttpResponse {
 
 /** Сообщения агент → сервер. */
 export type AgentToServer =
+  | { t: 'vpn.result'; requestId: string; observation: import('./vpn').VpnObservation }
   | { t: 'agent.register'; token: string; version?: string; imageHost?: AgentImageHost }
   /** Раздача картинок поднялась/адреса машины сменились — обновить у сервера. */
   | { t: 'agent.imageHost'; imageHost: AgentImageHost }
@@ -343,6 +345,7 @@ export type FsOp =
 
 /** Сообщения сервер → агент. */
 export type ServerToAgent =
+  | { t: 'vpn.request'; requestId: string; request: import('./vpn').VpnAgentRequest }
   | { t: 'agent.registered'; id?: string; name: string; policy: AgentPolicy }
   | { t: 'agent.denied'; reason: string }
   | { t: 'agent.policy'; policy: AgentPolicy }

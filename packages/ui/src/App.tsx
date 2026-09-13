@@ -3225,6 +3225,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <Suspense fallback={<div role="status">Загрузка парка машин…</div>}><MachineStatus
           variant="page"
           agents={operations.agents}
+          vpn={window.agents?.vpn}
           status={operations.agentsStatus}
           error={operations.agentsError}
           onRetry={() => void operationsActions.refreshAgents()}

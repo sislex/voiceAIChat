@@ -140,6 +140,181 @@ token, подтверждение атомарно заменяет зашифр
 `VC_LOGIN_APPLICATION` либо autodiscovery `apps/login-application/release`;
 неподдерживаемая пара и отсутствующий файл — явные 404.
 
+## Tailscale VPN management (CHAT-465)
+
+The machine fleet exposes VPN through
+`packages/ui/src/components/MachineVpn.tsx`, mounted in `MachineStatus.tsx`.
+The transport is `window.agents.vpn`, implemented by
+`packages/ui/src/remote/vpnBridge.ts`. The shared contract lives in
+`packages/shared/src/vpn.ts`; agent capability `vpn` requires version 0.18.0.
+Old agents and unsupported platforms display a preparation error, not an
+assumed off state. The UI keeps desired and observed modes separate, expires
+observations after 90 seconds, clears unavailable external IPs, and asks for
+confirmation before sending a role change.
+
+Routes are registered alongside the existing agent routes, including in the
+standalone machines process:
+
+- `POST /api/agents/vpn/network`: explicit tailnet name and administrative
+  API credential; validates device access and an ETag-protected policy write.
+- `GET /api/agents/:id/vpn`: owner-only inspection and eligible gateways.
+- `PUT /api/agents/:id/vpn`: desired mode, ChatAI gateway ID, LAN setting,
+  operation ID and expected revision.
+
+`machine_vpn_networks` belongs to the machines repository. Its unique tailnet
+column prevents attaching the same named network to two ChatAI owners. A
+per-owner generation CAS serializes changes across both endpoints, while
+machine revisions correlate observed attempts after reconnect. The JSON state
+stores verified node-ID/address bindings, desired state, operation state and
+the exact grants managed by ChatAI. Names are never identity proofs. Project
+sharing does not grant VPN management rights. Self-selection, dependent gateway
+changes and stale revisions are rejected. Explicit off can supersede an
+unresolved operation and does not call the administrative Tailscale API.
+
+Administrative credentials use AES-256-GCM, random nonces and user-ID associated
+data. Set `VC_VPN_SECRET_KEY` to a 64-character hexadecimal key in the machines
+service's secret environment. Losing this key prevents credential decryption;
+keep it backed up securely. Credentials are absent from public DTOs and agent
+messages. Upstream bodies and CLI errors are replaced by allowlisted error
+codes; the dedicated `vpn.request` / `vpn.result` path does not use the machine
+shell-command journal.
+
+The Tailscale integration preserves unrelated local policy entries and writes
+with `If-Match`. It conservatively rejects broad or ambiguous existing internet
+permissions instead of silently narrowing them. Managed internet grants use
+verified client addresses and `via` tags scoped to the chosen bound machine.
+Gateway preparation preserves existing tags and enabled subnet routes, adds
+the managed tag, approves both default routes, and reads the approval back.
+Subsequent device inspections check authorization, tags and enabled routes.
+External/shared Tailscale devices are excluded.
+
+### System preparation and privileged protection
+
+The regular agent calls the installed system CLI with argument arrays, never
+with shell commands. It checks a running authenticated system backend, version
+1.88.0 or newer, and a kernel tunnel; this is the implementation's minimum,
+not a claim about every upstream installation variant. Linux exit-node readiness
+also checks IPv4 and IPv6 forwarding sysctls. macOS uses the CLI inside
+`/Applications/Tailscale.app` when present. Tailscale installation, OS permission
+dialogs and service installation remain explicit local administrator steps.
+
+Client routing requires the separately installed
+`apps/agent/src/vpn/guardMain.ts` service. A missing or mismatched helper blocks
+client activation. Build the helper from the installed monorepo with
+`npm exec -- esbuild apps/agent/src/vpn/guardMain.ts --bundle --platform=node --target=node22 --format=esm --outfile=/absolute/build/vpn-guard.mjs`.
+An administrator installs the artifact in a root-owned, non-writable directory
+and runs `node /absolute/install/vpn-guard.mjs /etc/chatai-vpn/config.json` as
+a root system service (systemd on Linux, launchd on macOS). Do not run the helper
+from a user-writable checkout as root.
+
+The config file and its parent must be root-owned and not group/world writable.
+Use an operator group on the config file; the helper creates a group-accessible
+`runtime/guard.sock` next to it. Configure the ordinary agent with
+`VC_VPN_GUARD_SOCKET=/etc/chatai-vpn/runtime/guard.sock` and
+`VC_VPN_CONTROL_IP` equal to the literal control IP. The agent uses this IP for
+its WebSocket lookup while retaining TLS hostname verification. Helper readiness
+requires an exact match of the agent's WSS hostname, port and pinned IP; insecure
+TLS is not accepted as VPN recovery readiness.
+
+Example shape (documentation addresses must be replaced with actual lab values):
+
+```json
+{
+  "interface": "eth0",
+  "tunnelInterface": "tailscale0",
+  "gateway": "192.168.1.1",
+  "control": { "ip": "203.0.113.7", "hostname": "chat.example.test", "port": 443 },
+  "transport": [{ "ip": "203.0.113.8", "protocol": "udp", "port": 41641 }],
+  "lanCidrs": ["192.168.1.0/24"]
+}
+```
+
+The helper verifies that the configured tunnel carries an authenticated
+Tailscale address. On Linux it uses an independent nftables `inet chatai_vpn`
+output table and a narrow priority-5100 control-destination rule selecting the
+physical main routing table. An occupied conflicting priority is rejected.
+That service-channel rule is part of helper preparation and remains while the
+helper is installed. Tailscaled's marked underlay sockets are exempted; ordinary
+application output is not. Direct TCP/UDP DNS and TCP 853 are blocked before LAN
+exceptions. IPv6 defaults to drop except the verified tunnel and link-local
+neighbor discovery. LAN configuration currently accepts explicit private IPv4
+CIDRs with prefixes 16–32; unsupported direct IPv6 LAN traffic stays blocked.
+
+On macOS, PF must already be enabled and its first root filter rule must be
+`anchor "chatai-vpn"`; a `load anchor "chatai-vpn" from "/etc/pf.anchors/chatai-vpn"`
+can initialize an empty anchor. Only loopback may skip filtering. The helper
+rejects incompatible existing PF configuration rather than rewriting it.
+Use the actual `en*` and authenticated `utun*` interfaces in the config.
+Control and explicitly configured Tailscale transport endpoints are routed
+through the physical gateway; their address family must match that gateway.
+No generic direct TCP/UDP allowance is generated. Existing PF states are killed
+on activation, which is why the UI warns about broken connections. Transport
+endpoints must be maintained when the network/DERP/peer addresses change.
+
+Intent is persisted before protection changes; nft updates are applied in one
+transaction and PF updates target only the managed anchor. A helper watchdog
+reapplies intended protection if the observed rules differ. Closing or crashing
+the agent/helper does not invoke release. Off restores the saved Tailscale DNS preference while clearing the exit-node
+role, checks actual state, and explicitly releases protection. The agent's operation journal and DNS baseline live under
+`<rootDir>/.voicechat/vpn-operation.json*` and survive agent restarts.
+
+### Verification and acceptance limits
+
+Automated cases have `// @testCase` coverage markers next to the tests:
+shared contract validation; server ownership, HTTP boundaries, policy conflicts
+and credential encryption; agent sequencing, repeated operations, partial
+failure and firewall generation; UI role/gateway/LAN selection, confirmation,
+safe secret input and existing machine actions. UI tests and Storybook share
+`packages/ui/src/test/fixtures/vpn.ts`. Stories live in
+`MachineVpn.stories.tsx` under `Machines/VPN`, including the interactive
+`ChangeRole` play scenario. Existing fleet regression tests remain in
+`MachineStatus.dom.test.tsx`.
+
+`apps/agent/src/vpn/network.integration.test.ts` contains an opt-in real-host
+matrix for both directions, external IPv4/IPv6 comparison, direct-interface
+probes, physical-interface DNS capture, LAN switching and explicit cleanup.
+Default gates **skip** these tests. Running them requires
+`VC_VPN_NETWORK_TESTS=1`, `VC_VPN_TEST_TOKEN` (never place the token in a chat),
+and `VC_VPN_TEST_LAB` JSON containing `api`, `dnsName`, and `linux`/`mac`
+objects with `id`, `ssh`, `interface`, `os`, and `lanUrl`. Both hosts must
+start with observed and requested VPN off. SSH must use keys; probes require
+curl/dig and passwordless tcpdump plus GNU timeout (gtimeout on macOS).
+Use dedicated machines with local recovery access.
+
+As of this development run, all project Macs were offline and only Prod was
+online. No real-host VPN changes, packet captures, gateway sleep/failure tests,
+or OS/Tailscale version measurements have been performed. Generated nft/PF
+rules and mocked tests are **not** proof of leak protection, macOS Network
+Extension interaction, service-channel recovery, or boot-time ordering.
+The real network matrix, foreign-exit attempts outside ChatAI, physical sleep
+tests and reboot behavior remain acceptance work. Chromium Component QA in
+`e2e/machine-vpn.e2e.test.ts` starts an isolated loopback Storybook, verifies the
+keyboard-driven role/gateway/LAN flow and gateway-failure controls at a 390px
+viewport, and captures desktop/mobile screenshots. Both browser cases passed;
+the machine fleet's existing 31 DOM regression cases also passed.
+The web application catalog includes this Component QA suite in `e2eFiles`
+and maps VPN component/story changes through `browserPaths`. A uniquely owned
+E2E file explicitly listed in `browserPaths` is resolved by `applicationForPath`;
+other E2E files retain their existing gate selection and fallback behavior.
+
+The shared-protocol diff also selects Desktop, Agent Tray and Login application
+in `gate:fast`. They are outside root npm workspaces and require their own
+dependencies: `npm ci --prefix apps/desktop`, `npm ci --prefix apps/agent-tray`
+and `npm ci --prefix apps/login-application`.
+All three targeted application gates passed on the development host after
+restoring these lockfile dependencies.
+
+Final development verification on 2026-09-13: `npm run gate:fast` completed
+with exit code 0. Agent tests passed in 17 files (the opt-in network file was
+skipped), server tests in 179 files (5 existing skipped files), shared tests in
+106 files, and UI tests in 153 files. Selected consumer checks, Storybook and
+production builds passed. Chromium passed both VPN Component QA tests and both
+release-center regression tests. The real-host `TC-NETWORK` and gateway
+sleep/failure acceptance checks remain unexecuted; mock and browser results do
+not substitute for them.
+
+This implementation must not be described as production-verified VPN protection.
+
 ## Токены агентов: срок, отзыв, привязка к IP
 
 Колонки `agents.token_expires_at`, `token_issued_at`, `last_ip`, `pin_ip` (миграция `ALTER TABLE` в `database.ts`).
