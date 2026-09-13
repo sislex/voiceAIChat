@@ -180,7 +180,7 @@ export interface IpcInvokeMap {
   /** Make: состояние проекта разговора (файлы, снимки, rev) и операции с файлами. */
   'make:state': { arg: { conversationId: string }; result: MakeProjectState }
   'make:read': { arg: { conversationId: string; path: string }; result: MakeFileContent }
-  'make:write': { arg: { conversationId: string; path: string; content: string }; result: MakeProjectState }
+  'make:write': { arg: { conversationId: string; path: string; content: string; kind?: 'file' | 'directory'; createOnly?: boolean }; result: MakeProjectState }
   'make:delete': { arg: { conversationId: string; path: string }; result: MakeProjectState }
   'make:rename': { arg: { conversationId: string; from: string; to: string }; result: MakeProjectState }
   'make:snapshot': { arg: { conversationId: string; label?: string }; result: MakeProjectState }
@@ -197,8 +197,8 @@ export interface IpcInvokeMap {
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
   /** Замена по всем текстовым файлам проекта; перед заменой — снимок. */
   /** `dryRun` — только предпросмотр (`preview`), файлы не меняются. `regex` — запрос как регулярное выражение с `$1`-подстановками. */
-  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] } }
-  'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
+  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean; previewToken?: string; path?: string; matchIndex?: number }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[]; previewToken?: string } }
+  'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string; compareSnapshotId?: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
   'make:library': { arg: Record<string, never>; result: { items: MakeLibraryItem[] } }
   /** Сохранить файлы проекта в библиотеку под именем. */
@@ -1027,7 +1027,7 @@ export interface RendererBoardBridge {
   /** Адресная инвалидация списка репозиториев задачи. */
   onTaskRepositoriesUpdated(cb: (m: { projectId: string; taskId: string }) => void): () => void
   /** Адресная инвалидация состояния QA-этапа: панель перечитывает снимок вместо опроса. */
-  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage }) => void): () => void
+  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage | 'manual_qa' }) => void): () => void
   /** Адресная инвалидация очереди «Улучшения» проекта. */
   onImprovementsUpdated(cb: (m: { projectId: string }) => void): () => void
   /** Release Center: релиз сменил статус или шаг — перечитать список/подробности. Необязателен у старых мостов. */
@@ -1186,6 +1186,7 @@ export interface RendererSessionBridge {
 export interface RendererFsBridge {
   list(agentId: string, path: string, projectId?: string): Promise<FsResult>
   read(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  readPrefix?(agentId: string, path: string, projectId?: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string, projectId?: string): Promise<FsResult>
   remove(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /** Корзина машины (агент ≥ 0.15.0): результат содержит trashedPath для отката. */

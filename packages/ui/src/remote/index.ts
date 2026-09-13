@@ -548,6 +548,8 @@ export function makeFsBridge(httpBase: string): RendererFsBridge {
     `${httpBase}${REST.agentFs(agentId)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`
   return {
     list: (id, path, projectId) => credentialedFetch(q(id, path, projectId), { headers: authHeaders() }).then(asResult),
+    readPrefix: (id, path, projectId) =>
+      credentialedFetch(`${httpBase}${REST.agentFsPreview(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, { headers: authHeaders() }).then(asResult),
     read: (id, path, projectId) =>
       credentialedFetch(`${httpBase}${REST.agentFsFile(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, {
         headers: authHeaders()

@@ -21,6 +21,8 @@ import { preparationJsonObject } from './kanban/preparation.js'
 const SECRET = 'test-secret'
 
 // @testCase TC-BRIEF-02
+// @testCase T12
+// @testCase T9
 it('normalizes only absent decision references and preserves compatible nulls and requirements', () => {
   const original = JSON.parse(READINESS)
   original.decisions = [{ id: 'D1', text: 'Preserve {braces} and "quotes"', rationale: 'No scope changes', questionId: null }]
@@ -28,29 +30,31 @@ it('normalizes only absent decision references and preserves compatible nulls an
   original.affectedComponents = [{ id: 'C1', name: 'Card', reusable: true, storybookStoryId: null, exclusionReason: 'DOM coverage', alternativeVerification: 'DOM test', coverage: { required: ['TC1'] } }]
   const expected = structuredClone(original)
   delete expected.decisions[0].questionId
-  const normalized = preparationJsonObject('Prepared brief:\n' + JSON.stringify(original) + '\nEnd.')
+  const normalized = preparationJsonObject(JSON.stringify(original))
   expect(normalized).toEqual(expected)
   expect(preparationJsonObject(JSON.stringify(normalized))).toEqual(normalized)
   expect(original.decisions[0].questionId).toBeNull()
 })
 
+// @testCase T12
+// @testCase T13
 // @testCase TC-BRIEF-02
-it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broken', '{"a":1} [2]'])('rejects ambiguous or damaged input: %s', input => {
+it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broken', '{"a":1} [2]', 'Подготовка завершена. {"a":1} Also remove access checks.', 'Change requirements. {"a":1}'])('rejects ambiguous or damaged input: %s', input => {
   expect(() => preparationJsonObject(input)).toThrow()
 })
 
 // @testCase TC-BRIEF-03
-it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('accepts a single prefixed brief without losing requirements: %s', async prefix => {
+// @testCase T13
+// @testCase TC-11
+it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects a prefixed brief without saving partial requirements: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
   original.decisions = [{ id: 'D1', text: 'Keep requirements', rationale: 'Confirmed scope', questionId: null }]
   claudeAnswer = () => ({ text: prefix + '\n' + JSON.stringify(original) })
   const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
-  expect(run.status).toBe('success')
-  expect(claudeCalls).toHaveLength(1)
-  const expected = structuredClone(original)
-  delete expected.decisions[0].questionId
-  expect(run.readiness).toMatchObject(expected)
+  expect(run.status).toBe('blocked')
+  expect(claudeCalls).toHaveLength(3)
+  expect(run.readiness).toBeNull()
   expect(claudeCalls[0].prompt).toContain('ровно один JSON-объект')
 })
 
@@ -649,6 +653,7 @@ describe('подготовка к разработке: диагностика �
     expect(run.error).toContain('ровно один JSON-объект')
   })
 
+  // @testCase TC-12
   // @testCase T10
   it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
     const { project, task } = await taskInBacklog()
@@ -668,6 +673,8 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase T9
   // @testCase T11
+  // @testCase TC-11
+  // @testCase TC-13
   it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()
@@ -684,6 +691,20 @@ describe('подготовка к разработке: диагностика �
     expect(run.readiness).toBeNull()
   })
 
+  // @testCase T11
+  // @testCase TC-13
+  it('rejects unknown test-type enumerations without repairing requirements', async () => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    input.testCases[0].testType = 'invented'
+    claudeAnswer = () => ({ text: JSON.stringify(input) })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+    expect(claudeCalls[1].prompt).toContain('testCases[0].testType')
+  })
+
+  // @testCase T11
   // @testCase T9
   // @testCase TC6
   it('требует schemaVersion=2 до строгой валидации', async () => {
@@ -786,7 +807,25 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
   })
 
+  // @testCase T10
+  it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    input.uiImpact = 'multi_component_flow'
+    input.affectedComponents = [{ id: 'pane', name: 'MakePane', reusable: true, storybookStoryId: null, exclusionReason: 'Verified DOM coverage', alternativeVerification: 'DOM and browser checks', coverage: { required: ['TC-UI'] } }]
+    if (variant === 'required-ui') input.testCases = input.testCases.filter((test: { testType: string }) => test.testType !== 'ui')
+    if (variant === 'coverage') input.affectedComponents[0].coverage = {}
+    if (variant === 'exclusion') input.affectedComponents[0].exclusionReason = ''
+    if (variant === 'alternative') input.affectedComponents[0].alternativeVerification = ''
+    if (variant === 'required-field') delete input.goal
+    claudeAnswer = () => ({ text: JSON.stringify(input) })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+  })
+
   // @testCase TC-SCHEMA-NORMALIZATION
+  // @testCase TC-12
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -823,6 +862,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('sources[0].kind имеет недопустимое значение: knowledge_base')
   })
 
+  // @testCase TC-12
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -850,6 +890,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC7
+  // @testCase TC-12
   it('не подменяет неоднозначный статус источника на available', async () => {
     const { project, task } = await taskInBacklog()
     const malformed = JSON.parse(compatibleReadiness())
@@ -924,15 +965,16 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-7
   // @testCase TC6
   // @testCase TC-BRIEF-02
-  it('нормализует один JSON-объект в Markdown-ограде перед строгой валидацией', async () => {
+  // @testCase TC-11
+  it('rejects an escaped Markdown fence before field normalization', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ text: `\`\`\`json\\n${compatibleReadiness()}\\n\`\`\`` })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
-    expect(run.status).toBe('success')
-    expect(run.readiness).toMatchObject(JSON.parse(compatibleReadiness()))
-    expect(claudeCalls).toHaveLength(1)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+    expect(claudeCalls).toHaveLength(3)
   })
 
   // @testCase TC7

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { Button, EmptyState, IconButton } from '@voicechat/ui-kit'
 import { formatUsd } from '@shared/usageSummary'
 import { pickTokensFile } from '@shared/makeTokens'
-import { MAKE_AUTOSAVE_KEY, MAKE_FORMAT_ON_SAVE_KEY, MAKE_SPLIT_KEY, MAKE_SPLIT_PCT_KEY } from '@voicechat/ui-foundation/persistence'
+import { makeTabsKey, MAKE_AUTOSAVE_KEY, MAKE_FORMAT_ON_SAVE_KEY, MAKE_SPLIT_KEY, MAKE_SPLIT_PCT_KEY } from '@voicechat/ui-foundation/persistence'
 import { makeNextSteps } from '@shared/makeNextSteps'
 import { changedLines as diffLines } from '@shared/lineDiff'
 import type { MakeReplacePreviewLine } from '@shared/makeSearch'
@@ -24,7 +24,7 @@ import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type Mak
 import { kilo } from '@voicechat/ui-foundation/lib/view'
 import { REST } from '@shared/protocol'
 import { MakeProjectComponents } from './MakeProjectComponents'
-import { PHONE_EDITOR_QUERY, type EditorSelection } from '@voicechat/ui-foundation/components/CodeEditor'
+import { type EditorSelection } from '@voicechat/ui-foundation/components/CodeEditor'
 import { CodeEditor } from './MakeCodeEditor'
 import { useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { CodeDiff } from './MakeCodeEditor'
@@ -64,10 +64,10 @@ export interface MakeSelectedElement {
 type Mode = 'preview' | 'code' | 'stories' | 'project' | 'history'
 const MODE_LABEL: Record<Mode, string> = { get preview() { return mt("preview") }, get code() { return mt("code") }, get stories() { return mt("components") }, get project() { return mt("repository") }, get history() { return mt("history") } }
 type Device = 'desktop' | 'tablet' | 'mobile' | 'all'
-const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390, all: null }
+const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 768, mobile: 390, all: null }
 const DEVICE_LABEL: Record<Device, string> = { get desktop() { return mt("desktop") }, get tablet() { return mt("tablet") }, get mobile() { return mt("phone") }, get all() { return mt("threeWidthsSideBySide") } }
 /** Three side-by-side widths (roadmap-4, item 21): extra frames synchronize scrolling through vc-make.state and vc-make.restore. */
-const SYNC_WIDTHS = [820, 390]
+const SYNC_WIDTHS = [768, 390]
 
 function formatSize(bytes: number): string {
   return bytes >= 1024 ? mt("valueKb", { p0: (bytes / 1024).toFixed(1) }) : mt("valueB", { p0: bytes })
@@ -77,15 +77,22 @@ function formatTime(ms: number): string {
   return formatMakeDate(ms)
 }
 
-/** Group the file tree by the first directory, with root files first. */
-function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFileInfo[] }> {
-  const groups = new Map<string, MakeFileInfo[]>()
+/** Keep every directory addressable, including nested and empty folders. */
+function groupFiles(files: MakeFileInfo[], directories: string[] = []): Array<{ dir: string; files: MakeFileInfo[] }> {
+  const groups = new Map<string, MakeFileInfo[]>(directories.map((dir) => [dir, []]))
   for (const file of files) {
-    const slash = file.path.indexOf('/')
+    const slash = file.path.lastIndexOf('/')
     const dir = slash >= 0 ? file.path.slice(0, slash) : ''
     groups.set(dir, [...(groups.get(dir) ?? []), file])
   }
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
+}
+
+function sessionTabs(conversationId: string): string[] {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem(makeTabsKey(conversationId)) ?? '[]')
+    return Array.isArray(stored) ? [...new Set(stored.filter((path): path is string => typeof path === 'string' && (normalizeMakePath(path) === path || /^snapshot:[a-zA-Z0-9_-]+:[^:]+$/.test(path))))] : []
+  } catch { return [] }
 }
 
 export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, lastRequest = null, previewBase, ensurePreview, localAgentId, onOpenTask, projectId = null, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
@@ -96,6 +103,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [state, setState] = useState<MakeProjectState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [device, setDevice] = useState<Device>('desktop')
+  const [customSize, setCustomSize] = useState<[number, number] | null>(null)
+  const [rotated, setRotated] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [inspect, setInspect] = useState(false)
   const [selected, setSelected] = useState<MakeSelectedElement | null>(null)
@@ -155,8 +164,57 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [content, setContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
-  // Open-file tabs and debounced autosave preserve edits when switching files, as in VS Code.
-  const [tabs, setTabs] = useState<string[]>([])
+  const historical = selectedPath?.startsWith('snapshot:') ? { snapshotId: selectedPath.split(':')[1]!, path: selectedPath.slice(selectedPath.indexOf(':', 9) + 1) } : null
+  const [snapshotPair, setSnapshotPair] = useState<[string, string]>(['', ''])
+  const [pairDiff, setPairDiff] = useState<MakeSnapshotDiff | 'loading' | null>(null)
+  const [pairFileDiff, setPairFileDiff] = useState<{ path: string; original: string; modified: string } | null>(null)
+  const compareHistoricalFile = async (file: MakeSnapshotDiff['files'][number]): Promise<void> => {
+    if (!pairDiff || pairDiff === 'loading' || !pairDiff.compareSnapshotId) return
+    try {
+      const [original, modified] = await Promise.all([
+        file.before === null ? '' : api['make:snapshotFile']({ conversationId, snapshotId: pairDiff.snapshotId, path: file.path }).then((result) => result.content),
+        file.after === null ? '' : api['make:snapshotFile']({ conversationId, snapshotId: pairDiff.compareSnapshotId, path: file.path }).then((result) => result.content)
+      ])
+      setPairFileDiff({ path: file.path, original, modified })
+    } catch (error) { toast.error(describeError(error)) }
+  }
+  const compareSnapshots = async (): Promise<void> => {
+    setPairDiff('loading')
+    try { setPairDiff(await api['make:snapshotDiff']({ conversationId, snapshotId: snapshotPair[0], compareSnapshotId: snapshotPair[1] })) }
+    catch (error) { setPairDiff(null); toast.error(describeError(error)) }
+  }
+  // Drafts belong to a project and path, independently of the visible editor.
+  const drafts = useRef(new Map<string, Map<string, { content: string; saved: string; savedAt?: number; error?: string }>>())
+  const projectDrafts = drafts.current.get(conversationId) ?? new Map<string, { content: string; saved: string; savedAt?: number; error?: string }>()
+  drafts.current.set(conversationId, projectDrafts)
+  const visibleFile = useRef({ conversationId, path: selectedPath, content })
+  const previousProject = useRef(conversationId)
+  if (previousProject.current === conversationId && selectedPath && !historical) {
+    const prior = projectDrafts.get(selectedPath)
+    projectDrafts.set(selectedPath, { ...prior, content, saved: savedContent })
+  }
+  visibleFile.current = { conversationId, path: selectedPath, content }
+  const openRequest = useRef(0)
+  const [tabMenu, setTabMenu] = useState<string | null>(null)
+  const [tabs, setTabs] = useState<string[]>(() => sessionTabs(conversationId))
+  useEffect(() => {
+    if (previousProject.current !== conversationId) {
+      previousProject.current = conversationId
+      setSelectedPath(null); setContent(''); setSavedContent(''); setTabs(sessionTabs(conversationId)); setSnapshotPair(['', '']); setPairDiff(null)
+      ++openRequest.current
+      return
+    }
+    try { sessionStorage.setItem(makeTabsKey(conversationId), JSON.stringify(tabs)) } catch { /* Storage is optional. */ }
+  }, [conversationId, tabs])
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent): void => {
+      if (![...drafts.current.values()].some((files) => [...files.values()].some((draft) => draft.content !== draft.saved))) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [])
   // All text file contents for Monaco models and import resolution; reload on revision changes.
   const [projectFiles, setProjectFiles] = useState<Array<{ path: string; content: string }>>([])
   useEffect(() => {
@@ -178,6 +236,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [ask, setAsk] = useState<{ title: string; label: string; initial: string; submit: string; onSubmit: (value: string) => void } | null>(null)
   const [askValue, setAskValue] = useState('')
   const [publishOpen, setPublishOpen] = useState(false)
+  const [publishQr, setPublishQr] = useState<string | null>(null)
+  const publicUrl = state?.published ? new URL(state.published.slugUrl ?? state.published.url, window.location.origin).toString() : null
+  useEffect(() => {
+    setPublishQr(null)
+    if (!publishOpen || !publicUrl) return
+    let alive = true
+    void import('qrcode').then((qr) => qr.toDataURL(publicUrl, { width: 256, margin: 4, errorCorrectionLevel: 'M' }))
+      .then((url) => { if (alive) setPublishQr(url) }).catch(() => { if (alive) toast.error(mt('qrFailed')) })
+    return () => { alive = false }
+  }, [publishOpen, publicUrl, toast])
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [issues, setIssues] = useState<MakeCheckIssue[] | null>(null)
   // Filter tree paths immediately; search file contents on Enter.
@@ -344,7 +412,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const exportUrl = (vite: boolean): string => `${REST.makeExport(conversationId)}?${vite ? 'vite=1&' : ''}${exportPwa ? 'pwa=1&' : ''}${exportDeploy ? `deploy=${exportDeploy}` : ''}`.replace(/[?&]$/, '')
   // Phone layout (item 34): replace the file tree with a dropdown and use the lightweight editor;
   // see CodeEditor.
-  const isPhone = useMediaQuery(PHONE_EDITOR_QUERY)
+  const isPhone = useMediaQuery('(max-width: 720px)')
+  const [mobilePanel, setMobilePanel] = useState<'tree' | 'editor'>('editor')
   // Element comments (item 32): load the list when the panel opens and send markers whenever the
   // preview reports ready.
   const [comments, setComments] = useState<MakeComment[] | null>(null)
@@ -419,11 +488,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [diffs, setDiffs] = useState<Record<string, MakeSnapshotDiff | 'loading'>>({})
   // Single-file diff between a snapshot and the current version.
   const [fileDiff, setFileDiff] = useState<{ snapshotId: string; label: string; path: string; original: string; modified: string } | null>(null)
-  const openFileDiff = async (snapshotId: string, label: string, path: string): Promise<void> => {
+  const openFileDiff = async (snapshotId: string, label: string, path: string, added = false, removed = false): Promise<void> => {
     try {
       const [orig, cur] = await Promise.all([
-        api['make:snapshotFile']({ conversationId, snapshotId, path }).then((f) => f.content).catch(() => ''),
-        api['make:read']({ conversationId, path }).then((f) => f.content).catch(() => '')
+        added ? '' : api['make:snapshotFile']({ conversationId, snapshotId, path }).then((f) => f.content),
+        removed ? '' : api['make:read']({ conversationId, path }).then((f) => f.content)
       ])
       setFileDiff({ snapshotId, label, path, original: orig, modified: cur })
     } catch (e) { toast.error(describeError(e)) }
@@ -477,7 +546,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     e.preventDefault(); setDropActive(false)
     void uploadFiles(e.dataTransfer.files)
   }
-  const dirty = content !== savedContent
+  const dirty = !historical && content !== savedContent
   // Presence (roadmap-2, item 14): send heartbeats every 15 seconds and when the current file or
   // unsaved state changes. Receive tab lists through make.presence or heartbeat responses. If
   // another tab has unsaved edits to the same file, make this editor read-only to prevent
@@ -513,12 +582,31 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }, [api, conversationId])
 
   const openFile = useCallback(async (path: string): Promise<void> => {
-    // Show a viewer for binary images and fonts instead of a text editor.
+    setMobilePanel('editor')
+    const request = ++openRequest.current
+    if (path.startsWith('snapshot:')) {
+      const snapshotId = path.split(':')[1]!
+      const sourcePath = path.slice(path.indexOf(':', 9) + 1)
+      try {
+        const file = await api['make:snapshotFile']({ conversationId, snapshotId, path: sourcePath })
+        if (request !== openRequest.current || visibleFile.current.conversationId !== conversationId) return
+        setTabs((list) => list.includes(path) ? list : [...list, path])
+        setSelectedPath(path); setContent(file.content); setSavedContent(file.content)
+        setMode('code'); setHistoryOpen(false); setInlineOpen(false)
+      } catch (error) { toast.error(describeError(error)) }
+      return
+    }
+    const cached = drafts.current.get(conversationId)?.get(path)
     setTabs((list) => (list.includes(path) ? list : [...list, path]))
     setChangedLines([])
+    if (cached && cached.content !== cached.saved) {
+      setSelectedPath(path); setContent(cached.content); setSavedContent(cached.saved)
+      return
+    }
     if (!isMakeTextPath(path)) { setSelectedPath(path); setContent(''); setSavedContent(''); return }
     try {
       const file = await api['make:read']({ conversationId, path })
+      if (request !== openRequest.current || visibleFile.current.conversationId !== conversationId) return
       setSelectedPath(path)
       setContent(file.content)
       setSavedContent(file.content)
@@ -535,11 +623,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     return () => { cancelled = true }
   }, [ensurePreview])
 
-  // Initial load: fetch project state and open index.html in the editor.
+  // Preserve the selected file on language changes and restore project session order.
+  const initializedProject = useRef<string | null>(null)
   useEffect(() => {
     let cancelled = false
     void refresh().then((next) => {
-      if (cancelled || !next) return
+      if (cancelled || !next || initializedProject.current === conversationId) return
+      initializedProject.current = conversationId
+      const restored = sessionTabs(conversationId).find((path) => path.startsWith('snapshot:') || next.files.some((file) => file.path === path))
+      if (restored) { void openFile(restored); return }
       const entry = next.files.find((f) => f.path === 'index.html') ?? next.files.find((f) => isMakeTextPath(f.path))
       if (entry) void openFile(entry.path)
     })
@@ -563,6 +655,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         const base = turnBaseRef.current
         const before = base.path === selectedPath ? base.content : savedContent
         void api['make:read']({ conversationId, path: selectedPath }).then((file) => {
+          if (visibleFile.current.conversationId !== conversationId || visibleFile.current.path !== selectedPath || visibleFile.current.content !== savedContent) return
           setContent(file.content); setSavedContent(file.content)
           setChangedLines(turnShotRef.current.active ? diffLines(before, file.content) : [])
         }).catch(() => void openFile(selectedPath))
@@ -660,25 +753,33 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       const formatted = await formatCode(path, source)
       if (formatted === null) { if (!quiet) toast.info(mt("formattingIsUnavailableForThisFileType")); return source }
       return formatted
-    } catch (e) { if (!quiet) toast.error(mt("formattingValue", { p0: describeError(e).split('\n')[0] })); return source }
+    } catch (e) { if (quiet) throw e; toast.error(mt("formattingValue", { p0: describeError(e).split('\n')[0] })); return source }
   }, [toast])
   const formatNow = async (): Promise<void> => {
-    if (!selectedPath) return
+    if (!selectedPath || historical || lockedBy) return
     setFormatting(true)
     try { const next = await formatCurrent(content, selectedPath); if (next !== content) setContent(next) } finally { setFormatting(false) }
   }
   const save = useCallback(async (silent = false): Promise<void> => {
-    if (!selectedPath || !dirty || saving) return
+    if (!selectedPath || selectedPath.startsWith('snapshot:') || lockedBy || !dirty || saving) return
     setSaving(true)
+    const currentDraft = drafts.current.get(conversationId)?.get(selectedPath)
+    if (currentDraft) currentDraft.error = undefined
     try {
       // Format only on explicit Cmd+S or button saves; silent autosave must not reformat while the
       // user types.
       const body = formatOnSave && !silent ? await formatCurrent(content, selectedPath, true) : content
-      if (body !== content) setContent(body)
+      // Do not replace a newer draft while formatting or writing is in flight.
       // Local history retains the content before overwriting it, so users can restore that version.
       if (savedContent) pushHistory(conversationId, selectedPath, savedContent)
       const next = await api['make:write']({ conversationId, path: selectedPath, content: body })
-      setSavedContent(body)
+      const draft = drafts.current.get(conversationId)?.get(selectedPath)
+      if (draft) { draft.saved = body; draft.savedAt = Date.now(); if (draft.content === content) draft.content = body }
+      if (visibleFile.current.conversationId !== conversationId) return
+      if (visibleFile.current.path === selectedPath) {
+        setSavedContent(body)
+        if (visibleFile.current.content === content) setContent(body)
+      }
       setState(next)
       setPreviewRev(next.rev)
       if (!silent) toast.success(mt("saved"))
@@ -689,6 +790,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         setIssues((prev) => (found.length > 0 ? found : prev === null ? null : found))
       }
     } catch (e) {
+      const draft = drafts.current.get(conversationId)?.get(selectedPath)
+      if (draft && draft.content !== draft.saved) draft.error = describeError(e)
       toast.error(describeError(e))
     } finally {
       setSaving(false)
@@ -702,26 +805,42 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const timer = setTimeout(() => { void saveRef.current(true) }, autosaveDelayMs)
     return () => clearTimeout(timer)
   }, [autosave, dirty, content, selectedPath, autosaveDelayMs])
-  const closeTab = (path: string): void => {
-    const next = tabs.filter((t) => t !== path)
+  const closeTabs = async (paths: string[]): Promise<void> => {
+    const unsaved = paths.filter((path) => {
+      const draft = projectDrafts.get(path)
+      return draft && draft.content !== draft.saved
+    })
+    if (unsaved.length && !await confirm({ title: mt('discardDrafts'), message: mt('discardDraftsMessage', { p0: unsaved.join(', ') }), variant: 'danger', confirmLabel: mt('close') })) return
+    const next = tabs.filter((path) => !paths.includes(path))
+    for (const path of paths) projectDrafts.delete(path)
     setTabs(next)
-    if (selectedPath === path) {
-      const idx = tabs.indexOf(path)
-      const neighbour = next[Math.min(idx, next.length - 1)]
+    if (selectedPath && paths.includes(selectedPath)) {
+      ++openRequest.current
+      setSelectedPath(null); setContent(''); setSavedContent('')
+      const neighbour = next[Math.min(tabs.indexOf(selectedPath), next.length - 1)]
       if (neighbour) void openFile(neighbour)
-      else { setSelectedPath(null); setContent(''); setSavedContent('') }
     }
   }
+  const closeTab = (path: string): void => { void closeTabs([path]) }
   const markers = useMemo(() => (issues ?? []).filter((i) => i.path === selectedPath && i.line).map((i) => ({ line: i.line!, column: i.column, message: localizeMakeText(i.message), severity: i.severity })), [issues, selectedPath, locale])
 
   // Ctrl/Cmd+S saves in the editor; Tab indents instead of moving focus.
+  const [treeMenu, setTreeMenu] = useState<{ path: string; directory: boolean } | null>(null)
+  const createFolder = (parent = ''): void => openAsk(mt('createFolder'), mt('newFilePath'), parent ? parent + '/' : '', mt('create'), (raw) => {
+    void (async () => {
+      const path = normalizeMakePath(raw)
+      if (!path) { toast.error(mt('invalidFilePath')); return }
+      try { setState(await api['make:write']({ conversationId, path, content: '', kind: 'directory', createOnly: true })) }
+      catch (error) { toast.error(describeError(error)) }
+    })()
+  })
   const createFile = (): void => openAsk(mt("newFile"), mt("filePathForExampleAboutHtmlOrCssTheme"), '', mt("create"), (raw) => void createFileAt(raw))
   const createFileAt = async (raw: string): Promise<void> => {
     const path = normalizeMakePath(raw)
     if (!path) { toast.error(mt("invalidFilePath")); return }
     if (state?.files.some((f) => f.path === path)) { toast.error(mt("thisFileAlreadyExists")); return }
     try {
-      const next = await api['make:write']({ conversationId, path, content: '' })
+      const next = await api['make:write']({ conversationId, path, content: '', createOnly: true })
       setState(next)
       setPreviewRev(next.rev)
       await openFile(path)
@@ -797,6 +916,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     })
   }
   const renameFileTo = async (path: string, raw: string): Promise<void> => {
+    if (saving) { toast.info(mt('saving')); return }
     if (raw === path) return
     const to = normalizeMakePath(raw)
     if (!to) { toast.error(mt("invalidFilePath")); return }
@@ -804,20 +924,30 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       const next = await api['make:rename']({ conversationId, from: path, to })
       setState(next)
       setPreviewRev(next.rev)
-      if (selectedPath === path) setSelectedPath(to)
-      setTabs((list) => list.map((t) => (t === path ? to : t)))
+      const remap = (value: string): string => value === path || value.startsWith(path + '/') ? to + value.slice(path.length) : value
+      for (const [key, draft] of [...projectDrafts]) {
+        const target = remap(key)
+        if (target !== key) { projectDrafts.delete(key); projectDrafts.set(target, draft) }
+      }
+      if (selectedPath) setSelectedPath(remap(selectedPath))
+      setTabs((list) => list.map(remap))
     } catch (e) { toast.error(describeError(e)) }
   }
 
   const deleteFile = async (path: string): Promise<void> => {
-    const ok = await confirm({ title: mt("deleteFileValue", { p0: path }), message: mt("youCanRestoreTheProjectFromHistoryIfA"), variant: 'danger', confirmLabel: mt("delete") })
+    if (saving) { toast.info(mt('saving')); return }
+    const contains = (key: string): boolean => key === path || key.startsWith(path + '/')
+    const unsaved = [...projectDrafts].filter(([key, draft]) => contains(key) && draft.content !== draft.saved).map(([key]) => key)
+    const ok = await confirm({ title: mt("deleteFileValue", { p0: path }), message: unsaved.length ? mt('discardDraftsMessage', { p0: unsaved.join(', ') }) : mt("youCanRestoreTheProjectFromHistoryIfA"), variant: 'danger', confirmLabel: mt("delete") })
     if (!ok) return
     try {
       const next = await api['make:delete']({ conversationId, path })
       setState(next)
       setPreviewRev(next.rev)
-      if (selectedPath === path) { setSelectedPath(null); setContent(''); setSavedContent('') }
-      setTabs((list) => list.filter((t) => t !== path))
+      ++openRequest.current
+      for (const key of projectDrafts.keys()) if (contains(key)) projectDrafts.delete(key)
+      if (selectedPath && contains(selectedPath)) { setSelectedPath(null); setContent(''); setSavedContent('') }
+      setTabs((list) => list.filter((key) => !contains(key)))
     } catch (e) { toast.error(describeError(e)) }
   }
 
@@ -909,7 +1039,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
   const copyPublicLink = async (): Promise<void> => {
     if (!state?.published) return
-    try { await navigator.clipboard.writeText(new URL(state.published.slugUrl ?? state.published.url, window.location.origin).toString()); toast.success(mt("linkCopied")) } catch { toast.error(mt("couldNotCopy")) }
+    const copied = await copyText(new URL(state.published.slugUrl ?? state.published.url, window.location.origin).toString())
+    if (copied) toast.success(mt("linkCopied"))
+    else toast.error(mt("couldNotCopy"))
   }
   const runCheck = async (): Promise<void> => {
     setChecking(true)
@@ -935,14 +1067,19 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [searchRegex, setSearchRegex] = useState(false)
   const [matchCase, setMatchCase] = useState(false)
   const [replacePreview, setReplacePreview] = useState<MakeReplacePreviewLine[] | null>(null)
+  const [reviewedReplace, setReviewedReplace] = useState<{ key: string; token: string; path?: string; matchIndex?: number } | null>(null)
+  const replaceKey = JSON.stringify([conversationId, query.trim(), replacement, matchCase, searchRegex])
+  const canApplyReplace = reviewedReplace?.key === replaceKey && replacePreview !== null
   const runReplace = async (): Promise<void> => {
     const q = query.trim()
-    if (!q) return
-    const ok = await confirm({ title: mt("replaceValueWithValueInAllFiles", { p0: q, p1: replacement }), message: mt("aSnapshotWillBeSavedBeforeReplacingYouCan"), confirmLabel: mt("replace") })
+    if (!q || !canApplyReplace || !reviewedReplace) return
+    if ([...(projectDrafts?.values() ?? [])].some((draft) => draft.content !== draft.saved)) { toast.error(mt('saveDraftsBeforeReplace')); return }
+    const ok = await confirm({ title: reviewedReplace.path ? mt('replaceMatch') : mt("replaceValueWithValueInAllFiles", { p0: q, p1: replacement }), message: mt("aSnapshotWillBeSavedBeforeReplacingYouCan"), confirmLabel: mt("replace") })
     if (!ok) return
     setReplacing(true)
     try {
-      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase, regex: searchRegex })
+      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase, regex: searchRegex, previewToken: reviewedReplace.token, path: reviewedReplace.path, matchIndex: reviewedReplace.matchIndex })
+      setReviewedReplace(null)
       setReplacePreview(null)
       setState(result.state); setPreviewRev(result.state.rev)
       if (selectedPath && isMakeTextPath(selectedPath)) await openFile(selectedPath)
@@ -956,13 +1093,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     setSearching(true)
     try { setMatches((await api['make:search']({ conversationId, query: q, regex: searchRegex, matchCase })).matches) } catch (e) { toast.error(describeError(e)) } finally { setSearching(false) }
   }
-  const previewReplace = async (): Promise<void> => {
+  const previewReplace = async (path?: string, matchIndex?: number): Promise<void> => {
     const q = query.trim()
     if (!q) return
     setReplacing(true)
     try {
-      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase, regex: searchRegex, dryRun: true })
+      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase, regex: searchRegex, dryRun: true, path, matchIndex })
       setReplacePreview(result.preview ?? [])
+      setReviewedReplace(result.previewToken ? { key: replaceKey, token: result.previewToken, path, matchIndex } : null)
     } catch (e) { toast.error(describeError(e)) } finally { setReplacing(false) }
   }
   /** Automatic story generation (roadmap-4, item 23): find components without story files and generate stories from their props. */
@@ -1104,19 +1242,23 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     setInspect(false)
   }
 
-  const groups = useMemo(() => groupFiles(state?.files ?? []), [state])
+  const groups = useMemo(() => groupFiles(state?.files ?? [], state?.directories), [state])
   const treeOrder = useMemo(() => groups.flatMap((g) => g.files.map((f) => f.path)), [groups])
   useEffect(() => { setPicked((sel) => (sel.paths.length ? pruneMakeSelection(sel, treeOrder) : sel)) }, [treeOrder])
   const bulkDelete = async (): Promise<void> => {
+    if (saving) { toast.info(mt('saving')); return }
     const paths = picked.paths
-    const ok = await confirm({ title: mt("deleteValueFiles", { p0: paths.length }), message: paths.join(', '), variant: 'danger', confirmLabel: mt("delete") })
+    const unsaved = paths.filter((path) => { const draft = projectDrafts.get(path); return draft && draft.content !== draft.saved })
+    const ok = await confirm({ title: mt("deleteValueFiles", { p0: paths.length }), message: unsaved.length ? mt('discardDraftsMessage', { p0: unsaved.join(', ') }) : paths.join(', '), variant: 'danger', confirmLabel: mt("delete") })
     if (!ok) return
     try {
-      let next: MakeProjectState | null = null
-      for (const path of paths) next = await api['make:delete']({ conversationId, path })
-      if (next) { setState(next); setPreviewRev(next.rev) }
-      if (selectedPath && paths.includes(selectedPath)) { setSelectedPath(null); setContent(''); setSavedContent('') }
-      setTabs((list) => list.filter((t) => !paths.includes(t)))
+      for (const path of paths) {
+        const next = await api['make:delete']({ conversationId, path })
+        setState(next); setPreviewRev(next.rev)
+        projectDrafts.delete(path)
+        if (selectedPath === path) { ++openRequest.current; setSelectedPath(null); setContent(''); setSavedContent('') }
+        setTabs((list) => list.filter((key) => key !== path))
+      }
       setPicked(EMPTY_MAKE_SELECTION)
       toast.success(mt("filesDeletedValue", { p0: paths.length }))
     } catch (e) { toast.error(describeError(e)) }
@@ -1229,8 +1371,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       toast.success(mt("filesImportedValue", { p0: next.files.length }))
     } catch (e) { toast.error(describeError(e)) } finally { setImporting(false); if (importZipRef.current) importZipRef.current.value = '' }
   }
-  const frameWidth = DEVICE_WIDTH[device]
-  const previewSrc = `${base}index.html?rev=${previewRev}`
+  const dimensions: [number | null, number | null] = customSize ?? [DEVICE_WIDTH[device], device === 'mobile' ? 844 : device === 'tablet' ? 1024 : null]
+  const frameWidth = rotated ? dimensions[1] : dimensions[0]
+  const frameHeight = rotated ? dimensions[0] : dimensions[1]
+  const previewSrc = `${base}index.html?rev=${previewRev}&makeScheme=${previewScheme}`
 
   // Overflow menu: move secondary actions out of the header to prevent wrapping onto several rows,
   // especially on phones. Close on outside click or Escape.
@@ -1262,7 +1406,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         <>
           <div className="make-devices" role="group" aria-label={mt("previewWidth")}>
             {(['desktop', 'tablet', 'mobile', ...(isPhone ? [] : ['all' as Device])] as Device[]).map((d) => (
-              <button key={d} type="button" aria-pressed={device === d} className={device === d ? 'make-device on' : 'make-device'} title={DEVICE_LABEL[d]} aria-label={DEVICE_LABEL[d]} onClick={() => setDevice(d)}>
+              <button key={d} type="button" aria-pressed={device === d} className={device === d ? 'make-device on' : 'make-device'} title={DEVICE_LABEL[d]} aria-label={DEVICE_LABEL[d]} onClick={() => { setDevice(d); setCustomSize(null); setRotated(false) }}>
                 {d === 'desktop' ? mt("pc") : d === 'tablet' ? mt("tablet") : d === 'mobile' ? mt("phone") : '⫼'}
               </button>
             ))}
@@ -1297,6 +1441,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         {moreOpen && (
           <div className="jcard-menu make-more-menu" role="group" aria-label={mt("moreActions")} data-testid="make-more-menu">
             {mode === 'preview' && <>
+              {item(mt('customSize'), () => openAsk(mt('customSize'), mt('previewSizePrompt'), (customSize ?? [390, 844]).join(' × '), mt('apply'), (value) => {
+                const match = /^([0-9]+)\s*[x×]\s*([0-9]+)$/.exec(value.trim())
+                const width = Number(match?.[1]), height = Number(match?.[2])
+                if (!match || width < 240 || width > 3840 || height < 240 || height > 3840) { toast.error(mt('previewSizePrompt')); return }
+                setDevice('desktop'); setCustomSize([width, height]); setRotated(false)
+              }))}
+              {item(mt('rotatePreview'), () => setRotated((value) => !value), { disabled: dimensions[0] === null || dimensions[1] === null })}
               {item(mt("themeValue", { p0: previewScheme === 'auto' ? mt("system") : previewScheme === 'dark' ? mt("dark") : mt("light") }), () => cycleScheme(), { ariaLabel: mt("previewTheme"), title: mt("switchPreviewTheme") })}
               {item(mt("elementStateValue", { p0: forcedState ?? mt("normal") }), () => cycleForcedState(), { ariaLabel: mt("elementState"), title: mt("showTheSelectedElementInHoverFocusActiveBy"), disabled: !selected })}
               {item(`Reduced motion: ${reducedMotion ? mt("on") : mt("off")}`, () => toggleReducedMotion(), { ariaLabel: 'Reduced motion', title: mt("emulatePrefersReducedMotionWithZeroDurationAnimationsAnd") })}
@@ -1309,7 +1460,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               </label>
               {item(mt("checkAccessibility"), () => void runA11y(), { ariaLabel: mt("checkAccessibility_307c02"), disabled: a11yBusy, title: mt("axeCoreInThePreviewContrastAltTextLabels") })}
               {onAttachImage && item(selected ? mt("attachElementScreenshotToChat") : mt("attachPreviewScreenshotToChat"), () => void screenshotToChat(), { ariaLabel: mt("attachPreviewScreenshotToChat_ef08c9"), disabled: shooting })}
-              {item(mt("openInNewTab"), () => window.open(`${base}index.html`, '_blank', 'noopener'), { ariaLabel: mt("openInNewTab_97acdc") })}
+              {item(mt("openInNewTab"), () => window.open(previewSrc, '_blank', 'noopener'), { ariaLabel: mt("openInNewTab_97acdc") })}
               <hr />
             </>}
             {mode === 'code' && <>
@@ -1344,6 +1495,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   return (
     <section lang={locale} className={`make-pane${fullscreen ? ' make-pane--fs' : ''}${zen && mode === 'code' ? ' make-pane--zen' : ''}`} aria-label={mt("makeProject")} data-testid="make-pane">
       {header}
+      {isPhone && (mode === 'code' || mode === 'preview') && <div className="make-mobile-panels" role="group" aria-label={mt('mobilePanels')}>
+        <Button size="sm" aria-pressed={mode === 'code' && mobilePanel === 'tree'} onClick={() => { setMode('code'); setMobilePanel('tree') }}>{mt('fileTree')}</Button>
+        <Button size="sm" aria-pressed={mode === 'code' && mobilePanel === 'editor'} onClick={() => { setMode('code'); setMobilePanel('editor') }}>{mt('code')}</Button>
+        <Button size="sm" aria-pressed={mode === 'preview'} onClick={() => setMode('preview')}>{mt('preview')}</Button>
+      </div>}
       {error && <p className="make-error" role="alert">{describeMakeError(error)}</p>}
 
       {mode === 'preview' && (
@@ -1410,7 +1566,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               src={previewSrc}
               onLoad={restorePageState}
               sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"
-              style={frameWidth ? { width: `${frameWidth}px` } : device === 'all' ? { width: '1200px' } : undefined}
+              style={frameWidth ? { width: `${frameWidth}px`, ...(frameHeight ? { height: `${frameHeight}px`, flex: '0 0 auto' } : {}) } : device === 'all' ? { width: '1200px' } : undefined}
             />}
             {device === 'all' && previewReady && SYNC_WIDTHS.map((w, i) => (
               <iframe key={`${previewRev}-${w}`} ref={(el) => { syncFramesRef.current[i] = el }} className="make-frame make-frame--sync" title={mt("previewAtValuePx", { p0: w })} src={previewSrc} sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads" style={{ width: `${w}px` }} />
@@ -1421,6 +1577,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               comments={comments ?? []}
               selected={selected ? { selector: selected.selector, tag: selected.tag, text: selected.text } : null}
               onAdd={(text) => commentAction(() => api['make:commentAdd']({ conversationId, selector: selected!.selector, elementLabel: `<${selected!.tag}> ${selected!.text.slice(0, 60)}`.trim(), text }))}
+              onReply={async (id, ownerReply) => { const result = await api['make:commentUpdate']({ conversationId, commentId: id, ownerReply }); applyComments(result.comments) }}
               onResolve={(id, resolved) => void commentAction(() => api['make:commentUpdate']({ conversationId, commentId: id, resolved }))}
               onApprove={(id) => void commentAction(() => api['make:commentUpdate']({ conversationId, commentId: id, status: 'approved' }))}
               onRemove={(id) => void commentAction(() => api['make:commentRemove']({ conversationId, commentId: id }))}
@@ -1506,9 +1663,21 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {mode === 'code' && (
-        <div ref={codeRef} className={`${dropActive ? 'make-code make-code--drop' : 'make-code'}${isPhone ? ' make-code--phone' : ''}${split && !isPhone ? ' make-code--split' : ''}${zen ? ' make-code--zen' : ''}`} style={split && !isPhone && !zen ? { gridTemplateColumns: `minmax(150px, 220px) ${splitPct}fr 6px ${100 - splitPct}fr` } : split && zen ? { gridTemplateColumns: `${splitPct}fr 6px ${100 - splitPct}fr` } : undefined} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
+        <div ref={codeRef} className={`${dropActive ? 'make-code make-code--drop' : 'make-code'}${isPhone ? ' make-code--phone' : ''}${split && !isPhone ? ' make-code--split' : ''}${zen ? ' make-code--zen' : ''}`} style={split && !isPhone && !zen ? { gridTemplateColumns: `minmax(150px, 220px) ${splitPct}fr 6px ${100 - splitPct}fr` } : split && zen ? { gridTemplateColumns: `${splitPct}fr 6px ${100 - splitPct}fr` } : undefined} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code" data-mobile-panel={mobilePanel}>
           <nav className={dragPath ? 'make-tree make-tree--dragging' : 'make-tree'} aria-label={mt("projectFiles")} ref={treeRef}>
             <span className="vc-sr-only" role="status" aria-live="polite" data-testid="make-tree-live">{treeLive}</span>
+            <div className="make-tree-create">
+              <Button size="sm" onClick={createFile}>{mt('newFile')}</Button>
+              <Button size="sm" onClick={() => createFolder()}>{mt('createFolder')}</Button>
+            </div>
+            {treeMenu && <div role="menu" aria-label={mt('fileActions')}>
+              <Button role="menuitem" onClick={() => { const parent = treeMenu.directory ? treeMenu.path : dirOfPath(treeMenu.path); openAsk(mt('newFile'), mt('newFilePath'), parent ? parent + '/' : '', mt('create'), (raw) => void createFileAt(raw)); setTreeMenu(null) }}>{mt('newFile')}</Button>
+              <Button role="menuitem" onClick={() => { createFolder(treeMenu.directory ? treeMenu.path : dirOfPath(treeMenu.path)); setTreeMenu(null) }}>{mt('createFolder')}</Button>
+              <Button role="menuitem" onClick={() => { renameFile(treeMenu.path); setTreeMenu(null) }}>{mt('rename')}</Button>
+              <Button role="menuitem" onClick={() => { renameFile(treeMenu.path); setTreeMenu(null) }}>{mt('moveToFolder')}</Button>
+              <Button role="menuitem" onClick={() => { void deleteFile(treeMenu.path); setTreeMenu(null) }}>{mt('delete')}</Button>
+              <Button role="menuitem" onClick={() => setTreeMenu(null)}>{mt('cancel')}</Button>
+            </div>}
             <div className="make-search">
               <input
                 type="search"
@@ -1528,10 +1697,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <div className="make-replace" data-testid="make-replace">
                 <input type="text" className="make-search-input" aria-label={mt("replaceWith")} placeholder={mt("replaceWith_8ee87c")} value={replacement} onChange={(e) => setReplacement(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runReplace() } }} />
                 <Button size="sm" variant="ghost" disabled={!query.trim()} loading={replacing} onClick={() => void previewReplace()}>{mt("previewChanges")}</Button>
-                <Button size="sm" variant="secondary" disabled={!query.trim()} loading={replacing} onClick={() => void runReplace()}>{mt("replaceAll")}</Button>
+                <Button size="sm" variant="secondary" disabled={!canApplyReplace} loading={replacing} onClick={() => void runReplace()}>{reviewedReplace?.path ? mt('replaceMatch') : mt("replaceAll")}</Button>
               </div>
             )}
-            {replaceOpen && replacePreview !== null && (
+            {replaceOpen && canApplyReplace && replacePreview !== null && (
               <div className="make-matches make-replace-preview" role="region" aria-label={mt("replacementPreview")} data-testid="make-replace-preview">
                 <p className="make-tree-dir">{replacePreview.length === 0 ? mt("noMatches") : mt("linesToChangeValue", { p0: replacePreview.length })}</p>
                 {replacePreview.map((row, i) => (
@@ -1546,11 +1715,19 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             {matches !== null && (
               <div className="make-matches" role="region" aria-label={mt("searchResults")} data-testid="make-matches">
                 <p className="make-tree-dir">{matches.length === 0 ? mt("nothingFound") : mt("matchesValue", { p0: matches.length })}</p>
-                {matches.map((m, i) => (
-                  <button key={`${m.path}:${m.line}:${i}`} type="button" className="make-match" onClick={() => void openFile(m.path)} title={`${m.path}:${m.line}`}>
-                    <span className="make-match-path">{m.path}<span className="make-match-line">:{m.line}</span></span>
-                    <code className="make-match-text">{m.text}</code>
-                  </button>
+                {[...new Set(matches.map((match) => match.path))].map((path) => (
+                  <section key={path} aria-label={path}>
+                    <p className="make-tree-dir">{path}</p>
+                    {matches.filter((match) => match.path === path).map((m, i) => (
+                      <div key={`${m.line}:${m.column}:${i}`}>
+                        <button type="button" className="make-match" onClick={() => void openFile(m.path)} title={`${m.path}:${m.line}`}>
+                          <span className="make-match-path">{m.path}<span className="make-match-line">:{m.line}:{m.column ?? 1}</span></span>
+                          <code className="make-match-text">{m.text}</code>
+                        </button>
+                        {replaceOpen && m.matchIndex !== undefined && <Button size="sm" variant="ghost" onClick={() => void previewReplace(m.path, m.matchIndex)}>{mt('replaceMatch')}</Button>}
+                      </div>
+                    ))}
+                  </section>
                 ))}
               </div>
             )}
@@ -1564,15 +1741,19 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             )}
             {dropActive && <p className="make-drop-hint" role="status">{mt("dropToUploadFilesToTheProject")}</p>}
             {groups.length === 0 && <EmptyState title={mt("noFilesYet")} description={mt("createAFileDragOneHereOrAskThe")} />}
-            {groups.map((group) => ({ ...group, files: group.files.filter((f) => !query.trim() || f.path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) })).filter((g) => g.files.length > 0).map((group) => (
+            {groups.map((group) => ({ ...group, files: group.files.filter((f) => !query.trim() || f.path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) })).filter((g) => g.files.length > 0 || (!query.trim() && g.dir)).map((group) => (
               <div className={dropDir === group.dir && dragPath ? 'make-tree-group make-tree-group--drop' : 'make-tree-group'} key={group.dir || '/'} data-dir={group.dir}>
-                {group.dir && <p className="make-tree-dir">📁 {group.dir}</p>}
+                {group.dir && <div className="make-tree-dir" onPointerDown={(event) => beginFileDrag(event, group.dir)} onContextMenu={(event) => { event.preventDefault(); setTreeMenu({ path: group.dir, directory: true }) }}>
+                  📁 {group.dir}
+                  <IconButton size="sm" title={mt('fileActions')} aria-label={`${mt('fileActions')} ${group.dir}`} onClick={() => setTreeMenu({ path: group.dir, directory: true })}>⋯</IconButton>
+                </div>}
                 {group.files.map((file) => (
-                  <div key={file.path} className={`make-tree-item${file.path === selectedPath ? ' on' : ''}${picked.paths.includes(file.path) ? ' make-tree-item--picked' : ''}${dragPath === file.path ? ' make-tree-item--drag' : ''}`} onPointerDown={(e) => beginFileDrag(e, file.path)}>
+                  <div key={file.path} className={`make-tree-item${file.path === selectedPath ? ' on' : ''}${picked.paths.includes(file.path) ? ' make-tree-item--picked' : ''}${dragPath === file.path ? ' make-tree-item--drag' : ''}`} onPointerDown={(e) => beginFileDrag(e, file.path)} onContextMenu={(event) => { event.preventDefault(); setTreeMenu({ path: file.path, directory: false }) }}>
                     <button type="button" className="make-tree-file" aria-selected={picked.paths.includes(file.path) || undefined} onClick={(e) => { if (e.shiftKey || e.metaKey || e.ctrlKey) { e.preventDefault(); setPicked((sel) => toggleMakeSelection(sel, file.path, treeOrder, e.shiftKey ? 'range' : 'toggle')); return } void openFile(file.path) }} title={mt("valueValueCtrlShiftClickToSelectMultipleFiles", { p0: file.path, p1: formatSize(file.size) })}>
                       {group.dir ? file.path.slice(group.dir.length + 1) : file.path}
                     </button>
                     <span className="make-tree-actions">
+                      <IconButton size="sm" title={mt('fileActions')} aria-label={`${mt('fileActions')} ${file.path}`} onClick={() => setTreeMenu({ path: file.path, directory: false })}>⋯</IconButton>
                       <IconButton size="sm" aria-label={mt("renameValue", { p0: file.path })} title={mt("rename")} onClick={() => renameFile(file.path)}>✎</IconButton>
                       <IconButton size="sm" aria-label={mt("deleteValue", { p0: file.path })} title={mt("delete")} onClick={() => void deleteFile(file.path)}>✕</IconButton>
                     </span>
@@ -1590,6 +1771,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <div className="make-file-picker">
                 <select aria-label={mt("projectFile")} value={selectedPath ?? ''} onChange={(e) => { if (e.target.value) void openFile(e.target.value) }}>
                   {!selectedPath && <option value="">{mt("selectAFile")}</option>}
+                  {historical && <option value={selectedPath!}>{historical.path} · {state.snapshots.find((snap) => snap.id === historical.snapshotId)?.label ?? historical.snapshotId}</option>}
                   {state.files.filter((f) => isMakeTextPath(f.path)).map((f) => <option key={f.path} value={f.path}>{f.path}</option>)}
                 </select>
                 <Button size="sm" variant="secondary" onClick={createFile}>{mt("file")}</Button>
@@ -1606,12 +1788,17 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 <IconButton size="sm" aria-label={mt("hideCheckResults")} title={mt("hide")} onClick={() => setIssues(null)}>✕</IconButton>
               </div>
             )}
+            {tabMenu && <div role="group" aria-label={mt('openFiles')}>
+              <Button size="sm" onClick={() => { void closeTabs(tabs.filter((path) => path !== tabMenu)); setTabMenu(null) }}>{mt('closeOthers')}</Button>
+              <Button size="sm" onClick={() => setTabMenu(null)}>{mt('cancel')}</Button>
+            </div>}
+            {tabs.length > 1 && <Button size="sm" onClick={() => { void closeTabs(tabs.filter((path) => path !== selectedPath)) }}>{mt('closeOthers')}</Button>}
             {tabs.length > 0 && (
               <div className="make-tabs-bar" role="tablist" aria-label={mt("openFiles")}>
                 {tabs.map((t) => (
-                  <div key={t} className={`make-file-tab${t === selectedPath ? ' on' : ''}${t === flashPath ? ' make-file-tab--flash' : ''}`} data-testid={t === flashPath ? 'make-file-tab-flash' : undefined}>
+                  <div key={t} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(t) } }} onContextMenu={(e) => { e.preventDefault(); setTabMenu(t) }} className={`make-file-tab${t === selectedPath ? ' on' : ''}${t === flashPath ? ' make-file-tab--flash' : ''}`} data-testid={t === flashPath ? 'make-file-tab-flash' : undefined}>
                     <button type="button" role="tab" aria-selected={t === selectedPath} className="make-file-tab-name" onClick={() => void openFile(t)} title={t}>
-                      {t.slice(t.lastIndexOf('/') + 1)}{t === selectedPath && dirty ? <span className="make-file-tab-dirty" aria-label={mt("unsaved")}>●</span> : null}
+                      {t.startsWith('snapshot:') ? `${t.split(':').slice(2).join(':')} · ${t.split(':')[1]}` : t.slice(t.lastIndexOf('/') + 1)}{(t === selectedPath ? dirty : projectDrafts.get(t)?.content !== projectDrafts.get(t)?.saved) ? <span className="make-file-tab-dirty" aria-label={mt("unsaved")}>●</span> : null}
                     </button>
                     <IconButton size="sm" aria-label={mt("closeValue", { p0: t })} title={mt("close")} onClick={() => closeTab(t)}>✕</IconButton>
                   </div>
@@ -1634,8 +1821,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             ) : selectedPath ? (
               <>
                 <div className="make-editor-head">
-                  <code>{selectedPath}</code>
-                  <span className="make-editor-tools">
+                  <code>{historical ? `${historical.path} · ${state?.snapshots.find((snap) => snap.id === historical.snapshotId)?.label ?? historical.snapshotId}` : selectedPath}</code>
+                  {historical ? <span role="status">{mt('historicalFile')}</span> : <span className="make-editor-tools">
                     <label className="make-autosave"><input type="checkbox" checked={autosave} onChange={toggleAutosave} />{' '}{mt("autosave")}</label>
                     {mockTable && (
                       <span className="make-mock-view" role="group" aria-label={mt("mockView")}>
@@ -1647,10 +1834,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <Button size="sm" variant="ghost" loading={formatting} onClick={() => void formatNow()} title={mt("prettierShiftAltFInTheEditor")}>{mt("format")}</Button>
                     <Button size="sm" variant="ghost" aria-expanded={historyOpen} onClick={() => setHistoryOpen((v) => !v)} title={mt("recentVersionsOfThisFileSavedInThisBrowser")}>{mt("versions")}</Button>
                     {onAskAssistant && <Button size="sm" variant="ghost" onClick={openInline} title={mt("cmdCtrlIInTheEditorAskTheAssistant")}>{mt("aiEdit")}{selection ? mt("valueLines", { p0: selection.endLine - selection.startLine + 1 }) : ''}</Button>}
-                    <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? mt("unsaved") : mt("saved_f3f98e")}</span>
-                  </span>
+                    <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'} role="status">{projectDrafts.get(selectedPath)?.error ? mt('saveErrorState') : saving ? mt("saving") : dirty ? mt("unsaved") : mt("saved_f3f98e")}{!dirty && projectDrafts.get(selectedPath)?.savedAt ? <time dateTime={new Date(projectDrafts.get(selectedPath)!.savedAt!).toISOString()}> · {mt('savedAt', { p0: formatMakeDate(projectDrafts.get(selectedPath)!.savedAt!) })}</time> : null}</span>
+                  </span>}
                 </div>
-                {historyOpen && (
+                {!historical && historyOpen && (
                   <div className="make-local-history" data-testid="make-local-history">
                     {localVersions.length === 0
                       ? <span className="make-diff-note">{mt("noLocalVersionsYetTheyAppearAfterSavingIn")}</span>
@@ -1669,10 +1856,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <IconButton size="sm" aria-label={mt("closeAiEdit")} title={mt("close")} onClick={() => setInlineOpen(false)}>✕</IconButton>
                   </div>
                 )}
-                {mockTable && mockView === 'table' ? (
+                {!historical && mockTable && mockView === 'table' ? (
                   <MakeMockTable path={selectedPath} value={content} onChange={(v) => setContent(v)} readOnly={Boolean(lockedBy)} />
                 ) : (
-                <CodeEditor path={selectedPath} value={content} onChange={(v) => { setContent(v); if (changedLines.length) setChangedLines([]) }} onSave={() => void save()} ariaLabel={mt("contentsOfValue", { p0: selectedPath })} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} readOnly={Boolean(lockedBy)} changedLines={changedLines} />
+                <CodeEditor path={historical?.path ?? selectedPath} value={content} onChange={(v) => { if (historical) return; setContent(v); if (changedLines.length) setChangedLines([]) }} onSave={() => void save()} ariaLabel={mt("contentsOfValue", { p0: selectedPath })} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} readOnly={Boolean(lockedBy) || Boolean(historical)} changedLines={changedLines} />
                 )}
               </>
             ) : (
@@ -1840,6 +2027,23 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
 
       {mode === 'history' && (
         <div className="make-history">
+          {(state?.snapshots.length ?? 0) >= 2 && <section aria-label={mt('compareSnapshots')}>
+            <select aria-label={mt('beforeSnapshot')} value={snapshotPair[0]} onChange={(event) => { setSnapshotPair([event.target.value, snapshotPair[1]]); setPairDiff(null) }}>
+              <option value="">—</option>{state!.snapshots.map((snap) => <option key={snap.id} value={snap.id}>{snap.label}</option>)}
+            </select>
+            <select aria-label={mt('afterSnapshot')} value={snapshotPair[1]} onChange={(event) => { setSnapshotPair([snapshotPair[0], event.target.value]); setPairDiff(null) }}>
+              <option value="">—</option>{state!.snapshots.map((snap) => <option key={snap.id} value={snap.id}>{snap.label}</option>)}
+            </select>
+            <Button disabled={!snapshotPair[0] || !snapshotPair[1]} onClick={() => void compareSnapshots()}>{mt('compareSnapshots')}</Button>
+            {pairDiff === 'loading' ? <p role="status">{mt('comparing')}</p> : pairDiff && <ul className="make-diff" data-testid="make-pair-diff">
+              {pairDiff.files.every((file) => file.status === 'same') && <li>{mt('filesMatchTheCurrentVersion')}</li>}
+              {pairDiff.files.map((file) => <li key={file.path}>
+                <button type="button" className="make-diff-file" onClick={() => void compareHistoricalFile(file)}><code>{file.path}</code></button> · {file.status === 'same' ? '=' : file.status === 'added' ? '+' : file.status === 'removed' ? '−' : '±'}
+                {file.before !== null && <Button onClick={() => void openFile(`snapshot:${pairDiff.snapshotId}:${file.path}`)}>{mt('beforeSnapshot')}</Button>}
+                {file.after !== null && <Button onClick={() => void openFile(`snapshot:${pairDiff.compareSnapshotId}:${file.path}`)}>{mt('afterSnapshot')}</Button>}
+              </li>)}
+            </ul>}
+          </section>}
           {(state?.snapshots.length ?? 0) === 0 ? (
             <EmptyState title={mt("noSnapshotsYet")} description={mt("theAssistantSavesASnapshotBeforeEveryChangeUse")} />
           ) : (
@@ -1863,10 +2067,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                         <li key={f.path} className={`make-diff-row make-diff-row--${f.status}`}>
                           <span className="make-diff-status">{f.status === 'added' ? mt("new") : f.status === 'removed' ? mt("deleted") : mt("modified")}</span>
                           {isMakeTextPath(f.path)
-                            ? <button type="button" className="make-diff-file" onClick={() => void openFileDiff(snap.id, snap.label, f.path)} title={mt("showComparison")}><code>{f.path}</code></button>
+                            ? <button type="button" className="make-diff-file" onClick={() => void openFileDiff(snap.id, snap.label, f.path, f.before === null, f.after === null)} title={mt("showComparison")}><code>{f.path}</code></button>
                             : <code>{f.path}</code>}
                           <small>{f.before !== null ? formatSize(f.before) : '—'} → {f.after !== null ? formatSize(f.after) : '—'}</small>
-                          {f.status !== 'added' && <Button size="sm" variant="ghost" onClick={() => void restoreFile(snap.id, f.path)}>{mt("restoreFile")}</Button>}
+                          {f.status !== 'added' && <><Button size="sm" variant="ghost" onClick={() => void openFile(`snapshot:${snap.id}:${f.path}`)}>{mt('historicalFile')}</Button><Button size="sm" variant="ghost" onClick={() => void restoreFile(snap.id, f.path)}>{mt("restoreFile")}</Button></>}
                         </li>
                       ))}
                     </ul>
@@ -1881,6 +2085,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </div>
       )}
 
+      {pairFileDiff && <Dialog title={mt('compareSnapshots')} ariaLabel={mt('compareSnapshots')} size="lg" onClose={() => setPairFileDiff(null)} testId="make-historical-diff">
+        <CodeDiff path={pairFileDiff.path} original={pairFileDiff.original} modified={pairFileDiff.modified} />
+      </Dialog>}
       {fileDiff && (
         <Dialog className="make-dialog" padded title={mt("comparisonValue", { p0: fileDiff.path })} ariaLabel={mt("compareValue", { p0: fileDiff.path })} size="lg" onClose={() => setFileDiff(null)} testId="make-file-diff"
           actions={<Button size="sm" variant="secondary" onClick={() => { void restoreFile(fileDiff.snapshotId, fileDiff.path); setFileDiff(null) }}>{mt("restoreFileFromSnapshot")}</Button>}>
@@ -2031,6 +2238,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 <Button size="sm" variant="secondary" onClick={() => void copyPublicLink()}>{mt("copy")}</Button>
                 <Button size="sm" variant="ghost" onClick={() => window.open(`${state.published!.url}?makeLocale=${locale}`, '_blank', 'noopener')}>{mt("open_125957")}</Button>
               </div>
+              {publishQr && <img src={publishQr} alt={mt('publicationQr')} width={256} height={256} style={{ maxWidth: '100%', height: 'auto' }} />}
+              {!state.published.stats?.days.length && <p role="status">{mt('noPublicationStats')}</p>}
               <div className="make-publish-pin">
                 <label htmlFor="make-publish-pick">{mt("whatToPublish")}</label>
                 <select id="make-publish-pick" value={publishPick || (state.published.snapshotId ?? '')} onChange={(e) => setPublishPick(e.target.value)}>

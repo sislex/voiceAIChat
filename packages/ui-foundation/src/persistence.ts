@@ -5,6 +5,9 @@
 // хранилища не импортируют друг друга даже ради типа.
 
 /** Ключ localStorage для последнего выбранного в сайдбаре проекта. */
+export const MACHINE_FLEET_FILTER_KEY = 'vc.machines.filter'
+export const MACHINE_FLEET_SORT_KEY = 'vc.machines.sort'
+
 export const SIDEBAR_PROJECT_KEY = 'vc.sidebar.project'
 /** Conversation drafts and the explicit density preference survive reloads. */
 export const CHAT_DRAFTS_KEY = 'vc.chat.drafts.v1'
@@ -70,6 +73,8 @@ export const RELEASES_TAB_KEY = 'vc.releases.tab'
 /** Release Center mode («legacy» | «applications») and the environment of the applications mode. */
 export const RELEASES_MODE_KEY = 'vc.releases.mode'
 export const RELEASES_APP_ENVIRONMENT_KEY = 'vc.releases.appEnvironment'
+/** Open-file ordering is scoped to a project and stored only for the browser session. */
+export const makeTabsKey = (conversationId: string): string => `vc.make.tabs.${encodeURIComponent(conversationId)}`
 export const MAKE_AUTOSAVE_KEY = 'vc.make.autosave'
 export const MAKE_FORMAT_ON_SAVE_KEY = 'vc.make.formatOnSave'
 export const MAKE_SPLIT_KEY = 'vc.make.split'

@@ -39,7 +39,7 @@ export function createRemoteKanban(opts: RemoteKanbanOptions): RemoteKanban {
   const board = new Listeners<[string]>()
   const preparationRuns = new Listeners<[{ userId: string; projectId: string; taskId: string; runId: string }]>()
   const taskRepositories = new Listeners<[{ projectId: string; taskId: string }]>()
-  const qaStages = new Listeners<[{ projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }]>()
+  const qaStages = new Listeners<[{ projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage | 'manual_qa' }]>()
   const improvements = new Listeners<[string]>()
   const releases = new Listeners<[{ projectId: string; releaseId: string; status: import('@voicechat/shared').ReleaseStatus }]>()
   const notifications = new Listeners<[{ projectId: string; userId?: string; kind?: 'membership' }]>()

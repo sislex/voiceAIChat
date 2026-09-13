@@ -87,6 +87,9 @@ export interface MakeCheckIssue {
 /** Состояние проекта для панели: список файлов, ревизии и счётчик изменений. */
 /** Совпадение поиска по содержимому файлов проекта. */
 export interface MakeSearchMatch {
+  /** Index of this occurrence in its file, for replacing one exact match. */
+  matchIndex?: number
+  column?: number
   path: string
   /** Номер строки с 1. */
   line: number
@@ -112,7 +115,7 @@ export interface MakeSnapshotDiffEntry {
   before: number | null
   after: number | null
 }
-export interface MakeSnapshotDiff { snapshotId: string; files: MakeSnapshotDiffEntry[] }
+export interface MakeSnapshotDiff { snapshotId: string; compareSnapshotId?: string; files: MakeSnapshotDiffEntry[] }
 
 /** Строка консоли превью (перехват console.* и ошибок внутри iframe). */
 export interface MakeConsoleLine { level: 'log' | 'info' | 'warn' | 'error'; text: string; at: number }
@@ -156,6 +159,8 @@ export const MAKE_REACT_IMPORT_MAP: Record<string, string> = {
 }
 
 export interface MakeProjectState {
+  /** Real project directories, including empty folders. */
+  directories?: string[]
   conversationId: string
   files: MakeFileInfo[]
   snapshots: MakeSnapshot[]

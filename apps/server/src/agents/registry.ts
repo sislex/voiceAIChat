@@ -579,7 +579,8 @@ export class AgentRegistry {
   fsDeleteFileSafe(agentId: string, path: string): Promise<FsResult> {
     return this.runFs(agentId, (opId) => ({ t: 'fs.delete-file-safe', opId, path }), 'fs-safe-delete')
   }
-  fsRead(agentId: string, path: string): Promise<FsResult> {
+  fsRead(agentId: string, path: string, mode?: 'prefix'): Promise<FsResult> {
+    if (mode === 'prefix') return this.runFs(agentId, (opId) => ({ t: 'fs.read-prefix', opId, path }), 'fs-preview')
     return this.runFs(agentId, (opId) => ({ t: 'fs.read', opId, path }))
   }
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult> {
