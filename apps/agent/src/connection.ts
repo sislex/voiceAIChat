@@ -3,7 +3,9 @@
 // и в трей-приложении (Electron).
 
 import WebSocket from 'ws'
-import { createServer, connect as connectSocket, type Server, type Socket } from 'node:net'
+import { createSystemVpn } from './vpn/system.js'
+import { createServer, connect as connectSocket, isIP, type Server, type Socket } from 'node:net'
+import { lookup as dnsLookup } from 'node:dns'
 import { randomUUID } from 'node:crypto'
 import {
   evaluateAgentCommand,
@@ -116,6 +118,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     )
   }
   const collectTelemetry = createTelemetryCollector(config.rootDir, shellInfo)
+  const vpn = createSystemVpn(config.rootDir, config.serverUrl)
 
   /** Описание раздачи для agent.register (адреса пересчитываем каждый раз: IP меняется). */
   const imageHostInfo = (): { port: number; hosts: string[] } | undefined => {
@@ -127,7 +130,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
   /** Собирает и шлёт телеметрию (ошибки сбора не критичны — просто пропускаем). */
   const pushTelemetry = async (send: (msg: AgentToServer) => void): Promise<void> => {
     try {
-      send({ t: 'agent.telemetry', telemetry: await collectTelemetry() })
+      send({ t: 'agent.telemetry', telemetry: { ...await collectTelemetry(), vpn: await vpn.handle({ action: 'inspect' }) } })
     } catch {
       /* телеметрия best-effort */
     }
@@ -154,7 +157,18 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
       process.env.VC_AGENT_INSECURE_TLS && config.serverUrl.startsWith('wss:')
         ? { rejectUnauthorized: false }
         : undefined
-    const ws = new WebSocket(config.serverUrl, wsOpts)
+    const pinnedControlIp = process.env.VC_VPN_CONTROL_IP
+    const controlHost = new URL(config.serverUrl).hostname
+    // Keep TLS hostname verification while reconnecting without direct DNS.
+    const lookup: typeof dnsLookup = pinnedControlIp && isIP(pinnedControlIp)
+      ? ((hostname: string, options: unknown, callback: (...args: unknown[]) => void) => {
+          if (hostname !== controlHost) { callback(new Error('unexpected control host')); return }
+          const address = { address: pinnedControlIp, family: isIP(pinnedControlIp) }
+          if ((options as { all?: boolean })?.all) callback(null, [address])
+          else callback(null, address.address, address.family)
+        }) as typeof dnsLookup
+      : dnsLookup
+    const ws = new WebSocket(config.serverUrl, { ...wsOpts, lookup })
     socket = ws
     const send = (msg: AgentToServer): void => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
@@ -179,6 +193,9 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         return
       }
       switch (msg.t) {
+        case 'vpn.request':
+          void vpn.handle(msg.request).then(observation => send({ t: 'vpn.result', requestId: msg.requestId, observation }))
+          break
         case 'agent.registered':
           backoff = BACKOFF_START_MS
           applyPolicy(msg.policy ?? DEFAULT_AGENT_POLICY, false)

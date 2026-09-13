@@ -43,6 +43,13 @@ areas:
 
 Корневой `npm install` обслуживает `packages/shared`, `packages/ui`, `apps/llm-runner`, `apps/server`, `apps/web`, `apps/agent`. `apps/desktop` и `apps/agent-tray` устанавливаются отдельно из-за Electron/native ABI и собственных lockfiles.
 
+`apps/login-application` also has its own `package-lock.json` and is outside
+root workspaces (`applicationCatalog.ts` lists an empty `workspaces` array for
+this application). Install it with `npm ci --prefix apps/login-application`.
+A shared-protocol diff selects all three Electron applications in `gate:fast`;
+missing their separate dependencies produces TS2307 for `electron` and
+`electron-vite` even after a successful root install.
+
 Не переносить Electron-пакеты в workspaces без отдельного решения миграции: корневой hoisting способен подменить native module сборкой под другой runtime.
 
 ## Development

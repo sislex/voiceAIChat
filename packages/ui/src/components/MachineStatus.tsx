@@ -13,6 +13,8 @@ import { recommendedMachineStoragePath, type MachineStorage } from '@shared/proj
 import { MACHINE_FLEET_FILTER_KEY, MACHINE_FLEET_SORT_KEY } from '@voicechat/ui-foundation/persistence'
 import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { AgentCard } from './AgentCard'
+import { MachineVpn } from './MachineVpn'
+import type { VpnBridge } from '@shared/vpn'
 import { AgentCommands } from './AgentCommands'
 import { MachineCommandLog } from './MachineCommandLog'
 import { MachineBatchCommand } from './MachineBatchCommand'
@@ -26,6 +28,7 @@ import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 
 export interface MachineStatusProps {
+  vpn?: VpnBridge
   /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
   variant?: 'modal' | 'page'
   agents: AgentInfo[]
@@ -299,6 +302,7 @@ function AgentActions({
 }
 
 export function MachineStatus({
+  vpn,
   agents,
   status = 'ready',
   error = null,
@@ -337,6 +341,7 @@ export function MachineStatus({
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
   /** Машина с раскрытым редактором политики (одна на таблицу). */
   const [policyId, setPolicyId] = useState<string | null>(null)
+  const [vpnId, setVpnId] = useState<string | null>(null)
   const [logId, setLogId] = useState<string | null>(null)
   const [storageId, setStorageId] = useState<string | null>(null)
   const [storageDraft, setStorageDraft] = useState<Record<string, string>>({})
@@ -496,6 +501,7 @@ export function MachineStatus({
                           {policyId === a.id ? '▾' : '▸'}
                         </IconButton>
                         {a.name}
+                        {a.ownership !== 'project' && <Button size="sm" aria-label={'VPN ' + a.name} aria-expanded={vpnId === a.id} onClick={() => setVpnId(current => current === a.id ? null : a.id)}>VPN</Button>}
                         {onLoadCommands && (
                           <Button size="sm" aria-expanded={logId === a.id} aria-label={`Журнал команд ${a.name}`} title="Журнал команд машины: кто, когда и что выполнял" onClick={() => setLogId((cur) => (cur === a.id ? null : a.id))}>
                             {logId === a.id ? 'Журнал ▾' : 'Журнал'}
@@ -571,6 +577,7 @@ export function MachineStatus({
                       }
                     />
                   </tr>
+                  {vpnId === a.id && <tr className="mst-policyrow"><td colSpan={cols}><MachineVpn key={a.id} agent={a} bridge={vpn} /></td></tr>}
                   {storageId === a.id && (
                     <tr className="mst-policyrow" data-testid={`machine-storage-${a.id}`}>
                       <td colSpan={cols}>

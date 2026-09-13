@@ -996,6 +996,7 @@ export interface RendererSttBridge {
  * обновления статуса/списка по WebSocket (web-режим). В desktop отсутствует.
  */
 export interface RendererAgentsBridge {
+  vpn?: import('./vpn').VpnBridge
   onChange(cb: (agents: AgentInfo[]) => void): () => void
 }
 

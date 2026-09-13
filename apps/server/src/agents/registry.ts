@@ -2,6 +2,7 @@
 // Не зависит от ws: сокет — минимальный интерфейс {send, close} (тестируемо).
 
 import { randomUUID } from 'node:crypto'
+import { sanitizeVpnObservation, type VpnAgentRequest, type VpnObservation } from '@voicechat/shared'
 import {
   evaluateAgentCommand,
   isToolAllowed,
@@ -153,6 +154,7 @@ export class AgentRegistry {
   private readonly pendingFs = new Map<string, PendingFs>()
   private readonly pendingHttp = new Map<string, PendingHttp>()
   private readonly pendingGitAccess = new Map<string, PendingGitAccess>()
+  private readonly pendingVpn = new Map<string, { agentId: string; timer: NodeJS.Timeout; resolve: (o: VpnObservation) => void; reject: (e: Error) => void }>()
   private readonly ptys = new Map<string, PtySession>()
   private readonly telemetry = new Map<string, AgentTelemetry>()
   private readonly tunnels = new Map<string, TunnelSession>()
@@ -288,6 +290,10 @@ export class AgentRegistry {
       this.pending.delete(execId)
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась во время выполнения команды'))
+    }
+    for (const [requestId, p] of this.pendingVpn) {
+      if (p.agentId !== agentId) continue
+      this.pendingVpn.delete(requestId); clearTimeout(p.timer); p.reject(new Error('offline'))
     }
     for (const [requestId, p] of this.pendingGitAccess) {
       if (p.agentId !== agentId) continue
@@ -535,6 +541,19 @@ export class AgentRegistry {
       this.pending.set(execId, entryRef)
       signal?.addEventListener('abort', onAbort, { once: true })
       this.send(agentId, { t: 'exec.start', execId, command, timeoutMs })
+    })
+  }
+
+  vpn(agentId: string, request: VpnAgentRequest): Promise<VpnObservation> {
+    if (!this.online.has(agentId)) return Promise.reject(new Error('offline'))
+    if (!isToolAllowed(this.versionOf(agentId) ?? '0.1.0', 'vpn')) return Promise.reject(new Error('unsupported'))
+    const requestId = this.newId()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.pendingVpn.delete(requestId); reject(new Error('offline')) }, 60_000)
+      timer.unref?.()
+      this.pendingVpn.set(requestId, { agentId, timer, resolve, reject })
+      try { this.send(agentId, { t: 'vpn.request', requestId, request }) }
+      catch { clearTimeout(timer); this.pendingVpn.delete(requestId); reject(new Error('offline')) }
     })
   }
 
@@ -854,6 +873,15 @@ export class AgentRegistry {
       } else if (msg.t === 'tunnel.error') {
         tunnel.reject?.(new Error(msg.message)); this.closeTunnel(tunnel.id)
       }
+      return
+    }
+    if (msg.t === 'vpn.result') {
+      const pending = this.pendingVpn.get(msg.requestId)
+      if (!pending || pending.agentId !== agentId) return
+      this.pendingVpn.delete(msg.requestId); clearTimeout(pending.timer)
+      const observation = sanitizeVpnObservation(msg.observation)
+      if (observation) pending.resolve(observation)
+      else pending.reject(new Error('apply'))
       return
     }
     if (msg.t === 'git.access.result') {

@@ -29,6 +29,7 @@ import type { FsResult, FsCopyResult } from '@shared/agentProtocol'
 import type { SessionUser, SessionInfo } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
+import { createVpnBridge } from './vpnBridge'
 import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
@@ -667,7 +668,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   window.tts = makeTtsBridge(ws)
   window.cc = makeCcBridge(ws)
   window.codex = makeCodexBridge(ws)
-  window.agents = makeAgentsBridge(ws)
+  window.agents = { ...makeAgentsBridge(ws), vpn: createVpnBridge(httpBase) }
   window.realtime = makeRealtimeBridge(ws)
   window.board = makeBoardBridge(ws)
   window.ci = makeCiBridge(httpBase, ws)
