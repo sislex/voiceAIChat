@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
 updated: 2026-09-13
-checked: b30997da
+checked: 181c142e
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -306,29 +306,32 @@ QA-specific удаления вложений; безопасность и жи�
 
 ## Интерфейс
 
-CHAT-459 adds a 700 ms debounced autosave to each result card. A failed or
-blocked result still requires a comment; save errors stop automatic retries and
-keep local values visible. The revision check is preserved. Keys 1/2/3 select
-passed/failed/blocked only when the expanded editable card contains focus and
-focus is outside text inputs. Paste accepts image files through the existing
-authorized uploads and QA attachments bridges; plain text remains text. Upload
-errors are separate from successful result saves.
+Каждая карточка результата автосохраняется с debounce 700 мс. Для `failed` и
+`blocked` по-прежнему обязателен комментарий; ошибка сохранения прекращает
+автоматические повторы и оставляет локальные значения видимыми, а проверка
+revision сохраняется. Клавиши 1/2/3 выбирают `passed`/`failed`/`blocked`, только
+когда фокус находится внутри раскрытой редактируемой карточки и не стоит в
+текстовом поле. Вставка изображения из буфера использует существующие
+авторизованные мосты uploads и QA attachments; обычный текст остаётся текстом,
+а ошибка загрузки не маскируется успешным сохранением результата.
 
-The common QA metadata grid uses actual branch/SHA/timestamps; missing machine,
-model or duration remains explicitly unavailable. Component and Integration
-machine IDs come from their development run's workspace. Addressed qa.stage.updated events with stage manual_qa (session start, result save, attachment upload), manual refresh and
-reconnect reread the snapshot without replacing dirty card inputs. Freshness
-advances only on a successful current response. Each panel downloads Markdown
-for the selected attempt, including scenarios hidden by a local filter. Mobile
-ResultTable cells have data-label attributes; long logs start collapsed.
+Общая сетка QA-метаданных показывает фактические branch, SHA и timestamps;
+неизвестные machine, model или duration явно отмечаются недоступными. События
+`qa.stage.updated` со stage `manual_qa` отправляются при старте сессии,
+сохранении результата и добавлении вложения. Они, reconnect и ручное обновление
+перечитывают снимок, не затирая dirty-поля карточек; свежесть продвигается только
+после успешного актуального ответа. Markdown-отчёт строится для выбранной
+попытки, мобильные ячейки `ResultTable` имеют `data-label`, длинные логи изначально
+свёрнуты.
 
 
 `ManualQaPanel` из `packages/ui/src/components/qa/ManualQaPanel.tsx`
 встроен в модальное окно обычной задачи. Сверху находится раскрытая для running/
 failed и автоматически свёрнутая для success лента preparation-run: статус,
 попытка, время, длительность, сохранённый потоковый лог, диагностика и retry.
-Во время выполнения панель опрашивает QA state раз в две секунды, поэтому после
-повторного открытия восстанавливает снимок и продолжает обновлять ленту. Пока
+После открытия панель читает QA state, а затем обновляет его по адресным событиям;
+при отсутствии board-моста активный ран поддерживает запасной опрос раз в две
+секунды. Reconnect выполняет контрольное чтение пропущенных изменений. Пока
 preparation выполняется, тест-кейсы скрыты. Ниже session показывает commit/preview SHA.
 
 Каждая активная карточка показывает актуальные название и описание критерия,
@@ -348,7 +351,11 @@ passed, failed, blocked и remaining. Итоговые «Следующий эт
 доработку» последовательно вызывают функции сохранения всех изменённых карточек,
 затем перечитывают QA state. Первое действие повторно проверяет свежую session
 через `canCompleteQa` и только после допуска вызывает `complete`; второе вызывает
-`tasks:createReworkDraft` after saving and rereading the active session. One draft contains every failed result, the matching criterion version's steps and comments. A Dialog shows the draft for review; only the separate submit button calls `tasks:submitReworkDraft`. No failed results means no draft. Неуспешное
+`tasks:createReworkDraft` после сохранения и повторного чтения активной сессии.
+Один черновик включает все проваленные результаты, шаги соответствующих версий
+критериев и комментарии. `Dialog` предлагает проверить черновик; только отдельная
+кнопка отправки вызывает `tasks:submitReworkDraft`. Если проваленных результатов
+нет, черновик не создаётся. Неуспешное
 сохранение не запускает итоговый маршрут и оставляет карточки доступными для
 исправления. Общий `busy` и синхронный ref-lock блокируют повторную отправку на
 время запроса. Причина недопуска называет failed/blocked-тест, отсутствие
@@ -360,4 +367,5 @@ read-only. На мобильной ширине детали и обе груп�
 Web-клиент получает `window.qa` через REST-мост
 `packages/ui/src/remote/qaBridge.ts`. В панели остаётся ручное создание сценария; отдельного UI версионирования,
 назначения тестировщика, просмотра версий/аудита и удаления вложений нет.
-Manual QA now receives addressed result/attachment updates and reconnect refreshes.
+Ручная панель получает адресные обновления результатов и вложений, а reconnect
+восстанавливает актуальный серверный снимок с сохранением несохранённого ввода.

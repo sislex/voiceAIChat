@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
 updated: 2026-09-13
-checked: b30997da
+checked: 181c142e
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -424,12 +424,12 @@ preparation/QA-preparation/Component QA и пишет предупреждени
 - `POST /api/qa/runs/:runId/answer` — ответ на уточнение (только
   `integration_tests` в `awaiting_input`, пустой ответ отклоняется).
 
-Отдельного маршрута «завершить ран/зачесть гейт» нет. WS-событий и подписки у
-этих ранов тоже нет: ни `protocol.ts`, ни `ws.ts`, ни доменные хранилища UI о них не
-знают, живость обеспечивает опрос панели. Клиентская сторона — опциональные
+Отдельного маршрута «завершить ран/зачесть гейт» нет. Изменения рана сервер
+публикует адресным событием `qa.stage.updated`; панель сверяет `projectId`, `taskId`
+и `stage`, после чего перечитывает REST-снимок. Клиентская сторона — опциональные
 методы `listStageRuns`, `startStageRun`, `cancelStageRun`, `retryStageRun`,
 `answerStageRun` в `RendererQaBridge` (`packages/ui/src/remote/qaBridge.ts`),
-реализованные только REST-мостом `createQaRest`; без них панель не показывает
+реализованные REST-мостом `createQaRest`; без них панель не показывает
 соответствующие кнопки.
 
 ## Вкладки карточки и панель
@@ -455,38 +455,45 @@ development/merge → «Лента рана», иначе «Общее»». По
 диспетчер: описанное ниже поведение относится к её ветке
 `GenericQaStageRunPanel`, то есть теперь только к вкладке «Automated QA».
 Панель монтируется на вкладку и делает только GET: открытие вкладки ран не запускает.
-QA panels reread on addressed stage events (400 ms coalescing), reconnect and
-manual refresh. Polling remains a fallback without the board bridge. Request
-identity and sequence discard late responses; freshness changes after a
-successful read, and refresh errors preserve the previous snapshot. Existing
-runId/onRunsChange/onStateChange/hideHistory embedding contracts remain optional.
+Панели перечитывают состояние по адресным событиям этапа (серия событий
+склеивается за 400 мс), при reconnect и по ручному обновлению. Опрос остаётся
+запасным вариантом только для сборок без board-моста. Идентификатор запроса и
+порядковый номер отбрасывают запоздалые ответы; время свежести меняется лишь после
+успешного актуального чтения, а ошибка обновления сохраняет прежний снимок.
+Опциональные контракты встраивания `runId`, `onRunsChange`, `onStateChange` и
+`hideHistory` сохранены.
 
-Automated QA displays ordered step durations, step page errors and errors outside
-steps, an image preview Dialog and collapsed logs. Legacy unstructured results
-remain readable. retryStageRun(runId, scenarioIds?) carries an optional selection
-through REST and the database to the runner snapshot. IDs are source-run-scoped
-(runId:scenario:index), recorded explicitly on step results. Only nonempty,
-unique selections of failed scenarios in that source snapshot are accepted.
-Unknown, foreign, successful or duplicate IDs fail before launching. The
-optional argument's absence keeps full retry; legacy runs lacking explicit
-scenario links offer only full retry. A saved scenario snapshot also preserves
-Playwright mode if project settings have changed.
+Automated QA показывает шаги по порядку, длительность, ошибки страницы у
+соответствующего шага и отдельно ошибки вне шагов, увеличиваемый скриншот в
+`Dialog` и изначально свёрнутые логи. Старые неструктурированные результаты
+остаются читаемыми. `retryStageRun(runId, scenarioIds?)` передаёт необязательный
+выбор через REST и БД в снимок нового рана. Идентификаторы имеют область исходного
+рана (`runId:scenario:index`) и записываются в результаты шагов. Сервер принимает
+только непустой уникальный набор действительно проваленных сценариев этого
+снимка; неизвестные, чужие, успешные и повторяющиеся ID отклоняются до запуска.
+Отсутствие аргумента сохраняет полный повтор, а старые раны без явных связей
+сценариев предлагают только его. Сохранённый снимок сценариев удерживает режим
+Playwright, даже если настройка проекта позднее изменилась.
 
-Component QA intersects its status filter with case-insensitive title search,
-shows Storybook links only with a real base URL, and previews image artifacts.
-Integration separates automatable and excluded cases with counts and expandable
-exclusion reasons. File links use the existing hash route
-/projects/:id/code/:workspaceId and a file query parameter before the hash.
-The workspace must belong to the task and match the run SHA; missing bindings
-produce no fabricated link. GitPane opens the file via projects:gitFile.
+Component QA одновременно применяет фильтр статуса и регистронезависимый поиск
+по названию, показывает ссылку Storybook только при наличии ID истории и базового
+URL витрины, а изображения открывает из миниатюр. Integration делит кейсы на
+автоматизируемые и исключённые, показывает счётчики и раскрываемые причины
+исключения. Ссылка на тест использует hash-маршрут
+`/projects/:id/code/:workspaceId`, а query-параметр `file` стоит перед hash.
+Рабочая копия должна принадлежать задаче и совпадать с SHA рана; при отсутствии
+привязки ссылка не создаётся. `GitPane` безопасно проверяет относительный путь и
+открывает файл через `projects:gitFile`.
 
-All panels use the common metadata grid, localized statuses, refresh controls
-and Markdown download. Reports contain all scenarios of the selected attempt,
-independent of filters. Actual machine IDs are obtained from the development
-workspace for Component/Integration; Automated stores its execution machine in
-the verdict. Missing historical metadata stays unavailable. Mobile table cells
-carry data-label and action rows are sticky. packages/ui/src/components/qa/qaPanels.browser.test.ts exercises
-all four panels in Chromium at 390px; DOM tests run axe on the panels and preview.
+Во всех панелях едины метаданные, локализованные лозенги, индикатор свежести,
+ручное обновление и Markdown-выгрузка. Отчёт включает все сценарии выбранной
+попытки независимо от локальных фильтров. Реальный machine ID Component и
+Integration берётся из workspace development-рана, Automated сохраняет машину в
+вердикте; отсутствующие исторические данные явно помечаются недоступными. На
+мобильной ширине ячейки таблиц имеют `data-label`, а строки действий закреплены.
+`packages/ui/src/components/qa/qaPanels.browser.test.ts` проверяет четыре панели
+в Chromium на ширине 390 px; DOM-тесты дополнительно проверяют axe и просмотр
+изображений.
 
 На канбан-карточке (`TaskCard`) для колонок трёх QA-этапов запуск
 development-рана скрыт (`developmentAllowed` теперь исключает эти колонки), а
