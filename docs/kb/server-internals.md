@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-13
-checked: 5deeeb9b
+checked: 33bf88a8
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -632,15 +632,19 @@ work; process-restart recovery is not provided. Supported generation settings
 are translated into prompt instructions before invoking the existing core
 generator, including the HTTP core adapter.
 
-Queue admission checks the current unfinished-task count after asynchronous
-source-file validation, with no await between counting and insertion. This
-keeps simultaneous edit submissions within the same 50-task limit; shutdown
-is rechecked at that boundary too. The task endpoint rejects non-object
-parameter values (including null and arrays), unknown keys, non-string
-style/negative/size values, and non-boolean noText values with HTTP 400 before
-creating a task. Boolean false remains false in recorded metadata and adds no
-no-text instruction. Regression tests in `apps/image-studio/src/routes.test.ts`
-synchronize 51 source checks and verify admission of exactly 50 requests.
+Queue admission in `apps/image-studio/src/routes.ts` checks the current
+unfinished-task count only after asynchronous source-file validation, then
+inserts the task without another await. Concurrent edit submissions therefore
+reserve capacity against the latest state and cannot collectively exceed the
+50-task per-conversation limit; shutdown is rechecked at the same boundary.
+The task endpoint rejects non-object parameter values (including null and
+arrays), unknown keys, non-string style/negative/size values, and non-boolean
+`noText` values with HTTP 400 before creating a task. Valid booleans are not
+coerced: `false` remains in saved metadata and adds no no-text instruction,
+while `true` adds the instruction. Regression coverage in
+`apps/image-studio/src/routes.test.ts` synchronizes 51 source checks and
+asserts exactly 50 admissions, and separately checks malformed values plus both
+boolean meanings.
 
 `POST .../archive` validates explicit selected paths and issues a one-use,
 60-second download ticket. `GET /g/archive/:ticket` rechecks gallery ownership
