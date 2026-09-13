@@ -5,6 +5,9 @@ import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
 import type { AdminLlmEngine, AdminUserInfo, ModelPrice } from '@shared/admin'
 import { ModelPricesPage } from './pages/ModelPricesPage'
+import { UsersList } from './users/UsersList'
+import { DEFAULT_FILTER } from './users/usersModel'
+import { ConfirmProvider } from '@voicechat/ui-kit'
 
 const NOW = Date.now()
 
@@ -60,11 +63,61 @@ function renderAdmin(props: Partial<UsersAdminProps> = {}): UsersAdminProps {
 }
 
 /** Карточка выбранного человека: пропс `selected` + маршрут с вкладкой. */
-function renderUser(name: string, tab: 'overview' | 'access' | 'machines' | 'usage' | 'history' = 'overview', props: Partial<UsersAdminProps> = {}): UsersAdminProps {
+function renderUser(name: string, tab: 'overview' | 'access' | 'machines' | 'usage' | 'history' | 'sessions' = 'overview', props: Partial<UsersAdminProps> = {}): UsersAdminProps {
   return renderAdmin({ selected: name, route: { page: 'users', userName: name, tab }, ...props })
 }
 
 // @testCase TC-UI-1
+describe('CHAT-453 access management', () => {
+  it('requests another server page only after Show more', async () => {
+    const first = Array.from({ length: 40 }, (_, index) => ({ ...users[1]!, name: `person-${index}` }))
+    const onLoadUsersPage = vi.fn(async ({ offset }: { offset?: number }) => offset === 0 ? first : [{ ...users[1]!, name: 'last-person' }])
+    renderAdmin({ onLoadUsersPage })
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(40))
+    await userEvent.click(screen.getByRole('button', { name: /Показать ещё/ }))
+    expect(await screen.findByText('last-person')).toBeInTheDocument()
+    expect(onLoadUsersPage).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 40, limit: 40 }))
+  })
+
+  it('uses one typed confirmation for more than five selected users', async () => {
+    const onBulkUsers = vi.fn(async () => {})
+    renderAdmin({ users: Array.from({ length: 6 }, (_, index) => ({ ...users[1]!, name: `person-${index}` })), onBulkUsers })
+    for (let i = 0; i < 6; i++) await userEvent.click(screen.getByRole('checkbox', { name: `Выбрать person-${i}` }))
+    await userEvent.click(within(screen.getByLabelText('Массовые действия')).getByRole('button', { name: 'Заблокировать' }))
+    const dialog = screen.getByTestId('confirm-dialog')
+    expect(dialog).toHaveTextContent('person-0, person-1, person-2, person-3, person-4, person-5')
+    expect(within(dialog).getByRole('button', { name: 'Продолжить' })).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), '6')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Продолжить' }))
+    await waitFor(() => expect(onBulkUsers).toHaveBeenCalledOnce())
+    expect(onBulkUsers).toHaveBeenCalledWith(['person-0', 'person-1', 'person-2', 'person-3', 'person-4', 'person-5'], 'block')
+  })
+
+  it('keeps loaded pages when selecting a user updates the host cache', async () => {
+    const first = Array.from({ length: 40 }, (_, index) => ({ ...users[1]!, name: `person-${index}` }))
+    const last = { ...users[1]!, name: 'last-person' }
+    const onLoadUsersPage = vi.fn(async ({ offset }: { offset?: number }) => offset === 0 ? first : [last])
+    const view = (rows: AdminUserInfo[]) => <ConfirmProvider><UsersList users={rows} usageSummary={[]} selected={null} filter={DEFAULT_FILTER} onFilter={vi.fn()} onSelect={vi.fn()} now={NOW} onLoadUsersPage={onLoadUsersPage} /></ConfirmProvider>
+    const { rerender } = render(view(users))
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(40))
+    await userEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
+    expect(await screen.findByText('last-person')).toBeInTheDocument()
+    expect(onLoadUsersPage).toHaveBeenCalledTimes(2)
+    rerender(view([...users, last]))
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(41))
+    expect(onLoadUsersPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps inactivity and last-login sort in navigation', async () => {
+    const onNavigate = vi.fn()
+    renderAdmin({ route: { page: 'users', list: { state: 'inactive', sort: 'login', query: 'developer' } }, onNavigate })
+    expect(screen.getByLabelText('Статус')).toHaveValue('inactive')
+    expect(screen.getByLabelText('Порядок списка')).toHaveValue('login')
+    fireEvent.change(screen.getByLabelText('Роль'), { target: { value: 'tester' } })
+    expect(onNavigate).toHaveBeenLastCalledWith({ page: 'users', list: { query: 'developer', role: 'tester', state: 'inactive', sort: 'login' } })
+  })
+})
+
 describe('Component QA страницы тарифов OpenAI', () => {
   it('показывает синхронизированные строки, четыре тарифа, источник, дату и действия', async () => {
     const sourceUrl = 'https://developers.openai.com/api/docs/pricing'
@@ -439,11 +492,8 @@ describe('UsersAdmin — сессии пользователя (auth-roadmap п.
   it('список запрашивается только при раскрытии и рисуется общим модулем сессий', async () => {
     const list = vi.fn(async () => [session])
     const revoke = vi.fn(async () => undefined)
-    renderUser('bob', 'machines', { sessionsClient: { list, revoke } })
+    renderUser('bob', 'sessions', { sessionsClient: { list, revoke } })
     const details = screen.getByTestId('admin-sessions')
-    // Закрытый <details> не должен дёргать сервер: у админа сотни пользователей.
-    expect(list).not.toHaveBeenCalled()
-    await userEvent.click(within(details).getByText('Сессии'))
     await waitFor(() => expect(list).toHaveBeenCalled())
     expect(await within(details).findByText('Chrome 128 · macOS')).toBeInTheDocument()
     await userEvent.click(within(details).getByRole('button', { name: 'Завершить' }))
@@ -452,8 +502,7 @@ describe('UsersAdmin — сессии пользователя (auth-roadmap п.
 
   it('чужой список — только чтение: без переименования и доверия', async () => {
     const list = vi.fn(async () => [session])
-    renderUser('bob', 'machines', { sessionsClient: { list, revoke: async () => undefined, rename: async () => undefined, setTrusted: async () => undefined } })
-    await userEvent.click(within(screen.getByTestId('admin-sessions')).getByText('Сессии'))
+    renderUser('bob', 'sessions', { sessionsClient: { list, revoke: async () => undefined, rename: async () => undefined, setTrusted: async () => undefined } })
     expect(await screen.findByTestId('session-s1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Переименовать' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Сделать доверенным' })).toBeNull()

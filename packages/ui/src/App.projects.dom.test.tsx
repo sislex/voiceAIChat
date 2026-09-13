@@ -315,6 +315,20 @@ describe('App — завершённые задачи скрыты с доски
     expect(screen.getByRole('checkbox', { name: /Показать завершённые/ })).toBeChecked()
   })
 
+  it('protects an unsaved settings draft during hash navigation', async () => {
+    const { projectId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}/settings`
+    const input = await screen.findByLabelText('Название проекта')
+    await userEvent.type(input, ' draft')
+    window.location.hash = '#/projects'
+    await userEvent.click(await screen.findByRole('button', { name: 'Отмена' }))
+    expect((screen.getByLabelText('Название проекта') as HTMLInputElement).value).toContain('draft')
+    expect(window.location.hash).toContain('/settings')
+    window.location.hash = '#/projects'
+    await userEvent.click(await screen.findByRole('button', { name: 'Уйти' }))
+    await waitFor(() => expect(screen.queryByLabelText('Название проекта')).not.toBeInTheDocument())
+  })
+
   it('порог скрытия правится в настройках проекта', async () => {
     const { api, projectId } = await withCompleted()
     window.location.hash = `#/projects/${projectId}/settings`
@@ -324,6 +338,7 @@ describe('App — завершённые задачи скрыты с доски
     await userEvent.clear(input)
     await userEvent.type(input, '30')
     await userEvent.tab()
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await waitFor(async () => expect((await api['projects:get']({ id: projectId }))!.doneRetentionDays).toBe(30))
   })
 })

@@ -450,7 +450,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // и его состояние держит сам модуль, стору админки хранить их незачем.
   const adminSessionsClient = useMemo(() => ({
     list: () => adminActions.loadAdminSessions(),
-    revoke: (sid: string) => adminActions.revokeAdminSession(sid)
+    revoke: (sid: string) => adminActions.revokeAdminSession(sid),
+    revokeOthers: () => adminActions.revokeOtherAdminSessions()
   }), [adminActions])
   const projectsActions = useProjectsActions()
   // Возможности типа открытого проекта. Пока detail грузится, берём их из
@@ -2956,10 +2957,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onTabChange={(tab, opts) => navigate(buildProjectsRoute({ kind: 'settings', projectId: routeProjectId, tab }), opts)}
                 projectTypes={projects.projectTypes}
                 invitations={projects.projectInvitations}
+                ciCommands={projects.ciCommands}
+                onLoadCommands={() => projectsActions.reloadCiCommands(routeProjectId).catch(error => { toast.error(error instanceof Error ? error.message : 'Не удалось загрузить каталог команд') })}
+                onCheckTestLogin={async (projectId, username) => {
+                  const id = await chatActions.newConversation('web-recorder')
+                  if (!id) throw new Error('Не удалось открыть Web Reader')
+                  await chatActions.setConversationProject(id, projectId)
+                  await chatActions.setConversationPreviewUrl(id, projects.projectDetail?.previewUrl ?? null)
+                  navigate(`/web-reader/${id}`)
+                  chatActions.setDraft(`Проверь вход тестового пользователя ${JSON.stringify(username)} в тестовое окружение проекта через Web Reader. Получи учётные данные инструментом test-users, открой URL превью, выполни вход через форму и проверь признак успешной авторизации. Сообщи результат и причину отказа. Не выводи пароль в ответе и не меняй данные приложения.`)
+                  await chatActions.submitText()
+                }}
                 onDeriveType={async (id, name) => { await projectsActions.deriveProjectType(id, name) }}
-                onInvite={async (id, invitee, role) => {
-                  const result = await projectsActions.inviteToProject(id, invitee, role)
-                  if (!result) return
+                onInvite={async (id, invitee, role, ttlDays) => {
+                  const result = await projectsActions.inviteToProject(id, invitee, role, ttlDays)
+                  if (!result) throw new Error('Не удалось создать приглашение. Проверьте адресата и повторите.')
                   // Владелец должен понимать, ушло ли письмо: без этого он не
                   // знает, почему приглашённый молчит.
                   if (result.mailed && result.email) {
@@ -2979,13 +2991,27 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                     }
                   })
                 }}
-                onResendInvitation={(id, invitationId) => projectsActions.resendProjectInvitation(id, invitationId)}
+                onResendInvitation={async (id, invitationId) => {
+                  try {
+                  const result = await api['projects:resendInvitation']({ id, invitationId })
+                  await projectsActions.loadProjectInvitations(id)
+                  toast.success(result.mailed ? 'Приглашение отправлено повторно' : 'Новая ссылка приглашения готова', {
+                    action: { label: 'Скопировать ссылку', onClick: () => {
+                      void navigator.clipboard.writeText(result.link).then(() => toast.success('Ссылка скопирована'), () => toast.error('Скопируйте ссылку: ' + result.link))
+                    } }
+                  })
+                  } catch (error) { toast.error(error instanceof Error ? error.message : 'Не удалось перевыпустить приглашение') }
+                }}
                 onRevokeInvitation={(id, invitationId) => projectsActions.revokeProjectInvitation(id, invitationId)}
                 agents={operations.agents}
                 currentUsername={session.currentUser?.name}
                 llmAccess={settingsState.llmAccess}
                 llmEngines={settingsState.llmEngines}
-                onUpdate={(id, fields) => void projectsActions.updateProject(id, fields)}
+                onUpdate={async (id, fields) => {
+                  await api['projects:update']({ id, ...fields })
+                  await projectsActions.selectProject(id)
+                  await projectsActions.refreshProjects()
+                }}
                 checkAutomatedQa={async (id, scenarioIndex) => (await api['projects:checkAutomatedQa']({ id, ...(scenarioIndex === undefined ? {} : { scenarioIndex }) })).results}
                 onDelete={(id) => {
                   // Удалили проект — уводим на другой доступный, а если их не
@@ -3258,12 +3284,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           currentUserName={session.currentUser?.name ?? ''}
           onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
           onCreate={(name, password, role, mustChangePassword) => void adminActions.createUserAccount(name, password, role, mustChangePassword)}
-          onResetCode={(name) => adminActions.issueResetCode(name)}
+          onResetCode={adminActions.issueResetCode}
           onSetLlmLimit={(name, usd) => void adminActions.setUserLlmLimit(name, usd)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
           onSetBlocked={(name, blocked, reason) => void adminActions.setUserBlocked(name, blocked, reason)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
+          onLoadPriceHistory={adminActions.loadPriceHistory}
+          onLoadUsersPage={adminActions.loadUsersPage}
+          onBulkUsers={adminActions.bulkUsers}
           sessionsClient={adminSessionsClient}
           security={admin.adminSecurity}
           onLoadSecurity={(limit, group) => void adminActions.loadAdminSecurity(limit, group)}

@@ -65,11 +65,14 @@ export interface AdminState {
 }
 
 export interface AdminActions {
+  loadPriceHistory(): Promise<SecurityEvent[]>
+  loadUsersPage(input: NonNullable<Parameters<AdminClient['listUsers']>[0]>): Promise<AdminUserInfo[]>
+  bulkUsers(names: string[], action: 'block' | 'unblock' | 'revoke'): Promise<void>
   openUsers(): Promise<void>
   closeUsers(): void
   createUserAccount(name: string, password: string, role: UserRole, mustChangePassword?: boolean): Promise<void>
   /** Код сброса пароля (auth-roadmap п.10); null — клиент не умеет. */
-  issueResetCode(name: string): Promise<{ code: string; expiresAt: number } | null>
+  issueResetCode(name: string, action?: 'status' | 'revoke'): Promise<{ code: string; expiresAt: number } | null>
   setUserLlmLimit(name: string, llmLimitUsd: number | null): Promise<void>
   updateUserRole(name: string, role: UserRole): Promise<void>
   setUserBlocked(name: string, blocked: boolean, reason?: string): Promise<void>
@@ -84,6 +87,7 @@ export interface AdminActions {
   createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }): Promise<InviteInfo | null>
   deleteAdminInvite(token: string): Promise<void>
   revokeAdminSession(sid: string): Promise<void>
+  revokeOtherAdminSessions(): Promise<void>
   openAdminConversation(conversationId: string): Promise<void>
   refreshAdminLlmEngines(): Promise<void>
   refreshPendingProjectTypes(): Promise<void>
@@ -164,9 +168,14 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       // Сводка расхода — необязательная часть экрана: её отказ не должен
       // оставлять администратора без списка людей.
       const [adminUsers, adminUsageSummary] = await Promise.all([
-        client.listUsers(),
+        client.listUsers({ limit: 30 }),
         cachedSummary ?? client.usageSummary({ from, to }).catch(() => [])
       ])
+      const selected = getState().adminSelected
+      if (selected && !adminUsers.some((user) => user.name === selected)) {
+        const detail = (await client.listUsers({ q: selected, limit: 200 })).find((user) => user.name === selected)
+        if (detail) adminUsers.push(detail)
+      }
       if (!cachedSummary) loaded.add(summaryKey)
       // Метрики машин переехали на страницу «Система»: список людей знает
       // только счётчики, которые приходят вместе с ним.
@@ -243,6 +252,11 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
   async function selectAdminUser(name: string): Promise<void> {
     const request = ++selectionRequest
     invalidateUserCache(name)
+    if (!getState().adminUsers.some((user) => user.name === name)) {
+      const user = (await client.listUsers({ q: name, limit: 200 })).find((item) => item.name === name)
+      if (request !== selectionRequest) return
+      if (user) setState({ adminUsers: [...getState().adminUsers, user] })
+    }
     setState({
       adminSelected: name,
       adminUsage: null,
@@ -473,6 +487,17 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     subscribe: core.subscribe,
     dispose: core.dispose,
     actions: {
+      loadPriceHistory: () => client.securityEvents ? client.securityEvents({ group: 'prices', limit: 50 }) : Promise.resolve([]),
+      loadUsersPage: (input) => client.listUsers(input),
+      bulkUsers: async (names, action) => {
+        for (const name of names) {
+          if (action === 'revoke') {
+            if (!client.revokeUserSessions) throw new Error('Отзыв сессий недоступен')
+            await client.revokeUserSessions({ name })
+          } else await client.setUserBlocked({ name, blocked: action === 'block' })
+        }
+        await refreshAdminUsers()
+      },
       openUsers,
       openAdminPage,
       closeUsers,
@@ -493,9 +518,9 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
         invalidateUserCache(name)
         try { const u = await client.setUserLlmLimit({ name, llmLimitUsd }); setState({ adminUsers: getState().adminUsers.map((x) => (x.name === u.name ? u : x)) }) } catch (err) { fail(err, () => undefined) }
       },
-      async issueResetCode(name) {
+      async issueResetCode(name, action) {
         if (!client.resetCode) return null
-        try { return await client.resetCode({ name }) } catch (err) { fail(err, () => undefined); return null }
+        try { return await client.resetCode({ name, ...(action ? { action } : {}) }) } catch (err) { fail(err, () => undefined); return null }
       },
       async updateUserRole(name, role) {
         invalidateUserCache(name)
@@ -532,6 +557,11 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     createAdminInvite,
     deleteAdminInvite,
       revokeAdminSession,
+      revokeOtherAdminSessions: async () => {
+        const name = getState().adminSelected
+        if (!name || !client.revokeUserSessions) throw new Error('Отзыв сессий недоступен')
+        await client.revokeUserSessions({ name, exceptCurrent: true })
+      },
       openAdminConversation,
       refreshAdminLlmEngines,
       refreshPendingProjectTypes,

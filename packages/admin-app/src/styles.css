@@ -71,15 +71,27 @@
   /* Список превращается в горизонтальную ленту: на телефоне колонка в 260px
      съедала бы весь экран, а карточка человека — главное на странице. */
   .ua-list { border-right: 0; border-bottom: 1px solid var(--border); }
-  .ua-list__items { display: flex; gap: 8px; overflow-x: auto; padding: 0 12px 12px; }
+  .ua-list__items { display: grid; gap: 8px; padding: 0 12px 12px; }
+  .ua-list__items > li { border: 1px solid var(--border); border-radius: var(--radius-medium); padding: 8px; }
+  .ua-list__head { display: flex; align-items: center; gap: 8px; }
+  .ua-list__head > :first-child { min-width: 0; flex: 1; }
   .ua-list__items > li { flex: 0 0 auto; }
-  .ua-row { width: 232px; }
+  .ua-row { width: 100%; }
+  .ua-list__filters--closed { display: none; }
+  .ua-bulk { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
+  .ua-bulk .vc-btn { min-height: 40px; }
 }
 
 @media (max-width: 480px) {
   .ua-list__filters { grid-template-columns: 1fr; }
 }
 
+.uadmin-sessions .vcs-meta--dim { opacity: 1; }
+.ua .ua-top .vc-panel-head__actions { flex-wrap: wrap; max-width: 100%; overflow: visible; }
+@media (max-width: 720px) { .ua .ua-top .vc-panel-head__actions { width: 100%; } }
+.ua-row-menu { padding: 4px 12px; }
+.ua-row-menu summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; }
+.ua-row-menu .vc-btn { min-height: 40px; }
 .ua-list__more { margin: 0; padding: 0 12px 12px; }
 
 .ucreate-error { margin: 0; padding: 8px 10px; border-radius: var(--radius-medium); background: var(--danger-soft); color: var(--danger); font-size: 12px; }
