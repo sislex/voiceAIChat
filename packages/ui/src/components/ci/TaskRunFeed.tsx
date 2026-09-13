@@ -48,7 +48,7 @@ function mergeDetail(current: CiRunDetail | null, incoming: CiRunDetail): CiRunD
     ...incoming,
     steps: mergeSteps(current.steps, incoming.steps),
     fixAttempts: [...new Map([...incoming.fixAttempts, ...current.fixAttempts].map((item) => [item.id, item])).values()],
-    interactions: [...new Map([...(incoming.interactions ?? []), ...(current.interactions ?? [])].map((item) => [item.id, item])).values()]
+    interactions: [...new Map([...(current.interactions ?? []), ...(incoming.interactions ?? [])].map((item) => [item.id, item])).values()]
   }
 }
 
@@ -88,6 +88,10 @@ export function DevelopmentRunFeed({ runId, onDone }: { runId: string; onDone?: 
     const offLog = bridge.onLog((message) => {
       if (message.runId === runId) patch((current) => ({ ...current, log: mergeLog(current.log, [message.line]) }))
     })
+    const offInteraction = bridge.onInteraction((message) => {
+      if (message.runId !== runId) return
+      patch((current) => current.detail ? { ...current, detail: { ...current.detail, interactions: [...(current.detail.interactions ?? []).filter((item) => item.id !== message.interaction.id), message.interaction] } } : current)
+    })
     const offDone = bridge.onDone((message) => {
       if (message.runId !== runId) return
       patch((current) => ({ ...current, conclusion: message.conclusion ?? current.conclusion, detail: current.detail ? { ...current.detail, run: message.run } : { run: message.run, steps: [], fixAttempts: [], interactions: [] } }))
@@ -95,7 +99,7 @@ export function DevelopmentRunFeed({ runId, onDone }: { runId: string; onDone?: 
     })
     return () => {
       bridge.unsubscribe(runId)
-      offSnapshot(); offRun(); offStep(); offLog(); offDone()
+      offSnapshot(); offRun(); offStep(); offLog(); offInteraction(); offDone()
     }
   }, [runId])
   return <RunFeed
@@ -182,6 +186,10 @@ export function TaskRunFeed(props: TaskRunFeedProps): JSX.Element {
     const offLog = bridge.onLog((message) => {
       if (message.runId === runId) patch(runId, (current) => ({ ...current, log: mergeLog(current.log, [message.line]) }))
     })
+    const offInteraction = bridge.onInteraction((message) => {
+      if (message.runId !== runId) return
+      patch(runId, (current) => current.detail ? { ...current, detail: { ...current.detail, interactions: [...(current.detail.interactions ?? []).filter((item) => item.id !== message.interaction.id), message.interaction] } } : current)
+    })
     const offDone = bridge.onDone((message) => {
       if (message.runId !== runId) return
       patch(runId, (current) => ({ ...current, conclusion: message.conclusion ?? current.conclusion, detail: current.detail ? { ...current.detail, run: message.run } : { run: message.run, steps: [], fixAttempts: [], interactions: [] } }))
@@ -189,7 +197,7 @@ export function TaskRunFeed(props: TaskRunFeedProps): JSX.Element {
     })
     return () => {
       bridge.unsubscribe(runId)
-      offSnapshot(); offRun(); offStep(); offLog(); offDone()
+      offSnapshot(); offRun(); offStep(); offLog(); offInteraction(); offDone()
     }
   }, [selectedRun?.id, selectedRun?.kind])
 

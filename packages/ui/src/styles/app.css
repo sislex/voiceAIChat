@@ -5801,7 +5801,49 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    читалась как подсказка или выделение, а не как «что-то не так». */
 .ci-warn { margin-top: 6px; font-size: 12px; color: var(--text); background: var(--warning-soft); border-left: 3px solid var(--warning); border-radius: 6px; padding: 6px 10px; }
 .ci-defaults-wrap { margin-top: 10px; }
-.ci-console { position: fixed; inset: 0; z-index: 1000; background: var(--bg); display: flex; flex-direction: column; }
+.ci-console { position: relative; background: var(--bg); display: flex; flex-direction: column; min-width: 0; }
+.ci-console-dialog { width: min(1200px, 96vw); height: 90dvh; max-width: 100%; }
+.ci-console-head, .ci-console-input { flex-wrap: wrap; }
+.ci-console input, .ci-console pre { min-width: 0; max-width: 100%; }
+.ci-feed-tools, .ci-log-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; }
+.ci-feed-tools input { flex: 1 1 180px; min-width: 0; }
+.ci-log-tools { font-size: 12px; color: var(--text-dim); }
+.ci-log-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ci-step-log .ci-log .vc-btn--ghost { color: var(--ansi-fg); }
+.ci-step-log .ci-log .vc-btn--ghost:hover { background: color-mix(in srgb, var(--ansi-fg) 15%, var(--ansi-bg)); }
+.ci-log-number { flex: 0 0 3ch; color: var(--ansi-fg); text-align: right; user-select: none; }
+.ci-log-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ci-log-line--target, .ci-log-line--selected { outline: 1px solid var(--accent); outline-offset: -1px; }
+.ci-log mark { background: var(--surface-selected); color: var(--text); }
+.ci-log mark.ci-search-current { outline: 2px solid var(--accent); outline-offset: 1px; font-weight: 700; }
+.ci-queue, .ci-retry-preview, .ci-usage-summary { border: 1px solid var(--border); border-radius: var(--radius-medium); padding: 12px; margin: 8px 0; overflow-wrap: anywhere; }
+.ci-queue li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block: 8px; }
+.ci-usage-bar { display: flex; height: 12px; margin-block: 8px; gap: 2px; }
+.ci-usage-segment { min-width: 2px; background: var(--accent); }
+.ci-usage-segment--1 { background: var(--ci-success); }
+.ci-usage-segment--2 { background: var(--ci-progress); }
+.ci-report-scroll { overflow: auto; }
+.ci-report-scroll th, .ci-report-scroll td { padding: 8px; text-align: left; }
+.ci-interaction-wait { font-weight: 600; }
+.ci-plan-diff { overflow: auto; white-space: pre-wrap; }
+.ci-plan-added { background: var(--ci-success-bg); color: var(--text); }
+.ci-plan-removed { background: var(--ci-removed-bg); color: var(--text); }
+@media (max-width: 720px) {
+  .ci-runfeed { display: flex; flex-direction: column; min-width: 0; }
+  .ci-runfeed-head { display: contents; }
+  .ci-runfeed > * { flex-shrink: 0; }
+  .ci-runfeed-actions { order: 10; position: sticky; bottom: 0; background: var(--surface); padding: 8px 0 max(8px, env(safe-area-inset-bottom)); z-index: 1; flex-shrink: 0; flex-wrap: nowrap; overflow-x: auto; }
+  .ci-runfeed-actions > * { flex-shrink: 0; white-space: nowrap; }
+  .ci-runfeed .ci-step { border: 1px solid var(--border); border-radius: var(--radius-medium); margin-block: 8px; }
+  .ci-runfeed .ci-step-head { flex-wrap: wrap; min-height: 44px; }
+  .ci-runfeed .ci-step-title { flex-basis: 60%; overflow-wrap: anywhere; }
+  .ci-runfeed .ci-log { max-height: 160px; }
+  .ci-runfeed .vc-btn { min-height: 40px; }
+  .ci-console-dialog { width: 100%; height: 100dvh; }
+  .ci-console { padding: 4px; }
+  .ci-console-head, .ci-console-input { gap: 4px; padding: 4px; }
+  .ci-feed-tools > *, .ci-retry-preview select { max-width: 100%; }
+}
 .ci-console-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .ci-console-title { font-weight: 600; color: var(--text); }
 .ci-console-search { margin-left: auto; max-width: 260px; }
