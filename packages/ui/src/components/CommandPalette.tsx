@@ -25,6 +25,7 @@ import { Dialog } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 
 export interface CommandPaletteProps {
+  userId?: string
   open: boolean
   onClose: () => void
   /** Команды; по умолчанию — общий реестр (в тестах и сториз инжектится список). */
@@ -63,6 +64,7 @@ function Highlighted({ text, indices }: { text: string; indices: number[] }): JS
 
 export function CommandPalette({
   open,
+  userId,
   onClose,
   commands,
   limitPerSection,
@@ -74,7 +76,7 @@ export function CommandPalette({
   const available = commands ?? registry
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
-  const [recent, setRecent] = useState<string[]>([])
+  const recent = recentCommandIds(userId)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const baseId = useId()
@@ -85,8 +87,7 @@ export function CommandPalette({
     if (!open) return
     setQuery('')
     setActive(0)
-    setRecent(recentCommandIds())
-  }, [open])
+  }, [open, userId])
 
   const groups: CommandGroup[] = useMemo(
     () =>
@@ -112,7 +113,8 @@ export function CommandPalette({
   if (!open) return null
 
   const run = (hit: CommandHit): void => {
-    rememberCommand(hit.command.id)
+    if (hit.command.enabled?.() === false) return
+    rememberCommand(hit.command.id, userId)
     // Сначала закрываем: команда может открыть своё окно, и палитра не должна
     // остаться слоем под ним.
     onClose()
@@ -219,9 +221,9 @@ export function CommandPalette({
                       <Highlighted text={hit.command.title} indices={hit.indices} />
                     </span>
                     {hit.command.hint && <span className="cmdk-hint">{hit.command.hint}</span>}
-                    {hit.command.hotkey && (
+                    {hit.command.hotkey ? (
                       <kbd className="cmdk-key">{formatCombo(hit.command.hotkey, apple)}</kbd>
-                    )}
+                    ) : <span className="cmdk-key" aria-label="Сочетание не назначено">—</span>}
                   </div>
                 )
               })}

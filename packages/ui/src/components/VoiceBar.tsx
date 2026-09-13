@@ -5,6 +5,8 @@
 // Состояние нигде не хранится и ручной выбор не меняется при resize.
 
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { useCommandSource } from '@voicechat/ui-foundation/runtime'
+import { comboMatches, parseCombo, formatCombo } from '../lib/hotkeys'
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import type { PreviewElementPayload } from '@shared/previewInspector'
@@ -92,6 +94,7 @@ function AttachmentChip({
 }
 
 export interface VoiceBarProps {
+  sendShortcut?: string
   state: VoiceState
   draft: string
   diarization: boolean
@@ -163,6 +166,7 @@ export interface VoiceBarProps {
 }
 
 export function VoiceBar({
+  sendShortcut = 'Enter',
   state,
   draft,
   diarization,
@@ -349,9 +353,11 @@ export function VoiceBar({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [helper.open, onClosePromptSuggestions])
 
+  useCommandSource(() => [{ id: 'app.send', title: 'Отправить сообщение', section: 'action', hotkey: sendShortcut, enabled: () => canSubmit && state !== 'listening', run: () => { if (canSubmit) submitRequest() } }])
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     // Enter — отправить, Shift+Enter — перенос строки (многострочный ввод).
-    if (e.key === 'Enter' && !e.shiftKey && !e.repeat) {
+    if (!e.nativeEvent.isComposing && state !== 'listening' && !e.repeat && comboMatches(e.nativeEvent, parseCombo(sendShortcut)) && e.shiftKey === parseCombo(sendShortcut).shift) {
       e.preventDefault()
       if (canSubmit) submitRequest()
     }
@@ -668,7 +674,7 @@ export function VoiceBar({
                   }}
                   className={`tin${editorExpanded ? ' tin--expanded' : ''}`}
                   placeholder="Напишите сообщение…"
-                  title="Shift+Enter — новая строка"
+                  title={`${formatCombo(sendShortcut)} — отправить; Shift+Enter — новая строка`}
                   value={draft}
                   rows={DRAFT_MIN_ROWS}
                   onChange={(e) => onDraftChange(e.target.value)}

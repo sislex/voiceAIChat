@@ -57,6 +57,8 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     await api(`/api/make/${conversationId}/template`, { method: 'POST', body: JSON.stringify({ templateId: 'react-ts' }) })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     page.on('pageerror', error => browserDiagnostics.push(error.message))
     page.on('requestfailed', request => browserDiagnostics.push(`${request.method()} ${new URL(request.url()).pathname}: ${request.failure()?.errorText}`))
     await page.goto(`${BASE}/`)
@@ -89,6 +91,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     }
   })
 
+  // @testCase TC1
   it('mobile Make tabs отдают всю область только активной панели', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('tab', { name: 'Проект' }).click()
@@ -218,7 +221,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     const mobile = await mobileContext.newPage()
     await mobile.setViewportSize({ width: 390, height: 844 })
     const more = async (label: string): Promise<void> => {
-      await mobile.getByRole('button', { name: 'Ещё', exact: true }).click()
+      await mobile.locator('.make-pane').getByRole('button', { name: 'Ещё', exact: true }).click()
       await mobile.getByRole('button', { name: label, exact: true }).click()
     }
     const panels = () => mobile.getByRole('group', { name: 'Панели проекта' })

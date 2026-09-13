@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ShortcutSettings } from './ShortcutSettings'
 import { ProjectTypesSettings } from './ProjectTypesSettings'
 import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
@@ -677,6 +678,7 @@ export function SettingsModal({
 
             {section === 'ui' && (
               <>
+                <ShortcutSettings key={currentUsername ?? 'local'} userId={currentUsername ?? 'local'} />
                 <div className="frow">
                   <div>
                     <p className="flab">Тема интерфейса</p>
@@ -691,6 +693,7 @@ export function SettingsModal({
                     <option value="light">Светлая</option>
                     <option value="dark">Тёмная</option>
                     <option value="green">Зелёная</option>
+                    <option value="system">Как в системе</option>
                   </select>
                 </div>
 
