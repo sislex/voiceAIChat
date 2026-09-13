@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 70e9afe3 feat(admin): improve user and session access management (CHAT-453) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-12 | ⚠ 15 коммит(ов) в areas после сверки: 09971e0d Merge main into CHAT-453 (task d1791123-40ee-42e2-8736-ed86f8a09323) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 9 коммит(ов) в areas после сверки: 06c94c52 Merge main into CHAT-458 (task 9ae92e81-fdd5-42ba-a5d2-81821d817408) … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 164 коммит(ов) в areas после сверки: 09971e0d Merge main into CHAT-453 (task d1791123-40ee-42e2-8736-ed86f8a09323) … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 324 коммит(ов) в areas после сверки: 09971e0d Merge main into CHAT-453 (task d1791123-40ee-42e2-8736-ed86f8a09323) … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 117 коммит(ов) в areas после сверки: 09971e0d Merge main into CHAT-453 (task d1791123-40ee-42e2-8736-ed86f8a09323) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 32 коммит(ов) в areas после сверки: 09971e0d Merge main into CHAT-453 (task d1791123-40ee-42e2-8736-ed86f8a09323) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1435 коммит(ов) в areas после сверки: 09971e0d Merge main into CHAT-453 (task d1791123-40ee-42e2-8736-ed86f8a09323) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1436 коммит(ов) в areas после сверки: 2c5f182e docs(kb): update after merge d1791123-40ee-42e2-8736-ed86f8a09323 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 2 коммит(ов) в areas после сверки: 06c94c52 Merge main into CHAT-458 (task 9ae92e81-fdd5-42ba-a5d2-81821d817408) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 19 коммит(ов) в areas после сверки: 09971e0d Merge main into CHAT-453 (task d1791123-40ee-42e2-8736-ed86f8a09323) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 31 коммит(ов) в areas после сверки: 06c94c52 Merge main into CHAT-458 (task 9ae92e81-fdd5-42ba-a5d2-81821d817408) … |
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 814. Последние:
+Всего записей: 815. Последние:
 
 - [2026-09-13-germany-4-8-60-kanban-mobile-kb.md](log/2026-09-13-germany-4-8-60-kanban-mobile-kb.md) — kanban-mobile-kb
 - [2026-09-13-germany-4-8-60-chat451-machine-console-kb.md](log/2026-09-13-germany-4-8-60-chat451-machine-console-kb.md) — chat451-machine-console-kb

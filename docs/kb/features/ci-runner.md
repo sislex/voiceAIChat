@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-12
-checked: 4aae694e
+updated: 2026-09-13
+checked: 2c5f182e
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -2215,6 +2215,50 @@ $14–15, то есть замер попал в тот же порядок, ч�
 мерялось: там $0.11 на ран и пересказ готового списка шагов.
 
 ## Контракт и UI
+
+The run feed has step filters (all, failed/timeout/interrupted, commands,
+model work), case-insensitive log search, match navigation and expand/collapse
+controls. Physical lines are assembled from transport chunks before numbering;
+permalinks use `#step-<id>-L<n>` and reveal collapsed parent steps. Line numbers
+select a range (Shift selects its end); copying excludes ANSI escapes. Each
+step has an independent follow toggle and a bounded scroll viewport. Browser
+artifacts retain their authenticated loader.
+
+Pending questions display elapsed waiting time. “Ответить позже” saves partial
+answers in sessionStorage under the run/interaction identity and hides the
+form without answering the server. Reopening restores the draft. Plan approval
+shows a prefix/suffix text diff against the preceding plan interaction.
+Both TaskRunFeed and DevelopmentRunFeed subscribe to interaction updates.
+
+Run details and snapshots include an optional project queue summary: visible
+waiting/busy task identities, project-local ordering, and server-wide occupied
+slot count and limit. Queue ordering follows the board order used by the
+scheduler. Removing a queued run uses dequeue and reports a race with start;
+confirmed bypass uses the existing parallel start, promoting the queued run.
+An active feed refreshes its queue snapshot every five seconds.
+
+The feed loads getRunReport and refreshes active usage every 15 seconds. Its
+token bar and report table use the existing stage/model aggregates and retain
+estimated/unknown-cost semantics. The console uses the shared Dialog, command
+history, read-only path completion and confirmation for destructive shell
+commands. Mobile layouts use step cards, bounded logs, sticky bottom actions
+and a full-screen console.
+
+Task command settings receive commandContext (machine, command workdir and
+environment) from the server. Slot previews expand known environment references
+for display; execution keeps shell evaluation and passes the environment as
+quoted arguments. An explicit confirmed machine check uses the existing fs.exec
+bridge, is aborted after at most 30 seconds and displays the first 50 output
+lines. Built-in steps and PROD_DIR-routed commands are identified separately and
+are not executed by this local check. The cleanup warning remains.
+
+Retry requests accept an optional stepId for a root model-work or catalogue
+command step. The feed offers a preview of retained history and the subsequent
+steps before submitting the selection. Retry preserves the workspace and uses
+current slot configuration; removed or repeated command IDs fail explicitly
+instead of silently selecting a different occurrence. Full retry remains
+available for those configurations.
+
 
 Типы — `packages/shared/src/ci.ts`; REST-пути и WS-сообщения `ci.*` — в
 `protocol.ts` (union'ы + `*_MESSAGE_TYPES`). Роуты — `routes/ci.ts`. Мост
