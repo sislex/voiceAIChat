@@ -157,7 +157,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'clear', 'click', 'close-tab', 'console', 'copy', 'delete-download', 'dialogs', 'downloads', 'drag', 'drop-file', 'edits', 'environment', 'errors', 'evaluate', 'fill-form', 'find', 'focus', 'focus-order', 'focused', 'form-state', 'forward', 'frames', 'handle-dialog', 'hotkey', 'hover', 'network', 'new-tab', 'open', 'options', 'paste', 'press', 'probe', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'select-text', 'set', 'stop-loading', 'styles', 'submit', 'tabs', 'test-users', 'type', 'upload', 'validity', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'clear', 'click', 'close-tab', 'console', 'copy', 'count', 'delete-download', 'dialogs', 'downloads', 'drag', 'drop-file', 'edits', 'environment', 'errors', 'evaluate', 'fill-form', 'find', 'focus', 'focus-order', 'focused', 'form-state', 'forward', 'frames', 'handle-dialog', 'highlight', 'hotkey', 'hover', 'list', 'measure', 'metrics', 'network', 'new-tab', 'open', 'options', 'paste', 'press', 'probe', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'scroll-until', 'select-tab', 'select-text', 'set', 'stop-loading', 'styles', 'submit', 'table', 'tabs', 'test-users', 'type', 'upload', 'validity', 'viewport', 'wait'])
   })
 
   it.each([

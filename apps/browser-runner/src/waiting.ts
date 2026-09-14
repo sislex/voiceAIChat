@@ -2,6 +2,8 @@ import { browserUrlMatches, type BrowserWaitOptions } from '@voicechat/shared'
 
 export interface WaitLocator {
   first(): WaitLocator
+  /** Положение элемента: две одинаковые рамки подряд значат, что анимация кончилась. */
+  boundingBox(options?: { timeout?: number }): Promise<{ x: number; y: number; width: number; height: number } | null>
   filter(options: { visible?: boolean; hasText?: string }): WaitLocator
   count(): Promise<number>
   waitFor(options: { state: 'attached' | 'detached' | 'visible' | 'hidden'; timeout: number }): Promise<void>
@@ -16,7 +18,7 @@ export interface WaitPage {
   locator(selector: string): WaitLocator
   getByText(text: string, options: { exact: boolean }): WaitLocator
   waitForURL(predicate: (url: URL) => boolean, options: { timeout: number; waitUntil: 'commit' }): Promise<void>
-  waitForLoadState(state: 'domcontentloaded' | 'load', options: { timeout: number }): Promise<void>
+  waitForLoadState(state: 'domcontentloaded' | 'load' | 'networkidle', options: { timeout: number }): Promise<void>
   waitForFunction(expression: string, arg: undefined, options: { timeout: number; polling: number }): Promise<{ dispose(): Promise<void> }>
 }
 
@@ -52,6 +54,24 @@ export async function waitForConditions(page: WaitPage, options: BrowserWaitOpti
   }
   if (options.url) jobs.push(page.waitForURL(url => browserUrlMatches(publicUrl(url.toString()), options.url!), { timeout: remaining(), waitUntil: 'commit' }))
   if (options.loadState) jobs.push(page.waitForLoadState(options.loadState, { timeout: remaining() }))
+  // Сетевая тишина — то, чего человек ждёт, глядя на спиннер: разметка уже
+  // пришла, но данные ещё едут, и `load` об этом ничего не говорит.
+  if (options.network === 'idle') jobs.push(page.waitForLoadState('networkidle', { timeout: remaining() }))
+  if (options.stable && (options.selector || options.text)) jobs.push((async () => {
+    const base = options.selector ? page.locator(options.selector) : page.getByText(options.text!, { exact: false })
+    const target = (options.selector && options.text ? base.filter({ hasText: options.text }) : base).first()
+    // Две одинаковые рамки подряд: у меню и модальных окон анимация идёт уже
+    // после появления в DOM, и клик по едущему элементу промахивается мимо.
+    let previous: string | null = null
+    while (true) {
+      const box = await target.boundingBox({ timeout: remaining() })
+      const shape = box ? `${Math.round(box.x)}:${Math.round(box.y)}:${Math.round(box.width)}:${Math.round(box.height)}` : null
+      if (shape !== null && shape === previous) return
+      previous = shape
+      if (performance.now() >= deadline) throw timedOut()
+      await new Promise(resolve => setTimeout(resolve, Math.min(80, remaining())))
+    }
+  })())
   if (options.predicate) jobs.push((async () => {
     const expression = `(() => { const value = (${options.predicate}); const result = typeof value === 'function' ? value() : value; if (result && typeof result.then === 'function') { Promise.resolve(result).catch(() => {}); throw new Error('predicate должен возвращать синхронное значение'); } return result; })()`
     const handle = await page.waitForFunction(expression, undefined, { timeout: remaining(), polling: 50 })

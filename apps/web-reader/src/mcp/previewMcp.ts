@@ -503,7 +503,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Дождаться готовности страницы. selector вместе с text ждёт текст внутри элемента. ' +
-            'В Chromium доступны state, enabled, editable, checked, value, count, URL, loadState и predicate. ' +
+            'В Chromium доступны state, enabled, editable, checked, value, count, URL, loadState, network, stable и predicate. ' +
             'Условия делят один таймаут до 30000 мс (по умолчанию 5000). Ответ сообщает время ожидания. ' +
             'load не ждёт будущие запросы SPA: для них используй содержимое или predicate.',
           inputSchema: { frame: frameSchema,
@@ -517,6 +517,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             count: z.number().int().min(0).max(100000).optional().describe('Число совпадений селектора, включая скрытые'),
             url: z.string().max(L.url).optional().describe('Публичный URL или шаблон с *'),
             loadState: z.enum(['domcontentloaded', 'load']).optional().describe('Готовность DOM или завершение загрузки документа'),
+            network: z.literal('idle').optional().describe('Сетевая тишина: данные догрузились, а не только разметка — то, чего человек ждёт, глядя на спиннер'),
+            stable: z.boolean().optional().describe('Элемент перестал двигаться: у меню и модальных окон анимация идёт после появления в DOM, и клик по едущему элементу промахивается'),
             predicate: z.string().max(L.evaluateCode).optional().describe('Синхронное JS-выражение или функция без аргументов, дающая truthy'),
             timeoutMs: z.number().positive().max(30000).optional().describe('Общий таймаут ожидания, мс')
           }
@@ -884,6 +886,115 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           }
           return { content: [{ type: 'text', text: JSON.stringify(users) }] }
         }
+      )
+
+      server.registerTool(
+        'scroll-until',
+        {
+          description:
+            'Прокручивать ленту, пока не покажется цель (selector или text) или не кончится содержимое. ' +
+            'Для лент с ленивой подгрузкой: обычный scroll на них либо останавливается на первом экране, ' +
+            'либо крутится вслепую. Между шагами есть пауза на подгрузку. ' +
+            'Ответ говорит, нашлась ли цель, сколько было прокруток и дошли ли до конца.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор цели'),
+            text: z.string().max(L.text).optional().describe('Видимый текст цели'),
+            container: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера (без него — окно)'),
+            maxScrolls: z.number().int().min(1).max(50).optional().describe('Сколько прокруток максимум (по умолчанию 10)'),
+            step: z.number().min(1).max(10_000).optional().describe('Шаг прокрутки в пикселях (по умолчанию 800)')
+          }
+        },
+        async ({ frame, selector, text, container, maxScrolls, step }) => {
+          if (!selector && !text) return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+          return run({ kind: 'scrollUntil', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(container ? { container } : {}), ...(maxScrolls !== undefined ? { maxScrolls } : {}), ...(step !== undefined ? { step } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'count',
+        {
+          description:
+            'Сколько элементов подходит под селектор или текст: видимых и всего. ' +
+            'Проверка «стало на одну строку больше» не требует читать их текст и не съедает контекст хода.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
+            text: z.string().max(L.text).optional().describe('Видимый текст'),
+            visibleOnly: z.boolean().optional().describe('false — считать и скрытые (по умолчанию считаются видимые)')
+          }
+        },
+        async ({ frame, selector, text, visibleOnly }) => {
+          if (!selector && !text) return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+          return run({ kind: 'count', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(visibleOnly !== undefined ? { visibleOnly } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'table',
+        {
+          description:
+            'Таблица так, как её читает человек: строки записями под заголовками колонок, с порциями ' +
+            'offset/limit и nextOffset. columns оставляет только нужные колонки. ' +
+            'В отличие от read, не теряет связь ячейки со своим заголовком.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор таблицы'),
+            offset: z.number().int().min(0).optional().describe('С какой строки читать'),
+            limit: z.number().int().min(1).max(200).optional().describe('Сколько строк (по умолчанию 20)'),
+            columns: z.array(z.string().max(200)).min(1).max(32).optional().describe('Заголовки нужных колонок')
+          }
+        },
+        async ({ frame, selector, offset, limit, columns }) => run({ kind: 'table', ...(frame !== undefined ? { frame } : {}), selector, ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}), ...(columns ? { columns } : {}) })
+      )
+
+      server.registerTool(
+        'list',
+        {
+          description:
+            'Повторяющиеся блоки страницы (карточки, лента, результаты поиска) записями: заголовок, текст, ' +
+            'ссылка и свои кнопки каждого блока с селекторами. Плоский текст read теряет, какая кнопка ' +
+            'к какой карточке относится, — и клик уходил в соседнюю.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор повторяющегося блока'),
+            offset: z.number().int().min(0).optional().describe('С какого блока читать'),
+            limit: z.number().int().min(1).max(100).optional().describe('Сколько блоков (по умолчанию 20)')
+          }
+        },
+        async ({ frame, selector, offset, limit }) => run({ kind: 'list', ...(frame !== undefined ? { frame } : {}), selector, ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'metrics',
+        {
+          description:
+            'Куда прокручена страница и сколько её осталось: позиция, полная высота, размер окна, ' +
+            'сколько экранов ниже и достигнут ли низ. Ответ на вопрос «я всё прочитал или это только начало».',
+          inputSchema: { frame: frameSchema }
+        },
+        async ({ frame }) => run({ kind: 'metrics', ...(frame !== undefined ? { frame } : {}) })
+      )
+
+      server.registerTool(
+        'measure',
+        {
+          description:
+            'Геометрия элемента: положение, размер, попадает ли во вьюпорт, перекрыт ли другим узлом ' +
+            '(липкой шапкой — обычная причина «клик не сработал») и на сколько нужно прокрутить до него.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).describe('CSS-селектор элемента') }
+        },
+        async ({ frame, selector }) => run({ kind: 'measure', ...(frame !== undefined ? { frame } : {}), selector })
+      )
+
+      server.registerTool(
+        'highlight',
+        {
+          description:
+            'Обвести элемент рамкой прямо на странице на несколько секунд — человек в панели увидит, ' +
+            'о каком элементе идёт речь. Селектор в переписке нечитаем, рамка в кадре понятна сразу.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор элемента'),
+            ms: z.number().min(100).max(10_000).optional().describe('Сколько держать рамку, мс (по умолчанию 1500)')
+          }
+        },
+        async ({ frame, selector, ms }) => run({ kind: 'highlight', ...(frame !== undefined ? { frame } : {}), selector, ...(ms !== undefined ? { ms } : {}) })
       )
 
       server.registerTool(

@@ -31,3 +31,21 @@ describe('контракт ожидания браузера', () => {
     expect(browserUrlMatches('about:blank', '*')).toBe(true)
   })
 })
+
+// Круг 3: сетевая тишина и остановка анимации — то, чего человек ждёт глазами.
+describe('ожидание сети и стабильности', () => {
+  it('сетевая тишина допускается сама по себе, без цели', () => {
+    expect(isBrowserWaitOptions({ network: 'idle' })).toBe(true)
+    expect(isBrowserWaitOptions({ network: 'busy' })).toBe(false)
+  })
+
+  it('стабильность требует цели: двигаться может только конкретный элемент', () => {
+    expect(isBrowserWaitOptions({ selector: '#menu', stable: true })).toBe(true)
+    expect(isBrowserWaitOptions({ stable: true })).toBe(false)
+  })
+
+  it('оба условия исполняются только Chromium, а не iframe-прокси', () => {
+    expect(browserWaitRequiresChromium({ network: 'idle' })).toBe(true)
+    expect(browserWaitRequiresChromium({ selector: '#a', stable: true })).toBe(true)
+  })
+})

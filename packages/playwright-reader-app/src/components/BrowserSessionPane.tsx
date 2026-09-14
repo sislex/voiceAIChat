@@ -156,6 +156,15 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const [fullscreen, setFullscreen] = useState(false)
   /** Поля формы глазами страницы: то же, что видит модель инструментом form-state. */
   const [formInfo, setFormInfo] = useState<{ loading?: boolean; error?: string; form?: BrowserSelectorResult['form']; validity?: BrowserSelectorResult['validity'] } | null>(null)
+  /**
+   * Поиск по странице. Ctrl+F внутри кадра ищет по странице приложения, а не по
+   * той, что в Chromium: кадр — картинка, и найти в нём текст глазами на длинной
+   * странице невозможно.
+   */
+  const [search, setSearch] = useState<{ open: boolean; query: string; matches: Array<{ selector: string; text: string }>; at: number; searching?: boolean; error?: string }>({ open: false, query: '', matches: [], at: 0 })
+  const searchRef = useRef<HTMLInputElement>(null)
+  /** Куда прокручена страница: «экранов ниже» отвечает на «это всё или начало». */
+  const [metrics, setMetrics] = useState<BrowserSelectorResult['metrics'] | null>(null)
   /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
   const touch = useRef<{ x: number; y: number; moved: boolean; pinch: number | null } | null>(null)
   /** Долгое нажатие вместо правой кнопки и двойной тап вместо двойного клика. */
@@ -473,6 +482,44 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
 
   useEffect(() => { lastZoom = zoom }, [zoom])
 
+  /** Показать совпадение человеку: прокрутить к нему и обвести рамкой. */
+  const showMatch = useCallback(async (selector: string): Promise<void> => {
+    await run({ type: 'selector', action: { kind: 'scrollTo', selector } })
+    await run({ type: 'selector', action: { kind: 'highlight', selector, ms: 1500 } })
+  }, [run])
+
+  /** Поиск по странице: те же find/highlight/scrollTo, которыми пользуется модель. */
+  const runSearch = useCallback(async (query: string): Promise<void> => {
+    const text = query.trim()
+    if (!text) { setSearch((current) => ({ ...current, matches: [], at: 0, error: undefined })); return }
+    setSearch((current) => ({ ...current, searching: true, error: undefined }))
+    const found = await run({ type: 'selector', action: { kind: 'find', text, limit: 30, visibleOnly: true } }) as BrowserSelectorResult | undefined
+    if (!found || found.ok === false) { setSearch((current) => ({ ...current, searching: false, matches: [], at: 0, error: found?.error ?? 'Поиск не выполнен' })); return }
+    const matches = found.matches ?? []
+    setSearch((current) => ({ ...current, searching: false, matches, at: 0 }))
+    if (matches[0]) await showMatch(matches[0].selector)
+  }, [run])
+
+  /** Переход по совпадениям по кругу: так ведёт себя поиск в любом браузере. */
+  const step = useCallback(async (direction: 1 | -1): Promise<void> => {
+    let target: string | null = null
+    setSearch((current) => {
+      if (!current.matches.length) return current
+      const at = (current.at + direction + current.matches.length) % current.matches.length
+      target = current.matches[at].selector
+      return { ...current, at }
+    })
+    // Прокрутка вынесена из setState: она асинхронная, а состояние — нет.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    if (target) await showMatch(target)
+  }, [showMatch])
+
+  /** Метрики страницы: обновляются по требованию, не поллингом — это команда. */
+  const refreshMetrics = useCallback(async (): Promise<void> => {
+    const result = await run({ type: 'selector', action: { kind: 'metrics' } }) as BrowserSelectorResult | undefined
+    setMetrics(result?.metrics ?? null)
+  }, [run])
+
   /** Поля формы и проверки браузера — то же, что модель видит form-state/validity. */
   const loadFormInfo = useCallback(async (): Promise<void> => {
     setFormInfo({ loading: true })
@@ -666,6 +713,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     const shortcut = panelShortcut(event)
     if (!shortcut) return
     if (shortcut === 'exitFullscreen') {
+      // Escape закрывает сначала поиск, потом разворот: так же ведёт себя браузер.
+      if (search.open) { event.preventDefault(); setSearch((current) => ({ ...current, open: false })); return }
       if (!fullscreen) return
       event.preventDefault()
       setFullscreen(false)
@@ -674,6 +723,12 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     if (phase !== 'ready') return
     event.preventDefault()
     if (shortcut === 'address') { addressRef.current?.focus(); addressRef.current?.select(); return }
+    if (shortcut === 'find') {
+      setSearch((current) => ({ ...current, open: true }))
+      // Поле появляется в этом же кадре отрисовки — фокус ставим после него.
+      setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select() }, 0)
+      return
+    }
     void run({ type: shortcut })
   }
 
@@ -754,6 +809,31 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       <IconButton size="sm" aria-label={fullscreen ? 'Свернуть кадр' : 'Развернуть кадр'} title={fullscreen ? 'Свернуть кадр' : 'Развернуть кадр на всю панель'}
         aria-pressed={fullscreen} onClick={() => setFullscreen((value) => !value)}>{fullscreen ? '⤡' : '⤢'}</IconButton>
     </div>
+    {search.open && (
+      <div className="playwright-reader-find" role="search">
+        <input
+          ref={searchRef}
+          type="search"
+          className="login-input"
+          aria-label="Найти на странице"
+          placeholder="Найти на странице"
+          value={search.query}
+          disabled={phase !== 'ready'}
+          onChange={(event) => setSearch((current) => ({ ...current, query: event.target.value }))}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') { event.preventDefault(); void (search.matches.length ? step(event.shiftKey ? -1 : 1) : runSearch(search.query)) }
+            if (event.key === 'Escape') { event.preventDefault(); setSearch((current) => ({ ...current, open: false })) }
+          }}
+        />
+        <Button size="sm" variant="secondary" disabled={phase !== 'ready' || !search.query.trim() || search.searching} onClick={() => void runSearch(search.query)}>Найти</Button>
+        <span role="status" className="playwright-reader-size">
+          {search.searching ? 'ищем…' : search.error ? search.error : search.matches.length ? `${search.at + 1} из ${search.matches.length}` : search.query.trim() ? 'ничего не нашлось' : ''}
+        </span>
+        <IconButton size="sm" aria-label="Предыдущее совпадение" title="Предыдущее совпадение" disabled={search.matches.length < 2} onClick={() => void step(-1)}>↑</IconButton>
+        <IconButton size="sm" aria-label="Следующее совпадение" title="Следующее совпадение" disabled={search.matches.length < 2} onClick={() => void step(1)}>↓</IconButton>
+        <IconButton size="sm" aria-label="Закрыть поиск" title="Закрыть поиск" onClick={() => setSearch((current) => ({ ...current, open: false }))}>✕</IconButton>
+      </div>
+    )}
     <div className="playwright-reader-tools">
       <span className="playwright-reader-viewports" role="group" aria-label="Размер окна">
         {VIEWPORTS.map((v) => (
@@ -767,6 +847,19 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           >{v.label}</Button>
         ))}
       </span>
+      <Button size="sm" variant={search.open ? 'primary' : 'ghost'} aria-pressed={search.open} disabled={phase !== 'ready'}
+        onClick={() => { setSearch((current) => ({ ...current, open: !current.open })); setTimeout(() => searchRef.current?.focus(), 0) }}>Поиск по странице</Button>
+      {/* Длинную страницу человек листает концами: «в начало» и «в конец» —
+          первые две кнопки, за которыми он тянется, и их не было вовсе. */}
+      <span className="playwright-reader-keys" role="group" aria-label="Прокрутка страницы">
+        <IconButton size="sm" aria-label="В начало страницы" title="В начало страницы" disabled={phase !== 'ready'}
+          onClick={() => void (async () => { await run({ type: 'selector', action: { kind: 'scroll', to: 'top' } }); await refreshMetrics() })()}>⇱</IconButton>
+        <IconButton size="sm" aria-label="В конец страницы" title="В конец страницы" disabled={phase !== 'ready'}
+          onClick={() => void (async () => { await run({ type: 'selector', action: { kind: 'scroll', to: 'bottom' } }); await refreshMetrics() })()}>⇲</IconButton>
+      </span>
+      {/* «Экранов ниже» отвечает на вопрос, который кадр не отвечает никогда:
+          это вся страница или только её начало. */}
+      {metrics && <span className="playwright-reader-size" role="status">{metrics.atBottom ? 'страница долистана' : `ниже ещё ${metrics.screensBelow} экрана(ов)`}</span>}
       {/* Размер окна словами: пресет не говорит, какой ширины страница сейчас,
           а именно ширина объясняет, почему вёрстка выглядит так. */}
       {meta?.viewport && <span className="playwright-reader-size">{meta.viewport.width}×{meta.viewport.height}</span>}

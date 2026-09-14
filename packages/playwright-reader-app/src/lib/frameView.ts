@@ -76,7 +76,7 @@ export interface PanelKeyEvent {
 
 /** What a panel-level shortcut means. The frame keeps its own keys — these fire
  *  only where the page itself is not listening (toolbar, address bar, chrome). */
-export type PanelShortcut = 'back' | 'forward' | 'reload' | 'address' | 'exitFullscreen'
+export type PanelShortcut = 'back' | 'forward' | 'reload' | 'address' | 'find' | 'exitFullscreen'
 
 /**
  * Browser shortcuts a person presses without thinking. They cannot be handed to
@@ -90,5 +90,6 @@ export function panelShortcut(event: PanelKeyEvent): PanelShortcut | null {
   if (event.altKey && !primary && event.key === 'ArrowRight') return 'forward'
   if (primary && !event.altKey && event.key.toLowerCase() === 'r') return 'reload'
   if (primary && !event.altKey && event.key.toLowerCase() === 'l') return 'address'
+  if (primary && !event.altKey && event.key.toLowerCase() === 'f') return 'find'
   return null
 }

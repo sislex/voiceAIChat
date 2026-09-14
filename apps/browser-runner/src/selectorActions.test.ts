@@ -14,6 +14,7 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     isEditable: async () => true,
     isChecked: async () => false,
     inputValue: async () => '',
+    boundingBox: async () => ({ x: 0, y: 0, width: 10, height: 10 }),
     filter: () => self,
     evaluateAll: async () => null,
     click: vi.fn(async () => {}),
@@ -388,5 +389,76 @@ describe('формы целиком', () => {
     const result = await runSelectorAction(page(target), { kind: 'dropFile', selector: '#zone', files: [{ name: 'a.txt', base64: 'не base64!' }] })
     expect(result).toEqual({ ok: false, error: 'Некорректное содержимое base64' })
     expect(target.evaluate).toBeDefined()
+  })
+})
+
+// Круг 3: добраться до содержимого. Раньше модель имела плоское чтение и слепую
+// прокрутку — на ленивой ленте это либо первый экран, либо бесконечный цикл.
+describe('содержимое и прокрутка', () => {
+  it('count отдаёт и видимые, и все совпадения, а по умолчанию считает видимые', async () => {
+    const target = locator({ count: async () => 7, filter: () => locator({ count: async () => 3 }) })
+    const result = await runSelectorAction(page(target), { kind: 'count', selector: '.row' })
+    expect(result).toMatchObject({ ok: true, total: 3, counted: { visible: 3, all: 7 } })
+  })
+
+  it('count по запросу считает и скрытые', async () => {
+    const target = locator({ count: async () => 7, filter: () => locator({ count: async () => 3 }) })
+    const result = await runSelectorAction(page(target), { kind: 'count', selector: '.row', visibleOnly: false })
+    expect(result.total).toBe(7)
+  })
+
+  it('scroll-until останавливается, как только цель стала видимой', async () => {
+    const visible = locator({ count: async () => 1 })
+    const target = locator({ filter: () => visible })
+    const scrolled = vi.fn(async () => ({ moved: 800, top: 800, atBottom: false }))
+    const result = await runSelectorAction(page(target, { evaluate: scrolled }), { kind: 'scrollUntil', text: 'Итого' })
+    expect(result).toMatchObject({ ok: true, scrolledUntil: { found: true, scrolls: 0 } })
+    expect(scrolled).not.toHaveBeenCalled()
+  })
+
+  it('scroll-until честно говорит, что лента кончилась, а цель не появилась', async () => {
+    const hidden = locator({ count: async () => 0 })
+    const target = locator({ filter: () => hidden })
+    const result = await runSelectorAction(
+      page(target, { evaluate: vi.fn(async () => ({ moved: 0, top: 1200, atBottom: true })) }),
+      { kind: 'scrollUntil', selector: '#last', maxScrolls: 5 }
+    )
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('конца ленты')
+    expect(result.scrolledUntil).toMatchObject({ found: false, atBottom: true })
+  })
+
+  it('scroll-until не крутит бесконечно и сообщает число прокруток', async () => {
+    const hidden = locator({ count: async () => 0 })
+    const target = locator({ filter: () => hidden })
+    const scrolled = vi.fn(async () => ({ moved: 800, top: 800, atBottom: false }))
+    const result = await runSelectorAction(page(target, { evaluate: scrolled }), { kind: 'scrollUntil', selector: '#x', maxScrolls: 2 })
+    expect(result.ok).toBe(false)
+    expect(scrolled).toHaveBeenCalledTimes(3)
+    expect(result.scrolledUntil?.scrolls).toBe(3)
+  })
+
+  it('table возвращает строки записями, а пустую таблицу — отказом', async () => {
+    const table = { selector: 'table', headings: ['Имя'], total: 3, offset: 0, rows: [{ Имя: 'Алиса' }], nextOffset: 1 }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => table) }), { kind: 'table', selector: 'table' }))
+      .toMatchObject({ ok: true, table: { nextOffset: 1 } })
+    expect((await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'table', selector: 'table' })).ok).toBe(false)
+  })
+
+  it('list отдаёт блоки со своими кнопками', async () => {
+    const list = { selector: '.card', total: 2, offset: 0, items: [{ selector: '.card:nth-child(1)', text: 'Карточка', actions: [{ selector: 'button', text: 'Открыть' }] }] }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => list) }), { kind: 'list', selector: '.card' })
+    expect(result.list?.items[0].actions?.[0].text).toBe('Открыть')
+  })
+
+  it('metrics и measure отдают геометрию, а отсутствующий элемент — отказ', async () => {
+    const metrics = { scroll: { top: 0, left: 0 }, page: { width: 1280, height: 4000 }, viewport: { width: 1280, height: 800 }, screensBelow: 4, atBottom: false }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => metrics) }), { kind: 'metrics' })).toMatchObject({ ok: true, metrics: { screensBelow: 4 } })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'measure', selector: '#gone' })).toEqual({ ok: false, error: 'Элемент не найден' })
+  })
+
+  it('highlight отказывается словами, когда подсвечивать нечего', async () => {
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'highlight', selector: '#gone' }))
+      .toEqual({ ok: false, error: 'Элемент не найден' })
   })
 })
