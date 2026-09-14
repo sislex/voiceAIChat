@@ -10,7 +10,7 @@ import { previewActionProgressLabel } from './actionLabel'
 import { createReaderHostBridge, type ReaderHostBridge, type PreviewActionOutcome } from './hostBridge'
 
 
-export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, onRevealAction, onAsk, actionError = null, onRetryAction, pageError, onAskError, pendingAction = null, onPageTitle, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
+export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, onRevealAction, onAsk, onControl, actionError = null, onRetryAction, pageError, onAskError, pendingAction = null, onPageTitle, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
@@ -31,8 +31,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const gateSequence = useRef(0)
   const savedByReader = useRef<string | null | undefined>(undefined)
   const url = conversationUrl ?? projectUrl
-  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview, onPageTitle, onAsk })
-  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview, onPageTitle, onAsk }
+  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview, onPageTitle, onAsk, onControl })
+  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview, onPageTitle, onAsk, onControl }
 
   // Мост живёт со смонтированным iframe одного разговора и создаётся в эффекте:
   // dispose необратим, а StrictMode в dev прогоняет mount → cleanup → mount —
@@ -118,6 +118,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       onSaveUrl: (nextUrl) => { void save(nextUrl).catch(() => {}) },
       onPageTitle: (title) => callbacks.current.onPageTitle?.(title),
       onAsk: (text) => callbacks.current.onAsk?.(text),
+      onControl: (manual) => callbacks.current.onControl?.(manual),
       onElement: (element) => callbacks.current.onSelectElement?.(element),
       onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
     })
@@ -136,6 +137,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       unsubscribe()
       bridge.dispose()
       callbacks.current.onPageTitle?.(null)
+      callbacks.current.onControl?.(false)
       if (bridgeRef.current === bridge) bridgeRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,7 +183,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     {saveError && <div className="webpreview-error" role="alert"><span>{saveError}</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retrySave.current?.()}>Повторить сохранение</button></div>}
     {pageError && pageError !== dismissedError && <div className="webpreview-error webpreview-page-error" role="alert"><span>{pageError}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}<button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label="Скрыть ошибку страницы" onClick={() => setDismissedError(pageError)}>×</button></div>}
     {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {previewActionProgressLabel(pendingAction)}…{pendingSeconds >= 3 && <span className="webpreview-live__time"> {pendingSeconds} с</span>}</p>}
-    {actionError && !pendingAction && <div className="webpreview-error webpreview-action-error" role="status"><span>Ассистент не смог: {previewActionProgressLabel(actionError.action)} — {actionError.error}</span>{onRetryAction && !/Только я управляю/.test(actionError.error) && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onRetryAction(actionError.action)}>Повторить</button>}</div>}
+    {actionError && !pendingAction && <div className="webpreview-error webpreview-action-error" role="status" aria-live="polite"><span>Ассистент не смог: {previewActionProgressLabel(actionError.action)} — {actionError.error}</span>{onRetryAction && !/Только я управляю/.test(actionError.error) && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onRetryAction(actionError.action)}>Повторить</button>}</div>}
     <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} onReveal={onRevealAction} currentUrl={conversationUrl} />
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
     {previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retryOpen.current ? retryOpen.current() : setRetryKey((value) => value + 1)}>Повторить</button></div>}

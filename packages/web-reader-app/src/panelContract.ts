@@ -36,6 +36,8 @@ export interface WebReaderFrameProps {
   onPageTitle?: ((title: string | null) => void) | undefined
   /** Пользователь выделил текст на странице и хочет спросить о нём в чате. */
   onAsk?: ((text: string) => void) | undefined
+  /** Пользователь взял управление («Только я управляю») или вернул его. */
+  onControl?: ((manual: boolean) => void) | undefined
   /** Последнее неудавшееся действие модели: панель показывает причину и даёт повторить. */
   actionError?: { action: PreviewAction; error: string } | null
   onRetryAction?: ((action: PreviewAction) => void) | undefined

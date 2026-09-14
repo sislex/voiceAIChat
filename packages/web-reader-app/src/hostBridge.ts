@@ -58,6 +58,8 @@ export interface ReaderHostBridgeOptions {
   onPageTitle?: (title: string | null) => void
   /** Пользователь выделил текст на странице и просит спросить о нём ассистента. */
   onAsk?: (text: string) => void
+  /** Пользователь взял управление страницей (true) или вернул его ассистенту (false). */
+  onControl?: (manual: boolean) => void
   onElement?: (element: PreviewElementPayload) => void
   onRecordingStep?: (step: WebRecorderScenarioStep) => void
   /** Снимок области, выделенной пользователем в Reader. */
@@ -115,6 +117,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   // Куда ходила панель в этом разговоре: status отвечает историей, как вкладка браузера помнит путь.
   const history: string[] = []
   const remember = (url: string | null): void => { if (url && history[0] !== url) { history.unshift(url); if (history.length > 5) history.length = 5 } }
+  let manual = false
   let disposed = false
   let navigationGeneration = 0
   let inspectorMode: boolean | undefined
@@ -190,7 +193,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         connected, pageStatus: connected ? pageStatus : 'empty',
         page: connected && approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null,
         ...(pageStatus === 'error' && pageError ? { error: pageError } : {}),
-        ...(history.length ? { history: [...history] } : {})
+        ...(history.length ? { history: [...history] } : {}),
+        ...(manual ? { manual: true } : {})
       } })
     }
     // wait {url} — про адрес панели, а не про DOM: мост знает подтверждённый адрес и ждёт его сам.
@@ -294,6 +298,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         if (registration !== null) rejectAll('Web Reader перезагружен — повтори действие.')
         navigationGeneration++
         registration = options.newId()
+        manual = false
         pageStatus = approvedUrl ? 'loading' : 'empty'
         pageError = undefined
         if (!sendInit()) return
@@ -334,6 +339,10 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           return
         case 'ask':
           options.onAsk?.(message.text)
+          return
+        case 'control':
+          manual = message.manual
+          options.onControl?.(message.manual)
           return
         case 'save-url':
           if (message.url !== approvedUrl) { navigationGeneration++; rejectAll('Адрес страницы изменён пользователем — повтори действие.') }

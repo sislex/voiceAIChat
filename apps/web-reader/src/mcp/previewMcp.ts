@@ -333,6 +333,20 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         inputSchema: { frame: frameSchema, text: z.string().min(1).max(L.text).describe('Видимый текст пункта'), in: z.string().max(L.text).optional().describe('Текст или селектор триггера, открывающего список'), near: z.string().max(L.text).optional().describe('Текст рядом с пунктом') }
       }, async ({ frame, text, in: trigger, near }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}) }))
 
+      server.registerTool('show', {
+        description: 'Показать пользователю элемент на открытой странице: панель прокрутит к нему и подсветит его с подписью на несколько секунд («вот эта кнопка»). Ничего не нажимает.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema,
+          text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
+          selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
+          near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
+          label: z.string().max(120).optional().describe('Подпись рядом с элементом (по умолчанию «Ассистент показывает»)')
+        }
+      }, async ({ frame, text, selector, near, label }) => {
+        if (!text && !selector) return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
+        return run({ kind: 'show', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(label ? { label } : {}) })
+      })
+
       server.registerTool('check', {
         description: 'Проверка ожидания как у тестировщика: есть ли на странице элемент с текстом или по селектору, виден ли он, скрыт, отсутствует, совпадает ли value или число совпадений. ' +
           'Отвечает pass, actual и summary и не бросает ошибку — цитируй summary в отчёте о проверке фичи.',
@@ -460,10 +474,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             rect: z.object({ x: z.number().finite().nonnegative(), y: z.number().finite().nonnegative(), width: z.number().finite().positive(), height: z.number().finite().positive() }).optional().describe('Область в координатах документа страницы'),
             fullPage: z.boolean().optional().describe('Вся страница Chromium, включая область ниже окна'),
             animations: z.enum(['allow', 'disabled']).optional().describe('Отключить анимации только на время снимка Chromium'),
-            timeoutMs: z.number().int().min(100).max(30000).optional().describe('Ожидание снимка Chromium, включая шрифты; по умолчанию 10000 мс')
+            timeoutMs: z.number().int().min(100).max(30000).optional().describe('Ожидание снимка Chromium, включая шрифты; по умолчанию 10000 мс'),
+            marks: z.boolean().optional().describe('Панель: пронумеровать кликабельные элементы на снимке и вернуть их список marks')
           }
         },
-        async ({ frame, selector, rect, fullPage, animations, timeoutMs }) => {
+        async ({ frame, selector, rect, fullPage, animations, timeoutMs, marks }) => {
           if (!entry) return noContext
           if ([Boolean(selector), Boolean(rect), fullPage === true].filter(Boolean).length > 1) return toolResult({ ok: false, error: 'Выбери один режим снимка: selector, rect или fullPage' })
           // Единственный инструмент со своим транспортом: он отдаёт картинку, а
@@ -480,7 +495,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           const outcome = direct ?? await opts.relay.request(entry.userId, entry.conversationId, {
             kind: 'screenshot',
             ...(selector ? { selector } : {}),
-            ...(rect ? { rect } : {})
+            ...(rect ? { rect } : {}),
+            ...(marks ? { marks: true } : {})
           }, opts.timeoutMs)
           if (!outcome.ok) { await observe({ kind: 'screenshot', frame }, false); return toolResult(outcome) }
           const result = outcome.result as BrowserImageResult | undefined
@@ -490,10 +506,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             return { content: [{ type: 'text' as const, text: 'Снимок не получен: страница не вернула картинку.' }], isError: true }
           }
           const where = result?.rect ? `x=${result.rect.x}, y=${result.rect.y}, ${result.rect.width}×${result.rect.height} CSS px` : ''
+          const marked = Array.isArray((result as { marks?: unknown } | undefined)?.marks) ? (result as unknown as { marks: { n: number; selector: string; text: string; role?: string }[] }).marks : null
           return {
             content: [
               { type: 'image' as const, data: match[2], mimeType: match[1] },
-              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${result?.page ? `\nСтраница: ${JSON.stringify(result.page)}` : ''}${result?.frame ? `\nДокумент iframe: ${JSON.stringify(result.frame)}` : ''}${result?.clipped ? '\nЭлемент выходит за границы iframe; показана только видимая часть.' : ''}` }
+              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${result?.page ? `\nСтраница: ${JSON.stringify(result.page)}` : ''}${result?.frame ? `\nДокумент iframe: ${JSON.stringify(result.frame)}` : ''}${result?.clipped ? '\nЭлемент выходит за границы iframe; показана только видимая часть.' : ''}${marked ? `\nНомера на снимке: ${JSON.stringify(marked)}` : ''}` }
             ]
           }
         }
@@ -530,11 +547,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             url: z.string().max(L.url).optional().describe('Публичный URL или шаблон с *'),
             loadState: z.enum(['domcontentloaded', 'load']).optional().describe('Готовность DOM или завершение загрузки документа'),
             predicate: z.string().max(L.evaluateCode).optional().describe('Синхронное JS-выражение или функция без аргументов, дающая truthy'),
+            idle: z.boolean().optional().describe('Дождаться затишья сети страницы (нет fetch/XHR ~500 мс)'),
             timeoutMs: z.number().positive().max(30000).optional().describe('Общий таймаут ожидания, мс')
           }
         },
         async (options) => {
-          if (!isBrowserWaitOptions(options)) return { content: [{ type: 'text', text: 'Укажи selector/text или url/loadState/predicate и совместимые условия ожидания.' }], isError: true }
+          if (!isBrowserWaitOptions(options)) return { content: [{ type: 'text', text: 'Укажи selector/text, url/loadState/predicate или idle и совместимые условия ожидания.' }], isError: true }
           const action = { kind: 'wait' as const, ...options }
           if (options.frame !== undefined || browserWaitRequiresChromium(options)) {
             if (!entry) return noContext
@@ -792,11 +810,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
             visible: z.boolean().optional().describe('Только элементы и текст в видимой области окна'),
+            brief: z.boolean().optional().describe('Короткое описание страницы словами (панель)'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
             offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
           }
         },
-        async ({ frame, selector, limit, offset, visible }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}) })
+        async ({ frame, selector, limit, offset, visible, brief }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}), ...(brief !== undefined ? { brief } : {}) })
       )
 
       server.registerTool(

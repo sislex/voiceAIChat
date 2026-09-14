@@ -227,16 +227,18 @@ addEventListener('error',(e)=>{if(e instanceof ErrorEvent)pushError({kind:'error
 addEventListener('unhandledrejection',(e)=>pushError({kind:'unhandledrejection',message:e&&e.reason&&(e.reason.message||String(e.reason))||'unhandledrejection'}));
 for(const level of ['log','info','warn','error'])try{const nativeLog=console[level].bind(console);console[level]=function(){pushConsole(level,arguments);if(level==='error')try{pushError({kind:'console.error',message:Array.prototype.map.call(arguments,(a)=>a&&a.message||(typeof a==='object'?JSON.stringify(a):String(a))).join(' ')})}catch{}return nativeLog.apply(null,arguments)}}catch{}
 // fetch уже переписан context-шимом на прокси — оборачиваем поверх для журнала и статусов.
+// Сколько запросов в полёте: wait {idle} ждёт, когда страница затихнет, как человек ждёт спиннер.
+let inFlight=0,lastNetworkAt=0;const netStart=()=>{inFlight++;lastNetworkAt=performance.now()},netEnd=()=>{inFlight=Math.max(0,inFlight-1);lastNetworkAt=performance.now()};
 try{const shimFetch=window.fetch.bind(window);window.fetch=function(input,init){
-  const started=performance.now();
+  const started=performance.now();netStart();
   const url=(()=>{try{return String(unproxyLazy(typeof input==='string'?input:(input&&input.url)||String(input))).slice(0,300)}catch{return String(input).slice(0,300)}})();
   const method=String((init&&init.method)||(input&&typeof input==='object'&&input.method)||'GET').toUpperCase();
   const entry={via:'fetch',method,url,at:Math.round(started)};pushNetwork(entry);
-  return shimFetch(input,init).then((res)=>{entry.ms=Math.round(performance.now()-started);if(res)entry.status=res.status;if(res&&res.status>=400)pushError({kind:'network',message:'HTTP '+res.status,url:(()=>{try{return unproxyLazy(res.url)}catch{return url}})(),status:res.status});return res},(err)=>{entry.ms=Math.round(performance.now()-started);entry.error=String(err&&err.message||'network error').slice(0,200);pushError({kind:'network',message:entry.error});throw err})
+  return shimFetch(input,init).then((res)=>{netEnd();entry.ms=Math.round(performance.now()-started);if(res)entry.status=res.status;if(res&&res.status>=400)pushError({kind:'network',message:'HTTP '+res.status,url:(()=>{try{return unproxyLazy(res.url)}catch{return url}})(),status:res.status});return res},(err)=>{netEnd();entry.ms=Math.round(performance.now()-started);entry.error=String(err&&err.message||'network error').slice(0,200);pushError({kind:'network',message:entry.error});throw err})
 }}catch{}
 try{const xhrOpen=XMLHttpRequest.prototype.open,xhrSend=XMLHttpRequest.prototype.send;
 XMLHttpRequest.prototype.open=function(method,url){this.__vcNet={method:String(method||'GET').toUpperCase(),url:(()=>{try{return String(unproxyLazy(String(url))).slice(0,300)}catch{return String(url).slice(0,300)}})()};return xhrOpen.apply(this,arguments)};
-XMLHttpRequest.prototype.send=function(){const started=performance.now();const meta=this.__vcNet||{method:'GET',url:''};const entry={via:'xhr',method:meta.method,url:meta.url,at:Math.round(started)};pushNetwork(entry);this.addEventListener('loadend',()=>{entry.ms=Math.round(performance.now()-started);entry.status=this.status;if(this.status>=400)pushError({kind:'network',message:'HTTP '+this.status,url:(()=>{try{return unproxyLazy(this.responseURL)}catch{return ''}})(),status:this.status})});return xhrSend.apply(this,arguments)}}catch{}
+XMLHttpRequest.prototype.send=function(){const started=performance.now();netStart();const meta=this.__vcNet||{method:'GET',url:''};const entry={via:'xhr',method:meta.method,url:meta.url,at:Math.round(started)};pushNetwork(entry);this.addEventListener('loadend',()=>{netEnd();entry.ms=Math.round(performance.now()-started);entry.status=this.status;if(this.status>=400)pushError({kind:'network',message:'HTTP '+this.status,url:(()=>{try{return unproxyLazy(this.responseURL)}catch{return ''}})(),status:this.status})});return xhrSend.apply(this,arguments)}}catch{}
 if(typeof navigator.sendBeacon==='function')try{const shimBeacon=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(url,data){pushNetwork({via:'beacon',method:'POST',url:(()=>{try{return String(unproxyLazy(String(url))).slice(0,300)}catch{return String(url).slice(0,300)}})(),at:Math.round(performance.now())});return arguments.length>1?shimBeacon(url,data):shimBeacon(url)}}catch{}
 // unproxy объявлен ниже — ленивое обращение (ошибки случаются после инициализации).
 function unproxyLazy(value){return typeof unproxy==='function'?unproxy(value):String(value)}
@@ -267,6 +269,14 @@ const onScreen=(el)=>{const r=el.getBoundingClientRect();return r.width>0&&r.hei
 // Короткая подсветка элемента, с которым работает модель: человек видит, куда именно «нажали».
 const FLASH_ATTR='data-voicechat-flash';
 const flash=(el)=>{try{const prev=el.style.outline,prevOffset=el.style.outlineOffset;el.setAttribute(FLASH_ATTR,'');el.style.outline='2px solid #4f8cff';el.style.outlineOffset='2px';setTimeout(()=>{if(!el.hasAttribute(FLASH_ATTR))return;el.removeAttribute(FLASH_ATTR);el.style.outline=prev;el.style.outlineOffset=prevOffset},900)}catch{}};
+const showLabel=(el,label)=>{try{
+  const prev=el.style.outline,prevOffset=el.style.outlineOffset;el.setAttribute(FLASH_ATTR,'show');el.style.outline='3px solid #ff9f1c';el.style.outlineOffset='3px';
+  const tag=document.createElement('div');tag.setAttribute('data-voicechat-inspector','show-label');tag.textContent=String(label).slice(0,120);
+  Object.assign(tag.style,{position:'fixed',zIndex:'2147483647',pointerEvents:'none',padding:'3px 8px',borderRadius:'6px',background:'#ff9f1c',color:'#1b1b1b',font:'12px/1.4 system-ui,sans-serif',maxWidth:'60vw',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'});
+  const r=el.getBoundingClientRect();tag.style.left=Math.max(4,r.left)+'px';tag.style.top=(r.top>=28?r.top-26:Math.min(innerHeight-24,r.bottom+4))+'px';
+  document.documentElement.appendChild(tag);
+  setTimeout(()=>{tag.remove();if(el.getAttribute(FLASH_ATTR)!=='show')return;el.removeAttribute(FLASH_ATTR);el.style.outline=prev;el.style.outlineOffset=prevOffset},3000)
+}catch{}};
 const openDialogs=()=>[...document.querySelectorAll('dialog[open],[role=dialog],[role=alertdialog],[aria-modal="true"]')].filter(el=>readingVisible(el)&&!el.closest('[data-voicechat-inspector]')).slice(0,5).map(uniqueSelector);
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el),onScreen:onScreen(el)};
@@ -438,6 +448,15 @@ const run=(action)=>{
     const newErrors=pageErrors.slice(errorsBefore).slice(0,3).map((e)=>({kind:e.kind,message:e.message,at:e.at}));
     return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{}),...(obscuredBy?{obscuredBy}:{})}
   }
+  if(action.kind==='show'){
+    // «Вот эта кнопка»: прокрутить и подсветить с подписью на 3 с — модель указывает пользователю пальцем.
+    const found=findTargets({kind:'click',...(action.selector?{selector:action.selector}:{}),...(action.text?{text:action.text}:{}),...(action.near?{near:action.near}:{})});
+    if(!found.length)throw new Error('Элемент не найден: '+(action.selector||action.text));
+    const el=action.selector?found[0]:clickTarget(found[0]);
+    el.scrollIntoView&&el.scrollIntoView({block:'center',inline:'nearest'});
+    showLabel(el,action.label||'Ассистент показывает');
+    return {page:pageInfo(),shown:describe(el)}
+  }
   if(action.kind==='check'){
     // Проверка ожидания: человек смотрит, есть ли на экране «Войти», и говорит «есть»/«нет» — без исключений.
     const state=action.state||(typeof action.count==='number'?'present':'visible');
@@ -548,14 +567,15 @@ const run=(action)=>{
     let el=document.scrollingElement||document.documentElement,target='window';
     if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];target=uniqueSelector(el)}
     else if(action.text){const found=byText(action.text);if(!found.length)throw new Error('Текст не найден: '+action.text);el=found[0];target=uniqueSelector(el)}
-    if(action.to==='element'){el.scrollIntoView&&el.scrollIntoView({block:'center',inline:'nearest'});el=document.scrollingElement||document.documentElement}
+    let shownEl=null;
+    if(action.to==='element'){shownEl=el;el.scrollIntoView&&el.scrollIntoView({block:'center',inline:'nearest'});el=document.scrollingElement||document.documentElement}
     else if(action.to==='top')el.scrollTop=0;
     else if(action.to==='bottom')el.scrollTop=el.scrollHeight;
     else if(typeof action.dy==='number')el.scrollTop=el.scrollTop+action.dy;
     if(typeof action.dx==='number')el.scrollLeft=el.scrollLeft+action.dx;
     el.dispatchEvent(new Event('scroll',{bubbles:true}));
     const maxTop=Math.max(0,el.scrollHeight-el.clientHeight);
-    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop,maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)},atTop:el.scrollTop<=0,atBottom:el.scrollTop>=maxTop-1}
+    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop,maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)},atTop:el.scrollTop<=0,atBottom:el.scrollTop>=maxTop-1,...(action.to==='element'&&shownEl?{element:describe(shownEl)}:{})}
   }
   if(action.kind==='errors'){
     const fresh=typeof action.since==='number'?pageErrors.filter((e)=>e.at>action.since):pageErrors;
@@ -563,6 +583,10 @@ const run=(action)=>{
     const total=fresh.length;
     if(action.clear)pageErrors.length=0;
     return {page:pageInfo(),errors,total}
+  }
+  if(action.kind==='wait'&&action.idle&&!action.selector&&!action.text){
+    const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000),started=performance.now();
+    return new Promise((ok,fail)=>{const attempt=()=>{const quiet=inFlight===0&&performance.now()-lastNetworkAt>=500;if(quiet){ok({page:pageInfo(),waitedMs:Math.round(performance.now()-started),state:'idle'});return}if(performance.now()-started>=timeoutMs){fail(new Error('Сеть страницы не затихла за '+timeoutMs+' мс: в полёте '+inFlight));return}setTimeout(attempt,120)};attempt()})
   }
   if(action.kind==='wait'){
     const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000);
@@ -729,19 +753,25 @@ const run=(action)=>{
     }else{
       rect={x:scroller.scrollLeft,y:scroller.scrollTop,width:innerWidth,height:innerHeight}
     }
+    // marks: пронумерованные кликабельные элементы в кадре — модель «указывает пальцем» по номеру.
+    const marks=action.marks?[...document.querySelectorAll(CLICKABLE)].filter(el=>actionVisible(el)&&!el.closest('[data-voicechat-inspector]')).map(el=>({el,r:el.getBoundingClientRect()})).filter(({r})=>r.width>0&&r.height>0&&r.left+scroller.scrollLeft<rect.x+rect.width&&r.right+scroller.scrollLeft>rect.x&&r.top+scroller.scrollTop<rect.y+rect.height&&r.bottom+scroller.scrollTop>rect.y).slice(0,40).map(({el,r},i)=>({n:i+1,selector:uniqueSelector(el),text:(accessibleName(el)||'').slice(0,60),...(accessibleRole(el)?{role:accessibleRole(el)}:{}),box:{x:r.left+scroller.scrollLeft-rect.x,y:r.top+scroller.scrollTop-rect.y,width:r.width,height:r.height}})):null;
     // Масштаб до 1400px по большей стороне: снимок агента идёт в контекст модели.
-    return captureArea(rect,1400).then((dataUrl)=>({page:pageInfo(),rect,dataUrl}))
+    return captureArea(rect,1400,marks).then((dataUrl)=>({page:pageInfo(),rect,dataUrl,...(marks?{marks:marks.map(({n,selector,text,role})=>({n,selector,text,...(role?{role}:{})}))}:{})}))
   }
   if(action.kind==='press'){
     const el=action.selector?chooseTarget(action):(document.activeElement||document.body);
     if(action.selector){actionable(el);el.focus&&el.focus()}
     const repeat=Math.min(50,Math.max(1,Math.floor(action.repeat||1)));
     let pressed;for(let i=0;i<repeat;i++)pressed=performKey(document.activeElement&&document.activeElement!==document.body&&!action.selector?document.activeElement:el,action.key);
-    return {page:pageInfo(),pressed:repeat>1?Object.assign(pressed,{repeat}):pressed}
+    const dialogsAfter=openDialogs();
+    return {page:pageInfo(),pressed:repeat>1?Object.assign(pressed,{repeat}):pressed,...(dialogsAfter.length?{dialogs:dialogsAfter}:{})}
   }
   if(action.kind==='read'){
     const section=action.section?sectionScope(action.section):null;
-    const scope=section?section.scope:readingScope(action);
+    // Открытое модальное окно держит внимание человека — без selector читаем именно его.
+    const dialogSelectors=!action.selector&&!section?openDialogs():[];
+    const dialogEl=dialogSelectors.length?bySelector(dialogSelectors[dialogSelectors.length-1])[0]:null;
+    const scope=section?section.scope:dialogEl||readingScope(action);
     const selectedText=(()=>{try{return String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{return ''}})();
     // visible — экран пользователя: элементы вне видимой области отфильтровываются, текст берётся из видимых узлов.
     // Клон раздела не в документе: видимость и координаты у него не спросить — берём всё.
@@ -755,7 +785,8 @@ const run=(action)=>{
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached)),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
     const focus=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement?uniqueSelector(document.activeElement):undefined;
-    return {page:pageInfo(),headings,links,buttons,inputs,...(forms.length?{forms}:{}),...(landmarks.length?{landmarks}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    const brief=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; ').slice(0,600):'';
+    return {page:pageInfo(),headings,links,buttons,inputs,...(forms.length?{forms}:{}),...(landmarks.length?{landmarks}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(brief?{brief}:{}),text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };
@@ -921,7 +952,7 @@ const inlineImages=(root)=>Promise.all([...root.querySelectorAll('img')].map(asy
     img.setAttribute('src',await new Promise((ok,fail)=>{const reader=new FileReader();reader.onload=()=>ok(String(reader.result));reader.onerror=fail;reader.readAsDataURL(blob)}))
   }catch{img.removeAttribute('src')}
 }));
-const captureArea=async(rect,maxSide)=>{
+const captureArea=async(rect,maxSide,marks)=>{
   // Canvas проверяем до тяжёлой работы: без него снимок невозможен в принципе.
   const scale=maxSide?Math.min(1,maxSide/Math.max(rect.width,rect.height)):1;
   const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(rect.width*scale));canvas.height=Math.max(1,Math.round(rect.height*scale));
@@ -952,6 +983,7 @@ const captureArea=async(rect,maxSide)=>{
   ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
   if(scale!==1)ctx.scale(scale,scale);
   ctx.drawImage(image,-rect.x,-rect.y);
+  if(marks)for(const mark of marks){const b=mark.box;ctx.strokeStyle='#e5484d';ctx.lineWidth=2;ctx.strokeRect(b.x,b.y,b.width,b.height);const label=String(mark.n);ctx.font='bold 12px system-ui,sans-serif';const w=ctx.measureText(label).width+8;ctx.fillStyle='#e5484d';ctx.fillRect(b.x,Math.max(0,b.y-16),w,16);ctx.fillStyle='#fff';ctx.fillText(label,b.x+4,Math.max(12,b.y-4))}
   let dataUrl=canvas.toDataURL('image/png');
   if(dataUrl.length>1800000)dataUrl=canvas.toDataURL('image/jpeg',0.85);
   if(dataUrl.length>1800000)throw new Error('Снимок области слишком большой — выделите меньшую область');

@@ -177,6 +177,14 @@ describe('isPreviewAction: как пользователь — field, role, appe
     expect(resolvePreviewUrl('/about', null)).toBeNull()
     expect(resolvePreviewUrl('https://other.test/', null)).toBe('https://other.test/')
   })
+  it('show, screenshot marks, read brief и wait idle проходят валидацию', () => {
+    expect(isPreviewAction({ kind: 'show', text: 'Оплатить', label: 'Вот эта кнопка' })).toBe(true)
+    expect(isPreviewAction({ kind: 'show' })).toBe(false)
+    expect(isPreviewAction({ kind: 'screenshot', marks: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'screenshot', marks: 'yes' })).toBe(false)
+    expect(isPreviewAction({ kind: 'read', brief: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'wait', idle: true })).toBe(true)
+  })
   it('check, nth, scroll по тексту и errors since проходят валидацию', () => {
     expect(isPreviewAction({ kind: 'check', text: 'Войти', state: 'visible' })).toBe(true)
     expect(isPreviewAction({ kind: 'check', selector: '.row', count: 3 })).toBe(true)
@@ -225,7 +233,7 @@ describe('previewToolHint', () => {
   it('панель описана как видимая пользователю и объясняет новые человеческие параметры', () => {
     const hint = previewToolHint()
     expect(hint).toContain('видит каждое твоё действие')
-    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a', 'section', 'selection', 'onScreen: true', 'perKey', 'obscuredBy', 'check', 'nth', 'errors {since}']) expect(hint).toContain(term)
+    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a', 'section', 'selection', 'onScreen: true', 'perKey', 'obscuredBy', 'check', 'nth', 'errors {since}', 'show', 'marks: true', 'brief: true', 'idle: true', 'status.manual']) expect(hint).toContain(term)
   })
 
   it('для изолированного Chromium не обещает панель и требует поднять dev-сервер самому', () => {

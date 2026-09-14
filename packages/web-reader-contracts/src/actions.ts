@@ -32,6 +32,19 @@ interface PendingRequest {
  * выполняет его только тот, у кого чат действия активен. Остальные отвечают
  * отказом — resolve ждёт первый успех, либо все отказы, либо таймаут.
  */
+/** Короткая фраза о том, что изменилось после действия; пусто — нечего добавить к подписи. */
+function narrate(kind: string, result: Record<string, unknown> | undefined, address: string | null): string {
+  if (!result) return ''
+  const host = (): string => { try { return address ? new URL(address).host : '' } catch { return '' } }
+  const dialogs = Array.isArray(result.dialogs) ? result.dialogs.length : 0
+  if ((kind === 'click' || kind === 'press' || kind === 'choose') && dialogs) return 'открылось окно'
+  if ((kind === 'click' || kind === 'type' || kind === 'press' || kind === 'fill' || kind === 'choose') && result.navigated === true) return host() ? `перешёл на ${host()}` : 'перешёл на другую страницу'
+  if (kind === 'open' && result.redirected === true) return host() ? `перенаправлено на ${host()}` : 'перенаправлено'
+  if (kind === 'click' && typeof result.obscuredBy === 'string') return 'цель перекрыта другим элементом'
+  if ((kind === 'type' || kind === 'fill') && Array.isArray(result.validation) && result.validation.length) return `${result.validation.length} ${result.validation.length === 1 ? 'ошибка' : 'ошибки'} формы`
+  return ''
+}
+
 export class PreviewActionRelay {
   private readonly sinks = new Map<string, Set<(m: ServerMessage) => void>>()
   private readonly pending = new Map<string, PendingRequest>()
@@ -99,13 +112,16 @@ export class PreviewActionRelay {
       const result = outcome.result as { url?: unknown; title?: unknown; navigated?: unknown; page?: { url?: unknown; title?: unknown } } | undefined
       const address = typeof result?.url === 'string' ? result.url : typeof result?.page?.url === 'string' ? result.page.url : entry.action.kind === 'open' ? entry.action.url : null
       const title = typeof result?.title === 'string' ? result.title : typeof result?.page?.title === 'string' ? result.page.title : null
-      // Итог проверки едет в ленту панели: человек видит «пройдено/не пройдено», а не только «проверил».
+      // Итог действия едет в ленту панели словами: проверка — «пройдено/не пройдено», клик — «открылось окно»
+      // или «перешёл на host», open — «перенаправлено». Человек читает ленту как рассказ, а не как список команд.
       const check = entry.action.kind === 'check' && result && typeof (result as { summary?: unknown }).summary === 'string' ? result as { summary: string; pass?: unknown } : null
+      const navigated = entry.action.kind === 'open' || entry.action.kind === 'back' || entry.action.kind === 'forward' || result?.navigated === true
+      const summary = check ? check.summary.slice(0, 200) : narrate(entry.action.kind, result as Record<string, unknown> | undefined, address)
       const changed: ServerMessage = {
         t: 'reader.changed', conversationId: entry.conversationId, address, title,
-        navigated: entry.action.kind === 'open' || entry.action.kind === 'back' || entry.action.kind === 'forward' || result?.navigated === true,
+        navigated,
         action: entry.action,
-        ...(check ? { summary: check.summary.slice(0, 200), ok: check.pass === true } : {})
+        ...(summary ? { summary } : {}), ...(check ? { ok: check.pass === true } : {})
       }
       for (const sink of this.sinks.get(userId) ?? []) sink(changed)
       entry.resolve({ ok: true, ...(outcome.result !== undefined ? { result: outcome.result } : {}) })

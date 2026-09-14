@@ -6956,6 +6956,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .chat-split-live__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: chat-split-live 1s ease-in-out infinite alternate; }
 }
 @keyframes chat-split-live { from { opacity: .35; } to { opacity: 1; } }
+.chat-split-live--manual { color: var(--warning, var(--text-dim)); cursor: default; }
 @media (prefers-reduced-motion: reduce) { .chat-split-live__dot { animation: none; } }
 /* Мастерская (консоль с ассистентом и студия картинок) следует Make «Проект 18»:
    чат и рабочая панель остаются смонтированы, а обёртка владеет только их

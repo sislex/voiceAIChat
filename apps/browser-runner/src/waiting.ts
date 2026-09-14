@@ -16,7 +16,7 @@ export interface WaitPage {
   locator(selector: string): WaitLocator
   getByText(text: string, options: { exact: boolean }): WaitLocator
   waitForURL(predicate: (url: URL) => boolean, options: { timeout: number; waitUntil: 'commit' }): Promise<void>
-  waitForLoadState(state: 'domcontentloaded' | 'load', options: { timeout: number }): Promise<void>
+  waitForLoadState(state: 'domcontentloaded' | 'load' | 'networkidle', options: { timeout: number }): Promise<void>
   waitForFunction(expression: string, arg: undefined, options: { timeout: number; polling: number }): Promise<{ dispose(): Promise<void> }>
 }
 
@@ -52,6 +52,8 @@ export async function waitForConditions(page: WaitPage, options: BrowserWaitOpti
   }
   if (options.url) jobs.push(page.waitForURL(url => browserUrlMatches(publicUrl(url.toString()), options.url!), { timeout: remaining(), waitUntil: 'commit' }))
   if (options.loadState) jobs.push(page.waitForLoadState(options.loadState, { timeout: remaining() }))
+  // idle — затишье сети: у Playwright это отдельное состояние загрузки.
+  if (options.idle) jobs.push(page.waitForLoadState('networkidle', { timeout: remaining() }))
   if (options.predicate) jobs.push((async () => {
     const expression = `(() => { const value = (${options.predicate}); const result = typeof value === 'function' ? value() : value; if (result && typeof result.then === 'function') { Promise.resolve(result).catch(() => {}); throw new Error('predicate должен возвращать синхронное значение'); } return result; })()`
     const handle = await page.waitForFunction(expression, undefined, { timeout: remaining(), polling: 50 })

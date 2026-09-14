@@ -96,7 +96,8 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; diagnostic?: boolean }
   /** visible — только то, что сейчас в видимой области окна: экран пользователя, а не весь документ. */
   /** section — прочитать раздел под заголовком с этим текстом, как человек листает до нужного места. */
-  | { kind: 'read'; selector?: string; section?: string; limit?: number; offset?: number; visible?: boolean; diagnostic?: boolean }
+  /** brief — короткое человеческое описание страницы вместо полной структуры. */
+  | { kind: 'read'; selector?: string; section?: string; limit?: number; offset?: number; visible?: boolean; brief?: boolean; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   | { kind: 'hover'; selector?: string; text?: string; near?: string; exact?: boolean; nth?: number; diagnostic?: boolean }
@@ -107,7 +108,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** repeat повторяет нажатие (ArrowDown ×3) одним действием. */
   | { kind: 'press'; key: string; selector?: string; repeat?: number; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
-  | { kind: 'screenshot'; selector?: string; rect?: { x: number; y: number; width: number; height: number }; diagnostic?: boolean }
+  /** marks — пронумеровать на снимке кликабельные элементы и вернуть их список: модель кликает «по номеру», как человек указывает пальцем. */
+  | { kind: 'screenshot'; selector?: string; rect?: { x: number; y: number; width: number; height: number }; marks?: boolean; diagnostic?: boolean }
   /** Ошибки открытой страницы: JS-исключения, unhandledrejection, console.error, неуспешные fetch/XHR. */
   /** since — только ошибки после этой отметки времени страницы (`at` из прошлого ответа). */
   | { kind: 'errors'; clear?: boolean; since?: number; diagnostic?: boolean }
@@ -141,6 +143,8 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'fill'; fields: PreviewFillField[]; submit?: boolean; diagnostic?: boolean }
   /** Выбрать пункт из выпадающего меню или списка: открыть триггер (in), дождаться пункта и нажать его. */
   | { kind: 'choose'; text: string; in?: string; near?: string; diagnostic?: boolean }
+  /** Показать пользователю элемент: прокрутить к нему и подсветить с подписью на несколько секунд. */
+  | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; diagnostic?: boolean }
   /** Проверка ожидания как у тестировщика: pass/fail с фактическим значением, без исключений. */
   | { kind: 'check'; text?: string; selector?: string; near?: string; state?: 'visible' | 'hidden' | 'present' | 'absent'; value?: string; count?: number; diagnostic?: boolean }
 )
@@ -189,6 +193,8 @@ export interface PreviewStatusResult {
   error?: string
   /** Последние адреса этой панели, новые первыми — куда «ходили» в этом разговоре. */
   history?: string[]
+  /** Пользователь взял управление («Только я управляю»): действия будут отклонены. */
+  manual?: boolean
 }
 
 export interface PreviewPageInfo {
@@ -277,6 +283,10 @@ export interface PreviewReadResult {
   selection?: string
   /** Заголовок раздела, если читали section. */
   section?: string
+  /** Открытое модальное окно: чтение ограничено им, как и внимание человека. */
+  dialog?: string
+  /** Короткое описание страницы (brief: true). */
+  brief?: string
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
   total?: number
@@ -317,12 +327,16 @@ export interface PreviewScrollResult {
   /** Достигнут край: дальше ленивая лента либо подгрузится, либо это конец. */
   atTop?: boolean
   atBottom?: boolean
+  /** Элемент, к которому листали (to: element). */
+  element?: PreviewActionElement
 }
 
 export interface PreviewPressResult {
   page: PreviewPageInfo
   pressed: { key: string; selector: string; repeat?: number }
   navigated?: boolean
+  /** Диалоги, оставшиеся открытыми после нажатия (Escape закрыл окно или нет). */
+  dialogs?: string[]
 }
 
 /** Снимок области страницы: PNG/JPEG data-URL и итоговый rect в координатах документа. */
@@ -330,6 +344,13 @@ export interface PreviewScreenshotResult {
   page: PreviewPageInfo
   rect: { x: number; y: number; width: number; height: number }
   dataUrl: string
+  /** Пронумерованные на снимке элементы (marks: true). */
+  marks?: { n: number; selector: string; text: string; role?: string }[]
+}
+
+export interface PreviewShowResult {
+  page: PreviewPageInfo
+  shown: PreviewActionElement
 }
 
 /** Запись об ошибке страницы (кольцевой буфер инъецированного скрипта). */
@@ -496,6 +517,7 @@ export type PreviewActionResult =
   | PreviewFillResult
   | PreviewChooseResult
   | PreviewCheckResult
+  | PreviewShowResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -565,7 +587,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.perKey === undefined || typeof value.perKey === 'boolean')
     case 'read':
       return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) &&
-        (value.visible === undefined || typeof value.visible === 'boolean') &&
+        (value.visible === undefined || typeof value.visible === 'boolean') && (value.brief === undefined || typeof value.brief === 'boolean') &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
         (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0))
     case 'styles':
@@ -593,7 +615,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.repeat === undefined || (typeof value.repeat === 'number' && Number.isInteger(value.repeat) && value.repeat >= 1 && value.repeat <= 50))
       )
     case 'screenshot': {
-      if (!optBounded(value.selector, L.selector)) return false
+      if (!optBounded(value.selector, L.selector) || (value.marks !== undefined && typeof value.marks !== 'boolean')) return false
       if (value.rect === undefined) return true
       if (!record(value.rect)) return false
       const rect = value.rect
@@ -608,6 +630,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return value.frame === undefined && isPreviewProbeOptions(value)
     case 'errors':
       return (value.clear === undefined || typeof value.clear === 'boolean') && (value.since === undefined || (typeof value.since === 'number' && Number.isFinite(value.since) && value.since >= 0))
+    case 'show':
+      return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) && optBounded(value.label, 120) &&
+        (value.text !== undefined || value.selector !== undefined)
     case 'check':
       return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) && optBounded(value.value, L.text) &&
         (value.text !== undefined || value.selector !== undefined) &&
@@ -791,6 +816,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'wait {url: шаблон с *} в панели ждёт, когда адрес страницы станет таким. Ответ click с obscuredBy означает, что цель перекрыта оверлеем — сначала закрой его. ' +
     'check {text|selector, state?: visible|hidden|present|absent, value?, count?} — проверка как у тестировщика: отвечает pass/actual/summary, не бросает ошибку; так проверяй результат фичи и цитируй summary в отчёте. ' +
     'nth: N у find/click/hover берёт N-е совпадение, если одинаковых элементов несколько; scroll {to: element, text} листает к тексту. errors {since} — только новые ошибки после отметки at. ' +
+    'show {text|selector, label?} — показать пользователю элемент: панель прокрутит к нему и подсветит с подписью на несколько секунд («вот эта кнопка»). ' +
+    'screenshot {marks: true} нумерует на снимке кликабельные элементы и возвращает marks — затем click {selector} по нужному номеру. read {brief: true} — короткое описание страницы словами; ' +
+    'если открыто модальное окно, read без selector читает его (поле dialog). wait {idle: true} ждёт затихания сети страницы. status.manual: true — пользователь взял управление, подожди и спроси. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +
