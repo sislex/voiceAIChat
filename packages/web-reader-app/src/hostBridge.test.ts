@@ -87,6 +87,23 @@ describe('wait по адресу, история и вопрос о выделе
   })
 })
 
+describe('open waitFor и viewport', () => {
+  it('open с waitFor ждёт текст после готовности и сообщает итог; status несёт viewport', async () => {
+    const h = harness()
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    const opening = h.bridge.run({ kind: 'open', url: 'https://shop.example/', waitFor: 'Каталог' })
+    await Promise.resolve()
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/', title: 'Магазин', viewport: { width: 390, height: 700 } })
+    await Promise.resolve()
+    const command = h.sent.find((m) => m.kind === 'command' && (m.action as { kind: string }).kind === 'wait') as { requestId: string } | undefined
+    expect(command).toBeTruthy()
+    h.from(registrationId, { kind: 'result', requestId: command!.requestId, ok: true, result: { page: { url: 'https://shop.example/', title: 'Магазин' }, waitedMs: 30 } })
+    expect(await opening).toMatchObject({ ok: true, result: { url: 'https://shop.example/', title: 'Магазин', waited: { text: 'Каталог', found: true } } })
+    expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { viewport: { width: 390, height: 700 } } })
+  })
+})
+
 describe('status и outline', () => {
   it('status отвечает без страницы и после готовности, open несёт outline', async () => {
     const h = harness()

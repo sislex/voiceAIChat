@@ -42,6 +42,10 @@ export interface WebReaderFrameProps {
   actionError?: { action: PreviewAction; error: string } | null
   onRetryAction?: ((action: PreviewAction) => void) | undefined
   onRepeatAction?: (action: PreviewAction) => void
+  /** Очистить ленту действий ассистента. */
+  onClearActions?: (() => void) | undefined
+  /** Сколько ошибок страницы накоплено, кроме показанной первой. */
+  pageErrorCount?: number
   /** Показать на странице элемент прошлого действия (прокрутить к селектору и подсветить). */
   onRevealAction?: (selector: string) => void
   pageError?: string | null

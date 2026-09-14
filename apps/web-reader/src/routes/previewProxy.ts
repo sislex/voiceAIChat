@@ -306,8 +306,10 @@ const byText=(text,hidden=false,exactOnly=false)=>{
   return deepest.sort((a,b)=>(exact(a)-exact(b))||(clickable(a)-clickable(b)))
 };
 // role сужает совпадения так, как их называет пользователь («кнопка Войти»); без text/selector — все элементы роли.
+// Человек говорит «кнопка», «ссылка», «поле» — принимаем и русские слова, и ARIA-роли.
+const ROLE_WORDS={'кнопка':'button','кнопки':'button','ссылка':'link','ссылки':'link','поле':'textbox','поля':'textbox','ввод':'textbox','заголовок':'heading','заголовки':'heading','флажок':'checkbox','галочка':'checkbox','переключатель':'radio','список':'combobox','вкладка':'tab','меню':'menuitem','картинка':'img','изображение':'img','таблица':'table','строка':'row'};
 const byRole=(action)=>{
-  const role=String(action.role||'').toLowerCase();
+  const role=ROLE_WORDS[String(action.role||'').toLowerCase()]||String(action.role||'').toLowerCase();
   const base=action.selector?bySelector(action.selector):action.text?byText(action.text):[...document.querySelectorAll('body *')].filter(el=>!el.closest('[data-voicechat-inspector]'));
   return base.map(el=>action.text&&!action.selector?clickTarget(el):el).filter((el,i,all)=>all.indexOf(el)===i&&accessibleRole(el)===role)
 };
@@ -320,6 +322,20 @@ const nearFilter=(candidates,near)=>{
   if(!scored.length)return[];
   const best=Math.min(...scored.map(item=>item.size));
   return scored.filter(item=>item.size===best).map(item=>item.el)
+};
+const suggestTexts=(query)=>{
+  const words=normText(query).split(' ').filter(w=>w.length>=3);
+  if(!words.length)return [];
+  const seen=new Set(),out=[];
+  for(const el of document.querySelectorAll(CLICKABLE+',h1,h2,h3,label,td,th,li')){
+    if(!readingVisible(el))continue;
+    const t=(accessibleName(el)||textOf(el)).slice(0,80);const n=normText(t);
+    if(!t||t.length>80||seen.has(n))continue;
+    const score=words.filter(w=>n.includes(w)||w.length>=5&&n.includes(w.slice(0,Math.max(4,w.length-2)))).length;
+    if(score>0){seen.add(n);out.push({t,score})}
+    if(out.length>=40)break
+  }
+  return out.sort((a,b)=>b.score-a.score).slice(0,5).map(item=>item.t)
 };
 const findTargets=(action)=>{
   const base=action.role?byRole(action):action.selector?bySelector(action.selector):byText(action.text||'',false,action.exact===true);
@@ -421,10 +437,13 @@ const run=(action)=>{
   if(action.kind==='find'){
     const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden')).filter(el=>!action.onScreen||onScreen(el));
     const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
-    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{})}
+    // Ничего не нашлось — подсказать похожие тексты, как человек оглядывается вокруг искомого слова.
+    const suggestions=!found.length&&action.text?suggestTexts(action.text):[];
+    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{}),...(suggestions.length?{suggestions}:{})}
   }
   if(action.kind==='click'){
     const el=chooseTarget(action,true);actionable(el);
+    if(el.localName==='select')throw new Error('Это выпадающий список: выбери значение через set {selector, value} или choose, клик его не раскроет.');
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
     const dialogsBefore=new Set(openDialogs()),errorsBefore=pageErrors.length;
     flash(el);
@@ -480,18 +499,20 @@ const run=(action)=>{
   }
   if(action.kind==='fill'){
     // Форма целиком, как её заполняет человек: поле за полем, затем отправка первой формы.
-    const filled=[];let form=null;
+    const filled=[],missing=[];let form=null;
     for(const item of action.fields){
-      const el=item.selector?chooseTarget({kind:'type',selector:item.selector,near:item.near}):fieldTarget(item.field||'',item.near);
-      actionable(el,true);flash(el);
+      // Не нашлось одно поле — остальные всё равно заполняем и перечисляем пропуски, как сделал бы человек.
+      let el;try{el=item.selector?chooseTarget({kind:'type',selector:item.selector,near:item.near}):fieldTarget(item.field||'',item.near);actionable(el,true)}catch(err){missing.push({field:item.field||item.selector||'',error:String(err&&err.message||err).slice(0,200)});continue}
+      flash(el);
       const outcome=typeInto(el,item.value,false,false);
       filled.push({field:item.field||accessibleName(el)||item.selector||'',selector:outcome.typed.selector,value:outcome.value});
       if(!form)form=el.form||el.closest('form')
     }
+    if(!filled.length)throw new Error('Ни одно поле не найдено: '+missing.map(m=>m.field+' ('+m.error+')').join('; '));
     let submitted=false;
     if(action.submit&&form){form.requestSubmit?form.requestSubmit():form.submit();submitted=true}
     const validation=validationMessages(form||document);
-    return {page:pageInfo(),filled,submitted,...(validation.length?{validation}:{})}
+    return {page:pageInfo(),filled,...(missing.length?{missing}:{}),submitted,...(validation.length?{validation}:{})}
   }
   if(action.kind==='choose'){
     // Пункт меню: открыть триггер, дождаться пункта, нажать — три жеста человека одним действием.
@@ -579,7 +600,10 @@ const run=(action)=>{
   }
   if(action.kind==='errors'){
     const fresh=typeof action.since==='number'?pageErrors.filter((e)=>e.at>action.since):pageErrors;
-    const errors=fresh.slice(-50).map((e)=>({kind:e.kind,message:e.message,at:e.at,...(e.url?{url:String(e.url).slice(0,300)}:{}),...(typeof e.status==='number'?{status:e.status}:{})}));
+    // Повторы одной ошибки схлопываются с count: сто одинаковых строк не помогают ни человеку, ни модели.
+    const grouped=new Map();
+    for(const e of fresh){const key=e.kind+'|'+e.message+'|'+(e.url||'');const prev=grouped.get(key);if(prev){prev.count++;prev.at=e.at}else grouped.set(key,{kind:e.kind,message:e.message,at:e.at,...(e.url?{url:String(e.url).slice(0,300)}:{}),...(typeof e.status==='number'?{status:e.status}:{}),count:1})}
+    const errors=[...grouped.values()].slice(-50).map((e)=>e.count>1?e:(delete e.count,e));
     const total=fresh.length;
     if(action.clear)pageErrors.length=0;
     return {page:pageInfo(),errors,total}
@@ -780,7 +804,7 @@ const run=(action)=>{
     const links=[],seen=new Set();
     for(const a of pick('a[href]')){if(links.length>=LINKS)break;const text=accessibleName(a),href=unproxy(a.getAttribute('href'));if(!text||seen.has(text+'|'+href))continue;seen.add(text+'|'+href);links.push({text,href})}
     const buttons=pick('button,[role=button],input[type=submit],input[type=button],input[type=reset],input[type=image]').map(el=>accessibleName(el)).filter(Boolean).slice(0,BUTTONS);
-    const inputs=pick('input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el)}));
+    const inputs=pick('input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el),...(el.localName==='select'?{options:[...el.options].slice(0,20).map(o=>textOf(o).slice(0,EL_TEXT))}:{})}));
     const forms=pick('form').slice(0,10).map(form=>{const fields=[...form.querySelectorAll('input:not([type=hidden]),textarea,select')].filter(readingVisible).slice(0,20).map(el=>accessibleName(el)||el.getAttribute('placeholder')||el.name||el.localName);const submitter=[...form.querySelectorAll('button,input[type=submit],input[type=image]')].find(el=>readingVisible(el)&&(el.localName==='input'||!el.type||el.type==='submit'));return {selector:uniqueSelector(form),fields,...(submitter?{submit:accessibleName(submitter)}:{})}});
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached)),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
@@ -1011,7 +1035,7 @@ const message=(e)=>{
 };
 // Сводка страницы вместе с готовностью: модель ориентируется по open без отдельного read.
 const outline=()=>{try{const scope=document.body||document.documentElement;return {headings:[...scope.querySelectorAll('h1,h2,h3')].filter(readingVisible).slice(0,5).map(h=>readableText(h,120)).filter(Boolean),links:scope.querySelectorAll('a[href]').length,buttons:scope.querySelectorAll('button,[role=button],input[type=submit]').length,inputs:scope.querySelectorAll('input:not([type=hidden]),textarea,select').length}}catch{return {headings:[],links:0,buttons:0,inputs:0}}};
-const ready=()=>parent.postMessage({type:READY,...pageInfo(),outline:outline()},location.origin);
+const ready=()=>parent.postMessage({type:READY,...pageInfo(),outline:outline(),viewport:{width:innerWidth,height:innerHeight}},location.origin);
 // Выделение пользователя уходит оболочке: она предложит спросить о нём ассистента.
 const SELECTION='voicechat.preview.selection.v1';let selectionTimer=null,lastSelection='';
 document.addEventListener('selectionchange',()=>{if(selectionTimer)clearTimeout(selectionTimer);selectionTimer=setTimeout(()=>{let text='';try{text=String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{}if(text===lastSelection)return;lastSelection=text;parent.postMessage({type:SELECTION,text},location.origin)},250)});

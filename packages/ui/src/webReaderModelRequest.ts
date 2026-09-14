@@ -21,13 +21,21 @@ export async function runReaderModelRequest(options: {
 
 /** Неудачная или устаревшая диагностика не стирает известную ошибку новой страницы. */
 export async function readReaderErrors(registration: ReaderHostRegistration | null, isCurrent: () => boolean): Promise<string | null | undefined> {
+  const detailed = await readReaderErrorSummary(registration, isCurrent)
+  return detailed === undefined ? undefined : detailed?.message ?? null
+}
+
+/** Первая ошибка и общее число: баннер говорит «и ещё N», как консоль браузера со счётчиком. */
+export async function readReaderErrorSummary(registration: ReaderHostRegistration | null, isCurrent: () => boolean): Promise<{ message: string; total: number } | null | undefined> {
   if (!registration) return undefined
   try {
     const outcome = await registration.run({ kind: 'errors' })
     if (!outcome.ok || !isCurrent()) return undefined
-    const result = outcome.result as { errors?: unknown } | undefined
+    const result = outcome.result as { errors?: unknown; total?: unknown } | undefined
     if (!Array.isArray(result?.errors)) return undefined
     const first = result.errors[0] as { message?: unknown; text?: unknown } | null | undefined
-    return typeof first?.message === 'string' ? first.message : typeof first?.text === 'string' ? first.text : null
+    const message = typeof first?.message === 'string' ? first.message : typeof first?.text === 'string' ? first.text : null
+    if (message === null) return null
+    return { message, total: typeof result.total === 'number' ? result.total : result.errors.length }
   } catch { return undefined }
 }

@@ -262,4 +262,39 @@ UI (desktop and phone):
 | 09 | Manual mode toggles announce `control` to the host | Recorder |
 | 10 | Action failure line is announced to screen readers | `WebReaderFrame` |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-07.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-07.md`. Commit `41f14e0e`.
+Live: Codex answered a «read brief + show» request; the phone «Сайт» tab showed the attention dot during the turn.
+
+## Cycle 08 — forgiving search and forms; the feed and tab behave like a browser
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `find` with no match returns `suggestions` — similar texts on the page | script `suggestTexts` | script test |
+| 02 | ambiguity errors list candidates with their context and advise `near`/`nth` | `previewInteractions.ts` | script test |
+| 03 | `fill` fills what it finds and lists `missing` instead of aborting | script | script test |
+| 04 | `open {waitFor}` waits for a text after load in one action; `waited` in the result | `hostBridge.ts` | bridge test |
+| 05 | `errors` collapses repeats with `count` | script | script test |
+| 06 | `read` lists `options` of select controls | script | script test |
+| 07 | `role` accepts Russian words (кнопка, ссылка, поле, заголовок…) | script `ROLE_WORDS` | script test |
+| 08 | clicking a `<select>` explains to use `set`/`choose` | script | script test |
+| 09 | `status.viewport` — the size of the user's page area (from page-ready) | script, Recorder, bridge | Recorder + bridge tests |
+| 10 | hint documents suggestions/missing/waitFor/options/count/Russian roles/viewport | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Feed filter «Только ✗ (N)» when checks failed | `ReaderActionHistory` |
+| 02 | Feed auto-scrolls to the newest step | `ReaderActionHistory` |
+| 03 | «Очистить» the feed | `ReaderActionHistory`, App |
+| 04 | Page error banner says «и ещё N» | `WebReaderFrame`, `readReaderErrorSummary` |
+| 05 | Browser tab title becomes «<page> — Web Reader» while in Reader | App |
+| 06 | «Назад» disabled until the page has somewhere to go back to | Recorder |
+| 07 | Escape dismisses the selection chip | Recorder |
+| 08 | Iframe marked `aria-busy` while loading | Recorder |
+| 09 | Empty state mentions paste-and-go | Recorder |
+| 10 | Phone tab bar shows «Ассистент не смог: …» when an action fails behind the chat tab | App |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-08.md`.

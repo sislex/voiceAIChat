@@ -81,6 +81,9 @@ export function Recorder(): JSX.Element {
   const [selection, setSelection] = useState('')
   // Site icon and a redirect notice: the small cues a browser tab gives about where you landed.
   const [pageIcon, setPageIcon] = useState<string | null>(null)
+  // Rough history depth of this page session: «Назад» is disabled until there is somewhere to go.
+  const [historyDepth, setHistoryDepth] = useState(0)
+  const historyGrew = useRef(false)
   const [redirectedFrom, setRedirectedFrom] = useState<string | null>(null)
   const requestedUrl = useRef<string | null>(null)
   const manualRef = useRef(false)
@@ -150,6 +153,7 @@ export function Recorder(): JSX.Element {
     setPageTitle('')
     setSelection(''); setPageIcon(null); setRedirectedFrom(null)
     requestedUrl.current = next
+    setHistoryDepth(0); historyGrew.current = false
     setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
     currentUrl.current = next
     if (next) setFrameKey((value) => value + 1)
@@ -289,7 +293,13 @@ export function Recorder(): JSX.Element {
         setPageTitle(title)
         if (currentUrl.current) setRecent(list => { const updated = rememberRecentAddress(list, currentUrl.current!); saveRecentAddresses(updated); return updated })
         setLoadState('ready'); setLoadError(null)
-        reply({ kind: 'page-status', status: 'ready', url: currentUrl.current, ...(title ? { title } : {}), ...(summary ? { outline: summary } : {}) })
+        const vp = (message as { viewport?: unknown }).viewport as { width?: unknown; height?: unknown } | undefined
+        const viewportInfo = vp && typeof vp.width === 'number' && typeof vp.height === 'number' ? { width: vp.width, height: vp.height } : null
+        // Read the refs now: a state updater runs later, when the flag below is already flipped.
+        const grewInPage = requestedUrl.current === null && historyGrew.current
+        if (grewInPage) setHistoryDepth(depth => depth + 1)
+        historyGrew.current = true
+        reply({ kind: 'page-status', status: 'ready', url: currentUrl.current, ...(title ? { title } : {}), ...(summary ? { outline: summary } : {}), ...(viewportInfo ? { viewport: viewportInfo } : {}) })
         settleNavigationWatch(true, { url: currentUrl.current, title })
         const state = modes.current
         for (const [type, enabled] of [[RECORD, state.recording], [PREVIEW_INSPECTOR_COMMAND_TYPE, state.inspecting], [EDIT, state.editing], [CAPTURE, state.capturing]] as const) {
@@ -532,13 +542,14 @@ export function Recorder(): JSX.Element {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
       event.preventDefault(); addressRef.current?.focus(); addressRef.current?.select()
     }
+    if (event.key === 'Escape' && selection) setSelection('')
     // Browser-like history keys work anywhere in the panel, not only over the page.
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && url) {
       event.preventDefault(); historyGo(event.key === 'ArrowLeft' ? -1 : 1)
     }
   }}>
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
-      <IconButton variant="secondary" type="button" disabled={!url} aria-label="Назад" aria-keyshortcuts="Alt+ArrowLeft" title="Назад (Alt+←)" onClick={() => historyGo(-1)}>‹</IconButton>
+      <IconButton variant="secondary" type="button" disabled={!url || historyDepth === 0} aria-label="Назад" aria-keyshortcuts="Alt+ArrowLeft" title="Назад (Alt+←)" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" aria-keyshortcuts="Alt+ArrowRight" title="Вперёд (Alt+→)" onClick={() => historyGo(1)}>›</IconButton>
       <IconButton variant="secondary" aria-label="Обновить страницу" title={loadState === 'loading' ? 'Страница загружается…' : 'Обновить страницу'} disabled={!url || loadState === 'loading'} aria-busy={loadState === 'loading' || undefined} onClick={reload}>↻</IconButton>
       <span className="webpreview-link" role="img" title={linked ? 'Панель связана с чатом: ассистент может управлять страницей' : 'Панель не связана с чатом: ассистент не видит эту страницу'} aria-label={linked ? 'Связь с чатом есть' : 'Связи с чатом нет'} data-linked={linked || undefined} data-manual={manual || undefined}>{linked ? '●' : '○'}</span>
@@ -644,9 +655,9 @@ export function Recorder(): JSX.Element {
         {step.submit === true && <em>⏎ submit</em>}
         {step.sensitive && <em>секрет не сохраняется</em>}</li>)}
     </ol></section>}
-    {url ? <div className="webpreview-viewport"><iframe key={frameKey} ref={frame} className="webpreview-frame" style={viewport ? { width: viewport + 'px', minWidth: viewport + 'px', flex: 'none' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={event => loaded(event.currentTarget)} onError={() => failLoad('Не удалось загрузить сайт: сетевая ошибка.')} /></div> : <div className="webpreview-empty"><div>
+    {url ? <div className="webpreview-viewport"><iframe key={frameKey} ref={frame} className="webpreview-frame" aria-busy={loadState === 'loading' || undefined} style={viewport ? { width: viewport + 'px', minWidth: viewport + 'px', flex: 'none' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={event => loaded(event.currentTarget)} onError={() => failLoad('Не удалось загрузить сайт: сетевая ошибка.')} /></div> : <div className="webpreview-empty"><div>
       <p>Укажите адрес сайта или проекта</p>
-      <p className="webpreview-empty__hint">или попросите ассистента в чате: «открой …» — страница появится здесь</p>
+      <p className="webpreview-empty__hint">или попросите ассистента в чате: «открой …» — страница появится здесь. Вставленный в поле адрес открывается сразу.</p>
       <Button variant="secondary" size="sm" type="button" onClick={() => applyUrl(READER_PROJECT_ORIGIN + '/')}>Открыть текущий проект</Button>
       {recent.length > 0 && <p className="webpreview-empty__hint">Недавние:</p>}
       {recent.length > 0 && <nav className="webpreview-recent" aria-label="Недавние адреса">{recent.map(item => <Button key={item} variant="secondary" size="sm" type="button" title={item} onClick={() => openAddress(item)}>{recentAddressLabel(item)}</Button>)}</nav>}

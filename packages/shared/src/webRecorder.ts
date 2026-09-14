@@ -56,7 +56,7 @@ export type WebRecorderHostMessage =
 
 export type WebRecorderClientMessage =
   | (Envelope & { kind: 'ready'; protocolVersion: number; conversationId: string | null; registrationId: string | null; capabilities: readonly string[] })
-  | (Addressed & { kind: 'page-status'; status: WebRecorderPageStatus; url: string | null; error?: string; title?: string; outline?: PreviewPageOutline })
+  | (Addressed & { kind: 'page-status'; status: WebRecorderPageStatus; url: string | null; error?: string; title?: string; outline?: PreviewPageOutline; viewport?: { width: number; height: number } })
   | (Addressed & { kind: 'result'; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string })
   | (Addressed & { kind: 'save-url'; url: string | null })
   /** Пользователь выделил текст на странице и хочет спросить о нём ассистента. */
@@ -137,7 +137,8 @@ export function isWebRecorderClientMessage(value: unknown): value is WebRecorder
         nullableUrl(value.url) &&
         (value.error === undefined || bounded(value.error, 2_000)) &&
         (value.title === undefined || bounded(value.title, 500)) &&
-        (value.outline === undefined || isPageOutline(value.outline))
+        (value.outline === undefined || isPageOutline(value.outline)) &&
+        (value.viewport === undefined || (record(value.viewport) && typeof value.viewport.width === 'number' && typeof value.viewport.height === 'number'))
       )
     case 'result': {
       if (!bounded(value.requestId, ID_LIMIT) || typeof value.ok !== 'boolean') return false
