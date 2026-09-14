@@ -66,6 +66,17 @@ describe('wait по адресу, история и вопрос о выделе
     expect(await late).toMatchObject({ ok: false, error: expect.stringContaining('dashboard') })
     expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { history: ['https://shop.example/dashboard?tab=1', 'https://shop.example/login'] } })
   })
+  it('control переключает status.manual и уведомляет host', async () => {
+    const controls: boolean[] = []
+    let seq = 0
+    const bridge = createReaderHostBridge({ conversationId: 'conv-1', newId: () => `id-${++seq}`, send: () => {}, onControl: (manual) => controls.push(manual) })
+    bridge.receive({ type, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: [] })
+    bridge.receive({ type, conversationId: 'conv-1', registrationId: bridge.registrationId()!, kind: 'control', manual: true })
+    expect(await bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { manual: true } })
+    bridge.receive({ type, conversationId: 'conv-1', registrationId: bridge.registrationId()!, kind: 'control', manual: false })
+    expect((await bridge.run({ kind: 'status' }) as { result: { manual?: boolean } }).result.manual).toBeUndefined()
+    expect(controls).toEqual([true, false])
+  })
   it('сообщение ask доходит до host', () => {
     const asked: string[] = []
     let seq = 0

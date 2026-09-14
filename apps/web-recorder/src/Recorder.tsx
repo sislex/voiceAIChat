@@ -85,6 +85,7 @@ export function Recorder(): JSX.Element {
   const requestedUrl = useRef<string | null>(null)
   const manualRef = useRef(false)
   manualRef.current = manual
+  const setManualMode = (next: boolean): void => { setManual(next); reply({ kind: 'control', manual: next }) }
   // Actions that may start a navigation keep their result briefly: if the page begins
   // loading, the model learns `navigated: true` and the new page instead of a stale DOM.
   const commandKinds = useRef(new Map<string, string>())
@@ -541,7 +542,11 @@ export function Recorder(): JSX.Element {
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" aria-keyshortcuts="Alt+ArrowRight" title="Вперёд (Alt+→)" onClick={() => historyGo(1)}>›</IconButton>
       <IconButton variant="secondary" aria-label="Обновить страницу" title={loadState === 'loading' ? 'Страница загружается…' : 'Обновить страницу'} disabled={!url || loadState === 'loading'} aria-busy={loadState === 'loading' || undefined} onClick={reload}>↻</IconButton>
       <span className="webpreview-link" role="img" title={linked ? 'Панель связана с чатом: ассистент может управлять страницей' : 'Панель не связана с чатом: ассистент не видит эту страницу'} aria-label={linked ? 'Связь с чатом есть' : 'Связи с чатом нет'} data-linked={linked || undefined} data-manual={manual || undefined}>{linked ? '●' : '○'}</span>
-      <label className="webpreview-address">{url && <span className="webpreview-scheme" aria-hidden="true" title={url.startsWith('https:') ? 'Защищённое соединение' : 'Незащищённое соединение'}>{url.startsWith('https:') ? '🔒' : '⚠'}</span>}<span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} aria-keyshortcuts="Control+L Meta+L" value={draft} placeholder="https://example.com" onFocus={event => event.currentTarget.select()} onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => {
+      <label className="webpreview-address">{url && <span className="webpreview-scheme" aria-hidden="true" title={url.startsWith('https:') ? 'Защищённое соединение' : 'Незащищённое соединение'}>{url.startsWith('https:') ? '🔒' : '⚠'}</span>}<span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} aria-keyshortcuts="Control+L Meta+L" value={draft} placeholder="https://example.com" onFocus={event => event.currentTarget.select()} onPaste={event => {
+        // Paste-and-go: a pasted full address opens at once, like mobile browsers do.
+        const pasted = event.clipboardData.getData('text').trim()
+        if (!draft.trim() && /^https?:\/\/\S+$/.test(pasted)) { event.preventDefault(); openAddress(pasted) }
+      }} onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) }
         // Cmd/Ctrl+Enter opens the typed address in a real browser tab, like the address bar of a browser.
         if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); const result = normalizeReaderAddress(draft, currentUrl.current); if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer'); else setAddressError(result.error ?? null) }
@@ -568,8 +573,9 @@ export function Recorder(): JSX.Element {
           <Button variant="secondary" type="button" disabled={!url} onClick={copyAddress}>Копировать адрес</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={copyLink}>Копировать ссылку с названием</Button>
           <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} onClick={snapshotToChat}>Снимок страницы в чат</Button>
+          {typeof navigator.share === 'function' && <Button variant="secondary" type="button" disabled={!url} onClick={() => { const target = currentUrl.current; if (target) void navigator.share({ url: target, ...(pageTitle ? { title: pageTitle } : {}) }).catch(() => {}); closeTools() }}>Поделиться…</Button>}
           <Button variant="secondary" type="button" disabled={!url} onClick={openExternal}>Открыть в новой вкладке</Button>
-          <Button variant="secondary" type="button" aria-pressed={manual} onClick={() => { setManual(value => !value); closeTools() }}>{manual ? 'Вернуть управление ассистенту' : 'Только я управляю'}</Button>
+          <Button variant="secondary" type="button" aria-pressed={manual} onClick={() => { setManualMode(!manualRef.current); closeTools() }}>{manual ? 'Вернуть управление ассистенту' : 'Только я управляю'}</Button>
           </div>
           <div className="webpreview-tools__group" role="group" aria-label="Сценарий">
           <Button variant="secondary" type="button" aria-pressed={transferOpen} onClick={() => { setTransferOpen(value => !value); closeTools() }}>Файл сценария (JSON)</Button>
@@ -600,7 +606,7 @@ export function Recorder(): JSX.Element {
     {error && <div className="webpreview-error webpreview-load-error" role="alert"><span>{error}</span><Button size="sm" aria-label="Скрыть ошибку Reader" onClick={() => setError(null)}>×</Button></div>}
     {storageError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{storageError}</span><Button size="sm" onClick={saveScenario}>Повторить сохранение</Button></div>}
     {recording && <div className="webpreview-run-status" role="status" aria-live="polite">Идёт запись сценария: {steps.length} шаг.</div>}
-    {manual && <div className="webpreview-run-status webpreview-manual" role="status" aria-live="polite">Управляете только вы: действия ассистента отклоняются. <Button size="sm" onClick={() => setManual(false)}>Вернуть ассистенту</Button></div>}
+    {manual && <div className="webpreview-run-status webpreview-manual" role="status" aria-live="polite">Управляете только вы: действия ассистента отклоняются. <Button size="sm" onClick={() => setManualMode(false)}>Вернуть ассистенту</Button></div>}
     {diagnostics && <DiagnosticHistory key={`${session.current?.conversationId}:${session.current?.registrationId}`} steps={diagnostics} />}
     {scenarioProgress && <div className="webpreview-run-status" role="status" aria-live="polite" data-status={scenarioProgress.status}>
       {scenarioProgress.status === 'running' ? 'Выполняется сценарий' : scenarioProgress.status === 'passed' ? 'Сценарий выполнен' : scenarioProgress.status === 'cancelled' ? 'Сценарий остановлен' : 'Ошибка сценария'}: {scenarioProgress.completed} из {scenarioProgress.total}

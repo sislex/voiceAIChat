@@ -61,6 +61,8 @@ export type WebRecorderClientMessage =
   | (Addressed & { kind: 'save-url'; url: string | null })
   /** Пользователь выделил текст на странице и хочет спросить о нём ассистента. */
   | (Addressed & { kind: 'ask'; text: string })
+  /** Пользователь взял управление страницей на себя или вернул его ассистенту. */
+  | (Addressed & { kind: 'control'; manual: boolean })
   | (Addressed & { kind: 'element-selected'; element: PreviewElementPayload })
   | (Addressed & { kind: 'recording-step'; step: WebRecorderScenarioStep })
   | (Addressed & { kind: 'area-screenshot'; shot: WebRecorderAreaScreenshot })
@@ -153,6 +155,8 @@ export function isWebRecorderClientMessage(value: unknown): value is WebRecorder
       return nullableUrl(value.url)
     case 'ask':
       return bounded(value.text, 2_000) && value.text.trim().length > 0
+    case 'control':
+      return typeof value.manual === 'boolean'
     case 'element-selected':
       return isPreviewElementPayload(value.element)
     case 'recording-step': {

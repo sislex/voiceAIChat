@@ -429,6 +429,18 @@ describe('Recorder: результат действия и навигация (�
     fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: command.requestId, ok: true, result: { page: { url: 'https://shop.example/landing', title: 'Магазин' }, rect: { x: 0, y: 0, width: 10, height: 10 }, dataUrl: 'data:image/png;base64,AAAA' } })
     expect(sent(post).find((message) => message.kind === 'area-screenshot')).toMatchObject({ shot: { pageUrl: 'https://shop.example/landing', dataUrl: 'data:image/png;base64,AAAA' } })
   })
+  it('ручной режим сообщает host control, вставка адреса открывает его сразу', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    ready()
+    fireEvent.click(screen.getByRole('button', { name: 'Только я управляю' }))
+    expect(sent(post).find((message) => message.kind === 'control')).toMatchObject({ manual: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуть ассистенту' }))
+    expect(sent(post).filter((message) => message.kind === 'control').at(-1)).toMatchObject({ manual: false })
+    const address = screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement
+    fireEvent.change(address, { target: { value: '' } })
+    fireEvent.paste(address, { clipboardData: { getData: () => 'https://pasted.example/page' } })
+    expect(sent(post).find((message) => message.kind === 'save-url' && message.url === 'https://pasted.example/page')).toBeTruthy()
+  })
   it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()

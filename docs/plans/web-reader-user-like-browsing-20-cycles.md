@@ -228,4 +228,38 @@ UI (desktop and phone):
 | 09 | «Недавние:» caption above the chips in the empty state | Recorder |
 | 10 | Feed labels for check/fill/choose/status in past and present tense | `actionLabel.ts` |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-06.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-06.md`. Commit `0b7c9dad`.
+
+## Cycle 07 — pointing at things; the feed tells a story
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `show {text|selector, label}` scrolls to an element and highlights it with a caption for 3 s — the model points for the person | script `showLabel`, MCP | script test |
+| 02 | `screenshot {marks: true}` numbers clickable elements on the picture and returns `marks` (n → selector) | script `captureArea` | — (canvas is unavailable in jsdom; marks list is built before capture) |
+| 03 | `read {brief: true}` — a one-paragraph description of the page in words | script | script test |
+| 04 | `read` without selector reads the open modal dialog and reports `dialog` | script | script test |
+| 05 | `press` reports the dialogs still open (did Escape close the window) | script | script test |
+| 06 | `wait {idle: true}` waits for the page network to go quiet (panel counts fetch/XHR; Chromium uses networkidle) | script, `waiting.ts`, shared | script + shared tests |
+| 07 | `scroll {to: element}` returns the element it scrolled to | script | script test |
+| 08 | `status.manual` tells the model the person took control | bridge `control` | bridge test |
+| 09 | relay narrates results in `reader.changed` (открылось окно, перешёл на host, перенаправлено, ошибки формы) | `actions.ts` `narrate` | relay test |
+| 10 | hint documents show/marks/brief/dialog/idle/manual | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Orange highlight with a caption on the page when the model uses `show` | script |
+| 02 | Feed lines narrate outcomes («Нажал Купить — открылось окно») | relay summary → history |
+| 03 | «Показать» in the feed uses the same highlight with «Здесь действовал ассистент» | App |
+| 04 | Phone tab bar shows «✋ Страницей управляете вы» while manual mode is on | App, bridge `onControl` |
+| 05 | Paste-and-go: pasting a full address into the empty field opens it | Recorder |
+| 06 | «Поделиться…» via the Web Share API on devices that support it | Recorder |
+| 07 | Iframe background follows the panel theme instead of flashing white | recorder.css |
+| 08 | «Открыть» button hidden under 360 px (Enter and «go» key still work) | recorder.css |
+| 09 | Manual mode toggles announce `control` to the host | Recorder |
+| 10 | Action failure line is announced to screen readers | `WebReaderFrame` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-07.md`.

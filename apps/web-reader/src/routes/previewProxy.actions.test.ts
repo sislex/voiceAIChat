@@ -689,6 +689,45 @@ describe('скрипт превью: проверки тестировщика �
   })
 })
 
+describe('скрипт превью: показать пользователю и читать окно (круг 7)', () => {
+  it('show подсвечивает элемент с подписью и не нажимает его', async () => {
+    const link = document.querySelector('nav a') as HTMLAnchorElement
+    let clicked = false
+    link.addEventListener('click', () => { clicked = true })
+    const res = await act({ kind: 'show', text: 'Электроника', label: 'Вот ссылка' })
+    expect(res.ok).toBe(true)
+    expect((res.result as { shown: { tag: string } }).shown.tag).toBe('a')
+    expect(link.getAttribute('data-voicechat-flash')).toBe('show')
+    expect([...document.querySelectorAll('[data-voicechat-inspector="show-label"]')].map((el) => el.textContent)).toEqual(['Вот ссылка'])
+    expect(clicked).toBe(false)
+  })
+
+  it('read читает открытое модальное окно и даёт краткое описание; press сообщает оставшиеся окна', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<div id="modal" role="dialog"><h2>Подтвердите</h2><p>Удалить заказ?</p><button>Да</button></div>`)
+    const res = await act({ kind: 'read', brief: true })
+    const result = res.result as { dialog?: string; brief?: string; headings: { text: string }[] }
+    expect(result.dialog).toBe('#modal')
+    expect(result.headings).toEqual([{ level: 2, text: 'Подтвердите' }])
+    expect(result.brief).toContain('открыто окно')
+    expect(result.brief).toContain('Магазин')
+    const pressed = await act({ kind: 'press', key: 'Escape' })
+    expect((pressed.result as { dialogs?: string[] }).dialogs).toEqual(['#modal'])
+    document.getElementById('modal')!.remove()
+    const after = await act({ kind: 'press', key: 'Escape' })
+    expect((after.result as { dialogs?: string[] }).dialogs).toBeUndefined()
+  })
+
+  it('wait idle отвечает сразу при тихой сети, scroll к элементу описывает его', async () => {
+    const idle = await act({ kind: 'wait', idle: true, timeoutMs: 1000 })
+    expect(idle.ok).toBe(true)
+    expect(idle.result).toMatchObject({ state: 'idle' })
+    const heading = document.querySelector('h1') as HTMLElement
+    heading.scrollIntoView = () => {}
+    const scrolled = await act({ kind: 'scroll', to: 'element', selector: 'h1' })
+    expect((scrolled.result as { element?: { text: string } }).element).toMatchObject({ text: 'Группы товаров' })
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })
