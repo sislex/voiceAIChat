@@ -27,6 +27,28 @@ describe('parseCodexLine', () => {
     expect(ev && ev.kind === 'result' && ev.meta).toMatchObject({ inputTokens: 100, outputTokens: 5 })
   })
 
+  it('turn.completed keeps the raw thread totals in codexThreadUsage', () => {
+    // Codex reports the cumulative totals of the thread here; the server needs
+    // them untouched to subtract the previous turn later.
+    const line = JSON.stringify({
+      type: 'turn.completed',
+      usage: { input_tokens: 1_000, cached_input_tokens: 800, cache_write_input_tokens: 50, output_tokens: 20 }
+    })
+    const ev = parseCodexLine(line)
+    expect(ev && ev.kind === 'result' && ev.meta).toEqual({
+      inputTokens: 1_000,
+      cacheReadTokens: 800,
+      cacheCreationTokens: 50,
+      outputTokens: 20,
+      codexThreadUsage: { inputTokens: 1_000, cacheReadTokens: 800, cacheCreationTokens: 50, outputTokens: 20 }
+    })
+  })
+
+  it('turn.completed without usage leaves meta empty', () => {
+    const ev = parseCodexLine(JSON.stringify({ type: 'turn.completed' }))
+    expect(ev && ev.kind === 'result' && ev.meta).toEqual({})
+  })
+
   it('turn.completed с model → meta.model', () => {
     const line = JSON.stringify({
       type: 'turn.completed',

@@ -11,7 +11,8 @@ import {
   isCiToolDenial, KB_GAPS_HINT, parseKbGaps, parseQuestions,
   trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
 } from '@voicechat/shared'
-import type { CiRunMode, CiTestFailure, CiTargetedTestRun, CiToolCalls, CiToolChars, CiToolKind, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
+import type { CiRunMode, CiTestFailure, CiTargetedTestRun, CiToolCalls, CiToolChars, CiToolKind, CiUsageKind, CodexThreadUsage, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
+import { codexTurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
 import { buildKbAutoContext, CI_KB_AUTO_CONTEXT_BUDGET } from '../kb/autoContext.js'
@@ -443,6 +444,33 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * клиент без usage), строкой не становится — иначе отчёт считал бы запросы,
    * которых не было видно.
    */
+  /**
+   * Codex `turn.completed` carries the cumulative totals of the thread, and a
+   * run resumes the same thread across its turns (plan approval, questions), so
+   * the turn's spend is the difference from the previous turn of this run. The
+   * baseline lives in memory: after a server restart the first turn of a
+   * continued run is recorded with the whole thread total (a rare over-count,
+   * visible in the report as a spike, never an under-count). Usage without
+   * thread totals (older runners, Claude-shaped mocks) keeps the legacy
+   * normalization: input minus the cached part.
+   */
+  const codexThreadTotals = new Map<string, CodexThreadUsage>()
+  const CODEX_THREAD_TOTALS_CAP = 500
+  function codexRunTurnSpend(runId: string, u: TurnUsage & { codexThreadUsage?: CodexThreadUsage }, sessionId: string | null): TurnUsage {
+    if (!u.codexThreadUsage) {
+      return { ...u, inputTokens: Math.max(0, (u.inputTokens ?? 0) - (u.cacheReadTokens ?? 0)) }
+    }
+    const thread = { ...u.codexThreadUsage, ...(sessionId ? { sessionId } : {}) }
+    const spend = codexTurnUsage(thread, codexThreadTotals.get(runId) ?? null)
+    codexThreadTotals.delete(runId)
+    codexThreadTotals.set(runId, thread)
+    if (codexThreadTotals.size > CODEX_THREAD_TOTALS_CAP) {
+      const oldest = codexThreadTotals.keys().next().value
+      if (oldest !== undefined) codexThreadTotals.delete(oldest)
+    }
+    return spend
+  }
+
   async function recordUsage(ctx: CiModelContext, kind: CiUsageKind, stepId: string | null, turn: TurnResult, model: string): Promise<void> {
     // Вызовы инструментов считаются отдельно от токенов: ход, о расходе которого
     // CLI промолчал, всё равно успевает что-то вызвать.
@@ -450,13 +478,13 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const u: TurnUsage = turn.meta ?? turn.usage ?? {}
     const tokens = (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0)
     if (!turn.meta && tokens === 0) return
-    const cacheReadTokens = u.cacheReadTokens ?? 0
-    const rawInput = u.inputTokens ?? 0
     // Одна семантика входа на оба движка — «вход без кэша»: codex сообщает
     // input_tokens ВМЕСТЕ с прочитанным кэшем, claude — уже без него. Пока их
     // складывали как есть, суммы «до/после» сравнивали разные величины, а оценка
     // по прайсу считала кэш по полной цене входа и завышала её в разы.
-    const inputTokens = ctx.run.llmProvider === 'codex' ? Math.max(0, rawInput - cacheReadTokens) : rawInput
+    const spend = ctx.run.llmProvider === 'codex' ? codexRunTurnSpend(ctx.run.id, u, turn.sessionId) : u
+    const cacheReadTokens = spend.cacheReadTokens ?? 0
+    const inputTokens = spend.inputTokens ?? 0
     try {
       await deps.db.ci.addCiRunUsage({
         runId: ctx.run.id,
@@ -469,9 +497,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         // — модель, которой ход РЕАЛЬНО запускали (стадии считаются разными).
         model: turn.meta?.model || model || UNKNOWN_MODEL,
         inputTokens,
-        outputTokens: u.outputTokens ?? 0,
+        outputTokens: spend.outputTokens ?? 0,
         cacheReadTokens,
-        cacheCreationTokens: u.cacheCreationTokens ?? 0,
+        cacheCreationTokens: spend.cacheCreationTokens ?? 0,
         inputSemantics: 'no_cache',
         costUsd: turn.meta?.costUsd ?? null,
         // Длительность и число запросов: у codex CLI не сообщает ни то, ни
