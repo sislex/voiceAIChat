@@ -45,6 +45,8 @@ describe('webRecorder client message validator', () => {
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'result', requestId: 'r1', ok: true, result: { url: 'https://example.test/' } })).toBe(true)
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'result', requestId: 'r1', ok: false, error: 'нет страницы' })).toBe(true)
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'save-url', url: null })).toBe(true)
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'ask', text: 'Что это?' })).toBe(true)
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'ask', text: '   ' })).toBe(false)
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'click', selector: '#buy', text: 'Купить', sensitive: false } })).toBe(true)
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'diagnostics-progress', requestId: 'r1', action: 'read', ok: true, durationMs: 12 })).toBe(true)
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'diagnostics-complete', total: 3 })).toBe(true)

@@ -583,6 +583,61 @@ describe('скрипт превью: формы и меню как у челов
   }, 10_000)
 })
 
+describe('скрипт превью: читать как человек (круг 5)', () => {
+  it('текст ищется без учёта кавычек, тире и неразрывных пробелов', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button id="quoted">Открыть «Корзину» — сейчас</button>`)
+    const res = await act({ kind: 'find', text: 'Открыть "Корзину" - сейчас', exact: true })
+    expect((res.result as { elements: { selector: string }[] }).elements).toEqual([expect.objectContaining({ selector: '#quoted' })])
+  })
+
+  it('read section читает раздел под заголовком до следующего заголовка того же уровня', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<h2>Цены</h2><p>Базовый — 10 €</p><ul><li>Про — 20 €</li></ul><h2>Контакты</h2><p>Пишите нам</p>`)
+    const res = await act({ kind: 'read', section: 'цены' })
+    expect(res.ok).toBe(true)
+    const result = res.result as { section?: string; text: string }
+    expect(result.section).toBe('Цены')
+    expect(result.text).toContain('Базовый — 10 €')
+    expect(result.text).toContain('Про — 20 €')
+    expect(result.text).not.toContain('Пишите нам')
+    const missing = await act({ kind: 'read', section: 'Нет такого' })
+    expect(missing.ok).toBe(false)
+  })
+
+  it('read отдаёт выделенный пользователем текст, find onScreen фильтрует по экрану', async () => {
+    const heading = document.querySelector('h1')!
+    const range = document.createRange(); range.selectNodeContents(heading)
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range)
+    const res = await act({ kind: 'read' })
+    expect((res.result as { selection?: string }).selection).toBe('Группы товаров')
+    selection.removeAllRanges()
+    // jsdom не раскладывает элементы: на «экране» ничего нет, и фильтр должен это честно показать.
+    const onScreen = await act({ kind: 'find', role: 'heading', onScreen: true })
+    expect((onScreen.result as { total: number }).total).toBe(0)
+  })
+
+  it('type perKey печатает посимвольно с keydown на каждую букву', async () => {
+    const input = document.getElementById('q') as HTMLInputElement
+    const keys: string[] = []
+    input.addEventListener('keydown', (event) => keys.push(event.key))
+    const res = await act({ kind: 'type', selector: '#q', text: 'ab', perKey: true })
+    expect(res.ok).toBe(true)
+    expect(input.value).toBe('ab')
+    expect(keys).toEqual(['a', 'b'])
+    expect((res.result as { value: string }).value).toBe('ab')
+  })
+
+  it('click сообщает перекрывающий элемент, если в точке клика лежит оверлей', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button id="under">Под оверлеем</button><div id="overlay"></div>`)
+    const original = document.elementFromPoint
+    document.elementFromPoint = () => document.getElementById('overlay')
+    try {
+      const res = await act({ kind: 'click', selector: '#under' })
+      expect(res.ok).toBe(true)
+      expect((res.result as { obscuredBy?: string }).obscuredBy).toBe('#overlay')
+    } finally { document.elementFromPoint = original }
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

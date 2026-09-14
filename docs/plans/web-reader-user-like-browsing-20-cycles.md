@@ -160,4 +160,38 @@ UI (desktop and phone):
 | 09 | Hash navigation keeps the page state — no flash of a reload for hash routers | Recorder |
 | 10 | Manual-mode line uses the warning colour and lives with the other status lines | recorder.css |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-04.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-04.md`. Commit `f246379f`.
+
+## Cycle 05 — reading like a person; the person's selection becomes a question
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | text matching ignores quote styles, dash styles and non-breaking spaces (`normText`) | script | script test |
+| 02 | `read {section}` reads the part under a heading, up to the next heading of the same or higher level | script `sectionScope` | script test |
+| 03 | `read` returns `selection` — text the person selected on the page | script | script test |
+| 04 | `find {onScreen: true}` — only what the person sees without scrolling | script | script test |
+| 05 | `type {perKey: true}` types character by character with keyboard events (masks, autocomplete) | script `typePerKey` | script test |
+| 06 | `click` reports `obscuredBy` when an overlay sits at the click point | script | script test |
+| 07 | `wait {url}` works in the panel: the bridge waits for the confirmed address | `hostBridge.ts`, `browserWaiting.ts` | bridge + shared tests |
+| 08 | `status` returns `history` — the last five addresses of this panel | `hostBridge.ts` | bridge test |
+| 09 | `ask` message: the person's selection travels to the chat as a draft question | `webRecorder.ts`, bridge, Recorder, App | contract + bridge + Recorder tests |
+| 10 | hint documents section/selection/onScreen/perKey/url waits/obscuredBy | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Selecting text on the page shows «Спросить ассистента»; the question lands in the chat draft (phone switches to the chat tab) | Recorder, App |
+| 02 | Failed model action is shown in the panel with the reason and «Повторить»; disappears after 15 s | `WebReaderFrame`, App |
+| 03 | Live line shows elapsed seconds after 3 s | `WebReaderFrame` |
+| 04 | Tools menu grouped: Страница / Сценарий / Недавние | Recorder |
+| 05 | Arrow keys, Home and End walk the tools menu | Recorder |
+| 06 | «Копировать ссылку с названием» copies a Markdown link | Recorder |
+| 07 | `aria-keyshortcuts` and titles on back/forward and the address field | Recorder |
+| 08 | Load error hints at «Полный браузер» for sites that refuse the proxy | Recorder |
+| 09 | Link indicator turns amber in manual mode | recorder.css |
+| 10 | Empty state offers «Открыть текущий проект» | Recorder |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-05.md`.

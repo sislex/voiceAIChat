@@ -37,7 +37,8 @@ export function isBrowserWaitOptions(value: unknown): value is BrowserWaitOption
 export function browserWaitRequiresChromium(options: BrowserWaitOptions): boolean {
   // state, enabled, checked и value поддержаны и в iframe-скрипте панели: пользователь так же ждёт,
   // когда спиннер исчезнет, кнопка станет доступной или поле примет значение.
-  return ['editable', 'count', 'url', 'loadState', 'predicate'].some(key => options[key as keyof BrowserWaitOptions] !== undefined)
+  // url ждёт мост панели по подтверждённому адресу; страницу для этого трогать не нужно.
+  return ['editable', 'count', 'loadState', 'predicate'].some(key => options[key as keyof BrowserWaitOptions] !== undefined)
     || Boolean(options.selector && options.text) || (options.timeoutMs ?? 5000) > 8000
 }
 

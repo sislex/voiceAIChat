@@ -177,6 +177,13 @@ describe('isPreviewAction: как пользователь — field, role, appe
     expect(resolvePreviewUrl('/about', null)).toBeNull()
     expect(resolvePreviewUrl('https://other.test/', null)).toBe('https://other.test/')
   })
+  it('section, onScreen, perKey и url-ожидание панели проходят валидацию', () => {
+    expect(isPreviewAction({ kind: 'read', section: 'Цены' })).toBe(true)
+    expect(isPreviewAction({ kind: 'find', role: 'button', onScreen: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'find', role: 'button', onScreen: 'yes' })).toBe(false)
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'a', perKey: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'wait', url: 'https://shop.example/dashboard*' })).toBe(true)
+  })
   it('fill требует непустой список полей с целью, choose — текст пункта', () => {
     expect(isPreviewAction({ kind: 'fill', fields: [{ field: 'Логин', value: 'admin' }, { selector: '#pw', value: 'x' }], submit: true })).toBe(true)
     expect(isPreviewAction({ kind: 'fill', fields: [] })).toBe(false)
@@ -207,7 +214,7 @@ describe('previewToolHint', () => {
   it('панель описана как видимая пользователю и объясняет новые человеческие параметры', () => {
     const hint = previewToolHint()
     expect(hint).toContain('видит каждое твоё действие')
-    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a']) expect(hint).toContain(term)
+    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a', 'section', 'selection', 'onScreen: true', 'perKey', 'obscuredBy']) expect(hint).toContain(term)
   })
 
   it('для изолированного Chromium не обещает панель и требует поднять dev-сервер самому', () => {
