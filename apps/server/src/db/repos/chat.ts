@@ -855,13 +855,17 @@ export class ChatRepo extends BaseRepo {
    * reply yet.
    */
   async lastCodexThreadUsage(conversationId: string): Promise<CodexThreadUsage | null> {
-    const rows = (await this.sql.all(
-      `SELECT meta FROM messages WHERE conversation_id = ? AND role = 'ai' AND engine = 'codex' AND meta IS NOT NULL
+    // Ids first, one meta at a time: a Codex reply carries its whole activity
+    // log in `meta` (up to ~12 MB in production), and the core runs with a
+    // ~512 MB heap — pulling twenty of them in one result set is not free.
+    const ids = (await this.sql.all(
+      `SELECT id FROM messages WHERE conversation_id = ? AND role = 'ai' AND engine = 'codex' AND meta IS NOT NULL
        ORDER BY created_at DESC, history_position DESC, id DESC LIMIT 20`,
       [conversationId]
-    )) as Array<{ meta: string }>
-    for (const row of rows) {
-      const meta = parseMeta(row.meta)
+    )) as Array<{ id: string }>
+    for (const { id } of ids) {
+      const row = (await this.sql.get(`SELECT meta FROM messages WHERE id = ?`, [id])) as { meta: string } | undefined
+      const meta = row ? parseMeta(row.meta) : undefined
       if (meta?.codexThreadUsage) return meta.codexThreadUsage
     }
     return null
@@ -878,36 +882,44 @@ export class ChatRepo extends BaseRepo {
    * like every other engine. Replies that already carry `codexThreadUsage` are
    * left untouched, which makes the pass idempotent. Returns the number of
    * rewritten replies.
+   *
+   * Memory discipline matters here: `meta` holds the reply's whole activity
+   * log (production: 3.2k Codex replies, ~500 MB of meta in total, a single
+   * reply up to ~12 MB) and the core boots with a ~512 MB heap. The first
+   * version selected every meta in one result set and the core died of
+   * heap OOM before serving a request (release 0.1.304, 2026-09-14). Now the
+   * pass loads ids only, then one meta at a time, so the peak is one reply.
    */
   async migrateCodexThreadUsage(): Promise<number> {
     const rows = (await this.sql.all(
-      `SELECT id, conversation_id, meta FROM messages WHERE engine = 'codex' AND role = 'ai' AND meta IS NOT NULL
+      `SELECT id, conversation_id FROM messages WHERE engine = 'codex' AND role = 'ai' AND meta IS NOT NULL
        ORDER BY conversation_id ASC, created_at ASC, history_position ASC, id ASC`
-    )) as Array<{ id: string; conversation_id: string; meta: string }>
+    )) as Array<{ id: string; conversation_id: string }>
     let updated = 0
     let conversation: string | null = null
     let previous: CodexThreadUsage | null = null
-    await this.sql.transaction(async () => {
-      for (const row of rows) {
-        if (row.conversation_id !== conversation) {
-          conversation = row.conversation_id
-          previous = null
-        }
-        const meta = parseMeta(row.meta)
-        if (!meta) continue
-        if (meta.codexThreadUsage) {
-          previous = meta.codexThreadUsage
-          continue
-        }
-        if (typeof meta.inputTokens !== 'number' && typeof meta.outputTokens !== 'number') continue
-        const thread = codexThreadUsageOf(meta)
-        const next: TurnMeta = { ...meta, ...codexTurnUsage(thread, previous), codexThreadUsage: thread }
-        // The update also fires the cost-cache trigger, so the sidebar recomputes.
-        await this.sql.run(`UPDATE messages SET meta = ? WHERE id = ?`, [JSON.stringify(next), row.id])
-        previous = thread
-        updated++
+    for (const row of rows) {
+      if (row.conversation_id !== conversation) {
+        conversation = row.conversation_id
+        previous = null
       }
-    })
+      const stored = (await this.sql.get(`SELECT meta FROM messages WHERE id = ?`, [row.id])) as { meta: string | null } | undefined
+      const meta = stored?.meta ? parseMeta(stored.meta) : undefined
+      if (!meta) continue
+      if (meta.codexThreadUsage) {
+        previous = meta.codexThreadUsage
+        continue
+      }
+      if (typeof meta.inputTokens !== 'number' && typeof meta.outputTokens !== 'number') continue
+      const thread = codexThreadUsageOf(meta)
+      const next: TurnMeta = { ...meta, ...codexTurnUsage(thread, previous), codexThreadUsage: thread }
+      // The update also fires the cost-cache trigger, so the sidebar recomputes.
+      // No enclosing transaction: each reply is rewritten independently and the
+      // pass is idempotent, so a restart in the middle simply continues.
+      await this.sql.run(`UPDATE messages SET meta = ? WHERE id = ?`, [JSON.stringify(next), row.id])
+      previous = thread
+      updated++
+    }
     return updated
   }
 
