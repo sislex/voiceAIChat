@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-13
-checked: 09971e0d
+checked: 0b6c1d15
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -347,8 +347,10 @@ DELETE clears the hash and expiry. The plaintext is only returned on issuance.
 (`UsageReport`/`UsageUnit`), просмотр чужих разговоров и сообщений. Отчёт принимает
 `from`, `to`, `unit` и необязательный `conversationId`, возвращает агрегаты по
 бакетам, моделям и разговорам. Для сообщений Codex без `meta.costUsd`
-`model_prices` редактируются только админом через `GET/PUT/DELETE /api/admin/model-prices`. `usageReport` всегда возвращает две независимые суммы: `costUsd` (что сообщил CLI) и `costFromPrices` (пересчёт по `model_prices`) для Claude и Codex; обычный вход считается как
-`inputTokens - cacheReadTokens`, чтобы кэш не оплачивался дважды. Таблица содержит
+`model_prices` редактируются только админом через `GET/PUT/DELETE /api/admin/model-prices`. `usageReport` всегда возвращает две независимые суммы: `costUsd` (что сообщил CLI) и `costFromPrices` (пересчёт по `model_prices`) для Claude и Codex; `meta.inputTokens`
+у всех движков — вход **без** кэша (Codex приводится `TurnManager` и разовой
+миграцией `migrateCodexThreadUsage`, см. [llm.md](llm.md)), поэтому SQL берёт его
+как есть и отдельно платит за `cacheReadTokens`. Таблица содержит
 USD за 1M обычных/кэшированных/записанных в кэш/выходных токенов, URL источника и
 даты тарифа/обновления. Базовые четыре поля — Standard/short context; дополнительные
 официальные сочетания режима (`standard`/`batch`/`flex`/`fast`) и контекста

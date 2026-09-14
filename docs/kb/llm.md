@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-12
-checked: 3ae08249
+updated: 2026-09-14
+checked: 3fcc921c
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -283,9 +283,38 @@ test instance is no longer needed.
 
 Usage нормализуется в `TurnUsage` и рассылается как `claude.usage`. Claude CLI
 отдаёт промежуточные usage-снапшоты, поэтому его счётчик растёт во время ответа.
-`codex exec --json` отдаёт точные input/output/cached только в `turn.completed`:
-`CodexCli` проводит этот итог через `onUsage` перед `onDone`, а `TurnManager`
-подмешивает последний usage-снапшот в сохраняемый `TurnMeta`.
+`codex exec --json` отдаёт input/output/cached только в `turn.completed`:
+`CodexCli`/`sinks.ts` проводят этот итог через `onUsage` перед `onDone`, а
+`TurnManager` подмешивает последний usage-снапшот в сохраняемый `TurnMeta`.
+
+**`usage` в `turn.completed` у Codex — накопительный итог всего треда, а не
+хода.** В исходниках Codex CLI (`event_processor_with_jsonl_output.rs`) кадр
+собирается из `ThreadTokenUsage.total`, а не `.last`; при `codex exec resume`
+итог продолжает расти с прошлых ходов, `input_tokens` включает
+`cached_input_tokens`. До 13.09.2026 сервер записывал эти числа как расход
+сообщения: каждый ответ выглядел дороже предыдущего (ответ «Принято» из одного
+вызова модели показывал +54k входа), а стоимость беседы росла квадратично
+($85 в сайдбаре при реальных ≈$9). Теперь `codexStream.ts` дублирует сырые
+итоги в `TurnMeta.codexThreadUsage`, а `TurnManager` перед ходом читает
+`chat.lastCodexThreadUsage(conversationId)` (итоги последнего оценённого
+ответа беседы) и через `codexTurnUsage` (`packages/shared/src/codexUsage.ts`)
+пишет в `inputTokens/outputTokens/cacheReadTokens/cacheCreationTokens` разницу
+— и в живой счётчик `claude.usage`, и в сохраняемую мету. Другой id треда или
+уменьшившийся счётчик означают новый тред: тогда расходом считается сам итог.
+`inputTokens` при этом приводится к единой семантике «вход без кэша», как у
+Claude и как ждёт `estimateCostUsd`; SQL сайдбара/отчёта кэш больше не вычитает.
+Старые ответы переписаны разово при старте (`runOnce('codex_thread_usage_v2')`
+→ `chat.migrateCodexThreadUsage()`, оба бэкенда): по порядку сообщений беседы,
+идемпотентно — ответы с `codexThreadUsage` не трогаются. **Мета читается по
+одному сообщению**, а не одним `SELECT`: в `meta` лежит вся активность хода
+(на проде 3.2k ответов Codex, ~500 МБ меты, один ответ до 12 МБ), а ядро живёт с
+кучей ~512 МБ — первая версия (релиз 0.1.304, 14.09.2026) читала всё разом и
+роняла ядро heap-OOM через 4 с после старта, до `/api/health`; ключ `v1` на
+проде помечен выполненным вручную, чтобы остановить цикл рестартов, поэтому в
+коде ключ `v2`. То же правило у `lastCodexThreadUsage`: сначала id, потом мета. В CI тот же расчёт
+делает `codexRunTurnSpend` в `modelHooks.ts` с базой в памяти по id рана:
+после рестарта сервера первый ход продолженного рана запишется целым итогом
+треда (редкий перекос вверх, виден в отчёте как всплеск).
 
 `session_id` сохраняется в `conversations.claude_session_id`: следующий ход идёт
 с `--resume`, поэтому в промпт кладётся только новая реплика (`buildPrompt`), а
