@@ -312,6 +312,20 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         return 'error' in target ? toolResult({ ok: false, error: target.error }) : control({ type: 'newTab', url: target.url })
       })
 
+      server.registerTool('status', {
+        description: 'Состояние браузера без обращения к странице: подключена ли панель пользователя (или жива ли Chromium-сессия), какая страница открыта (url, title) и загружена ли она. Вызывай первым, если не уверен, что панель открыта, и перед длинной серией действий.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: {}
+      }, async () => {
+        if (!entry) return noContext
+        const chromium = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'status' })
+        if (chromium) return toolResult(chromium)
+        const outcome = await opts.relay.request(entry.userId, entry.conversationId, { kind: 'status' }, opts.timeoutMs)
+        // Неподключённая панель — тоже ответ на вопрос «что с браузером», а не сбой инструмента.
+        if (!outcome.ok) return { content: [{ type: 'text', text: JSON.stringify({ connected: false, pageStatus: 'empty', page: null, error: outcome.error }) }] }
+        return toolResult(outcome)
+      })
+
       server.registerTool(
         'open',
         {
@@ -336,14 +350,16 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'меню и hover-состояния. Нужен selector или text.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
-            text: z.string().max(L.text).optional().describe('Видимый текст элемента')
+            text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
+            near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
+            exact: z.boolean().optional().describe('Только точное совпадение текста')
           }
         },
-        async ({ frame, selector, text }) => {
+        async ({ frame, selector, text, near, exact }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
           }
-          return run({ kind: 'hover', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}) })
+          return run({ kind: 'hover', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}) })
         }
       )
 
@@ -747,11 +763,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             text: z.string().max(L.text).optional().describe('Видимый текст элемента (регистр не важен)'),
             selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
             role: z.string().regex(/^[a-z]+$/i).max(40).optional().describe('Роль элемента: button, link, textbox, checkbox, heading, tab…'),
+            near: z.string().max(L.text).optional().describe('Текст рядом с целью — строка таблицы, заголовок карточки'),
+            exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, role, limit, visibleOnly }) => {
+        async ({ frame, text, selector, role, near, exact, limit, visibleOnly }) => {
           if (!text && !selector && !role) {
             return { content: [{ type: 'text', text: 'Укажи text, role или selector.' }], isError: true }
           }
@@ -760,6 +778,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(text ? { text } : {}),
             ...(selector ? { selector } : {}),
             ...(role ? { role: role.toLowerCase() } : {}),
+            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })
@@ -776,12 +795,14 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
             text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
+            near: z.string().max(L.text).optional().describe('Текст рядом с целью, различающий одинаковые кнопки («Удалить» near «Заказ №5»)'),
+            exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
             button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
             dblclick: z.boolean().optional().describe('Двойной клик'),
             modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
           }
         },
-        async ({ frame, selector, text, button, dblclick, modifiers }) => {
+        async ({ frame, selector, text, near, exact, button, dblclick, modifiers }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
           }
@@ -789,6 +810,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             kind: 'click', ...(frame !== undefined ? { frame } : {}),
             ...(selector ? { selector } : {}),
             ...(text ? { text } : {}),
+            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}),
             ...(button ? { button } : {}),
             ...(dblclick !== undefined ? { dblclick } : {}),
             ...(modifiers?.length ? { modifiers } : {})
@@ -805,14 +827,15 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поля ввода'),
             field: z.string().max(L.text).optional().describe('Подпись, placeholder или name поля (регистр не важен), если селектора нет'),
+            near: z.string().max(L.text).optional().describe('Текст рядом с полем — строка или карточка, где оно стоит'),
             text: z.string().max(L.text).describe('Текст для ввода'),
             submit: z.boolean().optional().describe('Отправить форму после ввода'),
             append: z.boolean().optional().describe('Дописать к текущему значению, а не заменить его')
           }
         },
-        async ({ frame, selector, field, text, submit, append }) => {
+        async ({ frame, selector, field, near, text, submit, append }) => {
           if (!selector && !field?.trim()) return { content: [{ type: 'text', text: 'Укажи selector или field (подпись поля).' }], isError: true }
-          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}) })
+          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), ...(near ? { near } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}) })
         }
       )
 

@@ -59,3 +59,15 @@ it('starts collapsed on a narrow screen and shows the event time', () => {
     expect(screen.getByRole('listitem')).toHaveTextContent('09:05')
   } finally { window.matchMedia = original }
 })
+
+it('offers «Показать» only for steps with a selector and hides search until the list grows', () => {
+  const onReveal = vi.fn()
+  const { unmount } = render(<ReaderActionHistory actions={[{ id: 'c', action: { kind: 'click', selector: '#buy' }, title: null, address: null }]} onReveal={onReveal} />)
+  expect(screen.queryByRole('searchbox')).toBeNull()
+  unmount()
+  render(<ReaderActionHistory actions={[{ id: 'c', action: { kind: 'click', selector: '#buy' }, title: null, address: null }, ...actions]} onReveal={onReveal} />)
+  expect(screen.getByRole('searchbox')).toBeTruthy()
+  expect(screen.getAllByRole('button', { name: /Показать на странице/ })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: /Показать на странице/ }))
+  expect(onReveal).toHaveBeenCalledWith('#buy')
+})

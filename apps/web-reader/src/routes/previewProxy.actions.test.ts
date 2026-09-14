@@ -483,6 +483,52 @@ describe('скрипт превью: что видит пользователь 
   })
 })
 
+describe('скрипт превью: различать одинаковое, как человек (круг 3)', () => {
+  it('near выбирает кнопку по тексту строки, exact отсекает частичные совпадения', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<table><tr><td>Заказ №4</td><td><button class="del">Удалить</button></td></tr><tr><td>Заказ №5</td><td><button class="del">Удалить</button></td></tr></table><button id="del-all">Удалить все</button>`)
+    const rows = document.querySelectorAll('button.del')
+    let clicked: Element | null = null
+    for (const button of rows) button.addEventListener('click', () => { clicked = button })
+    const ambiguous = await act({ kind: 'click', text: 'Удалить', exact: true })
+    expect(ambiguous.ok).toBe(false)
+    expect(ambiguous.error).toContain('неоднозначен')
+    const near = await act({ kind: 'click', text: 'Удалить', near: 'Заказ №5', exact: true })
+    expect(near.ok).toBe(true)
+    expect(clicked).toBe(rows[1])
+    expect((near.result as { clicked: { context?: string } }).clicked.context).toContain('Заказ №5')
+    const none = await act({ kind: 'find', text: 'Удалить', near: 'Заказ №9' })
+    expect((none.result as { total: number }).total).toBe(0)
+    const loose = await act({ kind: 'find', text: 'Удалить' })
+    expect((loose.result as { total: number }).total).toBe(3)
+    const exact = await act({ kind: 'find', text: 'Удалить', exact: true })
+    expect((exact.result as { total: number }).total).toBe(2)
+  })
+
+  it('read перечисляет формы с полями и кнопкой отправки и ориентиры страницы', async () => {
+    const res = await act({ kind: 'read' })
+    const result = res.result as { forms?: { selector: string; fields: string[]; submit?: string }[]; landmarks?: { role: string }[] }
+    expect(result.forms).toEqual([{ selector: '#search-form', fields: ['Поиск'], submit: 'Найти' }])
+    expect(result.landmarks?.map((item) => item.role)).toEqual(['navigation', 'main'])
+  })
+
+  it('ready несёт outline страницы, scroll сообщает край', async () => {
+    const messages: unknown[] = []
+    const listener = (event: MessageEvent): void => { if ((event.data as { type?: string })?.type === 'voicechat.preview.page-ready.v1') messages.push(event.data) }
+    window.addEventListener('message', listener)
+    window.dispatchEvent(new Event('hashchange'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    window.removeEventListener('message', listener)
+    expect(messages.at(-1)).toMatchObject({ outline: { headings: ['Группы товаров', 'Электроника', 'Книги'], links: 2, buttons: 1, inputs: 2 } })
+    const main = document.querySelector('main') as HTMLElement
+    Object.defineProperty(main, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(main, 'clientHeight', { configurable: true, value: 400 })
+    const bottom = await act({ kind: 'scroll', selector: 'main', to: 'bottom' })
+    expect(bottom.result).toMatchObject({ atBottom: true, atTop: false })
+    const top = await act({ kind: 'scroll', selector: 'main', to: 'top' })
+    expect(top.result).toMatchObject({ atTop: true, atBottom: false })
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

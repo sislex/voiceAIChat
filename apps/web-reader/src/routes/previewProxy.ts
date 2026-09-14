@@ -262,6 +262,7 @@ const flash=(el)=>{try{const prev=el.style.outline,prevOffset=el.style.outlineOf
 const openDialogs=()=>[...document.querySelectorAll('dialog[open],[role=dialog],[role=alertdialog],[aria-modal="true"]')].filter(el=>readingVisible(el)&&!el.closest('[data-voicechat-inspector]')).slice(0,5).map(uniqueSelector);
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el),onScreen:onScreen(el)};
+  const context=contextOf(el);if(context)d.context=context;
   if(el.matches('input:not([type=hidden]),textarea,select')){const placeholder=el.getAttribute('placeholder');if(placeholder)d.placeholder=placeholder.slice(0,EL_TEXT);if(!sensitive(el)){const value=el.localName==='select'?(el.selectedOptions[0]?textOf(el.selectedOptions[0]):''):String(el.value||'');if(value)d.value=value.slice(0,EL_TEXT)}}
   const href=el.localName==='a'&&el.getAttribute('href');if(href)d.href=unproxy(href);
   const role=el.getAttribute('role')||(el.localName==='input'?(el.type||'text'):'');if(role)d.role=role;
@@ -269,14 +270,14 @@ const describe=(el)=>{
   return d
 };
 const bySelector=(selector)=>{let list;try{list=document.querySelectorAll(selector)}catch{throw new Error('Некорректный CSS-селектор: '+selector)}return [...list].filter(el=>!el.closest('[data-voicechat-inspector]'))};
-const byText=(text,hidden=false)=>{
+const byText=(text,hidden=false,exactOnly=false)=>{
   const q=text.replace(/\\s+/g,' ').trim().toLowerCase();
   if(!q)return[];
   const all=[];
   for(const el of document.querySelectorAll('body *')){
     if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}'||!hidden&&!actionVisible(el))continue;
     const t=accessibleName(el)||textOf(el);
-    if(!t||t.length>300||!t.toLowerCase().includes(q))continue;
+    if(!t||t.length>300||(exactOnly?t.toLowerCase()!==q:!t.toLowerCase().includes(q)))continue;
     all.push(el)
   }
   const deepest=all.filter(el=>!all.some(other=>other!==el&&el.contains(other)));
@@ -290,7 +291,27 @@ const byRole=(action)=>{
   const base=action.selector?bySelector(action.selector):action.text?byText(action.text):[...document.querySelectorAll('body *')].filter(el=>!el.closest('[data-voicechat-inspector]'));
   return base.map(el=>action.text&&!action.selector?clickTarget(el):el).filter((el,i,all)=>all.indexOf(el)===i&&accessibleRole(el)===role)
 };
-const findTargets=(action)=>(action.role?byRole(action):action.selector?bySelector(action.selector):byText(action.text||'')).filter(action.kind==='find'?readingVisible:actionVisible);
+// near — как человек различает одинаковые кнопки: по тексту строки, карточки или секции, где стоит цель.
+const CONTEXT_CONTAINERS='tr,li,article,section,fieldset,form,dialog,nav,header,footer,aside,[role=row],[role=listitem],[role=group],[role=dialog],[role=region],[role=tabpanel]';
+const nearFilter=(candidates,near)=>{
+  const q=String(near||'').replace(/\\s+/g,' ').trim().toLowerCase();
+  if(!q)return candidates;
+  const scored=candidates.map(el=>{let node=el.parentElement,depth=0;while(node&&node!==document.body&&depth<10){const t=textOf(node);if(t.length<=4000&&t.toLowerCase().includes(q))return {el,size:t.length};node=node.parentElement;depth++}return null}).filter(Boolean);
+  if(!scored.length)return[];
+  const best=Math.min(...scored.map(item=>item.size));
+  return scored.filter(item=>item.size===best).map(item=>item.el)
+};
+const findTargets=(action)=>{
+  const base=action.role?byRole(action):action.selector?bySelector(action.selector):byText(action.text||'',false,action.exact===true);
+  const scoped=action.near?nearFilter(base,action.near):base;
+  return scoped.filter(action.kind==='find'?readingVisible:actionVisible)
+};
+const contextOf=(el)=>{
+  const container=el.parentElement&&el.parentElement.closest(CONTEXT_CONTAINERS);
+  if(!container||container===document.body)return '';
+  const own=textOf(el).toLowerCase(),text=(accessibleName(container)||readableText(container,120)).replace(/\\s+/g,' ').trim();
+  return text&&text.toLowerCase()!==own?text.slice(0,120):''
+};
 const clickTarget=(el)=>{const host=el.matches(CLICKABLE)?el:(el.closest(CLICKABLE)||el);return host};
 const setNativeValue=(el,value)=>{
   const proto=el.localName==='textarea'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
@@ -330,7 +351,7 @@ const run=(action)=>{
     return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{})}
   }
   if(action.kind==='type'){
-    const el=action.selector?chooseTarget(action):fieldTarget(action.field||'');actionable(el,true);
+    const el=action.selector?chooseTarget(action):fieldTarget(action.field||'',action.near);actionable(el,true);
     flash(el);
     const editable=el.isContentEditable;
     if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+(action.selector||action.field));
@@ -386,7 +407,8 @@ const run=(action)=>{
     else if(typeof action.dy==='number')el.scrollTop=el.scrollTop+action.dy;
     if(typeof action.dx==='number')el.scrollLeft=el.scrollLeft+action.dx;
     el.dispatchEvent(new Event('scroll',{bubbles:true}));
-    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop:Math.max(0,el.scrollHeight-el.clientHeight),maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)}}
+    const maxTop=Math.max(0,el.scrollHeight-el.clientHeight);
+    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop,maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)},atTop:el.scrollTop<=0,atBottom:el.scrollTop>=maxTop-1}
   }
   if(action.kind==='errors'){
     const errors=pageErrors.slice(-50).map((e)=>({kind:e.kind,message:e.message,at:e.at,...(e.url?{url:String(e.url).slice(0,300)}:{}),...(typeof e.status==='number'?{status:e.status}:{})}));
@@ -573,8 +595,10 @@ const run=(action)=>{
     for(const a of pick('a[href]')){if(links.length>=LINKS)break;const text=accessibleName(a),href=unproxy(a.getAttribute('href'));if(!text||seen.has(text+'|'+href))continue;seen.add(text+'|'+href);links.push({text,href})}
     const buttons=pick('button,[role=button],input[type=submit],input[type=button],input[type=reset],input[type=image]').map(el=>accessibleName(el)).filter(Boolean).slice(0,BUTTONS);
     const inputs=pick('input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el)}));
+    const forms=pick('form').slice(0,10).map(form=>{const fields=[...form.querySelectorAll('input:not([type=hidden]),textarea,select')].filter(readingVisible).slice(0,20).map(el=>accessibleName(el)||el.getAttribute('placeholder')||el.name||el.localName);const submitter=[...form.querySelectorAll('button,input[type=submit],input[type=image]')].find(el=>readingVisible(el)&&(el.localName==='input'||!el.type||el.type==='submit'));return {selector:uniqueSelector(form),fields,...(submitter?{submit:accessibleName(submitter)}:{})}});
+    const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
-    return {page:pageInfo(),headings,links,buttons,inputs,text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings,links,buttons,inputs,...(forms.length?{forms}:{}),...(landmarks.length?{landmarks}:{}),text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };
@@ -796,7 +820,9 @@ const message=(e)=>{
     finally{diagnosticRunning=false}
   }
 };
-const ready=()=>parent.postMessage({type:READY,...pageInfo()},location.origin);
+// Сводка страницы вместе с готовностью: модель ориентируется по open без отдельного read.
+const outline=()=>{try{const scope=document.body||document.documentElement;return {headings:[...scope.querySelectorAll('h1,h2,h3')].filter(readingVisible).slice(0,5).map(h=>readableText(h,120)).filter(Boolean),links:scope.querySelectorAll('a[href]').length,buttons:scope.querySelectorAll('button,[role=button],input[type=submit]').length,inputs:scope.querySelectorAll('input:not([type=hidden]),textarea,select').length}}catch{return {headings:[],links:0,buttons:0,inputs:0}}};
+const ready=()=>parent.postMessage({type:READY,...pageInfo(),outline:outline()},location.origin);
 addEventListener('message',message);
 for(const event of ['hashchange','popstate','voicechat.preview.navigation'])addEventListener(event,ready);
 // BFCache сохраняет документ после pagehide: восстанавливаем его обработчик.

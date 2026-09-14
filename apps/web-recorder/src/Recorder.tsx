@@ -65,6 +65,9 @@ export function Recorder(): JSX.Element {
   // Page title from the injected bridge: the person sees where they are without reading the URL.
   const [pageTitle, setPageTitle] = useState('')
   const [recent, setRecent] = useState<string[]>(() => loadRecentAddresses())
+  // Link to the chat host: without it the assistant cannot drive this panel, and the person should know why.
+  const [linked, setLinked] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
   // Actions that may start a navigation keep their result briefly: if the page begins
   // loading, the model learns `navigated: true` and the new page instead of a stale DOM.
   const commandKinds = useRef(new Map<string, string>())
@@ -151,7 +154,7 @@ export function Recorder(): JSX.Element {
         const same = session.current && session.current.conversationId === message.conversationId && session.current.registrationId === message.registrationId
         if (!same) { diagnosticStarts.current.clear(); diagnosticsMode.current = false; setDiagnostics(null) }
         session.current = { conversationId: message.conversationId, registrationId: message.registrationId }
-        setDisposed(false)
+        setDisposed(false); setLinked(true)
         // Идемпотентный повтор init той же регистрации не перезагружает страницу.
         if (same && message.previewUrl === currentUrl.current) {
           reply({ kind: 'page-status', status: pageReady.current ? 'ready' : currentUrl.current ? 'loading' : 'empty', url: currentUrl.current })
@@ -211,12 +214,13 @@ export function Recorder(): JSX.Element {
         scenarioRunner.current?.setReady(false)
         reply({ kind: 'disposed' })
         session.current = null
+        setLinked(false)
         pageReady.current = false; setLoadState('empty'); setLoadError(null)
         setDisposed(true)
       }
     }
     const receivePage = (data: unknown): void => {
-      const message = data as { type?: unknown; requestId?: unknown; ok?: unknown; result?: unknown; error?: unknown; payload?: unknown; step?: unknown; enabled?: unknown; url?: unknown; title?: unknown }
+      const message = data as { type?: unknown; requestId?: unknown; ok?: unknown; result?: unknown; error?: unknown; payload?: unknown; step?: unknown; enabled?: unknown; url?: unknown; title?: unknown; outline?: unknown }
       if (message?.type === PREVIEW_PAGE_READY_TYPE) {
         loadGeneration.current++
         let next = typeof message.url === 'string' && message.url.length <= 4096 ? validUrl(message.url) : null
@@ -242,10 +246,14 @@ export function Recorder(): JSX.Element {
         scenarioRunner.current?.setReady(true)
         pageReady.current = true
         const title = typeof message.title === 'string' ? message.title.slice(0, 500) : ''
+        const outline = message.outline && typeof message.outline === 'object' ? message.outline as { headings?: unknown; links?: unknown; buttons?: unknown; inputs?: unknown } : null
+        const summary = outline && Array.isArray(outline.headings) && [outline.links, outline.buttons, outline.inputs].every(value => typeof value === 'number')
+          ? { headings: (outline.headings as unknown[]).filter((item): item is string => typeof item === 'string').slice(0, 8).map(item => item.slice(0, 200)), links: outline.links as number, buttons: outline.buttons as number, inputs: outline.inputs as number }
+          : null
         setPageTitle(title)
         if (currentUrl.current) setRecent(list => { const updated = rememberRecentAddress(list, currentUrl.current!); saveRecentAddresses(updated); return updated })
         setLoadState('ready'); setLoadError(null)
-        reply({ kind: 'page-status', status: 'ready', url: currentUrl.current, ...(title ? { title } : {}) })
+        reply({ kind: 'page-status', status: 'ready', url: currentUrl.current, ...(title ? { title } : {}), ...(summary ? { outline: summary } : {}) })
         settleNavigationWatch(true, { url: currentUrl.current, title })
         const state = modes.current
         for (const [type, enabled] of [[RECORD, state.recording], [PREVIEW_INSPECTOR_COMMAND_TYPE, state.inspecting], [EDIT, state.editing], [CAPTURE, state.capturing]] as const) {
@@ -476,7 +484,8 @@ export function Recorder(): JSX.Element {
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Назад" title="Назад" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" title="Вперёд" onClick={() => historyGo(1)}>›</IconButton>
       <IconButton variant="secondary" aria-label="Обновить страницу" title="Обновить страницу" disabled={!url} onClick={reload}>↻</IconButton>
-      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onFocus={event => event.currentTarget.select()} onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) } }} /></label>
+      <span className="webpreview-link" role="img" title={linked ? 'Панель связана с чатом: ассистент может управлять страницей' : 'Панель не связана с чатом: ассистент не видит эту страницу'} aria-label={linked ? 'Связь с чатом есть' : 'Связи с чатом нет'} data-linked={linked || undefined}>{linked ? '●' : '○'}</span>
+      <label className="webpreview-address">{url && <span className="webpreview-scheme" aria-hidden="true" title={url.startsWith('https:') ? 'Защищённое соединение' : 'Незащищённое соединение'}>{url.startsWith('https:') ? '🔒' : '⚠'}</span>}<span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onFocus={event => event.currentTarget.select()} onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) } }} /></label>
       <Button variant="secondary" type="submit">Открыть</Button>
       <IconButton variant="secondary" type="button" aria-label="Очистить страницу" title="Очистить страницу" disabled={!url && !draft} onClick={() => { applyUrl(null); reply({ kind: 'save-url', url: null }); addressRef.current?.focus() }}>×</IconButton>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
@@ -489,6 +498,8 @@ export function Recorder(): JSX.Element {
           <Button variant="secondary" type="button" onClick={() => { applyUrl(READER_PROJECT_ORIGIN + '/'); toolsMenu.current?.removeAttribute('open') }}>Текущий проект</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={copyAddress}>Копировать адрес</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={openExternal}>Открыть в новой вкладке</Button>
+          <Button variant="secondary" type="button" aria-pressed={transferOpen} onClick={() => { setTransferOpen(value => !value); closeTools() }}>Файл сценария (JSON)</Button>
+          {recent.filter(item => item !== url).slice(0, 3).map(item => <Button key={item} variant="secondary" type="button" title={item} onClick={() => { openAddress(item); closeTools() }}>↩ {recentAddressLabel(item)}</Button>)}
           <Button variant="secondary" type="button" disabled={!url || scenarioRunning || steps.length >= 200} onClick={() => addStep('click')}>Добавить клик</Button>
           <Button variant="secondary" type="button" disabled={!url || scenarioRunning || steps.length >= 200} onClick={() => addStep('type')}>Добавить ввод</Button>
           <Button variant="secondary" type="button" disabled={!url || resettingSession} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>{resettingSession ? 'Сбрасываем сессию…' : '⟲ Сессия'}</Button>
@@ -501,10 +512,11 @@ export function Recorder(): JSX.Element {
     </form>
     {loadState === 'loading' && <div className="webpreview-progress" aria-hidden="true" />}
     {pageTitle && loadState === 'ready' && <div className="webpreview-title" title={pageTitle}><span>{pageTitle}</span></div>}
-    <ScenarioTransfer key={frameKey} pageUrl={scenarioUrl} steps={steps} disabled={scenarioRunning} onImport={next => { setSecretValues({}); setScenarioProgress(null); setSteps(next) }} />
+    {(transferOpen || steps.length > 0 || recording) && <ScenarioTransfer key={frameKey} pageUrl={scenarioUrl} steps={steps} disabled={scenarioRunning} onImport={next => { setSecretValues({}); setScenarioProgress(null); setSteps(next) }} />}
     {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
     {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем страницу…</div>}
-    {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button></div>}
+    {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button>{url && <Button size="sm" variant="secondary" onClick={openExternal}>Открыть во внешней вкладке</Button>}</div>}
+    {loadState === 'ready' && url && <p className="vc-sr-only" aria-live="polite">{`Открыта страница${pageTitle ? `: ${pageTitle}` : ''}`}</p>}
     {error && <div className="webpreview-error webpreview-load-error" role="alert"><span>{error}</span><Button size="sm" aria-label="Скрыть ошибку Reader" onClick={() => setError(null)}>×</Button></div>}
     {storageError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{storageError}</span><Button size="sm" onClick={saveScenario}>Повторить сохранение</Button></div>}
     {recording && <div className="webpreview-run-status" role="status" aria-live="polite">Идёт запись сценария: {steps.length} шаг.</div>}

@@ -77,16 +77,17 @@ export type PreviewAction = BrowserFrameTarget & (
   /** url — абсолютный http(s) либо относительный путь (`/about`, `?page=2`, `#/route`): панель разрешает его от открытой страницы. */
   | { kind: 'open'; url: string; diagnostic?: boolean }
   /** role сужает совпадения по роли элемента (button, link, textbox…): так ищет пользователь, а не CSS. */
-  | { kind: 'find'; text?: string; selector?: string; role?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
+  | { kind: 'find'; text?: string; selector?: string; role?: string; near?: string; exact?: boolean; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
-  | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; diagnostic?: boolean }
+  /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
+  | { kind: 'click'; selector?: string; text?: string; near?: string; exact?: boolean; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; diagnostic?: boolean }
   /** field — подпись, placeholder или name поля вместо CSS-селектора; append дописывает к текущему значению. */
-  | { kind: 'type'; selector?: string; field?: string; text: string; submit?: boolean; append?: boolean; diagnostic?: boolean }
+  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; diagnostic?: boolean }
   /** visible — только то, что сейчас в видимой области окна: экран пользователя, а не весь документ. */
   | { kind: 'read'; selector?: string; limit?: number; offset?: number; visible?: boolean; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
-  | { kind: 'hover'; selector?: string; text?: string; diagnostic?: boolean }
+  | { kind: 'hover'; selector?: string; text?: string; near?: string; exact?: boolean; diagnostic?: boolean }
   /** Прокрутка окна или контейнера: к краю (`to`) либо на `dy` пикселей. */
   /** to: 'element' прокручивает страницу так, чтобы selector оказался в видимой области. */
   | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom' | 'element'; dx?: number; dy?: number; diagnostic?: boolean }
@@ -121,6 +122,8 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'viewport'; width: number; diagnostic?: boolean }
   /** Дерево доступности страницы: роли и имена как их видит скринридер. */
   | { kind: 'a11y'; selector?: string; limit?: number; diagnostic?: boolean }
+  /** Состояние панели без обращения к странице: подключена ли, что открыто, загружена ли страница. */
+  | { kind: 'status'; diagnostic?: boolean }
 )
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
@@ -147,6 +150,24 @@ export interface PreviewActionElement {
   /** Подсказка и текущее значение поля ввода (значение скрыто у секретных полей). */
   placeholder?: string
   value?: string
+  /** Где элемент стоит на странице: текст ближайшей строки/секции/формы — так человек различает одинаковые кнопки. */
+  context?: string
+}
+
+/** Короткая сводка страницы после загрузки: модель ориентируется без отдельного read. */
+export interface PreviewPageOutline {
+  headings: string[]
+  links: number
+  buttons: number
+  inputs: number
+}
+
+/** Состояние панели пользователя (`status`): что открыто и готова ли страница. */
+export interface PreviewStatusResult {
+  connected: boolean
+  pageStatus: 'empty' | 'loading' | 'ready' | 'error'
+  page: PreviewPageInfo | null
+  error?: string
 }
 
 export interface PreviewPageInfo {
@@ -190,6 +211,10 @@ export interface PreviewReadResult {
   links: { text: string; href: string }[]
   buttons: string[]
   inputs: { selector: string; type: string; name: string; placeholder: string; value: string; label?: string; expanded?: boolean; selected?: boolean; disabled?: boolean; readOnly?: boolean; checked?: boolean | 'mixed'; required?: boolean; invalid?: boolean }[]
+  /** Формы страницы: поля и кнопка отправки — маршрут входа или поиска виден целиком. */
+  forms?: { selector: string; fields: string[]; submit?: string }[]
+  /** Ориентиры страницы (navigation, main, banner…) с именами — как их видит скринридер. */
+  landmarks?: { role: string; name: string; selector: string }[]
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
   total?: number
@@ -202,6 +227,7 @@ export interface PreviewOpenResult {
   url: string
   /** Заголовок загруженной страницы — модели не нужен отдельный read ради него. */
   title?: string
+  outline?: PreviewPageOutline
 }
 
 export interface PreviewStylesResult {
@@ -222,6 +248,9 @@ export interface PreviewScrollResult {
   /** Что прокручено: окно или контейнер по селектору. */
   target: string
   scrolled: { top: number; left: number; maxTop: number; maxLeft?: number }
+  /** Достигнут край: дальше ленивая лента либо подгрузится, либо это конец. */
+  atTop?: boolean
+  atBottom?: boolean
 }
 
 export interface PreviewPressResult {
@@ -397,6 +426,7 @@ export type PreviewActionResult =
   | PreviewUploadResult
   | PreviewViewportResult
   | PreviewA11yResult
+  | PreviewStatusResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -436,6 +466,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (
         optBounded(value.text, L.text) &&
         optBounded(value.selector, L.selector) &&
+        optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') &&
         (value.role === undefined || (bounded(value.role, 40) && /^[a-z]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
@@ -445,13 +476,14 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (
         optBounded(value.text, L.text) &&
         optBounded(value.selector, L.selector) &&
+        optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') &&
         (value.text !== undefined || value.selector !== undefined) &&
         (value.button === undefined || value.button === 'left' || value.button === 'right') &&
         (value.dblclick === undefined || typeof value.dblclick === 'boolean') &&
         (value.modifiers === undefined || (Array.isArray(value.modifiers) && value.modifiers.length <= 4 && value.modifiers.every((item) => (PREVIEW_CLICK_MODIFIERS as readonly string[]).includes(item as string))))
       )
     case 'type':
-      return optBounded(value.selector, L.selector) && optBounded(value.field, L.text) &&
+      return optBounded(value.selector, L.selector) && optBounded(value.field, L.text) && optBounded(value.near, L.text) &&
         (bounded(value.selector, L.selector) && value.selector.length > 0 || bounded(value.field, L.text) && value.field.trim().length > 0) &&
         bounded(value.text, L.text) &&
         (value.submit === undefined || typeof value.submit === 'boolean') &&
@@ -468,6 +500,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (
         optBounded(value.text, L.text) &&
         optBounded(value.selector, L.selector) &&
+        optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') &&
         (value.text !== undefined || value.selector !== undefined)
       )
     case 'scroll':
@@ -505,6 +538,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'back':
     case 'forward':
     case 'edits':
+    case 'status':
       return true
     case 'network':
       return (
@@ -661,11 +695,13 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'В Chromium read включает открытый Shadow DOM и слоты; закрытые roots недоступны. ' +
     'Селекторы из read/find передавай в следующее действие целиком, включая >> nth; после изменения DOM повтори поиск. ' +
     'В Chromium selector вместе с text ограничивает click, hover и find текстом внутри селектора. ' +
+    'near {текст рядом} различает одинаковые кнопки по соседнему тексту («Удалить» near «Заказ №5»), exact: true требует точного совпадения текста; у найденных элементов context — текст их строки или секции. ' +
+    'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +
     'Действия выполняются только на странице, открытой в превью активного чата пользователя. ' +
     'Просьбы «открой сайт …», «нажми …», «что на странице?» выполняй этими инструментами, а не shell-командами. ' +
-    'open отвечает url и title открытой страницы. click, type и press сообщают navigated: true, если начался переход, — тогда page ' +
+    'open отвечает url, title и outline (заголовки, число ссылок, кнопок и полей) открытой страницы; read дополнительно перечисляет forms (поля и кнопка отправки) и landmarks. click, type и press сообщают navigated: true, если начался переход, — тогда page ' +
     'описывает уже новую страницу: перечитай её read перед следующим действием. Ответ click также содержит dialogs (появилось окно), focus и newErrors — реагируй на них, как отреагировал бы человек. ' +
     'Если панель отвечает, что клиент не подключён, скажи пользователю открыть раздел Web Reader этого чата в браузере и повтори действие после этого. ' +
     'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom|element | dy, selector?} — ' +

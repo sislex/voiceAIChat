@@ -50,6 +50,24 @@ describe('относительный open и заголовок для host', ()
   })
 })
 
+describe('status и outline', () => {
+  it('status отвечает без страницы и после готовности, open несёт outline', async () => {
+    const h = harness()
+    expect(await h.bridge.run({ kind: 'status' })).toEqual({ ok: true, result: { connected: false, pageStatus: 'empty', page: null } })
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { connected: true, pageStatus: 'empty', page: null } })
+    const open = h.bridge.run({ kind: 'open', url: 'https://shop.example/' })
+    await Promise.resolve()
+    const outline = { headings: ['Магазин'], links: 12, buttons: 3, inputs: 1 }
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/', title: 'Магазин', outline })
+    expect(await open).toEqual({ ok: true, result: { url: 'https://shop.example/', title: 'Магазин', outline } })
+    expect(await h.bridge.run({ kind: 'status' })).toEqual({ ok: true, result: { connected: true, pageStatus: 'ready', page: { url: 'https://shop.example/', title: 'Магазин' } } })
+    h.from(registrationId, { kind: 'page-status', status: 'error', url: 'https://shop.example/', error: 'Сайт недоступен' })
+    expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { pageStatus: 'error', error: 'Сайт недоступен' } })
+  })
+})
+
 describe('open отвечает заголовком страницы', () => {
   it('готовая страница с title попадает в результат open, без title — только url', async () => {
     const h = harness()

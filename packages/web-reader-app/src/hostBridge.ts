@@ -1,4 +1,4 @@
-import { isPreviewAction, resolvePreviewUrl, type PreviewAction, type PreviewActionResult } from '@shared/previewActions'
+import { isPreviewAction, resolvePreviewUrl, type PreviewAction, type PreviewActionResult, type PreviewPageOutline } from '@shared/previewActions'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import {
   WEB_RECORDER_MESSAGE_TYPE,
@@ -108,6 +108,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   let approvedUrl: string | null = null
   // Заголовок готовой страницы: open отвечает им сразу, без отдельного read ради названия.
   let pageTitle: string | undefined
+  let pageOutline: PreviewPageOutline | undefined
   let disposed = false
   let navigationGeneration = 0
   let inspectorMode: boolean | undefined
@@ -153,7 +154,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       if (entry.sent || entry.action.kind !== 'viewport' && pageStatus !== 'ready') continue
       // open резолвится готовностью целевой страницы, в iframe не пересылается.
       if (entry.action.kind === 'open') {
-        settle(requestId, { ok: true, result: { url: approvedUrl ?? entry.action.url, ...(pageTitle ? { title: pageTitle } : {}) } })
+        settle(requestId, { ok: true, result: { url: approvedUrl ?? entry.action.url, ...(pageTitle ? { title: pageTitle } : {}), ...(pageOutline ? { outline: pageOutline } : {}) } })
         continue
       }
       entry.sent = true
@@ -174,6 +175,15 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     let action: PreviewAction
     try { action = structuredClone(input) }
     catch { return Promise.resolve({ ok: false, error: 'Не удалось скопировать действие Web Reader.' }) }
+    // status отвечает мост сам: вопрос «что с панелью» не должен зависеть от готовности страницы.
+    if (action.kind === 'status') {
+      const connected = !disposed && registration !== null
+      return Promise.resolve({ ok: true, result: {
+        connected, pageStatus: connected ? pageStatus : 'empty',
+        page: connected && approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null,
+        ...(pageStatus === 'error' && pageError ? { error: pageError } : {})
+      } })
+    }
     if (disposed) return Promise.resolve({ ok: false, error: 'Панель Web Reader закрыта.' })
     if (registration === null) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
     if (action.kind === 'open') {
@@ -281,6 +291,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           pageStatus = message.status
           pageError = message.error
           pageTitle = message.status === 'ready' && typeof message.title === 'string' && message.title ? message.title : undefined
+          pageOutline = message.status === 'ready' ? message.outline : undefined
           if (message.status === 'ready' || message.status === 'empty') options.onPageTitle?.(pageTitle ?? null)
           syncPageStatus()
           if (message.status === 'ready') {
