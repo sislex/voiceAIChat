@@ -333,6 +333,23 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         inputSchema: { frame: frameSchema, text: z.string().min(1).max(L.text).describe('Видимый текст пункта'), in: z.string().max(L.text).optional().describe('Текст или селектор триггера, открывающего список'), near: z.string().max(L.text).optional().describe('Текст рядом с пунктом') }
       }, async ({ frame, text, in: trigger, near }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}) }))
 
+      server.registerTool('check', {
+        description: 'Проверка ожидания как у тестировщика: есть ли на странице элемент с текстом или по селектору, виден ли он, скрыт, отсутствует, совпадает ли value или число совпадений. ' +
+          'Отвечает pass, actual и summary и не бросает ошибку — цитируй summary в отчёте о проверке фичи.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema,
+          text: z.string().max(L.text).optional().describe('Видимый текст'),
+          selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
+          near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
+          state: z.enum(['visible', 'hidden', 'present', 'absent']).optional().describe('Ожидаемое состояние (по умолчанию visible; при count — present)'),
+          value: z.string().max(L.text).optional().describe('Ожидаемое значение поля или текст элемента'),
+          count: z.number().int().min(0).max(100000).optional().describe('Ожидаемое число совпадений')
+        }
+      }, async ({ frame, text, selector, near, state, value, count }) => {
+        if (!text && !selector) return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
+        return run({ kind: 'check', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(state ? { state } : {}), ...(value !== undefined ? { value } : {}), ...(count !== undefined ? { count } : {}) })
+      })
+
       server.registerTool('status', {
         description: 'Состояние браузера без обращения к странице: подключена ли панель пользователя (или жива ли Chromium-сессия), какая страница открыта (url, title) и загружена ли она. Вызывай первым, если не уверен, что панель открыта, и перед длинной серией действий.',
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
@@ -342,6 +359,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         const chromium = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'status' })
         if (chromium) return toolResult(chromium)
         const outcome = await opts.relay.request(entry.userId, entry.conversationId, { kind: 'status' }, opts.timeoutMs)
+        // Проверка задачи: модели важно знать, на целевой ли странице она стоит.
+        if (outcome.ok && entry.ciCheck && outcome.result && typeof outcome.result === 'object') {
+          const page = (outcome.result as { page?: { url?: string } | null }).page
+          let matches = false
+          try { matches = typeof page?.url === 'string' && new URL(page.url).href === new URL(entry.ciCheck.url).href } catch { matches = false }
+          return toolResult({ ok: true, result: { ...(outcome.result as object), target: { url: entry.ciCheck.url, matches } } as never })
+        }
         // Неподключённая панель — тоже ответ на вопрос «что с браузером», а не сбой инструмента.
         if (!outcome.ok) return { content: [{ type: 'text', text: JSON.stringify({ connected: false, pageStatus: 'empty', page: null, error: outcome.error }) }] }
         return toolResult(outcome)
@@ -393,17 +417,18 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'Полезно для лент с ленивой подгрузкой. Возвращает позицию прокрутки.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера или, при to: element, самого элемента'),
-            to: z.enum(['top', 'bottom', 'element']).optional().describe('Прокрутить к началу, концу или к элементу selector'),
+            text: z.string().max(L.text).optional().describe('При to: element — видимый текст элемента, к которому листать'),
+            to: z.enum(['top', 'bottom', 'element']).optional().describe('Прокрутить к началу, концу или к элементу selector/text'),
             dx: z.number().min(-100000).max(100000).optional().describe('Горизонтальный сдвиг в пикселях, отрицательное — влево'),
             dy: z.number().min(-100000).max(100000).optional().describe('Вертикальный сдвиг в пикселях, отрицательное — вверх')
           }
         },
-        async ({ frame, selector, to, dx, dy }) => {
+        async ({ frame, selector, text, to, dx, dy }) => {
           if (to === undefined && typeof dy !== 'number' && typeof dx !== 'number') {
             return { content: [{ type: 'text', text: 'Укажи to (top|bottom|element), dx или dy (пиксели).' }], isError: true }
           }
-          if (to === 'element' && !selector) return { content: [{ type: 'text', text: 'to: element требует selector элемента.' }], isError: true }
-          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}), ...(typeof dx === 'number' ? { dx } : {}) })
+          if (to === 'element' && !selector && !text) return { content: [{ type: 'text', text: 'to: element требует selector или text элемента.' }], isError: true }
+          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}), ...(typeof dx === 'number' ? { dx } : {}) })
         }
       )
 
@@ -480,9 +505,9 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Накопленные ошибки открытой в превью страницы: JS-исключения, unhandledrejection, console.error и ' +
             'упавшие fetch/XHR (статус и реальный URL). Проверяй после действий при тестировании фич. clear очищает буфер.',
-          inputSchema: { clear: z.boolean().optional().describe('Очистить буфер после чтения') }
+          inputSchema: { clear: z.boolean().optional().describe('Очистить буфер после чтения'), since: z.number().nonnegative().optional().describe('Только ошибки после этой отметки at из прошлого ответа') }
         },
-        async ({ clear }) => run({ kind: 'errors', ...(clear !== undefined ? { clear } : {}) })
+        async ({ clear, since }) => run({ kind: 'errors', ...(clear !== undefined ? { clear } : {}), ...(since !== undefined ? { since } : {}) })
       )
 
       server.registerTool(
@@ -786,11 +811,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             role: z.string().regex(/^[a-z]+$/i).max(40).optional().describe('Роль элемента: button, link, textbox, checkbox, heading, tab…'),
             near: z.string().max(L.text).optional().describe('Текст рядом с целью — строка таблицы, заголовок карточки'),
             exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
+            nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1)'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, role, near, exact, limit, visibleOnly }) => {
+        async ({ frame, text, selector, role, near, exact, nth, limit, visibleOnly }) => {
           if (!text && !selector && !role) {
             return { content: [{ type: 'text', text: 'Укажи text, role или selector.' }], isError: true }
           }
@@ -799,7 +825,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(text ? { text } : {}),
             ...(selector ? { selector } : {}),
             ...(role ? { role: role.toLowerCase() } : {}),
-            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}),
+            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })
@@ -818,12 +844,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
             near: z.string().max(L.text).optional().describe('Текст рядом с целью, различающий одинаковые кнопки («Удалить» near «Заказ №5»)'),
             exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
+            nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1), если одинаковых несколько'),
             button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
             dblclick: z.boolean().optional().describe('Двойной клик'),
             modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
           }
         },
-        async ({ frame, selector, text, near, exact, button, dblclick, modifiers }) => {
+        async ({ frame, selector, text, near, exact, nth, button, dblclick, modifiers }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
           }
@@ -831,7 +858,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             kind: 'click', ...(frame !== undefined ? { frame } : {}),
             ...(selector ? { selector } : {}),
             ...(text ? { text } : {}),
-            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}),
+            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}),
             ...(button ? { button } : {}),
             ...(dblclick !== undefined ? { dblclick } : {}),
             ...(modifiers?.length ? { modifiers } : {})

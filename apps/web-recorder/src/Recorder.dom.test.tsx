@@ -415,6 +415,20 @@ describe('Recorder: результат действия и навигация (�
     fireEvent.click(screen.getByRole('button', { name: 'Копировать ссылку с названием' }))
     expect(writeText).toHaveBeenCalledWith('[Магазин](https://shop.example/)')
   })
+  it('«Снимок страницы в чат» просит снимок у страницы и пересылает его host; редирект называется', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />); fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/landing', title: 'Магазин', icon: 'https://shop.example/favicon.ico' })
+    expect(screen.getByRole('status').textContent).toContain('Перенаправлено с shop.example')
+    expect((screen.getByRole('button', { name: /Магазин/ }).querySelector('img') as HTMLImageElement).src).toContain('favicon.ico')
+    fireEvent.click(screen.getByRole('button', { name: 'Снимок страницы в чат' }))
+    const command = inner.mock.calls.map(([message]) => message as { type?: string; requestId?: string; action?: { kind?: string } }).find((message) => message.type === PREVIEW_ACTION_COMMAND_TYPE && message.action?.kind === 'screenshot')!
+    expect(command.requestId).toMatch(/^snap-/)
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: command.requestId, ok: true, result: { page: { url: 'https://shop.example/landing', title: 'Магазин' }, rect: { x: 0, y: 0, width: 10, height: 10 }, dataUrl: 'data:image/png;base64,AAAA' } })
+    expect(sent(post).find((message) => message.kind === 'area-screenshot')).toMatchObject({ shot: { pageUrl: 'https://shop.example/landing', dataUrl: 'data:image/png;base64,AAAA' } })
+  })
   it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()
@@ -428,7 +442,7 @@ describe('Recorder: результат действия и навигация (�
   it('показывает заголовок страницы и недавние адреса; чип открывает адрес и сохраняет его', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()
-    expect(screen.getByTitle('Магазин')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Магазин/ })).toBeTruthy()
     fromHost({ type, ...ids, kind: 'set-url', url: null })
     const chip = screen.getByRole('button', { name: 'shop.example' })
     expect(screen.getByRole('navigation', { name: 'Недавние адреса' }).contains(chip)).toBe(true)

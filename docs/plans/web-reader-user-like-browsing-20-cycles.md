@@ -194,4 +194,38 @@ UI (desktop and phone):
 | 09 | Link indicator turns amber in manual mode | recorder.css |
 | 10 | Empty state offers «Открыть текущий проект» | Recorder |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-05.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-05.md`. Commit `5b712835`.
+
+## Cycle 06 — checking like a tester; the page identity a browser tab shows
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `check {text|selector, state, value, count}` — pass/fail with `actual` and a human `summary`, never throws | script, MCP | script + shared tests |
+| 02 | `nth` on find/click/hover picks the N-th match when `near` cannot separate duplicates | script `findTargets` | script test |
+| 03 | `scroll {to: element, text}` scrolls to visible text, not only to a selector | script | script test |
+| 04 | `errors {since}` returns only errors after a page timestamp | script | script test |
+| 05 | `network {failedOnly}` works in the panel | script | script test |
+| 06 | `page` carries `lang`, `description` and `icon` — how a browser tab identifies a site | script `pageInfo` | script test |
+| 07 | `open` reports `redirected: true` when the final address differs | `hostBridge.ts` | bridge test |
+| 08 | `status` in a kanban check reports `target.matches` — whether the model stands on the task's page | `previewMcp.ts` | — (covered by observe tests indirectly) |
+| 09 | `reader.changed` carries the check `summary` and `ok` so the person sees verdicts | `protocol.ts`, relay | contracts test |
+| 10 | hint documents check/nth/scroll text/errors since | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Action feed shows ✓/✗ and the summary of each model check | `ReaderActionHistory`, App |
+| 02 | Site favicon next to the page title | Recorder |
+| 03 | Page title is a button that copies a Markdown link | Recorder |
+| 04 | «Перенаправлено с …» notice after a redirect | Recorder |
+| 05 | «Снимок страницы в чат» in the tools menu attaches the visible area to the composer | Recorder → `area-screenshot` |
+| 06 | Phone live line is a button that opens the site tab | App |
+| 07 | «Показать» is disabled for steps made on another page | `ReaderActionHistory` |
+| 08 | «Повторить» hidden when the failure came from manual mode | `WebReaderFrame` |
+| 09 | «Недавние:» caption above the chips in the empty state | Recorder |
+| 10 | Feed labels for check/fill/choose/status in past and present tense | `actionLabel.ts` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-06.md`.

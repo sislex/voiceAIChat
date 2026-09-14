@@ -9,6 +9,10 @@ export function previewActionLabel(action: PreviewAction): string {
     case 'accessibility': return `Inspected browser accessibility: ${action.selector}`
     case 'probe': return `Осмотрел элемент ${action.selector}`
     case 'audit': return 'Проверил страницу'
+    case 'check': return `Проверил ${action.text ? `«${action.text}»` : action.selector ?? 'элемент'}`
+    case 'fill': return `Заполнил форму (${action.fields.length} ${action.fields.length === 1 ? 'поле' : 'поля'})`
+    case 'choose': return `Выбрал «${action.text}»`
+    case 'status': return 'Проверил состояние панели'
     case 'find': return `Нашёл ${action.text ?? action.selector ?? (action.role ? `элементы с ролью ${action.role}` : 'элементы')}`
     case 'screenshot': return 'Сделал снимок страницы'
     case 'errors': return 'Проверил ошибки страницы'
@@ -34,6 +38,10 @@ export function previewActionProgressLabel(action: PreviewAction): string {
     case 'press': return `нажимает клавишу ${action.key}`
     case 'wait': return 'ждёт страницу'
     case 'errors': return 'проверяет ошибки страницы'
+    case 'check': return `проверяет ${action.text ? `«${action.text}»` : action.selector ?? 'элемент'}`
+    case 'fill': return 'заполняет форму'
+    case 'choose': return `выбирает «${action.text}»`
+    case 'status': return 'смотрит состояние панели'
     case 'back': return 'переходит назад'
     case 'forward': return 'переходит вперёд'
     default: return `выполняет ${action.kind}`

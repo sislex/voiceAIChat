@@ -31,7 +31,7 @@ export interface WebReaderFrameProps {
   /** Актуальная регистрация iframe (или null): host сверяет по ней MCP-команды. */
   onRegisterHost?: ((registration: ReaderHostRegistration | null) => void) | undefined
   /** Последние подтверждённые действия модели; кнопка повторяет их через тот же host. at — время события. */
-  actions?: readonly { id: string; action: PreviewAction; address: string | null; title: string | null; at?: number }[]
+  actions?: readonly { id: string; action: PreviewAction; address: string | null; title: string | null; at?: number; summary?: string; ok?: boolean }[]
   /** Заголовок открытой страницы (null — страницы нет): для подписи мобильной вкладки. */
   onPageTitle?: ((title: string | null) => void) | undefined
   /** Пользователь выделил текст на странице и хочет спросить о нём в чате. */

@@ -71,3 +71,15 @@ it('offers «Показать» only for steps with a selector and hides search 
   fireEvent.click(screen.getByRole('button', { name: /Показать на странице/ }))
   expect(onReveal).toHaveBeenCalledWith('#buy')
 })
+
+it('shows check verdicts with summaries and disables reveal on another page', () => {
+  render(<ReaderActionHistory currentUrl="https://now.test/" onReveal={vi.fn()} actions={[
+    { id: 'ok', action: { kind: 'check', text: 'Войти' }, title: null, address: 'https://now.test/', ok: true, summary: '«Войти» видно' },
+    { id: 'bad', action: { kind: 'check', text: 'Строка', count: 3 }, title: null, address: 'https://now.test/', ok: false, summary: '.row: 2 из 3 — не совпало' },
+    { id: 'old', action: { kind: 'click', selector: '#buy' }, title: null, address: 'https://old.test/' }
+  ]} />)
+  expect(screen.getByLabelText('Проверка пройдена')).toBeTruthy()
+  expect(screen.getByLabelText('Проверка не пройдена')).toBeTruthy()
+  expect(screen.getByText('.row: 2 из 3 — не совпало')).toBeTruthy()
+  expect(screen.getByRole('button', { name: /Показать на странице/ })).toBeDisabled()
+})

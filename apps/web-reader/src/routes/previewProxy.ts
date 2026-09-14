@@ -243,7 +243,13 @@ function unproxyLazy(value){return typeof unproxy==='function'?unproxy(value):St
 const EL_TEXT=200, SNIPPET=4000, FIND_MAX=30, HEADINGS=64, LINKS=100, BUTTONS=50, INPUTS=50;
 const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],input,select,textarea,label,summary,[onclick]';
 const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};
-const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url);target.hash=location.hash;url=target.toString()}catch{}return {url,title:document.title||''}};
+const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url);target.hash=location.hash;url=target.toString()}catch{}
+  const info={url,title:document.title||''};
+  // Язык, описание и иконка — то, что человек видит во вкладке браузера и по чему узнаёт сайт.
+  const lang=(document.documentElement.getAttribute('lang')||'').trim();if(lang)info.lang=lang.slice(0,16);
+  const meta=document.querySelector('meta[name="description"],meta[property="og:description"]');const description=meta&&meta.getAttribute('content');if(description&&description.trim())info.description=description.trim().slice(0,200);
+  const icon=document.querySelector('link[rel~="icon"]');const href=icon&&icon.getAttribute('href');if(href){try{info.icon=unproxy(new URL(href,location.href).toString()).slice(0,500)}catch{}}
+  return info};
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
 // Человек не различает «ёлочки» и "кавычки", тире и дефис, обычный и неразрывный пробел — поиск текста тоже не должен.
 const normText=(value)=>String(value||'').replace(/[\u00a0\u202f]/g,' ').replace(/[«»“”„"]/g,'"').replace(/[’‘\u0060´]/g,"'").replace(/[–—‑]/g,'-').replace(/\\s+/g,' ').trim().toLowerCase();
@@ -308,7 +314,10 @@ const nearFilter=(candidates,near)=>{
 const findTargets=(action)=>{
   const base=action.role?byRole(action):action.selector?bySelector(action.selector):byText(action.text||'',false,action.exact===true);
   const scoped=action.near?nearFilter(base,action.near):base;
-  return scoped.filter(action.kind==='find'?readingVisible:actionVisible)
+  const visible=scoped.filter(action.kind==='find'?readingVisible:actionVisible);
+  // nth — «второй такой»: человек считает одинаковые элементы сверху вниз.
+  if(typeof action.nth==='number'&&action.nth>=1){const picked=(action.kind==='find'?visible:[...new Set(visible.map(clickTarget))])[action.nth-1];if(!picked)throw new Error('Совпадение №'+action.nth+' не найдено: всего '+visible.length);return [picked]}
+  return visible
 };
 const contextOf=(el)=>{
   const container=el.parentElement&&el.parentElement.closest(CONTEXT_CONTAINERS);
@@ -429,6 +438,27 @@ const run=(action)=>{
     const newErrors=pageErrors.slice(errorsBefore).slice(0,3).map((e)=>({kind:e.kind,message:e.message,at:e.at}));
     return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{}),...(obscuredBy?{obscuredBy}:{})}
   }
+  if(action.kind==='check'){
+    // Проверка ожидания: человек смотрит, есть ли на экране «Войти», и говорит «есть»/«нет» — без исключений.
+    const state=action.state||(typeof action.count==='number'?'present':'visible');
+    const raw=action.selector?bySelector(action.selector):byText(action.text||'',true);
+    const scoped=action.near?nearFilter(raw,action.near):raw;
+    const visible=scoped.filter(readingVisible);
+    const first=visible[0]||scoped[0];
+    const actualValue=first&&(first.value!==undefined?String(first.value):textOf(first));
+    let pass;
+    if(typeof action.count==='number')pass=scoped.length===action.count;
+    else if(state==='present')pass=scoped.length>0;
+    else if(state==='absent')pass=scoped.length===0;
+    else if(state==='hidden')pass=visible.length===0;
+    else pass=visible.length>0;
+    if(pass&&action.value!==undefined)pass=normText(actualValue||'')===normText(action.value);
+    const what=action.text?'«'+action.text+'»':action.selector;
+    const summary=typeof action.count==='number'?what+': '+scoped.length+' из '+action.count+(pass?' — совпало':' — не совпало')
+      :action.value!==undefined?what+(pass?' содержит «'+action.value+'»':' содержит «'+String(actualValue||'').slice(0,60)+'», ожидалось «'+action.value+'»')
+      :what+(state==='absent'?(pass?' отсутствует':' присутствует, хотя не должно'):state==='hidden'?(pass?' скрыто':' видно, хотя должно быть скрыто'):state==='present'?(pass?' есть на странице':' нет на странице'):(pass?' видно':' не видно'));
+    return {page:pageInfo(),pass,expected:{...(action.text?{text:action.text}:{}),...(action.selector?{selector:action.selector}:{}),state,...(action.value!==undefined?{value:action.value}:{}),...(typeof action.count==='number'?{count:action.count}:{})},actual:{count:scoped.length,visible:visible.length,...(actualValue!==undefined?{value:String(actualValue).slice(0,EL_TEXT)}:{}),...(first?{element:describe(first)}:{})},summary}
+  }
   if(action.kind==='fill'){
     // Форма целиком, как её заполняет человек: поле за полем, затем отправка первой формы.
     const filled=[];let form=null;
@@ -517,6 +547,7 @@ const run=(action)=>{
   if(action.kind==='scroll'){
     let el=document.scrollingElement||document.documentElement,target='window';
     if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];target=uniqueSelector(el)}
+    else if(action.text){const found=byText(action.text);if(!found.length)throw new Error('Текст не найден: '+action.text);el=found[0];target=uniqueSelector(el)}
     if(action.to==='element'){el.scrollIntoView&&el.scrollIntoView({block:'center',inline:'nearest'});el=document.scrollingElement||document.documentElement}
     else if(action.to==='top')el.scrollTop=0;
     else if(action.to==='bottom')el.scrollTop=el.scrollHeight;
@@ -527,8 +558,9 @@ const run=(action)=>{
     return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop,maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)},atTop:el.scrollTop<=0,atBottom:el.scrollTop>=maxTop-1}
   }
   if(action.kind==='errors'){
-    const errors=pageErrors.slice(-50).map((e)=>({kind:e.kind,message:e.message,at:e.at,...(e.url?{url:String(e.url).slice(0,300)}:{}),...(typeof e.status==='number'?{status:e.status}:{})}));
-    const total=pageErrors.length;
+    const fresh=typeof action.since==='number'?pageErrors.filter((e)=>e.at>action.since):pageErrors;
+    const errors=fresh.slice(-50).map((e)=>({kind:e.kind,message:e.message,at:e.at,...(e.url?{url:String(e.url).slice(0,300)}:{}),...(typeof e.status==='number'?{status:e.status}:{})}));
+    const total=fresh.length;
     if(action.clear)pageErrors.length=0;
     return {page:pageInfo(),errors,total}
   }
@@ -566,7 +598,8 @@ const run=(action)=>{
   }
   if(action.kind==='network'){
     const filter=typeof action.filter==='string'?action.filter.toLowerCase():'';
-    const all=filter?pageNetwork.filter((e)=>e.url.toLowerCase().includes(filter)):pageNetwork;
+    const matched=filter?pageNetwork.filter((e)=>e.url.toLowerCase().includes(filter)):pageNetwork;
+    const all=action.failedOnly?matched.filter((e)=>e.error||typeof e.status==='number'&&e.status>=400):matched;
     const limit=Math.max(1,Math.min(100,typeof action.limit==='number'?Math.floor(action.limit):50));
     const requests=all.slice(-limit).map((e)=>Object.assign({},e));
     const total=all.length;

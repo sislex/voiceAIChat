@@ -6948,7 +6948,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Phone tab bar: the page title says where the site pane is; the live line shows what the assistant is doing behind the chat tab. */
 .chat-split-tabs button { display: inline-flex; align-items: center; justify-content: center; min-width: 0; }
 .chat-split-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-split-live { display: none; }
+.chat-split-live { display: none; border: 0; background: transparent; font: inherit; cursor: pointer; text-align: left; }
 @media (max-width: 768px) {
   .chat-split-tabs { grid-template-columns: 1fr 1fr; grid-auto-rows: auto; }
   .chat-split-tabs button { min-height: 44px; }
