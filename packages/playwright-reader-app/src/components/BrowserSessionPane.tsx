@@ -3,6 +3,7 @@ export type { BrowserSessionPaneProps } from '../panelContract'
 import { BrowserDownloadsPane } from './BrowserDownloadsPane'
 import { BrowserSiteDialog } from './BrowserSiteDialog'
 import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/browserInput'
+import { fitScale, frameWidth, nextFrameZoom, panelShortcut, pinchDistance, touchScrollDelta, TOUCH_TAP_SLOP, type FrameZoom } from '../lib/frameView'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
@@ -132,6 +133,14 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const [typing, setTyping] = useState<string>('')
   const incarnation = useRef<string | null>(null)
   const imgRef = useRef<HTMLImageElement>(null)
+  // Кадр вписан по ширине панели. На телефоне это десятая часть натурального
+  // размера — читать нечем, поэтому масштаб отделён от раскладки.
+  const [zoom, setZoom] = useState<FrameZoom>('fit')
+  const [fullscreen, setFullscreen] = useState(false)
+  /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
+  const touch = useRef<{ x: number; y: number; moved: boolean; pinch: number | null } | null>(null)
+  const addressRef = useRef<HTMLInputElement>(null)
+  const paneRef = useRef<HTMLElement>(null)
   // Флаг актуальности: смена разговора или размонтирование отменяет поздние ответы.
   const alive = useRef(0)
 
@@ -375,6 +384,55 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     void run({ type: 'input', action })
   }
 
+  /**
+   * Свайп по кадру. Телефон прокручивает страницу пальцем, а кадр — картинка:
+   * без этого на мобильном была доступна только верхушка любой страницы.
+   * Короткое касание остаётся кликом, поэтому дельта копится до порога.
+   */
+  const onFrameTouchStart = (event: { touches: ArrayLike<{ clientX: number; clientY: number }> }): void => {
+    if (phase !== 'ready' || dialogOpen.current) return
+    const first = event.touches[0]
+    if (!first) return
+    const second = event.touches[1]
+    touch.current = { x: first.clientX, y: first.clientY, moved: false, pinch: second ? pinchDistance(first, second) : null }
+  }
+
+  const onFrameTouchMove = (event: { touches: ArrayLike<{ clientX: number; clientY: number }>; preventDefault(): void }): void => {
+    const start = touch.current
+    const first = event.touches[0]
+    if (!start || !first || phase !== 'ready' || dialogOpen.current) return
+    const second = event.touches[1]
+    const pinchStart = start.pinch
+    if (second && pinchStart !== null) {
+      // Щипок меняет масштаб кадра, а не страницу: страница в Chromium уже
+      // свёрстана под свой вьюпорт, растягивать её ещё раз незачем.
+      const distance = pinchDistance(first, second)
+      if (Math.abs(distance - pinchStart) > 24) {
+        const rect = imgRef.current?.getBoundingClientRect()
+        const scale = fitScale(rect?.width ?? 0, meta?.viewport.width ?? VIEWPORT.width)
+        setZoom((current) => nextFrameZoom(current, distance > pinchStart ? 'in' : 'out', scale))
+        touch.current = { ...start, pinch: distance, moved: true }
+      }
+      return
+    }
+    const rect = imgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    if (!start.moved && Math.hypot(first.clientX - start.x, first.clientY - start.y) < TOUCH_TAP_SLOP) return
+    event.preventDefault()
+    const delta = touchScrollDelta({ clientX: start.x, clientY: start.y }, first, rect, meta?.viewport ?? VIEWPORT)
+    touch.current = { x: first.clientX, y: first.clientY, moved: true, pinch: null }
+    if (!delta.deltaX && !delta.deltaY) return
+    if (recording) setSteps((current) => recordScroll(current, delta.deltaY, delta.deltaX))
+    void run({ type: 'input', action: { type: 'wheel', ...delta } })
+  }
+
+  /** Жест закончился прокруткой — клик по кадру после него был бы случайным. */
+  const swallowTapAfterScroll = (): boolean => {
+    const scrolled = touch.current?.moved === true
+    touch.current = null
+    return scrolled
+  }
+
   /** Перезапуск сессии: останавливаем текущую и стартуем заново на том же разговоре. */
   const restartSession = (): void => {
     if (!browser) return
@@ -553,7 +611,29 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const alias = aliasNote(meta?.currentUrl ?? '', meta?.aliasedHost ?? null)
   const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
 
-  return <section className="playwright-browser-pane" aria-label="Browser session">
+  /** Сочетания окружающего браузера: человек жмёт их не думая, и внутри панели
+   *  они должны означать то же самое, а не уходить в страницу Chromium. */
+  const onPanelKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    const shortcut = panelShortcut(event)
+    if (!shortcut) return
+    if (shortcut === 'exitFullscreen') {
+      if (!fullscreen) return
+      event.preventDefault()
+      setFullscreen(false)
+      return
+    }
+    if (phase !== 'ready') return
+    event.preventDefault()
+    if (shortcut === 'address') { addressRef.current?.focus(); addressRef.current?.select(); return }
+    void run({ type: shortcut })
+  }
+
+  return <section
+      className={`playwright-browser-pane${fullscreen ? ' playwright-browser-pane--fullscreen' : ''}`}
+      aria-label="Browser session"
+      ref={paneRef}
+      onKeyDown={onPanelKeyDown}
+    >
       <div className="playwright-reader-tabs" role={tabs.length ? 'tablist' : 'group'} aria-label="Вкладки страницы">
         {tabs.map((tab) => (
           <span key={tab.id} className={`playwright-reader-tab${tab.id === meta?.activeTabId ? ' is-active' : ''}`}>
@@ -579,6 +659,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       <IconButton size="sm" aria-label="Вперёд" title="Вперёд" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'forward' })}>›</IconButton>
       <IconButton size="sm" aria-label="Обновить" title="Обновить" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'reload' })}>⟳</IconButton>
       <input
+        ref={addressRef}
         type="url"
         className="playwright-reader-address"
         aria-label="Адрес страницы"
@@ -598,6 +679,21 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         }}
       />
       <Button size="sm" variant="secondary" disabled={phase !== 'ready'} onClick={submitAddress}>Открыть</Button>
+      {/* Адрес страницы нужен в задаче, письме и тикете чаще, чем кажется:
+          выделять его в поле на телефоне — отдельное упражнение. */}
+      <IconButton size="sm" aria-label="Скопировать адрес" title="Скопировать адрес"
+        disabled={!meta?.currentUrl}
+        onClick={() => void (async () => {
+          const url = meta?.currentUrl
+          if (!url) return
+          try {
+            if (!navigator.clipboard) throw new Error('Буфер обмена недоступен в этом контексте')
+            await navigator.clipboard.writeText(url)
+            setMessage('Адрес скопирован')
+          } catch (err) { setMessage(err instanceof Error ? err.message : 'Скопировать не удалось') }
+        })()}>⧉</IconButton>
+      <IconButton size="sm" aria-label={fullscreen ? 'Свернуть кадр' : 'Развернуть кадр'} title={fullscreen ? 'Свернуть кадр' : 'Развернуть кадр на всю панель'}
+        aria-pressed={fullscreen} onClick={() => setFullscreen((value) => !value)}>{fullscreen ? '⤡' : '⤢'}</IconButton>
     </div>
     <div className="playwright-reader-tools">
       <span className="playwright-reader-viewports" role="group" aria-label="Размер окна">
@@ -611,6 +707,16 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             onClick={() => changeViewport(v.id)}
           >{v.label}</Button>
         ))}
+      </span>
+      {/* Масштаб кадра отделён от размера окна Chromium: «Телефон» меняет вёрстку
+          страницы, а зум — только то, как кадр виден человеку. */}
+      <span className="playwright-reader-zoom" role="group" aria-label="Масштаб кадра">
+        <IconButton size="sm" aria-label="Уменьшить кадр" title="Уменьшить кадр"
+          onClick={() => setZoom((current) => nextFrameZoom(current, 'out', fitScale(imgRef.current?.getBoundingClientRect().width ?? 0, meta?.viewport.width ?? VIEWPORT.width)))}>−</IconButton>
+        <Button size="sm" variant={zoom === 'fit' ? 'primary' : 'ghost'} aria-pressed={zoom === 'fit'}
+          onClick={() => setZoom('fit')}>{zoom === 'fit' ? 'Вписан' : `${Math.round(zoom * 100)}%`}</Button>
+        <IconButton size="sm" aria-label="Увеличить кадр" title="Увеличить кадр"
+          onClick={() => setZoom((current) => nextFrameZoom(current, 'in', fitScale(imgRef.current?.getBoundingClientRect().width ?? 0, meta?.viewport.width ?? VIEWPORT.width)))}>+</IconButton>
       </span>
       {onAttachFrame && (
         <Button size="sm" variant="ghost" disabled={phase !== 'ready' || !frame} onClick={() => { if (frame) onAttachFrame(frame) }}>
@@ -683,9 +789,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       })()}>
         Очистить сессию сайта
       </Button>
+      {/* На телефоне экранная клавиатура не отдаёт ни стрелок, ни Backspace, а
+          без них не пройти ни список, ни поле с ошибкой ввода. */}
       <span className="playwright-reader-keys" role="group" aria-label="Клавиши">
-        {(['Enter', 'Tab', 'Escape'] as const).map((key) => (
-          <Button key={key} size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key } })}>{key}</Button>
+        {([['Enter', 'Enter'], ['Tab', 'Tab'], ['Escape', 'Esc'], ['ArrowUp', '↑'], ['ArrowDown', '↓'], ['Backspace', '⌫']] as const).map(([key, label]) => (
+          <Button key={key} size="sm" variant="ghost" disabled={phase !== 'ready'}
+            aria-label={key} title={key}
+            onClick={() => void run({ type: 'input', action: { type: 'press', key } })}>{label}</Button>
         ))}
       </span>
       {/* Долгая навигация ничем не отличалась от зависшей: прервать её было
@@ -726,9 +836,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             aria-disabled={Boolean(activeDialog)}
             role="application"
             aria-label="Страница в Chromium: клик, прокрутка и клавиатура работают прямо здесь"
-            onClick={(event) => clickAt(event, 'left', 1)}
+            onClick={(event) => { if (!swallowTapAfterScroll()) clickAt(event, 'left', 1) }}
             onContextMenu={(event) => { event.preventDefault(); clickAt(event, 'right', 1) }}
             onWheel={onFrameWheel}
+            onTouchStart={onFrameTouchStart}
+            onTouchMove={onFrameTouchMove}
             onKeyDown={onFrameKeyDown}
             onPaste={(event) => {
               if (phase !== 'ready' || dialogOpen.current) return
@@ -737,7 +849,17 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
               event.preventDefault()
               void run({ type: 'input', action: { type: 'type', text } })
             }}
-            style={{ width: '100%', display: 'block', cursor: 'pointer' }}
+            style={{
+              // Ширина задаётся числом только при явном масштабе: режим «вписать»
+              // остаётся на CSS, иначе кадр дёргался бы на каждом ресайзе панели.
+              width: frameWidth(zoom, meta?.viewport.width ?? VIEWPORT.width) ?? '100%',
+              maxWidth: zoom === 'fit' ? '100%' : 'none',
+              display: 'block',
+              cursor: 'pointer',
+              // Браузер не должен уводить страницу приложения, пока палец
+              // прокручивает страницу внутри кадра.
+              touchAction: 'none'
+            }}
           />
         : phase === 'ready' && tabs.length === 0
           ? <EmptyState title="Все вкладки закрыты" description="Откройте новую вкладку кнопкой + над адресом страницы." />
@@ -748,6 +870,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         if (error) throw new Error(error)
         if (!isBrowserSessionMetadata(result) || !Array.isArray(result.dialogs)) throw new Error('Сайт не подтвердил ответ. Обновите состояние и повторите.')
       }} />}
+      {/* Полоса вместо одного слова: на длинной навигации «Выполняется…» не
+          отличалось от зависшей страницы, и человек жал перезапуск зря. */}
+      {(busy || meta?.state === 'starting' || meta?.state === 'reconnecting') && !activeDialog && (
+        <span className="playwright-reader-progress" role="progressbar" aria-label="Страница выполняет действие" aria-busy="true" />
+      )}
       {busy && !activeDialog && <span className="playwright-reader-busy" role="status">Выполняется…</span>}
     </div>
     {downloadsOpen && <BrowserDownloadsPane downloads={meta?.downloads ?? []} count={meta?.downloadCount ?? 0} onCommand={async command => {

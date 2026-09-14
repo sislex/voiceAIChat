@@ -79,3 +79,36 @@
 .playwright-reader-diagnostics__list li { overflow-wrap: anywhere; }
 .playwright-reader-diagnostics__list li[data-kind='console'] { color: var(--danger); }
 .playwright-reader-diagnostics__list li[data-kind='network'] code { color: var(--danger); font-weight: 600; }
+
+/* Круг 1 «работает и на компьютере, и на телефоне».
+   Кадр — картинка: без собственного масштаба страница с телефонной панели
+   читается в треть натурального размера, а прокрутить её пальцем было нечем. */
+.playwright-reader-zoom { display: inline-flex; align-items: center; gap: var(--space-050); }
+.playwright-browser-viewport { overscroll-behavior: contain; }
+.playwright-reader-progress { position: absolute; left: 0; right: 0; top: 0; height: 3px; overflow: hidden;
+  background: var(--border-soft, var(--border)); }
+.playwright-reader-progress::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 35%;
+  background: var(--accent); animation: playwright-reader-progress 1.1s ease-in-out infinite; }
+@keyframes playwright-reader-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .playwright-reader-progress::after { animation: none; width: 100%; opacity: 0.5; }
+}
+
+/* Развёрнутый кадр: на телефоне панель инструментов и чат съедают весь экран,
+   а работать человек приходит со страницей. */
+.playwright-browser-pane--fullscreen { position: fixed; inset: 0; z-index: 40; width: 100%; }
+.playwright-browser-pane--fullscreen .playwright-reader-record,
+.playwright-browser-pane--fullscreen .playwright-reader-diagnostics { max-height: 20vh; }
+
+@media (max-width: 720px) {
+  /* Пятнадцать кнопок в ряд переносились в шесть строк и выдавливали кадр за
+     нижний край экрана. Прокрутка вбок сохраняет и кадр, и доступ к кнопкам. */
+  .playwright-reader-tools { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .playwright-reader-tools > * { flex: 0 0 auto; }
+  /* Адрес остаётся на виду: он отвечает на вопрос «где я» чаще всего. */
+  .playwright-reader-header { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+  .playwright-reader-zoom .vc-btn { min-height: 40px; }
+}

@@ -67,7 +67,7 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     case 'type':
       return {
         kind: 'command',
-        command: { type: 'selector', action: { kind: 'type', selector: action.selector, text: action.text, ...(action.submit ? { submit: true } : {}) } }
+        command: { type: 'selector', action: { kind: 'type', selector: action.selector, text: action.text, ...(action.submit ? { submit: true } : {}), ...(action.delay !== undefined ? { delay: action.delay } : {}) } }
       }
     case 'read':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'read', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}), ...(action.offset !== undefined ? { offset: action.offset } : {}) } } }
@@ -89,8 +89,28 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     }
     case 'press':
       return action.selector
-        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key } } }
-        : { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key } } }
+        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key, ...(action.repeat !== undefined ? { repeat: action.repeat } : {}) } } }
+        : { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key, ...(action.repeat !== undefined ? { repeat: action.repeat } : {}) } } }
+    case 'hotkey': {
+      // Modifier names travel lowercase in the model-facing contract and as
+      // Playwright key names inside the runner; translate once, here.
+      const modifiers = action.modifiers.map((value) => ({ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta', primary: 'ControlOrMeta' } as const)[value])
+      return action.selector
+        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key, modifiers, ...(action.repeat !== undefined ? { repeat: action.repeat } : {}) } } }
+        : { kind: 'command', command: { type: 'input', action: { type: 'hotkey', key: action.key, modifiers, ...(action.repeat !== undefined ? { repeat: action.repeat } : {}) } } }
+    }
+    case 'focus':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'focus', ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'clear':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'clear', selector: action.selector } } }
+    case 'selectText':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'selectText', ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'copy':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'copy' } } }
+    case 'paste':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'paste', text: action.text, ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'focusOrder':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'focusOrder', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
     case 'console': {
       const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
       return { kind: 'command', command: { type: 'inspect', action: { kind: 'console', ...options, regex: false } } }

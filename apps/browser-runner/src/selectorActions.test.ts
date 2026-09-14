@@ -18,6 +18,10 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     evaluateAll: async () => null,
     click: vi.fn(async () => {}),
     press: vi.fn(async () => {}),
+    pressSequentially: vi.fn(async () => {}),
+    focus: vi.fn(async () => {}),
+    clear: vi.fn(async () => {}),
+    selectText: vi.fn(async () => {}),
     fill: vi.fn(async () => {}),
     innerText: async () => 'Текст узла',
     isVisible: async () => true,
@@ -216,5 +220,91 @@ describe('однозначные цели', () => {
     const action = { kind: 'upload' as const, selector: 'input', name: 'a', base64: 'YQ==' }
     expect(await runSelectorAction(page(a), action)).toEqual({ ok: true })
     expect((await runSelectorAction(page(locator({ all: async () => [a, b] })), action)).error).toContain('несколько')
+  })
+})
+
+// Клавиатура и буфер обмена: круг 1 «модель работает как пользователь». Клик по
+// элементу и переход на него фокусом — разные события, и ошибки клавиатурной
+// доступности живут ровно в этой разнице.
+describe('фокус, выделение и вставка', () => {
+  it('focus с селектором ставит фокус и возвращает состояние активного элемента', async () => {
+    const target = locator()
+    const p = page(target, { evaluate: vi.fn(async () => ({ selector: '#login', tag: 'input', visibleRing: true, withinDialog: false })) })
+    const result = await runSelectorAction(p, { kind: 'focus', selector: '#login' })
+    expect(target.focus).toHaveBeenCalled()
+    expect(result).toMatchObject({ ok: true, focus: { selector: '#login', visibleRing: true } })
+  })
+
+  it('focus без селектора только читает фокус и не двигает его', async () => {
+    const target = locator()
+    const p = page(target, { evaluate: vi.fn(async () => ({ none: true })) })
+    const result = await runSelectorAction(p, { kind: 'focus' })
+    expect(target.focus).not.toHaveBeenCalled()
+    expect(result).toEqual({ ok: true, focus: { none: true } })
+  })
+
+  it('clear очищает поле через clear(), а не записью пустого значения', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'clear', selector: '#q' })
+    expect(target.clear).toHaveBeenCalled()
+    expect(target.fill).not.toHaveBeenCalled()
+  })
+
+  it('selectText берёт выделение элемента, а при отказе Playwright — через select() самой страницы', async () => {
+    const target = locator({ selectText: vi.fn(async () => { throw new Error('not text node') }) })
+    const p = page(target, { evaluate: vi.fn(async () => 'Выделенный текст') })
+    const result = await runSelectorAction(p, { kind: 'selectText', selector: '#title' })
+    expect(target.evaluate).toBeDefined()
+    expect(result).toEqual({ ok: true, selection: { text: 'Выделенный текст' } })
+  })
+
+  it('copy возвращает выделение и честно помечает обрезку длинного текста', async () => {
+    const long = 'я'.repeat(4_100)
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => long) }), { kind: 'copy' })
+    expect(result.selection?.truncated).toBe(true)
+    expect(result.selection?.text.length).toBe(4_000)
+  })
+
+  it('paste отказывается словами, когда элемент не принимает вставку', async () => {
+    // Первый evaluate — проверка живости узла внутри uniqueTarget, второй — сама вставка.
+    let call = 0
+    const target = locator({ evaluate: vi.fn(async () => (call++ === 0 ? true : false)) })
+    const result = await runSelectorAction(page(target), { kind: 'paste', selector: '#note', text: 'привет' })
+    expect(result).toEqual({ ok: false, error: 'Элемент не принимает вставку текста' })
+  })
+
+  it('paste без селектора целится в элемент в фокусе', async () => {
+    const target = locator({ evaluate: vi.fn(async () => true) })
+    const p = page(target)
+    await runSelectorAction(p, { kind: 'paste', text: 'привет' })
+    expect(target.evaluate).toHaveBeenCalled()
+    expect(p.locator).toHaveBeenCalledWith(':focus')
+  })
+
+  it('press собирает сочетание из модификаторов и повторяет нажатие repeat раз', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'press', selector: '#list', key: 'ArrowDown', modifiers: ['Shift'], repeat: 3 })
+    expect(target.press).toHaveBeenCalledTimes(3)
+    expect(target.press).toHaveBeenCalledWith('Shift+ArrowDown', expect.anything())
+  })
+
+  it('ввод с delay идёт посимвольно после очистки: иначе автодополнение не просыпается', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'type', selector: '#q', text: 'дом', delay: 30 })
+    expect(target.clear).toHaveBeenCalled()
+    expect(target.pressSequentially).toHaveBeenCalledWith('дом', expect.objectContaining({ delay: 30 }))
+    expect(target.fill).not.toHaveBeenCalled()
+  })
+
+  it('focus-order отдаёт обход по Tab и помечает, что список длиннее лимита', async () => {
+    const walk = { total: 7, items: [{ selector: '#a', tag: 'a', name: 'Домой', tabIndex: 0, visible: true }] }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => walk) }), { kind: 'focusOrder', limit: 1 })
+    expect(result).toMatchObject({ ok: true, total: 7, truncated: true })
+    expect(result.focusOrder).toHaveLength(1)
+  })
+
+  it('focus-order на несуществующем поддереве отвечает отказом, а не пустым списком', async () => {
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'focusOrder', selector: '#missing' })
+    expect(result).toEqual({ ok: false, error: 'Элемент не найден' })
   })
 })

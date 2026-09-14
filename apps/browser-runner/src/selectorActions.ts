@@ -2,6 +2,7 @@ import { BROWSER_UPLOAD_LIMIT_BYTES, isBrowserWaitOptions, type BrowserElementDe
 import { describeElementScript } from './describeElement.js'
 import { findElements, readPage, readBounds, type ReadContent } from './pageReading.js'
 import { readElementTargets } from './elementTargets.js'
+import { focusOrderScript, focusStateScript, pasteScript, selectElementScript, selectionScript } from './focusActions.js'
 import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js'
 
 /**
@@ -16,6 +17,10 @@ export interface SelectorLocator extends WaitLocator {
   evaluateAll(script: string | ((nodes: unknown[], arg: unknown) => unknown), arg?: unknown): Promise<unknown>
   click(options?: { timeout?: number; button?: 'left' | 'right'; clickCount?: number; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }): Promise<void>
   press(key: string, options?: { timeout?: number }): Promise<void>
+  pressSequentially(text: string, options?: { timeout?: number; delay?: number }): Promise<void>
+  focus(options?: { timeout?: number }): Promise<void>
+  clear(options?: { timeout?: number }): Promise<void>
+  selectText(options?: { timeout?: number }): Promise<void>
   fill(value: string, options?: { timeout?: number }): Promise<void>
   innerText(options?: { timeout?: number }): Promise<string>
   isVisible(): Promise<boolean>
@@ -33,7 +38,7 @@ export interface SelectorLocator extends WaitLocator {
 export interface SelectorPage extends WaitPage {
   locator(selector: string): SelectorLocator
   getByText(text: string, options?: { exact?: boolean }): SelectorLocator
-  keyboard: { press(key: string): Promise<void> }
+  keyboard: { press(key: string): Promise<void>; down?(key: string): Promise<void>; up?(key: string): Promise<void> }
   /** Код строкой: описание элемента и прокрутка исполняются в самой странице. */
   evaluate(script: string): Promise<unknown>
 }
@@ -46,6 +51,21 @@ export interface SelectorPage extends WaitPage {
  */
 /** Потолок загрузки: содержимое едет в JSON, base64 раздувает его на треть. */
 const UPLOAD_LIMIT_BYTES = BROWSER_UPLOAD_LIMIT_BYTES
+
+/** Selected text returned to the model; longer selections are cut with a flag. */
+const SELECTION_LIMIT = 4_000
+
+/** Keystroke repeat: a held key, bounded so one call cannot run away. */
+function repeatOf(value: number | undefined): number {
+  return value === undefined ? 1 : Math.min(Math.max(Math.trunc(value), 1), 50)
+}
+
+function selection(raw: unknown): BrowserSelectorResult {
+  const text = typeof raw === 'string' ? raw : ''
+  return text.length > SELECTION_LIMIT
+    ? { ok: true, selection: { text: text.slice(0, SELECTION_LIMIT), truncated: true } }
+    : { ok: true, selection: { text } }
+}
 
 /** Отказываем при неоднозначности: порядок DOM не выражает намерение модели. */
 export async function uniqueTarget(target: SelectorLocator, timeout: number, hiddenAllowed = false): Promise<SelectorLocator> {
@@ -92,8 +112,47 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       return { ok: true }
     }
     if (action.kind === 'press') {
-      await (await uniqueTarget(page.locator(action.selector), timeout)).press(action.key, { timeout })
+      const target = await uniqueTarget(page.locator(action.selector), timeout)
+      // Playwright spells a shortcut as "Control+a"; the model names the parts
+      // separately, because it also needs them for the keyboard-only input path.
+      const key = [...(action.modifiers ?? []), action.key].join('+')
+      for (let time = 0; time < repeatOf(action.repeat); time++) await target.press(key, { timeout })
       return { ok: true }
+    }
+    if (action.kind === 'focus') {
+      // No selector: report where focus is, do not move it. Tab-walking a form
+      // is a read-then-act loop, and moving focus to answer would break it.
+      if (action.selector) await (await uniqueTarget(page.locator(action.selector), timeout)).focus({ timeout })
+      return await readElementTargets(page, async () => {
+        const state = await page.evaluate(focusStateScript()) as BrowserSelectorResult['focus']
+        return { ok: true, ...(state ? { focus: state } : {}) }
+      })
+    }
+    if (action.kind === 'clear') {
+      await (await uniqueTarget(page.locator(action.selector), timeout)).clear({ timeout })
+      return { ok: true }
+    }
+    if (action.kind === 'selectText') {
+      if (action.selector) {
+        const target = await uniqueTarget(page.locator(action.selector), timeout)
+        // Playwright's selectText covers text nodes; inputs need their own select().
+        try { await target.selectText({ timeout }) } catch { await target.evaluate(selectElementScript(), undefined, { timeout }) }
+      } else await page.evaluate(`(() => { const range = document.createRange(); range.selectNodeContents(document.body); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); return true })()`)
+      return selection(await page.evaluate(selectionScript(SELECTION_LIMIT)))
+    }
+    if (action.kind === 'copy') return selection(await page.evaluate(selectionScript(SELECTION_LIMIT)))
+    if (action.kind === 'focusOrder') {
+      const limit = Math.min(Math.max(action.limit ?? 50, 1), 200)
+      return await readElementTargets(page, async () => {
+        const walk = await page.evaluate(focusOrderScript(action.selector ?? null, limit)) as { total: number; items: NonNullable<BrowserSelectorResult['focusOrder']> } | null
+        if (!walk) return { ok: false, error: 'Элемент не найден' }
+        return { ok: true, focusOrder: walk.items, total: walk.total, ...(walk.total > walk.items.length ? { truncated: true } : {}) }
+      })
+    }
+    if (action.kind === 'paste') {
+      const target = await uniqueTarget(page.locator(action.selector || ':focus'), timeout)
+      const done = await target.evaluate(pasteScript(), action.text, { timeout })
+      return done === false ? { ok: false, error: 'Элемент не принимает вставку текста' } : { ok: true }
     }
     if (action.kind === 'scroll') {
       // document.scrollingElement и вложенный контейнер имеют разные позиции.
@@ -115,7 +174,13 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       return { ok: true, scrolled: scrolled as BrowserSelectorResult['scrolled'] }
     }
     if (action.kind === 'type') {
-      await (await uniqueTarget(page.locator(action.selector), timeout)).fill(action.text, { timeout })
+      const target = await uniqueTarget(page.locator(action.selector), timeout)
+      // fill() sets the value in one go: autocomplete, debounced search and
+      // maxlength-per-keystroke logic never see the keys a person would press.
+      if (typeof action.delay === 'number') {
+        await target.clear({ timeout })
+        await target.pressSequentially(action.text, { timeout, delay: Math.min(Math.max(action.delay, 0), 200) })
+      } else await target.fill(action.text, { timeout })
       if (action.submit) await page.keyboard.press('Enter')
       return { ok: true }
     }
