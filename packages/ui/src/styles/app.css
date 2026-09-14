@@ -6937,6 +6937,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Marker on the hidden phone tab: the model acted on the site while the chat was open (or replied while the site was). */
 .chat-split-tab-dot { display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
 .chat-split-divider--active { background: var(--accent); }
+/* Reader: the site can take the whole width; the collapse handle lives on the divider, the only strip visible in both states. */
+.chat-split-divider { position: relative; }
+.chat-split-collapse { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 22px; height: 44px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text-dim); font: inherit; cursor: pointer; }
+.chat-split-collapse:hover, .chat-split-collapse:focus-visible { color: var(--text); border-color: var(--accent); outline: none; }
+.chat-split--site-only > .chat-split-chat { display: none; }
+.chat-split--site-only > .chat-split-divider { cursor: default; flex-basis: 24px; background: var(--panel); }
+.chat-split--site-only .webpreview { flex: 1 1 auto; }
+@media (max-width: 768px) { .chat-split-collapse { display: none; } .chat-split--site-only > .chat-split-chat { display: flex; } .chat-split--site-only.chat-split--preview > .chat-split-chat { display: none; } }
 /* Phone tab bar: the page title says where the site pane is; the live line shows what the assistant is doing behind the chat tab. */
 .chat-split-tabs button { display: inline-flex; align-items: center; justify-content: center; min-width: 0; }
 .chat-split-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

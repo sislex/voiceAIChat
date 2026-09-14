@@ -126,4 +126,38 @@ UI (desktop and phone):
 | 09 | History search appears only when there is more than one step | `ReaderActionHistory` |
 | 10 | Reveal uses the same blue flash as model actions — one visual language | script `flash()` via hover |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-03.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-03.md`. Commit `f9da7180`.
+
+## Cycle 04 — forms and menus the way a person handles them; the person can take over
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `fill {fields, submit}` fills a whole form (by label or selector) and submits it in one action | script, MCP | script + shared tests |
+| 02 | `fill`/`type submit` return `validation` — the field messages a person would see in red | script `validationMessages` | script test |
+| 03 | `choose {text, in}` opens a trigger, waits for the item and clicks it (custom dropdowns, menus, autocomplete) | script, MCP | script test |
+| 04 | `type` returns `options` — datalist/listbox suggestions that appeared after typing | script `suggestionsFor` | script test |
+| 05 | `hover` returns `revealed` — clickable elements that appeared (submenu items) | script | script test |
+| 06 | `read` returns `focus` — where the caret is | script | script test |
+| 07 | `wait {enabled, checked, value}` works in the panel («button became active») | script, `browserWaiting.ts` | shared + script tests |
+| 08 | hash-only `open` on the same document changes the fragment live instead of reloading the iframe | Recorder `sameDocument` | Recorder test |
+| 09 | manual mode refuses model commands with a reason the model can relay («спроси, когда можно продолжить») | Recorder | Recorder test |
+| 10 | hint documents fill/choose/options/revealed/validation and key chords like Control+a | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | «Только я управляю» in the tools menu: the person takes the page over; a status line with «Вернуть ассистенту» | Recorder |
+| 02 | Collapse the chat on desktop: the site takes the whole width, handle on the divider, choice persisted | `App.tsx`, `app.css` |
+| 03 | Reload button is disabled and marked busy while the page loads — no double loads from impatient taps | Recorder |
+| 04 | Loading status names the host («Загружаем shop.example…») | Recorder |
+| 05 | Page error banner can be dismissed; a different error reappears | `WebReaderFrame` |
+| 06 | Cmd/Ctrl+Enter in the address bar opens the typed address in a real tab | Recorder |
+| 07 | «Очистить недавние» in the tools menu | Recorder |
+| 08 | 44 px targets for history buttons, error actions and the live line on touch screens | `panel.css` |
+| 09 | Hash navigation keeps the page state — no flash of a reload for hash routers | Recorder |
+| 10 | Manual-mode line uses the warning colour and lives with the other status lines | recorder.css |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-04.md`.

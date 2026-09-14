@@ -177,6 +177,13 @@ describe('isPreviewAction: как пользователь — field, role, appe
     expect(resolvePreviewUrl('/about', null)).toBeNull()
     expect(resolvePreviewUrl('https://other.test/', null)).toBe('https://other.test/')
   })
+  it('fill требует непустой список полей с целью, choose — текст пункта', () => {
+    expect(isPreviewAction({ kind: 'fill', fields: [{ field: 'Логин', value: 'admin' }, { selector: '#pw', value: 'x' }], submit: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'fill', fields: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'fill', fields: [{ value: 'x' }] })).toBe(false)
+    expect(isPreviewAction({ kind: 'choose', text: 'Русский', in: 'Язык' })).toBe(true)
+    expect(isPreviewAction({ kind: 'choose', text: '   ' })).toBe(false)
+  })
   it('near и exact уточняют цель, status не требует аргументов', () => {
     expect(isPreviewAction({ kind: 'click', text: 'Удалить', near: 'Заказ №5' })).toBe(true)
     expect(isPreviewAction({ kind: 'find', text: 'Купить', exact: true })).toBe(true)
@@ -200,7 +207,7 @@ describe('previewToolHint', () => {
   it('панель описана как видимая пользователю и объясняет новые человеческие параметры', () => {
     const hint = previewToolHint()
     expect(hint).toContain('видит каждое твоё действие')
-    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks']) expect(hint).toContain(term)
+    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a']) expect(hint).toContain(term)
   })
 
   it('для изолированного Chromium не обещает панель и требует поднять dev-сервер самому', () => {

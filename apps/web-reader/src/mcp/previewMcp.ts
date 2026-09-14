@@ -312,6 +312,27 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         return 'error' in target ? toolResult({ ok: false, error: target.error }) : control({ type: 'newTab', url: target.url })
       })
 
+      const fillField = z.object({
+        selector: z.string().max(L.selector).optional().describe('CSS-селектор поля'),
+        field: z.string().max(L.text).optional().describe('Подпись, placeholder или name поля'),
+        near: z.string().max(L.text).optional().describe('Текст рядом с полем'),
+        value: z.string().max(L.text).describe('Значение')
+      })
+      server.registerTool('fill', {
+        description: 'Заполнить несколько полей формы одним действием — как человек заполняет форму целиком — и при submit отправить её. ' +
+          'Каждое поле задаётся selector или field (подпись/placeholder/name). Ответ перечисляет заполненные поля, submitted, validation (сообщения ошибок полей) и navigated.',
+        inputSchema: { frame: frameSchema, fields: z.array(fillField).min(1).max(30), submit: z.boolean().optional().describe('Отправить форму после заполнения') }
+      }, async ({ frame, fields, submit }) => {
+        const bad = fields.find((item) => !item.selector && !item.field?.trim())
+        if (bad) return { content: [{ type: 'text', text: 'У каждого поля укажи selector или field.' }], isError: true }
+        return run({ kind: 'fill', ...(frame !== undefined ? { frame } : {}), fields: fields.map((item) => ({ ...(item.selector ? { selector: item.selector } : {}), ...(item.field?.trim() ? { field: item.field.trim() } : {}), ...(item.near ? { near: item.near } : {}), value: item.value })), ...(submit !== undefined ? { submit } : {}) })
+      })
+      server.registerTool('choose', {
+        description: 'Выбрать пункт выпадающего меню, списка или автодополнения: при in сначала нажимается триггер (текст или селектор), затем ждётся и нажимается пункт с текстом text. ' +
+          'Для нативного <select> используй set.',
+        inputSchema: { frame: frameSchema, text: z.string().min(1).max(L.text).describe('Видимый текст пункта'), in: z.string().max(L.text).optional().describe('Текст или селектор триггера, открывающего список'), near: z.string().max(L.text).optional().describe('Текст рядом с пунктом') }
+      }, async ({ frame, text, in: trigger, near }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}) }))
+
       server.registerTool('status', {
         description: 'Состояние браузера без обращения к странице: подключена ли панель пользователя (или жива ли Chromium-сессия), какая страница открыта (url, title) и загружена ли она. Вызывай первым, если не уверен, что панель открыта, и перед длинной серией действий.',
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
@@ -468,8 +489,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'wait',
         {
           description:
-            'Дождаться готовности страницы. selector вместе с text ждёт текст внутри элемента. state: hidden или detached ждёт, когда элемент исчезнет (спиннер, модалка) — и в панели, и в Chromium. ' +
-            'Только в Chromium доступны enabled, editable, checked, value, count, URL, loadState и predicate. ' +
+            'Дождаться готовности страницы. selector вместе с text ждёт текст внутри элемента. state: hidden или detached ждёт, когда элемент исчезнет (спиннер, модалка); enabled, checked и value ждут состояния контрола — и в панели, и в Chromium. ' +
+            'Только в Chromium доступны editable, count, URL, loadState и predicate. ' +
             'Условия делят один таймаут до 30000 мс (по умолчанию 5000). Ответ сообщает время ожидания. ' +
             'load не ждёт будущие запросы SPA: для них используй содержимое или predicate.',
           inputSchema: { frame: frameSchema,
