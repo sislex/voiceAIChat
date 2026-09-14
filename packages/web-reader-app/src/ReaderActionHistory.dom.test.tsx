@@ -104,3 +104,14 @@ it('manual mode disables repeat and reveal; details show the action JSON', () =>
   fireEvent.click(screen.getByRole('button', { name: 'Подробности действия 1' }))
   expect(screen.getByText(/"selector": "#buy"/)).toBeTruthy()
 })
+
+it('shows verdict counts, repeat counters and short open labels', () => {
+  render(<ReaderActionHistory actions={[
+    { id: 'o', action: { kind: 'open', url: 'https://shop.example/catalog/very/long/path/that/keeps/going/and/going/forever/more' }, title: null, address: null },
+    { id: 'r', action: { kind: 'read' }, title: null, address: null, count: 3 },
+    { id: 'ok', action: { kind: 'check', text: 'Войти' }, title: null, address: null, ok: true, summary: 'видно' }
+  ]} />)
+  expect(screen.getByLabelText('Проверок пройдено 1, не пройдено 0')).toBeTruthy()
+  expect(screen.getByLabelText('повторено 3 раз')).toBeTruthy()
+  expect(screen.getByText(/Открыл shop\.example\/catalog/).textContent!.length).toBeLessThan(80)
+})

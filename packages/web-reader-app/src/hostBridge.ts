@@ -232,6 +232,15 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         return { ok: completed === steps.length, result: { page: lastPage, steps: results, completed, total: steps.length }, ...(completed === steps.length ? {} : { error: `Шаг ${completed + 1} из ${steps.length} (${results[completed]?.kind}): ${results[completed]?.error ?? 'не выполнен'}` }) }
       })()
     }
+    // check {url|title} — про адрес и заголовок панели: мост отвечает сам, страница не нужна.
+    if (action.kind === 'check' && !action.selector && !action.text && (action.url !== undefined || action.title !== undefined)) {
+      const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
+      const urlOk = action.url === undefined || Boolean(page && browserUrlMatches(page.url, action.url))
+      const titleOk = action.title === undefined || Boolean(page && page.title.toLowerCase().includes(action.title.toLowerCase()))
+      const pass = Boolean(page) && urlOk && titleOk
+      const summary = !page ? 'Страница не открыта' : !urlOk ? `Адрес ${page.url} не совпал с ${action.url}` : !titleOk ? `Заголовок «${page.title}» не содержит «${action.title}»` : action.url !== undefined ? `Адрес ${page.url} совпал` : `Заголовок содержит «${action.title}»`
+      return Promise.resolve({ ok: true, result: { page: page ?? { url: '', title: '' }, pass, expected: { state: 'present' as const, ...(action.url !== undefined ? { url: action.url } : {}), ...(action.title !== undefined ? { title: action.title } : {}) }, actual: { count: page ? 1 : 0, visible: page ? 1 : 0, ...(page ? { value: page.title } : {}) }, summary } as never })
+    }
     // wait {url} — про адрес панели, а не про DOM: мост знает подтверждённый адрес и ждёт его сам.
     if (action.kind === 'wait' && action.url && !action.selector && !action.text) {
       const pattern = action.url, timeout = Math.min(action.timeoutMs ?? 5000, 30_000), started = Date.now()

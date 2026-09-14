@@ -331,4 +331,38 @@ UI (desktop and phone):
 | 09 | Sequence steps show up as one feed item with «N из M шагов» | relay summary |
 | 10 | `aria-expanded` on the details toggle | `ReaderActionHistory` |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-09.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-09.md`. Commit `5984db1d`.
+
+## Cycle 10 — tables, addresses and keys in the person's words
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `read` lists `tables` (caption, headers, first rows) — part `tables` | script | script test |
+| 02 | `find {href}` finds links by where they lead | script | script test |
+| 03 | `find` orders on-screen elements first | script | — (jsdom has no layout) |
+| 04 | `hover {waitMs}` waits for animated menus before collecting `revealed` | script | script test |
+| 05 | `errors {kinds}` filters by kind | script | script test |
+| 06 | `check {url}` and `check {title}` verify the page address and title via the bridge | `hostBridge.ts` | bridge test |
+| 07 | Russian key names in `press` (Ввод, Пробел, Вниз, Эскейп…) | `previewKeyboard.ts` | script test |
+| 08 | Russian role words accepted by the validator as well | shared | shared test |
+| 09 | flash outline gains a white halo for dark and busy backgrounds | script | — |
+| 10 | hint documents check url/title, href, tables, waitMs, kinds, Russian keys | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Repeated reads of the same page collapse into one feed line with «×N» | App, `ReaderActionHistory` |
+| 02 | Feed header shows «✓ N · ✗ M» | `ReaderActionHistory` |
+| 03 | Open steps show host and path instead of the full URL | `actionLabel.ts` |
+| 04 | Page language badge next to the title | Recorder |
+| 05 | Viewport presets 360 and 1280 | Recorder |
+| 06 | Reload button spins while loading (reduced-motion aware) | recorder.css |
+| 07 | Keyboard hints in the empty state on pointer devices | Recorder |
+| 08 | Tools summary shows a dot when a mode is active | Recorder |
+| 09 | Phone remembers the chosen tab (chat/site) for the session | App |
+| 10 | Feed rows keep the verdict colour on the ✓/✗ glyph only | `panel.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-10.md`.

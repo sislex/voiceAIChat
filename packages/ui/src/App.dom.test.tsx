@@ -237,7 +237,9 @@ describe('App — действия модели в веб-превью (мост
         bridge.changed({ ...change, action: { kind: 'errors' } })
       })
       const history = await screen.findByRole('region', { name: 'Действия ассистента' })
-      expect(within(history).getAllByRole('listitem')).toHaveLength(2)
+      // Два одинаковых чтения одной страницы схлопываются в одну строку «×2».
+      expect(within(history).getAllByRole('listitem')).toHaveLength(1)
+      expect(within(history).getByLabelText('повторено 2 раз')).toBeInTheDocument()
       expect(within(history).queryByText('Нажал Чужая кнопка')).not.toBeInTheDocument()
       await userEvent.click(within(history).getAllByRole('button', { name: /^Повторить действие \d+:/ })[0])
       await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'command', action: { kind: 'errors' }, requestId: expect.any(String) }), window.location.origin))

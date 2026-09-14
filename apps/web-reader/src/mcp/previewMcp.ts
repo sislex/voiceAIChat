@@ -370,11 +370,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           state: z.enum(['visible', 'hidden', 'present', 'absent']).optional().describe('Ожидаемое состояние (по умолчанию visible; при count — present)'),
           value: z.string().max(L.text).optional().describe('Ожидаемое значение поля или текст элемента (точно)'),
           contains: z.string().max(L.text).optional().describe('Ожидаемая подстрока значения или текста'),
-          count: z.number().int().min(0).max(100000).optional().describe('Ожидаемое число совпадений')
+          count: z.number().int().min(0).max(100000).optional().describe('Ожидаемое число совпадений'),
+          url: z.string().max(L.url).optional().describe('Ожидаемый адрес страницы, шаблон с * (без text/selector)'),
+          title: z.string().max(L.text).optional().describe('Подстрока ожидаемого заголовка страницы (без text/selector)')
         }
-      }, async ({ frame, text, selector, near, state, value, contains, count }) => {
-        if (!text && !selector) return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
-        return run({ kind: 'check', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(state ? { state } : {}), ...(value !== undefined ? { value } : {}), ...(contains !== undefined ? { contains } : {}), ...(count !== undefined ? { count } : {}) })
+      }, async ({ frame, text, selector, near, state, value, contains, count, url, title }) => {
+        if (!text && !selector && url === undefined && title === undefined) return { content: [{ type: 'text', text: 'Укажи text, selector, url или title.' }], isError: true }
+        return run({ kind: 'check', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(state ? { state } : {}), ...(value !== undefined ? { value } : {}), ...(contains !== undefined ? { contains } : {}), ...(count !== undefined ? { count } : {}), ...(url !== undefined ? { url } : {}), ...(title !== undefined ? { title } : {}) })
       })
 
       server.registerTool('status', {
@@ -424,14 +426,15 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
             text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
             near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
-            exact: z.boolean().optional().describe('Только точное совпадение текста')
+            exact: z.boolean().optional().describe('Только точное совпадение текста'),
+            waitMs: z.number().int().min(0).max(2000).optional().describe('Подождать анимацию меню перед сбором revealed')
           }
         },
-        async ({ frame, selector, text, near, exact }) => {
+        async ({ frame, selector, text, near, exact, waitMs }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
           }
-          return run({ kind: 'hover', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}) })
+          return run({ kind: 'hover', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(waitMs !== undefined ? { waitMs } : {}) })
         }
       )
 
@@ -535,9 +538,9 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Накопленные ошибки открытой в превью страницы: JS-исключения, unhandledrejection, console.error и ' +
             'упавшие fetch/XHR (статус и реальный URL). Проверяй после действий при тестировании фич. clear очищает буфер.',
-          inputSchema: { clear: z.boolean().optional().describe('Очистить буфер после чтения'), since: z.number().nonnegative().optional().describe('Только ошибки после этой отметки at из прошлого ответа') }
+          inputSchema: { clear: z.boolean().optional().describe('Очистить буфер после чтения'), since: z.number().nonnegative().optional().describe('Только ошибки после этой отметки at из прошлого ответа'), kinds: z.array(z.enum(['error', 'unhandledrejection', 'console.error', 'network'])).min(1).max(4).optional().describe('Только эти виды ошибок') }
         },
-        async ({ clear, since }) => run({ kind: 'errors', ...(clear !== undefined ? { clear } : {}), ...(since !== undefined ? { since } : {}) })
+        async ({ clear, since, kinds }) => run({ kind: 'errors', ...(clear !== undefined ? { clear } : {}), ...(since !== undefined ? { since } : {}), ...(kinds ? { kinds } : {}) })
       )
 
       server.registerTool(
@@ -824,7 +827,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
             visible: z.boolean().optional().describe('Только элементы и текст в видимой области окна'),
             brief: z.boolean().optional().describe('Короткое описание страницы словами (панель)'),
-            parts: z.array(z.enum(PREVIEW_READ_PARTS as unknown as [string, ...string[]])).min(1).max(7).optional().describe('Какие части вернуть: headings, links, buttons, inputs, forms, landmarks, text'),
+            parts: z.array(z.enum(PREVIEW_READ_PARTS as unknown as [string, ...string[]])).min(1).max(8).optional().describe('Какие части вернуть: headings, links, buttons, inputs, forms, landmarks, tables, text'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
             offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
           }
@@ -845,20 +848,21 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             near: z.string().max(L.text).optional().describe('Текст рядом с целью — строка таблицы, заголовок карточки'),
             exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
             nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1)'),
+            href: z.string().max(L.url).optional().describe('Подстрока адреса ссылки — найти ссылку по тому, куда она ведёт'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, role, near, exact, nth, limit, visibleOnly }) => {
-          if (!text && !selector && !role) {
-            return { content: [{ type: 'text', text: 'Укажи text, role или selector.' }], isError: true }
+        async ({ frame, text, selector, role, near, exact, nth, href, limit, visibleOnly }) => {
+          if (!text && !selector && !role && !href) {
+            return { content: [{ type: 'text', text: 'Укажи text, role, selector или href.' }], isError: true }
           }
           return run({
             kind: 'find', ...(frame !== undefined ? { frame } : {}),
             ...(text ? { text } : {}),
             ...(selector ? { selector } : {}),
             ...(role ? { role: role.toLowerCase() } : {}),
-            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}),
+            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}), ...(href ? { href } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })

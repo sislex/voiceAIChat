@@ -1,8 +1,13 @@
 import type { PreviewAction } from '@shared/previewActions'
 
+/** Адрес в ленте — как в адресной строке: host и путь без схемы, не длиннее 60 символов. */
+function shortUrl(url: string): string {
+  try { const parsed = new URL(url); const text = parsed.host + (parsed.pathname === '/' && !parsed.search && !parsed.hash ? '' : parsed.pathname + parsed.search + parsed.hash); return text.length > 60 ? text.slice(0, 59) + '…' : text } catch { return url.length > 60 ? url.slice(0, 59) + '…' : url }
+}
+
 export function previewActionLabel(action: PreviewAction): string {
   switch (action.kind) {
-    case 'open': return `Открыл ${action.url}`
+    case 'open': return `Открыл ${shortUrl(action.url)}`
     case 'click': return `Нажал ${action.text ?? action.selector ?? 'элемент'}`
     case 'type': return `Ввёл текст в ${action.selector ?? (action.field ? `поле «${action.field}»` : 'поле')}`
     case 'read': return `Прочитал ${action.selector ?? 'страницу'}`
