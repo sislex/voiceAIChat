@@ -87,6 +87,18 @@ describe('wait по адресу, история и вопрос о выделе
   })
 })
 
+describe('check адреса и заголовка', () => {
+  it('проверяет url и title мостом без страницы', async () => {
+    const h = harness()
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    expect(await h.bridge.run({ kind: 'check', url: 'https://shop.example/*' })).toMatchObject({ ok: true, result: { pass: false, summary: 'Страница не открыта' } })
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/cabinet', title: 'Личный кабинет' })
+    expect(await h.bridge.run({ kind: 'check', url: 'https://shop.example/cab*', title: 'кабинет' })).toMatchObject({ ok: true, result: { pass: true } })
+    expect(await h.bridge.run({ kind: 'check', title: 'Корзина' })).toMatchObject({ ok: true, result: { pass: false, summary: expect.stringContaining('не содержит') } })
+  })
+})
+
 describe('sequence и pending', () => {
   it('выполняет шаги по очереди, сообщает прогресс и останавливается на первой ошибке', async () => {
     const progress: Array<{ done: number; total: number } | null> = []

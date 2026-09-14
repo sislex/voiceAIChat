@@ -1,7 +1,8 @@
 /** dispatchEvent клавиатуры не выполняет браузерное действие по умолчанию: его воспроизводим явно. */
 export function previewKeyboardHelpers(): string {
  return String.raw`const keyChord=value=>{
-  const aliases={Ctrl:'Control',Cmd:'Meta',Command:'Meta',Esc:'Escape',Space:' ',Spacebar:' '};
+  // Русские названия клавиш: человек говорит «нажми Ввод», а не «Enter».
+  const aliases={Ctrl:'Control',Cmd:'Meta',Command:'Meta',Esc:'Escape',Space:' ',Spacebar:' ','Ввод':'Enter','Энтер':'Enter','Пробел':' ','Эскейп':'Escape','Отмена':'Escape','Таб':'Tab','Табуляция':'Tab','Вверх':'ArrowUp','Вниз':'ArrowDown','Влево':'ArrowLeft','Вправо':'ArrowRight','Удалить':'Delete','Забой':'Backspace','Домой':'Home','Конец':'End','Шифт':'Shift','Контрол':'Control','Альт':'Alt'};
   let parts=String(value).split('+');if(parts.length>1&&parts.at(-1)===''){parts.pop();parts[parts.length-1]='+'}
   let key=parts.pop();key=aliases[key]||key;const modifiers=new Set(parts.map(part=>aliases[part]||part));
   if(modifiers.has('ControlOrMeta')){modifiers.delete('ControlOrMeta');modifiers.add(/Mac|iPhone|iPad/.test(navigator.platform)?'Meta':'Control')}

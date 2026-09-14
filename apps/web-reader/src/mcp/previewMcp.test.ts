@@ -710,7 +710,7 @@ describe('previewMcp — инструменты browser', () => {
     await makeApp()
     const result = await call('find', {})
     expect(result.isError).toBe(true)
-    expect(result.text).toContain('text, role или selector')
+    expect(result.text).toContain('text, role, selector или href')
   })
 
   it('click передаёт text, ошибка клиента доходит до модели', async () => {

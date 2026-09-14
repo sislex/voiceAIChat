@@ -454,6 +454,13 @@ describe('Recorder: результат действия и навигация (�
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Адрес превью' }), { key: 'Escape' })
     expect(screen.queryByRole('button', { name: 'Спросить ассистента' })).toBeNull()
   })
+  it('показывает язык страницы рядом с заголовком и новые пресеты ширины', () => {
+    render(<Recorder />); fromHost(init)
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/', title: 'Магазин', lang: 'ru' })
+    expect(screen.getByTitle('Язык страницы: ru').textContent).toBe('ru')
+    const options = [...(screen.getByRole('combobox', { name: 'Ширина вьюпорта' }) as HTMLSelectElement).options].map((option) => option.value)
+    expect(options).toEqual(['', '360', '375', '768', '1024', '1280'])
+  })
   it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()

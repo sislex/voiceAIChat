@@ -800,6 +800,33 @@ describe('скрипт превью: рутина одним вызовом (к�
   })
 })
 
+describe('скрипт превью: таблицы, ссылки по адресу и русские клавиши (круг 10)', () => {
+  it('find по href находит ссылку по адресу; errors kinds фильтрует вид; hover с waitMs ждёт меню', async () => {
+    const byHref = await act({ kind: 'find', href: '/books' })
+    expect((byHref.result as { elements: { text: string }[] }).elements.map((el) => el.text)).toEqual(['Книги'])
+    console.error('только консоль')
+    const kinds = await act({ kind: 'errors', kinds: ['network'], clear: true })
+    expect((kinds.result as { errors: unknown[] }).errors).toEqual([])
+    document.body.insertAdjacentHTML('beforeend', `<button id="slow-menu">Ещё</button><div id="slow-items" style="display:none"><a href="/x">Позже</a></div>`)
+    document.getElementById('slow-menu')!.addEventListener('mouseenter', () => { setTimeout(() => { document.getElementById('slow-items')!.style.display = 'block' }, 100) })
+    const hovered = await act({ kind: 'hover', selector: '#slow-menu', waitMs: 400 })
+    expect((hovered.result as { revealed?: { text: string }[] }).revealed?.map((el) => el.text)).toEqual(['Позже'])
+  })
+
+  it('read перечисляет таблицы построчно, press понимает русские названия клавиш', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<table id="orders"><caption>Заказы</caption><tr><th>№</th><th>Сумма</th></tr><tr><td>1</td><td>100 ₽</td></tr><tr><td>2</td><td>250 ₽</td></tr></table>`)
+    const res = await act({ kind: 'read', parts: ['tables'] })
+    const tables = (res.result as { tables?: { selector: string; caption?: string; headers: string[]; rows: string[][]; totalRows: number }[] }).tables
+    expect(tables).toEqual([{ selector: '#orders', caption: 'Заказы', headers: ['№', 'Сумма'], rows: [['1', '100 ₽'], ['2', '250 ₽']], totalRows: 2 }])
+    const input = document.getElementById('q') as HTMLInputElement
+    const keys: string[] = []
+    input.addEventListener('keydown', (event) => keys.push(event.key))
+    const pressed = await act({ kind: 'press', key: 'Ввод', selector: '#q' })
+    expect(pressed.ok).toBe(true)
+    expect(keys).toEqual(['Enter'])
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

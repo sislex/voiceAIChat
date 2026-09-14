@@ -268,7 +268,7 @@ const visibleText=(scope)=>{
 const onScreen=(el)=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth};
 // Короткая подсветка элемента, с которым работает модель: человек видит, куда именно «нажали».
 const FLASH_ATTR='data-voicechat-flash';
-const flash=(el)=>{try{const prev=el.style.outline,prevOffset=el.style.outlineOffset;el.setAttribute(FLASH_ATTR,'');el.style.outline='2px solid #4f8cff';el.style.outlineOffset='2px';setTimeout(()=>{if(!el.hasAttribute(FLASH_ATTR))return;el.removeAttribute(FLASH_ATTR);el.style.outline=prev;el.style.outlineOffset=prevOffset},900)}catch{}};
+const flash=(el)=>{try{const prev=el.style.outline,prevOffset=el.style.outlineOffset;el.setAttribute(FLASH_ATTR,'');el.style.outline='2px solid #4f8cff';el.style.outlineOffset='2px';const prevShadow=el.style.boxShadow;el.style.boxShadow='0 0 0 4px rgba(255,255,255,.9)';setTimeout(()=>{if(!el.hasAttribute(FLASH_ATTR))return;el.removeAttribute(FLASH_ATTR);el.style.outline=prev;el.style.outlineOffset=prevOffset;el.style.boxShadow=prevShadow},900)}catch{}};
 const showLabel=(el,label)=>{try{
   const prev=el.style.outline,prevOffset=el.style.outlineOffset;el.setAttribute(FLASH_ATTR,'show');el.style.outline='3px solid #ff9f1c';el.style.outlineOffset='3px';
   const tag=document.createElement('div');tag.setAttribute('data-voicechat-inspector','show-label');tag.textContent=String(label).slice(0,120);
@@ -435,7 +435,12 @@ const run=(action)=>{
   if(action.kind==='accessibility')throw new Error('Native accessibility requires Chromium mode.');
   if(action.kind==='probe')return runProbe(action);
   if(action.kind==='find'){
-    const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden')).filter(el=>!action.onScreen||onScreen(el));
+    const hrefNeedle=typeof action.href==='string'?action.href.toLowerCase():'';
+    const base=action.href&&!action.text&&!action.selector&&!action.role?bySelector('a[href]'):findTargets(action);
+    // Что на экране — сначала: человек видит ближайшее, а не первое в DOM.
+    const found=base.filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden')).filter(el=>!action.onScreen||onScreen(el))
+      .filter(el=>!hrefNeedle||(el.localName==='a'&&unproxy(el.getAttribute('href')||'').toLowerCase().includes(hrefNeedle)))
+      .map((el,i)=>({el,i,on:onScreen(el)?0:1})).sort((a,b)=>a.on-b.on||a.i-b.i).map(item=>item.el);
     const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
     // Ничего не нашлось — подсказать похожие тексты, как человек оглядывается вокруг искомого слова.
     const suggestions=!found.length&&action.text?suggestTexts(action.text):[];
@@ -583,9 +588,10 @@ const run=(action)=>{
     const described=(el.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)).filter(Boolean).map(node=>readableText(node,EL_TEXT,true)).filter(Boolean).join(' ');
     const shown=[...document.querySelectorAll('[role=tooltip]')].filter(readingVisible).map(node=>readableText(node,EL_TEXT)).filter(Boolean).join(' ');
     const tooltip=(el.getAttribute('title')||el.closest('[title]')?.getAttribute('title')||described||shown||'').slice(0,EL_TEXT);
-    // Что раскрылось при наведении — пункты меню, которые человек нажмёт следующими.
-    const revealed=[...document.querySelectorAll(CLICKABLE)].filter(node=>node!==el&&!el.contains(node)&&!visibleBefore.has(node)&&actionVisible(node)).slice(0,10).map(describe);
-    return {page:pageInfo(),hovered:describe(el),...(tooltip?{tooltip}:{}),...(revealed.length?{revealed}:{})}
+    // Что раскрылось при наведении — пункты меню, которые человек нажмёт следующими; меню с анимацией ждём waitMs.
+    const collect=()=>{const revealed=[...document.querySelectorAll(CLICKABLE)].filter(node=>node!==el&&!el.contains(node)&&!visibleBefore.has(node)&&actionVisible(node)).slice(0,10).map(describe);return {page:pageInfo(),hovered:describe(el),...(tooltip?{tooltip}:{}),...(revealed.length?{revealed}:{})}};
+    if(typeof action.waitMs==='number'&&action.waitMs>0)return new Promise(ok=>setTimeout(()=>ok(collect()),Math.min(2000,action.waitMs)));
+    return collect()
   }
   if(action.kind==='scroll'){
     let el=document.scrollingElement||document.documentElement,target='window';
@@ -603,7 +609,8 @@ const run=(action)=>{
     return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop,maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)},atTop:el.scrollTop<=0,atBottom:el.scrollTop>=maxTop-1,...(action.to==='element'&&shownEl?{element:describe(shownEl)}:{})}
   }
   if(action.kind==='errors'){
-    const fresh=typeof action.since==='number'?pageErrors.filter((e)=>e.at>action.since):pageErrors;
+    const kinds=Array.isArray(action.kinds)&&action.kinds.length?new Set(action.kinds):null;
+    const fresh=pageErrors.filter((e)=>(typeof action.since!=='number'||e.at>action.since)&&(!kinds||kinds.has(e.kind)));
     // Повторы одной ошибки схлопываются с count: сто одинаковых строк не помогают ни человеку, ни модели.
     const grouped=new Map();
     for(const e of fresh){const key=e.kind+'|'+e.message+'|'+(e.url||'');const prev=grouped.get(key);if(prev){prev.count++;prev.at=e.at}else grouped.set(key,{kind:e.kind,message:e.message,at:e.at,...(e.url?{url:String(e.url).slice(0,300)}:{}),...(typeof e.status==='number'?{status:e.status}:{}),count:1})}
@@ -798,6 +805,8 @@ const run=(action)=>{
     const scope=section?section.scope:dialogEl||readingScope(action);
     const selectedText=(()=>{try{return String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{return ''}})();
     // visible — экран пользователя: элементы вне видимой области отфильтровываются, текст берётся из видимых узлов.
+    const parts=Array.isArray(action.parts)&&action.parts.length?new Set(action.parts):null;
+    const keep=(name,value)=>!parts||parts.has(name)?value:undefined;
     // Клон раздела не в документе: видимость и координаты у него не спросить — берём всё.
     const pick=(selector)=>(section&&section.detached?[...(scope.matches(selector)?[scope]:[]),...scope.querySelectorAll(selector)]:scopeElements(scope,selector)).filter(el=>!action.visible||onScreen(el));
     const headings=pick('h1,h2,h3,h4,h5,h6').slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:readableText(h,EL_TEXT)}));
@@ -806,13 +815,13 @@ const run=(action)=>{
     const buttons=pick('button,[role=button],input[type=submit],input[type=button],input[type=reset],input[type=image]').map(el=>accessibleName(el)).filter(Boolean).slice(0,BUTTONS);
     const inputs=pick('input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el),...(el.localName==='select'?{options:[...el.options].slice(0,20).map(o=>textOf(o).slice(0,EL_TEXT))}:{})}));
     const forms=pick('form').slice(0,10).map(form=>{const fields=[...form.querySelectorAll('input:not([type=hidden]),textarea,select')].filter(readingVisible).slice(0,20).map(el=>accessibleName(el)||el.getAttribute('placeholder')||el.name||el.localName);const submitter=[...form.querySelectorAll('button,input[type=submit],input[type=image]')].find(el=>readingVisible(el)&&(el.localName==='input'||!el.type||el.type==='submit'));return {selector:uniqueSelector(form),fields,...(submitter?{submit:accessibleName(submitter)}:{})}});
+    // Таблицы построчно: заголовки и первые строки — так их читает человек.
+    const tables=(!parts||parts.has('tables'))?pick('table').slice(0,5).map(table=>{const rowsAll=[...table.querySelectorAll('tr')].filter(readingVisible);const headers=[...table.querySelectorAll('th')].filter(readingVisible).slice(0,12).map(th=>readableText(th,EL_TEXT));const body=rowsAll.filter(tr=>!tr.querySelector('th')||headers.length===0);const rows=body.slice(0,10).map(tr=>[...tr.querySelectorAll('td,th')].slice(0,12).map(td=>readableText(td,EL_TEXT)));const cap=table.querySelector('caption');return {selector:uniqueSelector(table),...(cap?{caption:readableText(cap,EL_TEXT)}:{}),headers,rows,totalRows:body.length}}):[];
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached)),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
     const focus=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement?uniqueSelector(document.activeElement):undefined;
-    const parts=Array.isArray(action.parts)&&action.parts.length?new Set(action.parts):null;
-    const keep=(name,value)=>!parts||parts.has(name)?value:undefined;
     const brief=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; ').slice(0,600):'';
-    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(brief?{brief}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(brief?{brief}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };

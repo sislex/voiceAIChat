@@ -42,3 +42,5 @@
 .webpreview-history-summary { display: block; color: var(--text); }
 .webpreview-history-details { flex-basis: 100%; margin: 4px 0 0; padding: 6px 8px; max-height: 140px; overflow: auto; border-radius: 6px; background: var(--panel); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .webpreview-history li { flex-wrap: wrap; }
+.webpreview-history-verdicts { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.webpreview-history-count { color: var(--text-dim); }

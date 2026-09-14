@@ -540,10 +540,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
    */
   const [gitWorkspaces, setGitWorkspaces] = useState<{ items: GitWorkspaceRef[]; status: LoadStatus; error: string | null }>({ items: [], status: 'idle', error: null })
   const [release, setRelease] = useState<HealthResponse | null>(null)
-  const [chatView, setChatViewState] = useState<'chat' | 'preview'>('chat')
+  // Вкладка телефона запоминается на сессию: после перезагрузки человек возвращается туда же, где был.
+  const [chatView, setChatViewState] = useState<'chat' | 'preview'>(() => { try { return sessionStorage.getItem('voicechat:split-view:v1') === 'preview' ? 'preview' : 'chat' } catch { return 'chat' } })
   const setChatView = useCallback((view: SplitView): void => {
     chatViewRef.current = view
     setChatViewState(view)
+    try { sessionStorage.setItem('voicechat:split-view:v1', view) } catch { /* приватный режим */ }
     setSplitAttention((state) => splitAttentionReducer(state, { type: 'switch', view }))
     if (view === 'preview') setSplitAttentionFailed(false)
   }, [])
@@ -613,7 +615,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // к host, который ещё размонтируется, и держит Reader-маршруты источником истины.
   const previewRunnerRef = useRef<ReaderHostRegistration | null>(null)
   const readerErrorSequence = useRef(0)
-  const [readerActions, setReaderActions] = useState<Array<{ id: string; action: PreviewAction; address: string | null; title: string | null; at: number; summary?: string; ok?: boolean }>>([])
+  const [readerActions, setReaderActions] = useState<Array<{ id: string; action: PreviewAction; address: string | null; title: string | null; at: number; summary?: string; ok?: boolean; count?: number }>>([])
   const [readerPageError, setReaderPageError] = useState<string | null>(null)
   const [readerPageErrorCount, setReaderPageErrorCount] = useState(0)
   // Действие модели, идущее прямо сейчас: панель показывает его человеку живым статусом.
@@ -699,7 +701,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     return bridge.onChanged((message) => {
       if (message.conversationId !== chat.activeId) return
       const item = { id: browserId(), action: message.action, address: message.address, title: message.title, at: Date.now(), ...(message.summary !== undefined ? { summary: message.summary } : {}), ...(message.ok !== undefined ? { ok: message.ok } : {}) }
-      setReaderActions((items) => [...items, item].slice(-20))
+      // Одинаковые подряд чтения одной страницы схлопываются в «×N»: лента остаётся рассказом, а не логом.
+      const repeatable = message.action.kind === 'read' || message.action.kind === 'find' || message.action.kind === 'errors' || message.action.kind === 'status'
+      setReaderActions((items) => {
+        const last = items.at(-1)
+        if (repeatable && last && last.action.kind === message.action.kind && last.address === message.address && JSON.stringify(last.action) === JSON.stringify(message.action)) return [...items.slice(0, -1), { ...last, at: item.at, count: (last.count ?? 1) + 1 }]
+        return [...items, item].slice(-20)
+      })
       if (message.action.kind !== 'errors') setSplitAttention((state) => splitAttentionReducer(state, { type: 'reader-changed', view: chatViewRef.current }))
       if (message.ok === false && chatViewRef.current === 'chat') setSplitAttentionFailed(true)
       if (message.action.kind !== 'errors') {
