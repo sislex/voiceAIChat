@@ -34,6 +34,11 @@ export interface WebReaderFrameProps {
   actions?: readonly { id: string; action: PreviewAction; address: string | null; title: string | null; at?: number }[]
   /** Заголовок открытой страницы (null — страницы нет): для подписи мобильной вкладки. */
   onPageTitle?: ((title: string | null) => void) | undefined
+  /** Пользователь выделил текст на странице и хочет спросить о нём в чате. */
+  onAsk?: ((text: string) => void) | undefined
+  /** Последнее неудавшееся действие модели: панель показывает причину и даёт повторить. */
+  actionError?: { action: PreviewAction; error: string } | null
+  onRetryAction?: ((action: PreviewAction) => void) | undefined
   onRepeatAction?: (action: PreviewAction) => void
   /** Показать на странице элемент прошлого действия (прокрутить к селектору и подсветить). */
   onRevealAction?: (selector: string) => void

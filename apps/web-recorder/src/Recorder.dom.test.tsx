@@ -391,6 +391,30 @@ describe('Recorder: результат действия и навигация (�
     expect(open).toHaveBeenCalledWith('https://other.example/', '_blank', 'noopener,noreferrer')
     expect(screen.getByTitle('Предпросмотр сайта')).toBe(frame)
   })
+  it('выделение на странице превращается в вопрос ассистенту сообщением ask', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    ready()
+    fromPage({ type: 'voicechat.preview.selection.v1', text: 'RFC 2606' })
+    fireEvent.click(screen.getByRole('button', { name: 'Спросить ассистента' }))
+    expect(sent(post).find((message) => message.kind === 'ask')).toMatchObject({ ...ids, text: 'RFC 2606' })
+    expect(screen.queryByRole('button', { name: 'Спросить ассистента' })).toBeNull()
+  })
+  it('стрелки ходят по меню инструментов, ссылка с названием копируется в markdown', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    ready()
+    const summary = screen.getByText('Инструменты ▾')
+    summary.closest('details')!.open = true
+    const menu = screen.getByRole('group', { name: 'Инструменты страницы' })
+    const buttons = [...menu.querySelectorAll('button:not(:disabled)')] as HTMLButtonElement[]
+    buttons[0].focus()
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(buttons[1])
+    fireEvent.keyDown(menu, { key: 'End' })
+    expect(document.activeElement).toBe(buttons[buttons.length - 1])
+    fireEvent.click(screen.getByRole('button', { name: 'Копировать ссылку с названием' }))
+    expect(writeText).toHaveBeenCalledWith('[Магазин](https://shop.example/)')
+  })
   it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()

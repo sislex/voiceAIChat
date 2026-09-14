@@ -85,14 +85,17 @@ export type PreviewAction = BrowserFrameTarget & (
   /** url — абсолютный http(s) либо относительный путь (`/about`, `?page=2`, `#/route`): панель разрешает его от открытой страницы. */
   | { kind: 'open'; url: string; diagnostic?: boolean }
   /** role сужает совпадения по роли элемента (button, link, textbox…): так ищет пользователь, а не CSS. */
-  | { kind: 'find'; text?: string; selector?: string; role?: string; near?: string; exact?: boolean; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
+  /** onScreen — только то, что пользователь видит сейчас без прокрутки. */
+  | { kind: 'find'; text?: string; selector?: string; role?: string; near?: string; exact?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
   | { kind: 'click'; selector?: string; text?: string; near?: string; exact?: boolean; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; diagnostic?: boolean }
   /** field — подпись, placeholder или name поля вместо CSS-селектора; append дописывает к текущему значению. */
-  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; diagnostic?: boolean }
+  /** perKey — посимвольный ввод с событиями клавиатуры: для полей, слушающих keydown (маски, автодополнение). */
+  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; diagnostic?: boolean }
   /** visible — только то, что сейчас в видимой области окна: экран пользователя, а не весь документ. */
-  | { kind: 'read'; selector?: string; limit?: number; offset?: number; visible?: boolean; diagnostic?: boolean }
+  /** section — прочитать раздел под заголовком с этим текстом, как человек листает до нужного места. */
+  | { kind: 'read'; selector?: string; section?: string; limit?: number; offset?: number; visible?: boolean; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   | { kind: 'hover'; selector?: string; text?: string; near?: string; exact?: boolean; diagnostic?: boolean }
@@ -180,6 +183,8 @@ export interface PreviewStatusResult {
   pageStatus: 'empty' | 'loading' | 'ready' | 'error'
   page: PreviewPageInfo | null
   error?: string
+  /** Последние адреса этой панели, новые первыми — куда «ходили» в этом разговоре. */
+  history?: string[]
 }
 
 export interface PreviewPageInfo {
@@ -205,6 +210,8 @@ export interface PreviewClickResult {
   focus?: string
   /** Ошибки страницы, возникшие синхронно в ответ на клик. */
   newErrors?: PreviewPageError[]
+  /** Элемент, перекрывающий цель в точке клика (оверлей, модалка): клик мог не дойти. */
+  obscuredBy?: string
 }
 
 export interface PreviewTypeResult {
@@ -249,6 +256,10 @@ export interface PreviewReadResult {
   landmarks?: { role: string; name: string; selector: string }[]
   /** Элемент с фокусом — где сейчас «курсор» пользователя. */
   focus?: string
+  /** Текст, выделенный пользователем на странице (до 2000 символов). */
+  selection?: string
+  /** Заголовок раздела, если читали section. */
+  section?: string
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
   total?: number
@@ -508,6 +519,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.role === undefined || (bounded(value.role, 40) && /^[a-z]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
+        (value.onScreen === undefined || typeof value.onScreen === 'boolean') &&
         (value.text !== undefined || value.selector !== undefined || value.role !== undefined)
       )
     case 'click':
@@ -525,9 +537,10 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (bounded(value.selector, L.selector) && value.selector.length > 0 || bounded(value.field, L.text) && value.field.trim().length > 0) &&
         bounded(value.text, L.text) &&
         (value.submit === undefined || typeof value.submit === 'boolean') &&
-        (value.append === undefined || typeof value.append === 'boolean')
+        (value.append === undefined || typeof value.append === 'boolean') &&
+        (value.perKey === undefined || typeof value.perKey === 'boolean')
     case 'read':
-      return optBounded(value.selector, L.selector) &&
+      return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) &&
         (value.visible === undefined || typeof value.visible === 'boolean') &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
         (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0))
@@ -744,6 +757,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'fill {fields: [{field|selector, value}], submit?} — заполнить форму целиком одним действием и отправить; ответ содержит validation (сообщения полей, как их увидел бы человек). ' +
     'choose {text, in?} — выбрать пункт выпадающего меню или списка: in — текст или селектор триггера, который его открывает. ' +
     'После type ответ может содержать options — подсказки автодополнения; после hover — revealed — показавшиеся пункты меню. Сочетания клавиш в press пишутся как Control+a или Shift+Tab. ' +
+    'read {section: «Цены»} читает раздел под заголовком с таким текстом; read отдаёт selection — текст, выделенный пользователем на странице (если он просит «что это?» — начни с него). ' +
+    'find {onScreen: true} — только то, что пользователь видит без прокрутки. type {perKey: true} печатает посимвольно с событиями клавиатуры (маски ввода, автодополнение). ' +
+    'wait {url: шаблон с *} в панели ждёт, когда адрес страницы станет таким. Ответ click с obscuredBy означает, что цель перекрыта оверлеем — сначала закрой его. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

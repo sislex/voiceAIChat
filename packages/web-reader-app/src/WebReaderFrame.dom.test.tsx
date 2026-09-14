@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
 import { WebReaderFrame, type WebReaderFramePlatform } from './WebReaderFrame'
@@ -29,6 +29,19 @@ function emit(data: object, overrides: { origin?: string; source?: MessageEventS
 afterEach(() => cleanup())
 
 describe('WebReaderFrame', () => {
+  it('показывает неудачу действия ассистента с кнопкой повтора и секунды долгого действия', () => {
+    vi.useFakeTimers()
+    try {
+      const onSave = vi.fn(async () => undefined), onRetryAction = vi.fn()
+      const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-fail" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} actionError={{ action: { kind: 'click', text: 'Купить' }, error: 'Элемент не найден' }} onRetryAction={onRetryAction} />)
+      expect(screen.getByText(/Ассистент не смог: нажимает Купить — Элемент не найден/)).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+      expect(onRetryAction).toHaveBeenCalledWith({ kind: 'click', text: 'Купить' })
+      rerender(<WebReaderFrame platform={platform} conversationId="conv-fail" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pendingAction={{ kind: 'read' }} />)
+      act(() => { vi.advanceTimersByTime(3500) })
+      expect(screen.getByRole('status').textContent).toContain('3 с')
+    } finally { vi.useRealTimers() }
+  })
   it('ошибку страницы можно скрыть; новая ошибка появляется снова', () => {
     const onSave = vi.fn(async () => undefined)
     const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-err" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pageError="TypeError: boom" />)

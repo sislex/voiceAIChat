@@ -605,7 +605,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const saved = Number(safeStorageGet(PREVIEW_WIDTH_KEY))
     return Number.isFinite(saved) && saved >= PREVIEW_WIDTH_MIN && saved <= PREVIEW_WIDTH_MAX ? saved : PREVIEW_WIDTH_DEFAULT
   })
-  useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null); setReaderPendingAction(null); setSplitAttention(null); setReaderPageTitle(null) }, [chat.activeId])
+  useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null); setReaderPendingAction(null); setSplitAttention(null); setReaderPageTitle(null); setReaderActionError(null) }, [chat.activeId])
   // Действия модели в превью (mcp__browser__*): регистрацию iframe создаёт
   // мост WebReaderFrame (registrationId ротируется на каждый boot Reader).
   // Хранение её вместе с conversationId не даёт переключившемуся чату обратиться
@@ -617,6 +617,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Действие модели, идущее прямо сейчас: панель показывает его человеку живым статусом.
   const [readerPendingAction, setReaderPendingAction] = useState<PreviewAction | null>(null)
   const readerPendingSequence = useRef(0)
+  // Неудача действия модели: панель показывает причину и даёт повторить; через 15 с строка уходит сама.
+  const [readerActionError, setReaderActionError] = useState<{ action: PreviewAction; error: string } | null>(null)
+  useEffect(() => {
+    if (!readerActionError) return
+    const timer = setTimeout(() => setReaderActionError(null), 15_000)
+    return () => clearTimeout(timer)
+  }, [readerActionError])
   // Метка на скрытой мобильной вкладке: модель действовала на сайте, пока открыт чат.
   const [splitAttention, setSplitAttention] = useState<SplitView | null>(null)
   const chatViewRef = useRef<SplitView>('chat')
@@ -696,6 +703,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       }).then(outcome => {
         // Более позднее действие уже показано — не гасим его статус завершением старого.
         if (sequence === readerPendingSequence.current) setReaderPendingAction(null)
+        if (conversationId === chat.activeId) setReaderActionError(outcome.ok || action.kind === 'errors' || action.kind === 'status' ? null : { action, error: outcome.error ?? 'действие не выполнено' })
         bridge.result({ conversationId, requestId, ...outcome })
       })
     })
@@ -2930,7 +2938,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane localAgentId={window.featurePreview?.localAgentId} key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} projectId={activeConversation?.projectId ?? null} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
       {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <div id="workshop-side-pane" role="tabpanel" aria-labelledby="workshop-side-tab" className="workshop-side-host"><Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense></div>}
       {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine === 'chromium' && <Suspense fallback={<div role="status">Запуск полного браузера…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} initialUrl={activeConversation.previewUrl ?? null} onPageChange={url => chatActions.setConversationPreviewUrl(chat.activeId!, url)} /></Suspense>}
-      {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine !== 'chromium' && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId} actions={readerActions} pendingAction={readerPendingAction} onPageTitle={setReaderPageTitle} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} onRevealAction={(selector) => { void previewRunnerRef.current?.run({ kind: 'scroll', to: 'element', selector }).then(() => previewRunnerRef.current?.run({ kind: 'hover', selector })) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
+      {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine !== 'chromium' && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId} actions={readerActions} pendingAction={readerPendingAction} onPageTitle={setReaderPageTitle} actionError={readerActionError} onRetryAction={(action) => { setReaderActionError(null); void previewRunnerRef.current?.run(action) }} onAsk={(text) => { chatActions.setDraft(`«${text}» — что это значит на открытой странице?`); if (window.matchMedia('(max-width: 768px)').matches) setChatView('chat') }} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} onRevealAction={(selector) => { void previewRunnerRef.current?.run({ kind: 'scroll', to: 'element', selector }).then(() => previewRunnerRef.current?.run({ kind: 'hover', selector })) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}
 

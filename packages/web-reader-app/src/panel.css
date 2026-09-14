@@ -35,3 +35,5 @@
 @media (prefers-reduced-motion: reduce) { .webpreview-live__dot { animation: none; } }
 .webpreview-page-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 @media (pointer: coarse) { .webpreview-history li > button, .webpreview-page-error .vc-btn, .webpreview-live { min-height: 44px; } }
+.webpreview-live__time { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.webpreview-action-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

@@ -50,6 +50,32 @@ describe('относительный open и заголовок для host', ()
   })
 })
 
+describe('wait по адресу, история и вопрос о выделенном', () => {
+  it('wait {url} ждёт подтверждённый адрес панели и отказывает по таймауту', async () => {
+    const h = harness()
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/login' })
+    const waiting = h.bridge.run({ kind: 'wait', url: 'https://shop.example/dashboard*', timeoutMs: 2000 })
+    h.from(registrationId, { kind: 'page-status', status: 'loading', url: 'https://shop.example/login' })
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/dashboard?tab=1' })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await waiting).toMatchObject({ ok: true, result: { page: { url: 'https://shop.example/dashboard?tab=1' } } })
+    const late = h.bridge.run({ kind: 'wait', url: 'https://shop.example/never', timeoutMs: 400 })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(await late).toMatchObject({ ok: false, error: expect.stringContaining('dashboard') })
+    expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { history: ['https://shop.example/dashboard?tab=1', 'https://shop.example/login'] } })
+  })
+  it('сообщение ask доходит до host', () => {
+    const asked: string[] = []
+    let seq = 0
+    const bridge = createReaderHostBridge({ conversationId: 'conv-1', newId: () => `id-${++seq}`, send: () => {}, onAsk: (text) => asked.push(text) })
+    bridge.receive({ type, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: [] })
+    bridge.receive({ type, conversationId: 'conv-1', registrationId: bridge.registrationId()!, kind: 'ask', text: 'Что такое RFC 2606?' })
+    expect(asked).toEqual(['Что такое RFC 2606?'])
+  })
+})
+
 describe('status и outline', () => {
   it('status отвечает без страницы и после готовности, open несёт outline', async () => {
     const h = harness()
@@ -62,7 +88,7 @@ describe('status и outline', () => {
     const outline = { headings: ['Магазин'], links: 12, buttons: 3, inputs: 1 }
     h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/', title: 'Магазин', outline })
     expect(await open).toEqual({ ok: true, result: { url: 'https://shop.example/', title: 'Магазин', outline } })
-    expect(await h.bridge.run({ kind: 'status' })).toEqual({ ok: true, result: { connected: true, pageStatus: 'ready', page: { url: 'https://shop.example/', title: 'Магазин' } } })
+    expect(await h.bridge.run({ kind: 'status' })).toEqual({ ok: true, result: { connected: true, pageStatus: 'ready', page: { url: 'https://shop.example/', title: 'Магазин' }, history: ['https://shop.example/'] } })
     h.from(registrationId, { kind: 'page-status', status: 'error', url: 'https://shop.example/', error: 'Сайт недоступен' })
     expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { pageStatus: 'error', error: 'Сайт недоступен' } })
   })

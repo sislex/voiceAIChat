@@ -245,6 +245,8 @@ const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],i
 const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};
 const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url);target.hash=location.hash;url=target.toString()}catch{}return {url,title:document.title||''}};
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
+// Человек не различает «ёлочки» и "кавычки", тире и дефис, обычный и неразрывный пробел — поиск текста тоже не должен.
+const normText=(value)=>String(value||'').replace(/[\u00a0\u202f]/g,' ').replace(/[«»“”„"]/g,'"').replace(/[’‘\u0060´]/g,"'").replace(/[–—‑]/g,'-').replace(/\\s+/g,' ').trim().toLowerCase();
 ${previewInteractionHelpers()}
 ${previewReadingHelpers()}
 ${previewAuditHelpers()}
@@ -271,17 +273,19 @@ const describe=(el)=>{
 };
 const bySelector=(selector)=>{let list;try{list=document.querySelectorAll(selector)}catch{throw new Error('Некорректный CSS-селектор: '+selector)}return [...list].filter(el=>!el.closest('[data-voicechat-inspector]'))};
 const byText=(text,hidden=false,exactOnly=false)=>{
-  const q=text.replace(/\\s+/g,' ').trim().toLowerCase();
+  const q=normText(text);
   if(!q)return[];
   const all=[];
   for(const el of document.querySelectorAll('body *')){
     if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}'||!hidden&&!actionVisible(el))continue;
     const t=accessibleName(el)||textOf(el);
-    if(!t||t.length>300||(exactOnly?t.toLowerCase()!==q:!t.toLowerCase().includes(q)))continue;
+    if(!t||t.length>300)continue;
+    const n=normText(t);
+    if(exactOnly?n!==q:!n.includes(q))continue;
     all.push(el)
   }
   const deepest=all.filter(el=>!all.some(other=>other!==el&&el.contains(other)));
-  const exact=(el)=>textOf(el).toLowerCase()===q?0:1;
+  const exact=(el)=>normText(textOf(el))===q?0:1;
   const clickable=(el)=>el.matches(CLICKABLE)||el.closest(CLICKABLE)?0:1;
   return deepest.sort((a,b)=>(exact(a)-exact(b))||(clickable(a)-clickable(b)))
 };
@@ -294,9 +298,9 @@ const byRole=(action)=>{
 // near — как человек различает одинаковые кнопки: по тексту строки, карточки или секции, где стоит цель.
 const CONTEXT_CONTAINERS='tr,li,article,section,fieldset,form,dialog,nav,header,footer,aside,[role=row],[role=listitem],[role=group],[role=dialog],[role=region],[role=tabpanel]';
 const nearFilter=(candidates,near)=>{
-  const q=String(near||'').replace(/\\s+/g,' ').trim().toLowerCase();
+  const q=normText(near);
   if(!q)return candidates;
-  const scored=candidates.map(el=>{let node=el.parentElement,depth=0;while(node&&node!==document.body&&depth<10){const t=textOf(node);if(t.length<=4000&&t.toLowerCase().includes(q))return {el,size:t.length};node=node.parentElement;depth++}return null}).filter(Boolean);
+  const scored=candidates.map(el=>{let node=el.parentElement,depth=0;while(node&&node!==document.body&&depth<10){const t=textOf(node);if(t.length<=4000&&normText(t).includes(q))return {el,size:t.length};node=node.parentElement;depth++}return null}).filter(Boolean);
   if(!scored.length)return[];
   const best=Math.min(...scored.map(item=>item.size));
   return scored.filter(item=>item.size===best).map(item=>item.el)
@@ -364,12 +368,39 @@ const typeInto=(el,text,append,submit)=>{
     const value=sensitive(el)?'':editable?String(el.textContent||'').slice(0,EL_TEXT):String(el.value||'').slice(0,EL_TEXT);
     return {page:pageInfo(),typed:describe(el),submitted,value}
 };
+// Посимвольный ввод: keydown/keypress/input/keyup на каждую букву — как печатает человек; маски и автодополнение это слышат.
+const typePerKey=(el,text,append,submit)=>{
+  if(!keyboardEditable(el)&&!el.isContentEditable)return typeInto(el,text,append,submit);
+  el.focus&&el.focus();
+  if(!append){if(el.isContentEditable)el.textContent='';else{setNativeValue(el,'');el.dispatchEvent(inputEvent('input',''))}}
+  for(const ch of Array.from(text))performKey(el,ch==='\\n'?'Enter':ch===' '?'Space':ch);
+  el.dispatchEvent(new Event('change',{bubbles:true}));
+  let submitted=false;
+  if(submit){const form=el.form||el.closest('form');if(form){form.requestSubmit?form.requestSubmit():form.submit();submitted=true}else performKey(el,'Enter')}
+  const value=sensitive(el)?'':el.isContentEditable?String(el.textContent||'').slice(0,EL_TEXT):String(el.value||'').slice(0,EL_TEXT);
+  return {page:pageInfo(),typed:describe(el),submitted,value}
+};
+// Раздел под заголовком: от заголовка до следующего того же или более высокого уровня — так человек читает «Цены».
+const sectionScope=(title)=>{
+  const q=normText(title);
+  const heading=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(readingVisible).find(h=>normText(readableText(h,EL_TEXT))===q)||[...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(readingVisible).find(h=>normText(readableText(h,EL_TEXT)).includes(q));
+  if(!heading)throw new Error('Раздел не найден: '+title);
+  const level=Number(heading.localName[1]);
+  const wrapper=document.createElement('section');wrapper.setAttribute('data-voicechat-section','');
+  const parent=heading.parentElement;
+  let node=heading.nextElementSibling,count=0;
+  while(node&&count<500){if(/^h[1-6]$/.test(node.localName)&&Number(node.localName[1])<=level)break;wrapper.appendChild(node.cloneNode(true));node=node.nextElementSibling;count++}
+  // Заголовок — единственный ребёнок родителя-обёртки (карточка): читаем родителя целиком.
+  if(!wrapper.childElementCount&&parent&&parent!==document.body)return {scope:parent,title:readableText(heading,EL_TEXT)};
+  wrapper.prepend(heading.cloneNode(true));
+  return {scope:wrapper,title:readableText(heading,EL_TEXT),detached:true}
+};
 const run=(action)=>{
   if(action.kind==='audit')return runAudit(action);
   if(action.kind==='accessibility')throw new Error('Native accessibility requires Chromium mode.');
   if(action.kind==='probe')return runProbe(action);
   if(action.kind==='find'){
-    const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'));
+    const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden')).filter(el=>!action.onScreen||onScreen(el));
     const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
     return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{})}
   }
@@ -392,9 +423,11 @@ const run=(action)=>{
     }
     if(count===2)el.dispatchEvent(new MouseEvent('dblclick',Object.assign({buttons:0,detail:2},base)));
     const dialogs=openDialogs().filter(sel=>!dialogsBefore.has(sel));
+    // Что лежит в точке клика: оверлей поверх кнопки означает, что человек бы в неё не попал.
+    let obscuredBy=null;try{const hit=document.elementFromPoint?document.elementFromPoint(base.clientX,base.clientY):null;if(hit&&hit!==el&&!el.contains(hit)&&!hit.contains(el)&&!hit.closest('[data-voicechat-inspector]'))obscuredBy=uniqueSelector(hit)}catch{}
     const active=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==el?uniqueSelector(document.activeElement):null;
     const newErrors=pageErrors.slice(errorsBefore).slice(0,3).map((e)=>({kind:e.kind,message:e.message,at:e.at}));
-    return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{})}
+    return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{}),...(obscuredBy?{obscuredBy}:{})}
   }
   if(action.kind==='fill'){
     // Форма целиком, как её заполняет человек: поле за полем, затем отправка первой формы.
@@ -450,7 +483,7 @@ const run=(action)=>{
   if(action.kind==='type'){
     const el=action.selector?chooseTarget(action):fieldTarget(action.field||'',action.near);actionable(el,true);
     flash(el);
-    const outcome=typeInto(el,action.text,action.append===true,action.submit===true);
+    const outcome=action.perKey?typePerKey(el,action.text,action.append===true,action.submit===true):typeInto(el,action.text,action.append===true,action.submit===true);
     const options=suggestionsFor(el);
     const validation=action.submit?validationMessages(el.form||el.closest('form')||document):[];
     return {...outcome,...(options.length?{options}:{}),...(validation.length?{validation}:{})}
@@ -674,9 +707,12 @@ const run=(action)=>{
     return {page:pageInfo(),pressed:repeat>1?Object.assign(pressed,{repeat}):pressed}
   }
   if(action.kind==='read'){
-    const scope=readingScope(action);
+    const section=action.section?sectionScope(action.section):null;
+    const scope=section?section.scope:readingScope(action);
+    const selectedText=(()=>{try{return String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{return ''}})();
     // visible — экран пользователя: элементы вне видимой области отфильтровываются, текст берётся из видимых узлов.
-    const pick=(selector)=>scopeElements(scope,selector).filter(el=>!action.visible||onScreen(el));
+    // Клон раздела не в документе: видимость и координаты у него не спросить — берём всё.
+    const pick=(selector)=>(section&&section.detached?[...(scope.matches(selector)?[scope]:[]),...scope.querySelectorAll(selector)]:scopeElements(scope,selector)).filter(el=>!action.visible||onScreen(el));
     const headings=pick('h1,h2,h3,h4,h5,h6').slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:readableText(h,EL_TEXT)}));
     const links=[],seen=new Set();
     for(const a of pick('a[href]')){if(links.length>=LINKS)break;const text=accessibleName(a),href=unproxy(a.getAttribute('href'));if(!text||seen.has(text+'|'+href))continue;seen.add(text+'|'+href);links.push({text,href})}
@@ -684,9 +720,9 @@ const run=(action)=>{
     const inputs=pick('input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el)}));
     const forms=pick('form').slice(0,10).map(form=>{const fields=[...form.querySelectorAll('input:not([type=hidden]),textarea,select')].filter(readingVisible).slice(0,20).map(el=>accessibleName(el)||el.getAttribute('placeholder')||el.name||el.localName);const submitter=[...form.querySelectorAll('button,input[type=submit],input[type=image]')].find(el=>readingVisible(el)&&(el.localName==='input'||!el.type||el.type==='submit'));return {selector:uniqueSelector(form),fields,...(submitter?{submit:accessibleName(submitter)}:{})}});
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
-    const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
+    const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached)),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
     const focus=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement?uniqueSelector(document.activeElement):undefined;
-    return {page:pageInfo(),headings,links,buttons,inputs,...(forms.length?{forms}:{}),...(landmarks.length?{landmarks}:{}),...(focus?{focus}:{}),text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings,links,buttons,inputs,...(forms.length?{forms}:{}),...(landmarks.length?{landmarks}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };
@@ -911,6 +947,9 @@ const message=(e)=>{
 // Сводка страницы вместе с готовностью: модель ориентируется по open без отдельного read.
 const outline=()=>{try{const scope=document.body||document.documentElement;return {headings:[...scope.querySelectorAll('h1,h2,h3')].filter(readingVisible).slice(0,5).map(h=>readableText(h,120)).filter(Boolean),links:scope.querySelectorAll('a[href]').length,buttons:scope.querySelectorAll('button,[role=button],input[type=submit]').length,inputs:scope.querySelectorAll('input:not([type=hidden]),textarea,select').length}}catch{return {headings:[],links:0,buttons:0,inputs:0}}};
 const ready=()=>parent.postMessage({type:READY,...pageInfo(),outline:outline()},location.origin);
+// Выделение пользователя уходит оболочке: она предложит спросить о нём ассистента.
+const SELECTION='voicechat.preview.selection.v1';let selectionTimer=null,lastSelection='';
+document.addEventListener('selectionchange',()=>{if(selectionTimer)clearTimeout(selectionTimer);selectionTimer=setTimeout(()=>{let text='';try{text=String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{}if(text===lastSelection)return;lastSelection=text;parent.postMessage({type:SELECTION,text},location.origin)},250)});
 addEventListener('message',message);
 for(const event of ['hashchange','popstate','voicechat.preview.navigation'])addEventListener(event,ready);
 // BFCache сохраняет документ после pagehide: восстанавливаем его обработчик.

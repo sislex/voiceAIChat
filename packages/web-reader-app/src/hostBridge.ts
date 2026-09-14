@@ -1,4 +1,5 @@
 import { isPreviewAction, resolvePreviewUrl, type PreviewAction, type PreviewActionResult, type PreviewPageOutline } from '@shared/previewActions'
+import { browserUrlMatches } from '@shared/browserWaiting'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import {
   WEB_RECORDER_MESSAGE_TYPE,
@@ -55,6 +56,8 @@ export interface ReaderHostBridgeOptions {
   onSaveUrl?: (url: string | null) => void
   /** Заголовок готовой страницы (null — страницы нет): host показывает его на мобильной вкладке. */
   onPageTitle?: (title: string | null) => void
+  /** Пользователь выделил текст на странице и просит спросить о нём ассистента. */
+  onAsk?: (text: string) => void
   onElement?: (element: PreviewElementPayload) => void
   onRecordingStep?: (step: WebRecorderScenarioStep) => void
   /** Снимок области, выделенной пользователем в Reader. */
@@ -109,6 +112,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   // Заголовок готовой страницы: open отвечает им сразу, без отдельного read ради названия.
   let pageTitle: string | undefined
   let pageOutline: PreviewPageOutline | undefined
+  // Куда ходила панель в этом разговоре: status отвечает историей, как вкладка браузера помнит путь.
+  const history: string[] = []
+  const remember = (url: string | null): void => { if (url && history[0] !== url) { history.unshift(url); if (history.length > 5) history.length = 5 } }
   let disposed = false
   let navigationGeneration = 0
   let inspectorMode: boolean | undefined
@@ -181,8 +187,22 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       return Promise.resolve({ ok: true, result: {
         connected, pageStatus: connected ? pageStatus : 'empty',
         page: connected && approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null,
-        ...(pageStatus === 'error' && pageError ? { error: pageError } : {})
+        ...(pageStatus === 'error' && pageError ? { error: pageError } : {}),
+        ...(history.length ? { history: [...history] } : {})
       } })
+    }
+    // wait {url} — про адрес панели, а не про DOM: мост знает подтверждённый адрес и ждёт его сам.
+    if (action.kind === 'wait' && action.url && !action.selector && !action.text) {
+      const pattern = action.url, timeout = Math.min(action.timeoutMs ?? 5000, 30_000), started = Date.now()
+      return new Promise((resolve) => {
+        const check = (): void => {
+          if (disposed) { resolve({ ok: false, error: 'Панель Web Reader закрыта.' }); return }
+          if (approvedUrl && pageStatus === 'ready' && browserUrlMatches(approvedUrl, pattern)) { resolve({ ok: true, result: { page: { url: approvedUrl, title: pageTitle ?? '' }, waitedMs: Date.now() - started } }); return }
+          if (Date.now() - started >= timeout) { resolve({ ok: false, error: `Адрес не стал ${pattern} за ${timeout} мс: сейчас ${approvedUrl ?? 'страницы нет'}.` }); return }
+          setTimeout(check, 150)
+        }
+        check()
+      })
     }
     if (disposed) return Promise.resolve({ ok: false, error: 'Панель Web Reader закрыта.' })
     if (registration === null) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
@@ -297,6 +317,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           if (message.status === 'ready') {
             const changed = message.url !== approvedUrl
             approvedUrl = message.url
+            remember(message.url)
             if (changed) options.onSaveUrl?.(message.url)
             flush()
           }
@@ -308,6 +329,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           settle(message.requestId, message.ok
             ? { ok: true, ...(message.result !== undefined ? { result: message.result } : {}) }
             : { ok: false, error: message.error ?? 'Действие в превью не выполнено.' })
+          return
+        case 'ask':
+          options.onAsk?.(message.text)
           return
         case 'save-url':
           if (message.url !== approvedUrl) { navigationGeneration++; rejectAll('Адрес страницы изменён пользователем — повтори действие.') }
