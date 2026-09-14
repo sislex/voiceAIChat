@@ -61,7 +61,7 @@ export class PreviewActionRelay {
     if (!sinks?.size) {
       return Promise.resolve({
         ok: false,
-        error: 'Клиент с открытым приложением не подключён — панель превью недоступна.'
+        error: `Панель Web Reader не подключена: у пользователя нет открытой вкладки приложения. Попроси его открыть раздел Web Reader этого чата (#/web-reader/${conversationId}) и повтори действие.`
       })
     }
     const requestId = randomUUID()
@@ -80,7 +80,7 @@ export class PreviewActionRelay {
         answered: 0,
         action,
         timer: setTimeout(
-          () => settle({ ok: false, error: 'Клиентский мост Web Reader не ответил при формально подключённом клиенте.' }),
+          () => settle({ ok: false, error: 'Панель Web Reader не ответила: вкладка приложения открыта, но раздел Web Reader этого чата в ней не активен. Попроси пользователя переключиться на него и повтори.' }),
           timeoutMs
         ),
         resolve: settle

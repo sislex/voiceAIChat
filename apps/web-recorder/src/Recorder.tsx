@@ -277,7 +277,8 @@ export function Recorder(): JSX.Element {
         const kind = commandKinds.current.get(message.requestId)
         commandKinds.current.delete(message.requestId)
         const result = message.result as Record<string, unknown> | undefined
-        const mayNavigate = message.ok === true && result && (kind === 'click' || kind === 'press' || kind === 'type' && result.submitted === true)
+        // back/forward always navigate: their answer waits for the new page like a navigating click.
+        const mayNavigate = message.ok === true && result && (kind === 'click' || kind === 'press' || kind === 'back' || kind === 'forward' || kind === 'type' && result.submitted === true)
         if (mayNavigate && !navigationWatch.current) {
           const watch = { requestId: message.requestId, result, timer: null as ReturnType<typeof setTimeout> | null, navigating: false }
           navigationWatch.current = watch
@@ -475,7 +476,7 @@ export function Recorder(): JSX.Element {
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Назад" title="Назад" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" title="Вперёд" onClick={() => historyGo(1)}>›</IconButton>
       <IconButton variant="secondary" aria-label="Обновить страницу" title="Обновить страницу" disabled={!url} onClick={reload}>↻</IconButton>
-      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onFocus={event => event.currentTarget.select()} onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) } }} /></label>
+      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onFocus={event => event.currentTarget.select()} onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) } }} /></label>
       <Button variant="secondary" type="submit">Открыть</Button>
       <IconButton variant="secondary" type="button" aria-label="Очистить страницу" title="Очистить страницу" disabled={!url && !draft} onClick={() => { applyUrl(null); reply({ kind: 'save-url', url: null }); addressRef.current?.focus() }}>×</IconButton>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
@@ -546,6 +547,7 @@ export function Recorder(): JSX.Element {
     </ol></section>}
     {url ? <div className="webpreview-viewport"><iframe key={frameKey} ref={frame} className="webpreview-frame" style={viewport ? { width: viewport + 'px', minWidth: viewport + 'px', flex: 'none' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={event => loaded(event.currentTarget)} onError={() => failLoad('Не удалось загрузить сайт: сетевая ошибка.')} /></div> : <div className="webpreview-empty"><div>
       <p>Укажите адрес сайта или проекта</p>
+      <p className="webpreview-empty__hint">или попросите ассистента в чате: «открой …» — страница появится здесь</p>
       {recent.length > 0 && <nav className="webpreview-recent" aria-label="Недавние адреса">{recent.map(item => <Button key={item} variant="secondary" size="sm" type="button" title={item} onClick={() => openAddress(item)}>{recentAddressLabel(item)}</Button>)}</nav>}
     </div></div>}
 

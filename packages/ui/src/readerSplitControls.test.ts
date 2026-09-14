@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PREVIEW_WIDTH_DEFAULT, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN, clampPreviewWidth, previewWidthAfterKey, splitAttentionReducer } from './readerSplitControls'
+import { PREVIEW_WIDTH_DEFAULT, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN, clampPreviewWidth, pendingActionLabel, previewWidthAfterKey, siteTabLabel, splitAttentionReducer } from './readerSplitControls'
 
 describe('previewWidthAfterKey', () => {
   it('moves the divider by steps, jumps to limits and resets on Enter', () => {
@@ -30,5 +30,19 @@ describe('splitAttentionReducer', () => {
     expect(splitAttentionReducer(null, { type: 'assistant-reply', view: 'preview' })).toBe('chat')
     expect(splitAttentionReducer(null, { type: 'assistant-reply', view: 'chat' })).toBeNull()
     expect(splitAttentionReducer('chat', { type: 'conversation' })).toBeNull()
+  })
+})
+
+describe('phone tab labels', () => {
+  it('describes the running action briefly and prefers human targets', () => {
+    expect(pendingActionLabel({ kind: 'click', text: 'Купить' })).toBe('нажимает «Купить»')
+    expect(pendingActionLabel({ kind: 'type', field: 'Почта', selector: '#x' })).toBe('вводит текст в «Почта»')
+    expect(pendingActionLabel({ kind: 'press', key: 'Enter' })).toBe('нажимает Enter')
+    expect(pendingActionLabel({ kind: 'audit' })).toBe('работает со страницей')
+  })
+  it('adds the page title to the site tab and ignores blank titles', () => {
+    expect(siteTabLabel('Сайт', ' Example  Domain ')).toBe('Сайт · Example Domain')
+    expect(siteTabLabel('Сайт', '   ')).toBe('Сайт')
+    expect(siteTabLabel('Сайт', null)).toBe('Сайт')
   })
 })

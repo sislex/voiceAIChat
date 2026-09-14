@@ -10,7 +10,7 @@ import { previewActionProgressLabel } from './actionLabel'
 import { createReaderHostBridge, type ReaderHostBridge, type PreviewActionOutcome } from './hostBridge'
 
 
-export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, pageError, onAskError, pendingAction = null, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
+export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, pageError, onAskError, pendingAction = null, onPageTitle, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
@@ -21,8 +21,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const gateSequence = useRef(0)
   const savedByReader = useRef<string | null | undefined>(undefined)
   const url = conversationUrl ?? projectUrl
-  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview })
-  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview }
+  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview, onPageTitle })
+  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview, onPageTitle }
 
   // Мост живёт со смонтированным iframe одного разговора и создаётся в эффекте:
   // dispose необратим, а StrictMode в dev прогоняет mount → cleanup → mount —
@@ -106,6 +106,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
         }
       } : null),
       onSaveUrl: (nextUrl) => { void save(nextUrl).catch(() => {}) },
+      onPageTitle: (title) => callbacks.current.onPageTitle?.(title),
       onElement: (element) => callbacks.current.onSelectElement?.(element),
       onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
     })
@@ -123,6 +124,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       retryOpen.current = null
       unsubscribe()
       bridge.dispose()
+      callbacks.current.onPageTitle?.(null)
       if (bridgeRef.current === bridge) bridgeRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -45,3 +45,28 @@ export function splitAttentionReducer(state: SplitView | null, event: SplitAtten
     case 'conversation': return null
   }
 }
+
+/** Compact present-tense label for the phone tab bar; the panel itself is hidden behind the chat tab. */
+export function pendingActionLabel(action: { kind: string; text?: string; selector?: string; field?: string; url?: string; key?: string; role?: string }): string {
+  const target = action.text ?? action.field ?? action.role ?? action.selector
+  switch (action.kind) {
+    case 'open': return 'открывает страницу'
+    case 'click': return target ? `нажимает «${target}»` : 'нажимает элемент'
+    case 'type': return target ? `вводит текст в «${target}»` : 'вводит текст'
+    case 'read': return 'читает страницу'
+    case 'find': return target ? `ищет «${target}»` : 'ищет элементы'
+    case 'screenshot': return 'делает снимок'
+    case 'scroll': return 'прокручивает страницу'
+    case 'press': return action.key ? `нажимает ${action.key}` : 'нажимает клавишу'
+    case 'wait': return 'ждёт страницу'
+    case 'back': return 'переходит назад'
+    case 'forward': return 'переходит вперёд'
+    default: return 'работает со страницей'
+  }
+}
+
+/** Phone tab label: the page title tells where the site pane is, truncated by CSS. */
+export function siteTabLabel(base: string, title: string | null): string {
+  const clean = (title ?? '').replace(/\s+/g, ' ').trim()
+  return clean ? `${base} · ${clean}` : base
+}

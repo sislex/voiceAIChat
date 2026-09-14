@@ -3,11 +3,19 @@ import type { WebReaderFrameProps } from './panelContract'
 import { previewActionLabel } from './actionLabel'
 
 type Props = { actions: NonNullable<WebReaderFrameProps['actions']>; onRepeat?: WebReaderFrameProps['onRepeatAction'] }
+/** На телефоне лента раскрытой по умолчанию отнимает у страницы половину экрана. */
+function defaultExpanded(): boolean {
+  try { return !(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 560px)').matches) } catch { return true }
+}
+function timeLabel(at: number | undefined): string {
+  if (!at) return ''
+  try { return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } catch { return '' }
+}
 function siteName(address: string | null): string {
   try { return address ? new URL(address).host : '' } catch { return '' }
 }
 export function ReaderActionHistory({ actions, onRepeat }: Props): JSX.Element | null {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const [query, setQuery] = useState('')
   const id = useId()
   if (!actions.length) return null
@@ -26,7 +34,7 @@ export function ReaderActionHistory({ actions, onRepeat }: Props): JSX.Element |
       </div>
       {shown.length === 0 && <p role="status">Действия не найдены</p>}
       <ol>{shown.map(item => <li key={item.id}>
-        <div className="webpreview-history-description"><span>{item.label}</span>{item.title && <small>{item.title}</small>}{item.site && <small>{item.site}</small>}</div>
+        <div className="webpreview-history-description"><span>{item.label}</span>{item.title && <small>{item.title}</small>}{item.site && <small>{item.site}{timeLabel(item.at) ? ` · ${timeLabel(item.at)}` : ''}</small>}{!item.site && timeLabel(item.at) && <small>{timeLabel(item.at)}</small>}</div>
         {onRepeat && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label={`Повторить действие ${item.index + 1}: ${item.label}`} onClick={() => onRepeat(item.action)}>Повторить</button>}
       </li>)}</ol>
     </div>

@@ -436,6 +436,53 @@ describe('скрипт превью: действия как у пользова
   })
 })
 
+describe('скрипт превью: что видит пользователь (круг 2)', () => {
+  it('describe отдаёт placeholder и значение поля, скрывая секретное', async () => {
+    ;(document.getElementById('q') as HTMLInputElement).value = 'ноутбук'
+    const res = await act({ kind: 'find', selector: '#q, #secret' })
+    const [q, secret] = (res.result as { elements: { placeholder?: string; value?: string }[] }).elements
+    expect(q).toMatchObject({ placeholder: 'Поиск', value: 'ноутбук' })
+    expect(secret.value).toBeUndefined()
+  })
+
+  it('click подсвечивает элемент, сообщает появившийся диалог, фокус и синхронные ошибки', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button id="open-dialog">Открыть окно</button><div id="modal" role="dialog" style="display:none"><input id="modal-input"></div>`)
+    const button = document.getElementById('open-dialog')!
+    button.addEventListener('click', () => {
+      document.getElementById('modal')!.style.display = 'block'
+      ;(document.getElementById('modal-input') as HTMLInputElement).focus()
+      console.error('modal opened badly')
+    })
+    const res = await act({ kind: 'click', text: 'Открыть окно' })
+    expect(res.ok).toBe(true)
+    expect(button.hasAttribute('data-voicechat-flash')).toBe(true)
+    const result = res.result as { dialogs?: string[]; focus?: string; newErrors?: { message: string }[] }
+    expect(result.dialogs).toEqual(['#modal'])
+    expect(result.focus).toBe('#modal-input')
+    expect(result.newErrors?.[0]?.message).toContain('modal opened badly')
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    expect(button.hasAttribute('data-voicechat-flash')).toBe(false)
+  })
+
+  it('hover возвращает подсказку из title или aria-describedby', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button id="hint-btn" aria-describedby="hint-text">Сохранить</button><span id="hint-text">Сохраняет черновик</span><a id="titled" href="/x" title="Подсказка ссылки">Ссылка с title</a>`)
+    const described = await act({ kind: 'hover', selector: '#hint-btn' })
+    expect((described.result as { tooltip?: string }).tooltip).toBe('Сохраняет черновик')
+    const titled = await act({ kind: 'hover', selector: '#titled' })
+    expect((titled.result as { tooltip?: string }).tooltip).toBe('Подсказка ссылки')
+  })
+
+  it('read visible оставляет только видимую область и сообщает viewport', async () => {
+    const res = await act({ kind: 'read', visible: true })
+    expect(res.ok).toBe(true)
+    const result = res.result as { visible?: boolean; viewport?: { width: number }; headings: unknown[] }
+    expect(result.visible).toBe(true)
+    expect(result.viewport?.width).toBe(window.innerWidth)
+    // jsdom не раскладывает элементы (все rect нулевые) — без прокрутки на «экране» ничего нет.
+    expect(result.headings).toEqual([])
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

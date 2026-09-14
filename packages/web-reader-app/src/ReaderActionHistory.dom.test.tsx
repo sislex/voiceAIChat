@@ -49,3 +49,13 @@ it('resets local history controls when the conversation key changes', () => {
   view.rerender(<ReaderActionHistory key="second" actions={actions} />)
   expect(screen.getByRole('searchbox')).toHaveValue(''); expect(screen.getAllByRole('listitem')).toHaveLength(2)
 })
+it('starts collapsed on a narrow screen and shows the event time', () => {
+  const original = window.matchMedia
+  window.matchMedia = ((query: string) => ({ matches: query.includes('max-width: 560px'), media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia
+  try {
+    render(<ReaderActionHistory actions={[{ ...actions[1], at: new Date(2026, 8, 14, 9, 5).getTime() }]} />)
+    expect(screen.getByRole('button', { name: 'Действия ассистента' })).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Действия ассистента' }))
+    expect(screen.getByRole('listitem')).toHaveTextContent('09:05')
+  } finally { window.matchMedia = original }
+})

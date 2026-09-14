@@ -181,7 +181,7 @@ describe('App — действия модели в веб-превью (мост
     bridge.emit({ conversationId: inactive.id, requestId: 'r2', action: { kind: 'open', url: 'https://shop.example/' } })
     await waitFor(() => expect(bridge.results).toHaveLength(1))
     expect(bridge.results[0].ok).toBe(false)
-    expect(bridge.results[0].error).toContain('не открыт')
+    expect(bridge.results[0].error).toContain('другой чат')
     expect(api._state.conversations.find((c) => c.id === inactive.id)?.previewUrl ?? null).toBeNull()
   })
 
@@ -338,7 +338,7 @@ describe('App — действия модели в веб-превью (мост
     await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(second.id))
     bridge.emit({ conversationId: first.id, requestId: 'old-chat', action: { kind: 'read' } })
     await waitFor(() => expect(bridge.results).toHaveLength(1))
-    expect(bridge.results[0]).toMatchObject({ requestId: 'old-chat', ok: false, error: expect.stringContaining('не открыт') })
+    expect(bridge.results[0]).toMatchObject({ requestId: 'old-chat', ok: false, error: expect.stringContaining('другой чат') })
   })
 
   it('Playwright Reader монтирует browser-панель (Chromium), а не iframe веб-превью', async () => {

@@ -74,6 +74,7 @@ export type PreviewAction = BrowserFrameTarget & (
   | ({ kind: 'audit'; diagnostic?: boolean } & PreviewAuditOptions)
   | ({ kind: 'probe'; diagnostic?: boolean } & PreviewProbeOptions)
   | ({ kind: 'accessibility'; diagnostic?: boolean } & PreviewAccessibilityOptions)
+  /** url — абсолютный http(s) либо относительный путь (`/about`, `?page=2`, `#/route`): панель разрешает его от открытой страницы. */
   | { kind: 'open'; url: string; diagnostic?: boolean }
   /** role сужает совпадения по роли элемента (button, link, textbox…): так ищет пользователь, а не CSS. */
   | { kind: 'find'; text?: string; selector?: string; role?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
@@ -81,7 +82,8 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; diagnostic?: boolean }
   /** field — подпись, placeholder или name поля вместо CSS-селектора; append дописывает к текущему значению. */
   | { kind: 'type'; selector?: string; field?: string; text: string; submit?: boolean; append?: boolean; diagnostic?: boolean }
-  | { kind: 'read'; selector?: string; limit?: number; offset?: number; diagnostic?: boolean }
+  /** visible — только то, что сейчас в видимой области окна: экран пользователя, а не весь документ. */
+  | { kind: 'read'; selector?: string; limit?: number; offset?: number; visible?: boolean; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   | { kind: 'hover'; selector?: string; text?: string; diagnostic?: boolean }
@@ -142,6 +144,9 @@ export interface PreviewActionElement {
   invalid?: boolean
   /** Элемент сейчас в видимой области окна — то, что пользователь видит без прокрутки. */
   onScreen?: boolean
+  /** Подсказка и текущее значение поля ввода (значение скрыто у секретных полей). */
+  placeholder?: string
+  value?: string
 }
 
 export interface PreviewPageInfo {
@@ -161,6 +166,12 @@ export interface PreviewClickResult {
   clicked: PreviewActionElement
   /** Клик привёл к загрузке новой страницы: page уже описывает её, читать заново обязательно. */
   navigated?: boolean
+  /** Открытые после клика диалоги (role=dialog, <dialog open>) — «появилось окно». */
+  dialogs?: string[]
+  /** Элемент с фокусом после клика. */
+  focus?: string
+  /** Ошибки страницы, возникшие синхронно в ответ на клик. */
+  newErrors?: PreviewPageError[]
 }
 
 export interface PreviewTypeResult {
@@ -202,6 +213,8 @@ export interface PreviewStylesResult {
 export interface PreviewHoverResult {
   page: PreviewPageInfo
   hovered: PreviewActionElement
+  /** Подсказка, которую увидел бы пользователь: title, aria-describedby или появившийся role=tooltip. */
+  tooltip?: string
 }
 
 export interface PreviewScrollResult {
@@ -418,7 +431,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
   const L = PREVIEW_ACTION_LIMITS
   switch (value.kind) {
     case 'open':
-      return bounded(value.url, L.url) && isHttpUrl(value.url)
+      return bounded(value.url, L.url) && (isHttpUrl(value.url) || isRelativePreviewPath(value.url))
     case 'find':
       return (
         optBounded(value.text, L.text) &&
@@ -445,6 +458,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.append === undefined || typeof value.append === 'boolean')
     case 'read':
       return optBounded(value.selector, L.selector) &&
+        (value.visible === undefined || typeof value.visible === 'boolean') &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
         (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0))
     case 'styles':
@@ -558,6 +572,18 @@ export function isPreviewDomAction(value: unknown): value is PreviewDomAction {
   return isPreviewAction(value) && value.kind !== 'open'
 }
 
+/** Относительный адрес от открытой страницы: путь, запрос или hash — без схемы и хоста. */
+export function isRelativePreviewPath(value: string): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= PREVIEW_ACTION_LIMITS.url && /^(?:\/(?!\/)|\.{1,2}\/|\?|#)/.test(value)
+}
+
+/** Разрешить относительный адрес от текущей страницы; абсолютный http(s) остаётся как есть, иначе null. */
+export function resolvePreviewUrl(value: string, base: string | null): string | null {
+  if (isHttpUrl(value)) return value
+  if (!isRelativePreviewPath(value) || !base) return null
+  try { const url = new URL(value, base); return isHttpUrl(url.toString()) ? url.toString() : null } catch { return null }
+}
+
 /** Только HTTP/HTTPS: прочие схемы в превью не открываются (см. previewProxy). */
 export function isHttpUrl(value: string): boolean {
   try {
@@ -629,8 +655,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
       + 'и коротко говори пользователю, что видишь и делаешь. Инструменты mcp__browser__*: '
   return (
     opening +
-    'open {url} — открыть сайт в превью; read {selector?, limit?, offset?} — структурированное содержимое страницы ' +
-    '(заголовки, ссылки, кнопки, поля ввода); nextOffset продолжает длинный текст. find {text|selector|role, limit?, visibleOnly?} — найти элементы ' +
+    'open {url} — открыть сайт в превью (относительный путь вроде /about или #/route разрешается от открытой страницы); read {selector?, limit?, offset?, visible?} — структурированное содержимое страницы ' +
+    '(заголовки, ссылки, кнопки, поля ввода); visible: true — только то, что сейчас на экране у пользователя; nextOffset продолжает длинный текст. find {text|selector|role, limit?, visibleOnly?} — найти элементы ' +
     '(role: button, link, textbox, heading…; onScreen у элемента — виден без прокрутки); ' +
     'В Chromium read включает открытый Shadow DOM и слоты; закрытые roots недоступны. ' +
     'Селекторы из read/find передавай в следующее действие целиком, включая >> nth; после изменения DOM повтори поиск. ' +
@@ -640,7 +666,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'Действия выполняются только на странице, открытой в превью активного чата пользователя. ' +
     'Просьбы «открой сайт …», «нажми …», «что на странице?» выполняй этими инструментами, а не shell-командами. ' +
     'open отвечает url и title открытой страницы. click, type и press сообщают navigated: true, если начался переход, — тогда page ' +
-    'описывает уже новую страницу: перечитай её read перед следующим действием. ' +
+    'описывает уже новую страницу: перечитай её read перед следующим действием. Ответ click также содержит dialogs (появилось окно), focus и newErrors — реагируй на них, как отреагировал бы человек. ' +
+    'Если панель отвечает, что клиент не подключён, скажи пользователю открыть раздел Web Reader этого чата в браузере и повтори действие после этого. ' +
     'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom|element | dy, selector?} — ' +
     'прокрутить окно или контейнер (ленивые ленты), to: element показывает selector пользователю; press {key, selector?, repeat?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…), repeat повторяет; ' +
     'screenshot {selector? | rect? | fullPage?, animations?, timeoutMs?} — картинка элемента, области или видимой части страницы. ' +
