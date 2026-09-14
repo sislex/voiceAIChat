@@ -640,15 +640,117 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).describe('CSS-селектор контрола'),
             value: z.string().max(L.text).optional().describe('Значение (для select — value или подпись option)'),
+            values: z.array(z.string().max(L.text)).min(1).max(64).optional().describe('Несколько значений для select multiple: по одному они затирают друг друга'),
             checked: z.boolean().optional().describe('Для checkbox/radio')
           }
         },
-        async ({ frame, selector, value, checked }) => {
-          if (value === undefined && checked === undefined) {
-            return { content: [{ type: 'text', text: 'Укажи value или checked.' }], isError: true }
+        async ({ frame, selector, value, values, checked }) => {
+          if (value === undefined && values === undefined && checked === undefined) {
+            return { content: [{ type: 'text', text: 'Укажи value, values или checked.' }], isError: true }
           }
-          return run({ kind: 'set', ...(frame !== undefined ? { frame } : {}), selector, ...(value !== undefined ? { value } : {}), ...(checked !== undefined ? { checked } : {}) })
+          return run({ kind: 'set', ...(frame !== undefined ? { frame } : {}), selector, ...(value !== undefined ? { value } : {}), ...(values !== undefined ? { values } : {}), ...(checked !== undefined ? { checked } : {}) })
         }
+      )
+
+      const formFieldSchema = z.object({
+        selector: z.string().max(L.selector).describe('CSS-селектор поля'),
+        value: z.string().max(L.text).optional().describe('Значение поля или подпись option'),
+        values: z.array(z.string().max(L.text)).min(1).max(64).optional().describe('Несколько значений для select multiple'),
+        checked: z.boolean().optional().describe('Для checkbox/radio')
+      })
+
+      server.registerTool(
+        'fill-form',
+        {
+          description:
+            'Заполнить форму целиком за один вызов: список полей со значениями, подписями option или checked. ' +
+            'Так же, как это делает человек — одним действием. Поле за вызовом теряется на формах, которые ' +
+            'перерисовываются между обращениями (управляемые поля React). ' +
+            'Ответ перечисляет результат по каждому полю; частично заполненная форма считается неуспехом. ' +
+            'delay — посимвольный ввод для полей с автодополнением.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор формы (по умолчанию первая форма страницы)'),
+            fields: z.array(formFieldSchema).min(1).max(50).describe('Поля формы по порядку заполнения'),
+            delay: z.number().min(0).max(200).optional().describe('Пауза между символами в мс')
+          }
+        },
+        async ({ frame, selector, fields, delay }) => run({
+          kind: 'fillForm', ...(frame !== undefined ? { frame } : {}),
+          ...(selector ? { selector } : {}), fields,
+          ...(delay !== undefined ? { delay } : {})
+        })
+      )
+
+      server.registerTool(
+        'form-state',
+        {
+          description:
+            'Что сейчас в форме: поля, значения, подписи, обязательность, блокировка и сообщение проверки браузера. ' +
+            'Так проверяется результат заполнения до отправки. Значение поля пароля не возвращается.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор формы (по умолчанию первая форма страницы)'),
+            limit: z.number().int().min(1).max(200).optional().describe('Максимум полей (по умолчанию 50)')
+          }
+        },
+        async ({ frame, selector, limit }) => run({ kind: 'formState', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'validity',
+        {
+          description:
+            'Почему браузер не отправит форму: поля, не прошедшие проверку, их сообщения и причины ' +
+            '(valueMissing, patternMismatch, rangeOverflow…). Спрашивай до submit — иначе причина отказа ' +
+            'видна только по тому, что страница решила нарисовать.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).optional().describe('CSS-селектор формы или одного поля') }
+        },
+        async ({ frame, selector }) => run({ kind: 'validity', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}) })
+      )
+
+      server.registerTool(
+        'submit',
+        {
+          description:
+            'Отправить форму так же, как это делает Enter: сначала проверка браузера (и её сообщение), ' +
+            'затем обработчик submit страницы. Отличается от клика по кнопке тем, что не зависит от того, ' +
+            'какой именно элемент страница считает кнопкой отправки.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).optional().describe('CSS-селектор формы или поля внутри неё') }
+        },
+        async ({ frame, selector }) => run({ kind: 'submit', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}) })
+      )
+
+      server.registerTool(
+        'options',
+        {
+          description:
+            'Варианты, которые предлагает контрол: option у select (с выбранными и выключенными), ' +
+            'подсказки datalist у поля ввода, кнопки группы radio. Без этого модель угадывала подписи ' +
+            'и получала отказ set по несуществующему значению.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор контрола'),
+            limit: z.number().int().min(1).max(500).optional().describe('Максимум вариантов (по умолчанию 100)')
+          }
+        },
+        async ({ frame, selector, limit }) => run({ kind: 'options', ...(frame !== undefined ? { frame } : {}), selector, ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'drop-file',
+        {
+          description:
+            'Перетащить файлы в зону загрузки: странице уходит настоящее событие drop с DataTransfer. ' +
+            'Половина загрузчиков в вебе не имеет input[type=file] вовсе и слушает именно drop — ' +
+            'туда upload не доходит. До 16 файлов, вместе до 8 МиБ.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор зоны перетаскивания'),
+            files: z.array(z.object({
+              name: z.string().min(1).max(255).describe('Имя файла'),
+              base64: z.string().max(L.uploadBase64).describe('Содержимое в base64'),
+              mimeType: z.string().max(100).optional().describe('MIME-тип')
+            })).min(1).max(16).describe('Файлы')
+          }
+        },
+        async ({ frame, selector, files }) => run({ kind: 'dropFile', ...(frame !== undefined ? { frame } : {}), selector, files })
       )
 
       server.registerTool(
@@ -656,15 +758,30 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Загрузить файл в input type=file открытой в превью страницы: содержимое передаётся base64 (до 8 МиБ). ' +
-            'Диспатчит input/change как при выборе файла пользователем.',
+            'Диспатчит input/change как при выборе файла пользователем. ' +
+            'files — несколько файлов сразу в поле с multiple; для зоны перетаскивания без input есть drop-file.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).describe('CSS-селектор input type=file'),
-            name: z.string().min(1).max(255).describe('Имя файла (например report.csv)'),
-            base64: z.string().max(L.uploadBase64).describe('Содержимое файла в base64; пустая строка — файл нулевой длины'),
-            mimeType: z.string().max(100).optional().describe('MIME-тип (по умолчанию application/octet-stream)')
+            name: z.string().min(1).max(255).optional().describe('Имя файла (например report.csv)'),
+            base64: z.string().max(L.uploadBase64).optional().describe('Содержимое файла в base64; пустая строка — файл нулевой длины'),
+            mimeType: z.string().max(100).optional().describe('MIME-тип (по умолчанию application/octet-stream)'),
+            files: z.array(z.object({
+              name: z.string().min(1).max(255),
+              base64: z.string().max(L.uploadBase64),
+              mimeType: z.string().max(100).optional()
+            })).min(1).max(16).optional().describe('Несколько файлов для поля с multiple')
           }
         },
-        async ({ frame, selector, name, base64, mimeType }) => run({ kind: 'upload', ...(frame !== undefined ? { frame } : {}), selector, name, base64, ...(mimeType ? { mimeType } : {}) })
+        async ({ frame, selector, name, base64, mimeType, files }) => {
+          if (!files && (name === undefined || base64 === undefined)) {
+            return { content: [{ type: 'text', text: 'Укажи name и base64 либо массив files.' }], isError: true }
+          }
+          return run({
+            kind: 'upload', ...(frame !== undefined ? { frame } : {}), selector,
+            name: name ?? files![0].name, base64: base64 ?? files![0].base64,
+            ...(mimeType ? { mimeType } : {}), ...(files ? { files } : {})
+          })
+        }
       )
 
       server.registerTool(

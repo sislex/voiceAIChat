@@ -238,13 +238,29 @@ export type BrowserSelectorAction =
   /** Наведение курсора: выпадающие меню и тултипы иначе не открыть. */
   | { kind: 'hover'; selector?: string; text?: string }
   /** Сложный контрол: select по значению или подписи, checkbox/radio, date/range. */
-  | { kind: 'set'; selector: string; value?: string; checked?: boolean }
+  | { kind: 'set'; selector: string; value?: string; values?: string[]; checked?: boolean }
+  /**
+   * Whole form in one call. A person fills a form as one act; doing it field by
+   * field costs the model a round trip each, and a form that re-renders between
+   * calls (React controlled inputs) loses the earlier fields entirely.
+   */
+  | { kind: 'fillForm'; selector?: string; fields: BrowserFormField[]; delay?: number }
+  /** Current state of a form: every field, its value and whether it is required. */
+  | { kind: 'formState'; selector?: string; limit?: number }
+  /** Browser validation as the person sees it: which fields block submit and why. */
+  | { kind: 'validity'; selector?: string }
+  /** Submit a form the way Enter does, running validation and the submit handler. */
+  | { kind: 'submit'; selector?: string }
+  /** Options a control offers: select, datalist, radio group. */
+  | { kind: 'options'; selector: string; limit?: number }
+  /** Drop files onto a zone — the upload path that has no input[type=file]. */
+  | { kind: 'dropFile'; selector: string; files: BrowserUploadFile[] }
   /** Перетаскивание от одного селектора к другому (перенос карточки на доске). */
   | { kind: 'drag'; from: string; to: string }
   /** Дерево доступности: роли и имена, как их видит скринридер. */
   | { kind: 'a11y'; selector?: string; limit?: number }
   /** Загрузка файла в input[type=file]: содержимое приходит base64 от модели. */
-  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string }
+  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string; files?: BrowserUploadFile[] }
   /**
    * Что за элемент в точке кадра. Нужен записи сценария: клик по кадру
    * координатный, а шаг сценария обязан быть селекторным — иначе запись
@@ -304,6 +320,14 @@ export interface BrowserSelectorResult {
   selection?: { text: string; truncated?: boolean }
   /** Tab order: elements a keyboard reaches, in the order Tab reaches them. */
   focusOrder?: Array<{ selector: string; tag: string; name: string; role?: string; tabIndex: number; visible: boolean; disabled?: boolean }>
+  /** Per-field outcome of `fillForm`: a partially filled form must not read as success. */
+  filled?: Array<{ selector: string; ok: boolean; error?: string }>
+  /** Form contents for `formState`: what the page would submit right now. */
+  form?: { selector: string; action?: string; method?: string; fields: BrowserFormFieldState[]; total: number; truncated?: boolean }
+  /** Validation as the browser reports it; `blocking` is what stops submit. */
+  validity?: { valid: boolean; blocking: Array<{ selector: string; message: string; reasons: string[] }>; checked: number }
+  /** Options of a control for `options`. */
+  options?: { selector: string; kind: 'select' | 'datalist' | 'radio'; multiple?: boolean; total: number; items: Array<{ value: string; label: string; selected?: boolean; disabled?: boolean }> }
   /**
    * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
    * проверкам сценария — «текста нет» и «до текста не дочитали» это разные
@@ -311,6 +335,37 @@ export interface BrowserSelectorResult {
    */
   truncated?: boolean
   error?: string
+}
+
+/** One field of a form fill: value, checkbox state or a chosen option. */
+export interface BrowserFormField {
+  selector: string
+  value?: string
+  values?: string[]
+  checked?: boolean
+}
+
+/** File handed to the page as bytes, for input[type=file] and drop zones alike. */
+export interface BrowserUploadFile {
+  name: string
+  mimeType?: string
+  base64: string
+}
+
+/** A field as the page holds it now — the answer to "did my fill land?". */
+export interface BrowserFormFieldState {
+  selector: string
+  tag: string
+  type?: string
+  name?: string
+  label?: string
+  value?: string
+  checked?: boolean
+  required?: boolean
+  disabled?: boolean
+  readOnly?: boolean
+  /** Browser-side validation message, empty when the field is valid. */
+  invalid?: string
 }
 
 /**

@@ -146,9 +146,37 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
         kind: 'command',
         command: {
           type: 'selector',
-          action: { kind: 'set', selector: action.selector, ...(typeof action.value === 'string' ? { value: action.value } : {}), ...(typeof action.checked === 'boolean' ? { checked: action.checked } : {}) }
+          action: { kind: 'set', selector: action.selector, ...(typeof action.value === 'string' ? { value: action.value } : {}), ...(action.values !== undefined ? { values: action.values } : {}), ...(typeof action.checked === 'boolean' ? { checked: action.checked } : {}) }
         }
       }
+    case 'fillForm':
+      return {
+        kind: 'command',
+        command: {
+          type: 'selector',
+          action: {
+            kind: 'fillForm',
+            ...(action.selector ? { selector: action.selector } : {}),
+            fields: action.fields.map((field) => ({
+              selector: field.selector,
+              ...(field.value !== undefined ? { value: field.value } : {}),
+              ...(field.values !== undefined ? { values: field.values } : {}),
+              ...(field.checked !== undefined ? { checked: field.checked } : {})
+            })),
+            ...(action.delay !== undefined ? { delay: action.delay } : {})
+          }
+        }
+      }
+    case 'formState':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'formState', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'validity':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'validity', ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'submit':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'submit', ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'options':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'options', selector: action.selector, ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'dropFile':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'dropFile', selector: action.selector, files: action.files.map((file) => ({ name: file.name, base64: file.base64, ...(file.mimeType ? { mimeType: file.mimeType } : {}) })) } } }
     case 'a11y':
       return {
         kind: 'command',
@@ -175,7 +203,14 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     case 'upload':
       return {
         kind: 'command',
-        command: { type: 'selector', action: { kind: 'upload', selector: action.selector, name: action.name, base64: action.base64, ...(action.mimeType ? { mimeType: action.mimeType } : {}) } }
+        command: {
+          type: 'selector',
+          // Несколько файлов передаются массивом; одиночные поля остаются
+          // заполненными, чтобы старый раннер загрузил хотя бы первый файл.
+          action: action.files?.length
+            ? { kind: 'upload', selector: action.selector, name: action.files[0].name, base64: action.files[0].base64, files: action.files.map((file) => ({ name: file.name, base64: file.base64, ...(file.mimeType ? { mimeType: file.mimeType } : {}) })) }
+            : { kind: 'upload', selector: action.selector, name: action.name, base64: action.base64, ...(action.mimeType ? { mimeType: action.mimeType } : {}) }
+        }
       }
     default:
       return { kind: 'unsupported', reason: `Действие «${(action as { kind: string }).kind}» в Playwright Reader пока не поддерживается.` }

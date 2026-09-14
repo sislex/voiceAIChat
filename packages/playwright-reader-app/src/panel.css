@@ -84,6 +84,9 @@
    Кадр — картинка: без собственного масштаба страница с телефонной панели
    читается в треть натурального размера, а прокрутить её пальцем было нечем. */
 .playwright-reader-zoom { display: inline-flex; align-items: center; gap: var(--space-050); }
+/* Подпись размера окна: у неё свой класс, потому что `playwright-reader-actor`
+   ищет по нему автотест «кто ходил последним», и второй такой узел его ломает. */
+.playwright-reader-size { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 .playwright-browser-viewport { overscroll-behavior: contain; }
 .playwright-reader-progress { position: absolute; left: 0; right: 0; top: 0; height: 3px; overflow: hidden;
   background: var(--border-soft, var(--border)); }

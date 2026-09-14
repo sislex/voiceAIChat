@@ -71,6 +71,21 @@ export type PreviewClickModifier = (typeof PREVIEW_CLICK_MODIFIERS)[number]
 export const PREVIEW_HOTKEY_MODIFIERS = ['shift', 'ctrl', 'alt', 'meta', 'primary'] as const
 export type PreviewHotkeyModifier = (typeof PREVIEW_HOTKEY_MODIFIERS)[number]
 
+/** Поле формы в массовом заполнении. */
+export interface PreviewFormField {
+  selector: string
+  value?: string
+  values?: string[]
+  checked?: boolean
+}
+
+/** Файл, передаваемый странице байтами: и в input[type=file], и в зону drop. */
+export interface PreviewUploadFile {
+  name: string
+  mimeType?: string
+  base64: string
+}
+
 /** Точка или элемент — источник/цель перетаскивания. */
 export interface PreviewDragPoint {
   selector?: string
@@ -136,9 +151,21 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Перетаскивание pointer-событиями (или HTML5 DnD у draggable) от from к to. */
   | { kind: 'drag'; from: PreviewDragPoint; to: PreviewDragPoint; diagnostic?: boolean }
   /** Установить значение сложного контрола: select (по value или подписи option), checkbox/radio (checked), date/range (value). */
-  | { kind: 'set'; selector: string; value?: string; checked?: boolean; diagnostic?: boolean }
+  | { kind: 'set'; selector: string; value?: string; values?: string[]; checked?: boolean; diagnostic?: boolean }
+  /** Заполнить форму целиком: человек заполняет её одним действием, а не полем за вызов. */
+  | { kind: 'fillForm'; selector?: string; fields: PreviewFormField[]; delay?: number; diagnostic?: boolean }
+  /** Что сейчас в форме: поля, значения, обязательность — проверка результата заполнения. */
+  | { kind: 'formState'; selector?: string; limit?: number; diagnostic?: boolean }
+  /** Валидация браузера: какие поля не дают отправить форму и почему. */
+  | { kind: 'validity'; selector?: string; diagnostic?: boolean }
+  /** Отправить форму так же, как Enter: с валидацией и обработчиком submit. */
+  | { kind: 'submit'; selector?: string; diagnostic?: boolean }
+  /** Варианты контрола: select, datalist, группа radio. */
+  | { kind: 'options'; selector: string; limit?: number; diagnostic?: boolean }
+  /** Перетащить файлы в зону загрузки — путь без input[type=file]. */
+  | { kind: 'dropFile'; selector: string; files: PreviewUploadFile[]; diagnostic?: boolean }
   /** Загрузить файл в input type=file: содержимое приходит base64 от модели. */
-  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string; diagnostic?: boolean }
+  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string; files?: PreviewUploadFile[]; diagnostic?: boolean }
   /** Ширина вьюпорта превью в пикселях (исполняет Reader, не страница); 0 — адаптив. */
   | { kind: 'viewport'; width: number; diagnostic?: boolean }
   /** Дерево доступности страницы: роли и имена как их видит скринридер. */
@@ -547,10 +574,32 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (
         bounded(value.selector, L.selector) &&
         optBounded(value.value, L.text) &&
+        (value.values === undefined || (Array.isArray(value.values) && value.values.length > 0 && value.values.length <= 64 && value.values.every((item) => bounded(item, L.text)))) &&
         (value.checked === undefined || typeof value.checked === 'boolean') &&
-        (value.value !== undefined || value.checked !== undefined)
+        (value.value !== undefined || value.values !== undefined || value.checked !== undefined)
       )
+    case 'fillForm':
+      return (
+        optBounded(value.selector, L.selector) &&
+        Array.isArray(value.fields) && value.fields.length > 0 && value.fields.length <= 50 &&
+        value.fields.every((field) => isFormField(field)) &&
+        (value.delay === undefined || (typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay >= 0 && value.delay <= 200))
+      )
+    case 'formState':
+      return optBounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200))
+    case 'validity':
+    case 'submit':
+      return optBounded(value.selector, L.selector)
+    case 'options':
+      return bounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 500))
+    case 'dropFile':
+      return bounded(value.selector, L.selector) && isUploadFiles(value.files)
     case 'upload':
+      // Несколько файлов передаются массивом; одиночная форма остаётся ради
+      // совместимости с уже написанными ходами модели.
+      if (value.files !== undefined) return bounded(value.selector, L.selector) && isUploadFiles(value.files)
       return (
         bounded(value.selector, L.selector) &&
         bounded(value.name, 255) && value.name.length > 0 &&
@@ -568,6 +617,31 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
 
 function validDiagnosticOptions(value: Record<string, unknown>): boolean {
   try { normalizeBrowserDiagnosticOptions(value); return true } catch { return false }
+}
+
+function isFormField(value: unknown): boolean {
+  if (!record(value)) return false
+  const L = PREVIEW_ACTION_LIMITS
+  return bounded(value.selector, L.selector) &&
+    optBounded(value.value, L.text) &&
+    (value.values === undefined || (Array.isArray(value.values) && value.values.length > 0 && value.values.length <= 64 && value.values.every((item) => bounded(item, L.text)))) &&
+    (value.checked === undefined || typeof value.checked === 'boolean') &&
+    (value.value !== undefined || value.values !== undefined || value.checked !== undefined)
+}
+
+/** Общий бюджет на все файлы тот же, что на один: он упирается в память раннера. */
+function isUploadFiles(value: unknown): boolean {
+  const L = PREVIEW_ACTION_LIMITS
+  if (!Array.isArray(value) || value.length === 0 || value.length > 16) return false
+  let total = 0
+  for (const item of value) {
+    if (!record(item)) return false
+    if (!bounded(item.name, 255) || item.name.length === 0) return false
+    if (!optBounded(item.mimeType, 100)) return false
+    if (!bounded(item.base64, L.uploadBase64)) return false
+    total += (item.base64 as string).length
+  }
+  return total <= L.uploadBase64
 }
 
 /** Repeat of a keystroke: a person holds a key, but not a thousand times. */

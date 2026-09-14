@@ -6,7 +6,7 @@ import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/bro
 import { fitScale, frameWidth, nextFrameZoom, panelShortcut, pinchDistance, touchScrollDelta, TOUCH_TAP_SLOP, type FrameZoom } from '../lib/frameView'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
+import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
 import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
@@ -42,6 +42,21 @@ const VIEWPORTS: ReadonlyArray<{ id: 'phone' | 'tablet' | 'desktop'; label: stri
   { id: 'tablet', label: 'Планшет', viewport: { width: 820, height: 1180, deviceScaleFactor: 1 } },
   { id: 'desktop', label: 'Десктоп', viewport: VIEWPORT }
 ]
+
+/** Сколько держать палец, чтобы это стало правым кликом — как в мобильных браузерах. */
+const LONG_PRESS_MS = 550
+/** Промежуток между двумя тапами, который страница считает двойным кликом. */
+const DOUBLE_TAP_MS = 320
+/** Сколько после касания клик считается тапом, а не щелчком мыши. */
+const TOUCH_CLICK_WINDOW_MS = 700
+
+/**
+ * Масштаб — настройка экрана человека, а не свойство разговора: он одинаков и
+ * при переключении чатов, и при повторном открытии панели. Живёт в модуле, а не
+ * в хранилище браузера: своего порта предпочтений у панели нет, а обращаться к
+ * хранилищу напрямую продуктовому пакету запрещает архитектурная проверка.
+ */
+let lastZoom: FrameZoom = 'fit'
 
 /** Состояние сессии словами: сырое `ready`/`idle` человеку ничего не говорит. */
 const STATE_LABELS: Record<string, string> = {
@@ -135,10 +150,19 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const imgRef = useRef<HTMLImageElement>(null)
   // Кадр вписан по ширине панели. На телефоне это десятая часть натурального
   // размера — читать нечем, поэтому масштаб отделён от раскладки.
-  const [zoom, setZoom] = useState<FrameZoom>('fit')
+  // Масштаб переживает переоткрытие панели: человек настраивает его под свой
+  // экран один раз, а не заново в каждом разговоре.
+  const [zoom, setZoom] = useState<FrameZoom>(lastZoom)
   const [fullscreen, setFullscreen] = useState(false)
+  /** Поля формы глазами страницы: то же, что видит модель инструментом form-state. */
+  const [formInfo, setFormInfo] = useState<{ loading?: boolean; error?: string; form?: BrowserSelectorResult['form']; validity?: BrowserSelectorResult['validity'] } | null>(null)
   /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
   const touch = useRef<{ x: number; y: number; moved: boolean; pinch: number | null } | null>(null)
+  /** Долгое нажатие вместо правой кнопки и двойной тап вместо двойного клика. */
+  const longPress = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; fired: boolean }>({ timer: undefined, fired: false })
+  const lastTap = useRef(0)
+  /** Когда экрана касались: двойной тап разбирается только для касаний. */
+  const lastTouchAt = useRef(0)
   const addressRef = useRef<HTMLInputElement>(null)
   const paneRef = useRef<HTMLElement>(null)
   // Флаг актуальности: смена разговора или размонтирование отменяет поздние ответы.
@@ -395,6 +419,18 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     if (!first) return
     const second = event.touches[1]
     touch.current = { x: first.clientX, y: first.clientY, moved: false, pinch: second ? pinchDistance(first, second) : null }
+    // Долгое нажатие — правый клик: контекстное меню страницы иначе недостижимо
+    // с телефона, а именно в нём живут «скачать», «открыть в новой вкладке».
+    longPress.current.fired = false
+    lastTouchAt.current = Date.now()
+    clearTimeout(longPress.current.timer)
+    if (!second) longPress.current.timer = setTimeout(() => {
+      const start = touch.current
+      if (!start || start.moved) return
+      longPress.current.fired = true
+      const point = pointFromEvent({ clientX: start.x, clientY: start.y })
+      if (point) void run({ type: 'input', action: { type: 'click', ...point, button: 'right' } })
+    }, LONG_PRESS_MS)
   }
 
   const onFrameTouchMove = (event: { touches: ArrayLike<{ clientX: number; clientY: number }>; preventDefault(): void }): void => {
@@ -418,6 +454,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     const rect = imgRef.current?.getBoundingClientRect()
     if (!rect) return
     if (!start.moved && Math.hypot(first.clientX - start.x, first.clientY - start.y) < TOUCH_TAP_SLOP) return
+    clearTimeout(longPress.current.timer)
     event.preventDefault()
     const delta = touchScrollDelta({ clientX: start.x, clientY: start.y }, first, rect, meta?.viewport ?? VIEWPORT)
     touch.current = { x: first.clientX, y: first.clientY, moved: true, pinch: null }
@@ -428,10 +465,22 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
 
   /** Жест закончился прокруткой — клик по кадру после него был бы случайным. */
   const swallowTapAfterScroll = (): boolean => {
-    const scrolled = touch.current?.moved === true
+    const scrolled = touch.current?.moved === true || longPress.current.fired
     touch.current = null
+    longPress.current.fired = false
     return scrolled
   }
+
+  useEffect(() => { lastZoom = zoom }, [zoom])
+
+  /** Поля формы и проверки браузера — то же, что модель видит form-state/validity. */
+  const loadFormInfo = useCallback(async (): Promise<void> => {
+    setFormInfo({ loading: true })
+    const form = await run({ type: 'selector', action: { kind: 'formState' } }) as BrowserSelectorResult | undefined
+    if (!form || form.ok === false) { setFormInfo({ error: form?.error ?? 'Форма не найдена' }); return }
+    const validity = await run({ type: 'selector', action: { kind: 'validity' } }) as BrowserSelectorResult | undefined
+    setFormInfo({ form: form.form, ...(validity?.validity ? { validity: validity.validity } : {}) })
+  }, [run])
 
   /** Перезапуск сессии: останавливаем текущую и стартуем заново на том же разговоре. */
   const restartSession = (): void => {
@@ -653,6 +702,16 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         ))}
         <IconButton size="sm" aria-label="Новая вкладка" title="Новая вкладка" disabled={phase !== 'ready'}
           onClick={() => void run({ type: 'newTab' })}>+</IconButton>
+        {/* За шестью вкладками начинается горизонтальная прокрутка, в которой
+            нужную приходится искать глазами; список выбирает её по названию. */}
+        {tabs.length > 5 && (
+          <label className="playwright-reader-testusers">Вкладок: {tabs.length}
+            <select className="sel" aria-label="Выбрать вкладку из списка" value={meta?.activeTabId ?? ''} disabled={phase !== 'ready'}
+              onChange={(event) => { if (event.target.value) void run({ type: 'selectTab', tabId: event.target.value }) }}>
+              {tabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.dialogId ? '● ' : ''}{tab.title || tab.url || 'Без названия'}</option>)}
+            </select>
+          </label>
+        )}
       </div>
     <div className="playwright-reader-header">
       <IconButton size="sm" aria-label="Назад" title="Назад" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'back' })}>‹</IconButton>
@@ -708,6 +767,9 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           >{v.label}</Button>
         ))}
       </span>
+      {/* Размер окна словами: пресет не говорит, какой ширины страница сейчас,
+          а именно ширина объясняет, почему вёрстка выглядит так. */}
+      {meta?.viewport && <span className="playwright-reader-size">{meta.viewport.width}×{meta.viewport.height}</span>}
       {/* Масштаб кадра отделён от размера окна Chromium: «Телефон» меняет вёрстку
           страницы, а зум — только то, как кадр виден человеку. */}
       <span className="playwright-reader-zoom" role="group" aria-label="Масштаб кадра">
@@ -776,6 +838,12 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         </label>
       )}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadDiagnostics()}>Ошибки страницы</Button>
+      {/* Человек видит форму глазами страницы — теми же данными, что и модель:
+          что заполнено, что обязательно и почему браузер не пустит дальше. */}
+      <Button size="sm" variant={formInfo ? 'primary' : 'ghost'} aria-expanded={Boolean(formInfo)} disabled={phase !== 'ready'} onClick={() => (formInfo ? setFormInfo(null) : void loadFormInfo())}>Поля формы</Button>
+      {/* Страницу иногда нужно доработать в своём браузере: скачать файл,
+          открыть devtools, войти паролем из менеджера. */}
+      <Button size="sm" variant="ghost" disabled={!meta?.currentUrl} onClick={() => { if (meta?.currentUrl) globalThis.open?.(meta.currentUrl, '_blank', 'noopener') }}>Открыть у себя</Button>
       <Button size="sm" variant={downloadsOpen ? 'primary' : 'ghost'} disabled={phase !== 'ready'} aria-expanded={downloadsOpen} onClick={() => setDownloadsOpen(value => !value)}>Скачивания{meta?.downloadCount ? ` (${meta.downloadCount})` : ''}</Button>
       {/* Профиль persistent, поэтому «выйти и посмотреть экран входа» иначе
           нечем: перезапуск сессии куки не трогает. */}
@@ -836,7 +904,19 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             aria-disabled={Boolean(activeDialog)}
             role="application"
             aria-label="Страница в Chromium: клик, прокрутка и клавиатура работают прямо здесь"
-            onClick={(event) => { if (!swallowTapAfterScroll()) clickAt(event, 'left', 1) }}
+            onClick={(event) => {
+              clearTimeout(longPress.current.timer)
+              if (swallowTapAfterScroll()) return
+              // Два быстрых тапа = двойной клик: на телефоне иначе не открыть
+              // то, что открывается двойным щелчком (строка таблицы, файл).
+              // Мышь сюда не попадает: у неё двойной клик приходит своим detail,
+              // и считать два соседних щелчка двойными было бы неверно.
+              const now = Date.now()
+              const touched = now - lastTouchAt.current < TOUCH_CLICK_WINDOW_MS
+              const double = touched && now - lastTap.current < DOUBLE_TAP_MS
+              lastTap.current = touched ? now : 0
+              clickAt(event, 'left', double ? 2 : 1)
+            }}
             onContextMenu={(event) => { event.preventDefault(); clickAt(event, 'right', 1) }}
             onWheel={onFrameWheel}
             onTouchStart={onFrameTouchStart}
@@ -997,6 +1077,32 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         </ol>
       </div>
     )}
+    {formInfo && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Поля формы">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Поля формы{formInfo.form ? `: ${formInfo.form.total}` : ''}{formInfo.validity && !formInfo.validity.valid ? ` · не проходят проверку: ${formInfo.validity.blocking.length}` : ''}</strong>
+          <IconButton size="sm" aria-label="Обновить поля формы" title="Обновить поля формы" disabled={formInfo.loading} onClick={() => void loadFormInfo()}>⟳</IconButton>
+          <IconButton size="sm" aria-label="Скрыть поля формы" title="Скрыть поля формы" onClick={() => setFormInfo(null)}>✕</IconButton>
+        </div>
+        {formInfo.loading && <p role="status">Читаем форму…</p>}
+        {formInfo.error && <p role="alert">{formInfo.error}</p>}
+        {formInfo.form?.truncated && <p className="proj-muted">Показана часть полей. Остальные модель дочитает инструментом form-state.</p>}
+        {formInfo.form && (
+          <ul className="playwright-reader-diagnostics__list">
+            {formInfo.form.fields.map((field, index) => (
+              <li key={`${field.selector}-${index}`} data-kind={field.invalid ? 'console' : undefined}>
+                <code>{field.label || field.name || field.selector}</code>
+                {field.type ? ` · ${field.type}` : ''}
+                {field.required ? ' · обязательное' : ''}
+                {field.disabled ? ' · выключено' : ''}
+                {field.checked !== undefined ? ` · ${field.checked ? 'отмечено' : 'снято'}` : field.value ? ` · «${field.value}»` : ' · пусто'}
+                {field.invalid && <small> · {field.invalid}</small>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )}
     {diagnostics && (
       <div className="playwright-reader-diagnostics" role="region" aria-label="Диагностика страницы">
         <div className="playwright-reader-diagnostics__head">
@@ -1032,6 +1138,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         onChange={(event) => setTyping(event.target.value)}
         onKeyDown={(event) => { if (event.key === 'Enter') submitTyping() }}
       />
+      <IconButton size="sm" aria-label="Очистить поле ввода" title="Очистить поле ввода" disabled={!typing} onClick={() => setTyping('')}>✕</IconButton>
       <Button size="sm" variant="secondary" disabled={phase !== 'ready' || Boolean(activeDialog) || !typing} onClick={submitTyping}>Ввести</Button>
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key: 'Enter' } })}>Enter</Button>
     </div>

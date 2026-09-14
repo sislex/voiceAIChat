@@ -203,3 +203,26 @@ describe('клавиатура и буфер обмена', () => {
     })
   })
 })
+
+// Круг 2: формы — перевод действий в команды раннера.
+describe('формы', () => {
+  it('заполнение формы переносит поля и задержку без потерь', () => {
+    expect(planModelAction({ kind: 'fillForm', selector: 'form', fields: [{ selector: '#a', value: 'x' }, { selector: '#b', checked: true }], delay: 20 })).toEqual({
+      kind: 'command',
+      command: { type: 'selector', action: { kind: 'fillForm', selector: 'form', fields: [{ selector: '#a', value: 'x' }, { selector: '#b', checked: true }], delay: 20 } }
+    })
+  })
+
+  it('чтение формы, проверки, отправка и варианты выбора ложатся на селекторные команды', () => {
+    expect(planModelAction({ kind: 'formState' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'formState' } } })
+    expect(planModelAction({ kind: 'validity', selector: '#email' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'validity', selector: '#email' } } })
+    expect(planModelAction({ kind: 'submit' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'submit' } } })
+    expect(planModelAction({ kind: 'options', selector: '#city', limit: 10 })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'options', selector: '#city', limit: 10 } } })
+  })
+
+  it('несколько файлов едут массивом, а одиночные поля остаются заполненными первым файлом', () => {
+    const plan = planModelAction({ kind: 'upload', selector: '#f', name: 'ignored', base64: 'AA==', files: [{ name: 'a.txt', base64: 'QQ==' }, { name: 'b.txt', base64: 'Qg==' }] })
+    expect(plan).toMatchObject({ command: { type: 'selector', action: { kind: 'upload', name: 'a.txt', base64: 'QQ==' } } })
+    expect(plan.kind === 'command' && plan.command.type === 'selector' && plan.command.action.kind === 'upload' ? plan.command.action.files?.length : 0).toBe(2)
+  })
+})

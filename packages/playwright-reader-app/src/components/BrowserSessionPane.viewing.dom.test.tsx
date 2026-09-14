@@ -120,3 +120,72 @@ describe('адрес под рукой', () => {
     await screen.findByText(/Буфер обмена недоступен/)
   })
 })
+
+describe('формы и жесты телефона (круг 2)', () => {
+  it('долгое нажатие открывает контекстное меню страницы правым кликом', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const browser = fakeBrowser()
+      render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+      const frame = await screen.findByAltText('Кадр Chromium')
+      fireEvent.touchStart(frame, { touches: [{ clientX: 50, clientY: 60 }] })
+      await vi.advanceTimersByTimeAsync(700)
+      await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+        command: expect.objectContaining({ action: expect.objectContaining({ type: 'click', button: 'right' }) })
+      })))
+    } finally { vi.useRealTimers() }
+  })
+
+  it('два быстрых тапа дают двойной клик, а два щелчка мыши — нет', async () => {
+    const { browser, frame } = await readyPane()
+    fireEvent.touchStart(frame, { touches: [{ clientX: 10, clientY: 10 }] })
+    fireEvent.click(frame, { clientX: 10, clientY: 10 })
+    fireEvent.touchStart(frame, { touches: [{ clientX: 10, clientY: 10 }] })
+    fireEvent.click(frame, { clientX: 10, clientY: 10 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ action: expect.objectContaining({ type: 'click', clickCount: 2 }) })
+    })))
+    ;(browser.command as ReturnType<typeof vi.fn>).mockClear()
+    fireEvent.click(frame, { clientX: 20, clientY: 20 })
+    fireEvent.click(frame, { clientX: 20, clientY: 20 })
+    const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+      .filter(([, req]) => (req as { command: { action?: { clickCount?: number } } }).command.action?.clickCount === 2)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('панель полей формы показывает значения и причину, по которой браузер не пустит дальше', async () => {
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+        if (req.command.action?.kind === 'formState') {
+          return { ok: true, form: { selector: 'form', total: 1, fields: [{ selector: '#email', tag: 'input', type: 'email', label: 'Почта', value: 'нет-собаки', invalid: 'Введите адрес' }] } }
+        }
+        if (req.command.action?.kind === 'validity') return { ok: true, validity: { valid: false, checked: 1, blocking: [{ selector: '#email', message: 'Введите адрес', reasons: ['typeMismatch'] }] } }
+        return meta()
+      }) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Поля формы' }))
+    await screen.findByText(/не проходят проверку: 1/)
+    await screen.findByText('Почта')
+    await screen.findByText(/Введите адрес/)
+  })
+
+  it('поле ввода очищается кнопкой: на телефоне стирать по символу — отдельное упражнение', async () => {
+    await readyPane()
+    const input = screen.getByLabelText('Ввод текста в страницу') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'привет' } })
+    fireEvent.click(screen.getByLabelText('Очистить поле ввода'))
+    await waitFor(() => expect(input.value).toBe(''))
+  })
+
+  it('масштаб переживает переоткрытие панели', async () => {
+    const { frame } = await readyPane()
+    fireEvent.click(screen.getByLabelText('Увеличить кадр'))
+    await waitFor(() => expect(frame.style.width).toMatch(/px$/))
+    cleanup()
+    render(<BrowserSessionPane conversationId="c2" browser={fakeBrowser()} />)
+    const again = await screen.findByAltText('Кадр Chromium')
+    expect(again.style.width).toMatch(/px$/)
+  })
+})
