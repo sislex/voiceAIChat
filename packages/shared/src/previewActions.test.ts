@@ -309,3 +309,39 @@ describe('действия клавиатуры, фокуса и буфера', 
     expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'a', delay: -1 })).toBe(false)
   })
 })
+
+// Круг 2: формы. Конверт проверяется и сервером, и клиентом — правила одни.
+describe('действия форм', () => {
+  it('заполнение формы требует хотя бы одно осмысленное поле', () => {
+    expect(isPreviewAction({ kind: 'fillForm', fields: [{ selector: '#a', value: 'x' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'fillForm', fields: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'fillForm', fields: [{ selector: '#a' }] })).toBe(false)
+    expect(isPreviewAction({ kind: 'fillForm', fields: [{ value: 'x' }] })).toBe(false)
+  })
+
+  it('несколько значений допускаются только непустым списком', () => {
+    expect(isPreviewAction({ kind: 'set', selector: '#tags', values: ['a'] })).toBe(true)
+    expect(isPreviewAction({ kind: 'set', selector: '#tags', values: [] })).toBe(false)
+  })
+
+  it('перетаскивание файлов ограничено и числом файлов, и общим объёмом', () => {
+    expect(isPreviewAction({ kind: 'dropFile', selector: '#zone', files: [{ name: 'a.txt', base64: '' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'dropFile', selector: '#zone', files: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'dropFile', selector: '#zone', files: [{ name: '', base64: '' }] })).toBe(false)
+    const half = 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 - 4)
+    expect(isPreviewAction({ kind: 'dropFile', selector: '#zone', files: [{ name: 'a', base64: half }, { name: 'b', base64: half }] })).toBe(false)
+  })
+
+  it('чтение формы, проверки и отправка работают и без селектора', () => {
+    expect(isPreviewAction({ kind: 'formState' })).toBe(true)
+    expect(isPreviewAction({ kind: 'validity' })).toBe(true)
+    expect(isPreviewAction({ kind: 'submit' })).toBe(true)
+    expect(isPreviewAction({ kind: 'options' })).toBe(false)
+    expect(isPreviewAction({ kind: 'options', selector: '#city' })).toBe(true)
+  })
+
+  it('загрузка нескольких файлов не требует одиночных полей', () => {
+    expect(isPreviewAction({ kind: 'upload', selector: '#f', files: [{ name: 'a.txt', base64: '' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'upload', selector: '#f', files: [] })).toBe(false)
+  })
+})

@@ -308,3 +308,85 @@ describe('фокус, выделение и вставка', () => {
     expect(result).toEqual({ ok: false, error: 'Элемент не найден' })
   })
 })
+
+// Круг 2: формы. Человек заполняет форму одним действием и видит, почему она не
+// отправляется; модель до этого круга заполняла поле за вызов и узнавала причину
+// отказа только по тому, что страница решила нарисовать.
+describe('формы целиком', () => {
+  it('fill-form заполняет поля по очереди и отчитывается по каждому', async () => {
+    const target = locator()
+    const result = await runSelectorAction(page(target), {
+      kind: 'fillForm',
+      fields: [{ selector: '#login', value: 'admin' }, { selector: '#remember', checked: true }]
+    })
+    expect(result.ok).toBe(true)
+    expect(result.filled).toEqual([{ selector: '#login', ok: true }, { selector: '#remember', ok: true }])
+    expect(target.check).toHaveBeenCalled()
+  })
+
+  it('частично заполненная форма не выдаётся за успех', async () => {
+    const target = locator({ fill: vi.fn(async () => { throw new Error('поле только для чтения') }), selectOption: vi.fn(async () => { throw new Error('не select') }) })
+    const result = await runSelectorAction(page(target), { kind: 'fillForm', fields: [{ selector: '#login', value: 'admin' }] })
+    expect(result.ok).toBe(false)
+    expect(result.filled?.[0]).toMatchObject({ selector: '#login', ok: false })
+    expect(result.error).toContain('Не заполнено полей')
+  })
+
+  it('поле без значения объясняет, чего не хватает, и не роняет остальные', async () => {
+    const result = await runSelectorAction(page(locator()), {
+      kind: 'fillForm',
+      fields: [{ selector: '#a' } as never, { selector: '#b', value: 'x' }]
+    })
+    expect(result.filled?.[0]).toMatchObject({ ok: false, error: 'Нужен value, values или checked' })
+    expect(result.filled?.[1]).toMatchObject({ ok: true })
+  })
+
+  it('form-state возвращает поля страницы, а отсутствие формы — отказом', async () => {
+    const form = { selector: 'form', total: 2, fields: [{ selector: '#login', tag: 'input' }] }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => form) }), { kind: 'formState' }))
+      .toMatchObject({ ok: true, form: { total: 2 } })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'formState' }))
+      .toEqual({ ok: false, error: 'Форма не найдена' })
+  })
+
+  it('validity отдаёт блокирующие поля с причинами браузера', async () => {
+    const validity = { valid: false, checked: 3, blocking: [{ selector: '#email', message: 'Введите адрес', reasons: ['typeMismatch'] }] }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => validity) }), { kind: 'validity' })
+    expect(result).toMatchObject({ ok: true, validity: { valid: false, blocking: [{ reasons: ['typeMismatch'] }] } })
+  })
+
+  it('submit отказывает словами, когда браузер не пропустил проверку', async () => {
+    let call = 0
+    const target = locator({ evaluate: vi.fn(async () => (call++ === 0 ? true : { ok: false, error: 'Форма не прошла проверку браузера' })) })
+    expect(await runSelectorAction(page(target), { kind: 'submit' })).toEqual({ ok: false, error: 'Форма не прошла проверку браузера' })
+  })
+
+  it('options объясняет отказ на элементе без вариантов выбора', async () => {
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'options', selector: '#name' })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('нет вариантов выбора')
+  })
+
+  it('set с несколькими значениями уходит одним selectOption: по одному они затирают друг друга', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'set', selector: '#tags', values: ['a', 'b'] })
+    expect(target.selectOption).toHaveBeenCalledWith(['a', 'b'], expect.anything())
+  })
+
+  it('upload проверяет общий размер файлов, а не каждый по отдельности', async () => {
+    const big = 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 - 4)
+    const result = await runSelectorAction(page(locator()), {
+      kind: 'upload', selector: '#file', name: 'a.bin', base64: big,
+      files: [{ name: 'a.bin', base64: big }, { name: 'b.bin', base64: big }]
+    })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('вместе больше')
+  })
+
+  it('drop-file отвергает испорченный base64 до обращения к странице', async () => {
+    const target = locator()
+    const result = await runSelectorAction(page(target), { kind: 'dropFile', selector: '#zone', files: [{ name: 'a.txt', base64: 'не base64!' }] })
+    expect(result).toEqual({ ok: false, error: 'Некорректное содержимое base64' })
+    expect(target.evaluate).toBeDefined()
+  })
+})

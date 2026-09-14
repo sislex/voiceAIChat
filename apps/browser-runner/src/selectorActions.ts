@@ -3,6 +3,7 @@ import { describeElementScript } from './describeElement.js'
 import { findElements, readPage, readBounds, type ReadContent } from './pageReading.js'
 import { readElementTargets } from './elementTargets.js'
 import { focusOrderScript, focusStateScript, pasteScript, selectElementScript, selectionScript } from './focusActions.js'
+import { dropFilesScript, formStateScript, optionsScript, submitScript, validityScript } from './formActions.js'
 import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js'
 
 /**
@@ -26,14 +27,14 @@ export interface SelectorLocator extends WaitLocator {
   isVisible(): Promise<boolean>
   waitFor(options?: { state?: 'attached' | 'detached' | 'visible' | 'hidden'; timeout?: number }): Promise<void>
   hover(options?: { timeout?: number }): Promise<void>
-  selectOption(value: string, options?: { timeout?: number }): Promise<unknown>
+  selectOption(value: string | string[], options?: { timeout?: number }): Promise<unknown>
   check(options?: { timeout?: number }): Promise<void>
   uncheck(options?: { timeout?: number }): Promise<void>
   dragTo(target: SelectorLocator, options?: { timeout?: number }): Promise<void>
   scrollIntoViewIfNeeded(options?: { timeout?: number }): Promise<void>
   ariaSnapshot(options?: { timeout?: number }): Promise<string>
   evaluate(fn: string | ((node: unknown, arg: unknown) => unknown), arg?: unknown, options?: { timeout?: number }): Promise<unknown>
-  setInputFiles(files: { name: string; mimeType: string; buffer: Buffer }, options?: { timeout?: number }): Promise<void>
+  setInputFiles(files: { name: string; mimeType: string; buffer: Buffer } | Array<{ name: string; mimeType: string; buffer: Buffer }>, options?: { timeout?: number }): Promise<void>
 }
 export interface SelectorPage extends WaitPage {
   locator(selector: string): SelectorLocator
@@ -51,6 +52,21 @@ export interface SelectorPage extends WaitPage {
  */
 /** Потолок загрузки: содержимое едет в JSON, base64 раздувает его на треть. */
 const UPLOAD_LIMIT_BYTES = BROWSER_UPLOAD_LIMIT_BYTES
+
+/**
+ * base64 от модели → байты. Buffer.from молча пропускает мусор, и без проверки
+ * страница получала другой файл, а модель — ok. Проверяем до выделения памяти;
+ * файл нулевой длины допустим.
+ */
+function decodeUpload(raw: string): { buffer: Buffer } | { error: string } {
+  const encoded = raw.replace(/\s/g, '')
+  if (encoded.length > Math.ceil(UPLOAD_LIMIT_BYTES / 3) * 4) return { error: 'Файл больше 8 МБ' }
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 === 1 || (encoded.includes('=') && encoded.length % 4 !== 0)) return { error: 'Некорректное содержимое base64' }
+  const buffer = Buffer.from(encoded, 'base64')
+  if (buffer.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) return { error: 'Некорректное содержимое base64' }
+  if (buffer.length > UPLOAD_LIMIT_BYTES) return { error: `Файл больше ${Math.round(UPLOAD_LIMIT_BYTES / 1024 / 1024)} МБ` }
+  return { buffer }
+}
 
 /** Selected text returned to the model; longer selections are cut with a flag. */
 const SELECTION_LIMIT = 4_000
@@ -202,6 +218,12 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
         await (action.checked ? target.check({ timeout }) : target.uncheck({ timeout }))
         return { ok: true }
       }
+      if (action.values) {
+        // Multi-select: a person ctrl-clicks several options, and setting them
+        // one by one would clear the previous choice each time.
+        await target.selectOption(action.values, { timeout })
+        return { ok: true }
+      }
       if (typeof action.value !== 'string') return { ok: false, error: 'Нужен value или checked' }
       // select отличаем от текстового поля по факту: сначала пробуем как select,
       // и только на отказе — как поле ввода.
@@ -215,16 +237,79 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
     if (action.kind === 'upload') {
       // Файл приходит base64 и уходит в память Playwright: писать его на диск
       // раннера незачем, а вот ограничить размер — обязательно.
-      const encoded = action.base64.replace(/\s/g, '')
-      // Buffer.from пропускает мусор; без проверки модель загружала другой файл
-      // и получала ok. Проверяем до выделения памяти, пустой файл допустим.
-      if (encoded.length > Math.ceil(UPLOAD_LIMIT_BYTES / 3) * 4) return { ok: false, error: 'Файл больше 8 МБ' }
-      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 === 1 || (encoded.includes('=') && encoded.length % 4 !== 0)) return { ok: false, error: 'Некорректное содержимое base64' }
-      const buffer = Buffer.from(encoded, 'base64')
-      if (buffer.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) return { ok: false, error: 'Некорректное содержимое base64' }
-      if (buffer.length > UPLOAD_LIMIT_BYTES) return { ok: false, error: `Файл больше ${Math.round(UPLOAD_LIMIT_BYTES / 1024 / 1024)} МБ` }
-      await (await uniqueTarget(page.locator(action.selector), timeout, true)).setInputFiles({ name: action.name, mimeType: action.mimeType || 'application/octet-stream', buffer }, { timeout })
+      const sources = action.files?.length ? action.files : [{ name: action.name, mimeType: action.mimeType, base64: action.base64 }]
+      const files: Array<{ name: string; mimeType: string; buffer: Buffer }> = []
+      let total = 0
+      for (const source of sources) {
+        const decoded = decodeUpload(source.base64)
+        if ('error' in decoded) return { ok: false, error: decoded.error }
+        total += decoded.buffer.length
+        if (total > UPLOAD_LIMIT_BYTES) return { ok: false, error: `Файлы вместе больше ${Math.round(UPLOAD_LIMIT_BYTES / 1024 / 1024)} МБ` }
+        files.push({ name: source.name, mimeType: source.mimeType || 'application/octet-stream', buffer: decoded.buffer })
+      }
+      const target = await uniqueTarget(page.locator(action.selector), timeout, true)
+      await target.setInputFiles(files.length === 1 ? files[0] : files, { timeout })
       return { ok: true }
+    }
+    if (action.kind === 'fillForm') {
+      // Заполняем по одному полю, но за один ход модели: форма, которая
+      // перерисовывается между вызовами, иначе теряла всё введённое раньше.
+      const filled: NonNullable<BrowserSelectorResult['filled']> = []
+      for (const field of action.fields) {
+        try {
+          const node = await uniqueTarget(page.locator(field.selector), timeout)
+          if (typeof field.checked === 'boolean') await (field.checked ? node.check({ timeout }) : node.uncheck({ timeout }))
+          else if (field.values) await node.selectOption(field.values, { timeout })
+          else if (typeof field.value === 'string') {
+            try { await node.selectOption(field.value, { timeout }) }
+            catch {
+              if (typeof action.delay === 'number') { await node.clear({ timeout }); await node.pressSequentially(field.value, { timeout, delay: Math.min(Math.max(action.delay, 0), 200) }) }
+              else await node.fill(field.value, { timeout })
+            }
+          } else { filled.push({ selector: field.selector, ok: false, error: 'Нужен value, values или checked' }); continue }
+          filled.push({ selector: field.selector, ok: true })
+        } catch (error) {
+          filled.push({ selector: field.selector, ok: false, error: error instanceof Error ? error.message.split('\n')[0] : 'Поле не заполнено' })
+        }
+      }
+      // Частично заполненная форма не должна читаться как успех: модель иначе
+      // жмёт «Отправить» и разбирается уже с ошибками страницы.
+      const failed = filled.filter((item) => !item.ok)
+      return { ok: failed.length === 0, filled, ...(failed.length ? { error: `Не заполнено полей: ${failed.length}` } : {}) }
+    }
+    if (action.kind === 'formState') {
+      const limit = Math.min(Math.max(action.limit ?? 50, 1), 200)
+      return await readElementTargets(page, async () => {
+        const form = await page.evaluate(formStateScript(action.selector ?? null, limit)) as BrowserSelectorResult['form'] | null
+        return form ? { ok: true, form } : { ok: false, error: 'Форма не найдена' }
+      })
+    }
+    if (action.kind === 'validity') {
+      return await readElementTargets(page, async () => {
+        const validity = await page.evaluate(validityScript(action.selector ?? null)) as BrowserSelectorResult['validity'] | null
+        return validity ? { ok: true, validity } : { ok: false, error: 'Форма не найдена' }
+      })
+    }
+    if (action.kind === 'submit') {
+      const target = await uniqueTarget(page.locator(action.selector || 'form'), timeout)
+      const outcome = await target.evaluate(submitScript(), undefined, { timeout }) as { ok: boolean; error?: string }
+      return outcome.ok ? { ok: true } : { ok: false, error: outcome.error ?? 'Форма не отправлена' }
+    }
+    if (action.kind === 'options') {
+      const limit = Math.min(Math.max(action.limit ?? 100, 1), 500)
+      const options = await page.evaluate(optionsScript(action.selector, limit)) as BrowserSelectorResult['options'] | null
+      return options ? { ok: true, options } : { ok: false, error: 'У этого элемента нет вариантов выбора: это не select, не поле с datalist и не группа radio' }
+    }
+    if (action.kind === 'dropFile') {
+      const files: Array<{ name: string; mimeType: string; base64: string }> = []
+      for (const file of action.files) {
+        const decoded = decodeUpload(file.base64)
+        if ('error' in decoded) return { ok: false, error: decoded.error }
+        files.push({ name: file.name, mimeType: file.mimeType || 'application/octet-stream', base64: decoded.buffer.toString('base64') })
+      }
+      const target = await uniqueTarget(page.locator(action.selector), timeout, true)
+      const outcome = await target.evaluate(dropFilesScript(), files, { timeout }) as { ok: boolean }
+      return outcome?.ok ? { ok: true } : { ok: false, error: 'Зона не приняла файлы' }
     }
     if (action.kind === 'describe') {
       return await readElementTargets(page, async () => {
