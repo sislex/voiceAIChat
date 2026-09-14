@@ -332,10 +332,18 @@ describe('previewMcp — инструменты browser', () => {
     const forwarded = vi.fn()
     await makeApp(undefined, { browserExecutor: async () => null })
     client = forwarded
-    const result = await call('wait', { selector: '#spinner', state: 'hidden' })
+    const result = await call('wait', { selector: '.row', count: 3 })
     expect(result.isError).toBe(true)
     expect(result.text).toContain('Playwright Reader')
     expect(forwarded).not.toHaveBeenCalled()
+  })
+
+  it('wait со state hidden уходит в панель: исчезновение спиннера ждёт сам iframe', async () => {
+    await makeApp(undefined, { browserExecutor: async () => null })
+    client = (message) => { if (message.t === 'preview.action') relay.resolve(U, message.requestId, { ok: true, result: { page: { url: 'https://x', title: '' }, waitedMs: 120, state: 'hidden' } }, CONV) }
+    const result = await call('wait', { selector: '#spinner', state: 'hidden' })
+    expect(result.isError).toBeFalsy()
+    expect(result.text).toContain('"state":"hidden"')
   })
 
   it('wait отклоняет противоречивые условия без вызова браузера', async () => {
@@ -692,7 +700,7 @@ describe('previewMcp — инструменты browser', () => {
     await makeApp()
     const result = await call('find', {})
     expect(result.isError).toBe(true)
-    expect(result.text).toContain('text или selector')
+    expect(result.text).toContain('text, role или selector')
   })
 
   it('click передаёт text, ошибка клиента доходит до модели', async () => {

@@ -104,6 +104,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   let pageStatus: WebRecorderPageStatus = 'empty'
   let pageError: string | undefined
   let approvedUrl: string | null = null
+  // Заголовок готовой страницы: open отвечает им сразу, без отдельного read ради названия.
+  let pageTitle: string | undefined
   let disposed = false
   let navigationGeneration = 0
   let inspectorMode: boolean | undefined
@@ -149,7 +151,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       if (entry.sent || entry.action.kind !== 'viewport' && pageStatus !== 'ready') continue
       // open резолвится готовностью целевой страницы, в iframe не пересылается.
       if (entry.action.kind === 'open') {
-        settle(requestId, { ok: true, result: { url: approvedUrl ?? entry.action.url } })
+        settle(requestId, { ok: true, result: { url: approvedUrl ?? entry.action.url, ...(pageTitle ? { title: pageTitle } : {}) } })
         continue
       }
       entry.sent = true
@@ -270,6 +272,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           if (message.status === 'empty' && approvedUrl !== null && [...pending.values()].some(entry => entry.action.kind === 'open')) return
           pageStatus = message.status
           pageError = message.error
+          pageTitle = message.status === 'ready' && typeof message.title === 'string' && message.title ? message.title : undefined
           syncPageStatus()
           if (message.status === 'ready') {
             const changed = message.url !== approvedUrl

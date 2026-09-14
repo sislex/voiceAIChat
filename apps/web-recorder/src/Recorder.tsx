@@ -7,6 +7,7 @@ import { useScenarioEditor } from './scenarioEditor'
 import { loadScenario, scenarioKey } from './scenarioStorage'
 import { createScenarioRunner, type ScenarioProgress } from './scenarioRunner'
 import { normalizeReaderAddress } from './readerAddress'
+import { loadRecentAddresses, recentAddressLabel, rememberRecentAddress, saveRecentAddresses } from './recentAddresses'
 import { useEffect, useId, useRef, useState } from 'react'
 import { PREVIEW_ACTION_LIMITS, PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, PREVIEW_INSPECTOR_MESSAGE_TYPE, isPreviewInspectorCommand } from '@shared/previewInspector'
@@ -61,6 +62,13 @@ export function Recorder(): JSX.Element {
   const [viewport, setViewport] = useState('')
   const [loadState, setLoadState] = useState<'empty' | 'loading' | 'ready' | 'error'>('empty')
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Page title from the injected bridge: the person sees where they are without reading the URL.
+  const [pageTitle, setPageTitle] = useState('')
+  const [recent, setRecent] = useState<string[]>(() => loadRecentAddresses())
+  // Actions that may start a navigation keep their result briefly: if the page begins
+  // loading, the model learns `navigated: true` and the new page instead of a stale DOM.
+  const commandKinds = useRef(new Map<string, string>())
+  const navigationWatch = useRef<{ requestId: string; result: Record<string, unknown>; timer: ReturnType<typeof setTimeout> | null; navigating: boolean } | null>(null)
   const toolsMenu = useRef<HTMLDetailsElement>(null)
   const loadGeneration = useRef(0)
   const loadTimers = useRef(new Set<ReturnType<typeof setTimeout>>())
@@ -83,6 +91,13 @@ export function Recorder(): JSX.Element {
     if (!ids) return
     window.parent.postMessage({ type: WEB_RECORDER_MESSAGE_TYPE, conversationId: ids.conversationId, registrationId: ids.registrationId, ...message }, sameOrigin)
   }
+  const settleNavigationWatch = (navigated: boolean, page?: { url: string | null; title: string }): void => {
+    const watch = navigationWatch.current
+    if (!watch) return
+    navigationWatch.current = null
+    if (watch.timer) clearTimeout(watch.timer)
+    reply({ kind: 'result', requestId: watch.requestId, ok: true, result: { ...watch.result, navigated, ...(navigated && page?.url ? { page: { url: page.url, title: page.title } } : {}) } as never })
+  }
   const setRecordingMode = (enabled: boolean): void => {
     // Режим доходит до страницы в обработчике кнопки: passive effect мог
     // отложиться до следующего paint и потерять первый быстрый ввод.
@@ -100,6 +115,8 @@ export function Recorder(): JSX.Element {
     scenarioRunner.current?.cancel('Открывается другая страница — запуск отменён.')
     scenarioRunner.current?.setReady(false)
     pageReady.current = false
+    settleNavigationWatch(false)
+    setPageTitle('')
     setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
     currentUrl.current = next
     if (next) setFrameKey((value) => value + 1)
@@ -163,6 +180,8 @@ export function Recorder(): JSX.Element {
           if (diagnosticStarts.current.size >= 64) diagnosticStarts.current.delete(diagnosticStarts.current.keys().next().value!)
           diagnosticStarts.current.set(message.requestId, { action: message.action.kind, started: performance.now() })
         }
+        if (commandKinds.current.size >= 128) commandKinds.current.delete(commandKinds.current.keys().next().value!)
+        commandKinds.current.set(message.requestId, message.action.kind)
         frame.current.contentWindow.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId: message.requestId, action: message.action }, sameOrigin)
         return
       }
@@ -187,6 +206,7 @@ export function Recorder(): JSX.Element {
       }
       if (message.kind === 'dispose') {
         cancelSessionReset()
+        settleNavigationWatch(false)
         scenarioRunner.current?.cancel('Reader отключён — запуск отменён.')
         scenarioRunner.current?.setReady(false)
         reply({ kind: 'disposed' })
@@ -196,7 +216,7 @@ export function Recorder(): JSX.Element {
       }
     }
     const receivePage = (data: unknown): void => {
-      const message = data as { type?: unknown; requestId?: unknown; ok?: unknown; result?: unknown; error?: unknown; payload?: unknown; step?: unknown; enabled?: unknown; url?: unknown }
+      const message = data as { type?: unknown; requestId?: unknown; ok?: unknown; result?: unknown; error?: unknown; payload?: unknown; step?: unknown; enabled?: unknown; url?: unknown; title?: unknown }
       if (message?.type === PREVIEW_PAGE_READY_TYPE) {
         loadGeneration.current++
         let next = typeof message.url === 'string' && message.url.length <= 4096 ? validUrl(message.url) : null
@@ -221,15 +241,29 @@ export function Recorder(): JSX.Element {
         }
         scenarioRunner.current?.setReady(true)
         pageReady.current = true
+        const title = typeof message.title === 'string' ? message.title.slice(0, 500) : ''
+        setPageTitle(title)
+        if (currentUrl.current) setRecent(list => { const updated = rememberRecentAddress(list, currentUrl.current!); saveRecentAddresses(updated); return updated })
         setLoadState('ready'); setLoadError(null)
-        reply({ kind: 'page-status', status: 'ready', url: currentUrl.current })
+        reply({ kind: 'page-status', status: 'ready', url: currentUrl.current, ...(title ? { title } : {}) })
+        settleNavigationWatch(true, { url: currentUrl.current, title })
         const state = modes.current
         for (const [type, enabled] of [[RECORD, state.recording], [PREVIEW_INSPECTOR_COMMAND_TYPE, state.inspecting], [EDIT, state.editing], [CAPTURE, state.capturing]] as const) {
           frame.current?.contentWindow?.postMessage({ type, enabled }, sameOrigin)
         }
         return
       }
-      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { cancelSessionReset(); loadGeneration.current++; scenarioRunner.current?.setReady(false); pageReady.current = false; setLoadState('loading'); setLoadError(null); reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
+      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) {
+        cancelSessionReset(); loadGeneration.current++; scenarioRunner.current?.setReady(false); pageReady.current = false; setLoadState('loading'); setLoadError(null)
+        const watch = navigationWatch.current
+        if (watch && !watch.navigating) {
+          // The click did start a navigation: hold the answer until the new page reports ready.
+          if (watch.timer) clearTimeout(watch.timer)
+          watch.navigating = true
+          watch.timer = setTimeout(() => settleNavigationWatch(true, { url: currentUrl.current, title: '' }), 6_000)
+        }
+        reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return
+      }
       if (message?.type === PREVIEW_ACTION_RESULT_TYPE && typeof message.requestId === 'string') {
         const diagnostic = diagnosticStarts.current.get(message.requestId)
         if (diagnostic) {
@@ -240,6 +274,16 @@ export function Recorder(): JSX.Element {
         }
         // Локальные шаги сценария не имеют pending на стороне host — не отвечаем.
         if (message.requestId.startsWith('local-')) { scenarioRunner.current?.receive(message.requestId, { ok: message.ok === true, ...(typeof message.error === 'string' ? { error: message.error } : {}) }); return }
+        const kind = commandKinds.current.get(message.requestId)
+        commandKinds.current.delete(message.requestId)
+        const result = message.result as Record<string, unknown> | undefined
+        const mayNavigate = message.ok === true && result && (kind === 'click' || kind === 'press' || kind === 'type' && result.submitted === true)
+        if (mayNavigate && !navigationWatch.current) {
+          const watch = { requestId: message.requestId, result, timer: null as ReturnType<typeof setTimeout> | null, navigating: false }
+          navigationWatch.current = watch
+          watch.timer = setTimeout(() => { if (navigationWatch.current === watch) settleNavigationWatch(false) }, 350)
+          return
+        }
         reply({ kind: 'result', requestId: message.requestId, ok: message.ok === true, ...(message.result !== undefined ? { result: message.result as never } : {}), ...(typeof message.error === 'string' ? { error: message.error } : {}) })
         return
       }
@@ -320,6 +364,7 @@ export function Recorder(): JSX.Element {
   }
   const reload = (): void => { if (currentUrl.current) applyUrl(currentUrl.current) }
   const failLoad = (message: string): void => {
+    settleNavigationWatch(navigationWatch.current?.navigating === true, { url: currentUrl.current, title: '' })
     scenarioRunner.current?.cancel(message); scenarioRunner.current?.setReady(false)
     pageReady.current = false; setLoadState('error'); setLoadError(message)
     reply({ kind: 'page-status', status: 'error', url: currentUrl.current, error: message })
@@ -330,7 +375,7 @@ export function Recorder(): JSX.Element {
     loadTimers.current.add(timer)
     return () => { clearTimeout(timer); loadTimers.current.delete(timer) }
   }, [frameKey, url, loadState])
-  useEffect(() => () => { for (const timer of loadTimers.current) clearTimeout(timer); loadTimers.current.clear() }, [])
+  useEffect(() => () => { for (const timer of loadTimers.current) clearTimeout(timer); loadTimers.current.clear(); if (navigationWatch.current?.timer) clearTimeout(navigationWatch.current.timer); navigationWatch.current = null }, [])
   const loaded = (target: HTMLIFrameElement): void => {
     // Отложенный callback старого iframe не должен портить состояние нового open.
     const expected = currentUrl.current
@@ -406,25 +451,43 @@ export function Recorder(): JSX.Element {
     URL.revokeObjectURL(link.href)
   }
   if (disposed) return <section className="webpreview" aria-label="Web Reader"><div className="webpreview-empty" role="status">Панель Web Reader отключена host-приложением</div></section>
+  const openAddress = (next: string): void => { applyUrl(next); reply({ kind: 'save-url', url: next }) }
+  const copyAddress = (): void => {
+    const target = currentUrl.current
+    if (!target) return
+    void navigator.clipboard?.writeText(target).catch(() => setError('Не удалось скопировать адрес.'))
+    closeTools()
+  }
+  const openExternal = (): void => {
+    if (currentUrl.current) window.open(currentUrl.current, '_blank', 'noopener,noreferrer')
+    closeTools()
+  }
   return <section className="webpreview" aria-label="Web Reader" onKeyDown={event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
       event.preventDefault(); addressRef.current?.focus(); addressRef.current?.select()
+    }
+    // Browser-like history keys work anywhere in the panel, not only over the page.
+    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && url) {
+      event.preventDefault(); historyGo(event.key === 'ArrowLeft' ? -1 : 1)
     }
   }}>
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Назад" title="Назад" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" title="Вперёд" onClick={() => historyGo(1)}>›</IconButton>
       <IconButton variant="secondary" aria-label="Обновить страницу" title="Обновить страницу" disabled={!url} onClick={reload}>↻</IconButton>
-      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) } }} /></label>
+      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onFocus={event => event.currentTarget.select()} onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) } }} /></label>
       <Button variant="secondary" type="submit">Открыть</Button>
       <IconButton variant="secondary" type="button" aria-label="Очистить страницу" title="Очистить страницу" disabled={!url && !draft} onClick={() => { applyUrl(null); reply({ kind: 'save-url', url: null }); addressRef.current?.focus() }}>×</IconButton>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
+      {viewport && <Button variant="secondary" size="sm" type="button" className="webpreview-viewport-chip" aria-label={`Сбросить ширину ${viewport} px`} title="Вернуть адаптивную ширину" onClick={() => setViewport('')}>{viewport} px ×</Button>}
       {/* Инструменты страницы собраны в свёрнутое меню, чтобы тулбар не переполнял
           узкую панель превью. Активные режимы подсвечивают саму сводку меню. */}
       <details ref={toolsMenu} className="webpreview-tools">
         <summary className="vc-btn vc-btn--secondary" aria-label="Инструменты страницы" data-active={(inspecting || editing || capturing || recording) || undefined}>Инструменты ▾</summary>
         <div className="webpreview-tools__menu" role="group" aria-label="Инструменты страницы">
           <Button variant="secondary" type="button" onClick={() => { applyUrl(READER_PROJECT_ORIGIN + '/'); toolsMenu.current?.removeAttribute('open') }}>Текущий проект</Button>
+          <Button variant="secondary" type="button" disabled={!url} onClick={copyAddress}>Копировать адрес</Button>
+          <Button variant="secondary" type="button" disabled={!url} onClick={openExternal}>Открыть в новой вкладке</Button>
           <Button variant="secondary" type="button" disabled={!url || scenarioRunning || steps.length >= 200} onClick={() => addStep('click')}>Добавить клик</Button>
           <Button variant="secondary" type="button" disabled={!url || scenarioRunning || steps.length >= 200} onClick={() => addStep('type')}>Добавить ввод</Button>
           <Button variant="secondary" type="button" disabled={!url || resettingSession} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>{resettingSession ? 'Сбрасываем сессию…' : '⟲ Сессия'}</Button>
@@ -435,6 +498,8 @@ export function Recorder(): JSX.Element {
         </div>
       </details>
     </form>
+    {loadState === 'loading' && <div className="webpreview-progress" aria-hidden="true" />}
+    {pageTitle && loadState === 'ready' && <div className="webpreview-title" title={pageTitle}><span>{pageTitle}</span></div>}
     <ScenarioTransfer key={frameKey} pageUrl={scenarioUrl} steps={steps} disabled={scenarioRunning} onImport={next => { setSecretValues({}); setScenarioProgress(null); setSteps(next) }} />
     {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
     {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем страницу…</div>}
@@ -479,7 +544,10 @@ export function Recorder(): JSX.Element {
         {step.submit === true && <em>⏎ submit</em>}
         {step.sensitive && <em>секрет не сохраняется</em>}</li>)}
     </ol></section>}
-    {url ? <div className="webpreview-viewport"><iframe key={frameKey} ref={frame} className="webpreview-frame" style={viewport ? { width: viewport + 'px', minWidth: viewport + 'px', flex: 'none' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={event => loaded(event.currentTarget)} onError={() => failLoad('Не удалось загрузить сайт: сетевая ошибка.')} /></div> : <div className="webpreview-empty">Укажите адрес сайта или проекта</div>}
+    {url ? <div className="webpreview-viewport"><iframe key={frameKey} ref={frame} className="webpreview-frame" style={viewport ? { width: viewport + 'px', minWidth: viewport + 'px', flex: 'none' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={event => loaded(event.currentTarget)} onError={() => failLoad('Не удалось загрузить сайт: сетевая ошибка.')} /></div> : <div className="webpreview-empty"><div>
+      <p>Укажите адрес сайта или проекта</p>
+      {recent.length > 0 && <nav className="webpreview-recent" aria-label="Недавние адреса">{recent.map(item => <Button key={item} variant="secondary" size="sm" type="button" title={item} onClick={() => openAddress(item)}>{recentAddressLabel(item)}</Button>)}</nav>}
+    </div></div>}
 
   </section>
 }

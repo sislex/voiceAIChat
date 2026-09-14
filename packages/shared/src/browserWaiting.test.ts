@@ -17,6 +17,9 @@ describe('контракт ожидания браузера', () => {
   it('отличает прежний iframe wait от расширенного Chromium-ожидания', () => {
     expect(browserWaitRequiresChromium({ selector: '#x', timeoutMs: 5000 })).toBe(false)
     expect(browserWaitRequiresChromium({ text: 'Готово' })).toBe(false)
+    // Исчезновение спиннера панель ждёт сама — как пользователь, глядя на страницу.
+    expect(browserWaitRequiresChromium({ selector: '.spinner', state: 'hidden' })).toBe(false)
+    expect(browserWaitRequiresChromium({ text: 'Загрузка', state: 'detached' })).toBe(false)
     for (const options of [{ selector: '#x', text: 'Готово' }, { selector: '#x', checked: false }, { selector: '#x', value: '' }, { selector: '.row', count: 0 }, { selector: '#x', timeoutMs: 10000 }, { url: '**/ready' }]) {
       expect(browserWaitRequiresChromium(options)).toBe(true)
     }

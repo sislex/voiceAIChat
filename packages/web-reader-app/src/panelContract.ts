@@ -35,6 +35,8 @@ export interface WebReaderFrameProps {
   onRepeatAction?: (action: PreviewAction) => void
   pageError?: string | null
   onAskError?: (error: string) => void
+  /** Действие модели, которое сейчас выполняется в панели: человек видит, что ассистент делает. */
+  pendingAction?: PreviewAction | null
   /** Адрес standalone-сборки Reader; production и dev-proxy раздают /web-recorder/. */
   src?: string
 }

@@ -16,6 +16,18 @@ const chooseTarget=(action,clickable=false)=>{
   if(candidates.length!==1)throw new Error('Селектор неоднозначен ('+candidates.length+'): '+candidates.slice(0,5).map(uniqueSelector).join(', '));
   return candidates[0]
 };
+// Поле по подписи, как его называет человек: label, aria-label, placeholder, name или id.
+const fieldTarget=(field)=>{
+  const q=String(field).replace(/\s+/g,' ').trim().toLowerCase();
+  if(!q)throw new Error('Укажи selector или field (подпись поля).');
+  const fields=[...document.querySelectorAll('input:not([type=hidden]),textarea,select,[contenteditable=true],[contenteditable=""]')].filter(el=>actionVisible(el)&&!el.closest('[data-voicechat-inspector]'));
+  const names=el=>[accessibleName(el),el.getAttribute('placeholder')||'',el.getAttribute('name')||'',el.id||'',el.getAttribute('title')||''].map(v=>String(v).replace(/\s+/g,' ').trim().toLowerCase()).filter(Boolean);
+  const exact=fields.filter(el=>names(el).includes(q));
+  const partial=exact.length?exact:fields.filter(el=>names(el).some(name=>name.includes(q)));
+  if(!partial.length)throw new Error('Поле не найдено по подписи: '+field);
+  if(partial.length>1)throw new Error('Подпись неоднозначна ('+partial.length+'): '+partial.slice(0,5).map(el=>uniqueSelector(el)+' «'+(names(el)[0]||'')+'»').join(', '));
+  return partial[0]
+};
 const actionable=(el,write=false)=>{
   if(!actionVisible(el))throw new Error('Элемент скрыт');
   if(el.matches(':disabled')||el.closest('[aria-disabled="true"],[inert]'))throw new Error('Элемент отключён — действие не выполнено');

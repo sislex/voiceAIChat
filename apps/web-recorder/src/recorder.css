@@ -58,3 +58,26 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
 @media (max-width: 560px) {
   .webpreview-scenario { max-height: 45vh; }
 }
+
+/* Thin indeterminate bar: the panel shows work in progress even when the status text is scrolled away. */
+.webpreview-progress { flex: none; position: relative; height: 3px; overflow: hidden; background: var(--border-soft, var(--border)); }
+.webpreview-progress::after { content: ''; position: absolute; inset: 0 auto 0 -40%; width: 40%; background: var(--accent); animation: webpreview-progress 1.1s ease-in-out infinite; }
+@keyframes webpreview-progress { from { transform: translateX(0); } to { transform: translateX(350%); } }
+@media (prefers-reduced-motion: reduce) { .webpreview-progress::after { animation: none; width: 100%; left: 0; opacity: .5; } }
+/* Page title under the address: one line, the URL stays editable. */
+.webpreview-title { flex: none; padding: 3px 10px 5px; font-size: 12px; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.webpreview-title > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.webpreview-viewport-chip { white-space: nowrap; }
+/* Recent addresses: tapping a chip beats typing a URL on a phone keyboard. */
+.webpreview-empty p { margin: 0 0 10px; }
+.webpreview-recent { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 420px; }
+.webpreview-recent .vc-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Touch screens: browser-grade tap targets for the toolbar and step controls. */
+@media (pointer: coarse) {
+  .webpreview-bar .vc-btn, .webpreview-bar select, .webpreview-address input, .webpreview-tools__menu .vc-btn, .webpreview-recent .vc-btn { min-height: 44px; }
+  .webpreview-tools__menu { gap: 6px; }
+}
+/* Narrow panels: viewport presets exceed the panel anyway, so only the reset chip stays. */
+@media (max-width: 560px) {
+  .webpreview-bar label:has(> select[aria-label='Ширина вьюпорта']) { display: none; }
+}

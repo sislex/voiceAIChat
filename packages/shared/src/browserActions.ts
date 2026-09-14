@@ -67,7 +67,7 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     case 'type':
       return {
         kind: 'command',
-        command: { type: 'selector', action: { kind: 'type', selector: action.selector, text: action.text, ...(action.submit ? { submit: true } : {}) } }
+        command: { type: 'selector', action: { kind: 'type', ...(action.selector ? { selector: action.selector } : {}), ...(action.field ? { field: action.field } : {}), text: action.text, ...(action.submit ? { submit: true } : {}), ...(action.append ? { append: true } : {}) } }
       }
     case 'read':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'read', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}), ...(action.offset !== undefined ? { offset: action.offset } : {}) } } }
@@ -76,7 +76,7 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
         kind: 'command',
         command: {
           type: 'selector',
-          action: { kind: 'find', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}), ...(action.visibleOnly !== undefined ? { visibleOnly: action.visibleOnly } : {}) }
+          action: { kind: 'find', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(action.role ? { role: action.role } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}), ...(action.visibleOnly !== undefined ? { visibleOnly: action.visibleOnly } : {}) }
         }
       }
     case 'wait': {
@@ -89,7 +89,7 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     }
     case 'press':
       return action.selector
-        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key } } }
+        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key, ...(action.repeat ? { repeat: action.repeat } : {}) } } }
         : { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key } } }
     case 'console': {
       const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action

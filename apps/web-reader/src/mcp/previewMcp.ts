@@ -303,7 +303,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'open',
         {
           description:
-            'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата. ' +
+            'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата; ответ содержит url и title загруженной страницы. ' +
             'Только HTTP/HTTPS. Тестовое окружение на машине этого разговора открывается адресом ' +
             'https://app.internal/ — текущее приложение с любым путём или #/маршрутом; ' +
             'http://machine.internal:<порт>/ — запрос уйдёт на 127.0.0.1:<порт> машины.',
@@ -338,19 +338,21 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'scroll',
         {
           description:
-            'Прокрутить открытую в превью страницу или контейнер: to — к краю, dx/dy — по горизонтали/вертикали в пикселях. ' +
+            'Прокрутить открытую в превью страницу или контейнер: to — к краю, dx/dy — по горизонтали/вертикали в пикселях, ' +
+            'to: element вместе с selector — показать элемент в видимой области (так пользователь увидит, о чём речь). ' +
             'Полезно для лент с ленивой подгрузкой. Возвращает позицию прокрутки.',
           inputSchema: { frame: frameSchema,
-            selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера (без него — окно)'),
-            to: z.enum(['top', 'bottom']).optional().describe('Прокрутить к началу или концу'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера или, при to: element, самого элемента'),
+            to: z.enum(['top', 'bottom', 'element']).optional().describe('Прокрутить к началу, концу или к элементу selector'),
             dx: z.number().min(-100000).max(100000).optional().describe('Горизонтальный сдвиг в пикселях, отрицательное — влево'),
             dy: z.number().min(-100000).max(100000).optional().describe('Вертикальный сдвиг в пикселях, отрицательное — вверх')
           }
         },
         async ({ frame, selector, to, dx, dy }) => {
           if (to === undefined && typeof dy !== 'number' && typeof dx !== 'number') {
-            return { content: [{ type: 'text', text: 'Укажи to (top|bottom), dx или dy (пиксели).' }], isError: true }
+            return { content: [{ type: 'text', text: 'Укажи to (top|bottom|element), dx или dy (пиксели).' }], isError: true }
           }
+          if (to === 'element' && !selector) return { content: [{ type: 'text', text: 'to: element требует selector элемента.' }], isError: true }
           return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}), ...(typeof dx === 'number' ? { dx } : {}) })
         }
       )
@@ -360,13 +362,15 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Нажать клавишу на открытой в превью странице (keydown+keyup): Escape, Enter, Tab, ArrowDown и т. п. ' +
-            'selector фокусирует элемент перед нажатием; без него — активный элемент страницы.',
+            'selector фокусирует элемент перед нажатием; без него — активный элемент страницы. repeat повторяет нажатие (ArrowDown ×3). ' +
+            'Ответ содержит navigated, если нажатие привело к переходу.',
           inputSchema: { frame: frameSchema,
             key: z.string().min(1).max(32).describe('Имя клавиши как в KeyboardEvent.key (Escape, Enter, ArrowDown, a…)'),
-            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя')
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя'),
+            repeat: z.number().int().min(1).max(50).optional().describe('Сколько раз нажать (по умолчанию 1)')
           }
         },
-        async ({ frame, key, selector }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}) })
+        async ({ frame, key, selector, repeat }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}), ...(repeat !== undefined && repeat > 1 ? { repeat } : {}) })
       )
 
       server.registerTool(
@@ -435,8 +439,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'wait',
         {
           description:
-            'Дождаться готовности страницы. selector вместе с text ждёт текст внутри элемента. ' +
-            'В Chromium доступны state, enabled, editable, checked, value, count, URL, loadState и predicate. ' +
+            'Дождаться готовности страницы. selector вместе с text ждёт текст внутри элемента. state: hidden или detached ждёт, когда элемент исчезнет (спиннер, модалка) — и в панели, и в Chromium. ' +
+            'Только в Chromium доступны enabled, editable, checked, value, count, URL, loadState и predicate. ' +
             'Условия делят один таймаут до 30000 мс (по умолчанию 5000). Ответ сообщает время ожидания. ' +
             'load не ждёт будущие запросы SPA: для них используй содержимое или predicate.',
           inputSchema: { frame: frameSchema,
@@ -722,23 +726,25 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'find',
         {
           description:
-            'Найти элементы на открытой в превью странице по видимому тексту или CSS-селектору. ' +
-            'Возвращает селекторы для click/type. Нужен text или selector.',
+            'Найти элементы на открытой в превью странице по видимому тексту, роли или CSS-селектору — так, как их ищет пользователь. ' +
+            'Возвращает селекторы для click/type и onScreen (виден без прокрутки). Нужен text, role или selector.',
           inputSchema: { frame: frameSchema,
             text: z.string().max(L.text).optional().describe('Видимый текст элемента (регистр не важен)'),
             selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
+            role: z.string().regex(/^[a-z]+$/i).max(40).optional().describe('Роль элемента: button, link, textbox, checkbox, heading, tab…'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, limit, visibleOnly }) => {
-          if (!text && !selector) {
-            return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
+        async ({ frame, text, selector, role, limit, visibleOnly }) => {
+          if (!text && !selector && !role) {
+            return { content: [{ type: 'text', text: 'Укажи text, role или selector.' }], isError: true }
           }
           return run({
             kind: 'find', ...(frame !== undefined ? { frame } : {}),
             ...(text ? { text } : {}),
             ...(selector ? { selector } : {}),
+            ...(role ? { role: role.toLowerCase() } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })
@@ -750,7 +756,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Клик по элементу открытой в превью страницы: по CSS-селектору или по видимому тексту ' +
-            '(кликается ближайший кликабельный элемент). Нужен selector или text. ' +
+            '(кликается ближайший кликабельный элемент). Нужен selector или text. Ответ содержит navigated: true и новую page, если клик начал переход. ' +
             'dblclick — двойной, button: right — контекстное меню, modifiers — клик с зажатыми клавишами.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
@@ -779,14 +785,20 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'type',
         {
           description:
-            'Ввести текст в поле открытой в превью страницы (CSS-селектор поля). submit: true — отправить форму после ввода.',
+            'Ввести текст в поле открытой в превью страницы. Поле задаётся CSS-селектором или field — подписью, placeholder или name, как его видит человек. ' +
+            'По умолчанию значение заменяется; append: true дописывает. submit: true — отправить форму после ввода. Ответ содержит итоговое value и navigated, если начался переход.',
           inputSchema: { frame: frameSchema,
-            selector: z.string().max(L.selector).describe('CSS-селектор поля ввода'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор поля ввода'),
+            field: z.string().max(L.text).optional().describe('Подпись, placeholder или name поля (регистр не важен), если селектора нет'),
             text: z.string().max(L.text).describe('Текст для ввода'),
-            submit: z.boolean().optional().describe('Отправить форму после ввода')
+            submit: z.boolean().optional().describe('Отправить форму после ввода'),
+            append: z.boolean().optional().describe('Дописать к текущему значению, а не заменить его')
           }
         },
-        async ({ frame, selector, text, submit }) => run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), selector, text, ...(submit !== undefined ? { submit } : {}) })
+        async ({ frame, selector, field, text, submit, append }) => {
+          if (!selector && !field?.trim()) return { content: [{ type: 'text', text: 'Укажи selector или field (подпись поля).' }], isError: true }
+          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}) })
+        }
       )
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

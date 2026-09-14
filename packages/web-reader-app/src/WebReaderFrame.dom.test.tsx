@@ -29,6 +29,14 @@ function emit(data: object, overrides: { origin?: string; source?: MessageEventS
 afterEach(() => cleanup())
 
 describe('WebReaderFrame', () => {
+  it('показывает живой статус выполняемого действия ассистента', () => {
+    const onSave = vi.fn(async () => undefined)
+    const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-live" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pendingAction={{ kind: 'click', text: 'Купить' }} />)
+    expect(screen.getByRole('status', { name: '' }).textContent).toContain('Ассистент нажимает Купить')
+    rerender(<WebReaderFrame platform={platform} conversationId="conv-live" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pendingAction={null} />)
+    expect(screen.queryByText(/Ассистент нажимает/)).toBeNull()
+  })
+
   // @testCase TC3
   it('восстанавливает сохранённый публичный URL беседы с hash, не подменяя его адресом проекта', async () => {
     const saved = 'http://89.125.68.35:8787/#/chat/81caab96-6d29-4054-a5bd-8da334caaf79'
