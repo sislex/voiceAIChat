@@ -142,12 +142,44 @@ describe('previewResultJson', () => {
   })
 })
 
+describe('isPreviewAction: как пользователь — field, role, append, element, repeat, state', () => {
+  it('type принимает field вместо selector и append, но требует хотя бы одну цель', () => {
+    expect(isPreviewAction({ kind: 'type', field: 'Электронная почта', text: 'a@b.c' })).toBe(true)
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'ещё', append: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'type', text: 'без цели' })).toBe(false)
+    expect(isPreviewAction({ kind: 'type', field: '   ', text: 'x' })).toBe(false)
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'x', append: 'yes' })).toBe(false)
+  })
+  it('find принимает role самостоятельно и вместе с текстом', () => {
+    expect(isPreviewAction({ kind: 'find', role: 'button' })).toBe(true)
+    expect(isPreviewAction({ kind: 'find', role: 'link', text: 'Далее' })).toBe(true)
+    expect(isPreviewAction({ kind: 'find', role: 'button!' })).toBe(false)
+  })
+  it('scroll to: element требует selector; press repeat ограничен 1..50', () => {
+    expect(isPreviewAction({ kind: 'scroll', to: 'element', selector: '#pricing' })).toBe(true)
+    expect(isPreviewAction({ kind: 'scroll', to: 'element' })).toBe(false)
+    expect(isPreviewAction({ kind: 'press', key: 'ArrowDown', repeat: 3 })).toBe(true)
+    expect(isPreviewAction({ kind: 'press', key: 'ArrowDown', repeat: 0 })).toBe(false)
+    expect(isPreviewAction({ kind: 'press', key: 'ArrowDown', repeat: 51 })).toBe(false)
+    expect(isPreviewAction({ kind: 'press', key: 'ArrowDown', repeat: 1.5 })).toBe(false)
+  })
+  it('wait со state не требует Chromium — панель ждёт исчезновение сама', () => {
+    expect(isPreviewAction({ kind: 'wait', selector: '.spinner', state: 'hidden' })).toBe(true)
+  })
+})
+
 describe('previewToolHint', () => {
   it('называет инструменты и ограничение активной страницей', () => {
     const hint = previewToolHint()
     for (const tool of ['open', 'read', 'find', 'click', 'type']) expect(hint).toContain(tool)
     expect(hint).toContain('mcp__browser__')
     expect(hint).toContain('активного чата')
+  })
+
+  it('панель описана как видимая пользователю и объясняет новые человеческие параметры', () => {
+    const hint = previewToolHint()
+    expect(hint).toContain('видит каждое твоё действие')
+    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title']) expect(hint).toContain(term)
   })
 
   it('для изолированного Chromium не обещает панель и требует поднять dev-сервер самому', () => {

@@ -250,20 +250,21 @@ ${previewReadingHelpers()}
 ${previewAuditHelpers()}
 ${previewProbeHelpers()}
 ${previewKeyboardHelpers()}
+const onScreen=(el)=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth};
 const describe=(el)=>{
-  const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el)};
+  const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el),onScreen:onScreen(el)};
   const href=el.localName==='a'&&el.getAttribute('href');if(href)d.href=unproxy(href);
   const role=el.getAttribute('role')||(el.localName==='input'?(el.type||'text'):'');if(role)d.role=role;
   Object.assign(d,controlState(el));
   return d
 };
 const bySelector=(selector)=>{let list;try{list=document.querySelectorAll(selector)}catch{throw new Error('Некорректный CSS-селектор: '+selector)}return [...list].filter(el=>!el.closest('[data-voicechat-inspector]'))};
-const byText=(text)=>{
+const byText=(text,hidden=false)=>{
   const q=text.replace(/\\s+/g,' ').trim().toLowerCase();
   if(!q)return[];
   const all=[];
   for(const el of document.querySelectorAll('body *')){
-    if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}'||!actionVisible(el))continue;
+    if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}'||!hidden&&!actionVisible(el))continue;
     const t=accessibleName(el)||textOf(el);
     if(!t||t.length>300||!t.toLowerCase().includes(q))continue;
     all.push(el)
@@ -273,7 +274,13 @@ const byText=(text)=>{
   const clickable=(el)=>el.matches(CLICKABLE)||el.closest(CLICKABLE)?0:1;
   return deepest.sort((a,b)=>(exact(a)-exact(b))||(clickable(a)-clickable(b)))
 };
-const findTargets=(action)=>(action.selector?bySelector(action.selector):byText(action.text||'')).filter(action.kind==='find'?readingVisible:actionVisible);
+// role сужает совпадения так, как их называет пользователь («кнопка Войти»); без text/selector — все элементы роли.
+const byRole=(action)=>{
+  const role=String(action.role||'').toLowerCase();
+  const base=action.selector?bySelector(action.selector):action.text?byText(action.text):[...document.querySelectorAll('body *')].filter(el=>!el.closest('[data-voicechat-inspector]'));
+  return base.map(el=>action.text&&!action.selector?clickTarget(el):el).filter((el,i,all)=>all.indexOf(el)===i&&accessibleRole(el)===role)
+};
+const findTargets=(action)=>(action.role?byRole(action):action.selector?bySelector(action.selector):byText(action.text||'')).filter(action.kind==='find'?readingVisible:actionVisible);
 const clickTarget=(el)=>{const host=el.matches(CLICKABLE)?el:(el.closest(CLICKABLE)||el);return host};
 const setNativeValue=(el,value)=>{
   const proto=el.localName==='textarea'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
@@ -308,16 +315,19 @@ const run=(action)=>{
     return {page:pageInfo(),clicked:info}
   }
   if(action.kind==='type'){
-    const el=chooseTarget(action);actionable(el,true);
+    const el=action.selector?chooseTarget(action):fieldTarget(action.field||'');actionable(el,true);
     const editable=el.isContentEditable;
-    if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+action.selector);
-    validateInput(el,action.text);
+    if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+(action.selector||action.field));
+    // append дописывает к тому, что уже введено, — как пользователь, продолжающий печатать.
+    const current=editable?(el.textContent||''):el.localName==='select'?'':String(el.value||'');
+    const nextText=action.append&&el.localName!=='select'?current+action.text:action.text;
+    validateInput(el,nextText);
     const option=el.localName==='select'?selectOption(el,action.text):null;
     el.focus&&el.focus();
     if(!el.dispatchEvent(inputEvent('beforeinput',action.text,true)))throw new Error('Страница отклонила ввод');
-    if(editable){el.textContent=action.text}
+    if(editable){el.textContent=nextText}
     else if(option){el.value=option.value}
-    else setNativeValue(el,action.text);
+    else setNativeValue(el,nextText);
     el.dispatchEvent(inputEvent('input',action.text));
     el.dispatchEvent(new Event('change',{bubbles:true}));
     let submitted=false;
@@ -326,7 +336,8 @@ const run=(action)=>{
       if(form){form.requestSubmit?form.requestSubmit():form.submit();submitted=true}
       else{el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',bubbles:true}))}
     }
-    return {page:pageInfo(),typed:describe(el),submitted}
+    const value=sensitive(el)?'':editable?String(el.textContent||'').slice(0,EL_TEXT):String(el.value||'').slice(0,EL_TEXT);
+    return {page:pageInfo(),typed:describe(el),submitted,value}
   }
   if(action.kind==='styles'){
     const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);
@@ -348,7 +359,8 @@ const run=(action)=>{
   if(action.kind==='scroll'){
     let el=document.scrollingElement||document.documentElement,target='window';
     if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];target=uniqueSelector(el)}
-    if(action.to==='top')el.scrollTop=0;
+    if(action.to==='element'){el.scrollIntoView&&el.scrollIntoView({block:'center',inline:'nearest'});el=document.scrollingElement||document.documentElement}
+    else if(action.to==='top')el.scrollTop=0;
     else if(action.to==='bottom')el.scrollTop=el.scrollHeight;
     else if(typeof action.dy==='number')el.scrollTop=el.scrollTop+action.dy;
     if(typeof action.dx==='number')el.scrollLeft=el.scrollLeft+action.dx;
@@ -363,13 +375,17 @@ const run=(action)=>{
   }
   if(action.kind==='wait'){
     const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000);
+    const state=action.state||'visible';
     const started=performance.now();
+    // attached/detached считают и скрытые узлы; visible/hidden — только то, что видит пользователь.
+    const matches=()=>state==='attached'||state==='detached'?(action.selector?bySelector(action.selector):byText(action.text||'',true)):findTargets(action);
     return new Promise((ok,fail)=>{
       const attempt=()=>{
         let found=[];
-        try{found=findTargets(action)}catch(err){fail(err);return}
-        if(found.length){ok({page:pageInfo(),found:describe(found[0]),waitedMs:Math.round(performance.now()-started)});return}
-        if(performance.now()-started>=timeoutMs){fail(new Error('Элемент не появился за '+timeoutMs+' мс: '+(action.selector||action.text)));return}
+        try{found=matches()}catch(err){fail(err);return}
+        const gone=state==='hidden'||state==='detached';
+        if(gone?!found.length:found.length){ok({page:pageInfo(),...(gone?{}:{found:describe(found[0])}),waitedMs:Math.round(performance.now()-started),state});return}
+        if(performance.now()-started>=timeoutMs){fail(new Error((gone?'Элемент не исчез за ':'Элемент не появился за ')+timeoutMs+' мс: '+(action.selector||action.text)));return}
         setTimeout(attempt,120)
       };
       attempt()
@@ -523,7 +539,9 @@ const run=(action)=>{
   if(action.kind==='press'){
     const el=action.selector?chooseTarget(action):(document.activeElement||document.body);
     if(action.selector){actionable(el);el.focus&&el.focus()}
-    return {page:pageInfo(),pressed:performKey(el,action.key)}
+    const repeat=Math.min(50,Math.max(1,Math.floor(action.repeat||1)));
+    let pressed;for(let i=0;i<repeat;i++)pressed=performKey(document.activeElement&&document.activeElement!==document.body&&!action.selector?document.activeElement:el,action.key);
+    return {page:pageInfo(),pressed:repeat>1?Object.assign(pressed,{repeat}):pressed}
   }
   if(action.kind==='read'){
     const scope=readingScope(action);

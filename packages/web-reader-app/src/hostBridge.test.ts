@@ -27,6 +27,22 @@ function harness(overrides: { conversationId?: string } = {}) {
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
+describe('open отвечает заголовком страницы', () => {
+  it('готовая страница с title попадает в результат open, без title — только url', async () => {
+    const h = harness()
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    const titled = h.bridge.run({ kind: 'open', url: 'https://shop.example/' })
+    await Promise.resolve()
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/', title: 'Магазин' })
+    expect(await titled).toEqual({ ok: true, result: { url: 'https://shop.example/', title: 'Магазин' } })
+    const untitled = h.bridge.run({ kind: 'open', url: 'https://blank.example/' })
+    await Promise.resolve()
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://blank.example/' })
+    expect(await untitled).toEqual({ ok: true, result: { url: 'https://blank.example/' } })
+  })
+})
+
 describe('handshake и регистрация', () => {
   it('на ready создаёт регистрацию и отвечает init с previewUrl и версией', () => {
     const h = harness()

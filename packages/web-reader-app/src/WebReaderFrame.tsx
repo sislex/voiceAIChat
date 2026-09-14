@@ -6,10 +6,11 @@ import type { WebRecorderHostMessage } from '@shared/webRecorder'
 import { browserId } from '@shared/browserId'
 import { prepareReaderPreview } from './preparePreview'
 import { ReaderActionHistory } from './ReaderActionHistory'
+import { previewActionProgressLabel } from './actionLabel'
 import { createReaderHostBridge, type ReaderHostBridge, type PreviewActionOutcome } from './hostBridge'
 
 
-export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, pageError, onAskError, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
+export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, pageError, onAskError, pendingAction = null, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
@@ -166,6 +167,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     {saving && <p role="status">Сохраняем адрес страницы…</p>}
     {saveError && <div className="webpreview-error" role="alert"><span>{saveError}</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retrySave.current?.()}>Повторить сохранение</button></div>}
     {pageError && <div className="webpreview-error" role="alert"><span>{pageError}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}</div>}
+    {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {previewActionProgressLabel(pendingAction)}…</p>}
     <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} />
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
     {previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retryOpen.current ? retryOpen.current() : setRetryKey((value) => value + 1)}>Повторить</button></div>}

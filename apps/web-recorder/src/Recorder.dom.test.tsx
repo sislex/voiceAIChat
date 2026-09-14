@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
+import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE } from '@shared/previewInspector'
 import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
 import { Recorder } from './Recorder'
@@ -303,6 +303,70 @@ describe('Recorder viewport-команда', () => {
     fromHost({ type, ...ids, kind: 'command', requestId: 'v2', action: { kind: 'viewport', width: 0 } })
     expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'v2')).toMatchObject({ ok: true, result: { width: 0 } })
     expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).style.width).toBe('')
+  })
+})
+
+describe('Recorder: результат действия и навигация (круг 1)', () => {
+  const ready = () => { render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/', title: 'Магазин' }) }
+  it('клик без перехода отвечает navigated: false после короткой паузы', async () => {
+    vi.useFakeTimers()
+    try {
+      const post = vi.spyOn(window, 'postMessage')
+      ready()
+      fromHost({ type, ...ids, kind: 'command', requestId: 'c1', action: { kind: 'click', text: 'Купить' } })
+      fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'c1', ok: true, result: { page: { url: 'https://shop.example/', title: 'Магазин' }, clicked: { selector: 'button', tag: 'button', text: 'Купить' } } })
+      expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'c1')).toBeUndefined()
+      act(() => { vi.advanceTimersByTime(400) })
+      expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'c1')).toMatchObject({ ok: true, result: { navigated: false, clicked: { text: 'Купить' } } })
+    } finally { vi.useRealTimers() }
+  })
+  it('клик, начавший переход, отвечает navigated: true с адресом и заголовком новой страницы', async () => {
+    vi.useFakeTimers()
+    try {
+      const post = vi.spyOn(window, 'postMessage')
+      ready()
+      fromHost({ type, ...ids, kind: 'command', requestId: 'c2', action: { kind: 'click', text: 'Книги' } })
+      fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'c2', ok: true, result: { page: { url: 'https://shop.example/', title: 'Магазин' }, clicked: { selector: 'a', tag: 'a', text: 'Книги' } } })
+      fromPage({ type: PREVIEW_PAGE_LOADING_TYPE })
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'c2')).toBeUndefined()
+      fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/books', title: 'Книги — Магазин' })
+      const result = sent(post).find((message) => message.kind === 'result' && message.requestId === 'c2')
+      expect(result).toMatchObject({ ok: true, result: { navigated: true, page: { url: 'https://shop.example/books', title: 'Книги — Магазин' } } })
+      expect(sent(post).find((message) => message.kind === 'page-status' && message.status === 'ready' && message.url === 'https://shop.example/books')).toMatchObject({ title: 'Книги — Магазин' })
+    } finally { vi.useRealTimers() }
+  })
+  it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    ready()
+    fromHost({ type, ...ids, kind: 'command', requestId: 'r1', action: { kind: 'read' } })
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'r1', ok: true, result: { page: { url: 'https://shop.example/', title: 'Магазин' }, headings: [], links: [], buttons: [], inputs: [], text: '' } })
+    expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'r1')).toBeTruthy()
+    fromHost({ type, ...ids, kind: 'command', requestId: 'c3', action: { kind: 'click', text: 'Нет' } })
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'c3', ok: false, error: 'Элемент не найден' })
+    expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'c3')).toMatchObject({ ok: false, error: 'Элемент не найден' })
+  })
+  it('показывает заголовок страницы и недавние адреса; чип открывает адрес и сохраняет его', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    ready()
+    expect(screen.getByTitle('Магазин')).toBeTruthy()
+    fromHost({ type, ...ids, kind: 'set-url', url: null })
+    const chip = screen.getByRole('button', { name: 'shop.example' })
+    expect(screen.getByRole('navigation', { name: 'Недавние адреса' }).contains(chip)).toBe(true)
+    post.mockClear()
+    fireEvent.click(chip)
+    expect(sent(post).find((message) => message.kind === 'save-url')).toMatchObject({ url: 'https://shop.example/' })
+    expect((screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement).value).toBe('https://shop.example/')
+  })
+  it('Alt+стрелки листают историю страницы, чип ширины сбрасывает viewport', () => {
+    ready()
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const back = vi.spyOn(frame.contentWindow!.history, 'back').mockImplementation(() => {})
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Адрес превью' }), { key: 'ArrowLeft', altKey: true })
+    expect(back).toHaveBeenCalledOnce()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Ширина вьюпорта' }), { target: { value: '375' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сбросить ширину 375 px' }))
+    expect((screen.getByRole('combobox', { name: 'Ширина вьюпорта' }) as HTMLSelectElement).value).toBe('')
   })
 })
 

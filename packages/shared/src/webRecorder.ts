@@ -56,7 +56,7 @@ export type WebRecorderHostMessage =
 
 export type WebRecorderClientMessage =
   | (Envelope & { kind: 'ready'; protocolVersion: number; conversationId: string | null; registrationId: string | null; capabilities: readonly string[] })
-  | (Addressed & { kind: 'page-status'; status: WebRecorderPageStatus; url: string | null; error?: string })
+  | (Addressed & { kind: 'page-status'; status: WebRecorderPageStatus; url: string | null; error?: string; title?: string })
   | (Addressed & { kind: 'result'; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string })
   | (Addressed & { kind: 'save-url'; url: string | null })
   | (Addressed & { kind: 'element-selected'; element: PreviewElementPayload })
@@ -126,7 +126,8 @@ export function isWebRecorderClientMessage(value: unknown): value is WebRecorder
       return (
         (value.status === 'empty' || value.status === 'loading' || value.status === 'ready' || value.status === 'error') &&
         nullableUrl(value.url) &&
-        (value.error === undefined || bounded(value.error, 2_000))
+        (value.error === undefined || bounded(value.error, 2_000)) &&
+        (value.title === undefined || bounded(value.title, 500))
       )
     case 'result': {
       if (!bounded(value.requestId, ID_LIMIT) || typeof value.ok !== 'boolean') return false

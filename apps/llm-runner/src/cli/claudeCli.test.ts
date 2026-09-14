@@ -320,7 +320,7 @@ describe('ClaudeCli', () => {
     expect(config.mcpServers.browser.url).toContain('turn=t1')
     const hint = args[args.indexOf('--append-system-prompt') + 1]
     expect(hint).toContain('mcp__browser__')
-    expect(hint).toContain('веб-превью')
+    expect(hint).toContain('панель Web Reader')
     // Без remote allow-list не передаём: он выключил бы автоодобрение Read/Grep.
     expect(args).not.toContain('--allowedTools')
   })

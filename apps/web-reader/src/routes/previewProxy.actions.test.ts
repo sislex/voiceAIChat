@@ -341,6 +341,101 @@ describe('скрипт превью: hover, scroll, press', () => {
   })
 })
 
+describe('скрипт превью: действия как у пользователя (круг 1)', () => {
+  it('type по field находит поле по label, placeholder или name; неоднозначность — ошибка со списком', async () => {
+    document.body.insertAdjacentHTML('beforeend', `
+      <form id="signup"><label for="email">Электронная почта</label><input id="email" name="email">
+      <input id="phone" name="phone" placeholder="Телефон"><input id="city" aria-label="Город"><input id="city2" aria-label="Город доставки"></form>`)
+    const byLabel = await act({ kind: 'type', field: 'электронная почта', text: 'a@b.c' })
+    expect(byLabel.ok).toBe(true)
+    expect((document.getElementById('email') as HTMLInputElement).value).toBe('a@b.c')
+    expect((byLabel.result as { value: string; typed: { selector: string } }).value).toBe('a@b.c')
+    const byPlaceholder = await act({ kind: 'type', field: 'Телефон', text: '+7' })
+    expect((document.getElementById('phone') as HTMLInputElement).value).toBe('+7')
+    expect(byPlaceholder.ok).toBe(true)
+    // Точное совпадение выигрывает у частичного: «Город» не путается с «Город доставки».
+    const exact = await act({ kind: 'type', field: 'Город', text: 'Минск' })
+    expect(exact.ok).toBe(true)
+    expect((document.getElementById('city') as HTMLInputElement).value).toBe('Минск')
+    const ambiguous = await act({ kind: 'type', field: 'Горо', text: 'x' })
+    expect(ambiguous.ok).toBe(false)
+    expect(ambiguous.error).toContain('неоднозначна')
+    const missing = await act({ kind: 'type', field: 'Фамилия', text: 'x' })
+    expect(missing.ok).toBe(false)
+    expect(missing.error).toContain('не найдено по подписи')
+  })
+
+  it('type с append дописывает к текущему значению и возвращает итог; секретное поле не раскрывает value', async () => {
+    const input = document.getElementById('q') as HTMLInputElement
+    input.value = 'ноут'
+    const res = await act({ kind: 'type', selector: '#q', text: 'бук', append: true })
+    expect(res.ok).toBe(true)
+    expect(input.value).toBe('ноутбук')
+    expect((res.result as { value: string }).value).toBe('ноутбук')
+    const secret = await act({ kind: 'type', selector: '#secret', text: 'пароль' })
+    expect(secret.ok).toBe(true)
+    expect((secret.result as { value: string }).value).toBe('')
+  })
+
+  it('find по role отбирает элементы по роли, в том числе вместе с текстом', async () => {
+    const buttons = await act({ kind: 'find', role: 'button' })
+    expect(buttons.ok).toBe(true)
+    const found = buttons.result as { elements: { text: string; role?: string }[]; total: number }
+    expect(found.elements.map((el) => el.text)).toEqual(['Найти'])
+    const links = await act({ kind: 'find', role: 'link', text: 'книги' })
+    expect((links.result as { elements: { tag: string }[] }).elements).toEqual([expect.objectContaining({ tag: 'a', text: 'Книги' })])
+    const headings = await act({ kind: 'find', role: 'heading' })
+    expect((headings.result as { total: number }).total).toBe(3)
+  })
+
+  it('describe сообщает onScreen — виден ли элемент без прокрутки', async () => {
+    const res = await act({ kind: 'find', selector: 'h1' })
+    const [element] = (res.result as { elements: { onScreen: boolean }[] }).elements
+    // jsdom не раскладывает элементы: rect нулевой — значит не на экране; поле присутствует всегда.
+    expect(typeof element.onScreen).toBe('boolean')
+  })
+
+  it('scroll to: element показывает элемент и отвечает позицией окна', async () => {
+    const heading = document.querySelector('h2') as HTMLElement
+    let shown = false
+    heading.scrollIntoView = () => { shown = true }
+    const res = await act({ kind: 'scroll', selector: 'main h2', to: 'element' })
+    expect(res.ok).toBe(true)
+    expect(shown).toBe(true)
+    expect((res.result as { scrolled: { top: number } }).scrolled).toMatchObject({ top: expect.any(Number) })
+  })
+
+  it('wait state hidden/detached ждёт исчезновения, attached считает скрытые узлы', async () => {
+    const spinner = document.createElement('div')
+    spinner.className = 'spinner'; spinner.textContent = 'Загрузка'
+    document.body.append(spinner)
+    setTimeout(() => { spinner.style.display = 'none' }, 150)
+    const hidden = await act({ kind: 'wait', selector: '.spinner', state: 'hidden', timeoutMs: 2000 })
+    expect(hidden.ok).toBe(true)
+    expect(hidden.result).toMatchObject({ state: 'hidden' })
+    expect((hidden.result as { found?: unknown }).found).toBeUndefined()
+    const attached = await act({ kind: 'wait', selector: '.spinner', state: 'attached', timeoutMs: 300 })
+    expect(attached.ok).toBe(true)
+    setTimeout(() => spinner.remove(), 150)
+    const detached = await act({ kind: 'wait', text: 'Загрузка', state: 'detached', timeoutMs: 2000 })
+    expect(detached.ok).toBe(true)
+    const stuck = document.createElement('div'); stuck.id = 'stuck'; document.body.append(stuck)
+    const timeout = await act({ kind: 'wait', selector: '#stuck', state: 'detached', timeoutMs: 200 })
+    expect(timeout.ok).toBe(false)
+    expect(timeout.error).toContain('не исчез')
+  }, 10_000)
+
+  it('press с repeat нажимает клавишу несколько раз одним действием', async () => {
+    const input = document.getElementById('q') as HTMLInputElement
+    let downs = 0
+    input.addEventListener('keydown', () => downs++)
+    const res = await act({ kind: 'press', key: 'ArrowDown', selector: '#q', repeat: 3 })
+    expect(res.ok).toBe(true)
+    expect(downs).toBe(3)
+    expect((res.result as { pressed: { repeat?: number } }).pressed.repeat).toBe(3)
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

@@ -75,18 +75,22 @@ export type PreviewAction = BrowserFrameTarget & (
   | ({ kind: 'probe'; diagnostic?: boolean } & PreviewProbeOptions)
   | ({ kind: 'accessibility'; diagnostic?: boolean } & PreviewAccessibilityOptions)
   | { kind: 'open'; url: string; diagnostic?: boolean }
-  | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
+  /** role сужает совпадения по роли элемента (button, link, textbox…): так ищет пользователь, а не CSS. */
+  | { kind: 'find'; text?: string; selector?: string; role?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; diagnostic?: boolean }
-  | { kind: 'type'; selector: string; text: string; submit?: boolean; diagnostic?: boolean }
+  /** field — подпись, placeholder или name поля вместо CSS-селектора; append дописывает к текущему значению. */
+  | { kind: 'type'; selector?: string; field?: string; text: string; submit?: boolean; append?: boolean; diagnostic?: boolean }
   | { kind: 'read'; selector?: string; limit?: number; offset?: number; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   | { kind: 'hover'; selector?: string; text?: string; diagnostic?: boolean }
   /** Прокрутка окна или контейнера: к краю (`to`) либо на `dy` пикселей. */
-  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number; diagnostic?: boolean }
+  /** to: 'element' прокручивает страницу так, чтобы selector оказался в видимой области. */
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom' | 'element'; dx?: number; dy?: number; diagnostic?: boolean }
   /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
-  | { kind: 'press'; key: string; selector?: string; diagnostic?: boolean }
+  /** repeat повторяет нажатие (ArrowDown ×3) одним действием. */
+  | { kind: 'press'; key: string; selector?: string; repeat?: number; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
   | { kind: 'screenshot'; selector?: string; rect?: { x: number; y: number; width: number; height: number }; diagnostic?: boolean }
   /** Ошибки открытой страницы: JS-исключения, unhandledrejection, console.error, неуспешные fetch/XHR. */
@@ -136,6 +140,8 @@ export interface PreviewActionElement {
   selected?: boolean
   required?: boolean
   invalid?: boolean
+  /** Элемент сейчас в видимой области окна — то, что пользователь видит без прокрутки. */
+  onScreen?: boolean
 }
 
 export interface PreviewPageInfo {
@@ -153,12 +159,17 @@ export interface PreviewFindResult {
 export interface PreviewClickResult {
   page: PreviewPageInfo
   clicked: PreviewActionElement
+  /** Клик привёл к загрузке новой страницы: page уже описывает её, читать заново обязательно. */
+  navigated?: boolean
 }
 
 export interface PreviewTypeResult {
   page: PreviewPageInfo
   typed: PreviewActionElement
   submitted: boolean
+  /** Итоговое значение поля после ввода (пустое у секретных полей). */
+  value?: string
+  navigated?: boolean
 }
 
 /** Структурированное содержимое страницы (или поддерева по selector). */
@@ -178,6 +189,8 @@ export interface PreviewReadResult {
 
 export interface PreviewOpenResult {
   url: string
+  /** Заголовок загруженной страницы — модели не нужен отдельный read ради него. */
+  title?: string
 }
 
 export interface PreviewStylesResult {
@@ -200,7 +213,8 @@ export interface PreviewScrollResult {
 
 export interface PreviewPressResult {
   page: PreviewPageInfo
-  pressed: { key: string; selector: string }
+  pressed: { key: string; selector: string; repeat?: number }
+  navigated?: boolean
 }
 
 /** Снимок области страницы: PNG/JPEG data-URL и итоговый rect в координатах документа. */
@@ -230,8 +244,10 @@ export interface PreviewErrorsResult {
 
 export interface PreviewWaitResult {
   page: PreviewPageInfo
-  found: PreviewActionElement
+  /** Найденный элемент; для state hidden/detached отсутствует. */
+  found?: PreviewActionElement
   waitedMs: number
+  state?: 'attached' | 'detached' | 'visible' | 'hidden'
 }
 
 export interface PreviewBackResult {
@@ -407,9 +423,10 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (
         optBounded(value.text, L.text) &&
         optBounded(value.selector, L.selector) &&
+        (value.role === undefined || (bounded(value.role, 40) && /^[a-z]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
-        (value.text !== undefined || value.selector !== undefined)
+        (value.text !== undefined || value.selector !== undefined || value.role !== undefined)
       )
     case 'click':
       return (
@@ -421,8 +438,11 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.modifiers === undefined || (Array.isArray(value.modifiers) && value.modifiers.length <= 4 && value.modifiers.every((item) => (PREVIEW_CLICK_MODIFIERS as readonly string[]).includes(item as string))))
       )
     case 'type':
-      return bounded(value.selector, L.selector) && bounded(value.text, L.text) &&
-        (value.submit === undefined || typeof value.submit === 'boolean')
+      return optBounded(value.selector, L.selector) && optBounded(value.field, L.text) &&
+        (bounded(value.selector, L.selector) && value.selector.length > 0 || bounded(value.field, L.text) && value.field.trim().length > 0) &&
+        bounded(value.text, L.text) &&
+        (value.submit === undefined || typeof value.submit === 'boolean') &&
+        (value.append === undefined || typeof value.append === 'boolean')
     case 'read':
       return optBounded(value.selector, L.selector) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
@@ -439,7 +459,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'scroll':
       return (
         optBounded(value.selector, L.selector) &&
-        (value.to === undefined || value.to === 'top' || value.to === 'bottom') &&
+        (value.to === undefined || value.to === 'top' || value.to === 'bottom' || value.to === 'element' && bounded(value.selector, L.selector)) &&
         (value.dy === undefined || (typeof value.dy === 'number' && Number.isFinite(value.dy) && Math.abs(value.dy) <= 100_000)) &&
         (value.dx === undefined || (typeof value.dx === 'number' && Number.isFinite(value.dx) && Math.abs(value.dx) <= 100_000)) &&
         (value.to !== undefined || value.dy !== undefined || value.dx !== undefined)
@@ -447,7 +467,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'press':
       return (
         typeof value.key === 'string' && value.key.length >= 1 && value.key.length <= 32 &&
-        optBounded(value.selector, L.selector)
+        optBounded(value.selector, L.selector) &&
+        (value.repeat === undefined || (typeof value.repeat === 'number' && Number.isInteger(value.repeat) && value.repeat >= 1 && value.repeat <= 50))
       )
     case 'screenshot': {
       if (!optBounded(value.selector, L.selector)) return false
@@ -603,25 +624,30 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     ? 'Проверять результат в браузере — часть твоей работы над этой задачей. Браузер — изолированный Chromium на сервере, '
       + 'панели у пользователя нет: страница существует только пока ты с ней работаешь инструментами mcp__browser__*, '
       + 'и она сохраняется между вызовами. Инструменты: '
-    : 'Рядом с чатом у пользователя открыта панель веб-превью. Управляй ею инструментами mcp__browser__*: '
+    : 'Рядом с чатом у пользователя открыта панель Web Reader — он видит каждое твоё действие в ней. Работай там как человек: '
+      + 'находи элементы по видимому тексту, подписи поля или роли, после шага смотри на результат (read или screenshot) '
+      + 'и коротко говори пользователю, что видишь и делаешь. Инструменты mcp__browser__*: '
   return (
     opening +
     'open {url} — открыть сайт в превью; read {selector?, limit?, offset?} — структурированное содержимое страницы ' +
-    '(заголовки, ссылки, кнопки, поля ввода); nextOffset продолжает длинный текст. find {text|selector, limit?, visibleOnly?} — найти элементы; ' +
+    '(заголовки, ссылки, кнопки, поля ввода); nextOffset продолжает длинный текст. find {text|selector|role, limit?, visibleOnly?} — найти элементы ' +
+    '(role: button, link, textbox, heading…; onScreen у элемента — виден без прокрутки); ' +
     'В Chromium read включает открытый Shadow DOM и слоты; закрытые roots недоступны. ' +
     'Селекторы из read/find передавай в следующее действие целиком, включая >> nth; после изменения DOM повтори поиск. ' +
     'В Chromium selector вместе с text ограничивает click, hover и find текстом внутри селектора. ' +
-    'click {selector|text} — клик по элементу; type {selector, text, submit?} — ввести текст в поле. ' +
+    'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
+    'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +
     'Действия выполняются только на странице, открытой в превью активного чата пользователя. ' +
     'Просьбы «открой сайт …», «нажми …», «что на странице?» выполняй этими инструментами, а не shell-командами. ' +
-    'После open или click, ведущего к переходу, страница загружается заново — перечитай её read перед следующим действием. ' +
-    'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom | dy, selector?} — ' +
-    'прокрутить окно или контейнер (ленивые ленты); press {key, selector?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…); ' +
+    'open отвечает url и title открытой страницы. click, type и press сообщают navigated: true, если начался переход, — тогда page ' +
+    'описывает уже новую страницу: перечитай её read перед следующим действием. ' +
+    'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom|element | dy, selector?} — ' +
+    'прокрутить окно или контейнер (ленивые ленты), to: element показывает selector пользователю; press {key, selector?, repeat?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…), repeat повторяет; ' +
     'screenshot {selector? | rect? | fullPage?, animations?, timeoutMs?} — картинка элемента, области или видимой части страницы. ' +
     'В Chromium fullPage снимает всю страницу, animations: disabled стабилизирует кадр; timeoutMs ограничивает ожидание, по умолчанию 10000 мс. ' +
     'Координаты снимка Chromium и действий — CSS px; rect задаётся в координатах документа; ' +
     'errors {clear?} — накопленные ошибки страницы (JS-исключения, console.error, упавшие запросы) — проверяй их после действий при тестировании; ' +
-    'wait {selector|text, timeoutMs?} — дождаться появления элемента; в Chromium selector вместе с text ждёт текст внутри элемента. ' +
+    'wait {selector|text, state?, timeoutMs?} — дождаться появления элемента; state: hidden или detached ждёт исчезновения (спиннер, модалка); в Chromium selector вместе с text ждёт текст внутри элемента. ' +
     'Дополнительные условия wait в Chromium: state (attached/detached/visible/hidden), enabled, editable, checked, value, count, url (шаблон с *), loadState (domcontentloaded/load), predicate (синхронное JS-условие). ' +
     'Условия делят один timeoutMs до 30000 мс; count включает скрытые узлы, по умолчанию видимость проверяется только без count. Для SPA жди нужное содержимое или predicate, один load не означает готовность приложения. ' +
     'back/forward — по истории страницы; ' +

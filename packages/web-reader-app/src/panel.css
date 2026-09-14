@@ -28,3 +28,8 @@
 .webpreview-history-description { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .webpreview-history-description small { display: block; color: var(--text-dim); }
 .webpreview-history li > button { flex: none; }
+/* Live status of the assistant's current action: the person sees the panel being driven, not just the result. */
+.webpreview-live { display: flex; align-items: center; gap: 8px; margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface-selected, var(--surface)); color: var(--text); font-size: 12px; }
+.webpreview-live__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: webpreview-live 1s ease-in-out infinite alternate; }
+@keyframes webpreview-live { from { opacity: .35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .webpreview-live__dot { animation: none; } }

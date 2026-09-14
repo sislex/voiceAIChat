@@ -250,7 +250,7 @@ describe('CodexCli', () => {
     expect(args.some((a) => a.startsWith('mcp_servers.browser.url=') && a.includes('turn=t1'))).toBe(true)
     await tick()
     expect(input).toContain('mcp__browser__')
-    expect(input).toContain('веб-превью')
+    expect(input).toContain('панель Web Reader')
   })
 
   it('remote + plan → без MCP и bypass, только read-only sandbox', async () => {

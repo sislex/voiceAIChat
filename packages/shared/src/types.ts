@@ -224,11 +224,11 @@ export type BrowserInputAction =
  */
 export type BrowserSelectorAction =
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }
-  | { kind: 'press'; selector: string; key: string }
-  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number }
-  | { kind: 'type'; selector: string; text: string; submit?: boolean }
+  | { kind: 'press'; selector: string; key: string; repeat?: number }
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom' | 'element'; dx?: number; dy?: number }
+  | { kind: 'type'; selector?: string; field?: string; text: string; submit?: boolean; append?: boolean }
   | { kind: 'read'; selector?: string; limit?: number; offset?: number }
-  | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean }
+  | { kind: 'find'; text?: string; selector?: string; role?: string; limit?: number; visibleOnly?: boolean }
   | ({ kind: 'wait' } & BrowserWaitOptions)
   /** Наведение курсора: выпадающие меню и тултипы иначе не открыть. */
   | { kind: 'hover'; selector?: string; text?: string }
