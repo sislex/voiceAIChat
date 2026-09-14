@@ -211,7 +211,13 @@ export type BrowserInputAction =
   | { type: 'wheel'; deltaX: number; deltaY: number; x?: number; y?: number }
   | { type: 'drag'; from: { x: number; y: number }; to: { x: number; y: number } }
   | { type: 'type'; text: string }
-  | { type: 'press'; key: string }
+  | { type: 'press'; key: string; repeat?: number }
+  /**
+   * Keyboard shortcut as the person types it: modifiers held down around one
+   * key. keyDown/keyUp could express it, but only as three round trips, and a
+   * dropped middle call left Control stuck down for every later keystroke.
+   */
+  | { type: 'hotkey'; key: string; modifiers: Array<'Shift' | 'Control' | 'Alt' | 'Meta' | 'ControlOrMeta'>; repeat?: number }
   | { type: 'keyDown'; key: string }
   | { type: 'keyUp'; key: string }
 
@@ -223,9 +229,9 @@ export type BrowserInputAction =
  */
 export type BrowserSelectorAction =
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }
-  | { kind: 'press'; selector: string; key: string }
+  | { kind: 'press'; selector: string; key: string; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta' | 'ControlOrMeta'>; repeat?: number }
   | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number }
-  | { kind: 'type'; selector: string; text: string; submit?: boolean }
+  | { kind: 'type'; selector: string; text: string; submit?: boolean; delay?: number }
   | { kind: 'read'; selector?: string; limit?: number; offset?: number }
   | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean }
   | ({ kind: 'wait' } & BrowserWaitOptions)
@@ -247,6 +253,24 @@ export type BrowserSelectorAction =
   | { kind: 'describe'; x: number; y: number }
   /** Прокрутить к элементу: вслепую колесом до него можно не добраться. */
   | { kind: 'scrollTo'; selector: string }
+  /**
+   * Keyboard-first work the way a person does it. Without a focus of its own the
+   * model had to click an element to reach it, and a click on a menu entry or a
+   * link is a different event than tabbing onto it — that difference is exactly
+   * what keyboard accessibility bugs live in. No selector reports the currently
+   * focused element instead of moving focus.
+   */
+  | { kind: 'focus'; selector?: string }
+  /** Empty a field the way Ctrl+A Delete does, with input/change events. */
+  | { kind: 'clear'; selector: string }
+  /** Select text of an element (or the whole document) as a drag would. */
+  | { kind: 'selectText'; selector?: string }
+  /** What is selected right now: the text a person would copy. */
+  | { kind: 'copy' }
+  /** Paste text into the focused field (or `selector`) with a paste event. */
+  | { kind: 'paste'; selector?: string; text: string }
+  /** Tab order of the page: what a keyboard user walks through, in order. */
+  | { kind: 'focusOrder'; selector?: string; limit?: number }
 
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
@@ -274,6 +298,12 @@ export interface BrowserSelectorResult {
   structureTruncated?: boolean
   /** Описание элемента под точкой (`describe`). */
   element?: BrowserElementDescription
+  /** Focused element after `focus`, or the current one when asked without a selector. */
+  focus?: BrowserFocusState
+  /** Selected text after `selectText`/`copy` — what Ctrl+C would put in the buffer. */
+  selection?: { text: string; truncated?: boolean }
+  /** Tab order: elements a keyboard reaches, in the order Tab reaches them. */
+  focusOrder?: Array<{ selector: string; tag: string; name: string; role?: string; tabIndex: number; visible: boolean; disabled?: boolean }>
   /**
    * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
    * проверкам сценария — «текста нет» и «до текста не дочитали» это разные
@@ -281,6 +311,28 @@ export interface BrowserSelectorResult {
    */
   truncated?: boolean
   error?: string
+}
+
+/**
+ * Focused element as the keyboard sees it. `selector` is built the same way as
+ * for describe, so the model can act on what it found; `withinDialog` matters
+ * because focus escaping an open modal is the classic keyboard-trap bug.
+ */
+export interface BrowserFocusState {
+  /** No element is focused: focus sits on body or the page has just loaded. */
+  none?: boolean
+  selector?: string
+  tag?: string
+  role?: string
+  name?: string
+  text?: string
+  value?: string
+  disabled?: boolean
+  readOnly?: boolean
+  /** Visible focus ring: outline/box-shadow actually drawn on the element. */
+  visibleRing?: boolean
+  withinDialog?: boolean
+  rect?: { x: number; y: number; width: number; height: number }
 }
 
 /** Элемент кадра, пригодный для шага сценария и для разбора вёрстки. */

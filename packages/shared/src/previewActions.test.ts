@@ -269,3 +269,43 @@ describe('isPreviewAction: drag, set, upload, viewport, a11y, forward', () => {
     expect(isPreviewAction({ kind: 'click', selector: '#a', modifiers: ['hyper'] })).toBe(false)
   })
 })
+
+// Валидация новых клавиатурных действий: конверт проверяется и на сервере, и в
+// клиенте, поэтому правила должны быть одни.
+describe('действия клавиатуры, фокуса и буфера', () => {
+  it('сочетание требует хотя бы один известный модификатор', () => {
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a', modifiers: ['ctrl'] })).toBe(true)
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a', modifiers: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a', modifiers: ['primary'] })).toBe(true)
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a', modifiers: ['super'] })).toBe(false)
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a' })).toBe(false)
+  })
+
+  it('повтор нажатия ограничен разумным потолком', () => {
+    expect(isPreviewAction({ kind: 'press', key: 'Tab', repeat: 50 })).toBe(true)
+    expect(isPreviewAction({ kind: 'press', key: 'Tab', repeat: 51 })).toBe(false)
+    expect(isPreviewAction({ kind: 'press', key: 'Tab', repeat: 0 })).toBe(false)
+    expect(isPreviewAction({ kind: 'press', key: 'Tab', repeat: 1.5 })).toBe(false)
+  })
+
+  it('фокус и выделение допускают отсутствие селектора, очистка — нет', () => {
+    expect(isPreviewAction({ kind: 'focus' })).toBe(true)
+    expect(isPreviewAction({ kind: 'selectText' })).toBe(true)
+    expect(isPreviewAction({ kind: 'copy' })).toBe(true)
+    expect(isPreviewAction({ kind: 'clear' })).toBe(false)
+    expect(isPreviewAction({ kind: 'clear', selector: '#q' })).toBe(true)
+  })
+
+  it('вставке нужен текст, а обходу по Tab — целый лимит в границах', () => {
+    expect(isPreviewAction({ kind: 'paste', text: 'привет' })).toBe(true)
+    expect(isPreviewAction({ kind: 'paste' })).toBe(false)
+    expect(isPreviewAction({ kind: 'focusOrder', limit: 200 })).toBe(true)
+    expect(isPreviewAction({ kind: 'focusOrder', limit: 201 })).toBe(false)
+  })
+
+  it('задержка посимвольного ввода не превращается в бесконечную паузу', () => {
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'a', delay: 200 })).toBe(true)
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'a', delay: 201 })).toBe(false)
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'a', delay: -1 })).toBe(false)
+  })
+})

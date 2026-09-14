@@ -320,13 +320,121 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Нажать клавишу на открытой в превью странице (keydown+keyup): Escape, Enter, Tab, ArrowDown и т. п. ' +
-            'selector фокусирует элемент перед нажатием; без него — активный элемент страницы.',
+            'selector фокусирует элемент перед нажатием; без него — активный элемент страницы. ' +
+            'repeat повторяет нажатие (ArrowDown до нужной строки списка) — это дешевле, чем звать press по разу.',
           inputSchema: { frame: frameSchema,
             key: z.string().min(1).max(32).describe('Имя клавиши как в KeyboardEvent.key (Escape, Enter, ArrowDown, a…)'),
-            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя')
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя'),
+            repeat: z.number().int().min(1).max(50).optional().describe('Сколько раз нажать подряд (по умолчанию 1)')
           }
         },
-        async ({ frame, key, selector }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}) })
+        async ({ frame, key, selector, repeat }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}), ...(repeat !== undefined ? { repeat } : {}) })
+      )
+
+      server.registerTool(
+        'hotkey',
+        {
+          description:
+            'Сочетание клавиш, как его нажимает человек: primary+a выделить всё, primary+c копировать, ' +
+            'shift+Tab назад по фокусу, primary+Enter отправить форму. ' +
+            'primary — основной модификатор системы раннера: бери именно его для правки и выделения, ' +
+            'иначе на macOS ctrl+a уводит курсор в начало строки вместо выделения. ' +
+            'Без selector уходит в активный элемент.',
+          inputSchema: { frame: frameSchema,
+            key: z.string().min(1).max(32).describe('Клавиша без модификаторов (a, c, Enter, Tab, ArrowDown)'),
+            modifiers: z.array(z.enum(['primary', 'shift', 'ctrl', 'alt', 'meta'])).min(1).max(4).describe('Модификаторы; primary — Ctrl на Linux/Windows и Cmd на macOS'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя'),
+            repeat: z.number().int().min(1).max(50).optional().describe('Сколько раз нажать подряд')
+          }
+        },
+        async ({ frame, key, modifiers, selector, repeat }) => run({ kind: 'hotkey', ...(frame !== undefined ? { frame } : {}), key, modifiers, ...(selector ? { selector } : {}), ...(repeat !== undefined ? { repeat } : {}) })
+      )
+
+      server.registerTool(
+        'focus',
+        {
+          description:
+            'Поставить фокус на элемент без клика — так работает переход по Tab, и именно так ловятся ' +
+            'ошибки клавиатурной доступности: клик по пункту меню и переход на него фокусом дают разные события. ' +
+            'Возвращает элемент в фокусе: селектор, роль, значение, видимое кольцо фокуса и признак «внутри диалога».',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).describe('CSS-селектор элемента') }
+        },
+        async ({ frame, selector }) => run({ kind: 'focus', ...(frame !== undefined ? { frame } : {}), selector })
+      )
+
+      server.registerTool(
+        'focused',
+        {
+          description:
+            'Что сейчас в фокусе: селектор, тег, роль, имя, значение поля, нарисовано ли кольцо фокуса ' +
+            'и находится ли элемент внутри открытого диалога. Фокус не двигает — зови после press Tab, ' +
+            'чтобы понять, куда попал, и заметить ловушку фокуса в модальном окне.',
+          inputSchema: { frame: frameSchema }
+        },
+        async ({ frame }) => run({ kind: 'focus', ...(frame !== undefined ? { frame } : {}) })
+      )
+
+      server.registerTool(
+        'focus-order',
+        {
+          description:
+            'Порядок обхода по Tab: элементы в том порядке, в каком их получит клавиатура ' +
+            '(положительный tabindex идёт первым, остальные — по DOM). Для каждого — селектор, имя, роль, ' +
+            'tabIndex и видимость. Так видно недостижимые кнопки и вырванные из потока элементы, не нажимая Tab по разу.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
+            limit: z.number().int().min(1).max(200).optional().describe('Максимум элементов (по умолчанию 50)')
+          }
+        },
+        async ({ frame, selector, limit }) => run({ kind: 'focusOrder', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'clear',
+        {
+          description:
+            'Очистить поле ввода так же, как это делает человек (Ctrl+A → Delete): значение стирается, ' +
+            'события input/change уходят странице. type с пустым текстом этого не даёт.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).describe('CSS-селектор поля') }
+        },
+        async ({ frame, selector }) => run({ kind: 'clear', ...(frame !== undefined ? { frame } : {}), selector })
+      )
+
+      server.registerTool(
+        'select-text',
+        {
+          description:
+            'Выделить текст элемента (или всей страницы без selector) — то же, что протащить курсор по тексту. ' +
+            'Возвращает выделенное. Дальше его можно скопировать (copy) или заменить вводом.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента') }
+        },
+        async ({ frame, selector }) => run({ kind: 'selectText', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}) })
+      )
+
+      server.registerTool(
+        'copy',
+        {
+          description:
+            'Прочитать текущее выделение страницы — то, что попало бы в буфер обмена по Ctrl+C. ' +
+            'Работает и для выделения внутри поля ввода. Не меняет страницу.',
+          inputSchema: { frame: frameSchema }
+        },
+        async ({ frame }) => run({ kind: 'copy', ...(frame !== undefined ? { frame } : {}) })
+      )
+
+      server.registerTool(
+        'paste',
+        {
+          description:
+            'Вставить текст в поле так, как это делает Ctrl+V: странице уходит событие paste с clipboardData, ' +
+            'и редакторы, которые читают именно его (а обычный ввод игнорируют), ведут себя как у человека. ' +
+            'Без selector вставляет в элемент в фокусе.',
+          inputSchema: { frame: frameSchema,
+            text: z.string().max(L.text).describe('Вставляемый текст'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор поля (по умолчанию — элемент в фокусе)')
+          }
+        },
+        async ({ frame, text, selector }) => run({ kind: 'paste', ...(frame !== undefined ? { frame } : {}), text, ...(selector ? { selector } : {}) })
       )
 
       server.registerTool(
@@ -738,14 +846,16 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'type',
         {
           description:
-            'Ввести текст в поле открытой в превью страницы (CSS-селектор поля). submit: true — отправить форму после ввода.',
+            'Ввести текст в поле открытой в превью страницы (CSS-селектор поля). submit: true — отправить форму после ввода. ' +
+            'delay — посимвольный ввод с паузой: без него значение ставится целиком, и автодополнение страницы не просыпается.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).describe('CSS-селектор поля ввода'),
             text: z.string().max(L.text).describe('Текст для ввода'),
-            submit: z.boolean().optional().describe('Отправить форму после ввода')
+            submit: z.boolean().optional().describe('Отправить форму после ввода'),
+            delay: z.number().min(0).max(200).optional().describe('Пауза между символами в мс: поле получит каждое нажатие — так срабатывают автодополнение и поиск с задержкой')
           }
         },
-        async ({ frame, selector, text, submit }) => run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), selector, text, ...(submit !== undefined ? { submit } : {}) })
+        async ({ frame, selector, text, submit, delay }) => run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), selector, text, ...(submit !== undefined ? { submit } : {}), ...(delay !== undefined ? { delay } : {}) })
       )
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

@@ -62,6 +62,15 @@ export const PREVIEW_ACTION_LIMITS = {
 export const PREVIEW_CLICK_MODIFIERS = ['shift', 'ctrl', 'alt', 'meta'] as const
 export type PreviewClickModifier = (typeof PREVIEW_CLICK_MODIFIERS)[number]
 
+/**
+ * Модификаторы сочетания. Кроме явных клавиш есть `primary` — «выделить всё»
+ * и «копировать» на Linux и на macOS нажимаются разными клавишами, а модель не
+ * знает, под какой системой крутится раннер: Control+A на macOS уводит курсор
+ * в начало строки вместо выделения, и это выглядело как молчаливый отказ.
+ */
+export const PREVIEW_HOTKEY_MODIFIERS = ['shift', 'ctrl', 'alt', 'meta', 'primary'] as const
+export type PreviewHotkeyModifier = (typeof PREVIEW_HOTKEY_MODIFIERS)[number]
+
 /** Точка или элемент — источник/цель перетаскивания. */
 export interface PreviewDragPoint {
   selector?: string
@@ -78,7 +87,7 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; diagnostic?: boolean }
-  | { kind: 'type'; selector: string; text: string; submit?: boolean; diagnostic?: boolean }
+  | { kind: 'type'; selector: string; text: string; submit?: boolean; delay?: number; diagnostic?: boolean }
   | { kind: 'read'; selector?: string; limit?: number; offset?: number; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
@@ -86,7 +95,26 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Прокрутка окна или контейнера: к краю (`to`) либо на `dy` пикселей. */
   | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number; diagnostic?: boolean }
   /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
-  | { kind: 'press'; key: string; selector?: string; diagnostic?: boolean }
+  | { kind: 'press'; key: string; selector?: string; repeat?: number; diagnostic?: boolean }
+  /**
+   * Keyboard shortcut with modifiers held, the way a person presses it
+   * (Control+A, Meta+C, Shift+Tab). Separate from `press` because the model
+   * kept spelling shortcuts as three keyDown/keyUp calls and lost a modifier
+   * in the middle, leaving the page typing in uppercase forever.
+   */
+  | { kind: 'hotkey'; key: string; modifiers: PreviewHotkeyModifier[]; repeat?: number; selector?: string; diagnostic?: boolean }
+  /** Focus an element without clicking it, or report the focused one when no selector is given. */
+  | { kind: 'focus'; selector?: string; diagnostic?: boolean }
+  /** Empty an input the way Ctrl+A Delete does, firing input/change. */
+  | { kind: 'clear'; selector: string; diagnostic?: boolean }
+  /** Select the text of an element (or the whole page) as a drag would. */
+  | { kind: 'selectText'; selector?: string; diagnostic?: boolean }
+  /** Read the current selection — what Ctrl+C would copy. */
+  | { kind: 'copy'; diagnostic?: boolean }
+  /** Paste text into the focused field (or `selector`), firing a paste event. */
+  | { kind: 'paste'; selector?: string; text: string; diagnostic?: boolean }
+  /** Tab order of the page: the path a keyboard-only person walks, in order. */
+  | { kind: 'focusOrder'; selector?: string; limit?: number; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
   | { kind: 'screenshot'; selector?: string; rect?: { x: number; y: number; width: number; height: number }; diagnostic?: boolean }
   /** Ошибки открытой страницы: JS-исключения, unhandledrejection, console.error, неуспешные fetch/XHR. */
@@ -422,7 +450,10 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       )
     case 'type':
       return bounded(value.selector, L.selector) && bounded(value.text, L.text) &&
-        (value.submit === undefined || typeof value.submit === 'boolean')
+        (value.submit === undefined || typeof value.submit === 'boolean') &&
+        // A per-character delay is what makes autocomplete and debounced search
+        // behave as they do for a person; fill() pastes and they never fire.
+        (value.delay === undefined || (typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay >= 0 && value.delay <= 200))
     case 'read':
       return optBounded(value.selector, L.selector) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
@@ -447,8 +478,27 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'press':
       return (
         typeof value.key === 'string' && value.key.length >= 1 && value.key.length <= 32 &&
-        optBounded(value.selector, L.selector)
+        optBounded(value.selector, L.selector) && keyRepeat(value.repeat)
       )
+    case 'hotkey':
+      return (
+        typeof value.key === 'string' && value.key.length >= 1 && value.key.length <= 32 &&
+        Array.isArray(value.modifiers) && value.modifiers.length > 0 && value.modifiers.length <= 4 &&
+        value.modifiers.every((item) => (PREVIEW_HOTKEY_MODIFIERS as readonly string[]).includes(item as string)) &&
+        optBounded(value.selector, L.selector) && keyRepeat(value.repeat)
+      )
+    case 'focus':
+    case 'selectText':
+      return optBounded(value.selector, L.selector)
+    case 'clear':
+      return bounded(value.selector, L.selector)
+    case 'copy':
+      return true
+    case 'paste':
+      return bounded(value.text, L.text) && optBounded(value.selector, L.selector)
+    case 'focusOrder':
+      return optBounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200))
     case 'screenshot': {
       if (!optBounded(value.selector, L.selector)) return false
       if (value.rect === undefined) return true
@@ -518,6 +568,11 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
 
 function validDiagnosticOptions(value: Record<string, unknown>): boolean {
   try { normalizeBrowserDiagnosticOptions(value); return true } catch { return false }
+}
+
+/** Repeat of a keystroke: a person holds a key, but not a thousand times. */
+function keyRepeat(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 50)
 }
 
 function logLimit(value: unknown): boolean {

@@ -149,3 +149,57 @@ it('frame не превращает координаты или общий фо�
     { kind: 'drag' as const, from: { x: 1, y: 2 }, to: { x: 3, y: 4 } }
   ]) expect(planModelAction({ ...action, frame: '#preview' })).toMatchObject({ kind: 'unsupported' })
 })
+
+// Круг 1 «как пользователь»: клавиатура, фокус и буфер обмена. Раньше модель
+// умела кликать, но не умела дойти до элемента табом и нажать сочетание.
+describe('клавиатура и буфер обмена', () => {
+  it('сочетание без селектора уходит вводом с модификаторами Playwright', () => {
+    expect(planModelAction({ kind: 'hotkey', key: 'a', modifiers: ['ctrl'] })).toEqual({
+      kind: 'command', command: { type: 'input', action: { type: 'hotkey', key: 'a', modifiers: ['Control'] } }
+    })
+  })
+
+  it('primary переводится в модификатор платформы раннера, а не в Control вслепую', () => {
+    expect(planModelAction({ kind: 'hotkey', key: 'a', modifiers: ['primary'] })).toEqual({
+      kind: 'command', command: { type: 'input', action: { type: 'hotkey', key: 'a', modifiers: ['ControlOrMeta'] } }
+    })
+  })
+
+  it('сочетание с селектором нажимается на самом элементе', () => {
+    expect(planModelAction({ kind: 'hotkey', key: 'c', modifiers: ['meta'], selector: '#note' })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: '#note', key: 'c', modifiers: ['Meta'] } }
+    })
+  })
+
+  it('повтор нажатия доходит и до селекторного, и до координатного пути', () => {
+    expect(planModelAction({ kind: 'press', key: 'ArrowDown', repeat: 5 })).toEqual({
+      kind: 'command', command: { type: 'input', action: { type: 'press', key: 'ArrowDown', repeat: 5 } }
+    })
+    expect(planModelAction({ kind: 'press', key: 'ArrowDown', selector: '#list', repeat: 5 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: '#list', key: 'ArrowDown', repeat: 5 } }
+    })
+  })
+
+  it('фокус без селектора остаётся чтением активного элемента', () => {
+    expect(planModelAction({ kind: 'focus' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'focus' } } })
+  })
+
+  it('очистка, выделение, копирование и вставка ложатся на селекторные команды', () => {
+    expect(planModelAction({ kind: 'clear', selector: '#q' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'clear', selector: '#q' } } })
+    expect(planModelAction({ kind: 'selectText' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'selectText' } } })
+    expect(planModelAction({ kind: 'copy' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'copy' } } })
+    expect(planModelAction({ kind: 'paste', text: 'привет' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'paste', text: 'привет' } } })
+  })
+
+  it('посимвольный ввод переносит задержку в команду: без неё поле заполняется целиком', () => {
+    expect(planModelAction({ kind: 'type', selector: '#q', text: 'дом', delay: 25 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'type', selector: '#q', text: 'дом', delay: 25 } }
+    })
+  })
+
+  it('обход по Tab переносит поддерево и лимит', () => {
+    expect(planModelAction({ kind: 'focusOrder', selector: 'form', limit: 20 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'focusOrder', selector: 'form', limit: 20 } }
+    })
+  })
+})
