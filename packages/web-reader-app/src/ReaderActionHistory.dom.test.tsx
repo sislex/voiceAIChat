@@ -83,3 +83,16 @@ it('shows check verdicts with summaries and disables reveal on another page', ()
   expect(screen.getByText('.row: 2 из 3 — не совпало')).toBeTruthy()
   expect(screen.getByRole('button', { name: /Показать на странице/ })).toBeDisabled()
 })
+
+it('filters to failed checks and clears the feed', () => {
+  const onClear = vi.fn()
+  render(<ReaderActionHistory onClear={onClear} actions={[
+    { id: 'ok', action: { kind: 'check', text: 'Войти' }, title: null, address: null, ok: true, summary: 'видно' },
+    { id: 'bad', action: { kind: 'check', text: 'Корзина' }, title: null, address: null, ok: false, summary: 'не видно' },
+    { id: 'read', action: { kind: 'read' }, title: null, address: null }
+  ]} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Только ✗ (1)' }))
+  expect(screen.getAllByRole('listitem')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Очистить ленту действий' }))
+  expect(onClear).toHaveBeenCalledOnce()
+})

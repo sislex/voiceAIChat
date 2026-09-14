@@ -1,9 +1,9 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { WebReaderFrameProps } from './panelContract'
 import { previewActionLabel } from './actionLabel'
 import type { PreviewAction } from '@shared/previewActions'
 
-type Props = { actions: NonNullable<WebReaderFrameProps['actions']>; onRepeat?: WebReaderFrameProps['onRepeatAction']; onReveal?: WebReaderFrameProps['onRevealAction']; currentUrl?: string | null }
+type Props = { actions: NonNullable<WebReaderFrameProps['actions']>; onRepeat?: WebReaderFrameProps['onRepeatAction']; onReveal?: WebReaderFrameProps['onRevealAction']; onClear?: WebReaderFrameProps['onClearActions']; currentUrl?: string | null }
 /** Steps that touched a concrete element can be shown again on the page. */
 function revealSelector(action: PreviewAction): string | null {
   return 'selector' in action && typeof action.selector === 'string' && action.selector && action.kind !== 'read' && action.kind !== 'scroll' ? action.selector : null
@@ -19,18 +19,25 @@ function timeLabel(at: number | undefined): string {
 function siteName(address: string | null): string {
   try { return address ? new URL(address).host : '' } catch { return '' }
 }
-export function ReaderActionHistory({ actions, onRepeat, onReveal, currentUrl }: Props): JSX.Element | null {
+export function ReaderActionHistory({ actions, onRepeat, onReveal, onClear, currentUrl }: Props): JSX.Element | null {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [query, setQuery] = useState('')
+  const [failedOnly, setFailedOnly] = useState(false)
   const id = useId()
+  const listRef = useRef<HTMLOListElement>(null)
+  // New steps land at the bottom of a scrolling list; keep the latest one in view like a chat.
+  useEffect(() => { const list = listRef.current; if (list) list.scrollTop = list.scrollHeight }, [actions.length])
   if (!actions.length) return null
   const needle = query.trim().toLocaleLowerCase()
   const rows = actions.map((item, index) => ({ ...item, index, label: previewActionLabel(item.action), site: siteName(item.address) }))
-  const shown = rows.filter(row => !needle || [row.label, row.title, row.site].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle))
+  const failed = rows.filter(row => row.ok === false).length
+  const shown = rows.filter(row => (!needle || [row.label, row.title, row.site, row.summary].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle)) && (!failedOnly || row.ok === false))
   return <section className="webpreview-scenario webpreview-history" aria-label="Действия ассистента">
     <div className="webpreview-scenario-header">
       <button type="button" className="vc-btn vc-btn--ghost" aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(value => !value)}>Действия ассистента</button>
       <span aria-label="Количество действий">{actions.length}</span>
+      {failed > 0 && <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" aria-pressed={failedOnly} onClick={() => setFailedOnly(value => !value)}>Только ✗ ({failed})</button>}
+      {onClear && <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" aria-label="Очистить ленту действий" onClick={onClear}>Очистить</button>}
     </div>
     <div id={id} hidden={!expanded}>
       {actions.length > 1 && <div className="webpreview-history-search">
@@ -38,7 +45,7 @@ export function ReaderActionHistory({ actions, onRepeat, onReveal, currentUrl }:
         {query && <button type="button" className="vc-btn vc-btn--ghost" onClick={() => setQuery('')}>Очистить поиск</button>}
       </div>}
       {shown.length === 0 && <p role="status">Действия не найдены</p>}
-      <ol>{shown.map(item => <li key={item.id}>
+      <ol ref={listRef}>{shown.map(item => <li key={item.id}>
         <div className="webpreview-history-description" data-ok={item.ok === undefined ? undefined : item.ok ? 'true' : 'false'}><span>{item.ok !== undefined && <span className="webpreview-history-verdict" aria-label={item.ok ? 'Проверка пройдена' : 'Проверка не пройдена'}>{item.ok ? '✓' : '✗'} </span>}{item.label}</span>{item.summary && <small className="webpreview-history-summary">{item.summary}</small>}{item.title && <small>{item.title}</small>}{item.site && <small>{item.site}{timeLabel(item.at) ? ` · ${timeLabel(item.at)}` : ''}</small>}{!item.site && timeLabel(item.at) && <small>{timeLabel(item.at)}</small>}</div>
         {onReveal && revealSelector(item.action) && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label={`Показать на странице элемент действия ${item.index + 1}`} disabled={Boolean(currentUrl && item.address && item.address !== currentUrl)} title={currentUrl && item.address && item.address !== currentUrl ? 'Открыта другая страница' : undefined} onClick={() => onReveal(revealSelector(item.action)!)}>Показать</button>}
         {onRepeat && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label={`Повторить действие ${item.index + 1}: ${item.label}`} onClick={() => onRepeat(item.action)}>Повторить</button>}

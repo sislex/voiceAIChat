@@ -13,7 +13,8 @@ const chooseTarget=(action,clickable=false)=>{
     const controls=candidates.filter(el=>el.matches(CLICKABLE));if(controls.length)candidates=controls;
     const text=String(action.text||'').trim().toLowerCase();const exact=candidates.filter(el=>textOf(el).toLowerCase()===text);if(exact.length)candidates=exact
   }
-  if(candidates.length!==1)throw new Error('Селектор неоднозначен ('+candidates.length+'): '+candidates.slice(0,5).map(uniqueSelector).join(', '));
+  // Кандидаты с контекстом: модель уточнит цель через near или nth, как человек — «та, что в строке заказа 5».
+  if(candidates.length!==1)throw new Error('Селектор неоднозначен ('+candidates.length+'): '+candidates.slice(0,5).map((el,i)=>'#'+(i+1)+' '+uniqueSelector(el)+(contextOf(el)?' — '+contextOf(el).slice(0,60):'')).join('; ')+'. Уточни near (текст рядом) или nth (номер).');
   return candidates[0]
 };
 // Поле по подписи, как его называет человек: label, aria-label, placeholder, name или id.

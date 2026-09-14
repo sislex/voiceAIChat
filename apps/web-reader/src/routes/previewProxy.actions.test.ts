@@ -728,6 +728,44 @@ describe('скрипт превью: показать пользователю �
   })
 })
 
+describe('скрипт превью: терпимый поиск и заполнение (круг 8)', () => {
+  it('find без результата предлагает похожие тексты; role понимает русские слова', async () => {
+    const none = await act({ kind: 'find', text: 'Электронка' })
+    expect((none.result as { total: number; suggestions?: string[] }).total).toBe(0)
+    expect((none.result as { suggestions?: string[] }).suggestions).toContain('Электроника')
+    const buttons = await act({ kind: 'find', role: 'кнопка' })
+    expect((buttons.result as { elements: { text: string }[] }).elements.map((el) => el.text)).toEqual(['Найти'])
+  })
+
+  it('fill заполняет найденные поля и перечисляет пропущенные; неоднозначный клик называет контексты', async () => {
+    const res = await act({ kind: 'fill', fields: [{ selector: '#q', value: 'книги' }, { field: 'Фамилия', value: 'Иванов' }] })
+    expect(res.ok).toBe(true)
+    expect((res.result as { filled: unknown[]; missing?: { field: string }[] })).toMatchObject({ filled: [expect.objectContaining({ selector: '#q' })], missing: [expect.objectContaining({ field: 'Фамилия' })] })
+    const nothing = await act({ kind: 'fill', fields: [{ field: 'Нет такого', value: 'x' }] })
+    expect(nothing.ok).toBe(false)
+    document.body.insertAdjacentHTML('beforeend', `<ul><li>Заказ 1 <button>Удалить</button></li><li>Заказ 2 <button>Удалить</button></li></ul>`)
+    const ambiguous = await act({ kind: 'click', text: 'Удалить', exact: true })
+    expect(ambiguous.ok).toBe(false)
+    expect(ambiguous.error).toContain('Заказ 1')
+    expect(ambiguous.error).toContain('near')
+  })
+
+  it('errors схлопывает повторы, read перечисляет варианты select, клик по select объясняет set', async () => {
+    console.error('дубль'); console.error('дубль'); console.error('другое')
+    const errors = await act({ kind: 'errors', clear: true })
+    const list = (errors.result as { errors: { message: string; count?: number }[]; total: number }).errors
+    expect(list.find((e) => e.message === 'дубль')?.count).toBe(2)
+    expect(list.find((e) => e.message === 'другое')?.count).toBeUndefined()
+    document.body.insertAdjacentHTML('beforeend', `<select id="lang"><option>Русский</option><option>English</option></select>`)
+    const read = await act({ kind: 'read' })
+    const select = (read.result as { inputs: { selector: string; options?: string[] }[] }).inputs.find((input) => input.selector === '#lang')
+    expect(select?.options).toEqual(['Русский', 'English'])
+    const click = await act({ kind: 'click', selector: '#lang' })
+    expect(click.ok).toBe(false)
+    expect(click.error).toContain('set')
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

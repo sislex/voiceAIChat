@@ -118,6 +118,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   const history: string[] = []
   const remember = (url: string | null): void => { if (url && history[0] !== url) { history.unshift(url); if (history.length > 5) history.length = 5 } }
   let manual = false
+  let viewport: { width: number; height: number } | undefined
   let disposed = false
   let navigationGeneration = 0
   let inspectorMode: boolean | undefined
@@ -165,7 +166,17 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       if (entry.action.kind === 'open') {
         // Итоговый адрес не совпал с запрошенным — сайт перенаправил; модели важно это знать.
         const finalUrl = approvedUrl ?? entry.action.url
-        settle(requestId, { ok: true, result: { url: finalUrl, ...(pageTitle ? { title: pageTitle } : {}), ...(pageOutline ? { outline: pageOutline } : {}), ...(finalUrl !== entry.action.url ? { redirected: true } : {}) } })
+        const opened = { url: finalUrl, ...(pageTitle ? { title: pageTitle } : {}), ...(pageOutline ? { outline: pageOutline } : {}), ...(finalUrl !== entry.action.url ? { redirected: true } : {}) }
+        const waitFor = entry.action.waitFor
+        if (waitFor) {
+          // open + wait одним действием: страница готова, теперь дождаться нужного текста.
+          const pendingEntry = entry
+          pending.delete(requestId)
+          clearTimeout(pendingEntry.timer)
+          void run({ kind: 'wait', text: waitFor, timeoutMs: 8000 }).then((waited) => pendingEntry.resolve({ ok: true, result: { ...opened, waited: { text: waitFor, found: waited.ok, ...(waited.ok ? {} : { error: waited.error ?? 'не дождались' }) } } }))
+          continue
+        }
+        settle(requestId, { ok: true, result: opened })
         continue
       }
       entry.sent = true
@@ -194,7 +205,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         page: connected && approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null,
         ...(pageStatus === 'error' && pageError ? { error: pageError } : {}),
         ...(history.length ? { history: [...history] } : {}),
-        ...(manual ? { manual: true } : {})
+        ...(manual ? { manual: true } : {}),
+        ...(viewport ? { viewport } : {})
       } })
     }
     // wait {url} — про адрес панели, а не про DOM: мост знает подтверждённый адрес и ждёт его сам.
@@ -319,6 +331,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           pageError = message.error
           pageTitle = message.status === 'ready' && typeof message.title === 'string' && message.title ? message.title : undefined
           pageOutline = message.status === 'ready' ? message.outline : undefined
+          if (message.status === 'ready' && message.viewport) viewport = message.viewport
           if (message.status === 'ready' || message.status === 'empty') options.onPageTitle?.(pageTitle ?? null)
           syncPageStatus()
           if (message.status === 'ready') {

@@ -83,7 +83,8 @@ export type PreviewAction = BrowserFrameTarget & (
   | ({ kind: 'probe'; diagnostic?: boolean } & PreviewProbeOptions)
   | ({ kind: 'accessibility'; diagnostic?: boolean } & PreviewAccessibilityOptions)
   /** url — абсолютный http(s) либо относительный путь (`/about`, `?page=2`, `#/route`): панель разрешает его от открытой страницы. */
-  | { kind: 'open'; url: string; diagnostic?: boolean }
+  /** waitFor — текст, которого дождаться после загрузки: open и wait одним действием. */
+  | { kind: 'open'; url: string; waitFor?: string; diagnostic?: boolean }
   /** role сужает совпадения по роли элемента (button, link, textbox…): так ищет пользователь, а не CSS. */
   /** onScreen — только то, что пользователь видит сейчас без прокрутки. */
   /** nth — взять N-е совпадение (с 1), когда одинаковых элементов несколько и near не помогает. */
@@ -195,6 +196,8 @@ export interface PreviewStatusResult {
   history?: string[]
   /** Пользователь взял управление («Только я управляю»): действия будут отклонены. */
   manual?: boolean
+  /** Размер видимой области страницы: понять, мобильная ли раскладка у пользователя. */
+  viewport?: { width: number; height: number }
 }
 
 export interface PreviewPageInfo {
@@ -220,6 +223,8 @@ export interface PreviewFindResult {
   elements: PreviewActionElement[]
   /** Сколько всего совпадений на странице (elements обрезан лимитом). */
   total: number
+  /** Ничего не нашлось — похожие тексты на странице, как человек «поискал бы глазами рядом». */
+  suggestions?: string[]
 }
 
 export interface PreviewClickResult {
@@ -253,6 +258,8 @@ export interface PreviewTypeResult {
 export interface PreviewFillResult {
   page: PreviewPageInfo
   filled: { field: string; selector: string; value: string }[]
+  /** Поля, которые не нашлись: остальные всё равно заполнены. */
+  missing?: { field: string; error: string }[]
   submitted: boolean
   validation?: { field: string; message: string }[]
   navigated?: boolean
@@ -272,7 +279,7 @@ export interface PreviewReadResult {
   headings: { level: number; text: string }[]
   links: { text: string; href: string }[]
   buttons: string[]
-  inputs: { selector: string; type: string; name: string; placeholder: string; value: string; label?: string; expanded?: boolean; selected?: boolean; disabled?: boolean; readOnly?: boolean; checked?: boolean | 'mixed'; required?: boolean; invalid?: boolean }[]
+  inputs: { selector: string; type: string; name: string; placeholder: string; value: string; label?: string; expanded?: boolean; selected?: boolean; disabled?: boolean; readOnly?: boolean; checked?: boolean | 'mixed'; required?: boolean; invalid?: boolean; /** Варианты select — из чего человек выбирает. */ options?: string[] }[]
   /** Формы страницы: поля и кнопка отправки — маршрут входа или поиска виден целиком. */
   forms?: { selector: string; fields: string[]; submit?: string }[]
   /** Ориентиры страницы (navigation, main, banner…) с именами — как их видит скринридер. */
@@ -302,6 +309,8 @@ export interface PreviewOpenResult {
   outline?: PreviewPageOutline
   /** Итоговый адрес отличается от запрошенного — сайт перенаправил. */
   redirected?: boolean
+  /** Итог ожидания waitFor: текст дождались или нет (с причиной). */
+  waited?: { text: string; found: boolean; error?: string }
 }
 
 export interface PreviewStylesResult {
@@ -366,7 +375,8 @@ export interface PreviewPageError {
 
 export interface PreviewErrorsResult {
   page: PreviewPageInfo
-  errors: PreviewPageError[]
+  /** Одинаковые сообщения схлопнуты; count — сколько раз повторилось. */
+  errors: (PreviewPageError & { count?: number })[]
   /** Сколько всего накоплено (errors обрезан лимитом выдачи). */
   total: number
 }
@@ -556,7 +566,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
   const L = PREVIEW_ACTION_LIMITS
   switch (value.kind) {
     case 'open':
-      return bounded(value.url, L.url) && (isHttpUrl(value.url) || isRelativePreviewPath(value.url))
+      return bounded(value.url, L.url) && (isHttpUrl(value.url) || isRelativePreviewPath(value.url)) && optBounded(value.waitFor, L.text)
     case 'find':
       return (
         optBounded(value.text, L.text) &&
@@ -819,6 +829,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'show {text|selector, label?} — показать пользователю элемент: панель прокрутит к нему и подсветит с подписью на несколько секунд («вот эта кнопка»). ' +
     'screenshot {marks: true} нумерует на снимке кликабельные элементы и возвращает marks — затем click {selector} по нужному номеру. read {brief: true} — короткое описание страницы словами; ' +
     'если открыто модальное окно, read без selector читает его (поле dialog). wait {idle: true} ждёт затихания сети страницы. status.manual: true — пользователь взял управление, подожди и спроси. ' +
+    'open {url, waitFor?} дождётся текста после загрузки одним действием; find без результата возвращает suggestions — похожие тексты страницы; fill заполняет найденные поля и перечисляет missing; ' +
+    'role принимает и русские слова (кнопка, ссылка, поле, заголовок); read у select перечисляет options; errors схлопывает повторы с count; status.viewport — размер экрана пользователя. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +
