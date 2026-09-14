@@ -115,3 +115,14 @@
   .playwright-reader-header { position: sticky; top: 0; z-index: 2; background: var(--panel); }
   .playwright-reader-zoom .vc-btn { min-height: 40px; }
 }
+
+/* Круг 3: поиск по странице и положение на ней. Кадр — картинка, и найти в нём
+   текст глазами на длинной странице нельзя; Ctrl+F окружающего браузера ищет по
+   приложению, а не по странице внутри Chromium. */
+.playwright-reader-find { display: flex; align-items: center; gap: var(--space-100); padding: var(--space-050) var(--space-150);
+  border-bottom: 1px solid var(--border-soft, var(--border)); background: var(--panel); }
+.playwright-reader-find input { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 720px) {
+  .playwright-reader-find input { min-height: 40px; }
+  .playwright-reader-find .vc-btn { min-height: 40px; }
+}

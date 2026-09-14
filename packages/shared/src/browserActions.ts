@@ -109,6 +109,20 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
       return { kind: 'command', command: { type: 'selector', action: { kind: 'copy' } } }
     case 'paste':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'paste', text: action.text, ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'scrollUntil':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'scrollUntil', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(action.container ? { container: action.container } : {}), ...(action.maxScrolls !== undefined ? { maxScrolls: action.maxScrolls } : {}), ...(action.step !== undefined ? { step: action.step } : {}) } } }
+    case 'count':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'count', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(action.visibleOnly !== undefined ? { visibleOnly: action.visibleOnly } : {}) } } }
+    case 'table':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'table', selector: action.selector, ...(action.offset !== undefined ? { offset: action.offset } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}), ...(action.columns ? { columns: action.columns } : {}) } } }
+    case 'list':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'list', selector: action.selector, ...(action.offset !== undefined ? { offset: action.offset } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'metrics':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'metrics' } } }
+    case 'measure':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'measure', selector: action.selector } } }
+    case 'highlight':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'highlight', selector: action.selector, ...(action.ms !== undefined ? { ms: action.ms } : {}) } } }
     case 'focusOrder':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'focusOrder', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
     case 'console': {

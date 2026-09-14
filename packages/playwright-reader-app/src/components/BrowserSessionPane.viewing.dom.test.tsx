@@ -189,3 +189,68 @@ describe('формы и жесты телефона (круг 2)', () => {
     expect(again.style.width).toMatch(/px$/)
   })
 })
+
+describe('поиск по странице и положение на ней (круг 3)', () => {
+  const searching = () => fakeBrowser({
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+      if (req.command.action?.kind === 'find') {
+        return { ok: true, matches: [{ selector: '#a', text: 'Итого 100', visible: true }, { selector: '#b', text: 'Итого 200', visible: true }] }
+      }
+      if (req.command.action?.kind === 'metrics') {
+        return { ok: true, metrics: { scroll: { top: 0, left: 0 }, page: { width: 1280, height: 4000 }, viewport: { width: 1280, height: 800 }, screensBelow: 4, atBottom: false } }
+      }
+      return meta()
+    }) as unknown as RendererBrowserBridge['command']
+  })
+
+  it('Ctrl+F открывает поиск панели, а не браузера, и находит текст в странице Chromium', async () => {
+    const browser = searching()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.keyDown(screen.getByLabelText('Browser session'), { key: 'f', ctrlKey: true })
+    const input = await screen.findByLabelText('Найти на странице')
+    fireEvent.change(input, { target: { value: 'Итого' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Найти$/ }))
+    await screen.findByText('1 из 2')
+    // Совпадение показывается человеку: прокрутка к нему и рамка вокруг.
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ action: expect.objectContaining({ kind: 'highlight', selector: '#a' }) })
+    })))
+  })
+
+  it('переход по совпадениям идёт по кругу', async () => {
+    const browser = searching()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.keyDown(screen.getByLabelText('Browser session'), { key: 'f', ctrlKey: true })
+    fireEvent.change(await screen.findByLabelText('Найти на странице'), { target: { value: 'Итого' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Найти$/ }))
+    await screen.findByText('1 из 2')
+    fireEvent.click(screen.getByLabelText('Следующее совпадение'))
+    await screen.findByText('2 из 2')
+    fireEvent.click(screen.getByLabelText('Следующее совпадение'))
+    await screen.findByText('1 из 2')
+  })
+
+  it('Escape закрывает сначала поиск, а разворот оставляет', async () => {
+    await readyPane()
+    const pane = screen.getByLabelText('Browser session')
+    fireEvent.click(screen.getByLabelText('Развернуть кадр'))
+    fireEvent.keyDown(pane, { key: 'f', ctrlKey: true })
+    await screen.findByLabelText('Найти на странице')
+    fireEvent.keyDown(pane, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByLabelText('Найти на странице')).toBeNull())
+    expect(pane.className).toContain('playwright-browser-pane--fullscreen')
+  })
+
+  it('кнопки концов страницы прокручивают и показывают, сколько осталось ниже', async () => {
+    const browser = searching()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByLabelText('В конец страницы'))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ action: expect.objectContaining({ kind: 'scroll', to: 'bottom' }) })
+    })))
+    await screen.findByText(/ниже ещё 4/)
+  })
+})

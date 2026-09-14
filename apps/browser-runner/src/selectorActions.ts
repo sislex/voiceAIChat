@@ -4,6 +4,7 @@ import { findElements, readPage, readBounds, type ReadContent } from './pageRead
 import { readElementTargets } from './elementTargets.js'
 import { focusOrderScript, focusStateScript, pasteScript, selectElementScript, selectionScript } from './focusActions.js'
 import { dropFilesScript, formStateScript, optionsScript, submitScript, validityScript } from './formActions.js'
+import { highlightScript, listScript, measureScript, pageMetricsScript, scrollStepScript, tableScript } from './contentActions.js'
 import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js'
 
 /**
@@ -310,6 +311,66 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const target = await uniqueTarget(page.locator(action.selector), timeout, true)
       const outcome = await target.evaluate(dropFilesScript(), files, { timeout }) as { ok: boolean }
       return outcome?.ok ? { ok: true } : { ok: false, error: 'Зона не приняла файлы' }
+    }
+    if (action.kind === 'count') {
+      const target = locate(action.selector, action.text)
+      if (!target) return { ok: false, error: 'Нужен selector или text' }
+      const all = await target.count()
+      const visible = await target.filter({ visible: true }).count()
+      return { ok: true, total: action.visibleOnly === false ? all : visible, counted: { ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), visible, all } }
+    }
+    if (action.kind === 'metrics') {
+      const metrics = await page.evaluate(pageMetricsScript()) as BrowserSelectorResult['metrics']
+      return { ok: true, ...(metrics ? { metrics } : {}) }
+    }
+    if (action.kind === 'measure') {
+      return await readElementTargets(page, async () => {
+        const measured = await page.evaluate(measureScript(action.selector)) as BrowserSelectorResult['measured'] | null
+        return measured ? { ok: true, measured } : { ok: false, error: 'Элемент не найден' }
+      })
+    }
+    if (action.kind === 'highlight') {
+      const ms = Math.min(Math.max(action.ms ?? 1500, 100), 10_000)
+      const shown = await page.evaluate(highlightScript(action.selector, ms))
+      return shown ? { ok: true } : { ok: false, error: 'Элемент не найден' }
+    }
+    if (action.kind === 'table') {
+      const offset = Math.max(action.offset ?? 0, 0)
+      const limit = Math.min(Math.max(action.limit ?? 20, 1), 200)
+      const table = await page.evaluate(tableScript(action.selector, offset, limit, action.columns ?? null)) as BrowserSelectorResult['table'] | null
+      return table ? { ok: true, table } : { ok: false, error: 'Таблица не найдена или в ней нет строк' }
+    }
+    if (action.kind === 'list') {
+      const offset = Math.max(action.offset ?? 0, 0)
+      const limit = Math.min(Math.max(action.limit ?? 20, 1), 100)
+      return await readElementTargets(page, async () => {
+        const list = await page.evaluate(listScript(action.selector, offset, limit)) as BrowserSelectorResult['list'] | null
+        return list ? { ok: true, list } : { ok: false, error: 'По этому селектору нет блоков' }
+      })
+    }
+    if (action.kind === 'scrollUntil') {
+      // Слепая прокрутка колесом на ленивой ленте либо останавливалась на первом
+      // экране, либо крутилась бесконечно: раннер не знал, грузится ли ещё что-то.
+      const target = locate(action.selector, action.text)
+      if (!target) return { ok: false, error: 'Нужен selector или text' }
+      const maxScrolls = Math.min(Math.max(action.maxScrolls ?? 10, 1), 50)
+      const step = Math.min(Math.max(action.step ?? 800, 1), 10_000)
+      let scrolls = 0, atBottom = false, top = 0
+      for (; scrolls <= maxScrolls; scrolls++) {
+        if (await target.filter({ visible: true }).count() > 0) return { ok: true, scrolledUntil: { found: true, scrolls, atBottom, top } }
+        if (atBottom) break
+        const moved = await page.evaluate(scrollStepScript(action.container ?? null, step)) as { moved: number; top: number; atBottom: boolean } | null
+        if (!moved) return { ok: false, error: 'Контейнер прокрутки не найден' }
+        atBottom = moved.atBottom
+        top = moved.top
+        // Лента подгружает содержимое после прокрутки: без паузы следующий шаг
+        // уходит в ещё не выросшую страницу и упирается в тот же низ.
+        await new Promise((resolve) => setTimeout(resolve, 250))
+      }
+      const found = await target.filter({ visible: true }).count() > 0
+      return found
+        ? { ok: true, scrolledUntil: { found, scrolls, atBottom, top } }
+        : { ok: false, error: atBottom ? 'Дошли до конца ленты, цель не появилась' : `Цель не появилась за ${maxScrolls} прокруток`, scrolledUntil: { found, scrolls, atBottom, top } }
     }
     if (action.kind === 'describe') {
       return await readElementTargets(page, async () => {

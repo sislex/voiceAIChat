@@ -287,6 +287,20 @@ export type BrowserSelectorAction =
   | { kind: 'paste'; selector?: string; text: string }
   /** Tab order of the page: what a keyboard user walks through, in order. */
   | { kind: 'focusOrder'; selector?: string; limit?: number }
+  /** Scroll a feed until the target appears or the content ends. */
+  | { kind: 'scrollUntil'; selector?: string; text?: string; container?: string; maxScrolls?: number; step?: number }
+  /** How many nodes match — an assertion that does not pull their text along. */
+  | { kind: 'count'; selector?: string; text?: string; visibleOnly?: boolean }
+  /** A table as rows under headings, with paging. */
+  | { kind: 'table'; selector: string; offset?: number; limit?: number; columns?: string[] }
+  /** Repeating blocks (cards, feed items) as records with their own actions. */
+  | { kind: 'list'; selector: string; offset?: number; limit?: number }
+  /** Where the page is scrolled and how much is left below. */
+  | { kind: 'metrics' }
+  /** Geometry of one element: visible, covered, how far to scroll to it. */
+  | { kind: 'measure'; selector: string }
+  /** Draw a box around an element so the person sees what the model means. */
+  | { kind: 'highlight'; selector: string; ms?: number }
 
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
@@ -328,6 +342,18 @@ export interface BrowserSelectorResult {
   validity?: { valid: boolean; blocking: Array<{ selector: string; message: string; reasons: string[] }>; checked: number }
   /** Options of a control for `options`. */
   options?: { selector: string; kind: 'select' | 'datalist' | 'radio'; multiple?: boolean; total: number; items: Array<{ value: string; label: string; selected?: boolean; disabled?: boolean }> }
+  /** Number of matches for `count` — `total` carries it, this says what was counted. */
+  counted?: { selector?: string; text?: string; visible: number; all: number }
+  /** Table contents for `table`: records keyed by heading. */
+  table?: { selector: string; headings: string[]; total: number; offset: number; rows: Array<Record<string, string>>; nextOffset?: number }
+  /** Repeating blocks for `list`. */
+  list?: { selector: string; total: number; offset: number; nextOffset?: number; items: Array<{ selector: string; title?: string; text: string; href?: string; actions?: Array<{ selector: string; text: string }> }> }
+  /** Page geometry for `metrics`. */
+  metrics?: { scroll: { top: number; left: number }; page: { width: number; height: number }; viewport: { width: number; height: number }; screensBelow: number; atBottom: boolean }
+  /** Element geometry for `measure`; `covered` is the usual reason a click misses. */
+  measured?: { selector: string; rect: { x: number; y: number; width: number; height: number }; inViewport: boolean; hidden: boolean; covered: boolean; coveredBy?: string; scrollToTop: number }
+  /** How the feed scrolled for `scrollUntil`: steps taken and whether it ended. */
+  scrolledUntil?: { found: boolean; scrolls: number; atBottom: boolean; top: number }
   /**
    * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
    * проверкам сценария — «текста нет» и «до текста не дочитали» это разные

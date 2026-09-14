@@ -130,6 +130,20 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'paste'; selector?: string; text: string; diagnostic?: boolean }
   /** Tab order of the page: the path a keyboard-only person walks, in order. */
   | { kind: 'focusOrder'; selector?: string; limit?: number; diagnostic?: boolean }
+  /** Прокручивать ленту, пока не появится цель или не кончится содержимое. */
+  | { kind: 'scrollUntil'; selector?: string; text?: string; container?: string; maxScrolls?: number; step?: number; diagnostic?: boolean }
+  /** Сколько узлов подходит под условие — проверка без чтения их текста. */
+  | { kind: 'count'; selector?: string; text?: string; visibleOnly?: boolean; diagnostic?: boolean }
+  /** Таблица строками под заголовками, с порциями. */
+  | { kind: 'table'; selector: string; offset?: number; limit?: number; columns?: string[]; diagnostic?: boolean }
+  /** Повторяющиеся блоки (карточки, лента) записями со своими действиями. */
+  | { kind: 'list'; selector: string; offset?: number; limit?: number; diagnostic?: boolean }
+  /** Куда прокручена страница и сколько её осталось ниже. */
+  | { kind: 'metrics'; diagnostic?: boolean }
+  /** Геометрия элемента: виден ли, перекрыт ли, сколько прокрутки до него. */
+  | { kind: 'measure'; selector: string; diagnostic?: boolean }
+  /** Обвести элемент в кадре, чтобы человек увидел, о чём речь. */
+  | { kind: 'highlight'; selector: string; ms?: number; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
   | { kind: 'screenshot'; selector?: string; rect?: { x: number; y: number; width: number; height: number }; diagnostic?: boolean }
   /** Ошибки открытой страницы: JS-исключения, unhandledrejection, console.error, неуспешные fetch/XHR. */
@@ -523,6 +537,33 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return true
     case 'paste':
       return bounded(value.text, L.text) && optBounded(value.selector, L.selector)
+    case 'scrollUntil':
+      return (
+        optBounded(value.selector, L.selector) && optBounded(value.text, L.text) && optBounded(value.container, L.selector) &&
+        (value.selector !== undefined || value.text !== undefined) &&
+        (value.maxScrolls === undefined || (typeof value.maxScrolls === 'number' && Number.isInteger(value.maxScrolls) && value.maxScrolls >= 1 && value.maxScrolls <= 50)) &&
+        (value.step === undefined || (typeof value.step === 'number' && Number.isFinite(value.step) && value.step > 0 && value.step <= 10_000))
+      )
+    case 'count':
+      return optBounded(value.selector, L.selector) && optBounded(value.text, L.text) &&
+        (value.selector !== undefined || value.text !== undefined) &&
+        (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean')
+    case 'table':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        (value.columns === undefined || (Array.isArray(value.columns) && value.columns.length > 0 && value.columns.length <= 32 && value.columns.every((item) => bounded(item, 200))))
+    case 'list':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 100))
+    case 'metrics':
+      return true
+    case 'measure':
+      return bounded(value.selector, L.selector)
+    case 'highlight':
+      return bounded(value.selector, L.selector) &&
+        (value.ms === undefined || (typeof value.ms === 'number' && Number.isFinite(value.ms) && value.ms >= 100 && value.ms <= 10_000))
     case 'focusOrder':
       return optBounded(value.selector, L.selector) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200))

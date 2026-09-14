@@ -226,3 +226,21 @@ describe('формы', () => {
     expect(plan.kind === 'command' && plan.command.type === 'selector' && plan.command.action.kind === 'upload' ? plan.command.action.files?.length : 0).toBe(2)
   })
 })
+
+// Круг 3: чтение содержимого переводится в селекторные команды раннера.
+describe('содержимое страницы', () => {
+  it('прокрутка до цели переносит контейнер и границы шагов', () => {
+    expect(planModelAction({ kind: 'scrollUntil', text: 'Итого', container: '#feed', maxScrolls: 5, step: 500 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'scrollUntil', text: 'Итого', container: '#feed', maxScrolls: 5, step: 500 } }
+    })
+  })
+
+  it('счёт, таблица, список, метрики, замер и рамка доезжают целиком', () => {
+    expect(planModelAction({ kind: 'count', selector: '.row', visibleOnly: false })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'count', selector: '.row', visibleOnly: false } } })
+    expect(planModelAction({ kind: 'table', selector: 'table', columns: ['Имя'] })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'table', selector: 'table', columns: ['Имя'] } } })
+    expect(planModelAction({ kind: 'list', selector: '.card', limit: 5 })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'list', selector: '.card', limit: 5 } } })
+    expect(planModelAction({ kind: 'metrics' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'metrics' } } })
+    expect(planModelAction({ kind: 'measure', selector: '#a' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'measure', selector: '#a' } } })
+    expect(planModelAction({ kind: 'highlight', selector: '#a', ms: 2000 })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'highlight', selector: '#a', ms: 2000 } } })
+  })
+})

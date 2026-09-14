@@ -33,7 +33,9 @@ describe('Web Reader diagnostics', () => {
       if (action.kind === 'upload') return { ok: true, result: { page: { url: '', title: '' }, uploaded: { selector: '#diag-file', name: action.name, size: 2 } } }
       if (action.kind === 'drag') return { ok: true, result: { page: { url: '', title: '' }, dragged: { selector: '#drag-source', tag: 'div', text: 'drag me' }, to: { x: 200, y: 240 }, via: 'pointer' } }
       if (action.kind === 'viewport') return { ok: true, result: { width: action.width } }
-      if (action.kind === 'back' || action.kind === 'forward' || action.kind === 'edits' || action.kind === 'copy') throw new Error('не участвуют в диагностике')
+      // Круги 1–3 добавили действия без селектора; в диагностике они не
+      // участвуют, а в объединении мешают сузить тип остальных.
+      if (action.kind === 'back' || action.kind === 'forward' || action.kind === 'edits' || action.kind === 'copy' || action.kind === 'metrics') throw new Error('не участвуют в диагностике')
       const text = action.selector === '#event-status' ? 'input:1 change:1'
         : action.selector === '#submit-status' ? 'submitted:diagnostic-input'
           : action.selector === '#hover-status' ? 'hover:1'

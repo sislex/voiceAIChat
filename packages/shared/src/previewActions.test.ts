@@ -345,3 +345,25 @@ describe('действия форм', () => {
     expect(isPreviewAction({ kind: 'upload', selector: '#f', files: [] })).toBe(false)
   })
 })
+
+// Круг 3: добраться до содержимого.
+describe('действия чтения содержимого', () => {
+  it('прокрутка до цели требует саму цель и ограничена числом шагов', () => {
+    expect(isPreviewAction({ kind: 'scrollUntil', text: 'Итого' })).toBe(true)
+    expect(isPreviewAction({ kind: 'scrollUntil' })).toBe(false)
+    expect(isPreviewAction({ kind: 'scrollUntil', selector: '#x', maxScrolls: 51 })).toBe(false)
+    expect(isPreviewAction({ kind: 'scrollUntil', selector: '#x', step: 0 })).toBe(false)
+  })
+
+  it('счёт, таблица, список, метрики и рамка проверяют свои границы', () => {
+    expect(isPreviewAction({ kind: 'count', selector: '.row' })).toBe(true)
+    expect(isPreviewAction({ kind: 'count' })).toBe(false)
+    expect(isPreviewAction({ kind: 'table', selector: 'table', limit: 200 })).toBe(true)
+    expect(isPreviewAction({ kind: 'table', selector: 'table', limit: 201 })).toBe(false)
+    expect(isPreviewAction({ kind: 'list', selector: '.card', offset: 0 })).toBe(true)
+    expect(isPreviewAction({ kind: 'metrics' })).toBe(true)
+    expect(isPreviewAction({ kind: 'measure', selector: '#a' })).toBe(true)
+    expect(isPreviewAction({ kind: 'highlight', selector: '#a', ms: 99 })).toBe(false)
+    expect(isPreviewAction({ kind: 'highlight', selector: '#a', ms: 2000 })).toBe(true)
+  })
+})
