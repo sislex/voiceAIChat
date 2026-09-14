@@ -1,4 +1,4 @@
-import { isPreviewAction, type PreviewAction, type PreviewActionResult } from '@shared/previewActions'
+import { isPreviewAction, resolvePreviewUrl, type PreviewAction, type PreviewActionResult } from '@shared/previewActions'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import {
   WEB_RECORDER_MESSAGE_TYPE,
@@ -53,6 +53,8 @@ export interface ReaderHostBridgeOptions {
   /** Новая регистрация после handshake либо null после dispose/ротации. */
   onRegistration?: (registration: ReaderHostRegistration | null) => void
   onSaveUrl?: (url: string | null) => void
+  /** Заголовок готовой страницы (null — страницы нет): host показывает его на мобильной вкладке. */
+  onPageTitle?: (title: string | null) => void
   onElement?: (element: PreviewElementPayload) => void
   onRecordingStep?: (step: WebRecorderScenarioStep) => void
   /** Снимок области, выделенной пользователем в Reader. */
@@ -174,7 +176,13 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     catch { return Promise.resolve({ ok: false, error: 'Не удалось скопировать действие Web Reader.' }) }
     if (disposed) return Promise.resolve({ ok: false, error: 'Панель Web Reader закрыта.' })
     if (registration === null) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
-    if (action.kind === 'open') rejectAll('Открывается другая страница — повтори действие.')
+    if (action.kind === 'open') {
+      // Относительный путь — от страницы, которая открыта сейчас: так пользователь переходит по сайту.
+      const resolved = resolvePreviewUrl(action.url, approvedUrl)
+      if (!resolved) return Promise.resolve({ ok: false, error: 'Относительный адрес требует открытой страницы: сначала open с полным http(s) адресом.' })
+      action = { ...action, url: resolved }
+      rejectAll('Открывается другая страница — повтори действие.')
+    }
     if (pageStatus === 'empty' && action.kind !== 'open' && action.kind !== 'viewport') {
       return Promise.resolve({ ok: false, error: 'Панель открыта, но в ней нет страницы — сначала вызови open.' })
     }
@@ -273,6 +281,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           pageStatus = message.status
           pageError = message.error
           pageTitle = message.status === 'ready' && typeof message.title === 'string' && message.title ? message.title : undefined
+          if (message.status === 'ready' || message.status === 'empty') options.onPageTitle?.(pageTitle ?? null)
           syncPageStatus()
           if (message.status === 'ready') {
             const changed = message.url !== approvedUrl

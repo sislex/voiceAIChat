@@ -5,7 +5,7 @@ import type { MakePaneProps } from '@voicechat/make-app/panelContract'
 import { createApplicationPanel } from './runtime/applicationHost'
 import { WebReaderEngineSelect } from './components/WebReaderEngineSelect'
 import { runReaderModelRequest, readReaderErrors } from './webReaderModelRequest'
-import { PREVIEW_WIDTH_DEFAULT, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN, clampPreviewWidth, previewWidthAfterKey, splitAttentionReducer, type SplitView } from './readerSplitControls'
+import { PREVIEW_WIDTH_DEFAULT, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN, clampPreviewWidth, pendingActionLabel, previewWidthAfterKey, siteTabLabel, splitAttentionReducer, type SplitView } from './readerSplitControls'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
@@ -604,14 +604,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const saved = Number(safeStorageGet(PREVIEW_WIDTH_KEY))
     return Number.isFinite(saved) && saved >= PREVIEW_WIDTH_MIN && saved <= PREVIEW_WIDTH_MAX ? saved : PREVIEW_WIDTH_DEFAULT
   })
-  useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null); setReaderPendingAction(null); setSplitAttention(null) }, [chat.activeId])
+  useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null); setReaderPendingAction(null); setSplitAttention(null); setReaderPageTitle(null) }, [chat.activeId])
   // Действия модели в превью (mcp__browser__*): регистрацию iframe создаёт
   // мост WebReaderFrame (registrationId ротируется на каждый boot Reader).
   // Хранение её вместе с conversationId не даёт переключившемуся чату обратиться
   // к host, который ещё размонтируется, и держит Reader-маршруты источником истины.
   const previewRunnerRef = useRef<ReaderHostRegistration | null>(null)
   const readerErrorSequence = useRef(0)
-  const [readerActions, setReaderActions] = useState<Array<{ id: string; action: PreviewAction; address: string | null; title: string | null }>>([])
+  const [readerActions, setReaderActions] = useState<Array<{ id: string; action: PreviewAction; address: string | null; title: string | null; at: number }>>([])
   const [readerPageError, setReaderPageError] = useState<string | null>(null)
   // Действие модели, идущее прямо сейчас: панель показывает его человеку живым статусом.
   const [readerPendingAction, setReaderPendingAction] = useState<PreviewAction | null>(null)
@@ -619,6 +619,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Метка на скрытой мобильной вкладке: модель действовала на сайте, пока открыт чат.
   const [splitAttention, setSplitAttention] = useState<SplitView | null>(null)
   const chatViewRef = useRef<SplitView>('chat')
+  // Заголовок открытой в Reader страницы — подпись мобильной вкладки «Сайт».
+  const [readerPageTitle, setReaderPageTitle] = useState<string | null>(null)
+  const [dividerActive, setDividerActive] = useState(false)
+  // Ответ ассистента, пришедший при открытой вкладке «Сайт», отмечает вкладку «Чат».
+  const seenMessageCount = useRef(0)
+  useEffect(() => {
+    const count = chat.messages.length
+    if (count > seenMessageCount.current && chat.messages.at(-1)?.role === 'ai' && voice.voice === 'idle') {
+      setSplitAttention((state) => splitAttentionReducer(state, { type: 'assistant-reply', view: chatViewRef.current }))
+    }
+    if (voice.voice === 'idle') seenMessageCount.current = count
+  }, [chat.messages, voice.voice])
   // Платформенная привязка WebReaderFrame: пакет Reader не трогает window сам.
   const readerPlatform = useMemo(() => ({
     origin: window.location.origin,
@@ -652,7 +664,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!bridge?.onChanged) return
     return bridge.onChanged((message) => {
       if (message.conversationId !== chat.activeId) return
-      const item = { id: browserId(), action: message.action, address: message.address, title: message.title }
+      const item = { id: browserId(), action: message.action, address: message.address, title: message.title, at: Date.now() }
       setReaderActions((items) => [...items, item].slice(-20))
       if (message.action.kind !== 'errors') setSplitAttention((state) => splitAttentionReducer(state, { type: 'reader-changed', view: chatViewRef.current }))
       if (message.action.kind !== 'errors') {
@@ -695,13 +707,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     event.currentTarget.setPointerCapture(event.pointerId)
     const container = event.currentTarget.parentElement
     if (!container) return
+    setDividerActive(true)
     const move = (pointer: PointerEvent): void => {
       const rect = container.getBoundingClientRect()
       const next = clampPreviewWidth(((rect.right - pointer.clientX) / rect.width) * 100)
       setPreviewWidth(next)
       safeStorageSet(PREVIEW_WIDTH_KEY, String(next))
     }
-    const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    const stop = (): void => { setDividerActive(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
   }
   // Разделитель доступен и с клавиатуры: стрелки двигают границу, Enter возвращает пропорцию по умолчанию.
@@ -2690,7 +2703,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           относится ко всей поверхности и обязан пережить сворачивание чата. */}
       {inConsoleReader && <header className="web-recorder-selector workshop-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
       {inImageStudio && <header className="web-recorder-selector workshop-selector"><strong>Студия</strong><label><span className="vc-sr-only">Чат студии картинок</span><select aria-label="Чат студии картинок" value={imageStudioActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/images/${event.target.value}`) }}>{!imageStudioActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.imageStudioConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createImageStudioChat()}>+ Новый</button></header>}
-      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inWorkshop ? 'Панели мастерской' : undefined}><button id={inWorkshop ? 'workshop-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inWorkshop ? 'workshop-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат{splitAttention === 'chat' && <span className="chat-split-tab-dot" role="img" aria-label="Есть новый ответ" />}</button><button id={inWorkshop ? 'workshop-side-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inWorkshop ? 'workshop-side-pane' : undefined} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}{splitAttention === 'preview' && <span className="chat-split-tab-dot" role="img" aria-label="Ассистент изменил страницу" />}</button></div></nav>}
+      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inWorkshop ? 'Панели мастерской' : undefined}><button id={inWorkshop ? 'workshop-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inWorkshop ? 'workshop-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат{splitAttention === 'chat' && <span className="chat-split-tab-dot" role="img" aria-label="Есть новый ответ" />}</button><button id={inWorkshop ? 'workshop-side-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inWorkshop ? 'workshop-side-pane' : undefined} onClick={() => setChatView('preview')}><span className="chat-split-tab-label">{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : siteTabLabel('Сайт', readerPageTitle)}</span>{splitAttention === 'preview' && <span className="chat-split-tab-dot" role="img" aria-label="Ассистент изменил страницу" />}</button></div>{inReader && readerPendingAction && <span className="chat-split-live" role="status" aria-live="polite"><span className="chat-split-live__dot" aria-hidden="true" />Ассистент {pendingActionLabel(readerPendingAction)}…</span>}</nav>}
       <div id={inWorkshop ? 'workshop-chat-pane' : undefined} role={inWorkshop ? 'tabpanel' : undefined} aria-labelledby={inWorkshop ? 'workshop-chat-tab' : undefined} className="chat-split-chat">
       {inReader && <header className="web-recorder-selector">{activeConversation?.assistantKind === 'web-recorder' && <WebReaderEngineSelect key={activeConversation.id} value={activeConversation.previewEngine ?? 'proxy'} onChange={engine => chatActions.setConversationPreviewUrl(activeConversation.id, activeConversation.previewUrl ?? null, engine)} />}<label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
@@ -2895,7 +2908,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onPointerDown={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
         onClick={toggleWorkshopChat}
-      >{workshopChatCollapsed ? '›' : '‹'}</button></div> : <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview} onDoubleClick={() => applyPreviewWidth(PREVIEW_WIDTH_DEFAULT)} title="Перетащите; двойной щелчок вернёт ширину по умолчанию"><div role="separator" tabIndex={0} aria-label="Изменить ширину панелей" aria-orientation="vertical" aria-valuemin={PREVIEW_WIDTH_MIN} aria-valuemax={PREVIEW_WIDTH_MAX} aria-valuenow={Math.round(previewWidth)} aria-valuetext={`Сайт занимает ${Math.round(previewWidth)}%`} onKeyDown={resizePreviewByKey} /></div>)}
+      >{workshopChatCollapsed ? '›' : '‹'}</button></div> : <div className={`chat-split-divider${dividerActive ? ' chat-split-divider--active' : ''}`} role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview} onDoubleClick={() => applyPreviewWidth(PREVIEW_WIDTH_DEFAULT)} title="Перетащите; двойной щелчок вернёт ширину по умолчанию"><div role="separator" tabIndex={0} aria-label="Изменить ширину панелей" aria-orientation="vertical" aria-valuemin={PREVIEW_WIDTH_MIN} aria-valuemax={PREVIEW_WIDTH_MAX} aria-valuenow={Math.round(previewWidth)} aria-valuetext={`Сайт занимает ${Math.round(previewWidth)}%`} onKeyDown={resizePreviewByKey} /></div>)}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка панели сессии…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
         // Записанный сценарий добавляется в набор или заменяет одноимённый:
@@ -2913,7 +2926,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane localAgentId={window.featurePreview?.localAgentId} key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} projectId={activeConversation?.projectId ?? null} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
       {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <div id="workshop-side-pane" role="tabpanel" aria-labelledby="workshop-side-tab" className="workshop-side-host"><Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense></div>}
       {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine === 'chromium' && <Suspense fallback={<div role="status">Запуск полного браузера…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} initialUrl={activeConversation.previewUrl ?? null} onPageChange={url => chatActions.setConversationPreviewUrl(chat.activeId!, url)} /></Suspense>}
-      {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine !== 'chromium' && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId} actions={readerActions} pendingAction={readerPendingAction} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
+      {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine !== 'chromium' && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId} actions={readerActions} pendingAction={readerPendingAction} onPageTitle={setReaderPageTitle} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}
 

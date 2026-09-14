@@ -34,7 +34,7 @@ describe('PreviewActionRelay', () => {
     const relay = new PreviewActionRelay()
     const outcome = await relay.request(U, CONV, { kind: 'read' })
     expect(outcome.ok).toBe(false)
-    expect(outcome.error).toContain('не подключён')
+    expect(outcome.error).toContain('не подключена')
   })
 
   it('первый успешный ответ выигрывает, отказ другого клиента не мешает', async () => {

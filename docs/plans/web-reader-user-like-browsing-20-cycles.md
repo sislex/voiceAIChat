@@ -57,3 +57,39 @@ UI (desktop and phone):
 | 10 | Split divider works from the keyboard (arrows, Home/End, Enter resets), announces its value; double-click resets | `App.tsx`, `app.css` |
 
 Evidence: see the log entry `docs/kb/log/2026-09-14-*-web-reader-user-like-cycle-01.md`.
+Commit `1879f373`. Live check: the model (Codex, `VC_CODEX_SHARED_AUTH=true`) read example.com,
+clicked «Learn more», the panel navigated to IANA, the action feed listed three steps.
+
+## Cycle 02 — the model sees what the user sees; the phone knows what the model does
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `open` accepts a relative path (`/about`, `?page=2`, `#/route`): the bridge resolves it from the open page, Chromium from session status | `previewActions.ts`, `hostBridge.ts`, `previewMcp.ts` | shared + bridge tests |
+| 02 | `read {visible: true}` returns only what is on the user's screen plus `viewport` | script | script test |
+| 03 | `back`/`forward` wait for the new page and answer with `navigated` and its `page` | Recorder | Recorder test |
+| 04 | elements carry `placeholder` and current `value` (hidden for secret fields) | `describe()` | script test |
+| 05 | `click` reports `dialogs` that appeared, the new `focus` and synchronous `newErrors` | script | script test |
+| 06 | `hover` returns the `tooltip` a person would see (title, aria-describedby, role=tooltip) | script | script test |
+| 07 | acted elements flash a blue outline for 0.9 s — the user sees where the model clicked or typed | script `flash()` | script test |
+| 08 | relay and host errors tell the model what to ask the user (open `#/web-reader/<id>`, switch to the chat) | `web-reader-contracts/actions.ts`, `webReaderModelRequest.ts` | contract + App tests |
+| 09 | MCP `open` description and schema explain relative paths; `read` schema gains `visible` | `previewMcp.ts` | MCP tests |
+| 10 | hint: `visible: true`, relative paths, reacting to `dialogs`/`focus`/`newErrors`, what to do when the panel is not connected (kanban turns) | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Live line «Ассистент нажимает …» in the phone tab bar while the chat tab hides the panel | `App.tsx`, `app.css` |
+| 02 | «Сайт» tab shows the page title («Сайт · Example Domain») | bridge `onPageTitle` → `App` |
+| 03 | «Чат» tab gets a dot when a reply lands while the site tab is open | `App.tsx` reply effect |
+| 04 | Action history collapsed by default on narrow screens | `ReaderActionHistory` |
+| 05 | Action history shows the time of each step | `ReaderActionHistory`, `App` items `at` |
+| 06 | Empty state hints that the assistant can open a page from the chat | Recorder |
+| 07 | Address input uses `enterKeyHint="go"` and `autoComplete="url"` for phone keyboards | Recorder |
+| 08 | Divider highlights while dragging | `App.tsx`, `app.css` |
+| 09 | 44 px tab buttons in the phone tab bar | `app.css` |
+| 10 | Flash outline on the page element the model acts on (shared with model item 07) | script |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-02.md`.

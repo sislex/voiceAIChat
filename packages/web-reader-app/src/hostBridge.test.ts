@@ -27,6 +27,29 @@ function harness(overrides: { conversationId?: string } = {}) {
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
+describe('относительный open и заголовок для host', () => {
+  it('разрешает относительный путь от открытой страницы и отказывает без неё', async () => {
+    const titles: Array<string | null> = []
+    let seq = 0
+    const sent: WebRecorderHostMessage[] = []
+    const bridge = createReaderHostBridge({ conversationId: 'conv-1', newId: () => `id-${++seq}`, send: (m) => sent.push(m), onPageTitle: (title) => titles.push(title) })
+    bridge.receive({ type, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: [] })
+    const registrationId = bridge.registrationId()!
+    expect(await bridge.run({ kind: 'open', url: '/about' })).toMatchObject({ ok: false, error: expect.stringContaining('открытой страницы') })
+    const first = bridge.run({ kind: 'open', url: 'https://shop.example/catalog/' })
+    await Promise.resolve()
+    bridge.receive({ type, conversationId: 'conv-1', registrationId, kind: 'page-status', status: 'ready', url: 'https://shop.example/catalog/', title: 'Каталог' })
+    await first
+    expect(titles).toEqual(['Каталог'])
+    const relative = bridge.run({ kind: 'open', url: '../about?x=1' })
+    await Promise.resolve()
+    expect(sent.filter((m) => m.kind === 'set-url').at(-1)).toMatchObject({ url: 'https://shop.example/about?x=1' })
+    bridge.receive({ type, conversationId: 'conv-1', registrationId, kind: 'page-status', status: 'ready', url: 'https://shop.example/about?x=1' })
+    expect(await relative).toEqual({ ok: true, result: { url: 'https://shop.example/about?x=1' } })
+    expect(titles).toEqual(['Каталог', null])
+  })
+})
+
 describe('open отвечает заголовком страницы', () => {
   it('готовая страница с title попадает в результат open, без title — только url', async () => {
     const h = harness()

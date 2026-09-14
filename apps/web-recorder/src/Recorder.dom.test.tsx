@@ -336,6 +336,18 @@ describe('Recorder: результат действия и навигация (�
       expect(sent(post).find((message) => message.kind === 'page-status' && message.status === 'ready' && message.url === 'https://shop.example/books')).toMatchObject({ title: 'Книги — Магазин' })
     } finally { vi.useRealTimers() }
   })
+  it('back ждёт новую страницу и отвечает её адресом', () => {
+    vi.useFakeTimers()
+    try {
+      const post = vi.spyOn(window, 'postMessage')
+      ready()
+      fromHost({ type, ...ids, kind: 'command', requestId: 'b1', action: { kind: 'back' } })
+      fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'b1', ok: true, result: { page: { url: 'https://shop.example/', title: 'Магазин' }, navigating: true } })
+      fromPage({ type: PREVIEW_PAGE_LOADING_TYPE })
+      fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/prev', title: 'Прежняя' })
+      expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'b1')).toMatchObject({ ok: true, result: { navigated: true, page: { url: 'https://shop.example/prev', title: 'Прежняя' } } })
+    } finally { vi.useRealTimers() }
+  })
   it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()

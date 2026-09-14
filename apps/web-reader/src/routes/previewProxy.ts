@@ -250,9 +250,19 @@ ${previewReadingHelpers()}
 ${previewAuditHelpers()}
 ${previewProbeHelpers()}
 ${previewKeyboardHelpers()}
+const visibleText=(scope)=>{
+  const walker=document.createTreeWalker(scope,NodeFilter.SHOW_TEXT),parts=[];let node;
+  while((node=walker.nextNode())){const parent=node.parentElement;if(!parent||parent.closest('script,style,template,noscript,[data-voicechat-inspector]')||!readingVisible(parent)||!onScreen(parent))continue;if(parent.closest('textarea')&&sensitive(parent.closest('textarea')))continue;const text=(node.nodeValue||'').replace(/\\s+/g,' ').trim();if(text)parts.push(text)}
+  return parts.join(' ')
+};
 const onScreen=(el)=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth};
+// Короткая подсветка элемента, с которым работает модель: человек видит, куда именно «нажали».
+const FLASH_ATTR='data-voicechat-flash';
+const flash=(el)=>{try{const prev=el.style.outline,prevOffset=el.style.outlineOffset;el.setAttribute(FLASH_ATTR,'');el.style.outline='2px solid #4f8cff';el.style.outlineOffset='2px';setTimeout(()=>{if(!el.hasAttribute(FLASH_ATTR))return;el.removeAttribute(FLASH_ATTR);el.style.outline=prev;el.style.outlineOffset=prevOffset},900)}catch{}};
+const openDialogs=()=>[...document.querySelectorAll('dialog[open],[role=dialog],[role=alertdialog],[aria-modal="true"]')].filter(el=>readingVisible(el)&&!el.closest('[data-voicechat-inspector]')).slice(0,5).map(uniqueSelector);
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el),onScreen:onScreen(el)};
+  if(el.matches('input:not([type=hidden]),textarea,select')){const placeholder=el.getAttribute('placeholder');if(placeholder)d.placeholder=placeholder.slice(0,EL_TEXT);if(!sensitive(el)){const value=el.localName==='select'?(el.selectedOptions[0]?textOf(el.selectedOptions[0]):''):String(el.value||'');if(value)d.value=value.slice(0,EL_TEXT)}}
   const href=el.localName==='a'&&el.getAttribute('href');if(href)d.href=unproxy(href);
   const role=el.getAttribute('role')||(el.localName==='input'?(el.type||'text'):'');if(role)d.role=role;
   Object.assign(d,controlState(el));
@@ -299,6 +309,8 @@ const run=(action)=>{
   if(action.kind==='click'){
     const el=chooseTarget(action,true);actionable(el);
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
+    const dialogsBefore=new Set(openDialogs()),errorsBefore=pageErrors.length;
+    flash(el);
     const info=describe(el),mods=Array.isArray(action.modifiers)?action.modifiers:[];
     const r=el.getBoundingClientRect(),right=action.button==='right';
     const base={bubbles:true,cancelable:true,composed:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,shiftKey:mods.includes('shift'),ctrlKey:mods.includes('ctrl'),altKey:mods.includes('alt'),metaKey:mods.includes('meta'),button:right?2:0};
@@ -312,10 +324,14 @@ const run=(action)=>{
       el.dispatchEvent(new MouseEvent(right?'contextmenu':'click',Object.assign({buttons:0,detail:index},base)))
     }
     if(count===2)el.dispatchEvent(new MouseEvent('dblclick',Object.assign({buttons:0,detail:2},base)));
-    return {page:pageInfo(),clicked:info}
+    const dialogs=openDialogs().filter(sel=>!dialogsBefore.has(sel));
+    const active=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==el?uniqueSelector(document.activeElement):null;
+    const newErrors=pageErrors.slice(errorsBefore).slice(0,3).map((e)=>({kind:e.kind,message:e.message,at:e.at}));
+    return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{})}
   }
   if(action.kind==='type'){
     const el=action.selector?chooseTarget(action):fieldTarget(action.field||'');actionable(el,true);
+    flash(el);
     const editable=el.isContentEditable;
     if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+(action.selector||action.field));
     // append дописывает к тому, что уже введено, — как пользователь, продолжающий печатать.
@@ -354,7 +370,12 @@ const run=(action)=>{
     const opts={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2};
     for(const type of ['pointerover','pointerenter','pointermove'])el.dispatchEvent(new (window.PointerEvent||MouseEvent)(type,opts));
     for(const type of ['mouseover','mouseenter','mousemove'])el.dispatchEvent(new MouseEvent(type,opts));
-    return {page:pageInfo(),hovered:describe(el)}
+    flash(el);
+    // Подсказка, которую увидел бы человек: title, описание по aria-describedby или всплывший tooltip.
+    const described=(el.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)).filter(Boolean).map(node=>readableText(node,EL_TEXT,true)).filter(Boolean).join(' ');
+    const shown=[...document.querySelectorAll('[role=tooltip]')].filter(readingVisible).map(node=>readableText(node,EL_TEXT)).filter(Boolean).join(' ');
+    const tooltip=(el.getAttribute('title')||el.closest('[title]')?.getAttribute('title')||described||shown||'').slice(0,EL_TEXT);
+    return {page:pageInfo(),hovered:describe(el),...(tooltip?{tooltip}:{})}
   }
   if(action.kind==='scroll'){
     let el=document.scrollingElement||document.documentElement,target='window';
@@ -545,13 +566,15 @@ const run=(action)=>{
   }
   if(action.kind==='read'){
     const scope=readingScope(action);
-    const headings=scopeElements(scope,'h1,h2,h3,h4,h5,h6').slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:readableText(h,EL_TEXT)}));
+    // visible — экран пользователя: элементы вне видимой области отфильтровываются, текст берётся из видимых узлов.
+    const pick=(selector)=>scopeElements(scope,selector).filter(el=>!action.visible||onScreen(el));
+    const headings=pick('h1,h2,h3,h4,h5,h6').slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:readableText(h,EL_TEXT)}));
     const links=[],seen=new Set();
-    for(const a of scopeElements(scope,'a[href]')){if(links.length>=LINKS)break;const text=accessibleName(a),href=unproxy(a.getAttribute('href'));if(!text||seen.has(text+'|'+href))continue;seen.add(text+'|'+href);links.push({text,href})}
-    const buttons=scopeElements(scope,'button,[role=button],input[type=submit],input[type=button],input[type=reset],input[type=image]').map(el=>accessibleName(el)).filter(Boolean).slice(0,BUTTONS);
-    const inputs=scopeElements(scope,'input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el)}));
-    const text=readableText(scope,Number.MAX_SAFE_INTEGER),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
-    return {page:pageInfo(),headings,links,buttons,inputs,text:text.slice(offset,end),total:text.length,offset,...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    for(const a of pick('a[href]')){if(links.length>=LINKS)break;const text=accessibleName(a),href=unproxy(a.getAttribute('href'));if(!text||seen.has(text+'|'+href))continue;seen.add(text+'|'+href);links.push({text,href})}
+    const buttons=pick('button,[role=button],input[type=submit],input[type=button],input[type=reset],input[type=image]').map(el=>accessibleName(el)).filter(Boolean).slice(0,BUTTONS);
+    const inputs=pick('input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el)}));
+    const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
+    return {page:pageInfo(),headings,links,buttons,inputs,text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };

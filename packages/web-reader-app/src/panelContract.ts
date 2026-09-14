@@ -30,8 +30,10 @@ export interface WebReaderFrameProps {
   onAreaScreenshot?: ((shot: WebRecorderAreaScreenshot) => void) | undefined
   /** Актуальная регистрация iframe (или null): host сверяет по ней MCP-команды. */
   onRegisterHost?: ((registration: ReaderHostRegistration | null) => void) | undefined
-  /** Последние подтверждённые действия модели; кнопка повторяет их через тот же host. */
-  actions?: readonly { id: string; action: PreviewAction; address: string | null; title: string | null }[]
+  /** Последние подтверждённые действия модели; кнопка повторяет их через тот же host. at — время события. */
+  actions?: readonly { id: string; action: PreviewAction; address: string | null; title: string | null; at?: number }[]
+  /** Заголовок открытой страницы (null — страницы нет): для подписи мобильной вкладки. */
+  onPageTitle?: ((title: string | null) => void) | undefined
   onRepeatAction?: (action: PreviewAction) => void
   pageError?: string | null
   onAskError?: (error: string) => void

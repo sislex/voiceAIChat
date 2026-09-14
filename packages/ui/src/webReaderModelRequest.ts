@@ -10,10 +10,10 @@ export async function runReaderModelRequest(options: {
   readerRoute: boolean
   action: PreviewAction
 }): Promise<PreviewActionOutcome & { registrationId?: string }> {
-  if (options.conversationId !== options.activeConversationId) return { ok: false, error: 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.' }
+  if (options.conversationId !== options.activeConversationId) return { ok: false, error: `У пользователя открыт другой чат: панель Web Reader этого разговора не активна. Попроси его открыть #/web-reader/${options.conversationId} и повтори действие.` }
   const registration = options.registration
   if (!registration || registration.conversationId !== options.conversationId || registration.registrationId !== options.activeRegistrationId) {
-    return { ok: false, error: options.readerRoute ? 'Панель превью активного чата не открыта или ещё не подключена.' : 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.' }
+    return { ok: false, error: options.readerRoute ? 'Панель Web Reader активного чата ещё подключается или переключена на полный браузер. Подожди секунду и повтори действие.' : `Чат открыт не в разделе Web Reader: панели нет. Попроси пользователя открыть #/web-reader/${options.conversationId} и повтори действие.` }
   }
   try { return { ...await registration.run(options.action), registrationId: registration.registrationId } }
   catch { return { ok: false, registrationId: registration.registrationId, error: 'Не удалось выполнить действие в Reader. Повтори команду.' } }

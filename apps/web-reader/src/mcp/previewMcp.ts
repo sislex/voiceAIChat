@@ -31,6 +31,8 @@ import {
   isBrowserWaitOptions,
   browserWaitRequiresChromium,
   isHttpUrl,
+  isRelativePreviewPath,
+  resolvePreviewUrl,
   previewResultJson,
   type PreviewAction,
 } from '@voicechat/shared'
@@ -206,7 +208,18 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       const frameSchema = z.union([z.string().trim().min(1).max(L.selector), z.array(z.string().trim().min(1).max(L.selector)).min(1).max(8)]).optional().describe('Селектор iframe или цепочка вложенных iframe из frames. Только Chromium; без параметра — верхняя страница.')
       // Одинаковое разрешение машины для open и new-tab: доступ берётся из хода.
       const resolveUrl = async (url: string): Promise<{ url: string } | { error: string }> => {
-        if (!isHttpUrl(url)) return { error: 'Разрешены только HTTP и HTTPS адреса с протоколом.' }
+        if (!isHttpUrl(url) && isRelativePreviewPath(url)) {
+          // Относительный адрес — от страницы, открытой сейчас: в Chromium её знает статус сессии,
+          // в панели пользователя — сам мост, поэтому туда путь уходит как есть.
+          const status = entry ? await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'status' }) : null
+          const current = status?.ok && status.result && 'currentUrl' in status.result && typeof status.result.currentUrl === 'string' ? status.result.currentUrl : null
+          if (status) {
+            const resolved = current ? resolvePreviewUrl(url, current) : null
+            if (!resolved) return { error: 'Относительный адрес требует открытой страницы: сначала open с полным http(s) адресом.' }
+            url = resolved
+          } else return { url }
+        }
+        if (!isHttpUrl(url)) return { error: 'Разрешены только HTTP и HTTPS адреса с протоколом либо относительный путь от открытой страницы (/about, #/route).' }
         const parsed = new URL(url)
         if (parsed.hostname === MACHINE_PREVIEW_ALIAS_HOST) {
           const agentId = await (entry && opts.context ? opts.context.machineOf(entry) : null)
@@ -304,10 +317,10 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата; ответ содержит url и title загруженной страницы. ' +
-            'Только HTTP/HTTPS. Тестовое окружение на машине этого разговора открывается адресом ' +
+            'HTTP/HTTPS либо относительный путь от открытой страницы (/about, ?page=2, #/route). Тестовое окружение на машине этого разговора открывается адресом ' +
             'https://app.internal/ — текущее приложение с любым путём или #/маршрутом; ' +
             'http://machine.internal:<порт>/ — запрос уйдёт на 127.0.0.1:<порт> машины.',
-          inputSchema: { frame: frameSchema, url: z.string().max(L.url).describe('Полный адрес с протоколом http:// или https://') }
+          inputSchema: { frame: frameSchema, url: z.string().max(L.url).describe('Полный адрес с протоколом http(s) или относительный путь от открытой страницы') }
         },
         async ({ frame, url }) => {
           const target = await resolveUrl(url)
@@ -712,14 +725,16 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Структурированное содержимое открытой в превью страницы: заголовки, ссылки, кнопки, поля ввода ' +
             'и текстовая выжимка. Chromium также описывает таблицы и iframe. selector ограничивает чтение поддеревом. ' +
+            'visible: true — только то, что сейчас в видимой области у пользователя (панель). ' +
             'Для длинного текста повторяй read с offset из nextOffset; structureTruncated означает, что структуру лучше читать по selector.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
+            visible: z.boolean().optional().describe('Только элементы и текст в видимой области окна'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
             offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
           }
         },
-        async ({ frame, selector, limit, offset }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}) })
+        async ({ frame, selector, limit, offset, visible }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}) })
       )
 
       server.registerTool(
