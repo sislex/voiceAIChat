@@ -83,7 +83,7 @@ export function MachineVpn({ agent, bridge, clock = Date.now }: { agent: AgentIn
         <p>Последняя проверка: {observed ? new Date(observed.observedAt).toLocaleString('ru-RU') : 'ещё не выполнена'}</p>
         <p>Внешний IP: {!stale && observed?.externalIp ? observed.externalIp : 'неизвестен'}</p>
         {observed?.mode === 'client' && <p role="status">
-          {observed.gatewayOnline ? 'Шлюз доступен.' : 'Шлюз недоступен.'} {observed.protected ? 'Прямой интернет заблокирован.' : 'Защита не подтверждена.'}
+          {stale ? 'Доступность шлюза неизвестна.' : observed.gatewayOnline ? 'Шлюз доступен.' : 'Шлюз недоступен.'} {!stale && observed.protected ? 'Прямой интернет заблокирован.' : 'Защита не подтверждена.'}
         </p>}
         {(state?.error || observed?.error) && <ErrorState compact message={VPN_ERRORS[(state?.error ?? observed?.error)!]} />}
         {state?.phase === 'applying' && <p role="status">Изменение режима: ожидается фактическое подтверждение агента. Если переход не завершается, проверьте состояние или явно выберите «Выключен».</p>}

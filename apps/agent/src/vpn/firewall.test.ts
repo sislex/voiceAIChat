@@ -6,6 +6,22 @@ const config: GuardConfig = {
   lanCidrs: ['192.168.1.0/24'], gateway: '192.168.1.1'
 }
 describe('system firewall policy', () => {
+  // @testCase TC-LINUX-SERVICES
+  // Covers the narrow management exception only; inbound service routing needs a real-host test.
+  it.each([false, true])('keeps management limited to its configured endpoint with LAN=%s', allowLan => {
+    const rules = nftVpnRules(config, allowLan)
+    const control = 'ip daddr 203.0.113.7 tcp dport 443 accept'
+    expect(rules).toContain(control)
+    expect(rules.indexOf('udp dport 53 drop')).toBeLessThan(rules.indexOf(control))
+    expect(rules.indexOf('tcp dport { 53, 853 } drop')).toBeLessThan(rules.indexOf(control))
+    expect(rules).not.toMatch(/ct state (established|related)/)
+    expect(rules).not.toMatch(/oifname "eth0" accept/)
+    expect(rules).not.toMatch(/(?:^|\n)\s*tcp dport 443 accept/)
+    expect(rules).toContain('policy drop')
+    expect(() => nftVpnRules({ ...config, control: { ...config.control, port: 53 } }, allowLan)).toThrow()
+    expect(() => nftVpnRules({ ...config, control: { ...config.control, port: 853 } }, allowLan)).toThrow()
+  })
+
   // @testCase TC-STATE
   it('drops both address families and blocks direct DNS before any LAN exemption on Linux', () => {
     const rules = nftVpnRules(config, true)
