@@ -6,7 +6,7 @@
 // для fix-loop, а брокер здесь — двойник, который умеет показать живые токены.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars, type MergeRun } from '@voicechat/shared'
+import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars, type MergeRun, type TurnMeta } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { automationHint, createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
 import { kbTaskQuery } from '../kb/taskQuery.js'
@@ -793,6 +793,37 @@ describe('расход хода: модель, время, семантика в
     expect(rows[0]).toMatchObject({ model: 'gpt-5.4', inputTokens: 200, cacheReadTokens: 800, inputSemantics: 'no_cache', numTurns: 1 })
     expect(rows[0].durationMs).toBeGreaterThan(0)
     expect(rows[0].costUsd).toBeNull() // настоящей стоимости CLI не дал — оценит отчёт
+  })
+
+  it('Codex thread totals across the turns of one run are recorded as per-turn spend', async () => {
+    const { run, ctx } = await codexRun('gpt-5.4')
+    // The same run resumes its thread: turn.completed grows with every turn.
+    const totals = [
+      { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 800, cacheCreationTokens: 0 },
+      { inputTokens: 2500, outputTokens: 80, cacheReadTokens: 2000, cacheCreationTokens: 0 }
+    ]
+    let call = 0
+    const client: LlmClient = {
+      send: (_req, handlers) => {
+        const t = totals[Math.min(call++, totals.length - 1)]
+        // The parser exposes the raw totals in the usage fields and repeats them
+        // in codexThreadUsage — the same shape the Codex sink hands over.
+        const usage: TurnMeta = { ...t, codexThreadUsage: { ...t } }
+        void handlers.onSession('thread-9')
+        handlers.onUsage?.(usage)
+        void handlers.onDelta?.('готово')
+        void handlers.onDone?.('готово', usage)
+        return { cancel: () => {} }
+      }
+    }
+    const hooks = hooksWith(client, { kb: undefined })
+    const resumable = { ...ctx, setModelSessionId: async () => {} } as unknown as CiModelContext
+    await hooks.modelWork(resumable)
+    await hooks.modelWork(resumable)
+    const rows = await db.ci.listCiRunUsage(run.id)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ inputTokens: 200, cacheReadTokens: 800, outputTokens: 50, inputSemantics: 'no_cache' })
+    expect(rows[1]).toMatchObject({ inputTokens: 300, cacheReadTokens: 1200, outputTokens: 30, inputSemantics: 'no_cache' })
   })
 
   it('модель, которую не назвал ни CLI, ни настройка рана, становится unknown', async () => {
