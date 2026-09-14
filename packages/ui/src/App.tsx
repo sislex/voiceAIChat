@@ -128,6 +128,7 @@ function deviceLabel(userAgent: string): string {
 }
 
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
+const READER_CHAT_COLLAPSED_KEY = 'voicechat:web-reader-chat-collapsed:v1'
 // Мастерская — общая обёртка «чат + рабочая панель»: консоль с ассистентом и
 // студия картинок делят одну геометрию, один разделитель и одни вкладки на
 // телефоне. Разъезжались они молча: у студии разделитель был декоративным.
@@ -622,6 +623,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Заголовок открытой в Reader страницы — подпись мобильной вкладки «Сайт».
   const [readerPageTitle, setReaderPageTitle] = useState<string | null>(null)
   const [dividerActive, setDividerActive] = useState(false)
+  // Свёрнутый чат в Reader: сайт на всю ширину, как во вкладке браузера; выбор запоминается.
+  const [readerChatCollapsed, setReaderChatCollapsed] = useState(() => safeStorageGet(READER_CHAT_COLLAPSED_KEY) === '1')
+  const toggleReaderChat = useCallback(() => setReaderChatCollapsed((value) => { safeStorageSet(READER_CHAT_COLLAPSED_KEY, value ? '0' : '1'); return !value }), [])
   // Ответ ассистента, пришедший при открытой вкладке «Сайт», отмечает вкладку «Чат».
   const seenMessageCount = useRef(0)
   useEffect(() => {
@@ -2692,7 +2696,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && !(inChat && !inSplit && chat.activeId === null && chat.conversationsStatus === 'ready' && chat.conversations.length === 0) && (
       <div
         ref={inWorkshop ? workshopSplitRef : undefined}
-        className={inSplit ? `chat-split chat-split--${chatView}${inWorkshop ? ' workshop-split' : ''}${inWorkshop && workshopChatCollapsed ? ' workshop-split--collapsed' : ''}` : 'chat-page'}
+        className={inSplit ? `chat-split chat-split--${chatView}${inWorkshop ? ' workshop-split' : ''}${inWorkshop && workshopChatCollapsed ? ' workshop-split--collapsed' : ''}${inReader && readerChatCollapsed ? ' chat-split--site-only' : ''}` : 'chat-page'}
         data-workshop={workshopSurface ?? undefined}
         data-resizing={inWorkshop && workshopResizing ? 'true' : undefined}
         style={inSplit ? (inWorkshop
@@ -2908,7 +2912,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onPointerDown={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
         onClick={toggleWorkshopChat}
-      >{workshopChatCollapsed ? '›' : '‹'}</button></div> : <div className={`chat-split-divider${dividerActive ? ' chat-split-divider--active' : ''}`} role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview} onDoubleClick={() => applyPreviewWidth(PREVIEW_WIDTH_DEFAULT)} title="Перетащите; двойной щелчок вернёт ширину по умолчанию"><div role="separator" tabIndex={0} aria-label="Изменить ширину панелей" aria-orientation="vertical" aria-valuemin={PREVIEW_WIDTH_MIN} aria-valuemax={PREVIEW_WIDTH_MAX} aria-valuenow={Math.round(previewWidth)} aria-valuetext={`Сайт занимает ${Math.round(previewWidth)}%`} onKeyDown={resizePreviewByKey} /></div>)}
+      >{workshopChatCollapsed ? '›' : '‹'}</button></div> : <div className={`chat-split-divider${dividerActive ? ' chat-split-divider--active' : ''}`} role="region" aria-label="Изменение ширины панелей" onPointerDown={(event) => { if (!readerChatCollapsed) resizePreview(event) }} onDoubleClick={() => { if (!readerChatCollapsed) applyPreviewWidth(PREVIEW_WIDTH_DEFAULT) }} title="Перетащите; двойной щелчок вернёт ширину по умолчанию"><div role="separator" tabIndex={0} aria-label="Изменить ширину панелей" aria-orientation="vertical" aria-valuemin={PREVIEW_WIDTH_MIN} aria-valuemax={PREVIEW_WIDTH_MAX} aria-valuenow={Math.round(previewWidth)} aria-valuetext={`Сайт занимает ${Math.round(previewWidth)}%`} onKeyDown={resizePreviewByKey} />{inReader && <button type="button" className="chat-split-collapse" aria-pressed={readerChatCollapsed} aria-label={readerChatCollapsed ? 'Показать чат' : 'Свернуть чат'} title={readerChatCollapsed ? 'Показать чат' : 'Свернуть чат'} onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onClick={toggleReaderChat}>{readerChatCollapsed ? '›' : '‹'}</button>}</div>)}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка панели сессии…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
         // Записанный сценарий добавляется в набор или заменяет одноимённый:

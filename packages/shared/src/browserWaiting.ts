@@ -35,8 +35,9 @@ export function isBrowserWaitOptions(value: unknown): value is BrowserWaitOption
 
 /** Старый iframe не должен выдавать наличие узла за выполнение новых условий. */
 export function browserWaitRequiresChromium(options: BrowserWaitOptions): boolean {
-  // state поддержан и в iframe-скрипте панели: пользователь так же ждёт, когда спиннер исчезнет.
-  return ['enabled', 'editable', 'checked', 'value', 'count', 'url', 'loadState', 'predicate'].some(key => options[key as keyof BrowserWaitOptions] !== undefined)
+  // state, enabled, checked и value поддержаны и в iframe-скрипте панели: пользователь так же ждёт,
+  // когда спиннер исчезнет, кнопка станет доступной или поле примет значение.
+  return ['editable', 'count', 'url', 'loadState', 'predicate'].some(key => options[key as keyof BrowserWaitOptions] !== undefined)
     || Boolean(options.selector && options.text) || (options.timeoutMs ?? 5000) > 8000
 }
 

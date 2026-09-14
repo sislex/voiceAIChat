@@ -20,7 +20,10 @@ describe('контракт ожидания браузера', () => {
     // Исчезновение спиннера панель ждёт сама — как пользователь, глядя на страницу.
     expect(browserWaitRequiresChromium({ selector: '.spinner', state: 'hidden' })).toBe(false)
     expect(browserWaitRequiresChromium({ text: 'Загрузка', state: 'detached' })).toBe(false)
-    for (const options of [{ selector: '#x', text: 'Готово' }, { selector: '#x', checked: false }, { selector: '#x', value: '' }, { selector: '.row', count: 0 }, { selector: '#x', timeoutMs: 10000 }, { url: '**/ready' }]) {
+    expect(browserWaitRequiresChromium({ selector: '#x', enabled: true })).toBe(false)
+    expect(browserWaitRequiresChromium({ selector: '#x', checked: false })).toBe(false)
+    expect(browserWaitRequiresChromium({ selector: '#x', value: '' })).toBe(false)
+    for (const options of [{ selector: '#x', text: 'Готово' }, { selector: '#x', editable: true }, { selector: '.row', count: 0 }, { selector: '#x', timeoutMs: 10000 }, { url: '**/ready' }]) {
       expect(browserWaitRequiresChromium(options)).toBe(true)
     }
   })

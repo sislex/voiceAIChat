@@ -29,6 +29,15 @@ function emit(data: object, overrides: { origin?: string; source?: MessageEventS
 afterEach(() => cleanup())
 
 describe('WebReaderFrame', () => {
+  it('ошибку страницы можно скрыть; новая ошибка появляется снова', () => {
+    const onSave = vi.fn(async () => undefined)
+    const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-err" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pageError="TypeError: boom" />)
+    expect(screen.getByRole('alert').textContent).toContain('boom')
+    fireEvent.click(screen.getByRole('button', { name: 'Скрыть ошибку страницы' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    rerender(<WebReaderFrame platform={platform} conversationId="conv-err" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pageError="ReferenceError: other" />)
+    expect(screen.getByRole('alert').textContent).toContain('other')
+  })
   it('показывает живой статус выполняемого действия ассистента', () => {
     const onSave = vi.fn(async () => undefined)
     const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-live" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pendingAction={{ kind: 'click', text: 'Купить' }} />)

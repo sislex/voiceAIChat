@@ -33,3 +33,5 @@
 .webpreview-live__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: webpreview-live 1s ease-in-out infinite alternate; }
 @keyframes webpreview-live { from { opacity: .35; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .webpreview-live__dot { animation: none; } }
+.webpreview-page-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (pointer: coarse) { .webpreview-history li > button, .webpreview-page-error .vc-btn, .webpreview-live { min-height: 44px; } }

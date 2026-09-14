@@ -318,6 +318,52 @@ const setNativeValue=(el,value)=>{
   const desc=Object.getOwnPropertyDescriptor(proto,'value');
   if(desc&&desc.set)desc.set.call(el,value);else el.value=value
 };
+// Подсказки автодополнения, показавшиеся после ввода: то, из чего человек выбирает дальше.
+const suggestionsFor=(el)=>{
+  const items=[];
+  const listId=el.getAttribute('list');if(listId){const list=document.getElementById(listId);if(list)for(const option of list.querySelectorAll('option'))items.push(option.label||option.value)}
+  const owns=(el.getAttribute('aria-controls')||el.getAttribute('aria-owns')||'').split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)).filter(Boolean);
+  const boxes=owns.length?owns:[...document.querySelectorAll('[role=listbox],[role=menu]')].filter(readingVisible);
+  for(const box of boxes)for(const option of box.querySelectorAll('[role=option],[role=menuitem],li'))if(readingVisible(option)){const t=textOf(option);if(t)items.push(t.slice(0,EL_TEXT))}
+  return [...new Set(items)].slice(0,10)
+};
+// Сообщения валидации, которые пользователь увидел бы после отправки.
+const validationMessages=(scope)=>{
+  const out=[];
+  for(const el of scope.querySelectorAll('input,textarea,select')){
+    if(out.length>=10)break;
+    const invalid=(typeof el.checkValidity==='function'&&!el.checkValidity())||el.getAttribute('aria-invalid')==='true';
+    if(!invalid)continue;
+    const described=(el.getAttribute('aria-describedby')||el.getAttribute('aria-errormessage')||'').split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)).filter(Boolean).map(node=>readableText(node,EL_TEXT,true)).filter(Boolean).join(' ');
+    out.push({field:accessibleName(el)||el.name||uniqueSelector(el),message:(el.validationMessage||described||'Поле заполнено неверно').slice(0,EL_TEXT)})
+  }
+  for(const alert of scope.querySelectorAll('[role=alert]'))if(out.length<10&&readingVisible(alert)){const t=readableText(alert,EL_TEXT);if(t)out.push({field:'',message:t})}
+  return out
+};
+const typeInto=(el,text,append,submit)=>{
+    const editable=el.isContentEditable;
+    if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+(uniqueSelector(el)));
+    // append дописывает к тому, что уже введено, — как пользователь, продолжающий печатать.
+    const current=editable?(el.textContent||''):el.localName==='select'?'':String(el.value||'');
+    const nextText=append&&el.localName!=='select'?current+text:text;
+    validateInput(el,nextText);
+    const option=el.localName==='select'?selectOption(el,text):null;
+    el.focus&&el.focus();
+    if(!el.dispatchEvent(inputEvent('beforeinput',text,true)))throw new Error('Страница отклонила ввод');
+    if(editable){el.textContent=nextText}
+    else if(option){el.value=option.value}
+    else setNativeValue(el,nextText);
+    el.dispatchEvent(inputEvent('input',text));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    let submitted=false;
+    if(submit){
+      const form=el.form||el.closest('form');
+      if(form){form.requestSubmit?form.requestSubmit():form.submit();submitted=true}
+      else{el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',bubbles:true}))}
+    }
+    const value=sensitive(el)?'':editable?String(el.textContent||'').slice(0,EL_TEXT):String(el.value||'').slice(0,EL_TEXT);
+    return {page:pageInfo(),typed:describe(el),submitted,value}
+};
 const run=(action)=>{
   if(action.kind==='audit')return runAudit(action);
   if(action.kind==='accessibility')throw new Error('Native accessibility requires Chromium mode.');
@@ -350,32 +396,66 @@ const run=(action)=>{
     const newErrors=pageErrors.slice(errorsBefore).slice(0,3).map((e)=>({kind:e.kind,message:e.message,at:e.at}));
     return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{})}
   }
+  if(action.kind==='fill'){
+    // Форма целиком, как её заполняет человек: поле за полем, затем отправка первой формы.
+    const filled=[];let form=null;
+    for(const item of action.fields){
+      const el=item.selector?chooseTarget({kind:'type',selector:item.selector,near:item.near}):fieldTarget(item.field||'',item.near);
+      actionable(el,true);flash(el);
+      const outcome=typeInto(el,item.value,false,false);
+      filled.push({field:item.field||accessibleName(el)||item.selector||'',selector:outcome.typed.selector,value:outcome.value});
+      if(!form)form=el.form||el.closest('form')
+    }
+    let submitted=false;
+    if(action.submit&&form){form.requestSubmit?form.requestSubmit():form.submit();submitted=true}
+    const validation=validationMessages(form||document);
+    return {page:pageInfo(),filled,submitted,...(validation.length?{validation}:{})}
+  }
+  if(action.kind==='choose'){
+    // Пункт меню: открыть триггер, дождаться пункта, нажать — три жеста человека одним действием.
+    let opened;
+    if(action.in){
+      const trigger=chooseTarget({kind:'click',...( /^[.#\[]|[>:]/.test(action.in)?{selector:action.in}:{text:action.in})},true);
+      actionable(trigger);flash(trigger);opened=describe(trigger);
+      const r=trigger.getBoundingClientRect(),base={bubbles:true,cancelable:true,composed:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,button:0};
+      trigger.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerdown',Object.assign({pointerId:1,isPrimary:true,buttons:1},base)));
+      trigger.dispatchEvent(new MouseEvent('mousedown',Object.assign({buttons:1},base)));trigger.focus&&trigger.focus({preventScroll:true});
+      trigger.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerup',Object.assign({pointerId:1,isPrimary:true,buttons:0},base)));
+      trigger.dispatchEvent(new MouseEvent('mouseup',Object.assign({buttons:0},base)));trigger.dispatchEvent(new MouseEvent('click',Object.assign({buttons:0},base)))
+    }
+    const started=performance.now();
+    return new Promise((ok,fail)=>{
+      const attempt=()=>{
+        let found=[];
+        try{found=findTargets({kind:'click',text:action.text,near:action.near}).map(clickTarget).filter(actionVisible)}catch(err){fail(err);return}
+        const options=found.filter(el=>el.matches('[role=option],[role=menuitem],[role=menuitemradio],[role=menuitemcheckbox],[role=treeitem],li,option'));
+        const pick=options.length?options:found;
+        const exact=pick.filter(el=>textOf(el).toLowerCase()===String(action.text).trim().toLowerCase());
+        const target=(exact.length?exact:pick)[0];
+        if(target){
+          flash(target);
+          const r=target.getBoundingClientRect(),base={bubbles:true,cancelable:true,composed:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,button:0};
+          target.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerdown',Object.assign({pointerId:1,isPrimary:true,buttons:1},base)));
+          target.dispatchEvent(new MouseEvent('mousedown',Object.assign({buttons:1},base)));
+          target.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerup',Object.assign({pointerId:1,isPrimary:true,buttons:0},base)));
+          target.dispatchEvent(new MouseEvent('mouseup',Object.assign({buttons:0},base)));target.dispatchEvent(new MouseEvent('click',Object.assign({buttons:0},base)));
+          ok({page:pageInfo(),chosen:describe(target),...(opened?{opened}:{})});return
+        }
+        if(performance.now()-started>=3000){fail(new Error('Пункт не появился: '+action.text+(action.in?' (после '+action.in+')':'')));return}
+        setTimeout(attempt,120)
+      };
+      attempt()
+    })
+  }
   if(action.kind==='type'){
     const el=action.selector?chooseTarget(action):fieldTarget(action.field||'',action.near);actionable(el,true);
     flash(el);
-    const editable=el.isContentEditable;
-    if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+(action.selector||action.field));
-    // append дописывает к тому, что уже введено, — как пользователь, продолжающий печатать.
-    const current=editable?(el.textContent||''):el.localName==='select'?'':String(el.value||'');
-    const nextText=action.append&&el.localName!=='select'?current+action.text:action.text;
-    validateInput(el,nextText);
-    const option=el.localName==='select'?selectOption(el,action.text):null;
-    el.focus&&el.focus();
-    if(!el.dispatchEvent(inputEvent('beforeinput',action.text,true)))throw new Error('Страница отклонила ввод');
-    if(editable){el.textContent=nextText}
-    else if(option){el.value=option.value}
-    else setNativeValue(el,nextText);
-    el.dispatchEvent(inputEvent('input',action.text));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
-    let submitted=false;
-    if(action.submit){
-      const form=el.form||el.closest('form');
-      if(form){form.requestSubmit?form.requestSubmit():form.submit();submitted=true}
-      else{el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',bubbles:true}))}
-    }
-    const value=sensitive(el)?'':editable?String(el.textContent||'').slice(0,EL_TEXT):String(el.value||'').slice(0,EL_TEXT);
-    return {page:pageInfo(),typed:describe(el),submitted,value}
+    const outcome=typeInto(el,action.text,action.append===true,action.submit===true);
+    const options=suggestionsFor(el);
+    const validation=action.submit?validationMessages(el.form||el.closest('form')||document):[];
+    return {...outcome,...(options.length?{options}:{}),...(validation.length?{validation}:{})}
   }
+
   if(action.kind==='styles'){
     const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);
     const computed=getComputedStyle(found[0]);const names=Array.isArray(action.properties)&&action.properties.length?action.properties:['display','color','font-size','visibility'];const values={};for(const name of names.slice(0,32))values[name]=computed.getPropertyValue(name)||computed[name]||'';
@@ -386,6 +466,7 @@ const run=(action)=>{
     if(!found.length)throw new Error('Элемент не найден: '+(action.selector||action.text));
     // mouseenter не всплывает: как и click, поднимаемся до интерактивного предка.
     const el=clickTarget(found[0]);
+    const visibleBefore=new Set([...document.querySelectorAll(CLICKABLE)].filter(actionVisible));
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
     const r=el.getBoundingClientRect();
     const opts={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2};
@@ -396,7 +477,9 @@ const run=(action)=>{
     const described=(el.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)).filter(Boolean).map(node=>readableText(node,EL_TEXT,true)).filter(Boolean).join(' ');
     const shown=[...document.querySelectorAll('[role=tooltip]')].filter(readingVisible).map(node=>readableText(node,EL_TEXT)).filter(Boolean).join(' ');
     const tooltip=(el.getAttribute('title')||el.closest('[title]')?.getAttribute('title')||described||shown||'').slice(0,EL_TEXT);
-    return {page:pageInfo(),hovered:describe(el),...(tooltip?{tooltip}:{})}
+    // Что раскрылось при наведении — пункты меню, которые человек нажмёт следующими.
+    const revealed=[...document.querySelectorAll(CLICKABLE)].filter(node=>node!==el&&!el.contains(node)&&!visibleBefore.has(node)&&actionVisible(node)).slice(0,10).map(describe);
+    return {page:pageInfo(),hovered:describe(el),...(tooltip?{tooltip}:{}),...(revealed.length?{revealed}:{})}
   }
   if(action.kind==='scroll'){
     let el=document.scrollingElement||document.documentElement,target='window';
@@ -421,7 +504,11 @@ const run=(action)=>{
     const state=action.state||'visible';
     const started=performance.now();
     // attached/detached считают и скрытые узлы; visible/hidden — только то, что видит пользователь.
-    const matches=()=>state==='attached'||state==='detached'?(action.selector?bySelector(action.selector):byText(action.text||'',true)):findTargets(action);
+    // enabled/checked/value — состояние контрола, которого ждёт человек («кнопка стала активной»).
+    const stateOk=(el)=>(action.enabled===undefined||(!el.matches(':disabled')&&!el.closest('[aria-disabled="true"],[inert]'))===action.enabled)
+      &&(action.checked===undefined||Boolean(el.checked)===action.checked)
+      &&(action.value===undefined||String(el.value===undefined?textOf(el):el.value)===action.value);
+    const matches=()=>(state==='attached'||state==='detached'?(action.selector?bySelector(action.selector):byText(action.text||'',true)):findTargets(action)).filter(stateOk);
     return new Promise((ok,fail)=>{
       const attempt=()=>{
         let found=[];
@@ -598,7 +685,8 @@ const run=(action)=>{
     const forms=pick('form').slice(0,10).map(form=>{const fields=[...form.querySelectorAll('input:not([type=hidden]),textarea,select')].filter(readingVisible).slice(0,20).map(el=>accessibleName(el)||el.getAttribute('placeholder')||el.name||el.localName);const submitter=[...form.querySelectorAll('button,input[type=submit],input[type=image]')].find(el=>readingVisible(el)&&(el.localName==='input'||!el.type||el.type==='submit'));return {selector:uniqueSelector(form),fields,...(submitter?{submit:accessibleName(submitter)}:{})}});
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
-    return {page:pageInfo(),headings,links,buttons,inputs,...(forms.length?{forms}:{}),...(landmarks.length?{landmarks}:{}),text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    const focus=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement?uniqueSelector(document.activeElement):undefined;
+    return {page:pageInfo(),headings,links,buttons,inputs,...(forms.length?{forms}:{}),...(landmarks.length?{landmarks}:{}),...(focus?{focus}:{}),text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };

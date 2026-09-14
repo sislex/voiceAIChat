@@ -529,6 +529,60 @@ describe('скрипт превью: различать одинаковое, к
   })
 })
 
+describe('скрипт превью: формы и меню как у человека (круг 4)', () => {
+  it('fill заполняет поля по подписи и селектору, отправляет форму и отдаёт валидацию', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<form id="login"><label for="login-user">Логин</label><input id="login-user" name="user" required><input id="login-pw" type="password" required minlength="4"><button type="submit">Войти</button></form>`)
+    document.getElementById('login')!.addEventListener('submit', (event) => event.preventDefault())
+    const res = await act({ kind: 'fill', fields: [{ field: 'Логин', value: 'admin' }, { selector: '#login-pw', value: '' }], submit: true })
+    expect(res.ok).toBe(true)
+    const result = res.result as { filled: { selector: string; value: string }[]; submitted: boolean; validation?: { field: string; message: string }[] }
+    expect(result.filled).toEqual([expect.objectContaining({ selector: '#login-user', value: 'admin' }), expect.objectContaining({ selector: '#login-pw', value: '' })])
+    expect(result.submitted).toBe(true)
+    // Пустое обязательное поле пароля — то, что человек увидел бы подсвеченным после отправки.
+    expect(result.validation?.[0]?.field).toBe('#login-pw')
+    expect(result.validation?.[0]?.message).toBeTruthy()
+  })
+
+  it('choose открывает триггер и нажимает появившийся пункт', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button id="lang">Язык</button><ul id="lang-menu" role="menu" style="display:none"><li role="menuitem">English</li><li role="menuitem">Русский</li></ul>`)
+    document.getElementById('lang')!.addEventListener('click', () => { document.getElementById('lang-menu')!.style.display = 'block' })
+    let chosen = ''
+    for (const item of document.querySelectorAll('#lang-menu li')) item.addEventListener('click', () => { chosen = item.textContent || '' })
+    const res = await act({ kind: 'choose', text: 'Русский', in: 'Язык' })
+    expect(res.ok).toBe(true)
+    expect(chosen).toBe('Русский')
+    expect((res.result as { opened?: { text: string }; chosen: { text: string } })).toMatchObject({ opened: { text: 'Язык' }, chosen: { text: 'Русский' } })
+    const missing = await act({ kind: 'choose', text: 'Deutsch', in: 'Язык' })
+    expect(missing.ok).toBe(false)
+    expect(missing.error).toContain('Пункт не появился')
+  }, 10_000)
+
+  it('type сообщает подсказки datalist, hover — раскрывшиеся пункты, read — фокус', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<input id="city" list="cities"><datalist id="cities"><option value="Минск"></option><option value="Москва"></option></datalist>
+      <nav><button id="menu-btn">Меню</button><div id="submenu" style="display:none"><a href="/a">Пункт А</a><a href="/b">Пункт Б</a></div></nav>`)
+    document.getElementById('menu-btn')!.addEventListener('mouseenter', () => { document.getElementById('submenu')!.style.display = 'block' })
+    const typed = await act({ kind: 'type', selector: '#city', text: 'М' })
+    expect((typed.result as { options?: string[] }).options).toEqual(['Минск', 'Москва'])
+    const hovered = await act({ kind: 'hover', selector: '#menu-btn' })
+    expect((hovered.result as { revealed?: { text: string }[] }).revealed?.map((item) => item.text)).toEqual(['Пункт А', 'Пункт Б'])
+    ;(document.getElementById('city') as HTMLInputElement).focus()
+    const read = await act({ kind: 'read' })
+    expect((read.result as { focus?: string }).focus).toBe('#city')
+  })
+
+  it('wait enabled/value ждёт состояние контрола в панели', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button id="save" disabled>Сохранить</button>`)
+    setTimeout(() => { (document.getElementById('save') as HTMLButtonElement).disabled = false }, 150)
+    const enabled = await act({ kind: 'wait', selector: '#save', enabled: true, timeoutMs: 2000 })
+    expect(enabled.ok).toBe(true)
+    setTimeout(() => { (document.getElementById('q') as HTMLInputElement).value = 'готово' }, 150)
+    const value = await act({ kind: 'wait', selector: '#q', value: 'готово', timeoutMs: 2000 })
+    expect(value.ok).toBe(true)
+    const never = await act({ kind: 'wait', selector: '#q', value: 'иное', timeoutMs: 200 })
+    expect(never.ok).toBe(false)
+  }, 10_000)
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

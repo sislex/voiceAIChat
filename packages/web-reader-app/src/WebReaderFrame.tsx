@@ -16,6 +16,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const [retryKey, setRetryKey] = useState(0)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // A dismissed page error stays hidden until a different error text arrives.
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
   const retrySave = useRef<(() => void) | null>(null)
   const retryOpen = useRef<(() => void) | null>(null)
   const gateSequence = useRef(0)
@@ -168,7 +170,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   return <section className="webpreview" aria-label="Web Reader">
     {saving && <p role="status">Сохраняем адрес страницы…</p>}
     {saveError && <div className="webpreview-error" role="alert"><span>{saveError}</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retrySave.current?.()}>Повторить сохранение</button></div>}
-    {pageError && <div className="webpreview-error" role="alert"><span>{pageError}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}</div>}
+    {pageError && pageError !== dismissedError && <div className="webpreview-error webpreview-page-error" role="alert"><span>{pageError}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}<button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label="Скрыть ошибку страницы" onClick={() => setDismissedError(pageError)}>×</button></div>}
     {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {previewActionProgressLabel(pendingAction)}…</p>}
     <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} onReveal={onRevealAction} />
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}

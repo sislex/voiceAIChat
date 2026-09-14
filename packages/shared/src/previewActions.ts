@@ -62,6 +62,14 @@ export const PREVIEW_ACTION_LIMITS = {
 export const PREVIEW_CLICK_MODIFIERS = ['shift', 'ctrl', 'alt', 'meta'] as const
 export type PreviewClickModifier = (typeof PREVIEW_CLICK_MODIFIERS)[number]
 
+/** Одно поле для `fill`: адресуется селектором либо подписью (как `type`). */
+export interface PreviewFillField {
+  selector?: string
+  field?: string
+  near?: string
+  value: string
+}
+
 /** Точка или элемент — источник/цель перетаскивания. */
 export interface PreviewDragPoint {
   selector?: string
@@ -124,6 +132,10 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'a11y'; selector?: string; limit?: number; diagnostic?: boolean }
   /** Состояние панели без обращения к странице: подключена ли, что открыто, загружена ли страница. */
   | { kind: 'status'; diagnostic?: boolean }
+  /** Заполнить несколько полей формы разом, как человек, и при submit отправить её. */
+  | { kind: 'fill'; fields: PreviewFillField[]; submit?: boolean; diagnostic?: boolean }
+  /** Выбрать пункт из выпадающего меню или списка: открыть триггер (in), дождаться пункта и нажать его. */
+  | { kind: 'choose'; text: string; in?: string; near?: string; diagnostic?: boolean }
 )
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
@@ -202,6 +214,26 @@ export interface PreviewTypeResult {
   /** Итоговое значение поля после ввода (пустое у секретных полей). */
   value?: string
   navigated?: boolean
+  /** Подсказки автодополнения, показавшиеся после ввода (listbox/datalist). */
+  options?: string[]
+  /** Сообщения валидации после отправки: то, что пользователь увидел бы красным. */
+  validation?: { field: string; message: string }[]
+}
+
+export interface PreviewFillResult {
+  page: PreviewPageInfo
+  filled: { field: string; selector: string; value: string }[]
+  submitted: boolean
+  validation?: { field: string; message: string }[]
+  navigated?: boolean
+}
+
+export interface PreviewChooseResult {
+  page: PreviewPageInfo
+  chosen: PreviewActionElement
+  /** Триггер, который открыл список, если он был. */
+  opened?: PreviewActionElement
+  navigated?: boolean
 }
 
 /** Структурированное содержимое страницы (или поддерева по selector). */
@@ -215,6 +247,8 @@ export interface PreviewReadResult {
   forms?: { selector: string; fields: string[]; submit?: string }[]
   /** Ориентиры страницы (navigation, main, banner…) с именами — как их видит скринридер. */
   landmarks?: { role: string; name: string; selector: string }[]
+  /** Элемент с фокусом — где сейчас «курсор» пользователя. */
+  focus?: string
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
   total?: number
@@ -241,6 +275,8 @@ export interface PreviewHoverResult {
   hovered: PreviewActionElement
   /** Подсказка, которую увидел бы пользователь: title, aria-describedby или появившийся role=tooltip. */
   tooltip?: string
+  /** Элементы, показавшиеся после наведения (пункты меню): их можно нажать следующим шагом. */
+  revealed?: PreviewActionElement[]
 }
 
 export interface PreviewScrollResult {
@@ -427,6 +463,8 @@ export type PreviewActionResult =
   | PreviewViewportResult
   | PreviewA11yResult
   | PreviewStatusResult
+  | PreviewFillResult
+  | PreviewChooseResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -540,6 +578,13 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'edits':
     case 'status':
       return true
+    case 'fill':
+      return Array.isArray(value.fields) && value.fields.length >= 1 && value.fields.length <= 30 &&
+        value.fields.every((item) => record(item) && bounded(item.value, L.text) && optBounded(item.selector, L.selector) && optBounded(item.field, L.text) && optBounded(item.near, L.text) &&
+          (bounded(item.selector, L.selector) && item.selector.length > 0 || bounded(item.field, L.text) && item.field.trim().length > 0)) &&
+        (value.submit === undefined || typeof value.submit === 'boolean')
+    case 'choose':
+      return bounded(value.text, L.text) && value.text.trim().length > 0 && optBounded(value.in, L.text) && optBounded(value.near, L.text)
     case 'network':
       return (
         validDiagnosticOptions(value) &&
@@ -696,6 +741,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'Селекторы из read/find передавай в следующее действие целиком, включая >> nth; после изменения DOM повтори поиск. ' +
     'В Chromium selector вместе с text ограничивает click, hover и find текстом внутри селектора. ' +
     'near {текст рядом} различает одинаковые кнопки по соседнему тексту («Удалить» near «Заказ №5»), exact: true требует точного совпадения текста; у найденных элементов context — текст их строки или секции. ' +
+    'fill {fields: [{field|selector, value}], submit?} — заполнить форму целиком одним действием и отправить; ответ содержит validation (сообщения полей, как их увидел бы человек). ' +
+    'choose {text, in?} — выбрать пункт выпадающего меню или списка: in — текст или селектор триггера, который его открывает. ' +
+    'После type ответ может содержать options — подсказки автодополнения; после hover — revealed — показавшиеся пункты меню. Сочетания клавиш в press пишутся как Control+a или Shift+Tab. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +
