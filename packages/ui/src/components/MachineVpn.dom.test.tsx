@@ -57,6 +57,21 @@ describe('machine VPN flow', () => {
     await screen.findByText(/Фактически: Выключен · состояние устарело/)
     expect(screen.getByText('Внешний IP: неизвестен')).toBeInTheDocument()
   })
+  // @testCase TC-UI
+  it.each(['expired', 'offline'] as const)('does not claim current protection for an %s observation', async reason => {
+    const observed = makeVpnObservation({ mode: 'client', gatewayOnline: true, protected: true })
+    const view = makeVpnView({ state: { ...initialVpnState(),
+      desired: { mode: 'client', gatewayId: 'gateway', allowLan: false }, observed } })
+    const bridge = vpnFixtureBridge(view)
+    const change = vi.spyOn(bridge, 'change')
+    render(<MachineVpn agent={makeAgent({ online: reason !== 'offline' })} bridge={bridge}
+      clock={() => VPN_TIME + (reason === 'expired' ? 100_000 : 0)} />)
+    await screen.findByText('Защита не подтверждена.', { exact: false })
+    expect(screen.queryByText('Прямой интернет заблокирован.', { exact: false })).not.toBeInTheDocument()
+    expect(screen.queryByText('Шлюз доступен.', { exact: false })).not.toBeInTheDocument()
+    expect(screen.getByText('Внешний IP: неизвестен')).toBeInTheDocument()
+    expect(change).not.toHaveBeenCalled()
+  })
   // @testCase TC-REGRESSION
   it('opens VPN inside the fleet without changing existing machine permissions', async () => {
     const setPolicy = vi.fn()

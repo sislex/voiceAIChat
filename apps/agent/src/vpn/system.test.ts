@@ -1,6 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
 import { TailscaleSystem } from './system.js'
 describe('Tailscale system observation', () => {
+  // @testCase TC-NETWORK
+  // This checks preparation failures, not real-host connectivity or WireGuard support.
+  it.each([
+    ['linux', 'not_installed'],
+    ['darwin', 'not_installed'],
+    ['win32', 'unsupported']
+  ] as const)('does not activate or report an external IP when %s preparation fails', async (platform, error) => {
+    const run = vi.fn().mockRejectedValue({ code: 'ENOENT' })
+    const guard = { status: vi.fn(), arm: vi.fn(), release: vi.fn() }
+    const ip = vi.fn()
+    const observed = await new TailscaleSystem(run, guard, platform, ip).inspect()
+    expect(observed).toMatchObject({ mode: 'unknown', error, externalIp: null,
+      protected: false, recoveryReady: false })
+    expect(guard.arm).not.toHaveBeenCalled()
+    expect(guard.release).not.toHaveBeenCalled()
+    expect(ip).not.toHaveBeenCalled()
+    expect(run.mock.calls.every(([args]) => args[0] === 'status')).toBe(true)
+    if (platform === 'win32') expect(run).not.toHaveBeenCalled()
+  })
+
   // @testCase TC-STATE
   it.each(['linux', 'darwin'] as const)('reports unavailable gateways and keeps protected state on %s', async platform => {
     const run = vi.fn(async (args: string[]) => JSON.stringify(args[0] === 'status'

@@ -127,6 +127,57 @@ describe('VPN owner boundary and persistent transitions', () => {
     expect(off.state.observed?.mode).toBe('off')
     expect(off.state.phase).toBe('idle')
   })
+  // @testCase TC-API
+  it.each(['client', 'off'] as const)('does not acknowledge %s from an expired apply result', async mode => {
+    const s = setup()
+    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.change('alice', 'gateway', command('server'))
+    if (mode === 'off') await s.service.change('alice', 'client', command('client'))
+    const dispatch = s.agents.vpn.getMockImplementation()!
+    s.agents.vpn.mockImplementation(async (id, request) => {
+      const observation = await dispatch(id, request)
+      return request.action === 'apply' ? { ...observation, observedAt: Date.now() - 100_000 } : observation
+    })
+    const result = await s.service.change('alice', 'client', command(mode, mode === 'off' ? 1 : 0))
+    expect(result.state.desired.mode).toBe(mode)
+    expect(result.state.phase).toBe('error')
+    expect(result.state.error).toBe('apply')
+  })
+  // @testCase TC-API
+  it('blocks activation when client readiness is stale', async () => {
+    const s = setup()
+    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.change('alice', 'gateway', command('server'))
+    s.agents.vpn.mockImplementation(async id => ({ ...s.states[id], observedAt: Date.now() - 100_000 }))
+    s.agents.vpn.mockClear()
+    await expect(s.service.change('alice', 'client', command('client'))).rejects.toThrow('apply')
+    expect(s.agents.vpn.mock.calls.every(([, request]) => request.action === 'inspect')).toBe(true)
+  })
+  // @testCase TC-ISOLATION
+  it('rejects a gateway whose ownership changes without dispatching any client configuration', async () => {
+    const s = setup()
+    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.change('alice', 'gateway', command('server'))
+    s.owners.gateway = 'bob'
+    s.agents.vpn.mockClear()
+    await expect(s.service.change('alice', 'client', command('client'))).rejects.toThrow('invalid')
+    expect(s.agents.vpn).not.toHaveBeenCalled()
+    expect((await s.repo.readVpnNetwork('alice'))?.state).not.toContain('"mode":"client"')
+  })
+  // @testCase TC-MIGRATION
+  it('preserves the active legacy network when replacement is attempted', async () => {
+    const s = setup()
+    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.change('alice', 'gateway', command('server'))
+    await s.service.change('alice', 'client', command('client'))
+    const before = await s.repo.readVpnNetwork('alice')
+    s.agents.vpn.mockClear()
+    vi.mocked(s.api.setPolicy).mockClear()
+    await expect(s.service.connect('alice', 'different.ts.net', 'tskey-replacement-secret')).rejects.toThrow('conflict')
+    expect(await s.repo.readVpnNetwork('alice')).toEqual(before)
+    expect(s.agents.vpn).not.toHaveBeenCalled()
+    expect(s.api.setPolicy).not.toHaveBeenCalled()
+  })
   // @testCase TC-SECRETS
   it('never returns a credential in successful DTOs or failed observations', async () => {
     const s = setup(), secret = 'tskey-secret-never-in-dto'

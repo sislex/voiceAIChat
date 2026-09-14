@@ -315,6 +315,31 @@ not substitute for them.
 
 This implementation must not be described as production-verified VPN protection.
 
+CHAT-466 regression follow-up (2026-09-14): expired observations cannot complete
+an apply operation or establish client readiness in `VpnService`. The UI hides
+current gateway/protection claims for expired observations and offline machines.
+Targeted tests passed for both stale apply outcomes (client/off), stale readiness,
+offline/expired UI observations, changed gateway ownership, and rejection of
+replacement of an active legacy network without agent or policy mutations.
+The new markers identify partial regression coverage, not full acceptance:
+`TC-NETWORK` in `system.test.ts` checks preparation failures on Linux/macOS and
+the existing Windows rejection; `TC-LINUX-SERVICES` in `firewall.test.ts` checks
+the narrow management endpoint and DNS restrictions only; `TC-MIGRATION` in
+`service.test.ts` checks the active-tailnet replacement conflict only.
+These tests do not exercise WireGuard, three simultaneous clients, inbound
+published-service replies, installer updates, or migration/rollback. Those
+mandatory scenarios remain unverified and must not be marked passed based on
+marker discovery or this mocked suite. The current system and UI still support
+only Linux/macOS through Tailscale; Windows remains unsupported.
+The existing Chromium flow now uses `selectOption` for the native mode menu and
+keyboard Enter for both apply and confirmation. Native select keyboard input
+left the value at `off` in headless macOS Chromium; both browser cases passed
+after this adjustment. Keyboard navigation inside the native menu itself is
+not verified by this browser test.
+The final `npm run gate:fast` rerun completed with exit code 0 on 2026-09-14,
+including the selected agent/server/UI/web checks, builds, and browser suites.
+The opt-in real-host network suite remained skipped.
+
 ## Токены агентов: срок, отзыв, привязка к IP
 
 Колонки `agents.token_expires_at`, `token_issued_at`, `last_ip`, `pin_ip` (миграция `ALTER TABLE` в `database.ts`).

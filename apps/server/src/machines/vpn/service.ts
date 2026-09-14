@@ -55,7 +55,7 @@ export class VpnService {
   }
   private matches(state: VpnState, binding: Binding | undefined, data: NetworkData): boolean {
     const o = state.observed
-    return !!o && !o.error && (state.revision === 0 || (o.revision === state.revision && o.operationId === state.operationId)) &&
+    return !!o && isVpnFresh(o, this.now()) && !o.error && (state.revision === 0 || (o.revision === state.revision && o.operationId === state.operationId)) &&
       (state.desired.mode === 'client' || !o.protected) && o.mode === state.desired.mode && (state.desired.mode !== 'client' || o.allowLan === state.desired.allowLan) &&
       (state.desired.mode !== 'server' || binding?.approved === true) &&
       (state.desired.mode !== 'client' || (o.protected && o.recoveryReady &&
@@ -67,6 +67,7 @@ export class VpnService {
     if (!this.agents.isOnline(id)) { state.error = 'offline'; return }
     const observation = await this.agents.vpn(id, { action: 'inspect' })
     state.observed = observation
+    if (!isVpnFresh(observation, this.now())) { state.error = 'apply'; return }
     state.error = observation.error
     const device = devices.find(d => d.nodeId === observation.deviceId &&
       observation.addresses.length > 0 && observation.addresses.every(a => d.addresses.includes(a)))
