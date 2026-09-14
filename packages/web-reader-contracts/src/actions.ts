@@ -41,6 +41,7 @@ function narrate(kind: string, result: Record<string, unknown> | undefined, addr
   if ((kind === 'click' || kind === 'type' || kind === 'press' || kind === 'fill' || kind === 'choose') && result.navigated === true) return host() ? `перешёл на ${host()}` : 'перешёл на другую страницу'
   if (kind === 'open' && result.redirected === true) return host() ? `перенаправлено на ${host()}` : 'перенаправлено'
   if (kind === 'click' && typeof result.obscuredBy === 'string') return 'цель перекрыта другим элементом'
+  if (kind === 'sequence' && typeof result.completed === 'number' && typeof result.total === 'number') return `${result.completed} из ${result.total} шагов`
   if ((kind === 'type' || kind === 'fill') && Array.isArray(result.validation) && result.validation.length) return `${result.validation.length} ${result.validation.length === 1 ? 'ошибка' : 'ошибки'} формы`
   return ''
 }

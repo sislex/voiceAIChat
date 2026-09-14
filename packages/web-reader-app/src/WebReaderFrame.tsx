@@ -10,7 +10,7 @@ import { previewActionProgressLabel } from './actionLabel'
 import { createReaderHostBridge, type ReaderHostBridge, type PreviewActionOutcome } from './hostBridge'
 
 
-export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, onRevealAction, onClearActions, pageErrorCount = 0, onAsk, onControl, actionError = null, onRetryAction, pageError, onAskError, pendingAction = null, onPageTitle, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
+export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, onRevealAction, onClearActions, pageErrorCount = 0, onAsk, onControl, manual = false, actionError = null, onRetryAction, pageError, onAskError, pendingAction = null, onPageTitle, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
@@ -20,6 +20,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const [dismissedError, setDismissedError] = useState<string | null>(null)
   // Long-running model actions show elapsed seconds so the person knows the panel is busy, not stuck.
   const [pendingSeconds, setPendingSeconds] = useState(0)
+  // Progress of a multi-step sequence: "шаг 2 из 5" tells the person how long the routine still is.
+  const [sequenceProgress, setSequenceProgress] = useState<{ done: number; total: number; action: PreviewAction } | null>(null)
   useEffect(() => {
     if (!pendingAction) { setPendingSeconds(0); return }
     const started = Date.now()
@@ -119,6 +121,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       onPageTitle: (title) => callbacks.current.onPageTitle?.(title),
       onAsk: (text) => callbacks.current.onAsk?.(text),
       onControl: (manual) => callbacks.current.onControl?.(manual),
+      onSequenceProgress: (progress) => { if (alive) setSequenceProgress(progress) },
       onElement: (element) => callbacks.current.onSelectElement?.(element),
       onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
     })
@@ -182,9 +185,9 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     {saving && <p role="status">Сохраняем адрес страницы…</p>}
     {saveError && <div className="webpreview-error" role="alert"><span>{saveError}</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retrySave.current?.()}>Повторить сохранение</button></div>}
     {pageError && pageError !== dismissedError && <div className="webpreview-error webpreview-page-error" role="alert"><span>{pageError}{pageErrorCount > 1 && <small> и ещё {pageErrorCount - 1}</small>}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}<button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label="Скрыть ошибку страницы" onClick={() => setDismissedError(pageError)}>×</button></div>}
-    {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {previewActionProgressLabel(pendingAction)}…{pendingSeconds >= 3 && <span className="webpreview-live__time"> {pendingSeconds} с</span>}</p>}
+    {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {sequenceProgress ? `выполняет шаг ${sequenceProgress.done + 1} из ${sequenceProgress.total}: ${previewActionProgressLabel(sequenceProgress.action)}` : previewActionProgressLabel(pendingAction)}…{pendingSeconds >= 3 && <span className="webpreview-live__time"> {pendingSeconds} с</span>}</p>}
     {actionError && !pendingAction && <div className="webpreview-error webpreview-action-error" role="status" aria-live="polite"><span>Ассистент не смог: {previewActionProgressLabel(actionError.action)} — {actionError.error}</span>{onRetryAction && !/Только я управляю/.test(actionError.error) && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onRetryAction(actionError.action)}>Повторить</button>}</div>}
-    <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} onReveal={onRevealAction} onClear={onClearActions} currentUrl={conversationUrl} />
+    <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} onReveal={onRevealAction} onClear={onClearActions} currentUrl={conversationUrl} manual={manual} />
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
     {previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retryOpen.current ? retryOpen.current() : setRetryKey((value) => value + 1)}>Повторить</button></div>}
     <iframe key={conversationId} ref={frameRef} className="webpreview-frame" src={src} title="Web Reader" aria-hidden={previewSession !== 'ready'} tabIndex={previewSession === 'ready' ? 0 : -1} {...{ inert: previewSession !== 'ready' ? '' : undefined }} />

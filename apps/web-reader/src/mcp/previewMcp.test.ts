@@ -203,7 +203,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
   })
 
   it.each([
@@ -694,6 +694,16 @@ describe('previewMcp — инструменты browser', () => {
     const result = await call('open', { url: 'javascript:alert(1)' })
     expect(result.isError).toBe(true)
     expect(called).toBe(false)
+  })
+
+  it('sequence проверяет шаги и уходит в панель одним действием', async () => {
+    await makeApp()
+    const bad = await call('sequence', { steps: [{ kind: 'open', url: 'https://x.test/' }] })
+    expect(bad.isError).toBe(true)
+    client = (message) => { if (message.t === 'preview.action') relay.resolve(U, message.requestId, { ok: true, result: { page: { url: 'https://x', title: '' }, steps: [{ kind: 'click', ok: true }], completed: 1, total: 1 } }, CONV) }
+    const good = await call('sequence', { steps: [{ kind: 'click', text: 'Войти' }] })
+    expect(good.isError).toBeFalsy()
+    expect(good.text).toContain('"completed":1')
   })
 
   it('find без text и selector — ошибка аргументов', async () => {

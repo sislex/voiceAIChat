@@ -177,6 +177,20 @@ describe('isPreviewAction: как пользователь — field, role, appe
     expect(resolvePreviewUrl('/about', null)).toBeNull()
     expect(resolvePreviewUrl('https://other.test/', null)).toBe('https://other.test/')
   })
+  it('sequence, parts, contains, nextPage, click по точке, back steps и network since проходят валидацию', () => {
+    expect(isPreviewAction({ kind: 'sequence', steps: [{ kind: 'click', text: 'Войти' }, { kind: 'type', field: 'Логин', text: 'a' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'sequence', steps: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'sequence', steps: [{ kind: 'open', url: 'https://x.test/' }] })).toBe(false)
+    expect(isPreviewAction({ kind: 'read', parts: ['headings', 'text'] })).toBe(true)
+    expect(isPreviewAction({ kind: 'read', parts: ['tables'] })).toBe(false)
+    expect(isPreviewAction({ kind: 'check', text: 'Итого', contains: '₽' })).toBe(true)
+    expect(isPreviewAction({ kind: 'scroll', to: 'nextPage' })).toBe(true)
+    expect(isPreviewAction({ kind: 'click', x: 10, y: 20 })).toBe(true)
+    expect(isPreviewAction({ kind: 'click', x: 10 })).toBe(false)
+    expect(isPreviewAction({ kind: 'back', steps: 2 })).toBe(true)
+    expect(isPreviewAction({ kind: 'back', steps: 0 })).toBe(false)
+    expect(isPreviewAction({ kind: 'network', since: 100 })).toBe(true)
+  })
   it('open waitFor проходит валидацию', () => {
     expect(isPreviewAction({ kind: 'open', url: 'https://shop.example/', waitFor: 'Каталог' })).toBe(true)
     expect(isPreviewAction({ kind: 'open', url: 'https://shop.example/', waitFor: 5 })).toBe(false)
@@ -237,7 +251,7 @@ describe('previewToolHint', () => {
   it('панель описана как видимая пользователю и объясняет новые человеческие параметры', () => {
     const hint = previewToolHint()
     expect(hint).toContain('видит каждое твоё действие')
-    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a', 'section', 'selection', 'onScreen: true', 'perKey', 'obscuredBy', 'check', 'nth', 'errors {since}', 'show', 'marks: true', 'brief: true', 'idle: true', 'status.manual', 'waitFor', 'suggestions', 'missing', 'кнопка, ссылка', 'status.viewport']) expect(hint).toContain(term)
+    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a', 'section', 'selection', 'onScreen: true', 'perKey', 'obscuredBy', 'check', 'nth', 'errors {since}', 'show', 'marks: true', 'brief: true', 'idle: true', 'status.manual', 'waitFor', 'suggestions', 'missing', 'кнопка, ссылка', 'status.viewport', 'sequence', 'parts', 'contains', 'nextPage', 'click {x, y}', 'status.pending']) expect(hint).toContain(term)
   })
 
   it('для изолированного Chromium не обещает панель и требует поднять dev-сервер самому', () => {

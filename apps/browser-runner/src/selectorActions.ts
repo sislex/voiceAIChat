@@ -122,8 +122,10 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
         const node = (element === scope.document.body || element === scope.document.documentElement ? scope.document.scrollingElement : element) as {
           scrollTop: number; scrollLeft: number; scrollHeight: number; scrollWidth: number; clientWidth: number; clientHeight: number; scrollTo(options: { top: number; left: number; behavior: string }): void
         }
-        const options = value as { to?: 'top' | 'bottom' | 'element'; dy: number; dx: number }
-        if (options.to === 'element') {
+        const options = value as { to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; dy: number; dx: number }
+        // nextPage/prevPage: на экран вниз или вверх, как PageDown/PageUp у человека.
+        if (options.to === 'nextPage' || options.to === 'prevPage') { const step = Math.max(1, Math.round(node.clientHeight * 0.9)); node.scrollTo({ top: node.scrollTop + (options.to === 'nextPage' ? step : -step), left: node.scrollLeft, behavior: 'instant' }) }
+        else if (options.to === 'element') {
           // Сам элемент — цель, прокручивается его ближайший scroll-контейнер и окно.
           ;(element as { scrollIntoView(options: { block: string; inline: string }): void }).scrollIntoView({ block: 'center', inline: 'nearest' })
         } else {

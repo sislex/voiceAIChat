@@ -442,7 +442,8 @@ const run=(action)=>{
     return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{}),...(suggestions.length?{suggestions}:{})}
   }
   if(action.kind==='click'){
-    const el=chooseTarget(action,true);actionable(el);
+    // Клик по точке: там, где у цели нет ни текста, ни селектора (карта, canvas), человек просто тыкает пальцем.
+    const el=typeof action.x==='number'&&!action.selector&&!action.text?(()=>{const hit=document.elementFromPoint?document.elementFromPoint(action.x,action.y):null;if(!hit)throw new Error('В точке ('+action.x+', '+action.y+') нет элемента: она вне видимой области');return hit})():chooseTarget(action,true);actionable(el);
     if(el.localName==='select')throw new Error('Это выпадающий список: выбери значение через set {selector, value} или choose, клик его не раскроет.');
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
     const dialogsBefore=new Set(openDialogs()),errorsBefore=pageErrors.length;
@@ -491,11 +492,13 @@ const run=(action)=>{
     else if(state==='hidden')pass=visible.length===0;
     else pass=visible.length>0;
     if(pass&&action.value!==undefined)pass=normText(actualValue||'')===normText(action.value);
+    if(pass&&action.contains!==undefined)pass=normText(actualValue||'').includes(normText(action.contains));
     const what=action.text?'«'+action.text+'»':action.selector;
     const summary=typeof action.count==='number'?what+': '+scoped.length+' из '+action.count+(pass?' — совпало':' — не совпало')
       :action.value!==undefined?what+(pass?' содержит «'+action.value+'»':' содержит «'+String(actualValue||'').slice(0,60)+'», ожидалось «'+action.value+'»')
+      :action.contains!==undefined?what+(pass?' содержит «'+action.contains+'»':' не содержит «'+action.contains+'»: сейчас «'+String(actualValue||'').slice(0,60)+'»')
       :what+(state==='absent'?(pass?' отсутствует':' присутствует, хотя не должно'):state==='hidden'?(pass?' скрыто':' видно, хотя должно быть скрыто'):state==='present'?(pass?' есть на странице':' нет на странице'):(pass?' видно':' не видно'));
-    return {page:pageInfo(),pass,expected:{...(action.text?{text:action.text}:{}),...(action.selector?{selector:action.selector}:{}),state,...(action.value!==undefined?{value:action.value}:{}),...(typeof action.count==='number'?{count:action.count}:{})},actual:{count:scoped.length,visible:visible.length,...(actualValue!==undefined?{value:String(actualValue).slice(0,EL_TEXT)}:{}),...(first?{element:describe(first)}:{})},summary}
+    return {page:pageInfo(),pass,expected:{...(action.text?{text:action.text}:{}),...(action.selector?{selector:action.selector}:{}),state,...(action.value!==undefined?{value:action.value}:{}),...(action.contains!==undefined?{contains:action.contains}:{}),...(typeof action.count==='number'?{count:action.count}:{})},actual:{count:scoped.length,visible:visible.length,...(actualValue!==undefined?{value:String(actualValue).slice(0,EL_TEXT)}:{}),...(first?{element:describe(first)}:{})},summary}
   }
   if(action.kind==='fill'){
     // Форма целиком, как её заполняет человек: поле за полем, затем отправка первой формы.
@@ -592,6 +595,7 @@ const run=(action)=>{
     if(action.to==='element'){shownEl=el;el.scrollIntoView&&el.scrollIntoView({block:'center',inline:'nearest'});el=document.scrollingElement||document.documentElement}
     else if(action.to==='top')el.scrollTop=0;
     else if(action.to==='bottom')el.scrollTop=el.scrollHeight;
+    else if(action.to==='nextPage'||action.to==='prevPage'){const step=Math.max(1,Math.round((el===document.scrollingElement||el===document.documentElement?innerHeight:el.clientHeight)*0.9));el.scrollTop=el.scrollTop+(action.to==='nextPage'?step:-step)}
     else if(typeof action.dy==='number')el.scrollTop=el.scrollTop+action.dy;
     if(typeof action.dx==='number')el.scrollLeft=el.scrollLeft+action.dx;
     el.dispatchEvent(new Event('scroll',{bubbles:true}));
@@ -634,19 +638,15 @@ const run=(action)=>{
       attempt()
     })
   }
-  if(action.kind==='back'){
-    const info=pageInfo();
-    history.back();
-    return {page:info,navigating:true}
-  }
-  if(action.kind==='forward'){
-    const info=pageInfo();
-    history.forward();
+  if(action.kind==='back'||action.kind==='forward'){
+    const info=pageInfo(),steps=Math.min(20,Math.max(1,Math.floor(action.steps||1)));
+    history.go(action.kind==='back'?-steps:steps);
     return {page:info,navigating:true}
   }
   if(action.kind==='network'){
     const filter=typeof action.filter==='string'?action.filter.toLowerCase():'';
-    const matched=filter?pageNetwork.filter((e)=>e.url.toLowerCase().includes(filter)):pageNetwork;
+    const recent=typeof action.since==='number'?pageNetwork.filter((e)=>e.at>action.since):pageNetwork;
+    const matched=filter?recent.filter((e)=>e.url.toLowerCase().includes(filter)):recent;
     const all=action.failedOnly?matched.filter((e)=>e.error||typeof e.status==='number'&&e.status>=400):matched;
     const limit=Math.max(1,Math.min(100,typeof action.limit==='number'?Math.floor(action.limit):50));
     const requests=all.slice(-limit).map((e)=>Object.assign({},e));
@@ -809,8 +809,10 @@ const run=(action)=>{
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached)),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
     const focus=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement?uniqueSelector(document.activeElement):undefined;
+    const parts=Array.isArray(action.parts)&&action.parts.length?new Set(action.parts):null;
+    const keep=(name,value)=>!parts||parts.has(name)?value:undefined;
     const brief=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; ').slice(0,600):'';
-    return {page:pageInfo(),headings,links,buttons,inputs,...(forms.length?{forms}:{}),...(landmarks.length?{landmarks}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(brief?{brief}:{}),text:text.slice(offset,end),total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(brief?{brief}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };

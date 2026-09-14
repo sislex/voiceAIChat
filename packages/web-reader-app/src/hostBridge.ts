@@ -60,6 +60,8 @@ export interface ReaderHostBridgeOptions {
   onAsk?: (text: string) => void
   /** Пользователь взял управление страницей (true) или вернул его ассистенту (false). */
   onControl?: (manual: boolean) => void
+  /** Ход выполнения последовательности: какой шаг идёт сейчас. */
+  onSequenceProgress?: (progress: { done: number; total: number; action: PreviewAction } | null) => void
   onElement?: (element: PreviewElementPayload) => void
   onRecordingStep?: (step: WebRecorderScenarioStep) => void
   /** Снимок области, выделенной пользователем в Reader. */
@@ -206,8 +208,29 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         ...(pageStatus === 'error' && pageError ? { error: pageError } : {}),
         ...(history.length ? { history: [...history] } : {}),
         ...(manual ? { manual: true } : {}),
-        ...(viewport ? { viewport } : {})
+        ...(viewport ? { viewport } : {}),
+        ...(pending.size ? { pending: pending.size } : {})
       } })
+    }
+    // Последовательность: шаги идут друг за другом через тот же run, стоп на первой ошибке.
+    if (action.kind === 'sequence') {
+      const steps = action.steps
+      return (async (): Promise<PreviewActionOutcome> => {
+        const results: { kind: string; ok: boolean; error?: string; summary?: string }[] = []
+        let lastPage: { url: string; title: string } | null = null
+        for (let index = 0; index < steps.length; index++) {
+          const step = steps[index]!
+          options.onSequenceProgress?.({ done: index, total: steps.length, action: step })
+          const outcome = await run(step)
+          const result = outcome.result as { page?: { url: string; title: string }; summary?: unknown } | undefined
+          if (result?.page) lastPage = result.page
+          results.push({ kind: step.kind, ok: outcome.ok, ...(outcome.error ? { error: outcome.error } : {}), ...(typeof result?.summary === 'string' ? { summary: result.summary } : {}) })
+          if (!outcome.ok) break
+        }
+        options.onSequenceProgress?.(null)
+        const completed = results.filter((item) => item.ok).length
+        return { ok: completed === steps.length, result: { page: lastPage, steps: results, completed, total: steps.length }, ...(completed === steps.length ? {} : { error: `Шаг ${completed + 1} из ${steps.length} (${results[completed]?.kind}): ${results[completed]?.error ?? 'не выполнен'}` }) }
+      })()
     }
     // wait {url} — про адрес панели, а не про DOM: мост знает подтверждённый адрес и ждёт его сам.
     if (action.kind === 'wait' && action.url && !action.selector && !action.text) {

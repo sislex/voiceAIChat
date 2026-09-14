@@ -42,6 +42,18 @@ describe('WebReaderFrame', () => {
       expect(screen.getByRole('status').textContent).toContain('3 с')
     } finally { vi.useRealTimers() }
   })
+  it('живая строка показывает шаг последовательности', async () => {
+    let registration: ReaderHostRegistration | null = null
+    const onSave = vi.fn(async () => undefined)
+    render(<WebReaderFrame platform={platform} conversationId="conv-seq" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} onRegisterHost={(r) => { registration = r }} pendingAction={{ kind: 'sequence', steps: [{ kind: 'click', text: 'Войти' }, { kind: 'read' }] }} />)
+    const post = vi.spyOn(frameEl().contentWindow as Window, 'postMessage')
+    emit(readyMessage)
+    await waitFor(() => expect(registration).toBeTruthy())
+    emit({ type, conversationId: 'conv-seq', registrationId: registration!.registrationId, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    void registration!.run({ kind: 'sequence', steps: [{ kind: 'click', text: 'Войти' }, { kind: 'read' }] })
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('шаг 1 из 2: нажимает Войти'))
+    expect(post).toHaveBeenCalled()
+  })
   it('ошибку страницы можно скрыть; новая ошибка появляется снова', () => {
     const onSave = vi.fn(async () => undefined)
     const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-err" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pageError="TypeError: boom" />)
