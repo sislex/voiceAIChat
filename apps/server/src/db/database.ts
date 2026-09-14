@@ -194,8 +194,11 @@ export class VoiceChatDb {
       await this.migrate()
     }
     // Legacy Codex replies stored cumulative thread totals as per-message spend;
-    // rewrite them once, on both backends (see migrateCodexThreadUsage).
-    await this.runOnce('codex_thread_usage_v1', async () => {
+    // rewrite them once, on both backends (see migrateCodexThreadUsage). The
+    // key is `v2`: `v1` was marked done by hand on production to stop the boot
+    // loop of release 0.1.304, whose pass loaded every meta at once and hit
+    // the heap limit — the rewrite itself never ran there.
+    await this.runOnce('codex_thread_usage_v2', async () => {
       await this.ctx.repos.chat.migrateCodexThreadUsage()
     })
     await this.ctx.repos.ci.ensureKbUpdateCommand()
