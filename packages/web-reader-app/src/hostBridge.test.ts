@@ -107,6 +107,10 @@ describe('open отвечает заголовком страницы', () => {
     await Promise.resolve()
     h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://blank.example/' })
     expect(await untitled).toEqual({ ok: true, result: { url: 'https://blank.example/' } })
+    const redirected = h.bridge.run({ kind: 'open', url: 'https://blank.example/old' })
+    await Promise.resolve()
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://blank.example/new' })
+    expect(await redirected).toEqual({ ok: true, result: { url: 'https://blank.example/new', redirected: true } })
   })
 })
 
@@ -321,7 +325,7 @@ describe('host: адрес живой страницы и сохранение �
     const h = harness(); h.ready()
     const pending = h.bridge.run({ kind: 'open', url: 'https://shop.example/login' })
     h.from(h.bridge.registrationId()!, { kind: 'page-status', status: 'ready', url: 'https://shop.example/account' })
-    await expect(pending).resolves.toEqual({ ok: true, result: { url: 'https://shop.example/account' } })
+    await expect(pending).resolves.toEqual({ ok: true, result: { url: 'https://shop.example/account', redirected: true } })
     h.bridge.dispose()
   })
   it('подтверждение ручного open не дублирует сохранение URL', () => {

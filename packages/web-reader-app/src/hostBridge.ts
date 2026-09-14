@@ -160,7 +160,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       if (entry.sent || entry.action.kind !== 'viewport' && pageStatus !== 'ready') continue
       // open резолвится готовностью целевой страницы, в iframe не пересылается.
       if (entry.action.kind === 'open') {
-        settle(requestId, { ok: true, result: { url: approvedUrl ?? entry.action.url, ...(pageTitle ? { title: pageTitle } : {}), ...(pageOutline ? { outline: pageOutline } : {}) } })
+        // Итоговый адрес не совпал с запрошенным — сайт перенаправил; модели важно это знать.
+        const finalUrl = approvedUrl ?? entry.action.url
+        settle(requestId, { ok: true, result: { url: finalUrl, ...(pageTitle ? { title: pageTitle } : {}), ...(pageOutline ? { outline: pageOutline } : {}), ...(finalUrl !== entry.action.url ? { redirected: true } : {}) } })
         continue
       }
       entry.sent = true

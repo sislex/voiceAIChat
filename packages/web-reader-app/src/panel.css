@@ -37,3 +37,6 @@
 @media (pointer: coarse) { .webpreview-history li > button, .webpreview-page-error .vc-btn, .webpreview-live { min-height: 44px; } }
 .webpreview-live__time { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .webpreview-action-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.webpreview-history-description[data-ok='true'] .webpreview-history-verdict { color: var(--success, #22863a); }
+.webpreview-history-description[data-ok='false'] .webpreview-history-verdict { color: var(--danger); }
+.webpreview-history-summary { display: block; color: var(--text); }

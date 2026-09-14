@@ -638,6 +638,57 @@ describe('скрипт превью: читать как человек (кру�
   })
 })
 
+describe('скрипт превью: проверки тестировщика и вторые совпадения (круг 6)', () => {
+  it('check отвечает pass/actual/summary для видимости, отсутствия, значения и количества', async () => {
+    const visible = await act({ kind: 'check', text: 'Группы товаров' })
+    expect(visible.result).toMatchObject({ pass: true, summary: '«Группы товаров» видно', actual: { count: 1 } })
+    const absent = await act({ kind: 'check', text: 'Корзина пуста', state: 'absent' })
+    expect(absent.result).toMatchObject({ pass: true, summary: '«Корзина пуста» отсутствует' })
+    ;(document.getElementById('q') as HTMLInputElement).value = 'ноутбук'
+    const value = await act({ kind: 'check', selector: '#q', value: 'Ноутбук' })
+    expect(value.result).toMatchObject({ pass: true })
+    const wrong = await act({ kind: 'check', selector: '#q', value: 'телефон' })
+    expect(wrong.result).toMatchObject({ pass: false, summary: expect.stringContaining('ожидалось «телефон»') })
+    const count = await act({ kind: 'check', selector: 'nav a', count: 3 })
+    expect(count.result).toMatchObject({ pass: false, summary: 'nav a: 2 из 3 — не совпало', actual: { count: 2 } })
+  })
+
+  it('nth берёт N-е совпадение, scroll листает к тексту, errors since и network failedOnly фильтруют журналы', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button class="twin">Удалить</button><button class="twin">Удалить</button>`)
+    const twins = document.querySelectorAll('button.twin')
+    let clicked: Element | null = null
+    for (const button of twins) button.addEventListener('click', () => { clicked = button })
+    const second = await act({ kind: 'click', text: 'Удалить', exact: true, nth: 2 })
+    expect(second.ok).toBe(true)
+    expect(clicked).toBe(twins[1])
+    const missing = await act({ kind: 'click', text: 'Удалить', exact: true, nth: 5 })
+    expect(missing.ok).toBe(false)
+    expect(missing.error).toContain('№5')
+    const heading = document.querySelector('h1') as HTMLElement
+    let shown = false
+    heading.scrollIntoView = () => { shown = true }
+    const scrolled = await act({ kind: 'scroll', to: 'element', text: 'Группы товаров' })
+    expect(scrolled.ok).toBe(true)
+    expect(shown).toBe(true)
+    console.error('старая ошибка')
+    const before = await act({ kind: 'errors' })
+    const at = (before.result as { errors: { at: number }[] }).errors.at(-1)!.at
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    console.error('новая ошибка')
+    const fresh = await act({ kind: 'errors', since: at })
+    expect((fresh.result as { errors: { message: string }[] }).errors.map((e) => e.message)).toEqual(['новая ошибка'])
+    const failed = await act({ kind: 'network', failedOnly: true })
+    expect(failed.ok).toBe(true)
+  })
+
+  it('page несёт язык, описание и иконку сайта', async () => {
+    document.documentElement.setAttribute('lang', 'ru')
+    document.head.insertAdjacentHTML('beforeend', `<meta name="description" content="Магазин электроники"><link rel="icon" href="/favicon.ico">`)
+    const res = await act({ kind: 'read', limit: 100 })
+    expect((res.result as { page: { lang?: string; description?: string; icon?: string } }).page).toMatchObject({ lang: 'ru', description: 'Магазин электроники', icon: expect.stringContaining('/favicon.ico') })
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

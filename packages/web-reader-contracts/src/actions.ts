@@ -99,10 +99,13 @@ export class PreviewActionRelay {
       const result = outcome.result as { url?: unknown; title?: unknown; navigated?: unknown; page?: { url?: unknown; title?: unknown } } | undefined
       const address = typeof result?.url === 'string' ? result.url : typeof result?.page?.url === 'string' ? result.page.url : entry.action.kind === 'open' ? entry.action.url : null
       const title = typeof result?.title === 'string' ? result.title : typeof result?.page?.title === 'string' ? result.page.title : null
+      // Итог проверки едет в ленту панели: человек видит «пройдено/не пройдено», а не только «проверил».
+      const check = entry.action.kind === 'check' && result && typeof (result as { summary?: unknown }).summary === 'string' ? result as { summary: string; pass?: unknown } : null
       const changed: ServerMessage = {
         t: 'reader.changed', conversationId: entry.conversationId, address, title,
         navigated: entry.action.kind === 'open' || entry.action.kind === 'back' || entry.action.kind === 'forward' || result?.navigated === true,
-        action: entry.action
+        action: entry.action,
+        ...(check ? { summary: check.summary.slice(0, 200), ok: check.pass === true } : {})
       }
       for (const sink of this.sinks.get(userId) ?? []) sink(changed)
       entry.resolve({ ok: true, ...(outcome.result !== undefined ? { result: outcome.result } : {}) })

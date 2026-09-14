@@ -143,7 +143,7 @@ export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
   return {
     onAction: (cb) =>
       ws.on('preview.action', (m) => cb({ conversationId: m.conversationId, requestId: m.requestId, action: m.action })),
-    onChanged: (cb) => ws.on('reader.changed', (m) => cb({ conversationId: m.conversationId, address: m.address, title: m.title, navigated: m.navigated, action: m.action })),
+    onChanged: (cb) => ws.on('reader.changed', (m) => cb({ conversationId: m.conversationId, address: m.address, title: m.title, navigated: m.navigated, action: m.action, ...(m.summary !== undefined ? { summary: m.summary } : {}), ...(m.ok !== undefined ? { ok: m.ok } : {}) })),
     result: (m) =>
       ws.send({
         t: 'preview.result',

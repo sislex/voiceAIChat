@@ -79,6 +79,10 @@ export function Recorder(): JSX.Element {
   const [manual, setManual] = useState(false)
   // Text the person selected on the page: one tap turns it into a question for the assistant.
   const [selection, setSelection] = useState('')
+  // Site icon and a redirect notice: the small cues a browser tab gives about where you landed.
+  const [pageIcon, setPageIcon] = useState<string | null>(null)
+  const [redirectedFrom, setRedirectedFrom] = useState<string | null>(null)
+  const requestedUrl = useRef<string | null>(null)
   const manualRef = useRef(false)
   manualRef.current = manual
   // Actions that may start a navigation keep their result briefly: if the page begins
@@ -143,7 +147,8 @@ export function Recorder(): JSX.Element {
     pageReady.current = false
     settleNavigationWatch(false)
     setPageTitle('')
-    setSelection('')
+    setSelection(''); setPageIcon(null); setRedirectedFrom(null)
+    requestedUrl.current = next
     setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
     currentUrl.current = next
     if (next) setFrameKey((value) => value + 1)
@@ -271,6 +276,11 @@ export function Recorder(): JSX.Element {
         scenarioRunner.current?.setReady(true)
         pageReady.current = true
         const title = typeof message.title === 'string' ? message.title.slice(0, 500) : ''
+        const iconUrl = typeof (message as { icon?: unknown }).icon === 'string' ? validUrl((message as { icon: string }).icon) : null
+        setPageIcon(iconUrl)
+        // Landed somewhere else than asked: tell the person, like a browser does with a redirect.
+        if (requestedUrl.current && currentUrl.current && requestedUrl.current !== currentUrl.current && !sameDocument(requestedUrl.current, currentUrl.current)) setRedirectedFrom(requestedUrl.current)
+        requestedUrl.current = null
         const outline = message.outline && typeof message.outline === 'object' ? message.outline as { headings?: unknown; links?: unknown; buttons?: unknown; inputs?: unknown } : null
         const summary = outline && Array.isArray(outline.headings) && [outline.links, outline.buttons, outline.inputs].every(value => typeof value === 'number')
           ? { headings: (outline.headings as unknown[]).filter((item): item is string => typeof item === 'string').slice(0, 8).map(item => item.slice(0, 200)), links: outline.links as number, buttons: outline.buttons as number, inputs: outline.inputs as number }
@@ -304,6 +314,12 @@ export function Recorder(): JSX.Element {
           const progress = { requestId: message.requestId, action: diagnostic.action, ok: message.ok === true, durationMs: Math.round(performance.now() - diagnostic.started) }
           setDiagnostics((current) => [...(current ?? []), progress])
           reply({ kind: 'diagnostics-progress', ...progress })
+        }
+        if (message.requestId.startsWith('snap-')) {
+          const shot = message.result as { dataUrl?: unknown; rect?: unknown; page?: { url?: unknown } } | undefined
+          if (message.ok === true && shot && typeof shot.dataUrl === 'string' && shot.rect && typeof shot.page?.url === 'string') reply({ kind: 'area-screenshot', shot: { dataUrl: shot.dataUrl, rect: shot.rect as { x: number; y: number; width: number; height: number }, pageUrl: shot.page.url } })
+          else setError('Снимок страницы не получился' + (typeof message.error === 'string' ? ': ' + message.error : '.'))
+          return
         }
         // Локальные шаги сценария не имеют pending на стороне host — не отвечаем.
         if (message.requestId.startsWith('local-')) { scenarioRunner.current?.receive(message.requestId, { ok: message.ok === true, ...(typeof message.error === 'string' ? { error: message.error } : {}) }); return }
@@ -500,6 +516,13 @@ export function Recorder(): JSX.Element {
     void navigator.clipboard?.writeText(pageTitle ? `[${pageTitle}](${target})` : target).catch(() => setError('Не удалось скопировать ссылку.'))
     closeTools()
   }
+  // Visible area as a picture for the chat: the same capture the model gets, attached by the person.
+  const snapshotToChat = (): void => {
+    const target = frame.current?.contentWindow
+    if (!target || !pageReady.current) return
+    target.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId: 'snap-' + browserId(), action: { kind: 'screenshot' } }, sameOrigin)
+    closeTools()
+  }
   const openExternal = (): void => {
     if (currentUrl.current) window.open(currentUrl.current, '_blank', 'noopener,noreferrer')
     closeTools()
@@ -544,6 +567,7 @@ export function Recorder(): JSX.Element {
           <Button variant="secondary" type="button" onClick={() => { applyUrl(READER_PROJECT_ORIGIN + '/'); toolsMenu.current?.removeAttribute('open') }}>Текущий проект</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={copyAddress}>Копировать адрес</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={copyLink}>Копировать ссылку с названием</Button>
+          <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} onClick={snapshotToChat}>Снимок страницы в чат</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={openExternal}>Открыть в новой вкладке</Button>
           <Button variant="secondary" type="button" aria-pressed={manual} onClick={() => { setManual(value => !value); closeTools() }}>{manual ? 'Вернуть управление ассистенту' : 'Только я управляю'}</Button>
           </div>
@@ -565,7 +589,8 @@ export function Recorder(): JSX.Element {
       </details>
     </form>
     {loadState === 'loading' && <div className="webpreview-progress" aria-hidden="true" />}
-    {pageTitle && loadState === 'ready' && <div className="webpreview-title" title={pageTitle}><span>{pageTitle}</span></div>}
+    {pageTitle && loadState === 'ready' && <button type="button" className="webpreview-title" title="Скопировать ссылку с названием" onClick={copyLink}>{pageIcon && <img className="webpreview-title__icon" src={'/api/preview?url=' + encodeURIComponent(pageIcon)} alt="" onError={() => setPageIcon(null)} />}<span>{pageTitle}</span></button>}
+    {redirectedFrom && loadState === 'ready' && <div className="webpreview-load-status" role="status">Перенаправлено с {(() => { try { return new URL(redirectedFrom).host } catch { return redirectedFrom } })()}</div>}
     {selection && loadState === 'ready' && <div className="webpreview-selection" role="status"><span className="webpreview-selection__text" title={selection}>«{selection.length > 80 ? selection.slice(0, 79) + '…' : selection}»</span><Button size="sm" onClick={() => { reply({ kind: 'ask', text: selection }); setSelection('') }}>Спросить ассистента</Button><IconButton size="sm" aria-label="Скрыть выделение" title="Скрыть выделение" onClick={() => setSelection('')}>×</IconButton></div>}
     {(transferOpen || steps.length > 0 || recording) && <ScenarioTransfer key={frameKey} pageUrl={scenarioUrl} steps={steps} disabled={scenarioRunning} onImport={next => { setSecretValues({}); setScenarioProgress(null); setSteps(next) }} />}
     {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
@@ -617,6 +642,7 @@ export function Recorder(): JSX.Element {
       <p>Укажите адрес сайта или проекта</p>
       <p className="webpreview-empty__hint">или попросите ассистента в чате: «открой …» — страница появится здесь</p>
       <Button variant="secondary" size="sm" type="button" onClick={() => applyUrl(READER_PROJECT_ORIGIN + '/')}>Открыть текущий проект</Button>
+      {recent.length > 0 && <p className="webpreview-empty__hint">Недавние:</p>}
       {recent.length > 0 && <nav className="webpreview-recent" aria-label="Недавние адреса">{recent.map(item => <Button key={item} variant="secondary" size="sm" type="button" title={item} onClick={() => openAddress(item)}>{recentAddressLabel(item)}</Button>)}</nav>}
     </div></div>}
 
