@@ -297,4 +297,38 @@ UI (desktop and phone):
 | 09 | Empty state mentions paste-and-go | Recorder |
 | 10 | Phone tab bar shows «Ассистент не смог: …» when an action fails behind the chat tab | App |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-08.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-08.md`. Commit `b7bdd8a8`.
+
+## Cycle 09 — routines in one call; the feed explains itself
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `sequence {steps}` runs up to ten panel actions in one call, stops on the first failure, reports each step | `hostBridge.ts`, MCP | bridge + MCP tests |
+| 02 | `read {parts}` returns only the requested parts (smaller answers) | script | script test |
+| 03 | `check {contains}` — partial text match | script | script test |
+| 04 | `scroll {to: nextPage|prevPage}` — one screen down/up like PageDown | script | script test |
+| 05 | `click {x, y}` — click a viewport point (maps, canvas) | script | script test |
+| 06 | `back`/`forward {steps}` | script | script test |
+| 07 | `network {since}` — only requests after a page timestamp | script | script test |
+| 08 | `status.pending` — how many model actions are still running | bridge | bridge test |
+| 09 | relay narrates sequences («3 из 5 шагов») | `actions.ts` | — |
+| 10 | hint documents sequence/parts/contains/nextPage/x,y/steps/since/pending | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Live line shows «выполняет шаг 2 из 5: …» during a sequence | bridge `onSequenceProgress` → `WebReaderFrame` |
+| 02 | «…» on a feed step reveals the action JSON | `ReaderActionHistory` |
+| 03 | Manual mode disables «Повторить» and «Показать» in the feed | `ReaderActionHistory` via `manual` |
+| 04 | Selection chip gains «Скопировать» | Recorder |
+| 05 | Tools menu becomes a bottom sheet under 560 px (safe-area aware) | recorder.css |
+| 06 | Cmd/Ctrl+\ toggles the chat in Reader | App |
+| 07 | Red dot on the «Сайт» tab when a check failed behind the chat tab | App, `app.css` |
+| 08 | Feed rows wrap so the details block fits | `panel.css` |
+| 09 | Sequence steps show up as one feed item with «N из M шагов» | relay summary |
+| 10 | `aria-expanded` on the details toggle | `ReaderActionHistory` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-09.md`.

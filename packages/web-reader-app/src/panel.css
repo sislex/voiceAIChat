@@ -40,3 +40,5 @@
 .webpreview-history-description[data-ok='true'] .webpreview-history-verdict { color: var(--success, #22863a); }
 .webpreview-history-description[data-ok='false'] .webpreview-history-verdict { color: var(--danger); }
 .webpreview-history-summary { display: block; color: var(--text); }
+.webpreview-history-details { flex-basis: 100%; margin: 4px 0 0; padding: 6px 8px; max-height: 140px; overflow: auto; border-radius: 6px; background: var(--panel); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.webpreview-history li { flex-wrap: wrap; }

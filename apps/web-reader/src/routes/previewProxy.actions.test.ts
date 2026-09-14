@@ -5,7 +5,7 @@
 // read) исполняются на реальном DOM. jsdom здесь заменяет iframe: parent ===
 // window, поэтому команда и ответ ходят через postMessage одного окна.
 
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   PREVIEW_ACTION_COMMAND_TYPE,
   PREVIEW_ACTION_RESULT_TYPE,
@@ -763,6 +763,40 @@ describe('скрипт превью: терпимый поиск и заполн
     const click = await act({ kind: 'click', selector: '#lang' })
     expect(click.ok).toBe(false)
     expect(click.error).toContain('set')
+  })
+})
+
+describe('скрипт превью: рутина одним вызовом (круг 9)', () => {
+  it('click по точке, read parts, check contains, scroll на экран, back на несколько шагов, network since', async () => {
+    const button = document.querySelector('form button') as HTMLButtonElement
+    let clicked = false
+    button.addEventListener('click', () => { clicked = true })
+    const original = document.elementFromPoint
+    document.elementFromPoint = () => button
+    try {
+      const point = await act({ kind: 'click', x: 10, y: 10 })
+      expect(point.ok).toBe(true)
+      expect(clicked).toBe(true)
+    } finally { document.elementFromPoint = original }
+    const partial = await act({ kind: 'read', parts: ['headings'] })
+    const result = partial.result as { headings: unknown[]; links: unknown[]; text: string }
+    expect(result.headings.length).toBe(3)
+    expect(result.links).toEqual([])
+    expect(result.text).toBe('')
+    const contains = await act({ kind: 'check', text: 'Группы товаров', contains: 'товар' })
+    expect(contains.result).toMatchObject({ pass: true })
+    const main = document.querySelector('main') as HTMLElement
+    Object.defineProperty(main, 'scrollHeight', { configurable: true, value: 3000 })
+    Object.defineProperty(main, 'clientHeight', { configurable: true, value: 500 })
+    const page = await act({ kind: 'scroll', selector: 'main', to: 'nextPage' })
+    expect((page.result as { scrolled: { top: number } }).scrolled.top).toBe(450)
+    const go = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+    const back = await act({ kind: 'back', steps: 2 })
+    expect(back.ok).toBe(true)
+    expect(go).toHaveBeenCalledWith(-2)
+    go.mockRestore()
+    const network = await act({ kind: 'network', since: 0 })
+    expect(network.ok).toBe(true)
   })
 })
 

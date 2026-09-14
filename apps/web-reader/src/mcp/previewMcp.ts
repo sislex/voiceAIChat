@@ -28,6 +28,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
   PREVIEW_ACTION_LIMITS,
+  PREVIEW_READ_PARTS,
+  isPreviewAction,
   isBrowserWaitOptions,
   browserWaitRequiresChromium,
   isHttpUrl,
@@ -333,6 +335,16 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         inputSchema: { frame: frameSchema, text: z.string().min(1).max(L.text).describe('Видимый текст пункта'), in: z.string().max(L.text).optional().describe('Текст или селектор триггера, открывающего список'), near: z.string().max(L.text).optional().describe('Текст рядом с пунктом') }
       }, async ({ frame, text, in: trigger, near }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}) }))
 
+      server.registerTool('sequence', {
+        description: 'Несколько действий панели одним вызовом (до 10): рутина вроде «нажать → ввести → нажать → проверить» без лишних ходов. ' +
+          'Шаги — те же объекты, что параметры инструментов, с полем kind (click, type, fill, press, wait, check, scroll, read…); open и вложенные sequence запрещены. Остановка на первой ошибке; ответ перечисляет итог каждого шага.',
+        inputSchema: { steps: z.array(z.record(z.string(), z.unknown())).min(1).max(10).describe('Шаги с полем kind') }
+      }, async ({ steps }) => {
+        const action = { kind: 'sequence' as const, steps: steps as never }
+        if (!isPreviewAction(action)) return { content: [{ type: 'text', text: 'Каждый шаг — корректное действие панели с полем kind; open и sequence внутри недопустимы.' }], isError: true }
+        return run(action)
+      })
+
       server.registerTool('show', {
         description: 'Показать пользователю элемент на открытой странице: панель прокрутит к нему и подсветит его с подписью на несколько секунд («вот эта кнопка»). Ничего не нажимает.',
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
@@ -356,12 +368,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
           near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
           state: z.enum(['visible', 'hidden', 'present', 'absent']).optional().describe('Ожидаемое состояние (по умолчанию visible; при count — present)'),
-          value: z.string().max(L.text).optional().describe('Ожидаемое значение поля или текст элемента'),
+          value: z.string().max(L.text).optional().describe('Ожидаемое значение поля или текст элемента (точно)'),
+          contains: z.string().max(L.text).optional().describe('Ожидаемая подстрока значения или текста'),
           count: z.number().int().min(0).max(100000).optional().describe('Ожидаемое число совпадений')
         }
-      }, async ({ frame, text, selector, near, state, value, count }) => {
+      }, async ({ frame, text, selector, near, state, value, contains, count }) => {
         if (!text && !selector) return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
-        return run({ kind: 'check', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(state ? { state } : {}), ...(value !== undefined ? { value } : {}), ...(count !== undefined ? { count } : {}) })
+        return run({ kind: 'check', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(state ? { state } : {}), ...(value !== undefined ? { value } : {}), ...(contains !== undefined ? { contains } : {}), ...(count !== undefined ? { count } : {}) })
       })
 
       server.registerTool('status', {
@@ -432,7 +445,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера или, при to: element, самого элемента'),
             text: z.string().max(L.text).optional().describe('При to: element — видимый текст элемента, к которому листать'),
-            to: z.enum(['top', 'bottom', 'element']).optional().describe('Прокрутить к началу, концу или к элементу selector/text'),
+            to: z.enum(['top', 'bottom', 'element', 'nextPage', 'prevPage']).optional().describe('К началу, концу, к элементу selector/text либо на экран вниз/вверх'),
             dx: z.number().min(-100000).max(100000).optional().describe('Горизонтальный сдвиг в пикселях, отрицательное — влево'),
             dy: z.number().min(-100000).max(100000).optional().describe('Вертикальный сдвиг в пикселях, отрицательное — вверх')
           }
@@ -574,19 +587,19 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       server.registerTool(
         'back',
         {
-          description: 'Назад по истории открытой в превью страницы. После перехода перечитай страницу read.',
-          inputSchema: {}
+          description: 'Назад по истории открытой в превью страницы (steps — на сколько записей). После перехода перечитай страницу read.',
+          inputSchema: { steps: z.number().int().min(1).max(20).optional() }
         },
-        async () => run({ kind: 'back' })
+        async ({ steps }) => run({ kind: 'back', ...(steps !== undefined && steps > 1 ? { steps } : {}) })
       )
 
       server.registerTool(
         'forward',
         {
-          description: 'Вперёд по истории открытой в превью страницы (после back). После перехода перечитай страницу read.',
-          inputSchema: {}
+          description: 'Вперёд по истории открытой в превью страницы (после back); steps — на сколько записей. После перехода перечитай страницу read.',
+          inputSchema: { steps: z.number().int().min(1).max(20).optional() }
         },
-        async () => run({ kind: 'forward' })
+        async ({ steps }) => run({ kind: 'forward', ...(steps !== undefined && steps > 1 ? { steps } : {}) })
       )
 
       const logSchema = {
@@ -811,11 +824,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
             visible: z.boolean().optional().describe('Только элементы и текст в видимой области окна'),
             brief: z.boolean().optional().describe('Короткое описание страницы словами (панель)'),
+            parts: z.array(z.enum(PREVIEW_READ_PARTS as unknown as [string, ...string[]])).min(1).max(7).optional().describe('Какие части вернуть: headings, links, buttons, inputs, forms, landmarks, text'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
             offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
           }
         },
-        async ({ frame, selector, limit, offset, visible, brief }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}), ...(brief !== undefined ? { brief } : {}) })
+        async ({ frame, selector, limit, offset, visible, brief, parts }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}), ...(brief !== undefined ? { brief } : {}), ...(parts ? { parts: parts as never } : {}) })
       )
 
       server.registerTool(
@@ -864,20 +878,23 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             near: z.string().max(L.text).optional().describe('Текст рядом с целью, различающий одинаковые кнопки («Удалить» near «Заказ №5»)'),
             exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
             nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1), если одинаковых несколько'),
+            x: z.number().min(0).max(100000).optional().describe('Клик по точке вьюпорта (CSS px), вместе с y'),
+            y: z.number().min(0).max(100000).optional().describe('Клик по точке вьюпорта (CSS px), вместе с x'),
             button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
             dblclick: z.boolean().optional().describe('Двойной клик'),
             modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
           }
         },
-        async ({ frame, selector, text, near, exact, nth, button, dblclick, modifiers }) => {
-          if (!text && !selector) {
-            return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+        async ({ frame, selector, text, near, exact, nth, x, y, button, dblclick, modifiers }) => {
+          if (!text && !selector && (x === undefined || y === undefined)) {
+            return { content: [{ type: 'text', text: 'Укажи selector, text или точку x и y.' }], isError: true }
           }
           return run({
             kind: 'click', ...(frame !== undefined ? { frame } : {}),
             ...(selector ? { selector } : {}),
             ...(text ? { text } : {}),
             ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}),
+            ...(x !== undefined && y !== undefined ? { x, y } : {}),
             ...(button ? { button } : {}),
             ...(dblclick !== undefined ? { dblclick } : {}),
             ...(modifiers?.length ? { modifiers } : {})

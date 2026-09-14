@@ -98,3 +98,7 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
 .webpreview-tools__group:first-child { padding-top: 0; margin-top: 0; border-top: 0; }
 .webpreview-empty .vc-btn { margin-top: 6px; }
 @media (max-width: 360px) { .webpreview-bar button[type='submit'] { display: none; } }
+/* Phone: the tools menu becomes a bottom sheet — reachable with a thumb, not a tiny dropdown. */
+@media (max-width: 560px) {
+  .webpreview-tools__menu { position: fixed; inset: auto 0 0 0; top: auto; max-width: none; max-height: 70vh; overflow: auto; border-radius: 14px 14px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 32px rgba(31, 35, 48, .2); }
+}

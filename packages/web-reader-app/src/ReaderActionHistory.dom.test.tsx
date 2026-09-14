@@ -96,3 +96,11 @@ it('filters to failed checks and clears the feed', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Очистить ленту действий' }))
   expect(onClear).toHaveBeenCalledOnce()
 })
+
+it('manual mode disables repeat and reveal; details show the action JSON', () => {
+  render(<ReaderActionHistory manual onRepeat={vi.fn()} onReveal={vi.fn()} actions={[{ id: 'c', action: { kind: 'click', selector: '#buy', text: 'Купить' }, title: null, address: null }]} />)
+  expect((screen.getByRole('button', { name: /Повторить действие 1/ }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: /Показать на странице/ }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Подробности действия 1' }))
+  expect(screen.getByText(/"selector": "#buy"/)).toBeTruthy()
+})

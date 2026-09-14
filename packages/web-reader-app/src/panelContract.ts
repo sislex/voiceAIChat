@@ -38,6 +38,8 @@ export interface WebReaderFrameProps {
   onAsk?: ((text: string) => void) | undefined
   /** Пользователь взял управление («Только я управляю») или вернул его. */
   onControl?: ((manual: boolean) => void) | undefined
+  /** Пользователь управляет сам: повтор и показ шагов ленты недоступны. */
+  manual?: boolean
   /** Последнее неудавшееся действие модели: панель показывает причину и даёт повторить. */
   actionError?: { action: PreviewAction; error: string } | null
   onRetryAction?: ((action: PreviewAction) => void) | undefined

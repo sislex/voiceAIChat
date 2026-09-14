@@ -87,6 +87,33 @@ describe('wait по адресу, история и вопрос о выделе
   })
 })
 
+describe('sequence и pending', () => {
+  it('выполняет шаги по очереди, сообщает прогресс и останавливается на первой ошибке', async () => {
+    const progress: Array<{ done: number; total: number } | null> = []
+    let seq = 0
+    const sent: WebRecorderHostMessage[] = []
+    const bridge = createReaderHostBridge({ conversationId: 'conv-1', newId: () => `id-${++seq}`, send: (m) => sent.push(m), onSequenceProgress: (p) => progress.push(p ? { done: p.done, total: p.total } : null) })
+    bridge.receive({ type, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: [] })
+    const registrationId = bridge.registrationId()!
+    bridge.receive({ type, conversationId: 'conv-1', registrationId, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    const running = bridge.run({ kind: 'sequence', steps: [{ kind: 'click', text: 'Войти' }, { kind: 'check', text: 'Кабинет' }, { kind: 'read' }] })
+    await Promise.resolve()
+    const first = sent.filter((m) => m.kind === 'command').at(-1) as { requestId: string }
+    expect(await bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { pending: 1 } })
+    bridge.receive({ type, conversationId: 'conv-1', registrationId, kind: 'result', requestId: first.requestId, ok: true, result: { page: { url: 'https://shop.example/', title: 'Магазин' }, clicked: { selector: 'a', tag: 'a', text: 'Войти' } } })
+    await Promise.resolve(); await Promise.resolve()
+    const second = sent.filter((m) => m.kind === 'command').at(-1) as { requestId: string }
+    expect(second.requestId).not.toBe(first.requestId)
+    bridge.receive({ type, conversationId: 'conv-1', registrationId, kind: 'result', requestId: second.requestId, ok: false, error: 'Элемент не найден' })
+    const outcome = await running
+    expect(outcome.ok).toBe(false)
+    expect(outcome.error).toContain('Шаг 2 из 3 (check)')
+    expect(outcome.result).toMatchObject({ completed: 1, total: 3, steps: [{ kind: 'click', ok: true }, { kind: 'check', ok: false, error: 'Элемент не найден' }] })
+    expect(progress).toEqual([{ done: 0, total: 3 }, { done: 1, total: 3 }, null])
+    expect(sent.filter((m) => m.kind === 'command')).toHaveLength(2)
+  })
+})
+
 describe('open waitFor и viewport', () => {
   it('open с waitFor ждёт текст после готовности и сообщает итог; status несёт viewport', async () => {
     const h = harness()
