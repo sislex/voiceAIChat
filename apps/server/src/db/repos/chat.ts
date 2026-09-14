@@ -1,7 +1,7 @@
 // Домен «chat»: таблицы conversations, messages, messages_fts, fts_state, speakers, conversation_context_events, conversation_draft_requests, conversation_turn_queue, conversation_turn_control, conversation_workspaces.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import { type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, MAKE_KIND, isContextToggleable } from '@voicechat/shared'
+import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, MAKE_KIND, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
 import { MESSAGES_FTS_SQL } from '../schema.js'
 import { toFtsMatchQuery, toPgTsQuery } from '../fts.js'
 import { BaseRepo } from './base.js'
@@ -848,6 +848,81 @@ export class ChatRepo extends BaseRepo {
     }
   }
 
+  /**
+   * Cumulative Codex thread totals of the latest reply in the conversation —
+   * the baseline the next turn of the thread is priced against. Replies without
+   * usage (interrupted, failed) are skipped; null when the thread has no priced
+   * reply yet.
+   */
+  async lastCodexThreadUsage(conversationId: string): Promise<CodexThreadUsage | null> {
+    // Ids first, one meta at a time: a Codex reply carries its whole activity
+    // log in `meta` (up to ~12 MB in production), and the core runs with a
+    // ~512 MB heap — pulling twenty of them in one result set is not free.
+    const ids = (await this.sql.all(
+      `SELECT id FROM messages WHERE conversation_id = ? AND role = 'ai' AND engine = 'codex' AND meta IS NOT NULL
+       ORDER BY created_at DESC, history_position DESC, id DESC LIMIT 20`,
+      [conversationId]
+    )) as Array<{ id: string }>
+    for (const { id } of ids) {
+      const row = (await this.sql.get(`SELECT meta FROM messages WHERE id = ?`, [id])) as { meta: string } | undefined
+      const meta = row ? parseMeta(row.meta) : undefined
+      if (meta?.codexThreadUsage) return meta.codexThreadUsage
+    }
+    return null
+  }
+
+  /**
+   * One-off backfill for legacy Codex replies. `codex exec --json` reports the
+   * cumulative totals of the whole thread in `turn.completed`, and they used to
+   * be stored as the spend of each reply — so every reply looked more expensive
+   * than the previous one and the conversation cost grew quadratically. Each
+   * reply becomes the difference from the previous priced reply of the same
+   * conversation (thread resets are detected by a shrinking counter), the raw
+   * totals move to `codexThreadUsage`, and `inputTokens` loses the cached part
+   * like every other engine. Replies that already carry `codexThreadUsage` are
+   * left untouched, which makes the pass idempotent. Returns the number of
+   * rewritten replies.
+   *
+   * Memory discipline matters here: `meta` holds the reply's whole activity
+   * log (production: 3.2k Codex replies, ~500 MB of meta in total, a single
+   * reply up to ~12 MB) and the core boots with a ~512 MB heap. The first
+   * version selected every meta in one result set and the core died of
+   * heap OOM before serving a request (release 0.1.304, 2026-09-14). Now the
+   * pass loads ids only, then one meta at a time, so the peak is one reply.
+   */
+  async migrateCodexThreadUsage(): Promise<number> {
+    const rows = (await this.sql.all(
+      `SELECT id, conversation_id FROM messages WHERE engine = 'codex' AND role = 'ai' AND meta IS NOT NULL
+       ORDER BY conversation_id ASC, created_at ASC, history_position ASC, id ASC`
+    )) as Array<{ id: string; conversation_id: string }>
+    let updated = 0
+    let conversation: string | null = null
+    let previous: CodexThreadUsage | null = null
+    for (const row of rows) {
+      if (row.conversation_id !== conversation) {
+        conversation = row.conversation_id
+        previous = null
+      }
+      const stored = (await this.sql.get(`SELECT meta FROM messages WHERE id = ?`, [row.id])) as { meta: string | null } | undefined
+      const meta = stored?.meta ? parseMeta(stored.meta) : undefined
+      if (!meta) continue
+      if (meta.codexThreadUsage) {
+        previous = meta.codexThreadUsage
+        continue
+      }
+      if (typeof meta.inputTokens !== 'number' && typeof meta.outputTokens !== 'number') continue
+      const thread = codexThreadUsageOf(meta)
+      const next: TurnMeta = { ...meta, ...codexTurnUsage(thread, previous), codexThreadUsage: thread }
+      // The update also fires the cost-cache trigger, so the sidebar recomputes.
+      // No enclosing transaction: each reply is rewritten independently and the
+      // pass is idempotent, so a restart in the middle simply continues.
+      await this.sql.run(`UPDATE messages SET meta = ? WHERE id = ?`, [JSON.stringify(next), row.id])
+      previous = thread
+      updated++
+    }
+    return updated
+  }
+
   /** Заменяет метаданные сообщения и возвращает актуальную запись. */
   async updateMessageMeta(userId: string, conversationId: string, messageId: string, meta: TurnMeta): Promise<Message> {
     if (!(await this.ownsConversation(userId, conversationId))) throw new Error('message not found')
@@ -1112,9 +1187,12 @@ export class ChatRepo extends BaseRepo {
     const j = this.j
     // Два независимых числа: CLI сообщает фактическую цену не для всех движков,
     // а редактируемый прайс пересчитывает все ответы с известной строкой.
+    // `inputTokens` in meta is the input WITHOUT the cached part for every
+    // engine: Claude reports it that way, Codex replies are normalized by the
+    // TurnManager (`codexTurnUsage`) and the one-off `migrateCodexThreadUsage`.
     const n = (key: string) => j.num('m.meta', key)
     const estimatedCost = `CASE WHEN mp.model IS NOT NULL THEN (
-      MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+      COALESCE(${n('inputTokens')},0) * mp.input_per_million +
       COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
       COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
       COALESCE(${n('outputTokens')},0) * mp.output_per_million
@@ -1159,7 +1237,7 @@ export class ChatRepo extends BaseRepo {
     const j = this.j
     const n = (key: string) => j.num('m.meta', key)
     const estimatedCost = `CASE WHEN mp.model IS NOT NULL THEN (
-      MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+      COALESCE(${n('inputTokens')},0) * mp.input_per_million +
       COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
       COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
       COALESCE(${n('outputTokens')},0) * mp.output_per_million
@@ -1259,7 +1337,7 @@ export class ChatRepo extends BaseRepo {
         COUNT(*) AS ai_count,
         SUM(CASE WHEN ${known} THEN 1 ELSE 0 END) AS known_count,
         SUM(CASE WHEN ${known} THEN (
-            MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+            COALESCE(${n('inputTokens')},0) * mp.input_per_million +
             COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
             COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
             COALESCE(${n('outputTokens')},0) * mp.output_per_million

@@ -304,7 +304,12 @@ describe('CodexCli', () => {
     const order: string[] = []
     h.onUsage = (usage) => {
       order.push('usage')
-      expect(usage).toEqual({ inputTokens: 9, outputTokens: 2, cacheReadTokens: 7 })
+      // Raw thread totals of Codex: the runner passes them through untouched
+      // (with a copy in codexThreadUsage); the server prices the turn as a difference.
+      expect(usage).toEqual({
+        inputTokens: 9, outputTokens: 2, cacheReadTokens: 7,
+        codexThreadUsage: { inputTokens: 9, outputTokens: 2, cacheReadTokens: 7, cacheCreationTokens: 0 }
+      })
     }
     h.onDone = () => order.push('done')
     new CodexCli({ spawn }).send({ prompt: 'x', sessionId: null, model: '' }, h)
