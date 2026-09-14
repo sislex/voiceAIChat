@@ -6921,6 +6921,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .app--web-reader > .chat-split { grid-column: 1; }
 .chat-split-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 360px; min-height: 0; }
 .chat-split-chat > .web-recorder-selector { flex: none; }
+/* Phone header of the Reader: three controls do not fit one 390px row — the engine select takes its own line. */
+@media (max-width: 480px) {
+  .web-recorder-selector { flex-wrap: wrap; }
+  .web-recorder-selector .web-reader-engine { flex: 1 1 100%; }
+  .web-recorder-selector .web-reader-engine select { width: 100%; }
+}
 .chat-split-chat > .main { flex: 1 1 auto; min-height: 0; height: auto; }
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }

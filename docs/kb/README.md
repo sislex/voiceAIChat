@@ -9,34 +9,34 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 24 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 5 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 25 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 44 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 3 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 5 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 6 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 5 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 170 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 330 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 171 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 331 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 6 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 122 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 38 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1454 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 5 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 27 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 39 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1455 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 6 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 28 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 40 коммит(ов) в areas после сверки: 4632bced Merge main into CHAT-466 (task 2c900bc5-86d3-4216-857c-529cc8951e5f) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-14 | ⚠ 1 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-14 | ⚠ 2 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 337 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 24 коммит(ов) в areas после сверки: e8c00896 fix(llm): price Codex turns as the difference of thread totals, not the totals … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 1 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-14 | ⚠ 1 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 237 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 12 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 2 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-14 | ⚠ 2 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 238 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 13 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 24 коммит(ов) в areas после сверки: 99e14157 feat(machines): add guarded Tailscale VPN management … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-13 | ⚠ 14 коммит(ов) в areas после сверки: 4632bced Merge main into CHAT-466 (task 2c900bc5-86d3-4216-857c-529cc8951e5f) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 25 коммит(ов) в areas после сверки: 1879f373 feat(reader): круг 1 — действия как у пользователя и живая панель на десктопе и телефоне … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-13 | ⚠ 15 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 26 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 201 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 825. Последние:
+Всего записей: 826. Последние:
 
+- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-03.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-03.md) — web-reader-user-like-cycle-03
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-02.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-02.md) — web-reader-user-like-cycle-02
 - [2026-09-14-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-01.md](log/2026-09-14-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-01.md) — web-reader-user-like-cycle-01
 - [2026-09-14-alexeys-macbook-air-tailae39a6-ts-net-chat-466-vpn-preparation.md](log/2026-09-14-alexeys-macbook-air-tailae39a6-ts-net-chat-466-vpn-preparation.md) — chat-466-vpn-preparation
@@ -85,7 +86,6 @@
 - [2026-09-13-germany-4-8-60-feature-preview-launch-readiness.md](log/2026-09-13-germany-4-8-60-feature-preview-launch-readiness.md) — feature-preview-launch-readiness
 - [2026-09-13-germany-4-8-60-chat451-machine-console-kb.md](log/2026-09-13-germany-4-8-60-chat451-machine-console-kb.md) — chat451-machine-console-kb
 - [2026-09-13-alexeys-macbook-air-tailae39a6-ts-net-codex-cumulative-usage.md](log/2026-09-13-alexeys-macbook-air-tailae39a6-ts-net-codex-cumulative-usage.md) — codex-cumulative-usage
-- [2026-09-13-alexeys-macbook-air-2-qa-panels-selective-retry.md](log/2026-09-13-alexeys-macbook-air-2-qa-panels-selective-retry.md) — qa-panels-selective-retry
 
 ## Исторические планы
 

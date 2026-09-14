@@ -92,4 +92,38 @@ UI (desktop and phone):
 | 09 | 44 px tab buttons in the phone tab bar | `app.css` |
 | 10 | Flash outline on the page element the model acts on (shared with model item 07) | script |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-02.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-02.md`. Commit `a6143646`.
+
+## Cycle 03 — telling identical controls apart; knowing the panel state
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `near` on find/click/hover/type: pick the target by the text of its row, card or section («Удалить» near «Заказ №5») | script `nearFilter`, MCP schemas | script + shared tests |
+| 02 | `exact: true` on find/click/hover: exact visible-text match only | script `byText` | script test |
+| 03 | every element carries `context` — text of the nearest row/section/form, so the model can tell duplicates apart | `describe()` | script test |
+| 04 | `status` tool: is the panel connected, what page is open, is it loaded — answered by the bridge without touching the page; Chromium answers from session status | `previewMcp.ts`, `hostBridge.ts` | MCP + bridge tests |
+| 05 | `open` returns `outline` (first headings, counts of links, buttons, inputs) from the page-ready message | script `outline()`, Recorder, bridge | script + bridge tests |
+| 06 | `read` lists `forms` (fields and submit button) | script | script test |
+| 07 | `read` lists `landmarks` (navigation, main, banner…) | script | script test |
+| 08 | `scroll` reports `atTop`/`atBottom` for lazy feeds | script | script test |
+| 09 | `type {field, near}` narrows a field by its row or card | `fieldTarget` | shared test |
+| 10 | hint documents near/exact/status/outline/forms/landmarks and asks to call `status` when unsure the panel is open | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Link-to-chat indicator in the toolbar (● connected / ○ not): the person sees whether the assistant can drive the page | Recorder |
+| 02 | Scheme badge in the address field (🔒 for https, «http» otherwise) | Recorder |
+| 03 | Recent addresses also in the tools menu (three latest) | Recorder |
+| 04 | «Показать» on history steps: scrolls to and highlights the element the model acted on | `ReaderActionHistory`, `App` |
+| 05 | Load error offers «Открыть во внешней вкладке» for sites that refuse the proxy | Recorder |
+| 06 | Scenario JSON import/export bar hidden until there are steps, a recording or the tools-menu toggle | Recorder |
+| 07 | Screen-reader announcement «Открыта страница: …» after each load | Recorder |
+| 08 | Phone header wraps: the engine select takes its own row under 480px | `app.css` |
+| 09 | History search appears only when there is more than one step | `ReaderActionHistory` |
+| 10 | Reveal uses the same blue flash as model actions — one visual language | script `flash()` via hover |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-03.md`.

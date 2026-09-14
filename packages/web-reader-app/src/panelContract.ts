@@ -35,6 +35,8 @@ export interface WebReaderFrameProps {
   /** Заголовок открытой страницы (null — страницы нет): для подписи мобильной вкладки. */
   onPageTitle?: ((title: string | null) => void) | undefined
   onRepeatAction?: (action: PreviewAction) => void
+  /** Показать на странице элемент прошлого действия (прокрутить к селектору и подсветить). */
+  onRevealAction?: (selector: string) => void
   pageError?: string | null
   onAskError?: (error: string) => void
   /** Действие модели, которое сейчас выполняется в панели: человек видит, что ассистент делает. */

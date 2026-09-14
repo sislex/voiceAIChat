@@ -348,6 +348,25 @@ describe('Recorder: результат действия и навигация (�
       expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'b1')).toMatchObject({ ok: true, result: { navigated: true, page: { url: 'https://shop.example/prev', title: 'Прежняя' } } })
     } finally { vi.useRealTimers() }
   })
+  it('показывает связь с чатом, прячет файл сценария без шагов и предлагает внешнюю вкладку при ошибке', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    render(<Recorder />)
+    expect(screen.getByLabelText('Связи с чатом нет')).toBeTruthy()
+    fromHost(init)
+    expect(screen.getByLabelText('Связь с чатом есть')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Импорт JSON' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Файл сценария (JSON)' }))
+    expect(screen.getByRole('button', { name: 'Импорт JSON' })).toBeTruthy()
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/', title: 'Магазин' })
+    expect(screen.getByText('Открыта страница: Магазин')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить страницу' }))
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const doc = frame.contentDocument!; doc.open(); doc.write('{"message":"Сайт не ответил"}'); doc.close(); fireEvent.load(frame)
+    return waitFor(() => screen.getByRole('button', { name: 'Открыть во внешней вкладке' })).then((button) => {
+      fireEvent.click(button)
+      expect(open).toHaveBeenCalledWith('https://shop.example/', '_blank', 'noopener,noreferrer')
+    })
+  })
   it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()

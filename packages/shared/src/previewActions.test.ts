@@ -177,6 +177,13 @@ describe('isPreviewAction: как пользователь — field, role, appe
     expect(resolvePreviewUrl('/about', null)).toBeNull()
     expect(resolvePreviewUrl('https://other.test/', null)).toBe('https://other.test/')
   })
+  it('near и exact уточняют цель, status не требует аргументов', () => {
+    expect(isPreviewAction({ kind: 'click', text: 'Удалить', near: 'Заказ №5' })).toBe(true)
+    expect(isPreviewAction({ kind: 'find', text: 'Купить', exact: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'hover', text: 'Меню', exact: 'yes' })).toBe(false)
+    expect(isPreviewAction({ kind: 'type', field: 'Кол-во', near: 'Товар 2', text: '3' })).toBe(true)
+    expect(isPreviewAction({ kind: 'status' })).toBe(true)
+  })
   it('wait со state не требует Chromium — панель ждёт исчезновение сама', () => {
     expect(isPreviewAction({ kind: 'wait', selector: '.spinner', state: 'hidden' })).toBe(true)
   })
@@ -193,7 +200,7 @@ describe('previewToolHint', () => {
   it('панель описана как видимая пользователю и объясняет новые человеческие параметры', () => {
     const hint = previewToolHint()
     expect(hint).toContain('видит каждое твоё действие')
-    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён']) expect(hint).toContain(term)
+    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks']) expect(hint).toContain(term)
   })
 
   it('для изолированного Chromium не обещает панель и требует поднять dev-сервер самому', () => {

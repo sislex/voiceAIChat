@@ -1,4 +1,4 @@
-import { PREVIEW_ACTION_LIMITS, isHttpUrl, isPreviewDomAction, isScreenshotResult, type PreviewDomAction, type PreviewActionResult } from './previewActions'
+import { PREVIEW_ACTION_LIMITS, isHttpUrl, isPreviewDomAction, isScreenshotResult, type PreviewDomAction, type PreviewActionResult, type PreviewPageOutline } from './previewActions'
 import { isPreviewElementPayload, type PreviewElementPayload } from './previewInspector'
 
 // Публичный postMessage-контракт между host ChatAI и самостоятельным
@@ -17,7 +17,7 @@ export const WEB_RECORDER_PROTOCOL_VERSION = 2 as const
 /** Возможности Reader, объявляемые в ready (host показывает их в диагностике). */
 export const WEB_RECORDER_CAPABILITIES = [
   'open', 'read', 'find', 'click', 'type', 'styles', 'hover', 'scroll', 'press', 'screenshot',
-  'inspector', 'recording', 'diagnostics', 'area-screenshot'
+  'inspector', 'recording', 'diagnostics', 'area-screenshot', 'status'
 ] as const
 
 export type WebRecorderPageStatus = 'empty' | 'loading' | 'ready' | 'error'
@@ -56,7 +56,7 @@ export type WebRecorderHostMessage =
 
 export type WebRecorderClientMessage =
   | (Envelope & { kind: 'ready'; protocolVersion: number; conversationId: string | null; registrationId: string | null; capabilities: readonly string[] })
-  | (Addressed & { kind: 'page-status'; status: WebRecorderPageStatus; url: string | null; error?: string; title?: string })
+  | (Addressed & { kind: 'page-status'; status: WebRecorderPageStatus; url: string | null; error?: string; title?: string; outline?: PreviewPageOutline })
   | (Addressed & { kind: 'result'; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string })
   | (Addressed & { kind: 'save-url'; url: string | null })
   | (Addressed & { kind: 'element-selected'; element: PreviewElementPayload })
@@ -83,6 +83,11 @@ function capabilities(value: unknown): value is readonly string[] {
 function addressed(value: Record<string, unknown>): boolean {
   return bounded(value.conversationId, ID_LIMIT) && bounded(value.registrationId, ID_LIMIT)
 }
+function isPageOutline(value: unknown): value is PreviewPageOutline {
+  if (!record(value) || !Array.isArray(value.headings) || value.headings.length > 8) return false
+  return value.headings.every((item) => bounded(item, 200)) && (['links', 'buttons', 'inputs'] as const).every((key) => typeof value[key] === 'number' && Number.isFinite(value[key] as number) && (value[key] as number) >= 0)
+}
+
 function envelope(value: unknown): value is Record<string, unknown> {
   return record(value) && value.type === WEB_RECORDER_MESSAGE_TYPE
 }
@@ -127,7 +132,8 @@ export function isWebRecorderClientMessage(value: unknown): value is WebRecorder
         (value.status === 'empty' || value.status === 'loading' || value.status === 'ready' || value.status === 'error') &&
         nullableUrl(value.url) &&
         (value.error === undefined || bounded(value.error, 2_000)) &&
-        (value.title === undefined || bounded(value.title, 500))
+        (value.title === undefined || bounded(value.title, 500)) &&
+        (value.outline === undefined || isPageOutline(value.outline))
       )
     case 'result': {
       if (!bounded(value.requestId, ID_LIMIT) || typeof value.ok !== 'boolean') return false
