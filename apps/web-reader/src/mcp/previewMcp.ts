@@ -936,6 +936,32 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'snapshot',
+        {
+          description:
+            'Именованный снимок состояния и сравнение с текущей страницей. ' +
+            '«Не сломалась ли вёрстка после правки» человек проверяет глазами: смотрит до, смотрит после. ' +
+            'Сделай snapshot save с именем до изменения, затем snapshot compare с тем же именем — ответ ' +
+            'скажет долю различающихся пикселей, прямоугольник, в который они уместились («всё в шапке» — ' +
+            'это диагноз, а «12%» — нет), и что появилось или исчезло в тексте. ' +
+            'Снимки живут в памяти сессии, их держится не больше десяти.',
+          inputSchema: {
+            do: z.enum(['save', 'list', 'compare', 'remove']).describe('Что сделать'),
+            name: z.string().max(120).optional().describe('Имя снимка (нужно для save, compare и точечного remove)'),
+            threshold: z.number().int().min(0).max(64).optional().describe('Порог различия канала: сжатие шевелит пиксели на пару единиц (по умолчанию 8)')
+          }
+        },
+        async ({ do: operation, name, threshold }) => {
+          if (!entry) return noContext
+          if ((operation === 'save' || operation === 'compare') && !name) {
+            return { content: [{ type: 'text', text: `Для ${operation} нужно имя снимка.` }], isError: true }
+          }
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'snapshot', do: operation, ...(name ? { name } : {}), ...(threshold !== undefined ? { threshold } : {}) })
+          return toolResult(result ?? { ok: false, error: 'Снимки состояния доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
         'network-rules',
         {
           description:
