@@ -90,6 +90,17 @@ export function Recorder(): JSX.Element {
   const [findText, setFindText] = useState('')
   const findRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
+  // Reading progress and reading time: the strip under the toolbar tells how far the person got and how long the page is.
+  const [readProgress, setReadProgress] = useState(0)
+  const [readMinutes, setReadMinutes] = useState(0)
+  const [zoom, setZoom] = useState(100)
+  const zoomRef = useRef(100)
+  const [suggestionIndex, setSuggestionIndex] = useState(-1)
+  const applyZoom = (next: number): void => {
+    const clamped = Math.min(200, Math.max(50, next))
+    setZoom(clamped); zoomRef.current = clamped
+    try { const doc = frame.current?.contentDocument; if (doc?.body) (doc.body.style as CSSStyleDeclaration & { zoom?: string }).zoom = clamped === 100 ? '' : `${clamped}%` } catch { /* cross-document */ }
+  }
   const findInPage = (backwards: boolean): void => {
     const target = frame.current?.contentWindow as (Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean, wrap?: boolean) => boolean }) | null | undefined
     if (!target || !findText.trim() || typeof target.find !== 'function') return
@@ -175,7 +186,7 @@ export function Recorder(): JSX.Element {
     pageReady.current = false
     settleNavigationWatch(false)
     setPageTitle('')
-    setSelection(''); setPageIcon(null); setRedirectedFrom(null); setPageLang('')
+    setSelection(''); setPageIcon(null); setRedirectedFrom(null); setPageLang(''); setReadProgress(0); setReadMinutes(0)
     requestedUrl.current = next
     setHistoryDepth(0); historyGrew.current = false
     setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
@@ -311,13 +322,22 @@ export function Recorder(): JSX.Element {
         // Landed somewhere else than asked: tell the person, like a browser does with a redirect.
         if (requestedUrl.current && currentUrl.current && requestedUrl.current !== currentUrl.current && !sameDocument(requestedUrl.current, currentUrl.current)) setRedirectedFrom(requestedUrl.current)
         requestedUrl.current = null
-        const outline = message.outline && typeof message.outline === 'object' ? message.outline as { headings?: unknown; links?: unknown; buttons?: unknown; inputs?: unknown } : null
+        const outline = message.outline && typeof message.outline === 'object' ? message.outline as { headings?: unknown; links?: unknown; buttons?: unknown; inputs?: unknown; words?: unknown } : null
         const summary = outline && Array.isArray(outline.headings) && [outline.links, outline.buttons, outline.inputs].every(value => typeof value === 'number')
-          ? { headings: (outline.headings as unknown[]).filter((item): item is string => typeof item === 'string').slice(0, 8).map(item => item.slice(0, 200)), links: outline.links as number, buttons: outline.buttons as number, inputs: outline.inputs as number }
+          ? { headings: (outline.headings as unknown[]).filter((item): item is string => typeof item === 'string').slice(0, 8).map(item => item.slice(0, 200)), links: outline.links as number, buttons: outline.buttons as number, inputs: outline.inputs as number, ...(typeof outline.words === 'number' ? { words: outline.words } : {}) }
           : null
         setPageTitle(title)
         if (currentUrl.current) setRecent(list => { const updated = rememberRecentAddress(list, currentUrl.current!); saveRecentAddresses(updated); return updated })
         setLoadState('ready'); setLoadError(null)
+        setReadMinutes(outline && typeof outline.words === 'number' ? Math.round(outline.words / 200) : 0)
+        try {
+          const win = frame.current?.contentWindow
+          if (win) {
+            const update = (): void => { try { const doc = win.document.scrollingElement || win.document.documentElement; const max = Math.max(0, doc.scrollHeight - win.innerHeight); setReadProgress(max > 0 ? Math.min(100, Math.round(doc.scrollTop / max * 100)) : 100) } catch { /* cross-document */ } }
+            win.addEventListener('scroll', update, { passive: true }); update()
+            if (zoomRef.current !== 100) applyZoom(zoomRef.current)
+          }
+        } catch { /* cross-document */ }
         const vp = (message as { viewport?: unknown }).viewport as { width?: unknown; height?: unknown } | undefined
         const viewportInfo = vp && typeof vp.width === 'number' && typeof vp.height === 'number' ? { width: vp.width, height: vp.height } : null
         // Read the refs now: a state updater runs later, when the flag below is already flipped.
@@ -592,18 +612,20 @@ export function Recorder(): JSX.Element {
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
       <IconButton variant="secondary" type="button" disabled={!url || historyDepth === 0} aria-label="Назад" aria-keyshortcuts="Alt+ArrowLeft" title="Назад (Alt+←)" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" aria-keyshortcuts="Alt+ArrowRight" title="Вперёд (Alt+→)" onClick={() => historyGo(1)}>›</IconButton>
-      <IconButton variant="secondary" aria-label="Обновить страницу" title={loadState === 'loading' ? 'Страница загружается…' : 'Обновить страницу'} disabled={!url || loadState === 'loading'} aria-busy={loadState === 'loading' || undefined} className={loadState === 'loading' ? 'webpreview-reload--busy' : undefined} onClick={reload}>↻</IconButton>
+      <IconButton variant="secondary" aria-label="Обновить страницу" title={loadState === 'loading' ? 'Страница загружается…' : 'Обновить страницу'} disabled={!url || loadState === 'loading'} aria-busy={loadState === 'loading' || undefined} className={loadState === 'loading' ? 'webpreview-reload--busy' : undefined} onClick={event => { if (event.shiftKey) resetSession(); else reload() }}>↻</IconButton>
       <span className="webpreview-link" role="img" title={linked ? 'Панель связана с чатом: ассистент может управлять страницей' : 'Панель не связана с чатом: ассистент не видит эту страницу'} aria-label={linked ? 'Связь с чатом есть' : 'Связи с чатом нет'} data-linked={linked || undefined} data-manual={manual || undefined}>{linked ? '●' : '○'}</span>
       <label className="webpreview-address">{url && <span className="webpreview-scheme" aria-hidden="true" title={url.startsWith('https:') ? 'Защищённое соединение' : 'Незащищённое соединение'}>{url.startsWith('https:') ? '🔒' : '⚠'}</span>}<span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} aria-keyshortcuts="Control+L Meta+L" value={draft} placeholder="https://example.com" onFocus={event => { event.currentTarget.select(); setAddressFocused(true) }} onBlur={() => setTimeout(() => setAddressFocused(false), 120)} aria-autocomplete="list" aria-controls={suggestionsId} aria-expanded={addressFocused && suggestions.length > 0} onPaste={event => {
         // Paste-and-go: a pasted full address opens at once, like mobile browsers do.
         const pasted = event.clipboardData.getData('text').trim()
         if (!draft.trim() && /^https?:\/\/\S+$/.test(pasted)) { event.preventDefault(); openAddress(pasted) }
-      }} onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => {
+      }} onChange={(event) => { setDraft(event.target.value); setAddressError(null); setSuggestionIndex(-1) }} onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) }
+        if (suggestions.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) { event.preventDefault(); setSuggestionIndex(index => { const next = index + (event.key === 'ArrowDown' ? 1 : -1); return next < -1 ? suggestions.length - 1 : next >= suggestions.length ? -1 : next }); return }
+        if (suggestions.length && suggestionIndex >= 0 && event.key === 'Enter' && !event.metaKey && !event.ctrlKey) { event.preventDefault(); const pick = suggestions[suggestionIndex]; if (pick) { openAddress(pick); setAddressFocused(false); setSuggestionIndex(-1) } return }
         // Cmd/Ctrl+Enter opens the typed address in a real browser tab, like the address bar of a browser.
         if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); const result = normalizeReaderAddress(draft, currentUrl.current); if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer'); else setAddressError(result.error ?? null) }
       }} />
-      {addressFocused && suggestions.length > 0 && <ul id={suggestionsId} className="webpreview-suggestions" role="listbox" aria-label="Недавние адреса, похожие на ввод">{suggestions.map(item => <li key={item} role="option" aria-selected={false}><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => { openAddress(item); setAddressFocused(false) }}>{recentAddressLabel(item)}</button></li>)}</ul>}</label>
+      {addressFocused && suggestions.length > 0 && <ul id={suggestionsId} className="webpreview-suggestions" role="listbox" aria-label="Недавние адреса, похожие на ввод">{suggestions.map((item, index) => <li key={item} role="option" aria-selected={index === suggestionIndex} className={index === suggestionIndex ? 'webpreview-suggestions__active' : undefined}><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => { openAddress(item); setAddressFocused(false); setSuggestionIndex(-1) }}>{recentAddressLabel(item)}</button></li>)}</ul>}</label>
       <Button variant="secondary" type="submit" disabled={!draft.trim()}>Открыть</Button>
       <IconButton variant="secondary" type="button" aria-label="Очистить страницу" title="Очистить страницу" disabled={!url && !draft} onClick={() => { applyUrl(null); reply({ kind: 'save-url', url: null }); addressRef.current?.focus() }}>×</IconButton>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
@@ -626,6 +648,7 @@ export function Recorder(): JSX.Element {
           <Button variant="secondary" type="button" disabled={!url} onClick={copyAddress}>Копировать адрес</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={copyLink}>Копировать ссылку с названием</Button>
           <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} aria-keyshortcuts="Control+F Meta+F" onClick={() => { setFindOpen(true); closeTools(); setTimeout(() => findRef.current?.focus(), 0) }}>Найти на странице</Button>
+          <div className="webpreview-tools__zoom" role="group" aria-label="Масштаб страницы"><Button variant="secondary" size="sm" type="button" disabled={!url || loadState !== 'ready' || zoom <= 50} aria-label="Уменьшить текст" onClick={() => applyZoom(zoom - 10)}>A−</Button><span aria-live="polite">{zoom}%</span><Button variant="secondary" size="sm" type="button" disabled={!url || loadState !== 'ready' || zoom >= 200} aria-label="Увеличить текст" onClick={() => applyZoom(zoom + 10)}>A+</Button></div>
           <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} onClick={snapshotToChat}>Снимок страницы в чат</Button>
           {typeof navigator.share === 'function' && <Button variant="secondary" type="button" disabled={!url} onClick={() => { const target = currentUrl.current; if (target) void navigator.share({ url: target, ...(pageTitle ? { title: pageTitle } : {}) }).catch(() => {}); closeTools() }}>Поделиться…</Button>}
           <Button variant="secondary" type="button" disabled={!url} onClick={openExternal}>Открыть в новой вкладке</Button>
@@ -649,7 +672,8 @@ export function Recorder(): JSX.Element {
       </details>
     </form>
     {loadState === 'loading' && <div className="webpreview-progress" aria-hidden="true" />}
-    {pageTitle && loadState === 'ready' && <button type="button" className="webpreview-title" title="Скопировать ссылку с названием" aria-label={`Скопировать ссылку: ${pageTitle}`} onClick={copyLink}>{pageIcon && <img className="webpreview-title__icon" src={'/api/preview?url=' + encodeURIComponent(pageIcon)} alt="" onError={() => setPageIcon(null)} />}<span>{pageTitle}</span>{pageLang && <small className="webpreview-title__lang" title={`Язык страницы: ${pageLang}`}>{pageLang}</small>}</button>}
+    {pageTitle && loadState === 'ready' && <button type="button" className="webpreview-title" title="Скопировать ссылку с названием" aria-label={`Скопировать ссылку: ${pageTitle}`} onClick={copyLink}>{pageIcon && <img className="webpreview-title__icon" src={'/api/preview?url=' + encodeURIComponent(pageIcon)} alt="" onError={() => setPageIcon(null)} />}<span>{pageTitle}</span>{pageLang && <small className="webpreview-title__lang" title={`Язык страницы: ${pageLang}`}>{pageLang}</small>}{readMinutes >= 1 && <small className="webpreview-title__time" title="Примерное время чтения">~{readMinutes} мин</small>}</button>}
+    {loadState === 'ready' && url && readProgress > 0 && readProgress < 100 && <div className="webpreview-readbar" role="progressbar" aria-label="Прочитано страницы" aria-valuemin={0} aria-valuemax={100} aria-valuenow={readProgress}><span style={{ width: `${readProgress}%` }} /></div>}
     {redirectedFrom && loadState === 'ready' && <div className="webpreview-load-status" role="status">Перенаправлено с {(() => { try { return new URL(redirectedFrom).host } catch { return redirectedFrom } })()}</div>}
     {findOpen && url && <form className="webpreview-find" role="search" aria-label="Поиск на странице" onSubmit={event => { event.preventDefault(); findInPage(event.nativeEvent instanceof SubmitEvent && (event.nativeEvent as SubmitEvent).submitter?.getAttribute('data-dir') === 'back') }}>
       <input ref={findRef} type="search" aria-label="Найти на странице" placeholder="Найти на странице" value={findText} onChange={event => setFindText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); findInPage(true) } }} />

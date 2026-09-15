@@ -117,3 +117,9 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
 .webpreview-find input { flex: 1; min-width: 0; min-height: 32px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; }
 .webpreview--dragging { outline: 2px dashed var(--accent); outline-offset: -4px; }
 @media (pointer: coarse) { .webpreview-find input, .webpreview-find .vc-btn { min-height: 44px; } }
+.webpreview-title__time { flex: none; color: var(--text-dim); font-size: 11px; }
+.webpreview-readbar { flex: none; height: 2px; background: var(--border-soft, var(--border)); }
+.webpreview-readbar > span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+.webpreview-tools__zoom { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.webpreview-tools__zoom span { min-width: 40px; text-align: center; color: var(--text-dim); }
+.webpreview-suggestions__active > button { background: var(--surface-selected); }

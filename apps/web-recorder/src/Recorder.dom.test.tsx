@@ -494,6 +494,22 @@ describe('Recorder: результат действия и навигация (�
     fireEvent.drop(screen.getByRole('region', { name: 'Web Reader' }), { dataTransfer: { types: ['text/uri-list'], getData: (type: string) => type === 'text/uri-list' ? 'https://dropped.example/page\n' : '' } })
     expect(sent(post).find((message) => message.kind === 'save-url' && message.url === 'https://dropped.example/page')).toBeTruthy()
   })
+  it('показывает время чтения из outline, масштабирует страницу и листает подсказки стрелками', () => {
+    localStorage.setItem('voicechat.reader.recent.v1', JSON.stringify(['https://shop.example/', 'https://docs.example/guide', 'https://docs.example/api']))
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />); fromHost(init)
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/', title: 'Магазин', outline: { headings: ['Магазин'], links: 2, buttons: 1, inputs: 0, words: 1000 } })
+    expect(screen.getByTitle('Примерное время чтения').textContent).toBe('~5 мин')
+    fireEvent.click(screen.getByRole('button', { name: 'Увеличить текст' }))
+    expect(screen.getByRole('group', { name: 'Масштаб страницы' }).textContent).toContain('110%')
+    const address = screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement
+    fireEvent.focus(address)
+    fireEvent.change(address, { target: { value: 'docs' } })
+    fireEvent.keyDown(address, { key: 'ArrowDown' })
+    fireEvent.keyDown(address, { key: 'ArrowDown' })
+    fireEvent.keyDown(address, { key: 'Enter' })
+    expect(sent(post).find((message) => message.kind === 'save-url' && message.url === 'https://docs.example/api')).toBeTruthy()
+  })
   it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()

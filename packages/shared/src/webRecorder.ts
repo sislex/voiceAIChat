@@ -89,7 +89,7 @@ function addressed(value: Record<string, unknown>): boolean {
 }
 function isPageOutline(value: unknown): value is PreviewPageOutline {
   if (!record(value) || !Array.isArray(value.headings) || value.headings.length > 8) return false
-  return value.headings.every((item) => bounded(item, 200)) && (['links', 'buttons', 'inputs'] as const).every((key) => typeof value[key] === 'number' && Number.isFinite(value[key] as number) && (value[key] as number) >= 0)
+  return value.headings.every((item) => bounded(item, 200)) && (['links', 'buttons', 'inputs'] as const).every((key) => typeof value[key] === 'number' && Number.isFinite(value[key] as number) && (value[key] as number) >= 0) && (value.words === undefined || (typeof value.words === 'number' && Number.isFinite(value.words) && value.words >= 0))
 }
 
 function envelope(value: unknown): value is Record<string, unknown> {

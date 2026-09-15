@@ -148,3 +148,10 @@ it('filters steps by kind and shows kind icons', () => {
   fireEvent.change(screen.getByRole('combobox', { name: 'Какие шаги показывать' }), { target: { value: 'actions' } })
   expect(screen.getAllByRole('listitem')).toHaveLength(2)
 })
+
+it('offers to open the page of a step made elsewhere', () => {
+  const onRepeat = vi.fn()
+  render(<ReaderActionHistory currentUrl="https://now.test/" onRepeat={onRepeat} actions={[{ id: 'o', action: { kind: 'click', text: 'A' }, title: null, address: 'https://old.test/page' }]} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Открыть страницу действия 1' }))
+  expect(onRepeat).toHaveBeenCalledWith({ kind: 'open', url: 'https://old.test/page' })
+})
