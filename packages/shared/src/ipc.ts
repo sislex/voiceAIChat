@@ -56,7 +56,7 @@ import type {
   AdminUserInfo,
   UserProfileInfo,
   UsageReport,
-  UsageUnit, SecurityEvent, InviteInfo, SignupConfig } from './admin'
+  UsageUnit, SecurityEvent, SecurityGroup, InviteInfo, SignupConfig } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { EnrollmentIssued, EnrollmentStatusResult, LoginApplicationArtifact } from './enrollment'
@@ -330,7 +330,7 @@ export interface IpcInvokeMap {
   'llm:access': { arg: void; result: import('./llmAccess').UserLlmAccess[] }
   /** Свой профиль и свой журнал безопасности: те же данные, что видит админ, но только о себе. */
   'me:profile': { arg: void; result: UserProfileInfo }
-  'me:security': { arg: { limit?: number }; result: SecurityEvent[] }
+  'me:security': { arg: { limit?: number; group?: SecurityGroup }; result: SecurityEvent[] }
   'llm:engines': { arg: void; result: LlmEngineOption[] }
   /**
    * Патч настроек: сервер применяет только присланные поля. Полный объект тоже

@@ -152,10 +152,31 @@ const UsersAdmin = lazy(async () => {
 
 // Страница «Мой аккаунт» ленивая по той же причине, что и админка: главный чанк
 // уже почти упёрся в бюджет сборки (frontend-quality/bundle-baseline.json).
+const loadAccountPage = async () => import('./components/AccountPage')
 const AccountPage = lazy(async () => {
-  const module = await import('./components/AccountPage')
+  const module = await loadAccountPage()
   return { default: module.AccountPage }
 })
+
+function AccountPageFallback(): JSX.Element {
+  return (
+    <section className="admin-page account-page account-page--loading" aria-label="Мой аккаунт" aria-busy="true">
+      <header className="admin-head account-head">
+        <div className="account-head__copy">
+          <h1>Мой аккаунт</h1>
+          <p>Профиль, доступ, устройства и использование моделей</p>
+        </div>
+      </header>
+      <div className="account-page__fallback" role="status">
+        <span className="vc-sr-only">Загрузка аккаунта…</span>
+        <div className="account-page__fallback-profile" aria-hidden="true" />
+        <div className="account-page__fallback-stats" aria-hidden="true">
+          <i /><i /><i /><i />
+        </div>
+      </div>
+    </section>
+  )
+}
 
 // Карточка задачи (85 КБ исходника со всеми панелями) нужна хосту ровно в одном
 // месте — черновик задачи, предложенной моделью в чате. Статический импорт
@@ -2521,6 +2542,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
+        onAccountIntent={session.authRequired && session.currentUser ? () => { void loadAccountPage() } : undefined}
         onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
         onOpenSettings={menu(() => navigate('/settings/llm'))}
         onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
@@ -3251,7 +3273,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
 
       {utilitySeg === 'account' && session.currentUser && (
-        <Suspense fallback={<div role="status">Загрузка аккаунта…</div>}>
+        <Suspense fallback={<AccountPageFallback />}>
           <AccountPage
             api={api}
             tab={accountTab}
