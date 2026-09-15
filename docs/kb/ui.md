@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: f20ec036
+checked: a6abbb37
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -4634,3 +4634,33 @@ items: otherwise a tall mobile profile collapses the tab row to its 1 px
 border. Routed tabs use `Tabs` horizontal `scrollTo`, which keeps the active tab
 visible without moving the page vertically. The account page was checked at
 1440, 768, 390, and 320 px with no document or panel overflow.
+
+## Маршрутные чтения и сессионный кэш
+
+Защищённые данные больше не входят в единый bootstrap: активный маршрут или
+вкладка запрашивает только нужные ему семейства. Поэтому холодный чат не читает
+машины, каталоги закрытых Settings и данные вкладок Account. Account всегда
+начинает с профиля; доступ и usage нужны Overview и своим вкладкам, машины —
+Overview/Machines, журнал — только Security. Каждый блок хранит собственные
+loading/error/retry, а уже показанные сводки Overview не исчезают во время
+обновления. Маршрутная оркестрация находится в
+`packages/ui/src/App.tsx`, Account — в
+`packages/ui/src/components/AccountPage.tsx` и `packages/profile-app/src`.
+
+Обёртка `packages/ui/src/clients/readResources.ts` пропускает через
+`ReadCache` только явный allowlist безопасных чтений; команды и поиски не
+кэшируются. Ключ включает семейство, канал и рекурсивно нормализованные
+аргументы (поля объектов сортируются, `undefined` отбрасывается), поэтому
+эквивалентные параметры делят запись, а project id разделяет проектные данные.
+Экземпляр привязан к `RendererApi`, то есть к пользовательской сессии; logout
+очищает его. TTL заданы по семействам в
+`packages/ui/src/lib/readCache.ts`: profile/access/settings — 60 с,
+usage/security/machines/projects — 30 с, board — 10 с, catalogs — 5 минут.
+
+Свежая запись даёт hit, конкурентные читатели одного ключа получают один
+in-flight Promise. Отписка компонента запрещает только его callback и не
+отменяет общий запрос. Инвалидация удаляет сам объект записи: завершение старого
+запроса становится `AbortError` и не может заменить новую запись или state.
+Мутации инвалидируют адресные семейства до вызова и в `finally`; realtime
+машин может сразу seed-ить список. Диагностика пишет только семейство и
+`hit|miss`, без ответа и параметров.
