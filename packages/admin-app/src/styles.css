@@ -1,4 +1,12 @@
 @import '@voicechat/ui-kit/styles.css';
+.ui-performance{color:var(--text);background:var(--bg);min-width:0;padding:max(1rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) max(1rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left));overflow-wrap:anywhere}
+.ui-performance__filters,.ui-performance__cards,.ui-performance__trend{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:1rem}
+.ui-performance__filters label{display:flex;flex-direction:column;min-width:0;gap:.35rem}
+.ui-performance input,.ui-performance select{box-sizing:border-box;min-width:0;width:100%;min-height:44px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:.4rem;padding:.5rem;font:inherit}
+.ui-performance :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.ui-performance article{min-width:0;border:1px solid var(--border);padding:1rem;border-radius:.5rem}
+.ui-performance dl{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}.ui-performance dd{margin:0}.ui-performance summary{min-height:44px;cursor:pointer}
+
 .admin-page,.admin-frame{display:flex;min-width:0;min-height:0;flex-direction:column;height:100%;background:var(--bg);color:var(--text)}
 .admin-head,.uadmin-head,.uusage-heading,.uadmin-actions{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
 /* Рамка без собственного заголовка: страница рисует его сама, здесь — только выход. */

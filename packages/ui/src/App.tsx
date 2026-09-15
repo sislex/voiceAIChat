@@ -6,7 +6,7 @@ import { createApplicationPanel } from './runtime/applicationHost'
 import { WebReaderEngineSelect } from './components/WebReaderEngineSelect'
 import { runReaderModelRequest, readReaderErrorSummary } from './webReaderModelRequest'
 import { PREVIEW_WIDTH_DEFAULT, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN, clampPreviewWidth, pendingActionLabel, previewWidthAfterKey, siteTabLabel, splitAttentionReducer, type SplitView } from './readerSplitControls'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
 import { buildProjectsRoute, isTaskRouteTab, parseProjectsRoute } from '@voicechat/projects-app'
@@ -102,6 +102,8 @@ import type { PipelineDelays } from './store/mockPipeline'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHashRoute } from '@voicechat/ui-foundation/runtime'
 import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
+import { uiPerformance } from './lib/uiPerformance'
+if (typeof window !== 'undefined') uiPerformance().begin('shell')
 import { useCommandSource, useCommandsRevision } from '@voicechat/ui-foundation/runtime'
 import { listCommands } from '@voicechat/ui-foundation/runtime'
 import { formatConfirmRows, runWidgetUiAction } from './lib/widgetUiActions'
@@ -146,6 +148,8 @@ const SessionsDialogHost = lazy(async () => {
 })
 
 const ImageStudioPane = createApplicationPanel<ImageStudioPaneProps>('image-studio-ui')
+const loadPerformanceReport = (query: import('@shared/uiPerformance').UiPerformanceQuery) => window.api!['uiPerformance:report'](query)
+const PerformanceDashboard = lazy(async () => ({ default: (await import('@voicechat/admin-app')).PerformanceDashboard }))
 const UsersAdmin = lazy(async () => {
   const module = await import('@voicechat/admin-app')
   return { default: module.UsersAdmin }
@@ -460,11 +464,35 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Каждый домен — своя подписка: обновление аудио или админских данных не
   // тянет за собой перерисовку соседних экранов.
   const runtime = useAppRuntime()
+  useLayoutEffect(() => {
+    const p = uiPerformance()
+    p.cancel('route')
+    p.begin('route', segments[0] === 'account' ? 'account' : segments[0] === 'projects' ? 'board' : 'chat')
+    return () => { p.cancel('route') }
+  }, [path])
+  useEffect(() => {
+    const p = uiPerformance()
+    void window.api?.['app:ping']?.().then(health => p.setVersion(health.commit ?? 'unknown')).catch(() => {})
+    const hidden = () => { if (document.visibilityState === 'hidden') p.hidden() }
+    document.addEventListener('visibilitychange', hidden)
+    const timer = setInterval(() => { void p.flush() }, 5000)
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', hidden); p.hidden() }
+  }, [])
   const shell = useShell((s) => s)
   const session = useSession((s) => s)
   const sessionActions = useSessionActions()
   const settingsState = useSettings((s) => s)
+  useEffect(() => {
+    if (session.checking || (session.authRequired && !session.currentUser) || !settingsState.settingsLoaded || !settingsState.settings.onboarded) return
+    const frame = requestAnimationFrame(() => { const p = uiPerformance(); p.mark('shell', 'shell_interactive'); p.finish('shell', 'shell') })
+    return () => cancelAnimationFrame(frame)
+  }, [session.checking, session.authRequired, session.currentUser, settingsState.settingsLoaded, settingsState.settings.onboarded])
   const chat = useChat((s) => s)
+  const performanceChat = useRef(chat.activeId)
+  useEffect(() => {
+    if (!inChat || (performanceChat.current !== null && performanceChat.current !== chat.activeId)) uiPerformance().cancelMessages()
+    performanceChat.current = chat.activeId
+  }, [inChat, chat.activeId])
   const voice = useVoice((s) => s)
   const operations = useOperations((s) => s)
   const admin = useAdmin((s) => s)
@@ -2839,6 +2867,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         canExecutePlan={!forcedPlan}
         state={voice.voice}
         messages={chat.messages.filter((message) => !(chat.activeId ? chat.queuedTurns[chat.activeId] ?? [] : []).some((item) => item.messageId === message.id))}
+        performanceReady={settingsState.settingsLoaded && chat.conversationsStatus === 'ready' && !chat.conversationsError && (!routeChatId || routeChatId === chat.activeId)}
         loadingMessages={chat.loadingMessages}
         highlightMessageId={chat.highlightMessageId}
         onHighlightDone={chatActions.clearMessageHighlight}
@@ -3410,6 +3439,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onUpdateMachine={async (id) => { try { await window.api!['admin:updateMachine']({ id }); return null } catch (err) { return err instanceof Error ? err.message : String(err) } }}
           usageSummary={admin.adminUsageSummary}
           makeStats={admin.adminMakeStats}
+          performanceSlot={<Suspense fallback={<span role="status">Loading performance…</span>}><PerformanceDashboard load={loadPerformanceReport} /></Suspense>}
           machineStats={admin.adminMachineStats}
           roleCommandPolicies={roleCommandPolicies}
           onSaveRoleCommandPolicies={async (roles) => { const r = await window.api!['admin:setCommandPolicy']({ roles }); setRoleCommandPolicies(r.roles) }}

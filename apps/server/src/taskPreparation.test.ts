@@ -83,6 +83,7 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
 // @testCase T13
 // @testCase TC-11
 // @testCase TC6
+// @testCase T9
 it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects a prefixed brief without saving partial requirements: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
@@ -108,6 +109,7 @@ function compatibleReadiness(): string {
   })
 }
 
+// @testCase T8
 // @testCase TC13
 it('normalizes all four diagnostic decisions without changing any other data', () => {
   const original = JSON.parse(compatibleReadiness())
@@ -774,6 +776,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase T11
   // @testCase T9
   // @testCase TC6
+  // @testCase T7
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })
@@ -877,6 +880,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-BRIEF-SCHEMA
   // @testCase T10
   // @testCase TC8
+  // @testCase T7
   it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -896,6 +900,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-SCHEMA-NORMALIZATION
   // @testCase TC-12
   // @testCase TC-BRIEF-NORMALIZATION
+  // @testCase T8
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())

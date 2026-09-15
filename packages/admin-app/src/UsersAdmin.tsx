@@ -63,6 +63,7 @@ export interface UsersAdminProps {
   /** Метрики Make (п.38): место, публикации, просмотры — секция дашборда для админа. */
   makeStats?: AdminMakeStats | null
   /** Метрики машин (machines-roadmap п.5). */
+  performanceSlot?: React.ReactNode
   machineStats?: AdminMachineStats | null
   /** Ролевые правила команд (п.10): текущие и сохранение. */
   roleCommandPolicies?: RoleCommandPolicies | null
@@ -161,6 +162,7 @@ export function UsersAdmin({
   users,
   usageSummary = NO_USAGE_SUMMARY,
   makeStats = null,
+  performanceSlot,
   machineStats = null,
   roleCommandPolicies = null,
   onSaveRoleCommandPolicies,
@@ -417,6 +419,7 @@ export function UsersAdmin({
 
       {page === 'system' && isAdmin && (
         <SystemPage
+          performanceSlot={performanceSlot}
           fleetSlot={isAdmin && latestAgentVersion && onUpdateMachine
             ? <AgentFleetUpdate users={users} latestVersion={latestAgentVersion} onUpdate={onUpdateMachine} onRefresh={onRetry} />
             : null}

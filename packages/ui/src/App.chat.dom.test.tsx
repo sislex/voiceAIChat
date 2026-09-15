@@ -8,6 +8,18 @@ import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeA
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
 
+import { uiPerformance } from './lib/uiPerformance'
+// @testCase T1
+it('marks shell interactive after the application commits its main actions', async () => {
+  const p=uiPerformance(),mark=vi.spyOn(p,'mark')
+  p.begin('shell')
+  const {api,gifts}=await seededApi()
+  window.location.hash='#/chat/'+gifts
+  render(<App api={api} delays={SLOW}/>)
+  await waitFor(()=>expect(mark).toHaveBeenCalledWith('shell','shell_interactive'))
+  expect(await screen.findByText('Что подарить?')).toBeVisible()
+  p.hidden();mark.mockRestore()
+})
 const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_000 }
 
 // Адрес чата: любой переход к разговору идёт через #/chat/:id, поэтому ссылку

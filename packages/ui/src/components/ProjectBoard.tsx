@@ -8,6 +8,7 @@
 // стек окон, а страница остаётся открытой.
 
 import { useEffect, useState } from 'react'
+import { uiPerformance } from '../lib/uiPerformance'
 import { KanbanBoard, type KanbanBoardProps } from './kanban/index'
 import type { TaskModalTab } from './kanban/TaskModal'
 
@@ -20,6 +21,11 @@ export interface ProjectBoardProps extends Omit<KanbanBoardProps, 'openTaskId' |
 }
 
 export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
+  useEffect(() => {
+    if (props.loading || props.error || !props.board) return
+    const frame = requestAnimationFrame(() => { const p = uiPerformance(); p.mark('route', 'board_ready'); p.finish('route', 'board') })
+    return () => cancelAnimationFrame(frame)
+  }, [props.loading, props.error, props.board])
   const { initialOpenTaskId, initialOpenTaskTab, onOpenTaskRouteChange, onAssistantSelectionChange, ...boardProps } = props
   const [openTaskId, setOpenTaskId] = useState<string | null>(initialOpenTaskId ?? null)
   const [openTaskTab, setOpenTaskTab] = useState<TaskModalTab | undefined>(initialOpenTaskTab)

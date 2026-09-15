@@ -1,12 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
-import { act, cleanup, fireEvent, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, within, waitFor } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { makeAiMessage, makeChatPair, makeMachineOps, makeUserMessage } from '../test/fixtures/index'
+
+import { uiPerformance } from '../lib/uiPerformance'
+// @testCase T1
+it('marks chat readiness only after required data and records rendered token commits', async () => {
+  const p=uiPerformance()
+  const mark=vi.spyOn(p,'mark')
+  p.begin('route');p.beginMessage(false)
+  const props={title:'Metric fixture',state:'thinking' as const,messages:[],liveSegments:[],diarization:false,voiceBar:null}
+  const view=render(<ChatColumn {...props} performanceReady={false} loadingMessages />)
+  await act(async()=>{await new Promise(r=>setTimeout(r,40))})
+  expect(mark).not.toHaveBeenCalledWith('route','chat_ready')
+  view.rerender(<ChatColumn {...props} performanceReady streamingReply="First visible token" />)
+  await waitFor(()=>expect(mark).toHaveBeenCalledWith('route','chat_ready'))
+  await waitFor(()=>expect(mark).toHaveBeenCalledWith('message','message_first_token'))
+  expect(screen.getByText('First visible token')).toBeVisible()
+  p.hidden();mark.mockRestore()
+})
 
 // Лента — общая фикстура (её же показывают сториз Chat/ChatColumn): вопрос
 // пользователя и ответ модели с markdown-разметкой.

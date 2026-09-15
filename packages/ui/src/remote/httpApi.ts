@@ -468,6 +468,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'admin:makeStats': () => req(REST.adminMakeStats),
     'admin:updateMachine': ({ id }) => req(REST.adminMachineUpdate(id), { method: 'POST' }),
+    'uiPerformance:send': async (body) => {
+      const response = await credentialedFetch(httpBase + REST.uiPerformance, {
+        method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(3000)
+      })
+      if (!response.ok) throw new Error('telemetry_unavailable')
+    },
+    'uiPerformance:report': (body) => req(REST.uiPerformanceReport, { method: 'POST', body: JSON.stringify(body) }),
     'admin:machineStats': () => req(REST.adminMachineStats),
     'admin:revokeMachineToken': ({ id }) => req(REST.adminMachineTokenRevoke(id), { method: 'POST' }),
     'admin:commandPolicy': () => req(REST.adminCommandPolicy),

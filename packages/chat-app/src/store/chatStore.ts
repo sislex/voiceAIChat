@@ -371,6 +371,7 @@ export interface ChatVoicePort {
 }
 
 export interface ChatDeps {
+  performance?: { accepted(queued: boolean, operationId: string): void; cancelled(operationId?: string): void }
   chat: ChatClient
   prefs: PreferencesPort
   draftStorageKey?: string
@@ -1044,6 +1045,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   /** Отмена текущего ответа: запрос к LLM и озвучка. */
   function cancelReply(): void {
+    deps.performance?.cancelled()
     turn.cancel?.(getState().activeId ?? undefined)
     voice.cancelSpeech()
     if (getState().streamingReply) setState({ streamingReply: '' })
@@ -1533,7 +1535,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       setState({ failedSubmits })
       const segments = [{ speakerId: 1, text: withEditorContext(withPreviewElementContext(pending.text || 'См. приложенные файлы.', pending.previewElement), pending.editorContext) }]
       if (getState().activeId === conversationId) {
-        if (!pending.queueOnly && ready.length === 0 && !pending.previewElement && await maybeOpenUtility(pending.text)) { clearPendingSubmit(pending.operationId); return true }
+        if (!pending.queueOnly && ready.length === 0 && !pending.previewElement && await maybeOpenUtility(pending.text)) { deps.performance?.cancelled(pending.operationId); clearPendingSubmit(pending.operationId); return true }
         if (getState().activeId !== conversationId) {
           turn.send?.(conversationId, segments, pending.attachmentIds, true, pending.execTarget, message.id)
         } else {
@@ -1548,6 +1550,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setState({ failedSubmits: { ...getState().failedSubmits, [pending.operationId]: { ...pending, error: message, retrying: false } } })
+      deps.performance?.cancelled(pending.operationId)
       clearPendingSubmit(pending.operationId, true)
       throw error
     }
@@ -1556,6 +1559,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   async function retryFailedSubmit(id: string): Promise<boolean> {
     const failed = getState().failedSubmits[id]
     if (!failed || failed.retrying) return false
+    deps.performance?.accepted(failed.queueOnly, failed.operationId)
     setState({ failedSubmits: { ...getState().failedSubmits, [id]: { ...failed, retrying: true } } })
     return sendCaptured(failed, (failed.conversationId ? drafts.get(failed.conversationId)?.trim() : getState().activeId === null ? getState().draft.trim() : undefined) === failed.text ? revisions.get(failed.conversationId ?? '__unsaved__') ?? 0 : -1).catch(() => false)
   }
@@ -1569,6 +1573,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
     const queueOnly = state.preparingReply || voice.state() === 'thinking' || voice.state() === 'speaking' || voice.state() === 'transcribing'
     const operationId = globalThis.crypto?.randomUUID?.() ?? `pending-${now()}-${Math.random()}`
+    deps.performance?.accepted(queueOnly, operationId)
     const messageId = globalThis.crypto?.randomUUID?.() ?? `message-${now()}-${Math.random()}`
     const pendingSubmit: PendingSubmit = {
       operationId,
@@ -1622,6 +1627,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   async function submitVoiceSegments(segments: LiveSegment[]): Promise<void> {
     const first = segments[0]
     if (!first) return
+    const performanceId = globalThis.crypto?.randomUUID?.() ?? 'voice-submit'
+    deps.performance?.accepted(false, performanceId)
+    try {
     const diarization = deps.getSettings().diarization
     const firstRole = `u${diarization ? first.speakerId : 1}` as MessageRole
     const created = await ensureConversation(first.text, {
@@ -1636,10 +1644,12 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     await refreshConversations()
     // Голосовая команда «открой консоль/проводник» → виджет в ответе, без LLM.
     if (await maybeOpenUtility(segments.map((s) => s.text).join(' '))) {
+      deps.performance?.cancelled(performanceId)
       voice.dispatch('reset') // thinking → idle
       return
     }
     beginReply(segments)
+    } catch (error) { deps.performance?.cancelled(performanceId); throw error }
   }
 
   // --- Realtime-кадры хода --------------------------------------------------

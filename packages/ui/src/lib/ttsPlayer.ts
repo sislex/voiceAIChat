@@ -2,6 +2,8 @@
 // приходят по одному на предложение и играются последовательно. Без AudioContext
 // (jsdom) — сразу вызывает onEnded (клип «проигран»), чтобы логика стора шла дальше.
 
+import { uiPerformance } from './uiPerformance'
+
 interface Clip {
   audio: ArrayBuffer
   onEnded: () => void
@@ -69,6 +71,15 @@ async function pump(): Promise<void> {
     }
     currentSource = src
     src.start()
+    // Only a running output clock proves playback; a suspended autoplay context does not.
+    const startedAt = c.currentTime
+    const observedAt = performance.now()
+    const observeStart = () => {
+      if (currentSource !== src || performance.now() - observedAt > 300_000) return
+      if (c.state === 'running' && c.currentTime > startedAt) uiPerformance().mark('message', 'message_first_audio')
+      else setTimeout(observeStart, 20)
+    }
+    setTimeout(observeStart, 20)
   } catch (err) {
     console.warn('[tts] воспроизведение не удалось', err)
     playing = false
