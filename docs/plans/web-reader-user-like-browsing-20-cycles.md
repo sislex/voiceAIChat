@@ -604,3 +604,37 @@ UI (desktop and phone):
 | 10 | Phone: path and pager scroll horizontally with 44 px targets | `recorder.css` |
 
 Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-17.md`.
+
+## Cycle 18 — long pages, lists and tables; bookmarks both sides can see
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `read {next: true}` — continue reading where the previous read of this page stopped | script `readCursor` | script test |
+| 02 | `read {toc: true}` — the contents: headings with levels and selectors to jump to | script `tocOf` | script test |
+| 03 | `read {table, rowOffset}` — one table, twenty rows at a time, with `nextRowOffset` | script `tableByName` | script test |
+| 04 | `read.lists` — repeated cards of a list with their count and first entries | script `listsOf` | script test |
+| 05 | `find {in: heading}` — search only inside that section | script `sectionRange` | script test |
+| 06 | `scroll {until: text, maxScreens}` — page a lazy feed until the text shows up | script | script test |
+| 07 | `scroll {until}` stops honestly when the feed ends without loading more | script | script test |
+| 08 | `bookmark {label?}` / `bookmark {remove}` — session bookmarks kept by the panel | `hostBridge.ts` | bridge test |
+| 09 | `status.bookmarks` and `report.bookmarks` carry the same list | `hostBridge.ts` | bridge test |
+| 10 | Feed phrases and step labels for bookmarks, paged reading and `scroll {until}` | relay, `actionLabel.ts` | label test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Bookmarks row in the panel: a chip opens the page, the cross removes it | `WebReaderFrame` |
+| 02 | «Запомнить страницу» — the person adds a bookmark from the same list | `WebReaderFrame` |
+| 03 | «Оглавление (N)» drawer built from the page headings | Recorder |
+| 04 | A heading in the drawer scrolls the page to that section | Recorder |
+| 05 | Escape closes the drawer and returns focus to its button | Recorder |
+| 06 | «Листать до…» scrolls a lazy feed to the text the person typed | Recorder |
+| 07 | Reading time turns into «осталось ~N мин» while reading | Recorder |
+| 08 | The reading bar announces the percentage and the time left | Recorder |
+| 09 | Alt+End scrolls to the end of the page, next to Alt+Home | Recorder |
+| 10 | «Копировать текст страницы»; phone gets 44 px rows in the drawer | Recorder, `recorder.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-18.md`.

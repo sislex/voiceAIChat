@@ -203,7 +203,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'changes', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'dismiss', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'focus', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'report', 'reset-session', 'screenshot', 'scroll', 'search', 'select', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'bookmark', 'cancel-download', 'changes', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'dismiss', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'focus', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'report', 'reset-session', 'screenshot', 'scroll', 'search', 'select', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
   })
 
   it.each([
@@ -610,6 +610,27 @@ describe('previewMcp — инструменты browser', () => {
     expect(result.text).toContain('загружается')
   })
 
+  it('bookmark, read next/toc/table, scroll until и find in доходят до клиента (круг 18)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, bookmarks: [] } })
+    }
+    await call('bookmark', { label: 'Сюда вернуться' })
+    expect(await call('bookmark', { label: 'x', remove: 'y' })).toMatchObject({ isError: true })
+    await call('read', { next: true, toc: true })
+    await call('read', { table: 'Цены', rowOffset: 20 })
+    await call('scroll', { until: 'Отзывы', maxScreens: 5 })
+    await call('find', { text: 'Условия', in: 'Доставка' })
+    expect(seen).toEqual([
+      { kind: 'bookmark', label: 'Сюда вернуться' },
+      { kind: 'read', next: true, toc: true },
+      { kind: 'read', table: 'Цены', rowOffset: 20 },
+      { kind: 'scroll', until: 'Отзывы', maxScreens: 5 },
+      { kind: 'find', text: 'Условия', in: 'Доставка' }
+    ])
+  })
   it('search, focus, select и read main доходят до клиента как действия (круг 17)', async () => {
     await makeApp()
     const seen: unknown[] = []

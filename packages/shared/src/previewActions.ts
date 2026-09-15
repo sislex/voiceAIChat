@@ -96,6 +96,8 @@ export interface PreviewReportResult {
   failed: number
   actions: number
   lastAction?: { kind: string; ok: boolean; at: number; error?: string }
+  /** Закладки сеанса — что человек и модель отметили как важное. */
+  bookmarks?: PreviewBookmarkEntry[]
 }
 
 export interface PreviewSequenceResult {
@@ -140,7 +142,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** level — уровень заголовка для role: heading. */
   /** below/above/leftOf/rightOf — ориентир по сторонам: «кнопка под ценой»; ближайшее с той стороны идёт первым. */
   /** details — подробности элемента (атрибуты, размеры, путь по странице), когда описания мало. */
-  | ({ kind: 'find'; text?: string; selector?: string; role?: string; level?: number; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; details?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean } & PreviewSpatialHints)
+  /** in — искать только в разделе под этим заголовком, как человек смотрит в нужной главе. */
+  | ({ kind: 'find'; text?: string; selector?: string; role?: string; level?: number; near?: string; in?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; details?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean } & PreviewSpatialHints)
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
   /** x/y — клик по точке вьюпорта (карты, canvas), когда у цели нет текста и селектора. */
@@ -159,7 +162,10 @@ export type PreviewAction = BrowserFrameTarget & (
   /** parts — какие части отдать (headings, links, buttons, inputs, forms, landmarks, text): меньше ответ — меньше контекста. */
   /** around — текст вокруг фразы (±600 символов); markdown — текст с заголовками и списками в лёгкой разметке. */
   /** main — только основное содержимое страницы (article/main/самый текстовый блок), без меню, шапки и подвала. */
-  | { kind: 'read'; selector?: string; section?: string; around?: string; markdown?: boolean; main?: boolean; limit?: number; offset?: number; visible?: boolean; brief?: boolean; parts?: PreviewReadPart[]; diagnostic?: boolean }
+  /** next — продолжить чтение с того места, где остановился прошлый read этой страницы: человек не считает символы. */
+  /** toc — оглавление страницы: заголовки с уровнями и селекторами, чтобы прыгнуть в нужный раздел. */
+  /** table — прочитать одну таблицу по подписи или селектору; rowOffset листает её строки. */
+  | { kind: 'read'; selector?: string; section?: string; around?: string; markdown?: boolean; main?: boolean; next?: boolean; toc?: boolean; table?: string; rowOffset?: number; limit?: number; offset?: number; visible?: boolean; brief?: boolean; parts?: PreviewReadPart[]; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   /** waitMs — подождать после наведения, пока меню анимируется, и только потом собрать revealed. */
@@ -168,7 +174,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** to: 'element' прокручивает страницу так, чтобы selector оказался в видимой области. */
   /** to: nextPage/prevPage — на экран вниз/вверх, как PageDown/PageUp. */
   /** percent — к доле высоты документа (0–100). */
-  | { kind: 'scroll'; selector?: string; text?: string; to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; percent?: number; dx?: number; dy?: number; diagnostic?: boolean }
+  /** until — листать ленту, пока не покажется текст (ленивая подгрузка), не больше maxScreens экранов. */
+  | { kind: 'scroll'; selector?: string; text?: string; to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; percent?: number; dx?: number; dy?: number; until?: string; maxScreens?: number; diagnostic?: boolean }
   /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
   /** repeat повторяет нажатие (ArrowDown ×3) одним действием. */
   | { kind: 'press'; key: string; selector?: string; repeat?: number; waitFor?: string; diagnostic?: boolean }
@@ -213,6 +220,8 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'changes'; selector?: string; diagnostic?: boolean }
   /** Отчёт о сеансе панели: где были, что проверили, что упало — для отчёта по задаче. */
   | { kind: 'report'; diagnostic?: boolean }
+  /** Запомнить открытую страницу в панели, как человек кладёт закладку: список видит и пользователь, и модель. */
+  | { kind: 'bookmark'; label?: string; remove?: string; diagnostic?: boolean }
   /** Показать пользователю элемент: прокрутить к нему и подсветить с подписью на несколько секунд. */
   /** all — подсветить все совпадения (до 10), не только первое. */
   | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; all?: boolean; diagnostic?: boolean }
@@ -301,6 +310,8 @@ export interface PreviewStatusResult {
   checks?: { passed: number; failed: number }
   /** Сводка текущей страницы, как у open. */
   outline?: PreviewPageOutline
+  /** Закладки этого сеанса панели: их видит и пользователь. */
+  bookmarks?: PreviewBookmarkEntry[]
   /** Размер видимой области страницы: понять, мобильная ли раскладка у пользователя. */
   viewport?: { width: number; height: number }
 }
@@ -422,6 +433,12 @@ export interface PreviewReadResult {
   search?: string
   /** Прочитано только основное содержимое (main: true) — selector найденного блока. */
   main?: string
+  /** Оглавление страницы: заголовки с уровнями и селекторами для scroll и read {section}. */
+  toc?: { level: number; text: string; selector: string }[]
+  /** Однотипные списки карточек: сколько элементов и первые из них — так человек оценивает выдачу. */
+  lists?: { selector: string; count: number; items: string[] }[]
+  /** Прочитана одна таблица (table): её строки с учётом rowOffset. */
+  table?: { selector: string; caption?: string; headers: string[]; rows: string[][]; totalRows: number; rowOffset: number; nextRowOffset?: number }
   /** Элемент с фокусом — где сейчас «курсор» пользователя. */
   focus?: string
   /** Текст, выделенный пользователем на странице (до 2000 символов). */
@@ -486,6 +503,9 @@ export interface PreviewScrollResult {
   atBottom?: boolean
   /** Насколько долистано, 0–100: «на середине страницы». */
   percent?: number
+  /** Итог scroll {until}: нашёлся ли текст и сколько экранов пролистали. */
+  found?: PreviewActionElement
+  screens?: number
   /** Элемент, к которому листали (to: element). */
   element?: PreviewActionElement
 }
@@ -505,6 +525,19 @@ export interface PreviewScreenshotResult {
   dataUrl: string
   /** Пронумерованные на снимке элементы (marks: true). */
   marks?: { n: number; selector: string; text: string; role?: string }[]
+}
+
+export interface PreviewBookmarkEntry {
+  url: string
+  label: string
+  at: number
+}
+
+export interface PreviewBookmarkResult {
+  page: PreviewPageInfo | null
+  bookmarks: PreviewBookmarkEntry[]
+  added?: PreviewBookmarkEntry
+  removed?: PreviewBookmarkEntry
 }
 
 export interface PreviewSearchResult {
@@ -726,6 +759,7 @@ export type PreviewActionResult =
   | PreviewSearchResult
   | PreviewFocusResult
   | PreviewSelectResult
+  | PreviewBookmarkResult
   | PreviewSequenceResult
   | PreviewChangesResult
   | PreviewReportResult
@@ -779,7 +813,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
-        (value.onScreen === undefined || typeof value.onScreen === 'boolean') && (value.details === undefined || typeof value.details === 'boolean') &&
+        (value.onScreen === undefined || typeof value.onScreen === 'boolean') && (value.details === undefined || typeof value.details === 'boolean') && optBounded(value.in, L.text) &&
         (PREVIEW_SPATIAL_SIDES as readonly string[]).every((side) => optBounded(value[side], L.text)) &&
         (value.text !== undefined || value.selector !== undefined || value.role !== undefined || value.href !== undefined)
       )
@@ -805,6 +839,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean') && (value.blur === undefined || typeof value.blur === 'boolean')
     case 'read':
       return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) && optBounded(value.around, L.text) && (value.markdown === undefined || typeof value.markdown === 'boolean') && (value.main === undefined || typeof value.main === 'boolean') &&
+        (value.next === undefined || typeof value.next === 'boolean') && (value.toc === undefined || typeof value.toc === 'boolean') && optBounded(value.table, L.text) &&
+        (value.rowOffset === undefined || (typeof value.rowOffset === 'number' && Number.isInteger(value.rowOffset) && value.rowOffset >= 0 && value.rowOffset <= 100_000)) &&
         (value.visible === undefined || typeof value.visible === 'boolean') && (value.brief === undefined || typeof value.brief === 'boolean') &&
         (value.parts === undefined || (Array.isArray(value.parts) && value.parts.length >= 1 && value.parts.length <= 9 && value.parts.every((part) => (PREVIEW_READ_PARTS as readonly string[]).includes(part as string)))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
@@ -828,7 +864,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.percent === undefined || (typeof value.percent === 'number' && Number.isFinite(value.percent) && value.percent >= 0 && value.percent <= 100)) &&
         (value.dy === undefined || (typeof value.dy === 'number' && Number.isFinite(value.dy) && Math.abs(value.dy) <= 100_000)) &&
         (value.dx === undefined || (typeof value.dx === 'number' && Number.isFinite(value.dx) && Math.abs(value.dx) <= 100_000)) &&
-        (value.to !== undefined || value.dy !== undefined || value.dx !== undefined || value.percent !== undefined)
+        optBounded(value.until, L.text) &&
+        (value.maxScreens === undefined || (typeof value.maxScreens === 'number' && Number.isInteger(value.maxScreens) && value.maxScreens >= 1 && value.maxScreens <= 50)) &&
+        (value.to !== undefined || value.dy !== undefined || value.dx !== undefined || value.percent !== undefined || value.until !== undefined)
       )
     case 'press':
       return (
@@ -895,6 +933,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.text !== undefined || value.selector !== undefined)
     case 'report':
       return true
+    case 'bookmark':
+      return optBounded(value.label, 120) && optBounded(value.remove, L.url) && !(value.label !== undefined && value.remove !== undefined)
     case 'network':
       return (
         validDiagnosticOptions(value) &&
@@ -1091,6 +1131,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'search {text} — искать на самом сайте: панель найдёт его поле поиска, введёт запрос и отправит (первое, что делает человек на большом сайте); focus {field} ставит курсор, ничего не вводя; ' +
     'select {text} выделяет место на странице — пользователь видит, о чём речь. read {main: true} — только основное содержимое без меню и подвала; read.breadcrumbs — путь по сайту; ' +
     'read.pagination — куда вести «дальше» и «назад»; read.published — дата и автор материала; wait {stable: true} — дождаться, пока страница перестанет меняться; back {to: «часть адреса или заголовка»} — вернуться к странице этого сеанса. ' +
+    'Длинные страницы и списки: scroll {until: текст} листает ленту с ленивой подгрузкой, пока текст не покажется (maxScreens ограничивает); read {next: true} продолжает чтение с того места, где остановился прошлый read; ' +
+    'read {toc: true} — оглавление с селекторами для scroll и read {section}; read {table: подпись, rowOffset} читает одну таблицу постранично; read.lists — однотипные карточки списка с их числом; find {in: заголовок раздела} ищет только в нём. ' +
+    'bookmark {label?} кладёт закладку на открытую страницу (bookmark {remove: адрес} убирает): список видят и пользователь в панели, и ты в status.bookmarks и report. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

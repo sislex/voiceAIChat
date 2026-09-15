@@ -453,6 +453,51 @@ const mainScope=()=>{
   }
   return best||document.body||document.documentElement
 };
+
+// Где остановилось чтение этой страницы: read {next: true} продолжает с этого места, как человек — с закладки.
+let readCursor={url:'',end:0};
+// Однотипные карточки списка: человек оценивает выдачу по числу элементов и первым из них.
+const listsOf=(scope)=>{
+  const groups=new Map();
+  const candidates=[...scope.querySelectorAll('ul,ol,[role=list],[class*=list i],[class*=grid i],[class*=results i]')].filter(readingVisible);
+  for(const group of candidates){
+    const items=[...group.children].filter(readingVisible);
+    if(items.length<3)continue;
+    const shape=items[0].localName+'|'+items.length;
+    if(groups.has(shape))continue;
+    const texts=items.slice(0,5).map(el=>(accessibleName(el)||textOf(el)).slice(0,80)).filter(Boolean);
+    if(texts.length<3)continue;
+    groups.set(shape,{selector:uniqueSelector(group),count:items.length,items:texts});
+    if(groups.size>=5)break
+  }
+  return [...groups.values()]
+};
+// Живые узлы раздела: от заголовка до следующего заголовка того же или старшего уровня.
+// sectionScope отдаёт клон для чтения, а find {in} должен спрашивать про настоящие элементы страницы.
+const sectionRange=(title)=>{
+  const q=normText(title);
+  const headings=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(readingVisible);
+  const heading=headings.find(h=>normText(readableText(h,EL_TEXT))===q)||headings.find(h=>normText(readableText(h,EL_TEXT)).includes(q));
+  if(!heading)throw new Error('Раздел не найден: '+title);
+  const level=Number(heading.localName[1]),nodes=[heading];
+  let node=heading.nextElementSibling,count=0;
+  while(node&&count<500){if(/^h[1-6]$/.test(node.localName)&&Number(node.localName[1])<=level)break;nodes.push(node);node=node.nextElementSibling;count++}
+  // Заголовок один в своей обёртке (карточка): разделом считаем родителя.
+  if(nodes.length===1&&heading.parentElement&&heading.parentElement!==document.body)nodes.push(heading.parentElement);
+  return nodes
+};
+// Оглавление: заголовки с уровнями и селекторами — человек смотрит содержание и прыгает в нужную главу.
+const tocOf=(scope)=>[...scope.querySelectorAll('h1,h2,h3,h4')].filter(readingVisible).slice(0,60).map(h=>({level:Number(h.localName[1]),text:readableText(h,EL_TEXT),selector:uniqueSelector(h)})).filter(item=>item.text);
+// Одна таблица по подписи, заголовку колонки или селектору — и её строки постранично.
+const tableByName=(name)=>{
+  const tables=[...document.querySelectorAll('table')].filter(readingVisible);
+  if(!tables.length)throw new Error('На странице нет таблиц');
+  if(/^[.#\[]|[>:]/.test(name)){const found=bySelector(name)[0];if(!found)throw new Error('Таблица не найдена: '+name);return found.localName==='table'?found:found.closest('table')||found}
+  const needle=normText(name);
+  const match=tables.find(table=>{const caption=table.querySelector('caption');const label=normText((caption?textOf(caption):'')+' '+(table.getAttribute('aria-label')||''));const heads=[...table.querySelectorAll('th')].map(th=>normText(textOf(th))).join(' ');const near=contextOf(table);return label.includes(needle)||heads.includes(needle)||normText(near).includes(needle)});
+  if(!match)throw new Error('Таблица «'+name+'» не найдена: на странице '+tables.length+' таблиц');
+  return match
+};
 const suggestTexts=(query)=>{
   const words=normText(query).split(' ').filter(w=>w.length>=3);
   if(!words.length)return [];
@@ -469,7 +514,10 @@ const suggestTexts=(query)=>{
 };
 const findTargets=(action)=>{
   const base=action.role?byRole(action):action.selector?bySelector(action.selector):byText(action.text||'',false,action.exact===true);
-  const scoped=spatialFilter(action.near?nearFilter(base,action.near):base,action);
+  // in — «в разделе Доставка»: человек смотрит только нужную главу, а не всю страницу.
+  const within=action.in?sectionRange(action.in):null;
+  const limited=within?base.filter(el=>within.some(node=>node===el||node.contains(el))):base;
+  const scoped=spatialFilter(action.near?nearFilter(limited,action.near):limited,action);
   const visible=scoped.filter(action.kind==='find'?readingVisible:actionVisible);
   // nth — «второй такой»: человек считает одинаковые элементы сверху вниз.
   if(typeof action.nth==='number'&&action.nth>=1){const picked=(action.kind==='find'?visible:[...new Set(visible.map(clickTarget))])[action.nth-1];if(!picked)throw new Error('Совпадение №'+action.nth+' не найдено: всего '+visible.length);return [picked]}
@@ -838,6 +886,29 @@ const run=(action)=>{
     if(typeof action.waitMs==='number'&&action.waitMs>0)return new Promise(ok=>setTimeout(()=>ok(collect()),Math.min(2000,action.waitMs)));
     return collect()
   }
+  if(action.kind==='scroll'&&action.until){
+    // Лента с ленивой подгрузкой: человек листает экран за экраном, пока не увидит нужное.
+    const container=action.selector?(bySelector(action.selector)[0]||null):null;
+    if(action.selector&&!container)throw new Error('Элемент не найден: '+action.selector);
+    const el=container||document.scrollingElement||document.documentElement;
+    const maxScreens=Math.max(1,Math.min(50,action.maxScreens??10));
+    const step=()=>Math.max(1,Math.round((container?el.clientHeight:innerHeight)*0.9));
+    return new Promise((ok,fail)=>{
+      let screens=0,lastHeight=-1,idle=0;
+      const attempt=()=>{
+        const hit=byText(action.until).filter(readingVisible)[0];
+        if(hit){hit.scrollIntoView&&hit.scrollIntoView({block:'center'});const maxTop=Math.max(0,el.scrollHeight-el.clientHeight);ok({page:pageInfo(),target:container?uniqueSelector(el):'window',scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop,maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)},atTop:el.scrollTop<=0,atBottom:el.scrollTop>=maxTop-1,percent:maxTop>0?Math.round(Math.min(1,el.scrollTop/maxTop)*100):100,found:describe(hit),screens});return}
+        if(screens>=maxScreens){fail(new Error('«'+action.until+'» не появилось за '+screens+' экранов прокрутки'));return}
+        // Конец ленты без подгрузки: два круга без роста высоты — дальше ничего не будет.
+        if(el.scrollHeight===lastHeight&&el.scrollTop>=el.scrollHeight-el.clientHeight-1){idle++;if(idle>=2){fail(new Error('Лента закончилась, «'+action.until+'» на ней нет'));return}}else idle=0;
+        lastHeight=el.scrollHeight;
+        el.scrollTop=el.scrollTop+step();screens++;
+        el.dispatchEvent(new Event('scroll',{bubbles:true}));
+        setTimeout(attempt,220)
+      };
+      attempt()
+    })
+  }
   if(action.kind==='scroll'){
     let el=document.scrollingElement||document.documentElement,target='window';
     if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];target=uniqueSelector(el)}
@@ -1102,9 +1173,15 @@ const run=(action)=>{
         const parent=node.parentElement;if(!parent||!readingVisible(parent)||parent.closest('script,style,template,noscript,[data-voicechat-inspector]'))continue;if([...seen].some(el=>el.contains(parent)))continue;const t=(node.nodeValue||'').replace(/\\s+/g,' ').trim();if(t)parts.push(t+' ')}
       return parts.join('').replace(/\\n{3,}/g,'\\n\\n').trim()};
     let text=action.markdown?markdownText():action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached));
-    let offset=action.offset??0;
+    // next — «читай дальше»: продолжаем с места, где закончился прошлый read этой же страницы.
+    let offset=action.next&&readCursor.url===pageInfo().url?readCursor.end:(action.offset??0);
+    if(action.next&&offset>=text.length&&text.length)offset=Math.max(0,text.length-200);
     if(action.around){const idx=normText(text).indexOf(normText(action.around));if(idx<0)throw new Error('Фраза не найдена на странице: '+action.around);offset=Math.max(0,idx-600)}
     const limit=action.around?Math.min(action.limit??1200,SNIPPET):(action.limit??SNIPPET),end=Math.min(text.length,offset+limit);
+    readCursor={url:pageInfo().url,end};
+    const toc=action.toc?tocOf(scope):null;
+    const lists=(!parts||parts.has('links'))?listsOf(scope):[];
+    const tableOne=action.table?(()=>{const table=tableByName(action.table);const rowsAll=[...table.querySelectorAll('tr')].filter(readingVisible);const headers=[...table.querySelectorAll('th')].filter(readingVisible).slice(0,20).map(th=>readableText(th,EL_TEXT));const body=rowsAll.filter(tr=>!tr.querySelector('th')||headers.length===0);const rowOffset=Math.max(0,Math.min(body.length,action.rowOffset??0));const page=body.slice(rowOffset,rowOffset+20).map(tr=>[...tr.querySelectorAll('td,th')].slice(0,20).map(td=>readableText(td,EL_TEXT)));const caption=table.querySelector('caption');return {selector:uniqueSelector(table),...(caption?{caption:readableText(caption,EL_TEXT)}:{}),headers,rows:page,totalRows:body.length,rowOffset,...(rowOffset+page.length<body.length?{nextRowOffset:rowOffset+page.length}:{})}})():null;
     const focus=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement?uniqueSelector(document.activeElement):undefined;
     // Уведомления и индикаторы загрузки — то, на что человек смотрит прежде всего.
     const notices=[...document.querySelectorAll('[role=alert],[role=status],[aria-live="assertive"],[aria-live="polite"],.toast,.notification,.alert,.snackbar')].filter(readingVisible).map(el=>readableText(el,EL_TEXT)).filter(Boolean).filter((t,i,all)=>all.indexOf(t)===i).slice(0,8);
@@ -1112,7 +1189,7 @@ const run=(action)=>{
     if(!action.selector&&!section)textSnapshot=visibleTexts();
     const scroller=document.scrollingElement||document.documentElement,maxScroll=Math.max(0,scroller.scrollHeight-innerHeight),scroll={top:Math.round(scroller.scrollTop),max:Math.round(maxScroll),percent:maxScroll>0?Math.round(scroller.scrollTop/maxScroll*100):100};
     const briefBase=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; '):'';
-    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(frames.length?{frames}:{}),...(images.length?{images}:{}),...(overlays.length?{overlays}:{}),...(breadcrumbs.length?{breadcrumbs}:{}),...(pagination?{pagination}:{}),...(published?{published}:{}),...(searchEl?{search:uniqueSelector(searchEl)}:{}),...(mainEl?{main:uniqueSelector(mainEl)}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(frames.length?{frames}:{}),...(images.length?{images}:{}),...(overlays.length?{overlays}:{}),...(breadcrumbs.length?{breadcrumbs}:{}),...(pagination?{pagination}:{}),...(published?{published}:{}),...(searchEl?{search:uniqueSelector(searchEl)}:{}),...(mainEl?{main:uniqueSelector(mainEl)}:{}),...(toc?{toc}:{}),...(lists.length?{lists}:{}),...(tableOne?{table:tableOne}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };
@@ -1339,7 +1416,7 @@ const message=(e)=>{
 // Сводка страницы вместе с готовностью: модель ориентируется по open без отдельного read.
 const outline=()=>{try{const scope=document.body||document.documentElement;const words=readableText(scope,200000).split(/\\s+/).filter(Boolean).length;return {headings:[...scope.querySelectorAll('h1,h2,h3')].filter(readingVisible).slice(0,5).map(h=>readableText(h,120)).filter(Boolean),links:scope.querySelectorAll('a[href]').length,buttons:scope.querySelectorAll('button,[role=button],input[type=submit]').length,inputs:scope.querySelectorAll('input:not([type=hidden]),textarea,select').length,words}}catch{return {headings:[],links:0,buttons:0,inputs:0}}};
 // Ориентиры для самой панели: путь по сайту, листалка, дата и поле поиска — их рисует оболочка, не модель.
-const navInfo=()=>{try{const search=searchField();return {breadcrumbs:breadcrumbsOf(),...(paginationOf()?{pagination:paginationOf()}:{}),...(publishedOf()?{published:publishedOf()}:{}),...(search?{search:uniqueSelector(search)}:{})}}catch{return {breadcrumbs:[]}}};
+const navInfo=()=>{try{const search=searchField();return {breadcrumbs:breadcrumbsOf(),toc:tocOf(document.body||document.documentElement).slice(0,40),...(paginationOf()?{pagination:paginationOf()}:{}),...(publishedOf()?{published:publishedOf()}:{}),...(search?{search:uniqueSelector(search)}:{})}}catch{return {breadcrumbs:[]}}};
 const ready=()=>parent.postMessage({type:READY,...pageInfo(),outline:outline(),nav:navInfo(),viewport:{width:innerWidth,height:innerHeight}},location.origin);
 // Выделение пользователя уходит оболочке: она предложит спросить о нём ассистента.
 const SELECTION='voicechat.preview.selection.v1';let selectionTimer=null,lastSelection='',selectionByAssistant=false;
