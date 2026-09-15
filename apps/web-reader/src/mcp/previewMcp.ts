@@ -388,6 +388,42 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         inputSchema: { frame: frameSchema, what: z.enum(['cookies', 'dialog', 'any']).optional().describe('Что убрать: баннер cookie, окно или любое из них (по умолчанию any)') }
       }, async ({ frame, what }) => run({ kind: 'dismiss', ...(frame !== undefined ? { frame } : {}), ...(what ? { what } : {}) }))
 
+      server.registerTool('search', {
+        description: 'Искать на самом сайте: панель найдёт его поле поиска (form[role=search], input[type=search], «Поиск»…), введёт запрос и отправит форму — так человек начинает на большом сайте. ' +
+          'Ответ содержит поле, факт отправки и подсказки, которые сайт показал. Если поля нет — ошибка подскажет искать ссылку «Поиск».',
+        inputSchema: { frame: frameSchema,
+          text: z.string().min(1).max(L.text).describe('Что искать'),
+          in: z.string().max(L.selector).optional().describe('CSS-селектор области, где искать поле поиска'),
+          waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после поиска')
+        }
+      }, async ({ frame, text, in: scope, waitFor }) => run({ kind: 'search', ...(frame !== undefined ? { frame } : {}), text, ...(scope ? { in: scope } : {}), ...(waitFor ? { waitFor } : {}) }))
+
+      server.registerTool('focus', {
+        description: 'Поставить курсор в поле, ничего не вводя: проверить, куда попадёт ввод, или подготовить поле перед press. Нужен selector или field (подпись поля).',
+        annotations: { destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema,
+          selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
+          field: z.string().max(L.text).optional().describe('Подпись, placeholder или name поля'),
+          near: z.string().max(L.text).optional().describe('Текст рядом с полем')
+        }
+      }, async ({ frame, selector, field, near }) => {
+        if (!selector && !field) return { content: [{ type: 'text', text: 'Укажи selector или field.' }], isError: true }
+        return run({ kind: 'focus', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field ? { field } : {}), ...(near ? { near } : {}) })
+      })
+
+      server.registerTool('select', {
+        description: 'Выделить текст на открытой странице, как выделяет мышью человек: пользователь видит выделенное место и понимает, о чём идёт речь. Ничего не нажимает.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema,
+          text: z.string().max(L.text).optional().describe('Видимый текст места, которое выделить'),
+          selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
+          near: z.string().max(L.text).optional().describe('Текст рядом с целью')
+        }
+      }, async ({ frame, text, selector, near }) => {
+        if (!text && !selector) return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
+        return run({ kind: 'select', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}) })
+      })
+
       server.registerTool('check', {
         description: 'Проверка ожидания как у тестировщика: есть ли на странице элемент с текстом или по селектору, виден ли он, скрыт, отсутствует, совпадает ли value или число совпадений. ' +
           'Отвечает pass, actual и summary и не бросает ошибку — цитируй summary в отчёте о проверке фичи.',
@@ -624,10 +660,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       server.registerTool(
         'back',
         {
-          description: 'Назад по истории открытой в превью страницы (steps — на сколько записей). После перехода перечитай страницу read.',
-          inputSchema: { steps: z.number().int().min(1).max(20).optional() }
+          description: 'Назад по истории открытой в превью страницы (steps — на сколько записей). ' +
+            'to — вернуться к странице этого сеанса по части адреса или заголовка («вернись на страницу поиска»), как человек ищет её в истории вкладки. После перехода перечитай страницу read.',
+          inputSchema: { steps: z.number().int().min(1).max(20).optional(), to: z.string().max(L.text).optional().describe('Часть адреса или заголовка страницы, к которой вернуться') }
         },
-        async ({ steps }) => run({ kind: 'back', ...(steps !== undefined && steps > 1 ? { steps } : {}) })
+        async ({ steps, to }) => run({ kind: 'back', ...(steps !== undefined && steps > 1 ? { steps } : {}), ...(to ? { to } : {}) })
       )
 
       server.registerTool(
@@ -864,11 +901,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             parts: z.array(z.enum(PREVIEW_READ_PARTS as unknown as [string, ...string[]])).min(1).max(9).optional().describe('Какие части вернуть: headings, links, buttons, inputs, forms, landmarks, tables, images, text'),
             around: z.string().max(L.text).optional().describe('Текст вокруг этой фразы (±600 символов)'),
             markdown: z.boolean().optional().describe('Текст с заголовками # и списками - (панель)'),
+            main: z.boolean().optional().describe('Только основное содержимое: article/main или самый текстовый блок, без меню и подвала'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
             offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
           }
         },
-        async ({ frame, selector, limit, offset, visible, brief, parts, around, markdown }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}), ...(brief !== undefined ? { brief } : {}), ...(parts ? { parts: parts as never } : {}), ...(around ? { around } : {}), ...(markdown !== undefined ? { markdown } : {}) })
+        async ({ frame, selector, limit, offset, visible, brief, parts, around, markdown, main }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}), ...(brief !== undefined ? { brief } : {}), ...(parts ? { parts: parts as never } : {}), ...(around ? { around } : {}), ...(markdown !== undefined ? { markdown } : {}), ...(main ? { main: true } : {}) })
       )
 
       server.registerTool(

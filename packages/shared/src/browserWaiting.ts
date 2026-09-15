@@ -18,6 +18,8 @@ export interface BrowserWaitOptions {
   idle?: boolean
   /** Дождаться любого изменения видимого текста страницы (после действия «что-то должно произойти»). */
   changed?: boolean
+  /** Дождаться, пока страница перестанет меняться (полсекунды без правок DOM): так человек ждёт, пока всё дорисуется. */
+  stable?: boolean
 }
 
 export function isBrowserWaitOptions(value: unknown): value is BrowserWaitOptions {
@@ -28,13 +30,13 @@ export function isBrowserWaitOptions(value: unknown): value is BrowserWaitOption
   if (item.timeoutMs !== undefined && (typeof item.timeoutMs !== 'number' || !Number.isFinite(item.timeoutMs) || item.timeoutMs <= 0 || item.timeoutMs > 30_000)) return false
   if (item.state !== undefined && (typeof item.state !== 'string' || !['attached', 'detached', 'visible', 'hidden'].includes(item.state))) return false
   if (item.loadState !== undefined && (typeof item.loadState !== 'string' || !['domcontentloaded', 'load'].includes(item.loadState))) return false
-  if (['enabled', 'editable', 'checked', 'idle', 'changed'].some(key => item[key] !== undefined && typeof item[key] !== 'boolean')) return false
+  if (['enabled', 'editable', 'checked', 'idle', 'changed', 'stable'].some(key => item[key] !== undefined && typeof item[key] !== 'boolean')) return false
   if (item.count !== undefined && (typeof item.count !== 'number' || !Number.isInteger(item.count) || item.count < 0 || item.count > 100_000)) return false
   const target = item.selector !== undefined || item.text !== undefined
   if (!target && ['state', 'enabled', 'editable', 'checked', 'value', 'count'].some(key => item[key] !== undefined)) return false
   if (item.count === 0 && ((item.state === 'visible' || item.state === 'attached') || ['enabled', 'editable', 'checked', 'value'].some(key => item[key] !== undefined))) return false
   if (typeof item.count === 'number' && item.count > 0 && item.state === 'detached') return false
-  return target || item.url !== undefined || item.loadState !== undefined || item.predicate !== undefined || item.idle === true || item.changed === true
+  return target || item.url !== undefined || item.loadState !== undefined || item.predicate !== undefined || item.idle === true || item.changed === true || item.stable === true
 }
 
 /** Старый iframe не должен выдавать наличие узла за выполнение новых условий. */

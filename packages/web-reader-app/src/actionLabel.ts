@@ -23,9 +23,12 @@ export function previewActionLabel(action: PreviewAction): string {
     case 'errors': return 'Проверил ошибки страницы'
     case 'scroll': return action.to === 'element' && action.selector ? `Показал ${action.selector}` : 'Прокрутил страницу'
     case 'press': return `Нажал клавишу ${action.key}${action.repeat && action.repeat > 1 ? ` ×${action.repeat}` : ''}`
-    case 'back': return 'Перешёл назад'
+    case 'back': return action.to ? `Вернулся на «${action.to}»` : 'Перешёл назад'
     case 'forward': return 'Перешёл вперёд'
     case 'dismiss': return action.what === 'cookies' ? 'Убрал баннер cookie' : action.what === 'dialog' ? 'Закрыл окно' : 'Убрал баннер или окно'
+    case 'search': return `Искал на сайте «${action.text}»`
+    case 'focus': return `Поставил курсор в ${action.field ? `поле «${action.field}»` : action.selector ?? 'поле'}`
+    case 'select': return `Выделил ${action.text ? `«${action.text}»` : action.selector ?? 'текст'}`
     case 'show': return `Показал ${action.text ?? action.selector ?? 'элемент'}`
     default: return `Выполнил: ${action.kind}`
   }
@@ -52,6 +55,9 @@ export function previewActionProgressLabel(action: PreviewAction): string {
     case 'back': return 'переходит назад'
     case 'forward': return 'переходит вперёд'
     case 'dismiss': return action.what === 'cookies' ? 'убирает баннер cookie' : 'закрывает окно или баннер'
+    case 'search': return `ищет на сайте «${action.text}»`
+    case 'focus': return 'ставит курсор в поле'
+    case 'select': return `выделяет ${action.text ? `«${action.text}»` : 'текст'}`
     case 'show': return `показывает ${action.text ?? action.selector ?? 'элемент'}`
     default: return `выполняет ${action.kind}`
   }

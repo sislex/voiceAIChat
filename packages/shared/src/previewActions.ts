@@ -158,7 +158,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** brief — короткое человеческое описание страницы вместо полной структуры. */
   /** parts — какие части отдать (headings, links, buttons, inputs, forms, landmarks, text): меньше ответ — меньше контекста. */
   /** around — текст вокруг фразы (±600 символов); markdown — текст с заголовками и списками в лёгкой разметке. */
-  | { kind: 'read'; selector?: string; section?: string; around?: string; markdown?: boolean; limit?: number; offset?: number; visible?: boolean; brief?: boolean; parts?: PreviewReadPart[]; diagnostic?: boolean }
+  /** main — только основное содержимое страницы (article/main/самый текстовый блок), без меню, шапки и подвала. */
+  | { kind: 'read'; selector?: string; section?: string; around?: string; markdown?: boolean; main?: boolean; limit?: number; offset?: number; visible?: boolean; brief?: boolean; parts?: PreviewReadPart[]; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   /** waitMs — подождать после наведения, пока меню анимируется, и только потом собрать revealed. */
@@ -180,7 +181,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Дождаться появления элемента (selector или видимый text) с таймаутом. */
   | ({ kind: 'wait'; diagnostic?: boolean } & BrowserWaitOptions)
   /** Назад по истории внутренней страницы (переход подтверждается page-ready). */
-  | { kind: 'back'; steps?: number; diagnostic?: boolean }
+  /** to — вернуться к странице этого сеанса по части адреса или заголовка («вернись на страницу поиска»); исполняет мост панели. */
+  | { kind: 'back'; steps?: number; to?: string; diagnostic?: boolean }
   /** Вперёд по истории внутренней страницы (симметрично back). */
   | { kind: 'forward'; steps?: number; diagnostic?: boolean }
   /** Сохранённые правки edit-режима текущей страницы (перенести «как поправил» в код). */
@@ -216,6 +218,12 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; all?: boolean; diagnostic?: boolean }
   /** Убрать то, что мешает читать: баннер cookie (предпочтительно «отклонить»/«только необходимые») или всплывающее окно — как человек закрывает их первым делом. */
   | { kind: 'dismiss'; what?: 'cookies' | 'dialog' | 'any'; diagnostic?: boolean }
+  /** Поиск по самому сайту: найти его поле поиска, ввести запрос и отправить — первое, что делает человек на большом сайте. */
+  | { kind: 'search'; text: string; in?: string; waitFor?: string; diagnostic?: boolean }
+  /** Поставить курсор в поле, ничего не вводя: так человек готовится печатать и проверяет, куда попадёт ввод. */
+  | { kind: 'focus'; selector?: string; field?: string; near?: string; diagnostic?: boolean }
+  /** Выделить текст на странице — пользователь видит выделение и понимает, о каком месте речь. */
+  | { kind: 'select'; text?: string; selector?: string; near?: string; diagnostic?: boolean }
   /** Проверка ожидания как у тестировщика: pass/fail с фактическим значением, без исключений. */
   /** url/title — проверка адреса и заголовка страницы (мост панели), без text/selector. */
   | { kind: 'check'; text?: string; selector?: string; near?: string; state?: 'visible' | 'hidden' | 'present' | 'absent'; value?: string; contains?: string; count?: number; enabled?: boolean; checked?: boolean; url?: string; title?: string; diagnostic?: boolean }
@@ -404,6 +412,16 @@ export interface PreviewReadResult {
   images?: { selector: string; alt: string; src: string; width: number; height: number }[]
   /** Что лежит поверх страницы: баннер cookie, модальное окно, липкая панель — то, что человек убирает первым. */
   overlays?: { selector: string; text: string; kind: 'cookies' | 'dialog' | 'sticky' }[]
+  /** Путь по сайту (хлебные крошки) — где страница лежит в иерархии. */
+  breadcrumbs?: { text: string; href?: string }[]
+  /** Листалка страницы: куда вести «дальше» и «назад», как их видит человек. */
+  pagination?: { next?: string; prev?: string; label?: string }
+  /** Что за материал: дата публикации и автор, если страница их показывает. */
+  published?: { date?: string; author?: string }
+  /** Поле поиска самого сайта (для search). */
+  search?: string
+  /** Прочитано только основное содержимое (main: true) — selector найденного блока. */
+  main?: string
   /** Элемент с фокусом — где сейчас «курсор» пользователя. */
   focus?: string
   /** Текст, выделенный пользователем на странице (до 2000 символов). */
@@ -487,6 +505,29 @@ export interface PreviewScreenshotResult {
   dataUrl: string
   /** Пронумерованные на снимке элементы (marks: true). */
   marks?: { n: number; selector: string; text: string; role?: string }[]
+}
+
+export interface PreviewSearchResult {
+  page: PreviewPageInfo
+  /** Поле поиска сайта, которым воспользовались. */
+  field: PreviewActionElement
+  query: string
+  submitted: boolean
+  /** Подсказки, которые сайт показал под полем. */
+  suggestions?: string[]
+  navigated?: boolean
+  waited?: { text: string; found: boolean; error?: string }
+}
+
+export interface PreviewFocusResult {
+  page: PreviewPageInfo
+  focused: PreviewActionElement
+}
+
+export interface PreviewSelectResult {
+  page: PreviewPageInfo
+  selected: string
+  target: PreviewActionElement
 }
 
 export interface PreviewDismissResult {
@@ -682,6 +723,9 @@ export type PreviewActionResult =
   | PreviewCheckResult
   | PreviewShowResult
   | PreviewDismissResult
+  | PreviewSearchResult
+  | PreviewFocusResult
+  | PreviewSelectResult
   | PreviewSequenceResult
   | PreviewChangesResult
   | PreviewReportResult
@@ -760,7 +804,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.append === undefined || typeof value.append === 'boolean') &&
         (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean') && (value.blur === undefined || typeof value.blur === 'boolean')
     case 'read':
-      return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) && optBounded(value.around, L.text) && (value.markdown === undefined || typeof value.markdown === 'boolean') &&
+      return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) && optBounded(value.around, L.text) && (value.markdown === undefined || typeof value.markdown === 'boolean') && (value.main === undefined || typeof value.main === 'boolean') &&
         (value.visible === undefined || typeof value.visible === 'boolean') && (value.brief === undefined || typeof value.brief === 'boolean') &&
         (value.parts === undefined || (Array.isArray(value.parts) && value.parts.length >= 1 && value.parts.length <= 9 && value.parts.every((part) => (PREVIEW_READ_PARTS as readonly string[]).includes(part as string)))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
@@ -822,7 +866,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return isBrowserWaitOptions(value)
     case 'back':
     case 'forward':
-      return value.steps === undefined || (typeof value.steps === 'number' && Number.isInteger(value.steps) && value.steps >= 1 && value.steps <= 20)
+      return (value.steps === undefined || (typeof value.steps === 'number' && Number.isInteger(value.steps) && value.steps >= 1 && value.steps <= 20)) &&
+        (value.to === undefined || (value.kind === 'back' && bounded(value.to, L.text) && value.to.trim().length > 0))
     case 'edits':
     case 'status':
       return true
@@ -840,6 +885,14 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return optBounded(value.selector, L.selector)
     case 'dismiss':
       return value.what === undefined || value.what === 'cookies' || value.what === 'dialog' || value.what === 'any'
+    case 'search':
+      return bounded(value.text, L.text) && value.text.trim().length > 0 && optBounded(value.in, L.selector) && optBounded(value.waitFor, L.text)
+    case 'focus':
+      return optBounded(value.selector, L.selector) && optBounded(value.field, L.text) && optBounded(value.near, L.text) &&
+        (bounded(value.selector, L.selector) && value.selector.length > 0 || bounded(value.field, L.text) && value.field.trim().length > 0)
+    case 'select':
+      return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) &&
+        (value.text !== undefined || value.selector !== undefined)
     case 'report':
       return true
     case 'network':
@@ -1035,6 +1088,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'find/click {below|above|leftOf|rightOf: текст-ориентир} — «кнопка под ценой», «поле справа от подписи»: ближайшее с той стороны идёт первым; find {details: true} — атрибуты, размер и путь элемента по ориентирам; ' +
     'read {parts: [images]} — видимые картинки с alt и адресом; read.overlays — что лежит поверх страницы (баннер cookie, окно, липкая панель); dismiss {what?: cookies|dialog|any} — убрать баннер cookie (предпочитая «отклонить»/«только необходимые») или закрыть всплывающее окно, как человек делает первым делом; ' +
     'click {peek: true} — не нажимать, а узнать, куда ведёт ссылка (href, external, newTab); scroll.percent — насколько долистано. ' +
+    'search {text} — искать на самом сайте: панель найдёт его поле поиска, введёт запрос и отправит (первое, что делает человек на большом сайте); focus {field} ставит курсор, ничего не вводя; ' +
+    'select {text} выделяет место на странице — пользователь видит, о чём речь. read {main: true} — только основное содержимое без меню и подвала; read.breadcrumbs — путь по сайту; ' +
+    'read.pagination — куда вести «дальше» и «назад»; read.published — дата и автор материала; wait {stable: true} — дождаться, пока страница перестанет меняться; back {to: «часть адреса или заголовка»} — вернуться к странице этого сеанса. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

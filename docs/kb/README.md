@@ -10,7 +10,7 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 20 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 42 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 44 коммит(ов) в areas после сверки: 06a68044 Merge remote-tracking branch 'origin/main' into claude/web-reader-20-cycles … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 48 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 7 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 6 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 126 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 54 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1475 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1476 коммит(ов) в areas после сверки: e402301e docs(kb): update after merge 0d08841b-d123-4eab-8613-cf70eef8fdb4 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 15 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 43 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 40 коммит(ов) в areas после сверки: 4632bced Merge main into CHAT-466 (task 2c900bc5-86d3-4216-857c-529cc8951e5f) … |
@@ -74,18 +74,18 @@
 
 ## Журнал сессий
 
-Всего записей: 844. Последние:
+Всего записей: 845. Последние:
 
 - [2026-09-15-germany-4-8-60-universal-search.md](log/2026-09-15-germany-4-8-60-universal-search.md) — universal-search
 - [2026-09-15-germany-4-8-60-universal-search-kb.md](log/2026-09-15-germany-4-8-60-universal-search-kb.md) — universal-search-kb
 - [2026-09-15-germany-4-8-60-chat468-route-read-cache.md](log/2026-09-15-germany-4-8-60-chat468-route-read-cache.md) — chat468-route-read-cache
 - [2026-09-15-germany-4-8-60-chat468-route-cache-kb.md](log/2026-09-15-germany-4-8-60-chat468-route-cache-kb.md) — chat468-route-cache-kb
+- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-17.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-17.md) — web-reader-user-like-cycle-17
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-16.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-16.md) — web-reader-user-like-cycle-16
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-15.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-15.md) — web-reader-user-like-cycle-15
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-14.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-14.md) — web-reader-user-like-cycle-14
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-13.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-13.md) — web-reader-user-like-cycle-13
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-12.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-12.md) — web-reader-user-like-cycle-12
-- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-11.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-11.md) — web-reader-user-like-cycle-11
 
 ## Исторические планы
 

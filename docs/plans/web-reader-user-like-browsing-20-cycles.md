@@ -570,3 +570,37 @@ UI (desktop and phone):
 | 10 | «К началу страницы» appears after a screen and a half of scrolling | `pageScroll.ts`, Recorder |
 
 Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-16.md`.
+
+## Cycle 17 — the site's own search, the landmarks a person reads first
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `search {text, in?}` — find the site's own search field, type the query and submit it | script `searchField` | script test |
+| 02 | `search` answers with the field, the submit fact and the site's own suggestions | script | script test |
+| 03 | `focus {field|selector}` — put the cursor where a person would, typing nothing | script | script test |
+| 04 | `select {text|selector}` — select a passage so the person sees what is meant | script | script test |
+| 05 | `read {main: true}` — the article only: `article`/`main`, else the most textual block | script `mainScope` | script test |
+| 06 | `read.breadcrumbs` — the path through the site | script `breadcrumbsOf` | script test |
+| 07 | `read.pagination` — next/prev pages by `rel` or by the words a person reads | script `paginationOf` | script test |
+| 08 | `read.published` — publication date and author | script `publishedOf` | script test |
+| 09 | `wait {stable: true}` — wait until the DOM stops changing for half a second | shared, script | script test |
+| 10 | `back {to: «part of an address or title»}` — return to a page of this session | `hostBridge.ts` | bridge test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Site path line under the title; a step opens that section | Recorder |
+| 02 | Pager row «← Предыдущая / Дальше →» with the current page number | Recorder |
+| 03 | Alt+Shift+← / Alt+Shift+→ walk the pager | Recorder |
+| 04 | «Искать на сайте» in the tools menu runs the site's own search field | Recorder |
+| 05 | `/` puts the cursor in the site's search field, as browsers do | Recorder |
+| 06 | Publication date and author next to the page title | Recorder |
+| 07 | A selection made by the assistant is labelled «Ассистент выделил» | script, Recorder |
+| 08 | Returning to a page of this session lands where reading stopped | `pageMemory.ts` |
+| 09 | The shortcut cheat sheet learns the two new keys | Recorder |
+| 10 | Phone: path and pager scroll horizontally with 44 px targets | `recorder.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-17.md`.
