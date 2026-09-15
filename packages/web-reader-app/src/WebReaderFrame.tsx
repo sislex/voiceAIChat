@@ -20,6 +20,10 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const [dismissedError, setDismissedError] = useState<string | null>(null)
   // Закладки сеанса: их кладут и модель, и человек, а список один на двоих.
   const [bookmarks, setBookmarks] = useState<{ url: string; label: string; at: number }[]>([])
+  // Модель спросила человека или передала ему шаг: панель ждёт живого ответа.
+  const [waiting, setWaiting] = useState<{ kind: 'question' | 'handover'; text: string; options?: string[]; since: number } | null>(null)
+  const [answerDraft, setAnswerDraft] = useState('')
+  const answerRef = useRef<HTMLInputElement>(null)
   // Long-running model actions show elapsed seconds so the person knows the panel is busy, not stuck.
   const [pendingSeconds, setPendingSeconds] = useState(0)
   // Progress of a multi-step sequence: "шаг 2 из 5" tells the person how long the routine still is.
@@ -58,7 +62,18 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   // мост из useMemo оставался бы мёртвым после повторного mount.
   const bridgeRef = useRef<ReaderHostBridge | null>(null)
   const [bridgeGeneration, setBridgeGeneration] = useState(0)
-  useEffect(() => { setBookmarks([]) }, [conversationId])
+  useEffect(() => { setBookmarks([]); setWaiting(null) }, [conversationId])
+  // Вопрос ассистента должен попасть под курсор сразу: человек отвечает, не ища поле мышью.
+  useEffect(() => { if (waiting?.kind === 'question') answerRef.current?.focus() }, [waiting])
+  // Сколько ассистент уже ждёт: человек видит, что ход стоит именно на нём.
+  const [waitingSeconds, setWaitingSeconds] = useState(0)
+  useEffect(() => {
+    if (!waiting) { setWaitingSeconds(0); return }
+    const tick = (): void => setWaitingSeconds(Math.floor((Date.now() - waiting.since) / 1000))
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [waiting])
   useEffect(() => {
     savedByReader.current = undefined
     setSaveError(null)
@@ -139,6 +154,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       onPageTitle: (title) => callbacks.current.onPageTitle?.(title),
       onAsk: (text) => callbacks.current.onAsk?.(text),
       onBookmarks: (list) => setBookmarks(list),
+      onWaitingForPerson: (next) => { setWaiting(next); setAnswerDraft('') },
       onControl: (manual) => callbacks.current.onControl?.(manual),
       onSequenceProgress: (progress) => { if (alive) setSequenceProgress(progress) },
       onElement: (element) => callbacks.current.onSelectElement?.(element),
@@ -207,6 +223,17 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {sequenceProgress ? `выполняет шаг ${sequenceProgress.done + 1} из ${sequenceProgress.total}: ${previewActionProgressLabel(sequenceProgress.action)}` : previewActionProgressLabel(pendingAction)}…{pendingSeconds >= 3 && <span className="webpreview-live__time"> {pendingSeconds} с</span>}</p>}
     {confirmRequest && <div className="webpreview-confirm" role="alertdialog" aria-live="assertive" aria-label="Подтверждение действия ассистента"><span>Ассистент хочет: {previewActionProgressLabel(confirmRequest.action)} — {confirmRequest.reason} ({confirmRequest.target}). Разрешить?</span><button className="vc-btn vc-btn--primary vc-btn--sm" type="button" autoFocus onClick={() => onConfirmAction?.({ ...confirmRequest.action, confirm: true } as PreviewAction)}>Разрешить</button><button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onDenyAction?.()}>Отказать</button></div>}
     {actionError && !pendingAction && <div className="webpreview-error webpreview-action-error" role="status" aria-live="polite"><span>Ассистент не смог: {previewActionProgressLabel(actionError.action)} — {actionError.error}</span>{onRetryAction && !/Только я управляю/.test(actionError.error) && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onRetryAction(actionError.action)}>Повторить</button>}</div>}
+    {waiting?.kind === 'question' && <form className="webpreview-question" role="group" aria-label="Вопрос ассистента" onSubmit={(event) => { event.preventDefault(); const answer = answerDraft.trim(); if (answer) bridgeRef.current?.answerQuestion(answer) }}>
+      <p aria-live="assertive">Ассистент спрашивает: {waiting.text}{waitingSeconds >= 5 && <small> · ждёт {waitingSeconds} с</small>}</p>
+      {waiting.options && waiting.options.length > 0 && <div className="webpreview-question__options">{waiting.options.map(option => <button key={option} type="button" className="vc-btn vc-btn--secondary vc-btn--sm" onClick={() => bridgeRef.current?.answerQuestion(option)}>{option}</button>)}</div>}
+      <label><span className="vc-sr-only">Ответ ассистенту</span><input ref={answerRef} type="text" value={answerDraft} placeholder="Ваш ответ" onChange={(event) => setAnswerDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); bridgeRef.current?.answerQuestion(null) } }} /></label>
+      <button type="submit" className="vc-btn vc-btn--primary vc-btn--sm" disabled={!answerDraft.trim()}>Ответить</button>
+      <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" onClick={() => bridgeRef.current?.answerQuestion(null)}>Не сейчас</button>
+    </form>}
+    {waiting?.kind === 'handover' && <div className="webpreview-question webpreview-handover" role="status" aria-live="polite">
+      <p>Ассистент ждёт вас: {waiting.text}{waitingSeconds >= 5 && <small> · {waitingSeconds} с</small>}</p>
+      <button type="button" className="vc-btn vc-btn--primary vc-btn--sm" onClick={() => bridgeRef.current?.finishHandover()}>Готово, продолжай</button>
+    </div>}
     {bookmarks.length > 0 && <nav className="webpreview-bookmarks" aria-label="Закладки страницы">
       {bookmarks.map(item => <span key={item.url} className="webpreview-bookmarks__item">
         <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" title={item.url} disabled={manual} onClick={() => bridgeRef.current?.run({ kind: 'open', url: item.url })}>{item.label}</button>

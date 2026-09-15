@@ -28,6 +28,8 @@ export function previewActionLabel(action: PreviewAction): string {
     case 'dismiss': return action.what === 'cookies' ? 'Убрал баннер cookie' : action.what === 'dialog' ? 'Закрыл окно' : 'Убрал баннер или окно'
     case 'search': return `Искал на сайте «${action.text}»`
     case 'bookmark': return action.remove ? `Убрал закладку ${action.remove}` : `Запомнил страницу${action.label ? ` как «${action.label}»` : ''}`
+    case 'question': return `Спросил: ${action.question}`
+    case 'handover': return `Передал шаг вам: ${action.reason}`
     case 'focus': return `Поставил курсор в ${action.field ? `поле «${action.field}»` : action.selector ?? 'поле'}`
     case 'select': return `Выделил ${action.text ? `«${action.text}»` : action.selector ?? 'текст'}`
     case 'show': return `Показал ${action.text ?? action.selector ?? 'элемент'}`
@@ -58,6 +60,8 @@ export function previewActionProgressLabel(action: PreviewAction): string {
     case 'dismiss': return action.what === 'cookies' ? 'убирает баннер cookie' : 'закрывает окно или баннер'
     case 'search': return `ищет на сайте «${action.text}»`
     case 'bookmark': return action.remove ? 'убирает закладку' : 'запоминает страницу'
+    case 'question': return 'ждёт вашего ответа'
+    case 'handover': return 'ждёт, пока вы сделаете свой шаг'
     case 'focus': return 'ставит курсор в поле'
     case 'select': return `выделяет ${action.text ? `«${action.text}»` : 'текст'}`
     case 'show': return `показывает ${action.text ?? action.selector ?? 'элемент'}`

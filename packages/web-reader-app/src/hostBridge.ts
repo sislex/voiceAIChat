@@ -60,6 +60,8 @@ export interface ReaderHostBridgeOptions {
   onAsk?: (text: string) => void
   /** Пользователь взял управление страницей (true) или вернул его ассистенту (false). */
   onControl?: (manual: boolean) => void
+  /** Модель ждёт человека: вопрос с вариантами ответа или переданный ему шаг (null — ожидание кончилось). */
+  onWaitingForPerson?: (waiting: { kind: 'question' | 'handover'; text: string; options?: string[]; since: number } | null) => void
   /** Закладки сеанса изменились: панель показывает тот же список, что видит модель. */
   onBookmarks?: (bookmarks: { url: string; label: string; at: number }[]) => void
   /** Ход выполнения последовательности: какой шаг идёт сейчас. */
@@ -82,6 +84,10 @@ export interface ReaderHostBridge {
   setRecording(enabled: boolean): void
   beginDiagnostics(): void
   endDiagnostics(): void
+  /** Ответ человека на вопрос модели; отказ (null) означает «не сейчас». */
+  answerQuestion(answer: string | null): void
+  /** Человек вернул управление после handover. */
+  finishHandover(): void
   /** Сообщение от iframe, чей event.source/origin уже проверен адаптером. */
   receive(message: unknown): void
   dispose(): void
@@ -133,6 +139,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   let viewport: { width: number; height: number } | undefined
   // Последнее завершённое действие: модель после паузы спрашивает status и продолжает с того места.
   let lastAction: { kind: string; ok: boolean; at: number; error?: string } | undefined
+  // Вопрос человеку или переданный ему шаг: панель ждёт, модель стоит.
+  let waiting: { kind: 'question' | 'handover'; text: string; since: number; settle: (answer: string | null) => void } | null = null
+  const questions: { question: string; answer?: string; answered: boolean; at: number }[] = []
   // Закладки сеанса: человек и модель кладут их на страницы, к которым вернутся.
   const bookmarks: { url: string; label: string; at: number }[] = []
   // Журнал проверок и счётчик действий: report собирает из них отчёт по задаче.
@@ -237,7 +246,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         ...(lastAction ? { lastAction } : {}),
         ...(checks.length ? { checks: { passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length } } : {}),
         ...(pageOutline && pageStatus === 'ready' ? { outline: pageOutline } : {}),
-        ...(bookmarks.length ? { bookmarks: [...bookmarks] } : {})
+        ...(bookmarks.length ? { bookmarks: [...bookmarks] } : {}),
+        ...(waiting ? { waitingFor: { kind: waiting.kind, text: waiting.text, since: waiting.since } } : {})
       } })
     }
     // waitFor у действия: после успеха дождаться текста тем же ходом, как у open.
@@ -281,7 +291,39 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     }
     if (action.kind === 'report') {
       const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
-      return Promise.resolve({ ok: true, result: { page, history: [...history], checks: [...checks], passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length, actions: actionsCount, ...(lastAction ? { lastAction } : {}), ...(bookmarks.length ? { bookmarks: [...bookmarks] } : {}) } })
+      return Promise.resolve({ ok: true, result: { page, history: [...history], checks: [...checks], passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length, actions: actionsCount, ...(lastAction ? { lastAction } : {}), ...(bookmarks.length ? { bookmarks: [...bookmarks] } : {}), ...(questions.length ? { questions: [...questions] } : {}) } })
+    }
+    // Пока панель ждёт человека, действовать за его спиной нельзя: так не делает и человек, задавший вопрос.
+    // status и report отвечены выше по потоку, поэтому здесь остаются только действия над страницей.
+    if (waiting && action.kind !== 'question' && action.kind !== 'handover') {
+      return Promise.resolve({ ok: false, error: `Панель ждёт человека: «${waiting.text}». Дождись ответа и продолжай.` })
+    }
+    // Вопрос человеку и передача шага — дело панели: страница о них не знает, а модель ждёт живого ответа.
+    if (action.kind === 'question' || action.kind === 'handover') {
+      if (waiting) return Promise.resolve({ ok: false, error: `Панель уже ждёт человека: «${waiting.text}». Дождись ответа.` })
+      const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
+      const text = action.kind === 'question' ? action.question : action.reason
+      const timeout = Math.min(action.timeoutMs ?? 120_000, 600_000)
+      const started = Date.now()
+      return new Promise((resolve) => {
+        const finish = (answer: string | null): void => {
+          if (waiting?.settle !== finish) return
+          clearTimeout(timer)
+          waiting = null
+          options.onWaitingForPerson?.(null)
+          const waitedMs = Date.now() - started
+          if (action.kind === 'question') {
+            questions.push({ question: text, ...(answer === null ? {} : { answer }), answered: answer !== null, at: Date.now() })
+            if (questions.length > 50) questions.shift()
+            resolve({ ok: true, result: { page, question: text, answered: answer !== null, ...(answer === null ? {} : { answer }), waitedMs } })
+            return
+          }
+          resolve({ ok: true, result: { page, reason: text, returned: answer !== null, waitedMs } })
+        }
+        const timer = setTimeout(() => finish(null), timeout)
+        waiting = { kind: action.kind === 'question' ? 'question' : 'handover', text, since: started, settle: finish }
+        options.onWaitingForPerson?.({ kind: waiting.kind, text, ...(action.kind === 'question' && action.options ? { options: [...action.options] } : {}), since: started })
+      })
     }
     // Закладка — дело панели, а не страницы: человек видит тот же список, что и модель.
     if (action.kind === 'bookmark') {
@@ -396,6 +438,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       post({ kind: 'set-url', url })
     },
     run,
+    answerQuestion: (answer) => { waiting?.settle(answer) },
+    finishHandover: () => { if (waiting?.kind === 'handover') waiting.settle('готово') },
     setInspector: (enabled) => { inspectorMode = enabled; post({ kind: 'inspector-state', enabled }) },
     setRecording: (enabled) => { recordingMode = enabled; post({ kind: 'recording-state', enabled }) },
     beginDiagnostics: () => { diagnosticsMode = true; post({ kind: 'diagnostics-start', active: true }) },
@@ -493,6 +537,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     },
     dispose() {
       if (disposed) return
+      // Незаконченный вопрос отпускаем: иначе ход модели висит до таймаута уже закрытой панели.
+      waiting?.settle(null)
       rejectAll('Панель Web Reader закрыта.')
       post({ kind: 'dispose' })
       disposed = true
