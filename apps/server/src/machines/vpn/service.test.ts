@@ -178,6 +178,45 @@ describe('VPN owner boundary and persistent transitions', () => {
     expect(s.agents.vpn).not.toHaveBeenCalled()
     expect(s.api.setPolicy).not.toHaveBeenCalled()
   })
+  // @testCase TC-API
+  // @testCase TC-ISOLATION
+  it('rejects foreign HTTP writes without changing stored state or upstream policy', async () => {
+    const s = setup(), app = Fastify()
+    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    const before = await s.repo.readVpnNetwork('alice')
+    vi.mocked(s.api.setPolicy).mockClear()
+    app.addHook('onRequest', async request => { Object.assign(request, { user: { name: 'bob' } }) })
+    registerVpnRoutes(app, s.service)
+    try {
+      const response = await app.inject({ method: 'PUT', url: '/api/agents/client/vpn', payload: command('server') })
+      expect(response.statusCode).toBe(404)
+      expect(await s.repo.readVpnNetwork('alice')).toEqual(before)
+      expect(s.agents.vpn).not.toHaveBeenCalled()
+      expect(s.api.setPolicy).not.toHaveBeenCalled()
+    } finally { await app.close() }
+  })
+  // @testCase TC-MIGRATION
+  it('preserves active state and bindings when renewing credentials for the same network', async () => {
+    const s = setup()
+    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.change('alice', 'gateway', command('server'))
+    await s.service.change('alice', 'client', command('client'))
+    const before = (await s.repo.readVpnNetwork('alice'))!
+    const policy = structuredClone(s.policy())
+    s.agents.vpn.mockClear()
+    await s.service.connect('alice', 'test.ts.net', 'tskey-renewed-secret-123')
+    const after = (await s.repo.readVpnNetwork('alice'))!
+    expect(JSON.parse(after.state)).toMatchObject({
+      states: JSON.parse(before.state).states,
+      bindings: JSON.parse(before.state).bindings,
+      grants: JSON.parse(before.state).grants
+    })
+    expect(after.generation).toBe(before.generation + 1)
+    expect(after.encryptedSecret).not.toBe(before.encryptedSecret)
+    expect(after.encryptedSecret).not.toContain('tskey-renewed-secret-123')
+    expect(s.policy()).toEqual(policy)
+    expect(s.agents.vpn).not.toHaveBeenCalled()
+  })
   // @testCase TC-SECRETS
   it('never returns a credential in successful DTOs or failed observations', async () => {
     const s = setup(), secret = 'tskey-secret-never-in-dto'

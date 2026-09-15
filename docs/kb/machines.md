@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-09-14
-checked: 4632bced
+updated: 2026-09-15
+checked: 9336bc5d
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -259,6 +259,19 @@ role, checks actual state, and explicitly releases protection. The agent's opera
 `<rootDir>/.voicechat/vpn-operation.json*` and survive agent restarts.
 
 ### Verification and acceptance limits
+
+The integration runner discovers markers only in changed test files from the
+feature diff (with a first-parent HEAD fallback), not across the whole checkout.
+Existing VPN markers outside that diff do not satisfy a new run. The VPN
+coverage files are `MachineVpn.dom.test.tsx` (TC-UI, TC-REGRESSION),
+`machines/vpn/service.test.ts` (TC-API, TC-ISOLATION, TC-MIGRATION,
+TC-STATE, TC-SECRETS), and agent `vpn/system.test.ts` (TC-NETWORK) plus
+`vpn/firewall.test.ts` (TC-LINUX-SERVICES). The migration checks protect
+the existing Tailscale state during rejected network replacement and same-network
+credential renewal; they do not exercise a migration to a different VPN backend.
+The default network checks cover preparation and protection-helper failures.
+Linux service checks validate generated output rules, including the IPv6
+management endpoint; they do not prove live inbound service availability.
 
 Automated cases have `// @testCase` coverage markers next to the tests:
 shared contract validation; server ownership, HTTP boundaries, policy conflicts
