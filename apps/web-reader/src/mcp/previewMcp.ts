@@ -895,6 +895,60 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'device',
+        {
+          description:
+            'Эмулировать устройство целиком, а не только ширину окна: тач, плотность пикселей, ' +
+            'ориентация и user agent. «Телефон» одной шириной означает, что maxTouchPoints остаётся нулём, ' +
+            'pointer: coarse не срабатывает, а devicePixelRatio равен единице — именно на этом ломаются ' +
+            'карусели, меню «по наведению» и всё, что отличает палец от мыши. ' +
+            'Пресеты: phone, phone-android, tablet, desktop.',
+          inputSchema: {
+            preset: z.enum(['phone', 'phone-android', 'tablet', 'desktop']).optional().describe('Готовое устройство'),
+            width: z.number().int().min(320).max(3840).optional().describe('Ширина, если нужна своя'),
+            height: z.number().int().min(240).max(2160).optional().describe('Высота'),
+            deviceScaleFactor: z.number().min(1).max(4).optional().describe('Плотность пикселей'),
+            touch: z.boolean().optional().describe('Эмулировать тач-экран'),
+            orientation: z.enum(['portrait', 'landscape']).optional().describe('Ориентация'),
+            userAgent: z.string().max(400).optional().describe('Свой user agent')
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'device', ...options })
+          return toolResult(result ?? { ok: false, error: 'Эмуляция устройства доступна только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'touch',
+        {
+          description:
+            'Жест пальцем: tap, swipe (direction и distance) или long-press. Мышиный клик и тап — разные ' +
+            'события, и страницы вешают на них разные обработчики: «работает мышью» ничего не говорит о телефоне. ' +
+            'Свайп идёт шагами, иначе «свайп для удаления» считает перенос пальца сбоем. ' +
+            'Включи сначала device с touch, иначе страница не примет касание.',
+          inputSchema: {
+            gesture: z.enum(['tap', 'swipe', 'long-press']).describe('Что сделать пальцем'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор цели'),
+            x: z.number().min(0).max(10_000).optional().describe('Координата X, если цель не селектор'),
+            y: z.number().min(0).max(10_000).optional().describe('Координата Y'),
+            direction: z.enum(['up', 'down', 'left', 'right']).optional().describe('Направление свайпа'),
+            distance: z.number().min(10).max(4_000).optional().describe('Длина свайпа в пикселях'),
+            ms: z.number().min(100).max(5_000).optional().describe('Длительность долгого нажатия')
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          if (!options.selector && (options.x === undefined || options.y === undefined)) {
+            return { content: [{ type: 'text', text: 'Укажи selector или обе координаты x/y.' }], isError: true }
+          }
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'touch', ...options })
+          return toolResult(result ?? { ok: false, error: 'Жесты доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
         'record',
         {
           description:

@@ -419,3 +419,53 @@ describe('понятный отказ действия (круг 7)', () => {
     await screen.findByText('Найди его через find.')
   })
 })
+
+describe('устройство целиком (круг 9)', () => {
+  const withDevice = () => fakeBrowser({
+    command: vi.fn(async (_id: string, req: { command: { type: string; preset?: string; orientation?: string } }) => {
+      if (req.command.type === 'device') {
+        const landscape = req.command.orientation === 'landscape'
+        // Раннер отвечает метаданными сессии: панель обновляет по ним и размер,
+        // и признак тача одним ответом.
+        return meta({
+          viewport: { width: landscape ? 844 : 390, height: landscape ? 390 : 844, deviceScaleFactor: 3 },
+          device: { preset: req.command.preset, width: landscape ? 844 : 390, height: landscape ? 390 : 844, deviceScaleFactor: 3, touch: true, orientation: landscape ? 'landscape' : 'portrait' }
+        })
+      }
+      return meta()
+    }) as unknown as RendererBrowserBridge['command']
+  })
+
+  it('пресет «Телефон» включает устройство целиком, а не только ширину', async () => {
+    const browser = withDevice()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Телефон' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'device', preset: 'phone' })
+    })))
+    await screen.findByText(/тач/)
+  })
+
+  it('поворот доступен для мобильных пресетов и меняет ориентацию', async () => {
+    const browser = withDevice()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.queryByRole('button', { name: 'Повернуть' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Телефон' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Повернуть' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'device', orientation: 'landscape' })
+    })))
+  })
+
+  it('раннер без поддержки устройства оставляет прежний ресайз', async () => {
+    const browser = fakeBrowser({ command: vi.fn(async () => meta()) as unknown as RendererBrowserBridge['command'] })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Планшет' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'resize' })
+    })))
+  })
+})

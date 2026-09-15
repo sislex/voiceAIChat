@@ -10,7 +10,7 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 92 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 11 коммит(ов) в areas после сверки: b50e7a36 feat(playwright-reader): say why an action failed and what to do (cycle 7) … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 12 коммит(ов) в areas после сверки: 366d6288 feat(playwright-reader): let the model record and replay a scenario (cycle 8) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 30 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-10 | ⚠ 27 коммит(ов) в areas после сверки: b50e7a36 feat(playwright-reader): say why an action failed and what to do (cycle 7) … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 78 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 98 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1354 коммит(ов) в areas после сверки: b50e7a36 feat(playwright-reader): say why an action failed and what to do (cycle 7) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1355 коммит(ов) в areas после сверки: 366d6288 feat(playwright-reader): let the model record and replay a scenario (cycle 8) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 62 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 4 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: fc240494 fix(gate): stabilize rebased application validation |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ⚠ 5 коммит(ов) в areas после сверки: b50e7a36 feat(playwright-reader): say why an action failed and what to do (cycle 7) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ⚠ 6 коммит(ов) в areas после сверки: 366d6288 feat(playwright-reader): let the model record and replay a scenario (cycle 8) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
