@@ -82,6 +82,16 @@ export interface PreviewChangesResult {
   baseline?: boolean
 }
 
+export interface PreviewReportResult {
+  page: PreviewPageInfo | null
+  history: string[]
+  checks: { summary: string; pass: boolean; at: number; url: string | null }[]
+  passed: number
+  failed: number
+  actions: number
+  lastAction?: { kind: string; ok: boolean; at: number; error?: string }
+}
+
 export interface PreviewSequenceResult {
   page: PreviewPageInfo | null
   /** Итог каждого выполненного шага в порядке следования; после первой ошибки шаги не выполняются. */
@@ -118,7 +128,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** nth — взять N-е совпадение (с 1), когда одинаковых элементов несколько и near не помогает. */
   /** href — подстрока адреса ссылки («ссылка на /pricing»). */
   /** enabled/checked — состояние контрола, как его видит человек: «активная кнопка», «отмеченный флажок». */
-  | { kind: 'find'; text?: string; selector?: string; role?: string; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean }
+  /** reveal — прокрутить к первому найденному и подсветить: «найди и покажи». */
+  | { kind: 'find'; text?: string; selector?: string; role?: string; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
   /** x/y — клик по точке вьюпорта (карты, canvas), когда у цели нет текста и селектора. */
@@ -180,7 +191,9 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Выбрать пункт из выпадающего меню или списка: открыть триггер (in), дождаться пункта и нажать его. */
   | { kind: 'choose'; text: string; in?: string; near?: string; waitFor?: string; diagnostic?: boolean }
   /** Что изменилось на странице с прошлого снимка (read/changes/действие): появившиеся и исчезнувшие тексты. */
-  | { kind: 'changes'; diagnostic?: boolean }
+  | { kind: 'changes'; selector?: string; diagnostic?: boolean }
+  /** Отчёт о сеансе панели: где были, что проверили, что упало — для отчёта по задаче. */
+  | { kind: 'report'; diagnostic?: boolean }
   /** Показать пользователю элемент: прокрутить к нему и подсветить с подписью на несколько секунд. */
   | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; diagnostic?: boolean }
   /** Проверка ожидания как у тестировщика: pass/fail с фактическим значением, без исключений. */
@@ -289,6 +302,8 @@ export interface PreviewClickResult {
   changes?: PreviewChanges
   /** Итог ожидания waitFor. */
   waited?: { text: string; found: boolean; error?: string }
+  /** Цель появилась не сразу: сколько ждали, как ждёт человек, пока кнопка прорисуется. */
+  waitedMs?: number
 }
 
 export interface PreviewTypeResult {
@@ -300,6 +315,9 @@ export interface PreviewTypeResult {
   navigated?: boolean
   /** Подсказки автодополнения, показавшиеся после ввода (listbox/datalist). */
   options?: string[]
+  /** Что изменилось на странице сразу после ввода (подсказки, сообщения). */
+  changes?: PreviewChanges
+  waitedMs?: number
   /** Сообщения валидации после отправки: то, что пользователь увидел бы красным. */
   validation?: { field: string; message: string }[]
 }
@@ -587,6 +605,7 @@ export type PreviewActionResult =
   | PreviewShowResult
   | PreviewSequenceResult
   | PreviewChangesResult
+  | PreviewReportResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -631,7 +650,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.text, L.text) &&
         optBounded(value.selector, L.selector) &&
         optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') && validNth(value.nth) && optBounded(value.href, L.url) &&
-        (value.enabled === undefined || typeof value.enabled === 'boolean') && (value.checked === undefined || typeof value.checked === 'boolean') &&
+        (value.enabled === undefined || typeof value.enabled === 'boolean') && (value.checked === undefined || typeof value.checked === 'boolean') && (value.reveal === undefined || typeof value.reveal === 'boolean') &&
         (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
@@ -734,6 +753,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'choose':
       return bounded(value.text, L.text) && value.text.trim().length > 0 && optBounded(value.in, L.text) && optBounded(value.near, L.text) && optBounded(value.waitFor, L.text)
     case 'changes':
+      return optBounded(value.selector, L.selector)
+    case 'report':
       return true
     case 'network':
       return (
@@ -919,6 +940,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'read.scroll — насколько человек долистал страницу; status.lastAction — последнее завершённое действие. open принимает адрес без схемы (example.com → https://). ' +
     'read.notices — уведомления и баннеры, видимые сейчас; read.progress — индикаторы загрузки; find/check {enabled, checked} — состояние контрола; click/hover {role} — «нажми кнопку Сохранить», а не ссылку; ' +
     'fill {perKey} печатает посимвольно; sequence {continueOnError: true} проходит все шаги как чек-лист и перечисляет провалы. ' +
+    'report — отчёт о сеансе панели (история адресов, проверки с итогами, число действий) для отчёта по задаче; find {reveal: true} — найти и показать пользователю первое совпадение; ' +
+    'click и type сами ждут цель до 1,5 с, если её ещё нет (waitedMs в ответе); changes {selector} сравнивает только область. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

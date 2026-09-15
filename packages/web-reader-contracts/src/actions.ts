@@ -44,6 +44,8 @@ function narrate(kind: string, result: Record<string, unknown> | undefined, addr
   const changes = result.changes as { addedTotal?: number; removedTotal?: number } | undefined
   if (kind === 'click' && changes && ((changes.addedTotal ?? 0) || (changes.removedTotal ?? 0))) return `на странице появилось ${changes.addedTotal ?? 0}, исчезло ${changes.removedTotal ?? 0}`
   if (kind === 'sequence' && typeof result.completed === 'number' && typeof result.total === 'number') return `${result.completed} из ${result.total} шагов`
+  if (kind === 'fill' && Array.isArray(result.filled)) return `заполнил ${result.filled.length} ${result.filled.length === 1 ? 'поле' : 'поля'}${Array.isArray(result.missing) && result.missing.length ? `, не нашёл ${result.missing.length}` : ''}`
+  if ((kind === 'click' || kind === 'type') && typeof result.waitedMs === 'number' && result.waitedMs > 0) return `дождался цели за ${Math.round(result.waitedMs / 100) / 10} с`
   if ((kind === 'type' || kind === 'fill') && Array.isArray(result.validation) && result.validation.length) return `${result.validation.length} ${result.validation.length === 1 ? 'ошибка' : 'ошибки'} формы`
   return ''
 }

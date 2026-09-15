@@ -887,6 +887,33 @@ describe('скрипт превью: состояние контролов и у
   })
 })
 
+describe('скрипт превью: терпение и показ (круг 13)', () => {
+  it('click ждёт цель по тексту до полутора секунд и сообщает waitedMs', async () => {
+    setTimeout(() => document.body.insertAdjacentHTML('beforeend', `<button id="late-btn">Появлюсь позже</button>`), 300)
+    const res = await act({ kind: 'click', text: 'Появлюсь позже' })
+    expect(res.ok).toBe(true)
+    expect((res.result as { waitedMs?: number }).waitedMs).toBeGreaterThan(0)
+    const never = await act({ kind: 'click', text: 'Никогда' })
+    expect(never.ok).toBe(false)
+  }, 10_000)
+
+  it('find reveal подсвечивает первое совпадение; type сообщает changes; changes с selector сравнивает область', async () => {
+    const found = await act({ kind: 'find', text: 'Книги', reveal: true })
+    expect(found.ok).toBe(true)
+    expect(document.querySelectorAll('[data-voicechat-inspector="show-label"]').length).toBeGreaterThan(0)
+    document.body.insertAdjacentHTML('beforeend', `<input id="promo"><p id="promo-hint" style="display:none">Промокод принят</p>`)
+    document.getElementById('promo')!.addEventListener('input', () => { document.getElementById('promo-hint')!.style.display = 'block' })
+    const typed = await act({ kind: 'type', selector: '#promo', text: 'SALE' })
+    expect((typed.result as { changes?: { added: string[] } }).changes?.added).toContain('Промокод принят')
+    document.body.insertAdjacentHTML('beforeend', `<div id="cart"><p>Пусто</p></div>`)
+    const first = await act({ kind: 'changes', selector: '#cart' })
+    expect(first.result).toMatchObject({ baseline: true })
+    document.querySelector('#cart p')!.textContent = 'Товар 1'
+    const diff = await act({ kind: 'changes', selector: '#cart' })
+    expect((diff.result as { changes: { added: string[]; removed: string[] } }).changes).toMatchObject({ added: ['Товар 1'], removed: ['Пусто'] })
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

@@ -433,4 +433,38 @@ UI (desktop and phone):
 | 09 | Find bar and search buttons get 44 px targets on touch | recorder.css |
 | 10 | «Найти на странице» also lives in the tools menu for phones without Ctrl+F | Recorder |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-12.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-12.md`. Commit `bb1d4a5b`.
+
+## Cycle 13 — patience, showing and reporting
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `click` by text/role waits up to 1.5 s for the target to appear (`waitedMs`) | script `withAutoWait` | script test |
+| 02 | `type` by field waits the same way | script | — (shared helper) |
+| 03 | `report` — history, checks with verdicts, action count, last action for the task report | `hostBridge.ts`, MCP | bridge test |
+| 04 | bridge logs every `check` (page and url/title checks) for the report | `hostBridge.ts` | bridge test |
+| 05 | `find {reveal: true}` — find and show the first match to the person | script | script test |
+| 06 | `type` result carries `changes` (hints, messages that appeared) | script | script test |
+| 07 | `changes {selector}` compares only a region | script | script test |
+| 08 | relay narrates `fill` («заполнил 2 поля») and auto-waits («дождался цели за 0,3 с») | `actions.ts` | — |
+| 09 | `report` MCP tool with read-only annotations | `previewMcp.ts` | tools list test |
+| 10 | hint documents report/reveal/auto-wait/changes scope | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | «Отчёт в чат» under the feed puts the session report into the chat draft | `WebReaderFrame` |
+| 02 | Feed filter «Все шаги / Действия / Проверки / Чтение» once the feed grows | `ReaderActionHistory` |
+| 03 | Kind icons on feed steps (🖱 ⌨ 👁 🔍 …) | `ReaderActionHistory` |
+| 04 | «Отчёт в чат» disabled while the person holds manual control (the panel refuses commands) | `WebReaderFrame` |
+| 05 | Find bar: Enter — next, Shift+Enter — previous | Recorder |
+| 06 | Feed narrates auto-waits and form fills | relay summary |
+| 07 | «Найдено» caption when the model reveals a find result | script `showLabel` |
+| 08 | Report lines use ✓/✗ so they paste well into tasks | `WebReaderFrame` |
+| 09 | Report button appears only when there is something to report | `WebReaderFrame` |
+| 10 | Kind filter select styled with panel tokens | `panel.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-13.md`.

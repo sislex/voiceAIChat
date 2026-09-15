@@ -123,6 +123,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   let viewport: { width: number; height: number } | undefined
   // Последнее завершённое действие: модель после паузы спрашивает status и продолжает с того места.
   let lastAction: { kind: string; ok: boolean; at: number; error?: string } | undefined
+  // Журнал проверок и счётчик действий: report собирает из них отчёт по задаче.
+  const checks: { summary: string; pass: boolean; at: number; url: string | null }[] = []
+  let actionsCount = 0
   let disposed = false
   let navigationGeneration = 0
   let inspectorMode: boolean | undefined
@@ -157,7 +160,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     if (!entry) return
     clearTimeout(entry.timer)
     pending.delete(requestId)
-    if (entry.action.kind !== 'status') lastAction = { kind: entry.action.kind, ok: outcome.ok, at: Date.now(), ...(outcome.error ? { error: outcome.error.slice(0, 200) } : {}) }
+    if (entry.action.kind !== 'status') { lastAction = { kind: entry.action.kind, ok: outcome.ok, at: Date.now(), ...(outcome.error ? { error: outcome.error.slice(0, 200) } : {}) }; actionsCount++ }
+    const checked = entry.action.kind === 'check' && outcome.ok ? outcome.result as { summary?: unknown; pass?: unknown } | undefined : undefined
+    if (checked && typeof checked.summary === 'string') { checks.push({ summary: checked.summary.slice(0, 200), pass: checked.pass === true, at: Date.now(), url: approvedUrl }); if (checks.length > 50) checks.shift() }
     entry.resolve(outcome)
   }
   const rejectAll = (error: string): void => {
@@ -248,6 +253,10 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         return { ok: completed === steps.length, result: { page: lastPage, steps: results, completed, total: steps.length }, ...(error ? { error } : {}) }
       })()
     }
+    if (action.kind === 'report') {
+      const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
+      return Promise.resolve({ ok: true, result: { page, history: [...history], checks: [...checks], passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length, actions: actionsCount, ...(lastAction ? { lastAction } : {}) } })
+    }
     // check {url|title} — про адрес и заголовок панели: мост отвечает сам, страница не нужна.
     if (action.kind === 'check' && !action.selector && !action.text && (action.url !== undefined || action.title !== undefined)) {
       const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
@@ -255,6 +264,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       const titleOk = action.title === undefined || Boolean(page && page.title.toLowerCase().includes(action.title.toLowerCase()))
       const pass = Boolean(page) && urlOk && titleOk
       const summary = !page ? 'Страница не открыта' : !urlOk ? `Адрес ${page.url} не совпал с ${action.url}` : !titleOk ? `Заголовок «${page.title}» не содержит «${action.title}»` : action.url !== undefined ? `Адрес ${page.url} совпал` : `Заголовок содержит «${action.title}»`
+      checks.push({ summary, pass, at: Date.now(), url: approvedUrl }); if (checks.length > 50) checks.shift()
       return Promise.resolve({ ok: true, result: { page: page ?? { url: '', title: '' }, pass, expected: { state: 'present' as const, ...(action.url !== undefined ? { url: action.url } : {}), ...(action.title !== undefined ? { title: action.title } : {}) }, actual: { count: page ? 1 : 0, visible: page ? 1 : 0, ...(page ? { value: page.title } : {}) }, summary } as never })
     }
     // wait {url} — про адрес панели, а не про DOM: мост знает подтверждённый адрес и ждёт его сам.
