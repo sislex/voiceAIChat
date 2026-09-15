@@ -1244,6 +1244,11 @@ On mobile, pointer autoscroll targets `.jboard` horizontally and the target colu
 
 **Ширина колонки чата в сплите.** Панель превью (`.webpreview` / `.playwright-browser-pane`) — `flex: 0 1 var(--preview-width); min-width` (сжимаема), а `.chat-split-chat` держит `min-width: 360px`, чтобы композер и шапка не схлопывались при широком превью. Композер использует **контейнерный запрос**: `.voicebar` объявлен `container: composer / inline-size`, и компакт-режим (скрытая подпись «Полный доступ» у `.mode-menu`, уменьшённые круглые кнопки, узкие поля) включается по `@container composer (max-width: 560px)` — то есть по ширине самой колонки чата, а не вьюпорта; иначе в узкой reader-колонке на широком экране текстовое поле схлопывалось до ~80px. Заголовок шапки `.mtitle` — одна строка с многоточием (`white-space: nowrap; text-overflow: ellipsis`). Тулбар превью веб-рекордера (`apps/web-recorder/src/Recorder.tsx`) собирает инструменты страницы (Сессия, Выбор элемента, Редактировать, Область, Записать сценарий) в свёрнутое `<details className="webpreview-tools">`-меню, а `.webpreview-bar` получил `flex-wrap`, чтобы не переполнять узкую панель. Кнопки инструментов остаются в DOM и в свёрнутом меню — поэтому dom-тесты рекордера их находят без раскрытия.
 
+The recorder hides its viewport preset selector below 560 px while keeping an
+active preset's reset chip. The width-persistence E2E selects 1024 px before
+narrowing the panel, then verifies the inner viewport and horizontal scrolling;
+it does not try to operate the intentionally hidden mobile selector.
+
 Полный браузер выбирается в шапке Web Reader через `WebReaderEngineSelect`;
 выбор хранится в разговоре, а не в localStorage. `BrowserSessionPane` получает
 initialUrl/onPageChange и сохраняет навигацию, включая действия модели, через
@@ -2897,6 +2902,12 @@ auditing while the user owns control.
 Общий синхронный генератор клиентских идентификаторов — `browserId()` из `packages/shared/src/browserId.ts`, экспортированный публичным barrel `packages/shared/src/index.ts`. Он сначала использует нативный `crypto.randomUUID()`, при его отсутствии формирует UUID v4 из `crypto.getRandomValues()`, а без обоих Web Crypto API возвращает непустой локально уникальный идентификатор из времени, последовательного счётчика и безопасной от исключений псевдослучайной части. Поэтому генерация не зависит от secure context и работает как на HTTP, так и на HTTPS. Один генератор используют request ID и регистрация preview/MCP-моста через `WebReaderFrame`, записи истории действий модели в `AppBody`, idempotency key Feature Preview и Kanban Assistant, а также request ID повторяемых шагов Web Recorder. ID записи истории создаётся до обновления React-state: повторный вызов updater не генерирует другой ключ.
 
 На HTTP по IP или обычному имени хоста `crypto.randomUUID` может отсутствовать, хотя `crypto.getRandomValues` доступен. Прямой вызов в обработчике `window.preview.onChanged` раньше обрушал весь `AppBody` после первого успешного действия модели (`reader.changed`), а первоначальное открытие Reader могло проходить успешно. Регрессия в `App.dom.test.tsx` проверяет историю и повтор действия без `randomUUID` и без Web Crypto. Браузерный набор `e2e/webReaderHttp.e2e.test.ts` проверяет вход, MCP open/read, историю и reload на `http://reader-http.test` с локальным DNS-алиасом, а также на loopback. Проверять только `http://localhost` недостаточно: браузер считает loopback доверенным контекстом и оставляет `randomUUID` доступным.
+
+Reader history labels can include an aria-hidden action icon before their text;
+browser assertions match the action wording without assuming it starts at the
+first text character. Semantic `read` heading objects may include `selector`
+(`PreviewReadResult`); the selected-root regression verifies its heading level,
+text and `#x` selector while allowing additional contract fields.
 
 ### Действия hover, scroll, press и скриншот области
 

@@ -5,6 +5,34 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CHAT_INSTRUCTIONS, DEFAULT_SETTINGS, sanitizeSettingsPatch } from './types'
 
+import { initialOnboarding, parseOnboarding, onboardingTransition, ONBOARDING_STEPS } from './types'
+
+// @testCase TC-CONTRACT-1
+it('round-trips every onboarding state without changing unrelated settings', () => {
+  const progress = initialOnboarding()
+  for (const step of ONBOARDING_STEPS) progress.results[step] = { status: 'success', diagnostic: 'Verified' }
+  const patch = sanitizeSettingsPatch({ onboarding: progress })
+  expect(patch).toEqual({ onboarding: progress })
+  expect({ ...DEFAULT_SETTINGS, ...patch, ...sanitizeSettingsPatch({ onboarding: null }) })
+    .toEqual({ ...DEFAULT_SETTINGS, onboarding: null })
+  expect(sanitizeSettingsPatch({ onboarding: { ...progress, version: 2 } })).toEqual({})
+  expect(sanitizeSettingsPatch({ onboarding: { ...progress, results: {} } })).toEqual({})
+})
+
+// @testCase TC-STATE-1
+it('recovers interrupted checks without replay and keeps independent successes on retry and skip', () => {
+  let progress = onboardingTransition(initialOnboarding(), 'tts', { status: 'success', diagnostic: 'Played' })
+  progress = onboardingTransition(progress, 'microphone', { status: 'checking', diagnostic: '' })
+  const restored = parseOnboarding(JSON.parse(JSON.stringify(progress)), true)!
+  expect(restored.results.microphone.status).toBe('warning')
+  expect(restored.results.tts.status).toBe('success')
+  const skipped = onboardingTransition(restored, 'microphone', { status: 'skipped', diagnostic: 'Skipped' })
+  expect(skipped.results.tts.status).toBe('success')
+  expect(skipped.results.voice.status).toBe('idle')
+  expect(initialOnboarding().results.tts.status).toBe('idle')
+  expect(parseOnboarding({ results: null })).toBeNull()
+})
+
 describe('sanitizeSettingsPatch', () => {
   it('пропускает известные поля и приводит модель Claude к алиасу', () => {
     expect(sanitizeSettingsPatch({ theme: 'dark', autoSpeak: true, model: 'claude-sonnet-4-5' }))

@@ -1071,7 +1071,55 @@ export function normalizeChatInstructions(raw: unknown): ChatInstruction[] {
   return DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item, enabled: flags[item.id] !== false }))
 }
 
+/** Progress is independent from general settings and contains no audio or transcript. */
+export const ONBOARDING_STEPS = ['microphone', 'tts', 'llm', 'machine', 'voice'] as const
+export type OnboardingStep = typeof ONBOARDING_STEPS[number]
+export const ONBOARDING_STATUSES = ['idle', 'checking', 'success', 'warning', 'error', 'skipped'] as const
+export type OnboardingStatus = typeof ONBOARDING_STATUSES[number]
+export interface OnboardingResult { status: OnboardingStatus; diagnostic: string }
+export interface OnboardingState {
+  configuration?: Partial<Record<OnboardingStep, string>>
+  version: 1
+  current: OnboardingStep
+  results: Record<OnboardingStep, OnboardingResult>
+}
+export function initialOnboarding(): OnboardingState {
+  return { version: 1, current: 'microphone', results: Object.fromEntries(
+    ONBOARDING_STEPS.map(step => [step, { status: 'idle', diagnostic: '' }])
+  ) as OnboardingState['results'] }
+}
+export function parseOnboarding(raw: unknown, recover = false): OnboardingState | null {
+  if (!raw || typeof raw !== 'object') return null
+  const value = raw as OnboardingState
+  if (value.version !== 1 || !ONBOARDING_STEPS.includes(value.current) || !value.results) return null
+  const state = initialOnboarding()
+  state.current = value.current
+  if (value.configuration !== undefined) {
+    if (!value.configuration || typeof value.configuration !== 'object' || Array.isArray(value.configuration)) return null
+    state.configuration = {}
+    for (const step of ONBOARDING_STEPS) {
+      const entry = value.configuration[step]
+      if (entry !== undefined && (typeof entry !== 'string' || entry.length > 1000)) return null
+      if (entry !== undefined) state.configuration[step] = entry
+    }
+  }
+  for (const step of ONBOARDING_STEPS) {
+    const result = value.results[step]
+    if (!result || !ONBOARDING_STATUSES.includes(result.status) || typeof result.diagnostic !== 'string' || result.diagnostic.length > 600) return null
+    state.results[step] = recover && result.status === 'checking'
+      ? { status: 'warning', diagnostic: 'Проверка прервана. Запустите её снова.' }
+      : { status: result.status, diagnostic: result.diagnostic }
+  }
+  return state
+}
+export function onboardingTransition(state: OnboardingState, step: OnboardingStep, result: OnboardingResult): OnboardingState {
+  const results = { ...state.results, [step]: result }
+  if (step !== 'voice') results.voice = { status: 'idle', diagnostic: 'Повторите голосовой тест после изменения проверки.' }
+  return { ...state, current: step, results }
+}
+
 export interface Settings {
+  onboarding?: OnboardingState | null
   model: ClaudeModel
   whisperModel: WhisperModel
   diarization: boolean
@@ -1502,6 +1550,11 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
     if (input[key] === null || typeof input[key] === 'string') patch[key] = input[key]
   }
 
+  if (input.onboarding === null) patch.onboarding = null
+  else if (input.onboarding !== undefined) {
+    const onboarding = parseOnboarding(input.onboarding)
+    if (onboarding) patch.onboarding = onboarding
+  }
   if (typeof input.model === 'string') patch.model = normalizeClaudeModel(input.model)
   oneOf('whisperModel', WHISPER_MODELS)
   oneOf('theme', ['light', 'dark', 'green', 'system'] as const)

@@ -1,0 +1,28 @@
+{
+  "provider": "codex",
+  "microphoneInput": "Chromium WAV device",
+  "services": "real Whisper / CLI / TTS",
+  "boundaries": [
+    {
+      "type": "stt.final",
+      "elapsedMs": 110198
+    },
+    {
+      "type": "claude.done",
+      "elapsedMs": 119242
+    },
+    {
+      "type": "claude.done",
+      "elapsedMs": 119253
+    },
+    {
+      "type": "tts.audio",
+      "elapsedMs": 120481
+    }
+  ],
+  "playback": "AudioContext source.onended",
+  "result": {
+    "status": "success",
+    "diagnostic": "Подтверждены запись, распознавание, ответ LLM и завершение воспроизведения."
+  }
+}
