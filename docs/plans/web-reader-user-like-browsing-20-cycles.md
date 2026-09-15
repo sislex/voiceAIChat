@@ -365,4 +365,38 @@ UI (desktop and phone):
 | 09 | Phone remembers the chosen tab (chat/site) for the session | App |
 | 10 | Feed rows keep the verdict colour on the ✓/✗ glyph only | `panel.css` |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-10.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-10.md`. Commit `7f2fd5df`.
+
+## Cycle 11 — noticing what changed; finishing a step in one move
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `changes` — what appeared and disappeared since the last read/changes/action (visible-text snapshot) | script | script test |
+| 02 | `click` result carries `changes` right after the click | script | script test |
+| 03 | `wait {changed: true}` — wait for any visible-text change | script, shared | script + shared tests |
+| 04 | `waitFor` on click/type/press/choose/fill — act and wait for a text in one move | `hostBridge.ts`, MCP | bridge test |
+| 05 | `read.scroll` — how far the person has scrolled (top, max, percent) | script | script test |
+| 06 | `status.lastAction` — the last finished action, its outcome and time | `hostBridge.ts` | bridge test |
+| 07 | `open` accepts a bare host («example.com/path» → https) | shared, MCP | shared test |
+| 08 | `choose {in}` on a native `<select>` picks the option instead of failing | script | script test |
+| 09 | relay narrates click changes («появилось 3, исчезло 1») | `actions.ts` | — |
+| 10 | hint documents changes/waitFor/scroll/lastAction/bare host | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Feed lines say what a click changed on the page | relay summary |
+| 02 | Recent addresses appear as a listbox under the address field while typing (input stays a textbox for ARIA) | Recorder |
+| 03 | «Открыть» disabled while the address is empty | Recorder |
+| 04 | First recent chip becomes «Продолжить: host» | Recorder |
+| 05 | «Копировать» the feed as text lines for a report | `ReaderActionHistory` |
+| 06 | Slow load (8 s) offers «Открыть во внешней вкладке» before the 12 s failure | Recorder |
+| 07 | Selection that looks like an address gets «Открыть как адрес» | Recorder |
+| 08 | Alt+Home scrolls the page to the top | Recorder |
+| 09 | Feed site names show the full address on hover | `ReaderActionHistory` |
+| 10 | Title button announces «Скопировать ссылку: <title>» | Recorder |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-11.md`.

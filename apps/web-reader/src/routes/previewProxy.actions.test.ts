@@ -827,6 +827,38 @@ describe('скрипт превью: таблицы, ссылки по адре�
   })
 })
 
+describe('скрипт превью: что изменилось (круг 11)', () => {
+  it('changes запоминает состояние и показывает появившееся и исчезнувшее; click сообщает changes', async () => {
+    // Снимок живёт в общем скрипте: предыдущие тесты уже читали страницу, поэтому baseline не гарантирован.
+    const first = await act({ kind: 'changes' })
+    expect(first.ok).toBe(true)
+    document.body.insertAdjacentHTML('beforeend', `<p id="fresh">Новый абзац</p>`)
+    // «Электроника» есть и в навигации, и в заголовке — снимок хранит тексты, поэтому убираем уникальный h1.
+    document.querySelector('h1')!.remove()
+    const diff = await act({ kind: 'changes' })
+    const changes = (diff.result as { changes: { added: string[]; removed: string[] } }).changes
+    expect(changes.added).toContain('Новый абзац')
+    expect(changes.removed).toContain('Группы товаров')
+    document.body.insertAdjacentHTML('beforeend', `<button id="reveal">Показать</button><p id="hidden-note" style="display:none">Секретная заметка</p>`)
+    document.getElementById('reveal')!.addEventListener('click', () => { document.getElementById('hidden-note')!.style.display = 'block' })
+    const clicked = await act({ kind: 'click', selector: '#reveal' })
+    expect((clicked.result as { changes?: { added: string[] } }).changes?.added).toContain('Секретная заметка')
+  })
+
+  it('wait changed ждёт изменения текста; read сообщает прокрутку; choose на select выбирает option', async () => {
+    setTimeout(() => document.body.insertAdjacentHTML('beforeend', `<p>Появилось позже</p>`), 200)
+    const waited = await act({ kind: 'wait', changed: true, timeoutMs: 2000 })
+    expect(waited.ok).toBe(true)
+    expect(waited.result).toMatchObject({ state: 'changed' })
+    const read = await act({ kind: 'read', parts: ['headings'] })
+    expect((read.result as { scroll: { percent: number } }).scroll).toMatchObject({ top: 0, percent: 100 })
+    document.body.insertAdjacentHTML('beforeend', `<select id="lang"><option>Русский</option><option>English</option></select>`)
+    const chosen = await act({ kind: 'choose', text: 'English', in: '#lang' })
+    expect(chosen.ok).toBe(true)
+    expect((document.getElementById('lang') as HTMLSelectElement).value).toBe('English')
+  }, 10_000)
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

@@ -34,6 +34,7 @@ import {
   browserWaitRequiresChromium,
   isHttpUrl,
   isRelativePreviewPath,
+  isBareHostUrl,
   resolvePreviewUrl,
   previewResultJson,
   type PreviewAction,
@@ -210,6 +211,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       const frameSchema = z.union([z.string().trim().min(1).max(L.selector), z.array(z.string().trim().min(1).max(L.selector)).min(1).max(8)]).optional().describe('Селектор iframe или цепочка вложенных iframe из frames. Только Chromium; без параметра — верхняя страница.')
       // Одинаковое разрешение машины для open и new-tab: доступ берётся из хода.
       const resolveUrl = async (url: string): Promise<{ url: string } | { error: string }> => {
+        // «example.com» без схемы — как вводит человек в адресную строку.
+        if (!isHttpUrl(url) && isBareHostUrl(url)) url = 'https://' + url
         if (!isHttpUrl(url) && isRelativePreviewPath(url)) {
           // Относительный адрес — от страницы, открытой сейчас: в Chromium её знает статус сессии,
           // в панели пользователя — сам мост, поэтому туда путь уходит как есть.
@@ -323,17 +326,23 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       server.registerTool('fill', {
         description: 'Заполнить несколько полей формы одним действием — как человек заполняет форму целиком — и при submit отправить её. ' +
           'Каждое поле задаётся selector или field (подпись/placeholder/name). Ответ перечисляет заполненные поля, submitted, validation (сообщения ошибок полей) и navigated.',
-        inputSchema: { frame: frameSchema, fields: z.array(fillField).min(1).max(30), submit: z.boolean().optional().describe('Отправить форму после заполнения') }
-      }, async ({ frame, fields, submit }) => {
+        inputSchema: { frame: frameSchema, fields: z.array(fillField).min(1).max(30), submit: z.boolean().optional().describe('Отправить форму после заполнения'), waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после отправки') }
+      }, async ({ frame, fields, submit, waitFor }) => {
         const bad = fields.find((item) => !item.selector && !item.field?.trim())
         if (bad) return { content: [{ type: 'text', text: 'У каждого поля укажи selector или field.' }], isError: true }
-        return run({ kind: 'fill', ...(frame !== undefined ? { frame } : {}), fields: fields.map((item) => ({ ...(item.selector ? { selector: item.selector } : {}), ...(item.field?.trim() ? { field: item.field.trim() } : {}), ...(item.near ? { near: item.near } : {}), value: item.value })), ...(submit !== undefined ? { submit } : {}) })
+        return run({ kind: 'fill', ...(frame !== undefined ? { frame } : {}), fields: fields.map((item) => ({ ...(item.selector ? { selector: item.selector } : {}), ...(item.field?.trim() ? { field: item.field.trim() } : {}), ...(item.near ? { near: item.near } : {}), value: item.value })), ...(submit !== undefined ? { submit } : {}), ...(waitFor ? { waitFor } : {}) })
       })
       server.registerTool('choose', {
         description: 'Выбрать пункт выпадающего меню, списка или автодополнения: при in сначала нажимается триггер (текст или селектор), затем ждётся и нажимается пункт с текстом text. ' +
           'Для нативного <select> используй set.',
-        inputSchema: { frame: frameSchema, text: z.string().min(1).max(L.text).describe('Видимый текст пункта'), in: z.string().max(L.text).optional().describe('Текст или селектор триггера, открывающего список'), near: z.string().max(L.text).optional().describe('Текст рядом с пунктом') }
-      }, async ({ frame, text, in: trigger, near }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}) }))
+        inputSchema: { frame: frameSchema, text: z.string().min(1).max(L.text).describe('Видимый текст пункта'), in: z.string().max(L.text).optional().describe('Текст или селектор триггера, открывающего список'), near: z.string().max(L.text).optional().describe('Текст рядом с пунктом'), waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после выбора') }
+      }, async ({ frame, text, in: trigger, near, waitFor }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}), ...(waitFor ? { waitFor } : {}) }))
+
+      server.registerTool('changes', {
+        description: 'Что изменилось на странице с прошлого read, changes или действия: появившиеся и исчезнувшие видимые тексты. Первый вызов запоминает состояние (baseline). Так человек замечает, что произошло после клика.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+        inputSchema: {}
+      }, async () => run({ kind: 'changes' }))
 
       server.registerTool('sequence', {
         description: 'Несколько действий панели одним вызовом (до 10): рутина вроде «нажать → ввести → нажать → проверить» без лишних ходов. ' +
@@ -472,10 +481,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { frame: frameSchema,
             key: z.string().min(1).max(32).describe('Имя клавиши как в KeyboardEvent.key (Escape, Enter, ArrowDown, a…)'),
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя'),
-            repeat: z.number().int().min(1).max(50).optional().describe('Сколько раз нажать (по умолчанию 1)')
+            repeat: z.number().int().min(1).max(50).optional().describe('Сколько раз нажать (по умолчанию 1)'),
+            waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после нажатия')
           }
         },
-        async ({ frame, key, selector, repeat }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}), ...(repeat !== undefined && repeat > 1 ? { repeat } : {}) })
+        async ({ frame, key, selector, repeat, waitFor }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}), ...(repeat !== undefined && repeat > 1 ? { repeat } : {}), ...(waitFor ? { waitFor } : {}) })
       )
 
       server.registerTool(
@@ -564,6 +574,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             loadState: z.enum(['domcontentloaded', 'load']).optional().describe('Готовность DOM или завершение загрузки документа'),
             predicate: z.string().max(L.evaluateCode).optional().describe('Синхронное JS-выражение или функция без аргументов, дающая truthy'),
             idle: z.boolean().optional().describe('Дождаться затишья сети страницы (нет fetch/XHR ~500 мс)'),
+            changed: z.boolean().optional().describe('Дождаться любого изменения видимого текста страницы'),
             timeoutMs: z.number().positive().max(30000).optional().describe('Общий таймаут ожидания, мс')
           }
         },
@@ -884,12 +895,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1), если одинаковых несколько'),
             x: z.number().min(0).max(100000).optional().describe('Клик по точке вьюпорта (CSS px), вместе с y'),
             y: z.number().min(0).max(100000).optional().describe('Клик по точке вьюпорта (CSS px), вместе с x'),
+            waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после клика (до 8 с)'),
             button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
             dblclick: z.boolean().optional().describe('Двойной клик'),
             modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
           }
         },
-        async ({ frame, selector, text, near, exact, nth, x, y, button, dblclick, modifiers }) => {
+        async ({ frame, selector, text, near, exact, nth, x, y, waitFor, button, dblclick, modifiers }) => {
           if (!text && !selector && (x === undefined || y === undefined)) {
             return { content: [{ type: 'text', text: 'Укажи selector, text или точку x и y.' }], isError: true }
           }
@@ -898,7 +910,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(selector ? { selector } : {}),
             ...(text ? { text } : {}),
             ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}),
-            ...(x !== undefined && y !== undefined ? { x, y } : {}),
+            ...(x !== undefined && y !== undefined ? { x, y } : {}), ...(waitFor ? { waitFor } : {}),
             ...(button ? { button } : {}),
             ...(dblclick !== undefined ? { dblclick } : {}),
             ...(modifiers?.length ? { modifiers } : {})
@@ -918,12 +930,14 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             near: z.string().max(L.text).optional().describe('Текст рядом с полем — строка или карточка, где оно стоит'),
             text: z.string().max(L.text).describe('Текст для ввода'),
             submit: z.boolean().optional().describe('Отправить форму после ввода'),
-            append: z.boolean().optional().describe('Дописать к текущему значению, а не заменить его')
+            append: z.boolean().optional().describe('Дописать к текущему значению, а не заменить его'),
+            perKey: z.boolean().optional().describe('Печатать посимвольно с событиями клавиатуры'),
+            waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после ввода')
           }
         },
-        async ({ frame, selector, field, near, text, submit, append }) => {
+        async ({ frame, selector, field, near, text, submit, append, perKey, waitFor }) => {
           if (!selector && !field?.trim()) return { content: [{ type: 'text', text: 'Укажи selector или field (подпись поля).' }], isError: true }
-          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), ...(near ? { near } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}) })
+          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), ...(near ? { near } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}), ...(perKey !== undefined ? { perKey } : {}), ...(waitFor ? { waitFor } : {}) })
         }
       )
 

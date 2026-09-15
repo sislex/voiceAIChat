@@ -87,6 +87,27 @@ describe('wait по адресу, история и вопрос о выделе
   })
 })
 
+describe('waitFor у действий и lastAction', () => {
+  it('click с waitFor ждёт текст после успеха; status помнит последнее действие', async () => {
+    const h = harness()
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    const clicking = h.bridge.run({ kind: 'click', text: 'Далее', waitFor: 'Шаг 2' })
+    await Promise.resolve()
+    const click = h.sent.filter((m) => m.kind === 'command').at(-1) as { requestId: string; action: { kind: string; waitFor?: string } }
+    expect(click.action.kind).toBe('click')
+    expect(click.action.waitFor).toBeUndefined()
+    h.from(registrationId, { kind: 'result', requestId: click.requestId, ok: true, result: { page: { url: 'https://shop.example/', title: '' }, clicked: { selector: 'button', tag: 'button', text: 'Далее' } } })
+    await Promise.resolve(); await Promise.resolve()
+    const wait = h.sent.filter((m) => m.kind === 'command').at(-1) as { requestId: string; action: { kind: string; text?: string } }
+    expect(wait.action).toMatchObject({ kind: 'wait', text: 'Шаг 2' })
+    h.from(registrationId, { kind: 'result', requestId: wait.requestId, ok: true, result: { page: { url: 'https://shop.example/', title: '' }, waitedMs: 10 } })
+    expect(await clicking).toMatchObject({ ok: true, result: { clicked: { text: 'Далее' }, waited: { text: 'Шаг 2', found: true } } })
+    expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { lastAction: { kind: 'wait', ok: true } } })
+  })
+})
+
 describe('check адреса и заголовка', () => {
   it('проверяет url и title мостом без страницы', async () => {
     const h = harness()
@@ -155,7 +176,7 @@ describe('status и outline', () => {
     const outline = { headings: ['Магазин'], links: 12, buttons: 3, inputs: 1 }
     h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/', title: 'Магазин', outline })
     expect(await open).toEqual({ ok: true, result: { url: 'https://shop.example/', title: 'Магазин', outline } })
-    expect(await h.bridge.run({ kind: 'status' })).toEqual({ ok: true, result: { connected: true, pageStatus: 'ready', page: { url: 'https://shop.example/', title: 'Магазин' }, history: ['https://shop.example/'] } })
+    expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { connected: true, pageStatus: 'ready', page: { url: 'https://shop.example/', title: 'Магазин' }, history: ['https://shop.example/'], lastAction: { kind: 'open', ok: true } } })
     h.from(registrationId, { kind: 'page-status', status: 'error', url: 'https://shop.example/', error: 'Сайт недоступен' })
     expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { pageStatus: 'error', error: 'Сайт недоступен' } })
   })
