@@ -388,6 +388,19 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         inputSchema: { frame: frameSchema, what: z.enum(['cookies', 'dialog', 'any']).optional().describe('Что убрать: баннер cookie, окно или любое из них (по умолчанию any)') }
       }, async ({ frame, what }) => run({ kind: 'dismiss', ...(frame !== undefined ? { frame } : {}), ...(what ? { what } : {}) }))
 
+      server.registerTool('bookmark', {
+        description: 'Положить закладку на открытую страницу панели, как человек сохраняет вкладку: список закладок видит и пользователь в панели, и ты в status.bookmarks и report. ' +
+          'Без label подписью станет заголовок страницы; remove убирает закладку по адресу или подписи.',
+        annotations: { destructiveHint: false, idempotentHint: true },
+        inputSchema: {
+          label: z.string().max(120).optional().describe('Подпись закладки (по умолчанию заголовок страницы)'),
+          remove: z.string().max(L.url).optional().describe('Убрать закладку по адресу или подписи')
+        }
+      }, async ({ label, remove }) => {
+        if (label && remove) return { content: [{ type: 'text', text: 'Либо label (добавить), либо remove (убрать).' }], isError: true }
+        return run({ kind: 'bookmark', ...(label ? { label } : {}), ...(remove ? { remove } : {}) })
+      })
+
       server.registerTool('search', {
         description: 'Искать на самом сайте: панель найдёт его поле поиска (form[role=search], input[type=search], «Поиск»…), введёт запрос и отправит форму — так человек начинает на большом сайте. ' +
           'Ответ содержит поле, факт отправки и подсказки, которые сайт показал. Если поля нет — ошибка подскажет искать ссылку «Поиск».',
@@ -517,16 +530,18 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             text: z.string().max(L.text).optional().describe('При to: element — видимый текст элемента, к которому листать'),
             to: z.enum(['top', 'bottom', 'element', 'nextPage', 'prevPage']).optional().describe('К началу, концу, к элементу selector/text либо на экран вниз/вверх'),
             percent: z.number().min(0).max(100).optional().describe('К доле высоты документа, 0–100'),
+            until: z.string().max(L.text).optional().describe('Листать ленту, пока не покажется этот текст (ленивая подгрузка)'),
+            maxScreens: z.number().int().min(1).max(50).optional().describe('Сколько экранов пролистать при until (по умолчанию 10)'),
             dx: z.number().min(-100000).max(100000).optional().describe('Горизонтальный сдвиг в пикселях, отрицательное — влево'),
             dy: z.number().min(-100000).max(100000).optional().describe('Вертикальный сдвиг в пикселях, отрицательное — вверх')
           }
         },
-        async ({ frame, selector, text, to, percent, dx, dy }) => {
-          if (to === undefined && typeof dy !== 'number' && typeof dx !== 'number' && percent === undefined) {
-            return { content: [{ type: 'text', text: 'Укажи to (top|bottom|element), dx или dy (пиксели).' }], isError: true }
+        async ({ frame, selector, text, to, percent, dx, dy, until, maxScreens }) => {
+          if (to === undefined && typeof dy !== 'number' && typeof dx !== 'number' && percent === undefined && !until) {
+            return { content: [{ type: 'text', text: 'Укажи to (top|bottom|element), until (текст), dx или dy (пиксели).' }], isError: true }
           }
           if (to === 'element' && !selector && !text) return { content: [{ type: 'text', text: 'to: element требует selector или text элемента.' }], isError: true }
-          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(to ? { to } : {}), ...(percent !== undefined ? { percent } : {}), ...(typeof dy === 'number' ? { dy } : {}), ...(typeof dx === 'number' ? { dx } : {}) })
+          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(to ? { to } : {}), ...(percent !== undefined ? { percent } : {}), ...(typeof dy === 'number' ? { dy } : {}), ...(typeof dx === 'number' ? { dx } : {}), ...(until ? { until } : {}), ...(maxScreens !== undefined ? { maxScreens } : {}) })
         }
       )
 
@@ -902,11 +917,15 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             around: z.string().max(L.text).optional().describe('Текст вокруг этой фразы (±600 символов)'),
             markdown: z.boolean().optional().describe('Текст с заголовками # и списками - (панель)'),
             main: z.boolean().optional().describe('Только основное содержимое: article/main или самый текстовый блок, без меню и подвала'),
+            next: z.boolean().optional().describe('Продолжить чтение с места, где остановился прошлый read этой страницы'),
+            toc: z.boolean().optional().describe('Оглавление: заголовки с уровнями и селекторами для scroll и read {section}'),
+            table: z.string().max(L.text).optional().describe('Прочитать одну таблицу по подписи, заголовку колонки или селектору'),
+            rowOffset: z.number().int().min(0).max(100_000).optional().describe('С какой строки читать таблицу (по 20 строк)'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
             offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
           }
         },
-        async ({ frame, selector, limit, offset, visible, brief, parts, around, markdown, main }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}), ...(brief !== undefined ? { brief } : {}), ...(parts ? { parts: parts as never } : {}), ...(around ? { around } : {}), ...(markdown !== undefined ? { markdown } : {}), ...(main ? { main: true } : {}) })
+        async ({ frame, selector, limit, offset, visible, brief, parts, around, markdown, main, next, toc, table, rowOffset }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}), ...(brief !== undefined ? { brief } : {}), ...(parts ? { parts: parts as never } : {}), ...(around ? { around } : {}), ...(markdown !== undefined ? { markdown } : {}), ...(main ? { main: true } : {}), ...(next ? { next: true } : {}), ...(toc ? { toc: true } : {}), ...(table ? { table } : {}), ...(rowOffset !== undefined ? { rowOffset } : {}) })
       )
 
       server.registerTool(
@@ -932,11 +951,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             leftOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель левее него'),
             rightOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель правее него («поле справа от подписи»)'),
             details: z.boolean().optional().describe('Добавить подробности элемента: атрибуты, размер и путь по ориентирам страницы'),
+            in: z.string().max(L.text).optional().describe('Искать только в разделе под этим заголовком'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, role, near, exact, nth, href, enabled, checked, reveal, level, below, above, leftOf, rightOf, details, limit, visibleOnly }) => {
+        async ({ frame, text, selector, role, near, exact, nth, href, enabled, checked, reveal, level, below, above, leftOf, rightOf, details, in: inSection, limit, visibleOnly }) => {
           if (!text && !selector && !role && !href) {
             return { content: [{ type: 'text', text: 'Укажи text, role, selector или href.' }], isError: true }
           }
@@ -947,7 +967,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(role ? { role: role.toLowerCase() } : {}),
             ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}), ...(href ? { href } : {}),
             ...(enabled !== undefined ? { enabled } : {}), ...(checked !== undefined ? { checked } : {}), ...(reveal ? { reveal: true } : {}), ...(level !== undefined ? { level } : {}),
-            ...(below ? { below } : {}), ...(above ? { above } : {}), ...(leftOf ? { leftOf } : {}), ...(rightOf ? { rightOf } : {}), ...(details ? { details: true } : {}),
+            ...(below ? { below } : {}), ...(above ? { above } : {}), ...(leftOf ? { leftOf } : {}), ...(rightOf ? { rightOf } : {}), ...(details ? { details: true } : {}), ...(inSection ? { in: inSection } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })

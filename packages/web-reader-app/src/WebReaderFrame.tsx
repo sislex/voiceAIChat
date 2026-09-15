@@ -18,6 +18,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const [saving, setSaving] = useState(false)
   // A dismissed page error stays hidden until a different error text arrives.
   const [dismissedError, setDismissedError] = useState<string | null>(null)
+  // Закладки сеанса: их кладут и модель, и человек, а список один на двоих.
+  const [bookmarks, setBookmarks] = useState<{ url: string; label: string; at: number }[]>([])
   // Long-running model actions show elapsed seconds so the person knows the panel is busy, not stuck.
   const [pendingSeconds, setPendingSeconds] = useState(0)
   // Progress of a multi-step sequence: "шаг 2 из 5" tells the person how long the routine still is.
@@ -56,6 +58,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   // мост из useMemo оставался бы мёртвым после повторного mount.
   const bridgeRef = useRef<ReaderHostBridge | null>(null)
   const [bridgeGeneration, setBridgeGeneration] = useState(0)
+  useEffect(() => { setBookmarks([]) }, [conversationId])
   useEffect(() => {
     savedByReader.current = undefined
     setSaveError(null)
@@ -135,6 +138,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       onSaveUrl: (nextUrl) => { void save(nextUrl).catch(() => {}) },
       onPageTitle: (title) => callbacks.current.onPageTitle?.(title),
       onAsk: (text) => callbacks.current.onAsk?.(text),
+      onBookmarks: (list) => setBookmarks(list),
       onControl: (manual) => callbacks.current.onControl?.(manual),
       onSequenceProgress: (progress) => { if (alive) setSequenceProgress(progress) },
       onElement: (element) => callbacks.current.onSelectElement?.(element),
@@ -203,6 +207,13 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {sequenceProgress ? `выполняет шаг ${sequenceProgress.done + 1} из ${sequenceProgress.total}: ${previewActionProgressLabel(sequenceProgress.action)}` : previewActionProgressLabel(pendingAction)}…{pendingSeconds >= 3 && <span className="webpreview-live__time"> {pendingSeconds} с</span>}</p>}
     {confirmRequest && <div className="webpreview-confirm" role="alertdialog" aria-live="assertive" aria-label="Подтверждение действия ассистента"><span>Ассистент хочет: {previewActionProgressLabel(confirmRequest.action)} — {confirmRequest.reason} ({confirmRequest.target}). Разрешить?</span><button className="vc-btn vc-btn--primary vc-btn--sm" type="button" autoFocus onClick={() => onConfirmAction?.({ ...confirmRequest.action, confirm: true } as PreviewAction)}>Разрешить</button><button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onDenyAction?.()}>Отказать</button></div>}
     {actionError && !pendingAction && <div className="webpreview-error webpreview-action-error" role="status" aria-live="polite"><span>Ассистент не смог: {previewActionProgressLabel(actionError.action)} — {actionError.error}</span>{onRetryAction && !/Только я управляю/.test(actionError.error) && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onRetryAction(actionError.action)}>Повторить</button>}</div>}
+    {bookmarks.length > 0 && <nav className="webpreview-bookmarks" aria-label="Закладки страницы">
+      {bookmarks.map(item => <span key={item.url} className="webpreview-bookmarks__item">
+        <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" title={item.url} disabled={manual} onClick={() => bridgeRef.current?.run({ kind: 'open', url: item.url })}>{item.label}</button>
+        <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" aria-label={`Убрать закладку ${item.label}`} title="Убрать закладку" onClick={() => { void bridgeRef.current?.run({ kind: 'bookmark', remove: item.url }) }}>×</button>
+      </span>)}
+    </nav>}
+    {onPageTitle && <p className="webpreview-bookmark-add"><button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" disabled={manual} onClick={() => { void bridgeRef.current?.run({ kind: 'bookmark' }) }}>Запомнить страницу</button></p>}
     <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} onReveal={onRevealAction} onClear={onClearActions} currentUrl={conversationUrl} manual={manual} />
     {actions.length > 0 && onAsk && <p className="webpreview-report"><button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" disabled={manual} title={manual ? 'Управляете вы: отчёт соберётся после возврата управления' : undefined} onClick={() => { void reportToChat() }}>Отчёт в чат</button></p>}
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}

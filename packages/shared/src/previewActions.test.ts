@@ -219,6 +219,19 @@ describe('isPreviewAction: как пользователь — field, role, appe
     expect(isPreviewAction({ kind: 'back', to: 'страница поиска' })).toBe(true)
     expect(isPreviewAction({ kind: 'forward', to: 'страница поиска' })).toBe(false)
   })
+  it('read next/toc/table, scroll until, find in и bookmark проходят валидацию (круг 18)', () => {
+    expect(isPreviewAction({ kind: 'read', next: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'read', toc: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'read', table: 'Цены', rowOffset: 20 })).toBe(true)
+    expect(isPreviewAction({ kind: 'read', rowOffset: -1 })).toBe(false)
+    expect(isPreviewAction({ kind: 'scroll', until: 'Отзывы' })).toBe(true)
+    expect(isPreviewAction({ kind: 'scroll', until: 'Отзывы', maxScreens: 60 })).toBe(false)
+    expect(isPreviewAction({ kind: 'find', text: 'Условия', in: 'Доставка' })).toBe(true)
+    expect(isPreviewAction({ kind: 'bookmark' })).toBe(true)
+    expect(isPreviewAction({ kind: 'bookmark', label: 'Сюда вернуться' })).toBe(true)
+    expect(isPreviewAction({ kind: 'bookmark', remove: 'https://a.b/' })).toBe(true)
+    expect(isPreviewAction({ kind: 'bookmark', label: 'x', remove: 'y' })).toBe(false)
+  })
   it('report, find reveal и changes selector проходят валидацию', () => {
     expect(isPreviewAction({ kind: 'report' })).toBe(true)
     expect(isPreviewAction({ kind: 'find', text: 'Цены', reveal: true })).toBe(true)
@@ -326,7 +339,7 @@ describe('previewToolHint', () => {
   it('панель описана как видимая пользователю и объясняет новые человеческие параметры', () => {
     const hint = previewToolHint()
     expect(hint).toContain('видит каждое твоё действие')
-    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a', 'section', 'selection', 'onScreen: true', 'perKey', 'obscuredBy', 'check', 'nth', 'errors {since}', 'show', 'marks: true', 'brief: true', 'idle: true', 'status.manual', 'waitFor', 'suggestions', 'missing', 'кнопка, ссылка', 'status.viewport', 'sequence', 'parts', 'contains', 'nextPage', 'click {x, y}', 'status.pending', 'check {url', 'href', 'tables', 'waitMs', 'kinds', 'Ввод', 'changes', 'waitFor у click', 'read.scroll', 'lastAction', 'example.com', 'notices', 'progress', 'enabled, checked', 'continueOnError', 'report', 'reveal: true', 'waitedMs', 'needsConfirmation', 'confirm: true', 'secret: true', 'show {all: true}', 'cursor', 'frames', 'crossSite', 'around', 'markdown: true', 'level: 2', 'percent: 50', 'blur: true', 'status.outline', 'below|above|leftOf|rightOf', 'details: true', 'parts: [images]', 'read.overlays', 'dismiss', 'peek: true', 'scroll.percent', 'search {text}', 'focus {field}', 'select {text}', 'main: true', 'read.breadcrumbs', 'read.pagination', 'read.published', 'stable: true', 'back {to']) expect(hint).toContain(term)
+    for (const term of ['field', 'role', 'navigated', 'to: element', 'repeat', 'state: hidden', 'append', 'onScreen', 'title', 'visible: true', 'dialogs', 'относительный путь', 'клиент не подключён', 'near', 'exact: true', 'status', 'outline', 'forms', 'landmarks', 'fill', 'choose', 'options', 'revealed', 'Control+a', 'section', 'selection', 'onScreen: true', 'perKey', 'obscuredBy', 'check', 'nth', 'errors {since}', 'show', 'marks: true', 'brief: true', 'idle: true', 'status.manual', 'waitFor', 'suggestions', 'missing', 'кнопка, ссылка', 'status.viewport', 'sequence', 'parts', 'contains', 'nextPage', 'click {x, y}', 'status.pending', 'check {url', 'href', 'tables', 'waitMs', 'kinds', 'Ввод', 'changes', 'waitFor у click', 'read.scroll', 'lastAction', 'example.com', 'notices', 'progress', 'enabled, checked', 'continueOnError', 'report', 'reveal: true', 'waitedMs', 'needsConfirmation', 'confirm: true', 'secret: true', 'show {all: true}', 'cursor', 'frames', 'crossSite', 'around', 'markdown: true', 'level: 2', 'percent: 50', 'blur: true', 'status.outline', 'below|above|leftOf|rightOf', 'details: true', 'parts: [images]', 'read.overlays', 'dismiss', 'peek: true', 'scroll.percent', 'search {text}', 'focus {field}', 'select {text}', 'main: true', 'read.breadcrumbs', 'read.pagination', 'read.published', 'stable: true', 'back {to', 'scroll {until', 'read {next: true}', 'read {toc: true}', 'read {table', 'read.lists', 'find {in', 'bookmark {label']) expect(hint).toContain(term)
   })
 
   it('для изолированного Chromium не обещает панель и требует поднять dev-сервер самому', () => {
