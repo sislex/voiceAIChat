@@ -36,6 +36,7 @@ import {
 } from './MessageTimeline'
 import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
+import { uiPerformance } from '../lib/uiPerformance'
 import { useDismissibleMenu } from '../lib/useDismissibleMenu'
 import { ChatSearchContext, HighlightText } from './Markdown'
 import { useHotkeys } from '../lib/useHotkeys'
@@ -119,6 +120,7 @@ export interface ChatColumnProps {
   state: VoiceState
   messages: Message[]
   /** Идёт загрузка сообщений разговора — показываем лоадер вместо ленты. */
+  performanceReady?: boolean
   loadingMessages?: boolean
   /**
    * Сообщение, к которому надо прокрутить ленту и подсветить его (переход из
@@ -234,6 +236,7 @@ export function ChatColumn({
   canExecutePlan = true,
   state,
   messages,
+  performanceReady = false,
   loadingMessages = false,
   highlightMessageId = null,
   onHighlightDone,
@@ -277,6 +280,23 @@ export function ChatColumn({
   onOpenMachines,
   onOpenKbDocument
 }: ChatColumnProps): JSX.Element {
+  const previousAi = useRef(messages.filter(m => m.role === 'ai').at(-1)?.id)
+  useEffect(() => {
+    const last = messages.filter(m => m.role === 'ai').at(-1)
+    const newAi = last && last.id !== previousAi.current && last.text.trim()
+    previousAi.current = last?.id
+    const generation = uiPerformance().messageGeneration()
+    const frame = requestAnimationFrame(() => {
+      const p = uiPerformance()
+      if (performanceReady && !loadingMessages) { p.mark('route', 'chat_ready'); p.finish('route', 'chat') }
+      const response = streamingReply.trim()
+        ? rootRef.current?.querySelector('[data-testid="streaming"] .md')
+        : newAi ? Array.from(rootRef.current?.querySelectorAll('.msg.ai[data-mid] .md') ?? []).at(-1) : null
+      const rendered = Array.from(response?.querySelectorAll('p,code,li,h1,h2,h3,blockquote,td') ?? []).some(node => node.textContent?.trim())
+      if (rendered && generation === p.messageGeneration()) p.mark('message', 'message_first_token')
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [performanceReady, loadingMessages, streamingReply, messages, conversationId])
   const rootRef = useRef<HTMLElement>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')

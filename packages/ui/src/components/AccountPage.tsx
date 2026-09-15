@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { readResources } from '../clients/readResources'
+import { uiPerformance } from '../lib/uiPerformance'
 import { isObsoleteRead } from '../lib/readCache'
 import { Button, ErrorState, Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import {
@@ -279,6 +280,16 @@ export function AccountPage({ api: sourceApi, tab, onChangeTab, onClose, onOpenS
   const showUsageLoading = (usageLoading && !usage) || ((tab === 'overview' || tab === 'usage') && !usageByPeriod[period] && !usageError)
   const showEventsLoading = (eventsLoading && (!eventsLoaded || eventsGroup !== requestedSecurityGroup)) || ((tab === 'overview' || tab === 'history') && (!eventsLoaded || eventsGroup !== requestedSecurityGroup) && !eventsError)
   const showMachinesLoading = (machinesLoading && !machinesLoaded) || (tab === 'machines' && !machinesLoaded && !machinesError)
+  const performanceTabReady = tab === 'access' ? !showAccessLoading && !accessError
+    : tab === 'usage' ? !showUsageLoading && !usageError
+    : tab === 'history' ? !showEventsLoading && !eventsError
+    : tab === 'machines' ? !showMachinesLoading && !machinesError
+    : !showAccessLoading && !accessError && !showUsageLoading && !usageError && !showEventsLoading && !eventsError
+  useEffect(() => {
+    if (!profile || error || !performanceTabReady) return
+    const frame = requestAnimationFrame(() => { const p = uiPerformance(); p.mark('route', 'account_ready'); p.finish('route', 'account') })
+    return () => cancelAnimationFrame(frame)
+  }, [tab, profile, error, performanceTabReady])
 
   return (
     <section className="admin-page account-page" aria-label="Мой аккаунт" data-testid="account-page">

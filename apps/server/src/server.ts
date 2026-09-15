@@ -13,6 +13,7 @@ import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
 import { registerAdminRoutes } from './routes/admin.js'
+import { registerUiPerformanceRoutes } from './routes/uiPerformance.js'
 
 
 
@@ -508,6 +509,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Телеметрия обращений к БЗ: одна на процесс (как реестр ходов) — её события
   // рассылаются всем соединениям пользователя, а строки живут в БД.
   const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
+  registerUiPerformanceRoutes(app)
   registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled })
 
   // Помощник формулировки — одноразовый вызов выбранного пользователем CLI.

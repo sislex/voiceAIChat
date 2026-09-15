@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
 updated: 2026-09-15
-checked: 4cb0d1bf
+checked: 27d26b48
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/ipc.ts
@@ -43,6 +43,15 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
+
+CHAT-469 links existing strict regressions to T7 (schema, prompt and dependent
+UI/coverage requirements), T8 (compatible normalization preserving requirements),
+T9 (the supplied prose-prefix defect) and T10 (executable KB examples). The full
+response must be one JSON object with unique keys, never extracted from prose.
+Only documented compatible field normalization follows parsing; full runtime
+validation and the readiness gate remain mandatory. Preparation itself does not
+run implementation tests, merge or production checks.
+
 
 CHAT-468 reuses the strict complete-response parser and existing schema v2
 validation. Its TC6 marker covers both supplied prefixed responses

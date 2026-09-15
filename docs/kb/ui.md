@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: 06a68044
+checked: 27d26b48
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2986,6 +2986,82 @@ Web Reader открывает тестовые окружения, живущи�
 На этом срезе новый `packages/ui/src/moduleRegistry.ts` регистрирует Operations через публичные parser/builder и лениво импортирует `Machines` после выбора маршрута. Одновременно публичный `App` по-прежнему указывает на большой `packages/ui/src/App.tsx`, где остаются существующие Machines, terminal/explorer, EnginesObserver, KB и CI, поэтому новый composition path ещё не стал единственным живым frontend bootstrap. Экспорты из `surfaces.tsx` — простые секционные оболочки с заголовком и `children`, а Storybook stories показывают текстовые состояния.
 
 ## App Shell и состояние composition host после CHAT-271
+
+### UI performance telemetry (CHAT-469)
+
+The technical contract/policy is `packages/shared/src/uiPerformance.ts`; the
+collector is `packages/ui/src/lib/uiPerformance.ts`. It is separate from
+`chatDiagnostics` and sends no diagnostic text. Durations are milliseconds
+from one context's `performance.now()`:
+
+| Metric | Start | End | Applicability |
+| --- | --- | --- | --- |
+| shell_interactive | App module initialization | Authenticated shell with loaded settings and onboarding complete, installed handlers, next frame | Main shell |
+| chat_ready | Route layout effect | ChatColumn commit with settings/index ready, requested chat selected and message loading complete, next frame | Chat route |
+| account_ready | Route layout effect | AccountPage profile and required tab resources loaded without errors, next frame | Account route |
+| board_ready | Route layout effect | ProjectBoard data present, loading false, no error, next frame | Board route |
+| message_first_token | Synchronous chat-store acceptance before persistence/network | ChatColumn commits nonempty streaming text or a new AI message, next frame | Text, retry, voice and queued sends |
+| message_first_audio | Same accepted-send event | TTS source started and running AudioContext output clock advances | Actual audio; disabled, absent or blocked playback creates no sample |
+
+Cold is the first start of a metric family/normalized screen in a collector
+context, warm is a later start. A new document creates a new context. Route
+values are only `shell|chat|account|board`, never actual URLs. Platform is
+`desktop` for the desktop host, `mobile` for mobile browser user agents, else
+`web`; viewport size does not identify desktop. Release commit comes from
+`app:ping`, with `unknown` before/unless available.
+
+Message observations remain provisional until generation and playback finish.
+Cancellation, interrupted responses, route departure and hidden tabs discard
+pending observations; queued sends retain their acceptance time. Local operation
+keys never enter payloads. Spans over five minutes are dropped. Missing events
+never produce zero; genuine zero durations are valid.
+
+Authenticated `POST /api/ui-performance` accepts at most 32 samples/16 KiB,
+rejects extra fields, invalid numbers and metric/route mismatches, and caps ingress
+at 600 requests/minute/process. `POST /api/ui-performance/report` uses the
+existing administrative permission. The collector keeps at most 32 completed
+samples, sends every five seconds with a three-second timeout, and does not retry.
+Offline samples expire five minutes after their measured event. Delivery failures
+do not log payloads or transport errors. Random batch nonces only deduplicate
+delivery; storage has no user, conversation or message association.
+
+Storage is process-local: seven days, 100,000 observations/deduplication entries,
+64 release values; restart clears it. Server receipt defines half-open report
+periods `[from,to)`; offline delivery belongs to its receipt period. Client and
+server wall clocks are never subtracted. Reports allow up to 168 buckets/seven
+days and metric/platform/lifecycle/route/version filters. p50/p95 use nearest rank
+on raw durations, never averaged percentiles. Count includes only valid filtered
+observations. Empty percentiles are null; counts below 20 are insufficient.
+
+Administration's System page hosts `PerformanceDashboard`. Its separate
+`performanceStore` rejects obsolete/disposed responses. It shows applied
+period/filters, p50/p95, count, textual bucket trend, loading, stale/error,
+offline, empty and insufficient states. Stories: `Admin/Performance`.
+
+Independent commands: `npm run -w @voicechat/admin-app performance:budget`,
+`performance:verify` (control passes, deliberate +1000 ms regression exits 1),
+and `performance:qa`. The real dashboard fixture uses fixed technical data and
+25 ms transport delay, without live LLM/TTS. Conditions: Linux, Chromium
+151.0.7922.34, Node 22, AMD EPYC-Rome with four available CPUs, 1280×720,
+4× CPU slowdown, reduced motion, median of seven fresh
+contexts. Baseline: 1284 ms mount, 242.1 ms filter completion. Failure threshold:
+baseline ×1.4 +100 ms. This measures the dashboard development bundle, not a
+live-service SLA. Missing baseline/environment mismatch or an active repository gate fails explicitly.
+Artifacts record environment, observations and before/after/limit.
+
+Browser QA covers 1440×900, 1280×720, 768×1024, 390×844 and 320×700, both themes
+and eight fixture states (including offline, updating and stale data), axe accessibility checks, nonzero CDP safe-area insets,
+touch focus, keyboard order, overflow, control hit-testing and focused-input
+visibility after visual viewport shrinkage (80 combinations). Keyboard coverage is resize
+emulation, not a native mobile keyboard. Safe-area padding uses CSS env insets.
+The separate `performance:desktop` command launches native Electron under Xvfb,
+bundles the real desktop preload, and verifies its host identity and monotonic
+collector delivery as platform `desktop`.
+
+`performance:release-check` requires `RELEASE_HEALTH_URL` and full
+`RELEASE_COMMIT`, runs gate:fast and checks the health endpoint's exact commit.
+It never merges/deploys; the release workflow owns deployment and this check.
+
 
 Появился самостоятельный workspace `@voicechat/app-shell` (`packages/app-shell`) с публичными фабриками session/settings/voice/shell stores, контрактом `AppModule`, registry, lifecycle runtime, React-поверхностями оболочки, собственными стилями, DOM setup, тестами и Storybook story. Stores создаются на каждый runtime и не используют singleton; shell агрегирует navigation slots, команды и notices, а command palette не обрабатывает hotkey во время записи голоса.
 
