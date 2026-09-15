@@ -63,7 +63,13 @@ export async function applyDevice(page: Page, options: BrowserDeviceOptions): Pr
   // maxTouchPoints передаётся только при включении: Chromium требует 1…16 и
   // отвергает ноль протокольной ошибкой.
   await session.send('Emulation.setTouchEmulationEnabled', mobile ? { enabled: true, maxTouchPoints: 5 } : { enabled: false })
-  await session.send('Emulation.setEmitTouchEventsForMouse', { enabled: mobile, configuration: mobile ? 'mobile' : 'desktop' }).catch(() => undefined)
+  // `setEmitTouchEventsForMouse` намеренно не включается: он превращает мышиные
+  // события в тач, и обычный клик Playwright (а с ним и клик человека в панели)
+  // перестаёт доходить до страницы — E2E ловил это таймаутом locator.click.
+  // Тач-эмуляции хватает `setTouchEmulationEnabled`: maxTouchPoints и
+  // `pointer: coarse` страница уже видит, а настоящие жесты идут
+  // `Input.dispatchTouchEvent` из `runTouchAction`.
+  await session.send('Emulation.setEmitTouchEventsForMouse', { enabled: false, configuration: 'desktop' }).catch(() => undefined)
   const userAgent = options.userAgent ?? base.userAgent
   await session.send('Emulation.setUserAgentOverride', { userAgent: userAgent ?? '' }).catch(() => undefined)
   return {

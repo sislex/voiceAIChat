@@ -105,3 +105,9 @@ describe('жесты пальцем', () => {
     await expect(runTouchAction(page, { gesture: 'tap', selector: '#hidden' })).rejects.toThrow('не найден')
   })
 })
+
+it('мышиные события не превращаются в тач: иначе обычный клик перестаёт доходить', async () => {
+  const { page, send } = fakePage()
+  await applyDevice(page, { preset: 'phone' })
+  expect(send).toHaveBeenCalledWith('Emulation.setEmitTouchEventsForMouse', { enabled: false, configuration: 'desktop' })
+})

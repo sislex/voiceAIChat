@@ -800,6 +800,8 @@ export type BrowserCommand = BrowserFrameTarget & (
    * Ждать новую вкладку после клика тоже приходилось опросом в цикле.
    */
   | { type: 'tabs-do'; do: 'find' | 'wait-new' | 'close-others'; match?: string; timeoutMs?: number }
+  /** Состояние самой сессии: сколько живёт, что эмулируется, что подменено. */
+  | { type: 'session-info' }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)

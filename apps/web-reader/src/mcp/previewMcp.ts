@@ -936,6 +936,23 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'session-info',
+        {
+          description:
+            'Состояние самой сессии: сколько она живёт, сколько вкладок и действий, ' +
+            'что сейчас эмулируется (устройство, тема, сеть) и сколько правил сети активно. ' +
+            'Сессия живёт долго и незаметно копит настройки: вернувшись к разговору через час, ' +
+            'легко принять подменённый ответ или тёмную тему за дефект сайта. Спроси это первым делом.',
+          inputSchema: {}
+        },
+        async () => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'session-info' })
+          return toolResult(result ?? { ok: false, error: 'Состояние сессии доступно только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
         'find-tab',
         {
           description:
