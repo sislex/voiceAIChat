@@ -879,6 +879,17 @@ export const IPC_SEND_CHANNELS: IpcSendChannel[] = [
  * Мост потокового аудио, доступный в renderer как `window.audio`.
  * Отдельно от `window.api` (invoke), т.к. это односторонний поток без ответа.
  */
+/** A private connection prevents diagnostic audio from reaching chat listeners. */
+export interface RendererOnboardingBridge {
+  open(): {
+    audio: RendererAudioBridge
+    stt: RendererSttBridge
+    tts: RendererTtsBridge
+    claude: RendererClaudeBridge
+    close(): void
+  }
+}
+
 export interface RendererAudioBridge {
   audioStart(payload: IpcSendPayload<'audio:start'>): void
   audioChunk(payload: AudioChunkMessage): void

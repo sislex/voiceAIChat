@@ -70,7 +70,9 @@ describe('Reader: адресная строка и адаптивный инте
     expect(await shell().locator('details').getAttribute('open')).toBeNull()
   })
   it('сохраняет выбранные 1024 пикселя внутри узкой панели', async () => {
-    await page.setViewportSize({ width: 375, height: 760 }); await shell().getByLabel('Ширина вьюпорта').selectOption('1024')
+    // Presets are intentionally hidden below 560 px; choose one before narrowing the panel.
+    await shell().getByLabel('Ширина вьюпорта').selectOption('1024')
+    await page.setViewportSize({ width: 375, height: 760 })
     expect(await content().locator('body').evaluate(() => window.innerWidth)).toBe(1024)
     expect(await shell().locator('.webpreview-viewport').evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
   })

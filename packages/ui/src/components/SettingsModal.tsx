@@ -119,6 +119,7 @@ export interface SettingsModalProps {
   /** Роль текущего пользователя — ограничивает список моделей Claude. */
   role: UserRole
   llmAccess?: UserLlmAccess[]
+  onOpenOnboarding?: () => void
   onClose: () => void
   /** Глобальная доступность голосового ввода. */
   voiceInputEnabled?: boolean
@@ -157,6 +158,7 @@ export function SettingsModal({
   role: _role,
   llmAccess = [],
   onClose,
+  onOpenOnboarding,
   voiceInputEnabled = true,
   initialSection,
   section: controlledSection,
@@ -184,6 +186,7 @@ export function SettingsModal({
 
   return (
     <Dialog title="Настройки" size="md" testId="overlay" onClose={onClose}>
+        {onOpenOnboarding && <Button onClick={onOpenOnboarding}>Мастер первого запуска</Button>}
         {!settingsLoaded && (
           <ErrorState
             compact

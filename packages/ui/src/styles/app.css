@@ -1999,6 +1999,13 @@
   box-shadow: none;
   padding-bottom: env(safe-area-inset-bottom);
 }
+/* Onboarding owns bottom safe-area spacing in its persistent actions. */
+.ob-dialog.vc-dialog--phone {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: 0;
+  padding-left: env(safe-area-inset-left);
+}
 .vc-dialog-overlay--phone {
   align-items: stretch;
   justify-content: stretch;
