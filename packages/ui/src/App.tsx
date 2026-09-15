@@ -6,7 +6,8 @@ import { createApplicationPanel } from './runtime/applicationHost'
 import { WebReaderEngineSelect } from './components/WebReaderEngineSelect'
 import { runReaderModelRequest, readReaderErrorSummary } from './webReaderModelRequest'
 import { PREVIEW_WIDTH_DEFAULT, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN, clampPreviewWidth, pendingActionLabel, previewWidthAfterKey, siteTabLabel, splitAttentionReducer, type SplitView } from './readerSplitControls'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { lazyScreen as lazy, CHUNK_REFRESH_EVENT } from './runtime/lazyScreen'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
 import { buildProjectsRoute, isTaskRouteTab, parseProjectsRoute } from '@voicechat/projects-app'
@@ -27,16 +28,16 @@ import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { PreviewAction } from '@shared/previewActions'
 import { browserId } from '@shared/browserId'
 import type { ReaderHostRegistration, WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
-import { ConsoleSessionPane } from './components/ConsoleSessionPane'
+const ConsoleSessionPane = lazy(() => import('./components/ConsoleSessionPane').then(module => ({ default: module.ConsoleSessionPane })))
 import { parseUserAgent } from '@voicechat/sessions-core'
-import { TwoFactorDialog } from './components/TwoFactorDialog'
+const TwoFactorDialog = lazy(() => import('./components/TwoFactorDialog').then(module => ({ default: module.TwoFactorDialog })), { frame: (content, props) => <Dialog title="Двухфакторная защита" size="sm" onClose={props.onClose}>{content}</Dialog> })
 import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
 import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { NewProjectDialog } from './components/NewProjectDialog'
 import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
-import { IMAGE_STUDIO_LAST_KEY, KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY, workshopChatCollapsedKey, workshopChatWidthKey } from '@voicechat/ui-foundation/persistence'
+import { CHAT_DRAFTS_KEY, IMAGE_STUDIO_LAST_KEY, KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY, workshopChatCollapsedKey, workshopChatWidthKey } from '@voicechat/ui-foundation/persistence'
 import { Sidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -46,19 +47,20 @@ import { CHAT_COMPOSER_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen, ResetPasswordScreen } from './components/LoginScreen'
-import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
-import { PersonalizationPage } from './components/SettingsPage'
+import type { ObserverEngine } from './components/EnginesObserver'
+const EnginesObserver = lazy(() => import('./components/EnginesObserver').then(module => ({ default: module.EnginesObserver })))
+const PersonalizationPage = lazy(() => import('./components/SettingsPage').then(module => ({ default: module.PersonalizationPage })))
 import type { TaskUpdateFields } from './components/kanban/TaskModal'
-import { ReleaseCenter } from './components/releases/ReleaseCenter'
+const ReleaseCenter = lazy(() => import('./components/releases/ReleaseCenter').then(module => ({ default: module.ReleaseCenter })))
 import { productionReadiness } from '@shared/release'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
-import { KanbanAssistant } from './components/KanbanAssistant'
-import { CiCommands } from './components/ci/CiCommands'
-import { RunFeed } from './components/ci/RunFeed'
+const KanbanAssistant = lazy(() => import('./components/KanbanAssistant').then(module => ({ default: module.KanbanAssistant })))
+const CiCommands = lazy(() => import('./components/ci/CiCommands').then(module => ({ default: module.CiCommands })))
+const RunFeed = lazy(() => import('./components/ci/RunFeed').then(module => ({ default: module.RunFeed })))
 import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { SidebarToggle } from './components/ui/IconButton'
 import type { ConsoleHistoryStore, MachineOps } from '@voicechat/ui-foundation/components/machine'
-import { ConversationSettings } from './components/ConversationSettings'
+const ConversationSettings = lazy(() => import('./components/ConversationSettings').then(module => ({ default: module.ConversationSettings })))
 import { PopupFrame } from '@voicechat/ui-foundation/components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
 import { Button, Dialog, EmptyState, IconButton } from '@voicechat/ui-kit'
@@ -67,7 +69,7 @@ import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { NotificationContainer } from './components/ClarificationNotification'
-import { KbUsagePanel } from './components/kb/KbUsagePanel'
+const KbUsagePanel = lazy(() => import('./components/kb/KbUsagePanel').then(module => ({ default: module.KbUsagePanel })))
 import { useShortcuts } from './components/ShortcutSettings'
 import { MobileNavigation, type ShellSection } from './components/MobileNavigation'
 import { ShellTour } from './components/ShellTour'
@@ -75,8 +77,8 @@ import { useShellTheme } from './lib/shellTheme'
 import { NotificationCenter } from './components/NotificationCenter'
 import { ConnectionStatus } from './components/ConnectionBanner'
 import { addNotification, safeStorageGet, safeStorageSet } from './lib/shellPreferences'
-import { CommandPalette } from './components/CommandPalette'
-import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
+const CommandPalette = lazy(() => import('./components/CommandPalette').then(module => ({ default: module.CommandPalette })), { frame: (content, props) => <Dialog title={props.api ? 'Поиск и команды' : 'Команды'} ariaLabel="Командная палитра" size="md" className="cmdk" onClose={props.onClose}>{content}</Dialog> })
+const HotkeysCheatSheet = lazy(() => import('./components/HotkeysCheatSheet').then(module => ({ default: module.HotkeysCheatSheet })), { frame: (content, props) => <Dialog title="Горячие клавиши" size="sm" className="hkeys" onClose={props.onClose}>{content}</Dialog> })
 import {
   AppRuntimeProvider,
   useAdmin,
@@ -143,7 +145,7 @@ const WORKSHOP_KEYBOARD_STEP = 2
 const SessionsDialogHost = lazy(async () => {
   const module = await import('./components/SessionsDialogHost')
   return { default: module.SessionsDialogHost }
-})
+}, { frame: (content, props) => <Dialog title="Сессии и устройства" size="md" onClose={props.onClose}>{content}</Dialog> })
 
 const ImageStudioPane = createApplicationPanel<ImageStudioPaneProps>('image-studio-ui')
 const UsersAdmin = lazy(async () => {
@@ -157,7 +159,7 @@ const loadAccountPage = async () => import('./components/AccountPage')
 const AccountPage = lazy(async () => {
   const module = await loadAccountPage()
   return { default: module.AccountPage }
-})
+}, { loading: <AccountPageFallback /> })
 
 function AccountPageFallback(): JSX.Element {
   return (
@@ -248,7 +250,7 @@ const GitTargetPane = lazy(async () => {
 
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
 // в главном чанке они лежат мёртвым весом до первого открытия.
-import { SETTINGS_SECTIONS, type SettingsSection } from './components/SettingsModal'
+import { SETTINGS_SECTIONS, type SettingsSection } from './components/settingsContract'
 
 const ContextInspector = lazy(async () => {
   const module = await import('./components/ContextInspector')
@@ -258,7 +260,7 @@ const ContextInspector = lazy(async () => {
 const SettingsModal = lazy(async () => {
   const module = await import('./components/SettingsModal')
   return { default: module.SettingsModal }
-})
+}, { frame: (content, props) => <Dialog title="Настройки" size="md" onClose={props.onClose}>{content}</Dialog> })
 
 // Панель Make — самый большой экран приложения (две тысячи строк, редактор,
 // история снимков, комментарии) и нужна только в Make-режиме чата. В главном
@@ -958,6 +960,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     })
   }, [toast, navigate])
   const confirm = useConfirm()
+  useEffect(() => {
+    const guard = (event: Event): void => {
+      try {
+        const stored = JSON.parse(safeStorageGet(CHAT_DRAFTS_KEY) ?? '{}') as Record<string, unknown> | null
+        if (chat.attachments.length || (chat.draft && (!chat.activeId || stored?.[chat.activeId] !== chat.draft))) event.preventDefault()
+      } catch { event.preventDefault() }
+    }
+    window.addEventListener(CHUNK_REFRESH_EVENT, guard)
+    return () => window.removeEventListener(CHUNK_REFRESH_EVENT, guard)
+  }, [chat.activeId, chat.draft, chat.attachments.length])
   // Снимок области из Reader: PNG уходит вложением композера, координаты — в черновик.
   const attachAreaScreenshot = useCallback((shot: WebRecorderAreaScreenshot) => {
     try {
@@ -2577,7 +2589,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
-        onAccountIntent={session.authRequired && session.currentUser ? () => { void loadAccountPage() } : undefined}
+        onSettingsIntent={() => { void SettingsModal.preload() }}
+        onAccountIntent={session.authRequired && session.currentUser ? () => { void AccountPage.preload() } : undefined}
         onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
         onOpenSettings={menu(() => navigate('/settings/llm'))}
         onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
@@ -3733,8 +3746,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
 
-      <CommandPalette userId={shellUserId} api={api} onNavigate={navigate} open={paletteOpen && authed} onClose={() => setPaletteOpen(false)} />
-      <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
+      {paletteOpen && authed && <CommandPalette userId={shellUserId} api={api} onNavigate={navigate} open={true} onClose={() => setPaletteOpen(false)} />}
+      {cheatSheetOpen && <HotkeysCheatSheet open={true} onClose={() => setCheatSheetOpen(false)} />}
 
       {globalSettingsSection && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal

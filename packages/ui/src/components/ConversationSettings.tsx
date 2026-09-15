@@ -13,7 +13,8 @@ import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { SettingsPage } from './SettingsPage'
-import { ContextInspector } from './ContextInspector'
+import { lazyScreen } from '../runtime/lazyScreen'
+const ContextInspector = lazyScreen(() => import('./ContextInspector').then(module => ({ default: module.ContextInspector })))
 import { LlmSettingsEditor } from './LlmSettingsEditor'
 
 export interface ConversationSettingsProps {

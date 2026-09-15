@@ -38,8 +38,8 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-export type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'security' | 'ui' | 'projectTypes'
-export const SETTINGS_SECTIONS: readonly SettingsSection[] = ['llm', 'aiAssist', 'download', 'stt', 'tts', 'dialog', 'instructions', 'storage', 'security', 'ui', 'projectTypes']
+import type { SettingsSection } from './settingsContract'
+export { SETTINGS_SECTIONS, type SettingsSection } from './settingsContract'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },

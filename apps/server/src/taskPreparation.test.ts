@@ -83,18 +83,38 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
 // @testCase T13
 // @testCase TC-11
 // @testCase TC6
-it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects a prefixed brief without saving partial requirements: %s', async prefix => {
+// @testCase TC-BRIEF
+it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('normalizes a known content-free prefix and validates the entire brief: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
   original.decisions = [{ id: 'D1', text: 'Keep requirements', rationale: 'Confirmed scope', questionId: null }]
   claudeAnswer = () => ({ text: prefix + '\n' + JSON.stringify(original) })
   const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
-  expect(run.status).toBe('blocked')
-  expect(claudeCalls).toHaveLength(3)
-  expect(run.readiness).toBeNull()
+  expect(run.status).toBe('success')
+  expect(claudeCalls).toHaveLength(1)
+  expect(run.readiness?.functionalRequirements).toBe(original.functionalRequirements)
+  expect(run.readiness?.scope).toEqual(original.scope)
+  expect(run.readiness?.decisions).toEqual([{ id: 'D1', text: 'Keep requirements', rationale: 'Confirmed scope' }])
   expect(claudeCalls[0].prompt).toContain('ровно один JSON-объект')
 })
 
+
+// @testCase TC-BRIEF
+it('validates an unwrapped JSON fence and rejects an incomplete fenced brief', async () => {
+  const fence = String.fromCharCode(96).repeat(3)
+  const wrap = (text: string): string => fence + 'json\n' + text + '\n' + fence
+  const validTask = await taskInBacklog()
+  const input = compatibleReadiness()
+  claudeAnswer = () => ({ text: wrap(input) })
+  const valid = await settled(adminTok, (await launch(adminTok, validTask.project.id, validTask.task.id)).id)
+  expect(valid.status).toBe('success')
+  expect(valid.readiness?.scope).toEqual(JSON.parse(input).scope)
+  const invalidTask = await taskInBacklog()
+  claudeAnswer = () => ({ text: wrap('{"schemaVersion":2}') })
+  const invalid = await settled(adminTok, (await launch(adminTok, invalidTask.project.id, invalidTask.task.id)).id)
+  expect(invalid.status).toBe('blocked')
+  expect(invalid.readiness).toBeNull()
+})
 
 function compatibleReadiness(): string {
   return JSON.stringify({
@@ -742,7 +762,8 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC11
   // @testCase TC-BRIEF-FORMAT
   // @testCase TC-BRIEF-CONTRACT
-  it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
+  // @testCase TC-BRIEF
+  it.each(['prefix', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()
     const input = JSON.parse(valid)

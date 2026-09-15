@@ -54,12 +54,13 @@ test('quality report diagnostics redact credentials', () => {
 // однажды сработало наоборот: ленивый чанк пакета с точкой входа `index.ts`
 // получил имя `index-XXX.js`, попал в ту же группу — и разгрузка главного чанка
 // выглядела как его рост на 32 КБ. Для входного чанка префикса недостаточно.
+// @testCase TC-BUDGET
 test('bundle budget measures the entry chunk named by index.html, not every index- file', () => {
   const root = mkdtempSync(join(tmpdir(), 'bundle-gate-'))
   const assets = join(root, 'apps/web/dist/assets')
   mkdirSync(assets, { recursive: true })
-  writeFileSync(join(root, 'apps/web/dist/index.html'), '<script type="module" src="/assets/index-entry.js"></script>')
-  writeFileSync(join(assets, 'index-entry.js'), 'a'.repeat(1000))
+  writeFileSync(join(root, 'apps/web/dist/index.html'), '<script type="module" src="/assets/bootstrap.js"></script>')
+  writeFileSync(join(assets, 'bootstrap.js'), 'a'.repeat(1000))
   // Ленивый чанк с тем же префиксом: он не должен попадать в бюджет входного.
   writeFileSync(join(assets, 'index-lazy.js'), 'b'.repeat(5000))
   writeFileSync(join(assets, 'react-x.js'), 'c'.repeat(100))
@@ -72,15 +73,15 @@ test('bundle budget measures the entry chunk named by index.html, not every inde
 
   const result = checkBundle({ root })
   assert.equal(result.measured['index-'], 1000)
-  assert.deepEqual(result.chunks['index-'], ['index-entry.js'])
+  assert.deepEqual(result.chunks['index-'], ['bootstrap.js'])
 })
 
 test('bundle budget still sums a group with several legitimate chunks', () => {
   const root = mkdtempSync(join(tmpdir(), 'bundle-gate-sum-'))
   const assets = join(root, 'apps/web/dist/assets')
   mkdirSync(assets, { recursive: true })
-  writeFileSync(join(root, 'apps/web/dist/index.html'), '<script type="module" src="/assets/index-entry.js"></script>')
-  writeFileSync(join(assets, 'index-entry.js'), 'a'.repeat(10))
+  writeFileSync(join(root, 'apps/web/dist/index.html'), '<script type="module" src="/assets/bootstrap.js"></script>')
+  writeFileSync(join(assets, 'bootstrap.js'), 'a'.repeat(10))
   writeFileSync(join(assets, 'markdown-a.js'), 'm'.repeat(300))
   writeFileSync(join(assets, 'markdown-b.js'), 'm'.repeat(400))
   writeFileSync(join(assets, 'react-x.js'), 'c'.repeat(10))

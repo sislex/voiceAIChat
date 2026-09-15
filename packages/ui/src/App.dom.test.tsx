@@ -425,7 +425,8 @@ describe('App — интеграция UI со стором и IPC', () => {
     const api = await seededApi()
     window.location.hash = '#/settings/llm'
     render(<App api={api} delays={SLOW} />)
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    await screen.findByRole('button', { name: 'LLM' })
+    const dialog = screen.getByRole('dialog', { name: 'Настройки' })
     const sections = [
       ['llm', 'LLM'], ['aiAssist', 'AI-помощник'], ['download', 'Скачать'], ['stt', 'Распознавание'],
       ['tts', 'Озвучка'], ['dialog', 'Голосовой диалог'], ['instructions', 'Инструкции'], ['storage', 'Хранилище'],
@@ -442,7 +443,8 @@ describe('App — интеграция UI со стором и IPC', () => {
     const api = await seededApi()
     window.location.hash = '#/settings/llm'
     const view = render(<App api={api} delays={SLOW} />)
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    await screen.findByRole('button', { name: 'LLM' })
+    const dialog = screen.getByRole('dialog', { name: 'Настройки' })
     await userEvent.click(within(dialog).getByRole('button', { name: 'AI-помощник' }))
     expect(window.location.hash).toBe('#/settings/aiAssist')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Инструкции' }))
@@ -461,7 +463,8 @@ describe('App — интеграция UI со стором и IPC', () => {
     const api = await seededApi()
     window.location.hash = route
     render(<App api={api} delays={SLOW} />)
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    await screen.findByRole('button', { name: 'LLM' })
+    const dialog = screen.getByRole('dialog', { name: 'Настройки' })
     await waitFor(() => expect(window.location.hash).toBe('#/settings/llm'))
     expect(within(dialog).getByRole('button', { name: 'LLM' })).toHaveAttribute('aria-pressed', 'true')
   })
@@ -473,7 +476,8 @@ describe('App — интеграция UI со стором и IPC', () => {
     const chat = api._state.conversations.find((conversation) => conversation.title === 'Поездка в Лиссабон')!
     window.location.hash = `#/chat/${chat.id}/context`
     fireEvent(window, new HashChangeEvent('hashchange'))
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки разговора' })
+    await screen.findByRole('tab', { name: 'Контекст' })
+    const dialog = screen.getByRole('dialog', { name: 'Настройки разговора' })
     expect(within(dialog).getByRole('tab', { name: 'Контекст' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('dialog', { name: 'Настройки' })).not.toBeInTheDocument()
   })
@@ -1333,13 +1337,15 @@ describe('App — выход из аккаунта', () => {
     expect(screen.queryByText('Пользователи')).not.toBeInTheDocument()
   })
 
+  // @testCase TC-REGRESSION
   it('«Сессии и устройства» открывается и со страницы-утилиты, а не только из чата', async () => {
     const api = await seededApi()
+    const sessions = vi.fn().mockResolvedValue([])
     ;(window as unknown as { session: unknown }).session = {
       me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
       login: vi.fn(),
       logout: vi.fn(),
-      sessions: vi.fn().mockResolvedValue([]),
+      sessions,
       revokeSession: vi.fn()
     }
     // Окно жило внутри блока страницы чата, поэтому с #/users (как и с доски
@@ -1349,6 +1355,7 @@ describe('App — выход из аккаунта', () => {
 
     await userEvent.click(await screen.findByTitle('Роль: admin'))
     await userEvent.click(screen.getByRole('menuitem', { name: /Сессии и устройства/ }))
-    expect(await screen.findByRole('dialog', { name: 'Сессии и устройства' })).toBeInTheDocument()
+    await waitFor(() => expect(sessions).toHaveBeenCalled())
+    expect(screen.getByRole('dialog', { name: 'Сессии и устройства' })).toBeInTheDocument()
   })
 })
