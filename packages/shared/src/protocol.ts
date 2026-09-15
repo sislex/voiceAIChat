@@ -229,6 +229,7 @@ export const REST = {
   conversationDraft: '/api/conversations/draft',
   conversationsSearch: '/api/conversations/search',
   /** Полнотекстовый поиск по сообщениям пользователя (FTS5). */
+  universalSearch: '/api/universal-search',
   messagesSearch: '/api/search',
   conversation: (id: string) => `/api/conversations/${id}`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,

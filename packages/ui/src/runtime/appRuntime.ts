@@ -92,6 +92,7 @@ export interface AppRuntimeDeps {
 
 /** Чего стартовый маршрут НЕ требует: доска обходится без индекса чатов. */
 export interface BootstrapOptions {
+  initialChatContext?: { scope: 'kanban'; projectId: string }
   /** Открывается доска (или другой экран без списка чатов) — индекс отложить. */
   skipConversations?: boolean
 }
@@ -362,7 +363,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       // Список — фильтруемый индекс сайдбара, а не реестр доступных разговоров:
       // hidden/done/cancelled task-чат по прямому адресу проверяем через get.
       if (wanted) {
-        const opened = await chat.actions.selectConversation(wanted)
+        const opened = await chat.actions.selectConversation(wanted, options?.initialChatContext)
         if (!opened && visible[0]) await chat.actions.selectConversation(visible[0].id)
       } else if (visible[0]) {
         await chat.actions.selectConversation(visible[0].id)

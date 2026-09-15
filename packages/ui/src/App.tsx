@@ -353,7 +353,10 @@ function initialChatIdFromPath(path: string, segments: string[]): string | null 
  */
 function AppRuntimeHost({ api: sourceApi = window.api, now, delays }: AppProps = {}): JSX.Element {
   const api = useMemo(() => readResources(sourceApi).api, [sourceApi])
-  const { path, segments } = useHashRoute()
+  const { path, segments, search } = useHashRoute()
+  const query = new URLSearchParams(search)
+  const initialChatContext = query.get('scope') === 'kanban' && query.get('project')
+    ? { scope: 'kanban' as const, projectId: query.get('project')! } : undefined
   const initialChatId = useRef(initialChatIdFromPath(path, segments))
   // Стартуем на доске проекта — индекс чатов не нужен: сайдбар показывает
   // проекты, а список чатов сам попросит индекс, когда его откроют.
@@ -363,6 +366,7 @@ function AppRuntimeHost({ api: sourceApi = window.api, now, delays }: AppProps =
     ...(now ? { now } : {}),
     ...(delays ? { delays } : {}),
     initialChatId: initialChatId.current,
+    ...(initialChatContext ? { initialChatContext } : {}),
     skipConversations: skipConversations.current
   })
   return (
@@ -374,7 +378,7 @@ function AppRuntimeHost({ api: sourceApi = window.api, now, delays }: AppProps =
 
 function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Hash-роутинг: URL — источник навигации (см. useHashRoute).
-  const { path, segments, navigate } = useHashRoute()
+  const { path, segments, search: routeSearch, navigate } = useHashRoute()
   const projectsRoute = parseProjectsRoute(path)
   const inProjects = projectsRoute !== null
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
@@ -1482,6 +1486,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // адрес (клик по чату, «Назад», ссылка извне) — грузим чат из адреса;
   // изменился активный чат в сторе (создание, удаление, resume, автосоздание
   // первой репликой) — переписываем адрес без новой записи в истории.
+  useEffect(() => {
+    if (!authed) return
+    const messageId = new URLSearchParams(routeSearch).get('message')
+    if (messageId) chatActions.focusMessage(messageId)
+  }, [authed, routeSearch, path, chatActions])
+
   const syncedChatId = useRef<string | null>(routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId ?? routeConsoleReaderChatId ?? routeMakeChatId)
   useEffect(() => {
     if (!authed || !inChat || projectInviteToken) return
@@ -1489,7 +1499,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       syncedChatId.current = routeChatId
       if (routeChatId === chat.activeId) return // стор уже открыл этот чат
       const fallback = chat.activeId
-      void chatActions.selectConversation(routeChatId).then((ok) => {
+      const query = new URLSearchParams(routeSearch)
+      const projectId = query.get('project')
+      void chatActions.selectConversation(routeChatId, query.get('scope') === 'kanban' && projectId ? { scope: 'kanban', projectId } : undefined).then((ok) => {
         if (ok || syncedChatId.current !== routeChatId) return
         // Чата нет (удалён или чужой) — возвращаемся к прежнему.
         syncedChatId.current = fallback
@@ -1507,7 +1519,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       navigate(`/chat/${chat.activeId}`, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inChat, routeChatId, chat.activeId, projectInviteToken])
+  }, [authed, inChat, routeChatId, routeSearch, chat.activeId, projectInviteToken])
 
   // Отдельный экран Web Reader держит только типизированные чаты; старые
   // разговоры с сохранённым URL совместимы с ним и остаются доступны после переноса.
@@ -3721,7 +3733,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
 
-      <CommandPalette userId={shellUserId} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette userId={shellUserId} api={api} onNavigate={navigate} open={paletteOpen && authed} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
       {globalSettingsSection && (
