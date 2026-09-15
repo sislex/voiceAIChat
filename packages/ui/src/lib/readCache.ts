@@ -16,10 +16,16 @@ export function resourceKey(value: unknown): string {
     .map(([k, v]) => JSON.stringify(k) + ':' + resourceKey(v)).join(',') + '}'
 }
 type Entry = { family: ResourceFamily; params: unknown; data?: unknown; ready: boolean; expires: number; flight?: Promise<unknown> }
+class ObsoleteReadError extends Error {
+  constructor() {
+    super('Obsolete read')
+    this.name = 'AbortError'
+  }
+}
 export class ReadCache {
   private entries = new Map<string, Entry>()
-  private listeners = new Set<() => void>()
-  onInvalidated(listener: () => void): () => void {
+  private listeners = new Set<(family?: ResourceFamily) => void>()
+  onInvalidated(listener: (family?: ResourceFamily) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
@@ -46,7 +52,7 @@ export class ReadCache {
       if (entry.flight) return entry.flight as Promise<T>
       const cached = entry
       return Promise.resolve().then(() => {
-        if (this.entries.get(key) !== cached) throw Object.assign(new Error('Obsolete read'), { name: 'AbortError' })
+        if (this.entries.get(key) !== cached) throw new ObsoleteReadError()
         return cached.data as T
       })
     }
@@ -61,13 +67,13 @@ export class ReadCache {
     this.entries.set(key, entry)
     const current = entry
     const flight = Promise.resolve().then(load).then((data) => {
-      if (this.entries.get(key) !== current) throw Object.assign(new Error('Obsolete read'), { name: 'AbortError' })
+      if (this.entries.get(key) !== current) throw new ObsoleteReadError()
       current.data = data
       current.ready = true
       current.expires = this.now() + RESOURCE_TTL[family]
       return data
     }).catch(error => {
-      if (this.entries.get(key) !== current) throw Object.assign(new Error('Obsolete read'), { name: 'AbortError' })
+      if (this.entries.get(key) !== current) throw new ObsoleteReadError()
       throw error
     }).finally(() => {
       if (this.entries.get(key) === current) current.flight = undefined
@@ -90,7 +96,7 @@ export class ReadCache {
     for (const [key, entry] of this.entries) {
       if ((!family || entry.family === family) && matches(entry.params)) this.entries.delete(key)
     }
-    for (const listener of this.listeners) listener()
+    for (const listener of this.listeners) listener(family)
   }
   clear(): void {
     this.entries.clear()
@@ -98,5 +104,5 @@ export class ReadCache {
   }
 }
 export function isObsoleteRead(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError'
+  return error instanceof ObsoleteReadError
 }
