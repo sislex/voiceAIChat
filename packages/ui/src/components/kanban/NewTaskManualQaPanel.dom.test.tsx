@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { QaCriterionResult, QaSession, QaTaskState } from '@shared/qa'
 import { NewTaskManualQaPanel } from './NewTaskManualQaPanel'
@@ -58,8 +59,10 @@ describe('NewTaskManualQaPanel', () => {
     const save = vi.fn(async () => { Object.assign(result, { status: 'passed', revision: 5 }); return result })
     window.qa = { get: vi.fn().mockResolvedValue(state), saveResult: save } as unknown as typeof window.qa
     render(<NewTaskManualQaPanel projectId="p1" taskId="t1" cycles={[cycle]} workflow={[]} runActive={false} />)
-    fireEvent.change(await screen.findByLabelText('Результат проверки'), { target: { value: 'passed' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
+    const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText('Результат проверки'), 'passed')
+    expect(screen.getByLabelText('Результат проверки')).toHaveValue('passed')
+    await user.click(screen.getByRole('button', { name: 'Сохранить результат' }))
     await waitFor(() => expect(save).toHaveBeenCalledWith('p1', 't1', 'result-2', 4, { status: 'passed', draft: false, comment: '' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled())
     fireEvent.click(within(screen.getByTestId('new-task-manual-qa-stage-1')).getByRole('button', { name: 'Показать' }))

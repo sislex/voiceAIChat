@@ -49,3 +49,26 @@
 .webpreview-report { margin: 0; padding: 2px 10px 4px; border-bottom: 1px solid var(--border); }
 .webpreview-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--warning, var(--border)); background: var(--surface-selected, var(--surface)); font-size: 12px; }
 @media (pointer: coarse) { .webpreview-confirm .vc-btn { min-height: 44px; } }
+/* Cycle 18: session bookmarks — one list for the person and the model. */
+.webpreview-bookmarks { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-x: auto; white-space: nowrap; }
+.webpreview-bookmarks__item { display: inline-flex; align-items: center; gap: 0; }
+.webpreview-bookmarks__item > button:first-child { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.webpreview-bookmark-add { flex: none; margin: 0; padding: 2px 10px 4px; }
+@media (pointer: coarse) { .webpreview-bookmarks .vc-btn, .webpreview-bookmark-add .vc-btn { min-height: 44px; } }
+/* Cycle 19: the assistant asks the person right in the panel and waits for a live answer. */
+.webpreview-question { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface-selected, var(--surface)); font-size: 13px; }
+.webpreview-question p { flex-basis: 100%; margin: 0; }
+.webpreview-question input { flex: 1 1 160px; min-width: 0; }
+.webpreview-question__options { display: flex; flex-wrap: wrap; gap: 6px; }
+.webpreview-handover { background: var(--surface); }
+@media (pointer: coarse) { .webpreview-question .vc-btn, .webpreview-question input { min-height: 44px; } }
+/* Cycle 20: the assistant's notes for the person and the readable session report. */
+.webpreview-notes { flex: none; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.webpreview-notes ul { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.webpreview-notes li { display: flex; gap: 6px; align-items: baseline; }
+.webpreview-notes li::before { content: '✎'; color: var(--accent); }
+.webpreview-notes small { color: var(--text-dim); }
+.webpreview-report-text { flex: none; max-height: 30vh; overflow: auto; margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12px; white-space: pre-wrap; }
+@media (pointer: coarse) { .webpreview-notes .vc-btn { min-height: 44px; } }
+.webpreview-history-page { display: block; margin: 6px 0 2px; color: var(--text-dim); font-size: 11px; font-weight: 600; }
+.webpreview-history li:first-child .webpreview-history-page { margin-top: 0; }

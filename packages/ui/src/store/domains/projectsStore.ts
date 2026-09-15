@@ -283,6 +283,7 @@ function initialState(includeCompleted = false): ProjectsState {
 
 export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   const client = deps.projects
+  let projectsEpoch = 0
   const boardBridge = client.board
   const ciBridge = client.ci
   // Вид доски — настройка взгляда, а не сессии: она переживает и выход, и деплой.
@@ -425,15 +426,20 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   }
 
   const unsubscribeBoardChanged = boardBridge?.onChanged(({ projectId }) => {
+    client.invalidateProjectReads?.(projectId)
     if (projectId === getState().activeProjectId) scheduleBoardSync()
   })
   const unsubscribeBoardConnected = boardBridge?.onConnected(() => {
     const id = getState().activeProjectId
     if (!id) return
     boardBridge.subscribe(id)
+    // Initial connection must not invalidate the first HTTP snapshot or hide its error.
+    if (getState().boardLoading && !getState().board) return
+    client.invalidateProjectReads?.(id)
     scheduleBoardSync()
   })
   core.onDispose(() => {
+    projectsEpoch++
     clearBoardSync()
     if (getState().activeProjectId) boardBridge?.unsubscribe()
     unsubscribeBoardChanged?.()
@@ -455,6 +461,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   }
 
   function dropInaccessibleProject(id: string): void {
+    client.invalidateProjectReads?.(id)
     clearBoardSync()
     boardBridge?.unsubscribe()
     setState({
@@ -478,18 +485,22 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
 
   async function refreshProjects(): Promise<ProjectSummary[]> {
     if (projectsFlight) return projectsFlight
+    const epoch = projectsEpoch
     setState({ projectsStatus: 'loading', projectsError: null })
-    const flight = (async () => {
+    let flight!: Promise<ProjectSummary[]>
+    flight = (async () => {
       try {
         const projects = await client['projects:list']()
+        if (epoch !== projectsEpoch) return []
         setState({ projects, projectsLoaded: true, projectsStatus: 'ready', projectsError: null })
         return projects
       } catch (err) {
+        if (epoch !== projectsEpoch || (err instanceof Error && err.name === 'AbortError')) return []
         // Ошибку держим в сторе: пустой список и сломанное чтение — разные экраны.
         setState({ projectsStatus: 'error', projectsError: err instanceof Error ? err.message : String(err) })
         throw err
       } finally {
-        projectsFlight = null
+        if (projectsFlight === flight) projectsFlight = null
       }
     })()
     projectsFlight = flight
@@ -497,6 +508,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   }
 
   async function refreshBoard(): Promise<void> {
+    client.invalidateProjectReads?.(getState().activeProjectId ?? undefined)
     await syncBoard()
   }
 
@@ -505,7 +517,8 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     if (!id || getState().boardIncludeCompleted !== includeCompleted) return
     clearBoardSync()
     const generation = boardGeneration
-    setState({ board: null, boardLoading: true, boardError: null })
+    const cached = client.boardReadFresh?.(id, includeCompleted) ? client.cachedBoard?.(id, includeCompleted) : undefined
+    setState({ board: cached ?? null, boardLoading: !cached, boardError: null })
     try {
       const board = await client['board:get']({ id, includeCompleted })
       if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
@@ -536,7 +549,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     // обязана появиться сразу. Включённый фильтр догружает их следом, поэтому и
     // сам флаг на время старта честно стоит в «нет».
     const wantsCompleted = getState().boardIncludeCompleted
-    setState({ activeProjectId: id, boardLoading: withBoard, boardError: null, board: null, projectDetail: null, projectSettingsOpen: false, boardIncludeCompleted: false })
+    const cachedBoard = withBoard ? client.cachedBoard?.(id) : undefined
+    const cachedProject = client.cachedProject?.(id)
+    setState({ activeProjectId: id, boardLoading: withBoard && !cachedBoard, boardError: null, board: cachedBoard ?? null, projectDetail: cachedProject ?? null, projectSettingsOpen: false, boardIncludeCompleted: false })
     if (!withBoard) return loadProjectDetail(id, generation)
     await loadBoard(id, generation, wantsCompleted)
   }
@@ -568,7 +583,12 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
    */
   async function ensureBoard(id: string): Promise<void> {
     if (getState().activeProjectId !== id) return openProject(id, { board: true })
-    if (getState().board || getState().boardLoading) return
+    if (getState().boardLoading) return
+    if (getState().board) {
+      if (client.boardReadFresh?.(id, getState().boardIncludeCompleted) ?? true) return
+      // TTL refresh preserves the visible board and its completed-task filter.
+      return syncBoard()
+    }
     clearBoardSync()
     const generation = boardGeneration
     const wantsCompleted = getState().boardIncludeCompleted
@@ -603,6 +623,11 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       if (accessLost(err)) {
         dropInaccessibleProject(id)
         fail(new Error('Доступ к проекту закрыт: он удалён или вас исключили из участников.'))
+        return
+      }
+      if (err instanceof Error && err.name === 'AbortError') {
+        setState({ boardLoading: false })
+        if (boardPending) { boardPending = false; void actions.ensureBoard(id) }
         return
       }
       setState({ boardLoading: false, boardError: err instanceof Error ? err.message : String(err) })
@@ -1255,7 +1280,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         const id = getState().activeProjectId
         const prev = getState().board
         if (!id || !prev) return false
-        const tasks = prev.tasks.map((t) => ({ ...t }))
+        const tasks = prev.tasks.map((t) => t.id === taskId ? { ...t } : t)
         const moving = tasks.find((t) => t.id === taskId)
         const fromColumnId = moving?.columnId ?? null
         if (moving) {
@@ -1283,7 +1308,16 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           void deps.chat.refreshConversations({ keepActiveListed: true }).catch(() => {})
           return true
         } catch (err) {
-          setState({ board: prev })
+          // Roll back only this still-owned optimistic task, never a newer snapshot or another project.
+          const current = getState()
+          const original = prev.tasks.find((task) => task.id === taskId)
+          if (current.activeProjectId === id && current.board && original && moving) {
+            const optimistic = moving
+            setState({ board: {
+              ...current.board,
+              tasks: current.board.tasks.map((task) => task.id === taskId && task === optimistic ? original : task)
+            } })
+          }
           fail(err, () => void actions.moveTask(taskId, columnId, afterId, beforeId))
           return false
         }
@@ -1553,6 +1587,8 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         if (changed) setState({ ciSummaries })
       },
       reset() {
+        projectsEpoch++
+        projectsFlight = null
         if (getState().activeProjectId) boardBridge?.unsubscribe()
         mergeNoticeSeen.clear()
         core.resetState(initialState(deps.prefs?.get(BOARD_COMPLETED_KEY) === '1'))

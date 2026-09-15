@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: f20ec036
+checked: abc8c97e
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -299,6 +299,53 @@ build-time флагом `VITE_REDUX_DEVTOOLS=true`. Перед `init` и `send` 
 
 ## Состояние приложения
 
+Route read ownership (CHAT-468): bootstrap reads settings, model engines/access,
+the visible chat index and project navigation. It does not request the machine
+list, Account profile/usage/security, or Settings-only catalogs. Machines calls
+`openMachines` on authenticated route entry. Settings calls `loadCatalogs(section)`;
+LLM needs capabilities/MCP, STT needs microphones/status/models/capabilities,
+TTS needs voices/catalog/capabilities, and voice dialog needs microphones/voices/
+capabilities. Project types load on the projectTypes section. Active chat loads
+installed TTS voices only when playback is enabled, and local model status only
+when STT is enabled. Voice metadata loads independently and cannot delay chat
+startup; the browser fixture supplies the remote runner's voice list locally.
+Creating a chat/project requests machines before the existing
+machine-required guard. Confirmed enrollment invalidates the machine list before
+polling, so a cached offline snapshot cannot hide the newly connected machine.
+Machines checks freshness every 30 seconds while open; board refreshes every
+10 seconds while visible and preserves its current snapshot and completed-task
+filter. Server access denials clear that project's cached navigation and details.
+Saving a board view invalidates only that project's view, not its snapshot.
+Realtime machine snapshots seed the machine cache and fence older HTTP responses;
+profile summaries invalidate when machine ids/online states change. STT model status
+shares the catalog TTL and invalidates with model-download completion.
+
+`clients/readResources.ts` wraps an allowlist of RendererApi reads without changing
+REST, WS or IPC shapes. The same API instance shares one in-memory `ReadCache`
+across stores and Account. Keys contain the channel and recursively sorted object
+parameters; board flags and security defaults normalize before key construction.
+Projects are separated by id. Runtime logout, expiry, user change and dispose
+clear entries and fence outstanding generations. No responses persist to storage.
+TTL milliseconds: profile/access/settings 60000, usage/security/machines/projects
+30000, catalogs 300000, board 10000. Concurrent callers share one promise;
+subscription cleanup suppresses delivery only to that subscriber. Invalidation
+uses entry identity, so late completions cannot populate a replacement entry.
+Diagnostics contain only the resource family and hit/miss.
+
+Account keeps a stable range instant between freshness ticks, reuses it across
+visits within the usage TTL, checks freshness on tab entry and every 30 seconds, and
+retains previous data during refresh. Profile completion is guarded by effect
+cleanup. History and Usage keep their filter controls mounted while their data
+skeleton loads, allowing A → B → A changes before the slow response completes.
+Repeated settings invalidations during an existing refresh queue a current follow-up
+read; reset/dispose fence that queue. An obsolete settings snapshot does not discard
+independent model-access and engine-catalog responses. Overview retry reloads only failed blocks. Settings catalog failures
+are recorded individually and have an individual retry action. Cache behavior,
+cold bootstrap and isolated retries are covered by `readCache.test.ts`,
+`readResources.test.ts` and `AccountPage.dom.test.tsx`. Browser measurement and
+responsive scenarios live in `packages/ui/src/test/routeResources.browser.test.ts`; measurements are
+written to `.generated_images/chat468/before.json` and `after.json`.
+
 ### Адаптивный композер VoiceBar
 
 Новый пустой чат определяется в `packages/ui/src/App.tsx` по готовности списка разговоров (`conversationsStatus === 'ready'`), завершённой загрузке сообщений и фактическому отсутствию сообщений. `activeId` в этот критерий намеренно не входит: заранее созданный разговор с уже присвоенным id всё ещё считается новым пустым чатом. В таком состоянии `VoiceBar` получает `layout="centered"`, поле ввода остаётся развёрнутым, а сворачивание отключено даже на компактном viewport.
@@ -500,6 +547,53 @@ success/warning/error-состояния, поэтому те же цвета п
 *расширением* квадратной иконки под длинную подпись, но на телефоне читалось как
 ограничение). Меньший минимум допустим только под `min-width`, то есть на
 десктопе; сторож — в `cssTokens.test.ts`.
+
+### Панель Playwright Reader на телефоне и на компьютере
+
+Кадр Chromium — картинка, вписанная по ширине панели, и это накладывало три
+ограничения, незаметных на широком десктопе: на телефоне страница показывалась
+примерно в треть натурального размера, прокрутить её было нечем (только колесо),
+а пятнадцать кнопок панели инструментов переносились в шесть рядов и выдавливали
+сам кадр за нижний край экрана.
+
+Круг 1 паритета с пользователем (15.09.2026) добавил в `BrowserSessionPane`:
+масштаб кадра `−/Вписан/+` (лестница `FRAME_ZOOM_STEPS`, отдельно от пресетов
+размера окна Chromium), разворот кадра на всю панель с выходом по Escape,
+прокрутку свайпом и щипок для масштаба, копирование адреса, полосу выполнения и
+кнопки `↑ ↓ ⌫` (экранная клавиатура телефона их не даёт). Чистая арифметика —
+`lib/frameView.ts`, потому что те же числа решают и состояние кнопки масштаба, и
+пересчёт координат касания.
+
+Два решения, которые стоит помнить:
+
+- **Клик после свайпа гасится.** Палец, поднятый после прокрутки, порождает
+  `click` по кадру; без порога `TOUCH_TAP_SLOP` и флага «жест был прокруткой»
+  каждая прокрутка что-нибудь нажимала на странице.
+- **Сочетания окружающего браузера перехватываются панелью, а не страницей:**
+  `Alt+←/→`, `Ctrl/Cmd+R`, `Ctrl/Cmd+L`, `Escape` (`panelShortcut`). Внутри кадра
+  те же клавиши принадлежат странице — поэтому обработчик висит на секции панели,
+  а не на изображении.
+
+Круг 2 (15.09.2026) добавил телефонные жесты и форму глазами страницы: долгое
+нажатие = правый клик (контекстное меню страницы иначе с телефона недостижимо),
+двойной тап = двойной клик, панель «Поля формы» с теми же данными, что видит
+модель (`form-state` + `validity`), «Открыть у себя», список вкладок при их числе
+больше пяти и подпись размера окна Chromium.
+
+Двойной тап различается по касанию, а не по `event.detail`: в jsdom и части
+окружений щелчок мыши приходит с `detail: 0`, и два соседних клика мышью
+склеивались бы в двойной. Признак — «касание было не дольше 700 мс назад».
+Масштаб кадра переживает переключение разговора, но живёт в модуле панели:
+своего порта предпочтений у неё нет, а прямое обращение к хранилищу браузера
+запрещает `architecture.test.ts` продуктового пакета.
+
+Круг 3 (15.09.2026) добавил поиск по странице внутри панели: `Ctrl/Cmd+F`
+окружающего браузера ищет по приложению, а не по странице в Chromium, и на
+длинной странице внутри кадра-картинки найти текст глазами нельзя. Поиск
+пользуется теми же инструментами, что и модель (`find` → `scrollTo` →
+`highlight`), показывает «N из M», ходит по совпадениям по кругу и закрывается
+Escape раньше, чем разворот кадра. Рядом — кнопки «в начало»/«в конец» и
+подпись «ниже ещё N экранов» по `metrics`.
 
 ### Тестовые идентификаторы (`data-testid`)
 
@@ -1213,15 +1307,23 @@ suite галереи.
 
 ## Прокрутка канбан-доски
 
+Фикстура Projects E2E в `e2e/projects.e2e.test.ts` до открытия создания проекта заводит устройство через REST и регистрирует его WebSocket-соединение на `/agent`. Это обеспечивает online-устройство в realtime snapshot, которое требует существующий guard создания проекта. Проверка общей доски считает реальные элементы `[data-column-id]`, а не вспомогательные панели `.jcol-head`.
+
 Рабочая область `KanbanBoard` заполняет остаток полностраничного `ToolFrame`: `.toolpage` имеет `height: 100%` и `overflow: hidden`, а цепочка `.toolpage > .jboard-wrap` → `.jboard` использует `flex: 1`, `min-height: 0` и `min-width: 0`. `.jboard-wrap` обрезает выход за границы, поэтому переносимая по строкам шапка проекта и соседняя `.jboard-filters` остаются вне прокрутки доски и автоматически отнимают свою фактическую высоту без пиксельных offsets. На мобильной ширине корневая `.app` использует `100dvh`, поэтому изменение браузерных панелей и ориентации пересчитывает доступную высоту.
 
 On desktop, `.jboard` растягивается на остаток области и является единым viewport по обеим осям (`overflow-x: auto; overflow-y: auto`). Обычная `.jcol` сохраняет ширину 272 px, имеет `min-height: 100%` и растёт по содержимому без ограничения максимальной высоты; поэтому короткие колонки заполняют доступную высоту, а самая длинная задаёт общий вертикальный overflow. `.jcol-body` остаётся flex-колонкой с `flex: 1`, но имеет видимое переполнение и не является scroll-контейнером. При вертикальной прокрутке `.jboard` заголовки, карточки и композеры всех колонок движутся синхронно; горизонтальная прокрутка большого числа колонок сохраняется. Свимлейны используют тот же вертикальный viewport `.jboard`, а `.jcol--incell` явно сбрасывает минимальную высоту и сохраняет автоматическую высоту с видимым переполнением.
 
-On mobile (≤720px), the board uses mandatory horizontal snap, arrows and `Колонка N из M`. The visible column id is stored in `sessionStorage` under `kanbanColumnKey(scrollScopeId)`; the caller supplies a board-specific scope (the project id is the application fallback), so different boards do not share navigation state. A missing, removed or unreadable saved id falls back to the first available column, and storage failures do not block navigation. Ordinary columns keep their headers above independently scrolling `.jcol-content`; swimlanes retain their shared vertical viewport. Desktop instead keeps one `.jboard` viewport for both axes and scrolls all column headers and cards together.
+При доступной ширине доски не более 720 px `ResizeObserver` включает narrow-режим, а именованный CSS-контейнер растягивает единственную смонтированную активную колонку на всю ширину. Стрелки, доступный select со счётчиками задач и статус «Колонка N из M» переключают все доступные в текущем представлении колонки, включая заголовки и ячейки свимлейнов. Выбор хранится в `sessionStorage` по `kanbanColumnKey(JSON.stringify([currentUserId, projectId, scrollScopeId]))`, поэтому изолирован одновременно по пользователю, проекту и экземпляру доски. Старые board-only ключи не мигрируют, поскольку их владельца определить нельзя. Отсутствующий, скрытый, удалённый или повреждённый id заменяется первой доступной колонкой; ошибка storage не блокирует навигацию. Контракт и восстановление закреплены в `packages/ui/src/components/kanban/KanbanBoard.tsx` и `KanbanBoard.dom.test.tsx`.
 
-One safe-area-aware FAB opens the existing composer in a Dialog for the visible mobile column, including swimlane and collapsed-column views. Desktop column creation remains available. Density is read from and written to `localStorage` through `kanbanDensityKey(userId, projectId)`, preserving the `voicechat.kanban.density.v1` user/project namespace. `KANBAN_DENSITY_KEY` and the mobile-column base key are registered in `PREFERENCE_KEYS` in `packages/ui-foundation/src/persistence.ts`, so preference tooling knows about both namespaces. Mobile cards retain their key, title, stage status and avatar; their action menu opens all card details, including all labels. Filtered empty mobile columns use `EmptyState` with a global reset action. `MobileScroll` contains six columns and 30 cards with `mobile1`; `MobileFilters` exercises the filter dialog. `kanbanMobile.browser.mjs` checks 390px and the 720/721px boundary against Storybook. The general Storybook axe suite is split across `stories.a11y.0.dom.test.tsx`, `stories.a11y.1.dom.test.tsx` and `stories.a11y.2.dom.test.tsx`, using `storiesA11yShard.tsx`; `KanbanBoard.dom.test.tsx` also renders both new stories' data with a mobile media query and checks the open filter dialog.
+Горизонтальный swipe начинается только на неинтерактивной поверхности: нужен ход не менее 64 px за 700 мс, вертикальное отклонение не более 24 px, а жесты из 24-пиксельной краевой зоны отбрасываются. Карточки, controls и открытые dialog/menu исключены; обработчик не отменяет нативную вертикальную прокрутку. Keyboard-навигация и перенос задач сохраняют фокус поверхности после смены колонки. Обычные колонки имеют собственную вертикальную прокрутку контента, свимлейны сохраняют общий viewport, desktop — общий viewport по двум осям.
 
-On mobile, pointer autoscroll targets `.jboard` horizontally and the target column content vertically. Mandatory snap is suspended during pointer drag, targets expose `data-drop-target`, and hit testing is refreshed after each autoscroll frame. The engine remains `packages/ui-foundation/src/lib/dnd.ts` with its 200ms hold, 6px mouse threshold and scale 1.02. On desktop, `KanbanBoard.tsx` directs both `autoScroll` axes to `.jboard`; `[data-drop-body]` используется только для вычисления целевой ячейки и позиции вставки. Для переноса колонок используется только горизонтальная ось `.jboard`, поэтому он не меняет общий `scrollTop`. Стабильные React-ключи сохраняют DOM общей поверхности и её `scrollLeft`/`scrollTop` при drop, открытии карточки и обычном обновлении данных. Pointer-контракт остаётся единым для мыши, пальца и стилуса, клавиатурный перенос не менялся. Источник инвариантов высоты и overflow — `packages/ui/src/styles/app.css`; общий viewport, сохранение позиций и обе оси DnD закреплены в `packages/ui/src/styles/boardScroll.test.ts` и `packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx`.
+One safe-area-aware FAB opens the existing composer in a Dialog for the visible mobile column, including swimlane and collapsed-column views. CHAT-472 reserves bottom space for the last card and hides create while a dialog/menu is open or the visual viewport shrinks by more than 120px. The command-palette create action also targets the active mobile column. The five viewport/two theme Chromium matrix in `kanbanMobile.browser.mjs` saves geometry screenshots under `.mobile-shots/CHAT-472-*`; DOM viewport emulation is not evidence of real OS keyboard, safe-area, system gestures or screen-reader behavior. Desktop column creation remains available. Density is read from and written to `localStorage` through `kanbanDensityKey(userId, projectId)`, preserving the `voicechat.kanban.density.v1` user/project namespace. `KANBAN_DENSITY_KEY` and the mobile-column base key are registered in `PREFERENCE_KEYS` in `packages/ui-foundation/src/persistence.ts`, so preference tooling knows about both namespaces. Mobile cards retain their key, title, stage status and avatar; their action menu opens all card details, including all labels. Filtered empty mobile columns use `EmptyState` with a global reset action. `MobileScroll` contains six columns and 30 cards with `mobile1`; `MobileFilters` exercises the filter dialog. `kanbanMobile.browser.mjs` checks 1440×900, 1280×720, 768×1024, 390×844 and 320×700 in both themes, including compact density, filtered empty results, swimlanes, last-card menus, unbroken long titles and a 500px board inside a wide viewport. The same size/theme matrix also records empty, loading, refreshing, error-without-data, error-with-data and WIP-exceeded stories. The general Storybook axe suite is split across `stories.a11y.0.dom.test.tsx`, `stories.a11y.1.dom.test.tsx` and `stories.a11y.2.dom.test.tsx`, using `storiesA11yShard.tsx`; `KanbanBoard.dom.test.tsx` also renders both new stories' data with a mobile media query and checks the open filter dialog.
+
+В narrow-режиме pointer-перенос работает внутри активной колонки, а меню и клавиатура достигают остальных колонок. Цели имеют `data-drop-target`, hit testing обновляется после каждого кадра autoscroll. Перенос через меню ждёт существующий `onMoveTask(taskId, columnId, afterId, beforeId)`, вычисляет порядок по полному нефильтрованному списку задач целевой колонки и объявляет как возврат `false`, так и rejected promise. После успеха выбирается целевая колонка и фокус возвращается карточке либо поверхности.
+
+При отказе `projectsStore` в `packages/ui/src/store/domains/projectsStore.ts` откатывает только ту оптимистическую задачу, которой операция всё ещё владеет по ссылочной идентичности, и только если активен исходный проект. Новый snapshot, параллельное изменение этой задачи, данные другой задачи и переход в другой проект не заменяются старой копией всей доски; это закреплено сценариями `appRuntime.projects.test.ts`.
+
+DnD-движок остаётся в `packages/ui-foundation/src/lib/dnd.ts` с удержанием 200 мс, mouse threshold 6 px и scale 1.02. На desktop `KanbanBoard.tsx` направляет обе оси `autoScroll` в `.jboard`; `[data-drop-body]` используется только для расчёта целевой ячейки и позиции вставки. Перенос колонок использует только горизонтальную ось и не меняет общий `scrollTop`. Стабильные React-ключи сохраняют DOM поверхности и её `scrollLeft`/`scrollTop` при drop, открытии карточки и обновлении данных. Pointer-контракт общий для мыши, touch и pen; keyboard-перенос в narrow-режиме сохраняет контракт и переносит фокус через поверхность при монтировании целевой колонки. CSS-инварианты находятся в `packages/ui/src/styles/app.css`, регрессии — в `boardScroll.test.ts` и `KanbanBoard.dom.test.tsx`.
 
 ## Отдельный режим Web Reader
 
@@ -2514,6 +2616,14 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 
 Цикл 16 (2026-09-15): рекордер ведёт себя как браузер телефона. Инъецированный скрипт шлёт оболочке три новых канала: `voicechat.preview.link.v1` (ссылка под курсором или в фокусе, `longPress: true` после 500 мс удержания без сдвига больше 10 px), `voicechat.preview.gesture.v1` (свайп больше 80 px от края экрана — `back`/`forward`) и принимает `voicechat.preview.reader.v1` — режим чтения вставляет в страницу `<style id="voicechat-reader-style">`, прячущий nav/header/footer/aside и сужающий текст до 44em. Панель показывает адрес ссылки строкой состояния поверх страницы (`.webpreview-linkbar`, скрыта на тач-экранах), по долгому нажатию — меню ссылки (открыть, скопировать, спросить ассистента, новая вкладка), по правому клику или удержанию «Назад» — историю этой вкладки (до 30 адресов). Свайп «назад» срабатывает только при `historyDepth > 0`, поэтому хост-приложение не уходит со страницы. Масштаб текста запоминается по сайту в `localStorage` (`voicechat.reader.zoom.v1`, `apps/web-recorder/src/zoomMemory.ts`, 50–200 %, значение 100 % удаляет запись) и применяется на каждом `page-ready`. На ширине до 560 px адресная строка показывает только host, а по фокусу — полный адрес; панель инструментов прячется при прокрутке страницы вниз и возвращается при прокрутке вверх или у самого верха (`toolbarHiddenAfterScroll`, порог 12 px, верхняя зона 96 px), свёрнутое состояние оставляет полоску `.webpreview-peek`. После полутора экранов появляется круглая кнопка «К началу страницы» (`pageScrollState`). Пункт «Клавиши» показывает шпаргалку сочетаний из общего списка `SHORTCUTS` — второго списка «для документации» в рекордере нет.
 
+Цикл 17 (2026-09-15): панель показывает ориентиры страницы. Инъецированный скрипт добавляет в `page-ready` поле `nav` (крошки, листалка, дата с автором, селектор поля поиска) — это внутренний канал рекордер ↔ страница, контракт host-а `@shared/webRecorder` не меняется. Рекордер рисует из него строку пути по сайту (клик по крошке открывает раздел), ряд листалки «← Предыдущая / Дальше →» с номером страницы (Alt+Shift+← и Alt+Shift+→), дату и автора рядом с названием. Поле «Искать на сайте» в меню инструментов и клавиша «/» отправляют странице собственные действия панели (`search` и `focus`) с requestId-префиксом `ui-` — ответ host-у не нужен, это жест человека, а не ход модели. Выделение, сделанное моделью, помечается `by: 'assistant'` в `voicechat.preview.selection.v1`, и чип подписан «Ассистент выделил». Место чтения запоминается по адресу в памяти вкладки (`apps/web-recorder/src/pageMemory.ts`, до 30 страниц) и восстанавливается при возврате — как в браузере.
+
+Цикл 18 (2026-09-15): работа с длинной страницей. Панель (`WebReaderFrame`) показывает ряд закладок сеанса — чип открывает страницу, крестик убирает, кнопка «Запомнить страницу» кладёт закладку рукой человека в тот же список, что видит модель (мост зовёт `onBookmarks`). Рекордер получает оглавление в `page-ready.nav.toc` и рисует ящик «Оглавление (N)»: заголовки с отступом по уровню, клик прокручивает страницу к разделу, Escape закрывает ящик и возвращает фокус на кнопку, на телефоне ящик занимает до 55vh и строки — 44 px. Поле «Листать до…» отправляет странице `scroll {until}`, «Копировать текст страницы» кладёт `innerText` в буфер, Alt+End уводит в конец страницы рядом с Alt+Home. Пока человек читает, время чтения превращается в «осталось ~N мин», а полоса прочитанного объявляет процент и остаток через `aria-valuetext`.
+
+Цикл 19 (2026-09-15): вопрос ассистента живёт в самой панели (`WebReaderFrame`). Карточка вопроса объявляется `aria-live="assertive"`, фокус сразу уходит в поле ответа, быстрые ответы приходят кнопками из `options`, Escape и «Не сейчас» отвечают отказом, а через пять секунд рядом с вопросом идёт счётчик ожидания. Переданный человеку шаг показывается баннером с кнопкой «Готово, продолжай». Карточка исчезает при смене разговора, а на тач-экранах поле и кнопки — 44 px. В ленте действий шаг подписан «Спросил: …», живая строка в это время читает «ждёт вашего ответа», а итог попадает в ленту фразой «вы ответили: …» или «вопрос остался без ответа».
+
+Цикл 20 (2026-09-15): панель отдаёт результат человеку. Заметки ассистента идут строкой со значком и хостом страницы, есть «Скопировать заметки»; «Отчёт в чат», «Скопировать отчёт» и блок «Текст отчёта» показывают один и тот же человеческий текст, собранный мостом (`report {readable: true}`), а «Скрыть отчёт» убирает его. Лента действий разбита по страницам: заголовок появляется там, где ассистент перешёл на другой сайт, и шаг больше не дублирует название страницы под своей строкой. Заметки и отчёт очищаются при смене разговора, на тач-экранах кнопки заметок — 44 px, а текст отчёта прокручивается и сохраняет переносы.
+
 ### Действия модели в превью (mcp__browser__*)
 
 Ход разговора получает MCP-сервер `browser` (эндпоинт `/mcp/preview`, `apps/web-reader/src/mcp/previewMcp.ts`) с инструментами `open`, `read`, `find`, `click`, `type`: открыть URL в панели превью, прочитать структурированное содержимое страницы (заголовки/ссылки/кнопки/поля + текстовая выжимка), найти элементы по видимому тексту или CSS-селектору, кликнуть, ввести текст (`submit: true` отправляет форму). Протокол, лимиты и валидаторы — `packages/shared/src/previewActions.ts`; хинт модели — `previewToolHint()` (подключают `apps/llm-runner/src/cli/claudeCli.ts` и `codexCli.ts` вместе с `LlmRequest.previewMcpUrl`).
@@ -2549,6 +2659,14 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 Цикл 15 (2026-09-15): `read {around}` (±600 символов вокруг фразы), `read {markdown}` (обход дерева с `#`/`-`), `headings[].selector`, `find {role: heading, level}`, `type {blur}`, `scroll {percent}`, `fill fields[].secret`; `outline.words` из `page-ready` даёт время чтения, `status.outline` повторяет сводку страницы; ошибка `choose` перечисляет видимые пункты.
 
 Цикл 16 (2026-09-15): место вместо селектора — `find`/`click {below|above|leftOf|rightOf: текст-ориентир}` (`spatialFilter` в `previewProxy.ts`: кандидаты той стороны от bounding box ориентира, сортировка по расстоянию с штрафом 400 px за отсутствие пересечения по другой оси; `chooseTarget` при заданной стороне берёт первого кандидата вместо ошибки «селектор неоднозначен»). `find {details: true}` добавляет `details` — `id`, классы, значимые атрибуты (type/name/href/aria-*/data-*, кроме `data-voicechat*`), `box` во вьюпорте и `path` по ориентирам («main › form «Вход»»). `click {peek: true}` ничего не нажимает и отвечает `peeked`, `href` (через `unproxy`), `external` (другой host) и `newTab` (`target=_blank`) — так человек читает адрес в строке состояния. `dismiss {what: cookies|dialog|any}` убирает то, что мешает читать: `findOverlays` собирает `dialog[open]`, `[role=dialog]`, `aria-modal` и `position: fixed|sticky` крупнее 6 % экрана, `overlayKind` отличает cookie-баннер по тексту; порядок действий — сначала «отклонить»/«только необходимые», затем крестик или «Закрыть», и лишь при отсутствии выбора «Принять», без кнопок — Escape и `dialog.close()`; ответ несёт `dismissed`, `how`, `target` и `remaining`. `read` отдаёт `overlays` (что лежит поверх страницы) и `images` — без `parts` только подписанные и не мельче 24 px (до 5), с `parts: [images]` все видимые (до 20) с `alt`, реальным `src` и размером. `scroll` отвечает `percent`. Лента чата называет peek и dismiss словами (`narrate` в `packages/web-reader-contracts/src/actions.ts`). Переписанный HTML прокси всегда отдаётся с `cache-control: private, no-store` — он несёт инъецированный скрипт панели, и кэш браузера иначе удерживал бы его прошлую версию после релиза (ресурсы свой `cache-control` сохраняют).
+
+Цикл 17 (2026-09-15): большой незнакомый сайт. `search {text, in?}` ищет поле поиска самого сайта (`form[role=search]`, `input[type=search]`, подписи «Поиск»/«Search» в name, id, placeholder и aria-label — `searchField`), вводит запрос, отправляет форму и возвращает подсказки сайта; `focus {field|selector}` ставит курсор, ничего не вводя (ошибка, если элемент не принимает фокус); `select {text|selector}` выделяет место на странице средствами Selection API. `read {main: true}` читает только основное: `article`/`main`, а если их нет — блок с лучшим отношением длины текста к числу ссылок (`mainScope`), и возвращает его selector в `main`. `read` дополняется ориентирами: `breadcrumbs` (nav с aria-label «хлеб»/«bread», класс или `itemtype=BreadcrumbList`), `pagination` (`rel=next|prev`, иначе подписи «Дальше», «Следующая», «Next», «Назад», «Previous» и `aria-current=page` как label), `published` (мета `article:published_time`, `author`, первый видимый `<time>`) и `search` — селектор поля поиска. `wait {stable: true}` ждёт полсекунды без правок DOM через `MutationObserver` и отвечает `state: 'stable'`; в ошибке — сколько правок пришло за таймаут. `back {to: «часть адреса или заголовка»}` исполняет мост панели: он помнит до 20 адресов сеанса с заголовками и открывает найденный, а незнакомую страницу называет вместе со списком открытых.
+
+Цикл 18 (2026-09-15): длинные страницы и списки. `read {next: true}` продолжает чтение с позиции `readCursor` — скрипт помнит, где закончился прошлый read этой же страницы, и модель не считает offset сама; `read {toc: true}` отдаёт оглавление (h1–h4 с уровнями и селекторами) для `scroll {to: element}` и `read {section}`; `read {table: подпись, rowOffset}` читает одну таблицу по 20 строк (подпись ищется в caption, aria-label, заголовках колонок и контексте) и отвечает `nextRowOffset`; `read.lists` перечисляет однотипные карточки (контейнеры с тремя и более похожими детьми) с их числом. `find {in: заголовок}` сужает поиск живыми узлами раздела (`sectionRange` — от заголовка до следующего того же или старшего уровня; `sectionScope` для этого не годится, он отдаёт клон). `scroll {until: текст, maxScreens}` листает ленту с ленивой подгрузкой по 0,9 экрана с паузой 220 мс, останавливается на найденном тексте (`found`, `screens`) и честно сдаётся, когда высота ленты перестала расти. Закладки сеанса живут в мосте панели (`bookmark {label|remove}`, до 20 штук): их отдают `status.bookmarks` и `report.bookmarks`, и тот же список видит человек.
+
+Цикл 19 (2026-09-15): модель спрашивает человека, а не угадывает. `question {question, options?, timeoutMs?}` и `handover {reason}` исполняет мост панели: страница о них не знает. Мост держит одно ожидание (`waiting`), второй вопрос отклоняется с текстом первого, а любые действия над страницей на время ожидания получают отказ «Панель ждёт человека» — модель не действует за спиной у того, кого спросила. Ответ приходит в `answer` (`answered: false` — человек нажал «Не сейчас» или истёк `timeoutMs`, по умолчанию 2 минуты, максимум 10); `handover` отвечает `returned`. `status.waitingFor` показывает, чего панель ждёт и с какого момента, `report.questions` собирает вопросы с ответами в отчёт по задаче. `dispose` отпускает незаконченное ожидание, иначе ход модели висел бы до таймаута уже закрытой панели. Инструменты MCP — `ask-user` и `hand-over`.
+
+Цикл 20 (2026-09-15): итог работы. `note {text}` оставляет пользователю заметку в панели (до 30 штук, с адресом страницы, на которой она сделана) — она видна сразу и попадает в `report.notes`. `report {readable: true}` собирает готовый человеческий текст: длительность сеанса и число действий, открытая страница, где были, итоги проверок с перечислением непрошедших, вопросы с ответами, заметки и закладки; без флага отчёт остаётся структурным. `report.durationMs`, `status.actions` и `status.since` показывают размер сеанса. Флаг назван `readable`, а не `text`: поле `text` во всех остальных действиях union-а — строка, и булев `text` у report ломал типизацию каждого потребителя (`pendingActionLabel` в `packages/ui/src/readerSplitControls.ts`).
 
 Сервер действий не исполняет: `PreviewActionRelay` транслирует вызов кадром WS `preview.action` всем клиентам пользователя и ждёт `preview.result` — первый успех, все отказы или таймаут 20 с. Токен `?turn=` выдаёт и снимает `turns.ts` (брокер `previewToolBroker`), как у инструментов БЗ. Действия ограничены активной страницей пользователя: обрабатывает их только клиент, у которого совпали `conversationId`, активный чат, зарегистрированный для этого же разговора `WebReaderFrame` и актуальный `registrationId` (localStorage-claim активной вкладки) — `AppBody` в `packages/ui/src/App.tsx`, мост `window.preview` из `packages/ui/src/remote/index.ts`. Регистрацию (`ReaderHostRegistration`: conversationId, registrationId моста, `run`, `beginDiagnostics`/`endDiagnostics`) создаёт сам `WebReaderFrame` после handshake и снимает при dispose; тот же `registrationId` уходит в WS-кадр `preview.result`. Регистрация host-а служит надёжным признаком открытого Web Reader или Playwright Reader и не зависит от краткой рассинхронизации hash-маршрута; остальные вкладки сразу отвечают отказом, поэтому команды и ответы параллельных чатов не смешиваются. `open` проходит cookie-гейт в `WebReaderFrame`, затем переводит host в `loading`; после `ready` сохраняется подтверждённый конечный URL, включая redirect. Ошибка загрузки не сохраняет неподтверждённый адрес. Инъецированный `previewProxy.ts`-скрипт сообщает `voicechat.preview.page-ready.v1` после установки DOM-моста и `voicechat.preview.page-loading.v1` на `beforeunload`; recorder переводит это в `page-status`. DOM-команды, пришедшие сразу после `open` или перехода по клику, host (мост `createReaderHostBridge`) держит в очереди до `ready`, затем посылает рекордеру как `command`; рекордер пересылает их своему iframe как `voicechat.preview.action.v1` и возвращает `result` с тем же `requestId` и своими `conversationId`/`registrationId`. Каждое клиентское ожидание имеет 10-секундный таймер; результат, ошибка загрузки, закрытие панели и тайм-аут очищают запись и таймер. Диагностика различает: неоткрытую/неактивную панель; страницу, которая не стала готова за время команды; сетевую/DNS/HTTP-ошибку прокси или страницу без инъецированного моста; молчащий клиентский мост при формально открытой панели. Серверный relay отдельно ограничивает ожидание 20 секундами, удаляет pending-запрос и сообщает именно об отсутствии ответа клиентского моста. Поиск по тексту выбирает глубочайшее совпадение и поднимается до кликабельного предка, `type` ставит значение нативным сеттером с событиями `input`/`change`, `read` не отдаёт значения парольных полей, ссылки возвращаются без прокси-обёртки `/api/preview`.
 
@@ -4598,3 +4716,33 @@ items: otherwise a tall mobile profile collapses the tab row to its 1 px
 border. Routed tabs use `Tabs` horizontal `scrollTo`, which keeps the active tab
 visible without moving the page vertically. The account page was checked at
 1440, 768, 390, and 320 px with no document or panel overflow.
+
+## Маршрутные чтения и сессионный кэш
+
+Защищённые данные больше не входят в единый bootstrap: активный маршрут или
+вкладка запрашивает только нужные ему семейства. Поэтому холодный чат не читает
+машины, каталоги закрытых Settings и данные вкладок Account. Account всегда
+начинает с профиля; доступ и usage нужны Overview и своим вкладкам, машины —
+Overview/Machines, журнал — только Security. Каждый блок хранит собственные
+loading/error/retry, а уже показанные сводки Overview не исчезают во время
+обновления. Маршрутная оркестрация находится в
+`packages/ui/src/App.tsx`, Account — в
+`packages/ui/src/components/AccountPage.tsx` и `packages/profile-app/src`.
+
+Обёртка `packages/ui/src/clients/readResources.ts` пропускает через
+`ReadCache` только явный allowlist безопасных чтений; команды и поиски не
+кэшируются. Ключ включает семейство, канал и рекурсивно нормализованные
+аргументы (поля объектов сортируются, `undefined` отбрасывается), поэтому
+эквивалентные параметры делят запись, а project id разделяет проектные данные.
+Экземпляр привязан к `RendererApi`, то есть к пользовательской сессии; logout
+очищает его. TTL заданы по семействам в
+`packages/ui/src/lib/readCache.ts`: profile/access/settings — 60 с,
+usage/security/machines/projects — 30 с, board — 10 с, catalogs — 5 минут.
+
+Свежая запись даёт hit, конкурентные читатели одного ключа получают один
+in-flight Promise. Отписка компонента запрещает только его callback и не
+отменяет общий запрос. Инвалидация удаляет сам объект записи: завершение старого
+запроса становится `AbortError` и не может заменить новую запись или state.
+Мутации инвалидируют адресные семейства до вызова и в `finally`; realtime
+машин может сразу seed-ить список. Диагностика пишет только семейство и
+`hit|miss`, без ответа и параметров.
