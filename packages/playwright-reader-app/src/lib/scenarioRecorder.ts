@@ -17,6 +17,8 @@ export interface RecordedStep extends AutomatedQaScenarioStep {
   matches?: number
   /** Пауза перед этим шагом: длинная означает, что человек ждал страницу. */
   pauseMs?: number
+  /** Выключенный шаг виден в записи, но в сценарий и прогон не попадает. */
+  skipped?: boolean
 }
 
 /** Человеческое название шага: по тексту элемента, иначе по тегу и селектору. */
@@ -127,6 +129,29 @@ export function removeStep(steps: RecordedStep[], id: string): RecordedStep[] {
   return steps.filter((step) => step.id !== id)
 }
 
+/**
+ * Перестановка шага. Записанный вручную проход почти никогда не идеален: один
+ * шаг сделан раньше времени, другой лишний. Раньше это лечилось только записью
+ * заново — а заново это ещё десять кликов по живому сайту.
+ */
+export function moveStep(steps: RecordedStep[], id: string, direction: -1 | 1): RecordedStep[] {
+  const at = steps.findIndex((step) => step.id === id)
+  const to = at + direction
+  if (at < 0 || to < 0 || to >= steps.length) return steps
+  const next = [...steps]
+  ;[next[at], next[to]] = [next[to], next[at]]
+  return next
+}
+
+/**
+ * Выключенный шаг остаётся в записи, но в сценарий не уезжает. Удалять его
+ * жалко: он снова понадобится через минуту, а записать его заново — это опять
+ * пройти путь руками.
+ */
+export function toggleStep(steps: RecordedStep[], id: string): RecordedStep[] {
+  return steps.map((step) => (step.id === id ? { ...step, skipped: !step.skipped } : step))
+}
+
 /** Есть ли в сценарии хоть одна проверка — иначе прогон ничего не докажет. */
 export function hasAssertions(steps: RecordedStep[]): boolean {
   return steps.some((step) => Boolean(step.expectText || step.expectAbsentText))
@@ -170,7 +195,11 @@ export function recordNavigate(steps: RecordedStep[], url: string): RecordedStep
  * шага-перехода, а сам этот шаг из списка убирается: у сценария есть отдельное
  * поле `startUrl`, и дублировать его шагом — значит открывать страницу дважды.
  */
-export function toScenario(steps: RecordedStep[], currentUrl: string): AutomatedQaScenario {
+export function toScenario(recorded: RecordedStep[], currentUrl: string): AutomatedQaScenario {
+  // Выключенные шаги в сценарий не уезжают: они остаются в записи как заготовка.
+  // Отбор идёт до выбора стартового адреса — иначе выключенный первый переход
+  // всё равно задавал бы startUrl.
+  const steps = recorded.filter((step) => !step.skipped)
   const first = steps[0]
   const opensFirst = first?.action.kind === 'open' && first.action.frame === undefined
   const startUrl = opensFirst && first.action.kind === 'open' ? first.action.url : currentUrl

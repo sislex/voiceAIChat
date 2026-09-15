@@ -23,6 +23,7 @@ import type { BrowserActionOutcome, BrowserImageResult, BrowserControlCommand, B
 
 import { CI_BROWSER_ACTIONS, type CiBrowserAction } from '@voicechat/shared'
 import { z } from 'zod'
+import { isRecording, recordAction, recordExpectation, scenarioOf, startRecording, stopRecording } from './turnRecorder.js'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -177,12 +178,17 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           if (!isPreviewAccessibilityResult(result)) return toolResult({ ok: false, error: 'The runner did not return valid native accessibility evidence. Update browser-runner and retry.' })
           return toolResult({ ok: true, result })
         }
+        // Успешное действие становится шагом сценария, если идёт запись: путь
+        // модели ничем не отличается от пути человека, а на выходе у неё
+        // оставался только текст хода, из которого сценарий не восстановить.
+        if (direct?.ok) recordAction(entry.conversationId, action)
         if (direct) return toolResult(direct)
         if ((action.kind === 'console' || action.kind === 'network') && browserDiagnosticsRequireChromium(action)) return toolResult({ ok: false, error: 'Вкладки, курсор и расширенные фильтры журналов доступны только в Playwright Reader или Chromium-проверке.' })
         if (action.kind === 'evaluate' && action.timeoutMs !== undefined) return toolResult({ ok: false, error: 'timeoutMs evaluate доступен только в Playwright Reader или Chromium-проверке.' })
         if (action.kind === 'accessibility') return toolResult({ ok: false, error: 'Native accessibility requires Chromium mode. Switch the Web Reader engine to Chromium.' })
         if (action.frame !== undefined) return toolResult({ ok: false, error: 'frame доступен только в Playwright Reader или Chromium-проверке.' })
         const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
+        if (outcome.ok) recordAction(entry.conversationId, action)
         if (outcome.ok && action.kind === 'probe' && !validProbeReport(outcome.result, 'proxy')) return toolResult({ ok: false, error: 'The proxy page did not return a valid control probe. Reload the Web Reader page and retry.' })
         return toolResult(outcome)
       }
@@ -345,10 +351,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       }, async ({ frame, text, in: trigger, near, waitFor }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}), ...(waitFor ? { waitFor } : {}) }))
 
       server.registerTool('report', {
-        description: 'Отчёт о сеансе панели: где были (history), какие проверки check прошли и упали (с итогами и адресами), сколько действий выполнено, последнее действие. Используй в конце проверки задачи для отчёта человеку.',
+        description: 'Отчёт о сеансе панели: где были (history), какие проверки check прошли и упали (с итогами и адресами), сколько действий выполнено, последнее действие, закладки, вопросы человеку и заметки. ' +
+          'readable: true отдаёт готовый человеческий текст отчёта с длительностью сеанса — его можно показать пользователю как есть. Используй в конце проверки задачи.',
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-        inputSchema: {}
-      }, async () => run({ kind: 'report' }))
+        inputSchema: { readable: z.boolean().optional().describe('Вернуть готовый текст отчёта в поле text') }
+      }, async ({ readable }) => run({ kind: 'report', ...(readable ? { readable: true } : {}) }))
 
       server.registerTool('changes', {
         description: 'Что изменилось на странице с прошлого read, changes или действия: появившиеся и исчезнувшие видимые тексты. Первый вызов запоминает состояние (baseline). Так человек замечает, что произошло после клика.',
@@ -387,6 +394,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         annotations: { destructiveHint: false, idempotentHint: true },
         inputSchema: { frame: frameSchema, what: z.enum(['cookies', 'dialog', 'any']).optional().describe('Что убрать: баннер cookie, окно или любое из них (по умолчанию any)') }
       }, async ({ frame, what }) => run({ kind: 'dismiss', ...(frame !== undefined ? { frame } : {}), ...(what ? { what } : {}) }))
+
+      server.registerTool('note', {
+        description: 'Оставить пользователю заметку в панели: «нашёл дешевле на другой странице», «форма падает без индекса». ' +
+          'Заметку он видит сразу рядом со страницей, и она попадает в report.notes — это способ сказать что-то, не прерывая работу.',
+        annotations: { destructiveHint: false },
+        inputSchema: { text: z.string().min(1).max(500).describe('Текст заметки для человека') }
+      }, async ({ text }) => run({ kind: 'note', text }))
 
       server.registerTool('ask-user', {
         description: 'Спросить пользователя прямо в панели и дождаться его ответа: выбор за человеком (размер, адрес, какой из похожих пунктов). ' +
@@ -582,6 +596,100 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'hotkey',
+        {
+          description:
+            'Сочетание клавиш, как его нажимает человек: primary+a выделить всё, primary+c копировать, ' +
+            'shift+Tab назад по фокусу, primary+Enter отправить форму. ' +
+            'primary — основной модификатор системы раннера: бери именно его для правки и выделения, ' +
+            'иначе на macOS ctrl+a уводит курсор в начало строки вместо выделения. ' +
+            'Без selector уходит в активный элемент.',
+          inputSchema: { frame: frameSchema,
+            key: z.string().min(1).max(32).describe('Клавиша без модификаторов (a, c, Enter, Tab, ArrowDown)'),
+            modifiers: z.array(z.enum(['primary', 'shift', 'ctrl', 'alt', 'meta'])).min(1).max(4).describe('Модификаторы; primary — Ctrl на Linux/Windows и Cmd на macOS'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя'),
+            repeat: z.number().int().min(1).max(50).optional().describe('Сколько раз нажать подряд')
+          }
+        },
+        async ({ frame, key, modifiers, selector, repeat }) => run({ kind: 'hotkey', ...(frame !== undefined ? { frame } : {}), key, modifiers, ...(selector ? { selector } : {}), ...(repeat !== undefined ? { repeat } : {}) })
+      )
+
+      server.registerTool(
+        'focused',
+        {
+          description:
+            'Что сейчас в фокусе: селектор, тег, роль, имя, значение поля, нарисовано ли кольцо фокуса ' +
+            'и находится ли элемент внутри открытого диалога. Фокус не двигает — зови после press Tab, ' +
+            'чтобы понять, куда попал, и заметить ловушку фокуса в модальном окне.',
+          inputSchema: { frame: frameSchema }
+        },
+        async ({ frame }) => run({ kind: 'focusState', ...(frame !== undefined ? { frame } : {}) })
+      )
+
+      server.registerTool(
+        'focus-order',
+        {
+          description:
+            'Порядок обхода по Tab: элементы в том порядке, в каком их получит клавиатура ' +
+            '(положительный tabindex идёт первым, остальные — по DOM). Для каждого — селектор, имя, роль, ' +
+            'tabIndex и видимость. Так видно недостижимые кнопки и вырванные из потока элементы, не нажимая Tab по разу.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
+            limit: z.number().int().min(1).max(200).optional().describe('Максимум элементов (по умолчанию 50)')
+          }
+        },
+        async ({ frame, selector, limit }) => run({ kind: 'focusOrder', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'clear',
+        {
+          description:
+            'Очистить поле ввода так же, как это делает человек (Ctrl+A → Delete): значение стирается, ' +
+            'события input/change уходят странице. type с пустым текстом этого не даёт.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).describe('CSS-селектор поля') }
+        },
+        async ({ frame, selector }) => run({ kind: 'clear', ...(frame !== undefined ? { frame } : {}), selector })
+      )
+
+      server.registerTool(
+        'select-text',
+        {
+          description:
+            'Выделить текст элемента (или всей страницы без selector) — то же, что протащить курсор по тексту. ' +
+            'Возвращает выделенное. Дальше его можно скопировать (copy) или заменить вводом.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента') }
+        },
+        async ({ frame, selector }) => run({ kind: 'selectText', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}) })
+      )
+
+      server.registerTool(
+        'copy',
+        {
+          description:
+            'Прочитать текущее выделение страницы — то, что попало бы в буфер обмена по Ctrl+C. ' +
+            'Работает и для выделения внутри поля ввода. Не меняет страницу.',
+          inputSchema: { frame: frameSchema }
+        },
+        async ({ frame }) => run({ kind: 'copy', ...(frame !== undefined ? { frame } : {}) })
+      )
+
+      server.registerTool(
+        'paste',
+        {
+          description:
+            'Вставить текст в поле так, как это делает Ctrl+V: странице уходит событие paste с clipboardData, ' +
+            'и редакторы, которые читают именно его (а обычный ввод игнорируют), ведут себя как у человека. ' +
+            'Без selector вставляет в элемент в фокусе.',
+          inputSchema: { frame: frameSchema,
+            text: z.string().max(L.text).describe('Вставляемый текст'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор поля (по умолчанию — элемент в фокусе)')
+          }
+        },
+        async ({ frame, text, selector }) => run({ kind: 'paste', ...(frame !== undefined ? { frame } : {}), text, ...(selector ? { selector } : {}) })
+      )
+
+      server.registerTool(
         'screenshot',
         {
           description:
@@ -665,6 +773,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             count: z.number().int().min(0).max(100000).optional().describe('Число совпадений селектора, включая скрытые'),
             url: z.string().max(L.url).optional().describe('Публичный URL или шаблон с *'),
             loadState: z.enum(['domcontentloaded', 'load']).optional().describe('Готовность DOM или завершение загрузки документа'),
+            network: z.literal('idle').optional().describe('Сетевая тишина: данные догрузились, а не только разметка — то, чего человек ждёт, глядя на спиннер'),
+            stable: z.boolean().optional().describe('Элемент перестал двигаться: у меню и модальных окон анимация идёт после появления в DOM, и клик по едущему элементу промахивается'),
             predicate: z.string().max(L.evaluateCode).optional().describe('Синхронное JS-выражение или функция без аргументов, дающая truthy'),
             idle: z.boolean().optional().describe('Дождаться затишья сети страницы (нет fetch/XHR ~500 мс)'),
             changed: z.boolean().optional().describe('Дождаться любого изменения видимого текста страницы'),
@@ -791,15 +901,117 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).describe('CSS-селектор контрола'),
             value: z.string().max(L.text).optional().describe('Значение (для select — value или подпись option)'),
+            values: z.array(z.string().max(L.text)).min(1).max(64).optional().describe('Несколько значений для select multiple: по одному они затирают друг друга'),
             checked: z.boolean().optional().describe('Для checkbox/radio')
           }
         },
-        async ({ frame, selector, value, checked }) => {
-          if (value === undefined && checked === undefined) {
-            return { content: [{ type: 'text', text: 'Укажи value или checked.' }], isError: true }
+        async ({ frame, selector, value, values, checked }) => {
+          if (value === undefined && values === undefined && checked === undefined) {
+            return { content: [{ type: 'text', text: 'Укажи value, values или checked.' }], isError: true }
           }
-          return run({ kind: 'set', ...(frame !== undefined ? { frame } : {}), selector, ...(value !== undefined ? { value } : {}), ...(checked !== undefined ? { checked } : {}) })
+          return run({ kind: 'set', ...(frame !== undefined ? { frame } : {}), selector, ...(value !== undefined ? { value } : {}), ...(values !== undefined ? { values } : {}), ...(checked !== undefined ? { checked } : {}) })
         }
+      )
+
+      const formFieldSchema = z.object({
+        selector: z.string().max(L.selector).describe('CSS-селектор поля'),
+        value: z.string().max(L.text).optional().describe('Значение поля или подпись option'),
+        values: z.array(z.string().max(L.text)).min(1).max(64).optional().describe('Несколько значений для select multiple'),
+        checked: z.boolean().optional().describe('Для checkbox/radio')
+      })
+
+      server.registerTool(
+        'fill-form',
+        {
+          description:
+            'Заполнить форму целиком за один вызов: список полей со значениями, подписями option или checked. ' +
+            'Так же, как это делает человек — одним действием. Поле за вызовом теряется на формах, которые ' +
+            'перерисовываются между обращениями (управляемые поля React). ' +
+            'Ответ перечисляет результат по каждому полю; частично заполненная форма считается неуспехом. ' +
+            'delay — посимвольный ввод для полей с автодополнением.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор формы (по умолчанию первая форма страницы)'),
+            fields: z.array(formFieldSchema).min(1).max(50).describe('Поля формы по порядку заполнения'),
+            delay: z.number().min(0).max(200).optional().describe('Пауза между символами в мс')
+          }
+        },
+        async ({ frame, selector, fields, delay }) => run({
+          kind: 'fillForm', ...(frame !== undefined ? { frame } : {}),
+          ...(selector ? { selector } : {}), fields,
+          ...(delay !== undefined ? { delay } : {})
+        })
+      )
+
+      server.registerTool(
+        'form-state',
+        {
+          description:
+            'Что сейчас в форме: поля, значения, подписи, обязательность, блокировка и сообщение проверки браузера. ' +
+            'Так проверяется результат заполнения до отправки. Значение поля пароля не возвращается.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор формы (по умолчанию первая форма страницы)'),
+            limit: z.number().int().min(1).max(200).optional().describe('Максимум полей (по умолчанию 50)')
+          }
+        },
+        async ({ frame, selector, limit }) => run({ kind: 'formState', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'validity',
+        {
+          description:
+            'Почему браузер не отправит форму: поля, не прошедшие проверку, их сообщения и причины ' +
+            '(valueMissing, patternMismatch, rangeOverflow…). Спрашивай до submit — иначе причина отказа ' +
+            'видна только по тому, что страница решила нарисовать.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).optional().describe('CSS-селектор формы или одного поля') }
+        },
+        async ({ frame, selector }) => run({ kind: 'validity', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}) })
+      )
+
+      server.registerTool(
+        'submit',
+        {
+          description:
+            'Отправить форму так же, как это делает Enter: сначала проверка браузера (и её сообщение), ' +
+            'затем обработчик submit страницы. Отличается от клика по кнопке тем, что не зависит от того, ' +
+            'какой именно элемент страница считает кнопкой отправки.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).optional().describe('CSS-селектор формы или поля внутри неё') }
+        },
+        async ({ frame, selector }) => run({ kind: 'submit', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}) })
+      )
+
+      server.registerTool(
+        'options',
+        {
+          description:
+            'Варианты, которые предлагает контрол: option у select (с выбранными и выключенными), ' +
+            'подсказки datalist у поля ввода, кнопки группы radio. Без этого модель угадывала подписи ' +
+            'и получала отказ set по несуществующему значению.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор контрола'),
+            limit: z.number().int().min(1).max(500).optional().describe('Максимум вариантов (по умолчанию 100)')
+          }
+        },
+        async ({ frame, selector, limit }) => run({ kind: 'options', ...(frame !== undefined ? { frame } : {}), selector, ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'drop-file',
+        {
+          description:
+            'Перетащить файлы в зону загрузки: странице уходит настоящее событие drop с DataTransfer. ' +
+            'Половина загрузчиков в вебе не имеет input[type=file] вовсе и слушает именно drop — ' +
+            'туда upload не доходит. До 16 файлов, вместе до 8 МиБ.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор зоны перетаскивания'),
+            files: z.array(z.object({
+              name: z.string().min(1).max(255).describe('Имя файла'),
+              base64: z.string().max(L.uploadBase64).describe('Содержимое в base64'),
+              mimeType: z.string().max(100).optional().describe('MIME-тип')
+            })).min(1).max(16).describe('Файлы')
+          }
+        },
+        async ({ frame, selector, files }) => run({ kind: 'dropFile', ...(frame !== undefined ? { frame } : {}), selector, files })
       )
 
       server.registerTool(
@@ -807,15 +1019,30 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Загрузить файл в input type=file открытой в превью страницы: содержимое передаётся base64 (до 8 МиБ). ' +
-            'Диспатчит input/change как при выборе файла пользователем.',
+            'Диспатчит input/change как при выборе файла пользователем. ' +
+            'files — несколько файлов сразу в поле с multiple; для зоны перетаскивания без input есть drop-file.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).describe('CSS-селектор input type=file'),
-            name: z.string().min(1).max(255).describe('Имя файла (например report.csv)'),
-            base64: z.string().max(L.uploadBase64).describe('Содержимое файла в base64; пустая строка — файл нулевой длины'),
-            mimeType: z.string().max(100).optional().describe('MIME-тип (по умолчанию application/octet-stream)')
+            name: z.string().min(1).max(255).optional().describe('Имя файла (например report.csv)'),
+            base64: z.string().max(L.uploadBase64).optional().describe('Содержимое файла в base64; пустая строка — файл нулевой длины'),
+            mimeType: z.string().max(100).optional().describe('MIME-тип (по умолчанию application/octet-stream)'),
+            files: z.array(z.object({
+              name: z.string().min(1).max(255),
+              base64: z.string().max(L.uploadBase64),
+              mimeType: z.string().max(100).optional()
+            })).min(1).max(16).optional().describe('Несколько файлов для поля с multiple')
           }
         },
-        async ({ frame, selector, name, base64, mimeType }) => run({ kind: 'upload', ...(frame !== undefined ? { frame } : {}), selector, name, base64, ...(mimeType ? { mimeType } : {}) })
+        async ({ frame, selector, name, base64, mimeType, files }) => {
+          if (!files && (name === undefined || base64 === undefined)) {
+            return { content: [{ type: 'text', text: 'Укажи name и base64 либо массив files.' }], isError: true }
+          }
+          return run({
+            kind: 'upload', ...(frame !== undefined ? { frame } : {}), selector,
+            name: name ?? files![0].name, base64: base64 ?? files![0].base64,
+            ...(mimeType ? { mimeType } : {}), ...(files ? { files } : {})
+          })
+        }
       )
 
       server.registerTool(
@@ -918,6 +1145,616 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           }
           return { content: [{ type: 'text', text: JSON.stringify(users) }] }
         }
+      )
+
+      server.registerTool(
+        'session-info',
+        {
+          description:
+            'Состояние самой сессии: сколько она живёт, сколько вкладок и действий, ' +
+            'что сейчас эмулируется (устройство, тема, сеть) и сколько правил сети активно. ' +
+            'Сессия живёт долго и незаметно копит настройки: вернувшись к разговору через час, ' +
+            'легко принять подменённый ответ или тёмную тему за дефект сайта. Спроси это первым делом.',
+          inputSchema: {}
+        },
+        async () => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'session-info' })
+          return toolResult(result ?? { ok: false, error: 'Состояние сессии доступно только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'find-tab',
+        {
+          description:
+            'Переключиться на вкладку по части её заголовка или адреса — так, как её называет человек ' +
+            '(«та, где корзина»), а не по идентификатору из tabs.',
+          inputSchema: { match: z.string().min(1).max(200).describe('Часть заголовка или адреса') }
+        },
+        async ({ match }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'tabs-do', do: 'find', match })
+          return toolResult(result ?? { ok: false, error: 'Вкладки доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'wait-new-tab',
+        {
+          description:
+            'Дождаться вкладки, которую откроет страница (ссылка target=_blank, кнопка «открыть в новой»), ' +
+            'и переключиться на неё. Без этого приходилось опрашивать tabs в цикле и тратить на это ход. ' +
+            'Зови сразу после действия, которое открывает вкладку.',
+          inputSchema: { timeoutMs: z.number().int().min(500).max(60_000).optional().describe('Сколько ждать (по умолчанию 10000)') }
+        },
+        async ({ timeoutMs }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'tabs-do', do: 'wait-new', ...(timeoutMs !== undefined ? { timeoutMs } : {}) })
+          return toolResult(result ?? { ok: false, error: 'Вкладки доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'close-other-tabs',
+        {
+          description:
+            'Закрыть все вкладки, кроме текущей — один пункт меню у человека. ' +
+            'Полезно после проверки, которая наоткрывала попапов: список вкладок перестаёт путать.',
+          inputSchema: {}
+        },
+        async () => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'tabs-do', do: 'close-others' })
+          return toolResult(result ?? { ok: false, error: 'Вкладки доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'check-report',
+        {
+          description:
+            'Собрать отчёт о проверке для задачи: что проверялось (твои note), что не получилось, на что жаловалась ' +
+            'страница, снимки состояния и последние шаги — готовым markdown для комментария в задаче. ' +
+            'Итог «всё работает» человеку в канбане не говорит ни что проверялось, ни где проверка споткнулась; ' +
+            'всё нужное уже лежит в сессии, отчёт просто собирает это в один текст.',
+          inputSchema: {
+            title: z.string().max(200).optional().describe('Заголовок отчёта: что за задача или сценарий'),
+            limit: z.number().int().min(500).max(32_000).optional().describe('Потолок длины (по умолчанию 8000)')
+          }
+        },
+        async ({ title, limit }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'report', ...(title ? { title } : {}), ...(limit !== undefined ? { limit } : {}) })
+          return toolResult(result ?? { ok: false, error: 'Отчёт доступен только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'snapshot',
+        {
+          description:
+            'Именованный снимок состояния и сравнение с текущей страницей. ' +
+            '«Не сломалась ли вёрстка после правки» человек проверяет глазами: смотрит до, смотрит после. ' +
+            'Сделай snapshot save с именем до изменения, затем snapshot compare с тем же именем — ответ ' +
+            'скажет вердикт (identical, visual, dom-only, resized), долю различающихся пикселей, ' +
+            'прямоугольник, в который они уместились («всё в шапке» — это диагноз, а «12%» — нет), ' +
+            'и что появилось или исчезло в тексте. dom-only значит «пиксели те же, а текст другой» — ' +
+            'почти всегда это изменение ниже сгиба: повтори со снимком fullPage. ' +
+            'Снимки живут в памяти сессии, их держится не больше десяти.',
+          inputSchema: {
+            do: z.enum(['save', 'list', 'compare', 'remove']).describe('Что сделать'),
+            name: z.string().max(120).optional().describe('Имя снимка (нужно для save, compare и точечного remove)'),
+            threshold: z.number().int().min(0).max(64).optional().describe('Порог различия канала: сжатие шевелит пиксели на пару единиц (по умолчанию 8)'),
+            fullPage: z.boolean().optional().describe('Снять всю страницу, а не видимую часть: на длинной странице сравнение иначе смотрит только первый экран')
+          }
+        },
+        async ({ do: operation, name, threshold, fullPage }) => {
+          if (!entry) return noContext
+          if ((operation === 'save' || operation === 'compare') && !name) {
+            return { content: [{ type: 'text', text: `Для ${operation} нужно имя снимка.` }], isError: true }
+          }
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'snapshot', do: operation, ...(name ? { name } : {}), ...(threshold !== undefined ? { threshold } : {}), ...(fullPage !== undefined ? { fullPage } : {}) })
+          return toolResult(result ?? { ok: false, error: 'Снимки состояния доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'network-rules',
+        {
+          description:
+            'Правила сети: подменить ответ (mock), заблокировать запрос (block) или задержать его (delay). ' +
+            'То, что человек делает в devtools за минуту: «а если этот запрос вернёт 500», «а как выглядит ' +
+            'страница без аналитики», «а если сеть медленная». Пустая корзина, ошибка сервера и подвисший ' +
+            'ответ — половина состояний интерфейса, и раньше они были недостижимы. ' +
+            'url — шаблон с *; do: add ставит правило, remove снимает (без url — все), list показывает текущие. ' +
+            'Не забудь снять правила после проверки: они живут до конца сессии.',
+          inputSchema: {
+            do: z.enum(['add', 'remove', 'list']).describe('Что сделать'),
+            url: z.string().max(L.url).optional().describe('Шаблон адреса (для add и remove)'),
+            action: z.enum(['mock', 'block', 'delay']).optional().describe('Что делать с запросом (для add)'),
+            status: z.number().int().min(100).max(599).optional().describe('Код ответа подмены'),
+            body: z.string().max(256 * 1024).optional().describe('Тело подменного ответа'),
+            contentType: z.string().max(200).optional().describe('Content-Type подмены (по умолчанию JSON)'),
+            delayMs: z.number().int().min(0).max(60_000).optional().describe('Задержка перед ответом')
+          }
+        },
+        async ({ do: operation, url, action, status, body, contentType, delayMs }) => {
+          if (!entry) return noContext
+          if (operation === 'add' && (!url || !action)) return { content: [{ type: 'text', text: 'Для add нужны url и action.' }], isError: true }
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, {
+            type: 'network-rules', do: operation,
+            ...(url ? { url } : {}),
+            ...(operation === 'add' ? { rule: { url: url!, action: action!, ...(status !== undefined ? { status } : {}), ...(body !== undefined ? { body } : {}), ...(contentType ? { contentType } : {}), ...(delayMs !== undefined ? { delayMs } : {}) } } : {})
+          })
+          return toolResult(result ?? { ok: false, error: 'Правила сети доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'ask',
+        {
+          description:
+            'Попросить человека сделать что-то в браузере и дождаться ответа: код из СМС, капча, ' +
+            'вход паролем из менеджера, подтверждение в приложении банка. Это места, где действовать ' +
+            'самой нельзя и не нужно. Просьба появляется прямо в панели — там же, где экран, которого ' +
+            'она касается, — и вызов возвращается, когда человек нажал «Сделал» или отказался. ' +
+            'Пиши, что именно сделать и зачем; по таймауту вернётся timedOut.',
+          inputSchema: {
+            text: z.string().min(1).max(500).describe('Что нужно сделать человеку'),
+            timeoutMs: z.number().int().min(5_000).max(600_000).optional().describe('Сколько ждать ответа (по умолчанию 120000)')
+          }
+        },
+        async ({ text, timeoutMs }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'ask', text, ...(timeoutMs !== undefined ? { timeoutMs } : {}) })
+          return toolResult(result ?? { ok: false, error: 'Просьбы к человеку доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'device',
+        {
+          description:
+            'Эмулировать устройство целиком, а не только ширину окна: тач, плотность пикселей, ' +
+            'ориентация и user agent. «Телефон» одной шириной означает, что maxTouchPoints остаётся нулём, ' +
+            'pointer: coarse не срабатывает, а devicePixelRatio равен единице — именно на этом ломаются ' +
+            'карусели, меню «по наведению» и всё, что отличает палец от мыши. ' +
+            'Пресеты: phone, phone-android, tablet, desktop.',
+          inputSchema: {
+            preset: z.enum(['phone', 'phone-android', 'tablet', 'desktop']).optional().describe('Готовое устройство'),
+            width: z.number().int().min(320).max(3840).optional().describe('Ширина, если нужна своя'),
+            height: z.number().int().min(240).max(2160).optional().describe('Высота'),
+            deviceScaleFactor: z.number().min(1).max(4).optional().describe('Плотность пикселей'),
+            touch: z.boolean().optional().describe('Эмулировать тач-экран'),
+            orientation: z.enum(['portrait', 'landscape']).optional().describe('Ориентация'),
+            userAgent: z.string().max(400).optional().describe('Свой user agent')
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'device', ...options })
+          return toolResult(result ?? { ok: false, error: 'Эмуляция устройства доступна только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'touch',
+        {
+          description:
+            'Жест пальцем: tap, swipe (direction и distance) или long-press. Мышиный клик и тап — разные ' +
+            'события, и страницы вешают на них разные обработчики: «работает мышью» ничего не говорит о телефоне. ' +
+            'Свайп идёт шагами, иначе «свайп для удаления» считает перенос пальца сбоем. ' +
+            'Включи сначала device с touch, иначе страница не примет касание.',
+          inputSchema: {
+            gesture: z.enum(['tap', 'swipe', 'long-press']).describe('Что сделать пальцем'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор цели'),
+            x: z.number().min(0).max(10_000).optional().describe('Координата X, если цель не селектор'),
+            y: z.number().min(0).max(10_000).optional().describe('Координата Y'),
+            direction: z.enum(['up', 'down', 'left', 'right']).optional().describe('Направление свайпа'),
+            distance: z.number().min(10).max(4_000).optional().describe('Длина свайпа в пикселях'),
+            ms: z.number().min(100).max(5_000).optional().describe('Длительность долгого нажатия')
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          if (!options.selector && (options.x === undefined || options.y === undefined)) {
+            return { content: [{ type: 'text', text: 'Укажи selector или обе координаты x/y.' }], isError: true }
+          }
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'touch', ...options })
+          return toolResult(result ?? { ok: false, error: 'Жесты доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'record',
+        {
+          description:
+            'Запись сценария из твоих же действий: start начинает, stop заканчивает, status показывает ход. ' +
+            'Человек в панели записывает свой проход и получает воспроизводимые шаги — у модели этого не было, ' +
+            'хотя проходит путь чаще всего она, в задаче канбана, где потом нужен автотест. ' +
+            'Читающие действия (read, find, screenshot) в запись не идут — прогонять их нечего.',
+          inputSchema: {
+            do: z.enum(['start', 'stop', 'status']).describe('Что сделать'),
+            name: z.string().max(120).optional().describe('Имя сценария (при start)'),
+            startUrl: z.string().max(L.url).optional().describe('Стартовый адрес; по умолчанию — адрес открытой страницы')
+          }
+        },
+        async ({ do: operation, name, startUrl }) => {
+          if (!entry) return noContext
+          if (operation === 'start') {
+            startRecording(entry.conversationId, startUrl ?? '', name)
+            return toolResult({ ok: true, result: { recording: true, steps: 0 } as never })
+          }
+          if (operation === 'stop') {
+            const scenario = scenarioOf(entry.conversationId)
+            stopRecording(entry.conversationId)
+            return toolResult({ ok: true, result: (scenario ?? { recording: false }) as never })
+          }
+          const scenario = scenarioOf(entry.conversationId)
+          return toolResult({ ok: true, result: { recording: isRecording(entry.conversationId), ...(scenario ? { steps: scenario.steps.length, scenario } : {}) } as never })
+        }
+      )
+
+      server.registerTool(
+        'replay',
+        {
+          description:
+            'Прогнать сценарий по шагам: записанный (record) или переданный целиком. ' +
+            'После каждого шага проверяется его ожидаемый текст. Отчёт говорит, какой шаг упал и почему — ' +
+            'это и есть автотест, который остаётся после проверки задачи. ' +
+            'Прогон останавливается на первом упавшем шаге: дальше страница уже не та.',
+          inputSchema: {
+            scenario: z.object({
+              name: z.string().max(120).optional(),
+              startUrl: z.string().max(L.url),
+              steps: z.array(z.object({
+                id: z.string().max(64),
+                title: z.string().max(200),
+                action: z.record(z.string(), z.unknown()),
+                expectText: z.string().max(L.text).optional(),
+                expectAbsentText: z.string().max(L.text).optional()
+              })).min(1).max(100)
+            }).optional().describe('Сценарий целиком; без него берётся записанный в этом разговоре'),
+            expectTimeoutMs: z.number().int().min(100).max(30_000).optional().describe('Сколько ждать ожидаемый текст после шага')
+          }
+        },
+        async ({ scenario, expectTimeoutMs }) => {
+          if (!entry) return noContext
+          const plan = scenario ?? scenarioOf(entry.conversationId)
+          if (!plan || !plan.steps.length) return toolResult({ ok: false, error: 'Нечего прогонять: сценарий пуст. Включи запись (record start) или передай scenario.' })
+          const send = async (action: PreviewAction): Promise<{ ok: boolean; error?: string }> => {
+            const direct = await opts.browserExecutor?.(entry.userId, entry.conversationId, action)
+            if (direct) return { ok: direct.ok, ...(direct.error ? { error: direct.error } : {}) }
+            const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
+            return { ok: outcome.ok, ...(outcome.error ? { error: outcome.error } : {}) }
+          }
+          const report: Array<{ id: string; title: string; ok: boolean; detail?: string }> = []
+          if (plan.startUrl) {
+            const opened = await send({ kind: 'open', url: plan.startUrl })
+            if (!opened.ok) return toolResult({ ok: false, error: `Стартовый адрес не открылся: ${opened.error ?? 'отказ'}` })
+          }
+          for (const step of plan.steps) {
+            if (!isPreviewAction(step.action)) { report.push({ id: step.id, title: step.title, ok: false, detail: 'Шаг содержит неизвестное действие' }); break }
+            const outcome = await send(step.action as PreviewAction)
+            if (!outcome.ok) { report.push({ id: step.id, title: step.title, ok: false, detail: outcome.error ?? 'Действие не выполнено' }); break }
+            // Проверка живёт на шаге: «нажал — увидел» это одно событие, и ждать
+            // текст нужно сразу после действия, а не перед следующим.
+            if (step.expectText) {
+              const waited = await send({ kind: 'wait', text: step.expectText, ...(expectTimeoutMs ? { timeoutMs: expectTimeoutMs } : {}) })
+              if (!waited.ok) { report.push({ id: step.id, title: step.title, ok: false, detail: `Не дождались текста «${step.expectText}»` }); break }
+            }
+            if (step.expectAbsentText) {
+              const hidden = await send({ kind: 'wait', text: step.expectAbsentText, state: 'hidden', ...(expectTimeoutMs ? { timeoutMs: expectTimeoutMs } : {}) })
+              if (!hidden.ok) { report.push({ id: step.id, title: step.title, ok: false, detail: `На странице остался текст «${step.expectAbsentText}»` }); break }
+            }
+            report.push({ id: step.id, title: step.title, ok: true })
+          }
+          const failed = report.find((item) => !item.ok)
+          return toolResult({
+            ok: !failed,
+            ...(failed ? { error: `Шаг «${failed.title}»: ${failed.detail ?? 'не выполнен'}` } : {}),
+            result: { passed: !failed, steps: report, total: plan.steps.length } as never
+          })
+        }
+      )
+
+      server.registerTool(
+        'record-check',
+        {
+          description:
+            'Прикрепить проверку к последнему записанному шагу: после него текст обязан быть на странице ' +
+            '(или обязан отсутствовать — absent). В сценарии «нажал — увидел» это одно событие, ' +
+            'поэтому проверка живёт на шаге, а не становится отдельным. ' +
+            'Сценарий без единой проверки проходит, даже если страница сломана.',
+          inputSchema: {
+            text: z.string().min(1).max(L.text).describe('Ожидаемый текст'),
+            absent: z.boolean().optional().describe('true — текста быть не должно')
+          }
+        },
+        async ({ text, absent }) => {
+          if (!entry) return noContext
+          const attached = recordExpectation(entry.conversationId, text, absent === true)
+          return toolResult(attached
+            ? { ok: true, result: { attached: true } as never }
+            : { ok: false, error: 'Нет записанного шага: включи запись (record start) и сделай действие.' })
+        }
+      )
+
+      server.registerTool(
+        'storage',
+        {
+          description:
+            'Хранилище сайта (localStorage и sessionStorage): что страница держит между перезагрузками. ' +
+            'Здесь живёт половина дефектов «у меня работает» — устаревший флаг, недописанный черновик, ' +
+            'включённая фича. do: read (по умолчанию), set, remove, clear. Значения длиннее 500 символов ' +
+            'возвращаются обрезанными, но с полным размером в bytes. ' +
+            'В отличие от evaluate, этот инструмент не считается выполнением произвольного кода.',
+          inputSchema: { frame: frameSchema,
+            area: z.enum(['local', 'session', 'both']).optional().describe('Какое хранилище (по умолчанию оба)'),
+            do: z.enum(['read', 'set', 'remove', 'clear']).optional().describe('Что сделать'),
+            key: z.string().max(400).optional().describe('Ключ (обязателен для set и remove; для read фильтрует)'),
+            value: z.string().max(100_000).optional().describe('Значение для set'),
+            limit: z.number().int().min(1).max(200).optional().describe('Сколько ключей вернуть (по умолчанию 50)')
+          }
+        },
+        async ({ frame, area, do: operation, key, value, limit }) => {
+          if (operation === 'set' && (key === undefined || value === undefined)) return { content: [{ type: 'text', text: 'Для set нужны key и value.' }], isError: true }
+          if (operation === 'remove' && key === undefined) return { content: [{ type: 'text', text: 'Для remove нужен key.' }], isError: true }
+          return run({ kind: 'storage', ...(frame !== undefined ? { frame } : {}), ...(area ? { area } : {}), ...(operation ? { do: operation } : {}), ...(key !== undefined ? { key } : {}), ...(value !== undefined ? { value } : {}), ...(limit !== undefined ? { limit } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'source',
+        {
+          description:
+            'Исходная разметка страницы или элемента порциями (offset/limit, nextOffset). ' +
+            'Нужна там, где текст не отвечает на вопрос: атрибуты, скрытые поля, data-* и порядок узлов. ' +
+            'read даёт содержимое глазами человека, source — то, что на самом деле в документе.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента (без него — весь документ)'),
+            offset: z.number().int().min(0).optional().describe('Смещение в символах'),
+            limit: z.number().int().min(100).max(20_000).optional().describe('Размер порции (по умолчанию 4000)')
+          }
+        },
+        async ({ frame, selector, offset, limit }) => run({ kind: 'source', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'csv',
+        {
+          description:
+            'Таблица целиком в CSV: форма, которую человек вставляет в таблицу или в комментарий задачи. ' +
+            'Кавычки и переводы строк экранируются. table отвечает «что в третьей строке», csv — «дай всё».',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор таблицы'),
+            offset: z.number().int().min(0).optional().describe('С какой строки'),
+            limit: z.number().int().min(1).max(500).optional().describe('Сколько строк (по умолчанию 100)')
+          }
+        },
+        async ({ frame, selector, offset, limit }) => run({ kind: 'csv', ...(frame !== undefined ? { frame } : {}), selector, ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'expect',
+        {
+          description:
+            'Несколько проверок страницы разом, одним вердиктом: есть ли текст, виден ли элемент, ' +
+            'сколько их, что в поле, какой адрес. Человек описывает экран одним предложением — ' +
+            '«итого 500, ошибки нет, три строки»; здесь то же самое, и ответ говорит, ' +
+            'что именно не сошлось и что на странице вместо этого.',
+          inputSchema: { frame: frameSchema,
+            checks: z.array(z.union([
+              z.object({ is: z.literal('text'), value: z.string().max(L.text), selector: z.string().max(L.selector).optional(), absent: z.boolean().optional() }),
+              z.object({ is: z.literal('visible'), selector: z.string().max(L.selector), absent: z.boolean().optional() }),
+              z.object({ is: z.literal('count'), selector: z.string().max(L.selector), value: z.number().int().min(0).max(100_000) }),
+              z.object({ is: z.literal('value'), selector: z.string().max(L.selector), value: z.string().max(L.text) }),
+              z.object({ is: z.literal('url'), value: z.string().max(L.url) })
+            ])).min(1).max(20).describe('Проверки; все должны сойтись')
+          }
+        },
+        async ({ frame, checks }) => run({ kind: 'expect', ...(frame !== undefined ? { frame } : {}), checks: checks as never })
+      )
+
+      server.registerTool(
+        'history',
+        {
+          description:
+            'Что происходило в этой браузерной сессии: действия человека и модели в порядке событий, ' +
+            'с итогом каждого. Полезно после передачи управления («что человек успел сделать»), ' +
+            'при разборе своей же ошибки и для отчёта в задаче. clear очищает ленту.',
+          inputSchema: {
+            actor: z.enum(['user', 'assistant']).optional().describe('Только человек или только модель'),
+            limit: z.number().int().min(1).max(200).optional().describe('Сколько последних записей (по умолчанию 30)'),
+            clear: z.boolean().optional().describe('Очистить ленту')
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'history', ...options })
+          return toolResult(result ?? { ok: false, error: 'Лента сессии доступна только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'emulate',
+        {
+          description:
+            'Среда, в которой сидит человек: тема системы (dark/light), уменьшенная анимация, ' +
+            'высокий контраст, отсутствие сети и геопозиция. Страница ведёт себя под ними по-разному, ' +
+            'и такие дефекты иначе находит только тот, у кого именно такая настройка. ' +
+            'Действует на все вкладки сессии и переживает переходы. Ответ показывает, что теперь в силе.',
+          inputSchema: {
+            colorScheme: z.enum(['light', 'dark', 'no-preference']).optional().describe('prefers-color-scheme страницы'),
+            reducedMotion: z.enum(['reduce', 'no-preference']).optional().describe('prefers-reduced-motion'),
+            forcedColors: z.enum(['active', 'none']).optional().describe('Режим высокой контрастности системы'),
+            offline: z.boolean().optional().describe('Отключить сеть: так проверяется поведение без интернета'),
+            geolocation: z.object({
+              latitude: z.number().min(-90).max(90),
+              longitude: z.number().min(-180).max(180),
+              accuracy: z.number().min(0).optional()
+            }).nullable().optional().describe('Координаты для страницы; null убирает позицию. Разрешение geolocation выдаётся автоматически'),
+            permissions: z.array(z.string().max(64)).max(16).optional().describe('Разрешения сайта (geolocation, clipboard-read…); пустой список отзывает все')
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'environment', ...options })
+          return toolResult(result ?? { ok: false, error: 'Эмуляция среды доступна только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'cookies',
+        {
+          description:
+            'Cookies сессии браузера: list читает, add ставит одну, clear убирает все или одну по имени. ' +
+            'Значение длинной cookie возвращается сокращённым — это доступ к аккаунту, и в переписке ему не место. ' +
+            'Для входа тестовой учёткой обычно достаточно add с url сайта.',
+          inputSchema: {
+            action: z.enum(['list', 'add', 'clear']).describe('Что сделать'),
+            name: z.string().max(200).optional().describe('Имя cookie'),
+            value: z.string().max(4_096).optional().describe('Значение (для add)'),
+            url: z.string().max(L.url).optional().describe('Адрес сайта (для add, вместо domain/path)'),
+            domain: z.string().max(253).optional().describe('Домен (для add вместе с path)'),
+            path: z.string().max(1_024).optional().describe('Путь (по умолчанию /)'),
+            expires: z.number().optional().describe('Срок жизни, unix-время в секундах'),
+            httpOnly: z.boolean().optional(),
+            secure: z.boolean().optional(),
+            sameSite: z.enum(['Strict', 'Lax', 'None']).optional()
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'cookies', ...options })
+          return toolResult(result ?? { ok: false, error: 'Cookies доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'media',
+        {
+          description:
+            'Видео и аудио страницы: что играет, сколько длится, где сейчас, выключен ли звук. ' +
+            'do управляет ими как человек — play, pause, mute, unmute; seconds перематывает. ' +
+            'Отказ автовоспроизведения возвращается причиной, а не молчанием: человек увидел бы то же самое.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор конкретного video/audio'),
+            do: z.enum(['play', 'pause', 'mute', 'unmute']).optional().describe('Действие над первым найденным элементом'),
+            seconds: z.number().min(0).max(86_400).optional().describe('Перемотать на эту секунду')
+          }
+        },
+        async ({ frame, selector, do: action, seconds }) => run({ kind: 'media', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(action ? { do: action } : {}), ...(seconds !== undefined ? { seconds } : {}) })
+      )
+
+      server.registerTool(
+        'scroll-until',
+        {
+          description:
+            'Прокручивать ленту, пока не покажется цель (selector или text) или не кончится содержимое. ' +
+            'Для лент с ленивой подгрузкой: обычный scroll на них либо останавливается на первом экране, ' +
+            'либо крутится вслепую. Между шагами есть пауза на подгрузку. ' +
+            'Ответ говорит, нашлась ли цель, сколько было прокруток и дошли ли до конца.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор цели'),
+            text: z.string().max(L.text).optional().describe('Видимый текст цели'),
+            container: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера (без него — окно)'),
+            maxScrolls: z.number().int().min(1).max(50).optional().describe('Сколько прокруток максимум (по умолчанию 10)'),
+            step: z.number().min(1).max(10_000).optional().describe('Шаг прокрутки в пикселях (по умолчанию 800)')
+          }
+        },
+        async ({ frame, selector, text, container, maxScrolls, step }) => {
+          if (!selector && !text) return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+          return run({ kind: 'scrollUntil', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(container ? { container } : {}), ...(maxScrolls !== undefined ? { maxScrolls } : {}), ...(step !== undefined ? { step } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'count',
+        {
+          description:
+            'Сколько элементов подходит под селектор или текст: видимых и всего. ' +
+            'Проверка «стало на одну строку больше» не требует читать их текст и не съедает контекст хода.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
+            text: z.string().max(L.text).optional().describe('Видимый текст'),
+            visibleOnly: z.boolean().optional().describe('false — считать и скрытые (по умолчанию считаются видимые)')
+          }
+        },
+        async ({ frame, selector, text, visibleOnly }) => {
+          if (!selector && !text) return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+          return run({ kind: 'count', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(visibleOnly !== undefined ? { visibleOnly } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'table',
+        {
+          description:
+            'Таблица так, как её читает человек: строки записями под заголовками колонок, с порциями ' +
+            'offset/limit и nextOffset. columns оставляет только нужные колонки. ' +
+            'В отличие от read, не теряет связь ячейки со своим заголовком.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор таблицы'),
+            offset: z.number().int().min(0).optional().describe('С какой строки читать'),
+            limit: z.number().int().min(1).max(200).optional().describe('Сколько строк (по умолчанию 20)'),
+            columns: z.array(z.string().max(200)).min(1).max(32).optional().describe('Заголовки нужных колонок')
+          }
+        },
+        async ({ frame, selector, offset, limit, columns }) => run({ kind: 'table', ...(frame !== undefined ? { frame } : {}), selector, ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}), ...(columns ? { columns } : {}) })
+      )
+
+      server.registerTool(
+        'list',
+        {
+          description:
+            'Повторяющиеся блоки страницы (карточки, лента, результаты поиска) записями: заголовок, текст, ' +
+            'ссылка и свои кнопки каждого блока с селекторами. Плоский текст read теряет, какая кнопка ' +
+            'к какой карточке относится, — и клик уходил в соседнюю.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор повторяющегося блока'),
+            offset: z.number().int().min(0).optional().describe('С какого блока читать'),
+            limit: z.number().int().min(1).max(100).optional().describe('Сколько блоков (по умолчанию 20)')
+          }
+        },
+        async ({ frame, selector, offset, limit }) => run({ kind: 'list', ...(frame !== undefined ? { frame } : {}), selector, ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'metrics',
+        {
+          description:
+            'Куда прокручена страница и сколько её осталось: позиция, полная высота, размер окна, ' +
+            'сколько экранов ниже и достигнут ли низ. Ответ на вопрос «я всё прочитал или это только начало».',
+          inputSchema: { frame: frameSchema }
+        },
+        async ({ frame }) => run({ kind: 'metrics', ...(frame !== undefined ? { frame } : {}) })
+      )
+
+      server.registerTool(
+        'measure',
+        {
+          description:
+            'Геометрия элемента: положение, размер, попадает ли во вьюпорт, перекрыт ли другим узлом ' +
+            '(липкой шапкой — обычная причина «клик не сработал») и на сколько нужно прокрутить до него.',
+          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).describe('CSS-селектор элемента') }
+        },
+        async ({ frame, selector }) => run({ kind: 'measure', ...(frame !== undefined ? { frame } : {}), selector })
+      )
+
+      server.registerTool(
+        'highlight',
+        {
+          description:
+            'Обвести элемент рамкой прямо на странице на несколько секунд — человек в панели увидит, ' +
+            'о каком элементе идёт речь. Селектор в переписке нечитаем, рамка в кадре понятна сразу.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор элемента'),
+            ms: z.number().min(100).max(10_000).optional().describe('Сколько держать рамку, мс (по умолчанию 1500)')
+          }
+        },
+        async ({ frame, selector, ms }) => run({ kind: 'highlight', ...(frame !== undefined ? { frame } : {}), selector, ...(ms !== undefined ? { ms } : {}) })
       )
 
       server.registerTool(
@@ -1055,12 +1892,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             perKey: z.boolean().optional().describe('Печатать посимвольно с событиями клавиатуры'),
             waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после ввода'),
             secret: z.boolean().optional().describe('Секрет: значение не возвращается и не пишется в сценарий'),
-            blur: z.boolean().optional().describe('Снять фокус после ввода — формы проверяют поле по blur')
+            blur: z.boolean().optional().describe('Снять фокус после ввода — формы проверяют поле по blur'),
+            delay: z.number().min(0).max(200).optional().describe('Пауза между символами в мс: поле получит каждое нажатие — так просыпаются автодополнение и поиск с задержкой')
           }
         },
-        async ({ frame, selector, field, near, text, submit, append, perKey, waitFor, secret, blur }) => {
+        async ({ frame, selector, field, near, text, submit, append, perKey, waitFor, secret, blur, delay }) => {
           if (!selector && !field?.trim()) return { content: [{ type: 'text', text: 'Укажи selector или field (подпись поля).' }], isError: true }
-          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), ...(near ? { near } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}), ...(perKey !== undefined ? { perKey } : {}), ...(waitFor ? { waitFor } : {}), ...(secret ? { secret: true } : {}), ...(blur ? { blur: true } : {}) })
+          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), ...(near ? { near } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}), ...(perKey !== undefined ? { perKey } : {}), ...(waitFor ? { waitFor } : {}), ...(secret ? { secret: true } : {}), ...(blur ? { blur: true } : {}), ...(delay !== undefined ? { delay } : {}) })
         }
       )
 

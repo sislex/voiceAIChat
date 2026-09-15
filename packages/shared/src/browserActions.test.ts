@@ -149,3 +149,141 @@ it('frame не превращает координаты или общий фо�
     { kind: 'drag' as const, from: { x: 1, y: 2 }, to: { x: 3, y: 4 } }
   ]) expect(planModelAction({ ...action, frame: '#preview' })).toMatchObject({ kind: 'unsupported' })
 })
+
+// Круг 1 «как пользователь»: клавиатура, фокус и буфер обмена. Раньше модель
+// умела кликать, но не умела дойти до элемента табом и нажать сочетание.
+describe('клавиатура и буфер обмена', () => {
+  it('сочетание без селектора уходит вводом с модификаторами Playwright', () => {
+    expect(planModelAction({ kind: 'hotkey', key: 'a', modifiers: ['ctrl'] })).toEqual({
+      kind: 'command', command: { type: 'input', action: { type: 'hotkey', key: 'a', modifiers: ['Control'] } }
+    })
+  })
+
+  it('primary переводится в модификатор платформы раннера, а не в Control вслепую', () => {
+    expect(planModelAction({ kind: 'hotkey', key: 'a', modifiers: ['primary'] })).toEqual({
+      kind: 'command', command: { type: 'input', action: { type: 'hotkey', key: 'a', modifiers: ['ControlOrMeta'] } }
+    })
+  })
+
+  it('сочетание с селектором нажимается на самом элементе', () => {
+    expect(planModelAction({ kind: 'hotkey', key: 'c', modifiers: ['meta'], selector: '#note' })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: '#note', key: 'c', modifiers: ['Meta'] } }
+    })
+  })
+
+  it('повтор нажатия доходит и до селекторного, и до координатного пути', () => {
+    expect(planModelAction({ kind: 'press', key: 'ArrowDown', repeat: 5 })).toEqual({
+      kind: 'command', command: { type: 'input', action: { type: 'press', key: 'ArrowDown', repeat: 5 } }
+    })
+    expect(planModelAction({ kind: 'press', key: 'ArrowDown', selector: '#list', repeat: 5 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: '#list', key: 'ArrowDown', repeat: 5 } }
+    })
+  })
+
+  it('чтение фокуса — отдельный вид: раннер различает его по отсутствию селектора', () => {
+    expect(planModelAction({ kind: 'focusState' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'focus' } } })
+  })
+
+  it('очистка, выделение, копирование и вставка ложатся на селекторные команды', () => {
+    expect(planModelAction({ kind: 'clear', selector: '#q' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'clear', selector: '#q' } } })
+    expect(planModelAction({ kind: 'selectText' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'selectText' } } })
+    expect(planModelAction({ kind: 'copy' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'copy' } } })
+    expect(planModelAction({ kind: 'paste', text: 'привет' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'paste', text: 'привет' } } })
+  })
+
+  it('посимвольный ввод переносит задержку в команду: без неё поле заполняется целиком', () => {
+    expect(planModelAction({ kind: 'type', selector: '#q', text: 'дом', delay: 25 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'type', selector: '#q', text: 'дом', delay: 25 } }
+    })
+  })
+
+  it('обход по Tab переносит поддерево и лимит', () => {
+    expect(planModelAction({ kind: 'focusOrder', selector: 'form', limit: 20 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'focusOrder', selector: 'form', limit: 20 } }
+    })
+  })
+})
+
+// Круг 2: формы — перевод действий в команды раннера.
+describe('формы', () => {
+  it('заполнение формы переносит поля и задержку без потерь', () => {
+    expect(planModelAction({ kind: 'fillForm', selector: 'form', fields: [{ selector: '#a', value: 'x' }, { selector: '#b', checked: true }], delay: 20 })).toEqual({
+      kind: 'command',
+      command: { type: 'selector', action: { kind: 'fillForm', selector: 'form', fields: [{ selector: '#a', value: 'x' }, { selector: '#b', checked: true }], delay: 20 } }
+    })
+  })
+
+  it('чтение формы, проверки, отправка и варианты выбора ложатся на селекторные команды', () => {
+    expect(planModelAction({ kind: 'formState' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'formState' } } })
+    expect(planModelAction({ kind: 'validity', selector: '#email' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'validity', selector: '#email' } } })
+    expect(planModelAction({ kind: 'submit' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'submit' } } })
+    expect(planModelAction({ kind: 'options', selector: '#city', limit: 10 })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'options', selector: '#city', limit: 10 } } })
+  })
+
+  it('несколько файлов едут массивом, а одиночные поля остаются заполненными первым файлом', () => {
+    const plan = planModelAction({ kind: 'upload', selector: '#f', name: 'ignored', base64: 'AA==', files: [{ name: 'a.txt', base64: 'QQ==' }, { name: 'b.txt', base64: 'Qg==' }] })
+    expect(plan).toMatchObject({ command: { type: 'selector', action: { kind: 'upload', name: 'a.txt', base64: 'QQ==' } } })
+    expect(plan.kind === 'command' && plan.command.type === 'selector' && plan.command.action.kind === 'upload' ? plan.command.action.files?.length : 0).toBe(2)
+  })
+})
+
+// Круг 3: чтение содержимого переводится в селекторные команды раннера.
+describe('содержимое страницы', () => {
+  it('прокрутка до цели переносит контейнер и границы шагов', () => {
+    expect(planModelAction({ kind: 'scrollUntil', text: 'Итого', container: '#feed', maxScrolls: 5, step: 500 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'scrollUntil', text: 'Итого', container: '#feed', maxScrolls: 5, step: 500 } }
+    })
+  })
+
+  it('счёт, таблица, список, метрики, замер и рамка доезжают целиком', () => {
+    expect(planModelAction({ kind: 'count', selector: '.row', visibleOnly: false })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'count', selector: '.row', visibleOnly: false } } })
+    expect(planModelAction({ kind: 'table', selector: 'table', columns: ['Имя'] })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'table', selector: 'table', columns: ['Имя'] } } })
+    expect(planModelAction({ kind: 'list', selector: '.card', limit: 5 })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'list', selector: '.card', limit: 5 } } })
+    expect(planModelAction({ kind: 'metrics' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'metrics' } } })
+    expect(planModelAction({ kind: 'measure', selector: '#a' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'measure', selector: '#a' } } })
+    expect(planModelAction({ kind: 'highlight', selector: '#a', ms: 2000 })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'highlight', selector: '#a', ms: 2000 } } })
+  })
+})
+
+// Круг 4: среда уходит командой уровня сессии, медиа — селекторной.
+describe('среда и медиа', () => {
+  it('эмуляция среды переводится в команду environment без служебных полей', () => {
+    expect(planModelAction({ kind: 'environment', colorScheme: 'dark', offline: true, diagnostic: true })).toEqual({
+      kind: 'command', command: { type: 'environment', colorScheme: 'dark', offline: true }
+    })
+  })
+
+  it('медиа управляется селекторной командой', () => {
+    expect(planModelAction({ kind: 'media', do: 'pause', seconds: 12 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'media', do: 'pause', seconds: 12 } }
+    })
+  })
+})
+
+// Круг 5: проверки — селекторная команда, лента и заметка — команды сессии.
+describe('проверки, лента и заметки', () => {
+  it('набор проверок доезжает целиком', () => {
+    const checks = [{ is: 'text' as const, value: 'Итого' }, { is: 'count' as const, selector: '.row', value: 3 }]
+    expect(planModelAction({ kind: 'expect', checks })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'expect', checks } } })
+  })
+
+  it('лента и заметка уходят командами уровня сессии', () => {
+    expect(planModelAction({ kind: 'history', actor: 'assistant', limit: 10 })).toEqual({ kind: 'command', command: { type: 'history', actor: 'assistant', limit: 10 } })
+    expect(planModelAction({ kind: 'note', text: 'проверяю вход' })).toEqual({ kind: 'command', command: { type: 'note', text: 'проверяю вход' } })
+  })
+})
+
+// Круг 6: данные страницы переводятся в селекторные команды.
+describe('данные страницы', () => {
+  it('хранилище, исходник и CSV доезжают со своими параметрами', () => {
+    expect(planModelAction({ kind: 'storage', area: 'local', do: 'set', key: 'a', value: 'b' })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'storage', area: 'local', do: 'set', key: 'a', value: 'b' } }
+    })
+    expect(planModelAction({ kind: 'source', selector: 'main', offset: 100 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'source', selector: 'main', offset: 100 } }
+    })
+    expect(planModelAction({ kind: 'csv', selector: 'table', limit: 50 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'csv', selector: 'table', limit: 50 } }
+    })
+  })
+})
