@@ -5,6 +5,7 @@ import { readElementTargets } from './elementTargets.js'
 import { focusOrderScript, focusStateScript, pasteScript, selectElementScript, selectionScript } from './focusActions.js'
 import { dropFilesScript, formStateScript, optionsScript, submitScript, validityScript } from './formActions.js'
 import { csvScript, highlightScript, listScript, measureScript, pageMetricsScript, scrollStepScript, sourceScript, storageScript, tableScript } from './contentActions.js'
+import { candidatesScript, classifyActionError } from './actionErrors.js'
 import { mediaScript } from './environmentActions.js'
 import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js'
 
@@ -465,6 +466,18 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
     }
     return { ok: false, error: 'Неизвестное селекторное действие' }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message.split('\n')[0] : 'Действие не выполнено' }
+    const raw = err instanceof Error ? err.message : 'Действие не выполнено'
+    const failure = classifyActionError(raw)
+    // «Нет элемента» — половина ответа: человек в этот момент видит на экране
+    // кнопку с чуть другой подписью, и модель должна получить тех же кандидатов.
+    if (failure.kind === 'not-found' || failure.kind === 'timeout' || failure.kind === 'ambiguous') {
+      const text = 'text' in action ? action.text : undefined
+      const selector = 'selector' in action ? action.selector : undefined
+      try {
+        const candidates = await page.evaluate(candidatesScript(text ?? null, selector ?? null, 5)) as NonNullable<BrowserSelectorResult['failure']>['candidates']
+        if (candidates?.length) return { ok: false, error: raw.split('\n')[0], failure: { ...failure, candidates } }
+      } catch { /* страница могла уйти — тогда просто отдаём причину */ }
+    }
+    return { ok: false, error: raw.split('\n')[0], failure }
   }
 }

@@ -139,7 +139,10 @@ describe('действия, которых у раннера не было (кр
 
   it('ошибка Playwright возвращается значением, а не исключением', async () => {
     const target = locator({ hover: vi.fn(async () => { throw new Error('Timeout 5000ms exceeded\nCall log:\n  - waiting') }) })
-    expect(await runSelectorAction(page(target), { kind: 'hover', selector: '.menu' })).toEqual({ ok: false, error: 'Timeout 5000ms exceeded' })
+    // Круг 7 добавил к отказу разбор причины: сама ошибка по-прежнему значение,
+    // первая строка Playwright, но рядом лежит совет, что делать дальше.
+    expect(await runSelectorAction(page(target, { evaluate: vi.fn(async () => []) }), { kind: 'hover', selector: '.menu' }))
+      .toMatchObject({ ok: false, error: 'Timeout 5000ms exceeded', failure: { kind: 'timeout' } })
   })
 })
 
@@ -198,7 +201,7 @@ describe('описание элемента и прокрутка (круг 12)'
   it('scrollTo сообщает, что элемента нет, а не молчит', async () => {
     expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => true) }), { kind: 'scrollTo', selector: '#a' })).toEqual({ ok: true })
     expect(await runSelectorAction(page(locator({ evaluate: async () => { throw new Error('Элемент #нет не найден') } })), { kind: 'scrollTo', selector: '#нет' }))
-      .toEqual({ ok: false, error: 'Элемент #нет не найден' })
+      .toMatchObject({ ok: false, error: 'Элемент #нет не найден', failure: { kind: 'not-found' } })
   })
 })
 
@@ -551,5 +554,30 @@ describe('данные страницы', () => {
     expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => csv) }), { kind: 'csv', selector: 'table' }))
       .toMatchObject({ ok: true, csv: { rows: 2 } })
     expect((await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'csv', selector: 'table' })).ok).toBe(false)
+  })
+})
+
+// Круг 7: отказ объясняется и предлагает похожие элементы страницы.
+describe('объяснение отказа', () => {
+  it('к отказу прикладывается причина и совет', async () => {
+    const target = locator({ count: async () => 0, filter: () => locator({ count: async () => 0 }) })
+    const result = await runSelectorAction(page(target, { evaluate: vi.fn(async () => []) }), { kind: 'click', selector: '#save' })
+    expect(result.ok).toBe(false)
+    expect(result.failure?.kind).toBe('not-found')
+    expect(result.failure?.advice).toContain('find')
+  })
+
+  it('похожие элементы страницы попадают в отказ: «нет элемента» — половина ответа', async () => {
+    const candidates = [{ text: 'Сохранить как', tag: 'button', visible: true }]
+    const target = locator({ count: async () => 0, filter: () => locator({ count: async () => 0 }) })
+    const result = await runSelectorAction(page(target, { evaluate: vi.fn(async () => candidates) }), { kind: 'click', text: 'Сохранить' })
+    expect(result.failure?.candidates).toEqual(candidates)
+  })
+
+  it('недоступная страница не мешает вернуть причину', async () => {
+    const target = locator({ count: async () => 0, filter: () => locator({ count: async () => 0 }) })
+    const result = await runSelectorAction(page(target, { evaluate: vi.fn(async () => { throw new Error('Target closed') }) }), { kind: 'click', selector: '#save' })
+    expect(result.ok).toBe(false)
+    expect(result.failure?.kind).toBe('not-found')
   })
 })

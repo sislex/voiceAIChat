@@ -439,6 +439,18 @@ export interface BrowserSelectorResult {
   /** Table as CSV text for `csv`, with the same paging as `table`. */
   csv?: { text: string; rows: number; total: number; offset: number; nextOffset?: number }
   /**
+   * Why the action failed and what to do about it. The raw Playwright line
+   * ("Timeout 5000ms exceeded") told the model nothing it could act on, so it
+   * retried the same click; each of these failures has a different next step.
+   */
+  failure?: {
+    kind: 'not-found' | 'ambiguous' | 'covered' | 'disabled' | 'detached' | 'navigated' | 'timeout' | 'other'
+    reason: string
+    advice?: string
+    /** Elements that look like the one asked for — what a person would see instead. */
+    candidates?: Array<{ text: string; tag: string; visible: boolean; disabled?: boolean }>
+  }
+  /**
    * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
    * проверкам сценария — «текста нет» и «до текста не дочитали» это разные
    * беды, и вторую нельзя выдавать за первую.

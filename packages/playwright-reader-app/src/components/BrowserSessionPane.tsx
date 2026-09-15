@@ -99,6 +99,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const busyRequests = useRef({ generation: 0, count: 0 })
   const [pollTick, setPollTick] = useState(0)
   const [retryable, setRetryable] = useState(false)
+  /**
+   * Разбор отказа от раннера: причина словами, совет и похожие элементы.
+   * Человеку «Timeout 5000ms exceeded» говорит не больше, чем модели.
+   */
+  const [failure, setFailure] = useState<BrowserSelectorResult['failure'] | null>(null)
   const lastCommand = useRef<Parameters<RendererBrowserBridge['command']>[1]['command'] | null>(null)
   const [message, setMessage] = useState<string>('')
   // Журналы страницы: раннер копит их с открытия, но до круга 11 показать их
@@ -338,7 +343,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     if (busyRequests.current.generation !== generation) busyRequests.current = { generation, count: 0 }
     busyRequests.current.count++
     setBusy(true)
-    setMessage(''); setRetryable(false)
+    setMessage(''); setRetryable(false); setFailure(null)
     lastCommand.current = command
     lastAction.current = Date.now()
     setPollTick((v) => v + 1)
@@ -358,6 +363,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       // Метаданные приходят не на всякую команду: `selector` отдаёт чтение,
       // `inspect` — журналы. Обновляем состояние только по метаданным.
       if (command.type === 'handleDialog' && (!isBrowserSessionMetadata(next) || !Array.isArray(next.dialogs))) throw new Error('Сайт не подтвердил ответ. Обновите состояние и повторите.')
+      // Селекторное действие отвечает значением: отказ не бросается исключением,
+      // и без этой ветки человек видел бы просто «ничего не произошло».
+      if (next && typeof next === 'object' && 'ok' in next && (next as { ok?: unknown }).ok === false) {
+        const detail = next as { error?: string; failure?: BrowserSelectorResult['failure'] }
+        setFailure(detail.failure ?? null)
+        if (detail.error) setMessage(detail.failure?.reason ?? detail.error)
+      }
       if (isBrowserSessionMetadata(next)) applyMeta(next)
       if (command.type !== 'cancel' && command.type !== 'control') await refreshFrame()
       return next
@@ -1385,6 +1397,19 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     {message && (
       <div className="playwright-reader-error" role="alert">
         <span>{message}</span>
+        {/* Совет раннера — это следующий шаг, а не диагноз: прокрутить, закрыть
+            перекрывающее окно, дождаться готовности. */}
+        {failure?.advice && <span className="playwright-reader-size">{failure.advice}</span>}
+        {failure?.candidates?.length && (
+          <span className="playwright-reader-keys" role="group" aria-label="Похожие элементы страницы">
+            {failure.candidates.slice(0, 3).map((candidate) => (
+              <Button key={candidate.text} size="sm" variant="ghost" disabled={phase !== 'ready'}
+                onClick={() => void run({ type: 'selector', action: { kind: 'find', text: candidate.text, limit: 1 } })}>
+                {candidate.text}{candidate.disabled ? ' (выключен)' : candidate.visible ? '' : ' (скрыт)'}
+              </Button>
+            ))}
+          </span>
+        )}
         {retryable && lastCommand.current && (
           <Button size="sm" variant="secondary" onClick={() => { const cmd = lastCommand.current; if (cmd) void run(cmd) }}>Повторить</Button>
         )}
