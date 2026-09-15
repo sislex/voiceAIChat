@@ -155,3 +155,9 @@ it('offers to open the page of a step made elsewhere', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Открыть страницу действия 1' }))
   expect(onRepeat).toHaveBeenCalledWith({ kind: 'open', url: 'https://old.test/page' })
 })
+
+it('подпись шага лежит отдельным элементом: значок не приклеивается к тексту действия', () => {
+  render(<ReaderActionHistory actions={[{ id: '1', action: { kind: 'open', url: 'https://shop.example/' }, address: 'https://shop.example/', title: null, at: Date.now() }]} />)
+  // Иконка декоративная и aria-hidden, но текстом она мешала бы и поиску по ленте, и E2E.
+  expect(screen.getByText('Открыл shop.example').className).toContain('webpreview-history-label')
+})
