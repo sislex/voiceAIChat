@@ -40,6 +40,10 @@ export interface WebReaderFrameProps {
   onControl?: ((manual: boolean) => void) | undefined
   /** Пользователь управляет сам: повтор и показ шагов ленты недоступны. */
   manual?: boolean
+  /** Панель остановила опасное действие модели: человек разрешает или отказывает прямо здесь. */
+  confirmRequest?: { action: PreviewAction; reason: string; target: string } | null
+  onConfirmAction?: ((action: PreviewAction) => void) | undefined
+  onDenyAction?: (() => void) | undefined
   /** Последнее неудавшееся действие модели: панель показывает причину и даёт повторить. */
   actionError?: { action: PreviewAction; error: string } | null
   onRetryAction?: ((action: PreviewAction) => void) | undefined

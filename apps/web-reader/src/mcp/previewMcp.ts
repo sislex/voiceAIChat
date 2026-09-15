@@ -146,6 +146,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         catch { infrastructureError = true; result = toolResult({ ok: false, error: 'Browser infrastructure unavailable; retry the action after restoring the dev server or Reader.' }) }
         let value: unknown
         try { value = JSON.parse(result.content[0]?.text ?? '{}') } catch { /* No structured result. */ }
+        // Панель остановила опасное действие: модели нужен явный отказ с инструкцией, а не «успешный» JSON.
+        if (!result.isError && value && typeof value === 'object' && (value as { needsConfirmation?: unknown }).needsConfirmation === true) {
+          const stop = value as { reason?: string; target?: { text?: string; selector?: string } }
+          result = { content: [{ type: 'text', text: `Действие остановлено до подтверждения (${stop.reason ?? 'опасное действие'}): ${stop.target?.text ? `«${stop.target.text}»` : stop.target?.selector ?? 'элемент'}. Спроси пользователя словами, можно ли, и повтори с confirm: true только после его согласия.` }], isError: true }
+        }
         await observe(action, !result.isError, value, infrastructureError)
         return result
       }
@@ -367,11 +372,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
           selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
           near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
-          label: z.string().max(120).optional().describe('Подпись рядом с элементом (по умолчанию «Ассистент показывает»)')
+          label: z.string().max(120).optional().describe('Подпись рядом с элементом (по умолчанию «Ассистент показывает»)'),
+          all: z.boolean().optional().describe('Подсветить все совпадения (до 10) с номерами')
         }
-      }, async ({ frame, text, selector, near, label }) => {
+      }, async ({ frame, text, selector, near, label, all }) => {
         if (!text && !selector) return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
-        return run({ kind: 'show', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(label ? { label } : {}) })
+        return run({ kind: 'show', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(label ? { label } : {}), ...(all ? { all: true } : {}) })
       })
 
       server.registerTool('check', {
@@ -909,12 +915,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             x: z.number().min(0).max(100000).optional().describe('Клик по точке вьюпорта (CSS px), вместе с y'),
             y: z.number().min(0).max(100000).optional().describe('Клик по точке вьюпорта (CSS px), вместе с x'),
             waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после клика (до 8 с)'),
+            confirm: z.boolean().optional().describe('Пользователь явно разрешил опасное действие (оплата, удаление, скачивание)'),
             button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
             dblclick: z.boolean().optional().describe('Двойной клик'),
             modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
           }
         },
-        async ({ frame, selector, text, role, near, exact, nth, x, y, waitFor, button, dblclick, modifiers }) => {
+        async ({ frame, selector, text, role, near, exact, nth, x, y, waitFor, confirm, button, dblclick, modifiers }) => {
           if (!text && !selector && !role && (x === undefined || y === undefined)) {
             return { content: [{ type: 'text', text: 'Укажи selector, text, role или точку x и y.' }], isError: true }
           }
@@ -923,7 +930,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(selector ? { selector } : {}),
             ...(text ? { text } : {}), ...(role ? { role: role.toLowerCase() } : {}),
             ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}),
-            ...(x !== undefined && y !== undefined ? { x, y } : {}), ...(waitFor ? { waitFor } : {}),
+            ...(x !== undefined && y !== undefined ? { x, y } : {}), ...(waitFor ? { waitFor } : {}), ...(confirm ? { confirm: true } : {}),
             ...(button ? { button } : {}),
             ...(dblclick !== undefined ? { dblclick } : {}),
             ...(modifiers?.length ? { modifiers } : {})
@@ -945,12 +952,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             submit: z.boolean().optional().describe('Отправить форму после ввода'),
             append: z.boolean().optional().describe('Дописать к текущему значению, а не заменить его'),
             perKey: z.boolean().optional().describe('Печатать посимвольно с событиями клавиатуры'),
-            waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после ввода')
+            waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после ввода'),
+            secret: z.boolean().optional().describe('Секрет: значение не возвращается и не пишется в сценарий')
           }
         },
-        async ({ frame, selector, field, near, text, submit, append, perKey, waitFor }) => {
+        async ({ frame, selector, field, near, text, submit, append, perKey, waitFor, secret }) => {
           if (!selector && !field?.trim()) return { content: [{ type: 'text', text: 'Укажи selector или field (подпись поля).' }], isError: true }
-          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), ...(near ? { near } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}), ...(perKey !== undefined ? { perKey } : {}), ...(waitFor ? { waitFor } : {}) })
+          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), ...(near ? { near } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}), ...(perKey !== undefined ? { perKey } : {}), ...(waitFor ? { waitFor } : {}), ...(secret ? { secret: true } : {}) })
         }
       )
 

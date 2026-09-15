@@ -87,6 +87,25 @@ describe('wait по адресу, история и вопрос о выделе
   })
 })
 
+describe('смена сайта и итоги проверок', () => {
+  it('open отмечает crossSite при смене host; status считает проверки', async () => {
+    const h = harness()
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    const first = h.bridge.run({ kind: 'open', url: 'https://shop.example/' })
+    await Promise.resolve()
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    expect(await first).toMatchObject({ ok: true, result: { url: 'https://shop.example/' } })
+    expect(((await first).result as { crossSite?: boolean }).crossSite).toBeUndefined()
+    const second = h.bridge.run({ kind: 'open', url: 'https://pay.example/checkout' })
+    await Promise.resolve()
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://pay.example/checkout' })
+    expect(await second).toMatchObject({ ok: true, result: { crossSite: true } })
+    await h.bridge.run({ kind: 'check', url: 'https://pay.example/*' })
+    expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { checks: { passed: 1, failed: 0 } } })
+  })
+})
+
 describe('report', () => {
   it('собирает историю, проверки и число действий', async () => {
     const h = harness()
@@ -232,7 +251,8 @@ describe('open отвечает заголовком страницы', () => {
     const untitled = h.bridge.run({ kind: 'open', url: 'https://blank.example/' })
     await Promise.resolve()
     h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://blank.example/' })
-    expect(await untitled).toEqual({ ok: true, result: { url: 'https://blank.example/' } })
+    // Другой host, чем у предыдущей страницы: мост отмечает смену сайта.
+    expect(await untitled).toEqual({ ok: true, result: { url: 'https://blank.example/', crossSite: true } })
     const redirected = h.bridge.run({ kind: 'open', url: 'https://blank.example/old' })
     await Promise.resolve()
     h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://blank.example/new' })

@@ -10,11 +10,11 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 14 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 35 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 36 коммит(ов) в areas после сверки: bc366c7d feat(reader): круг 13 — терпение, показ и отчёт … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 45 коммит(ов) в areas после сверки: 0b7c9dad feat(reader): круг 6 — проверки как у тестировщика и лицо страницы во вкладке … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 5984db1d feat(reader): круг 9 — рутина одним вызовом, лента объясняет себя … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 16 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 17 коммит(ов) в areas после сверки: bc366c7d feat(reader): круг 13 — терпение, показ и отчёт … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 14 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 180 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 5 коммит(ов) в areas после сверки: 0b7c9dad feat(reader): круг 6 — проверки как у тестировщика и лицо страницы во вкладке … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 123 коммит(ов) в areas после сверки: 0b7c9dad feat(reader): круг 6 — проверки как у тестировщика и лицо страницы во вкладке … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 48 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1465 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1466 коммит(ов) в areas после сверки: bc366c7d feat(reader): круг 13 — терпение, показ и отчёт … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 12 коммит(ов) в areas после сверки: 5984db1d feat(reader): круг 9 — рутина одним вызовом, лента объясняет себя … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 37 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 40 коммит(ов) в areas после сверки: 4632bced Merge main into CHAT-466 (task 2c900bc5-86d3-4216-857c-529cc8951e5f) … |
@@ -36,7 +36,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 22 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 25 коммит(ов) в areas после сверки: 0b7c9dad feat(reader): круг 6 — проверки как у тестировщика и лицо страницы во вкладке … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-13 | ⚠ 15 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 36 коммит(ов) в areas после сверки: bb1d4a5b feat(reader): круг 12 — состояние контролов, уведомления и чек-лист … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 37 коммит(ов) в areas после сверки: bc366c7d feat(reader): круг 13 — терпение, показ и отчёт … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 201 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 836. Последние:
+Всего записей: 837. Последние:
 
+- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-14.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-14.md) — web-reader-user-like-cycle-14
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-13.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-13.md) — web-reader-user-like-cycle-13
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-12.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-12.md) — web-reader-user-like-cycle-12
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-11.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-11.md) — web-reader-user-like-cycle-11
@@ -85,7 +86,6 @@
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-07.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-07.md) — web-reader-user-like-cycle-07
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-06.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-06.md) — web-reader-user-like-cycle-06
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-05.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-05.md) — web-reader-user-like-cycle-05
-- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-04.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-04.md) — web-reader-user-like-cycle-04
 
 ## Исторические планы
 

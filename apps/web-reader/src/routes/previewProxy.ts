@@ -251,6 +251,8 @@ const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url)
   const lang=(document.documentElement.getAttribute('lang')||'').trim();if(lang)info.lang=lang.slice(0,16);
   const meta=document.querySelector('meta[name="description"],meta[property="og:description"]');const description=meta&&meta.getAttribute('content');if(description&&description.trim())info.description=description.trim().slice(0,200);
   const icon=document.querySelector('link[rel~="icon"]');const href=icon&&icon.getAttribute('href');if(href){try{info.icon=unproxy(new URL(href,location.href).toString()).slice(0,500)}catch{}}
+  // Без <link rel=icon> браузеры пробуют /favicon.ico — делаем так же.
+  if(!info.icon){try{info.icon=new URL('/favicon.ico',url).toString()}catch{}}
   return info};
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
 // Человек не различает «ёлочки» и "кавычки", тире и дефис, обычный и неразрывный пробел — поиск текста тоже не должен.
@@ -443,8 +445,18 @@ const withAutoWait=(resolve,retryable)=>{
     return new Promise((ok,fail)=>{const attempt=()=>{try{ok({el:resolve(),waitedMs:Math.round(performance.now()-started)})}catch(err){if(performance.now()-started>=AUTO_WAIT_MS){fail(first);return}setTimeout(attempt,150)}};setTimeout(attempt,150)})
   }
 };
+// Опасные действия — оплата, удаление, отправка денег, скачивание — панель останавливает: человек бы переспросил.
+// \\b знает только латиницу: для русских слов границы задаём Unicode-классами.
+const DANGER=/(?<![\\p{L}\\p{N}])(оплатить|оплата|купить|заплатить|перевести|перевод|подтвердить (?:оплату|покупку|заказ|перевод)|удалить|удаление|стереть|очистить (?:всё|все)|отписаться|закрыть аккаунт|удалить аккаунт|pay|purchase|buy now|checkout|place order|confirm (?:payment|purchase|order)|delete|remove|erase|unsubscribe|cancel subscription|transfer|send money|withdraw)(?![\\p{L}\\p{N}])/iu;
+const dangerReason=(el)=>{
+  const text=normText(accessibleName(el)||textOf(el));
+  if(el.localName==='a'&&(el.hasAttribute('download')||/\\.(pdf|zip|rar|7z|exe|dmg|pkg|msi|apk|csv|xlsx?|docx?)(\\?|#|$)/i.test(el.getAttribute('href')||'')))return 'скачивание файла';
+  if(DANGER.test(text))return /оплат|купить|заплат|перевод|перевест|pay|purchase|buy|checkout|order|transfer|money|withdraw/i.test(text)?'оплата или перевод':/удал|стереть|очистить|delete|remove|erase/i.test(text)?'удаление':'необратимое действие';
+  return null
+};
 const runClick=(action,el)=>{
     actionable(el);
+    if(!action.confirm){const reason=dangerReason(el);if(reason)return {page:pageInfo(),needsConfirmation:true,reason,target:describe(el)}}
     if(el.localName==='select')throw new Error('Это выпадающий список: выбери значение через set {selector, value} или choose, клик его не раскроет.');
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
     const dialogsBefore=new Set(openDialogs()),errorsBefore=pageErrors.length,textsBefore=visibleTexts();
@@ -514,10 +526,11 @@ const run=(action)=>{
     // «Вот эта кнопка»: прокрутить и подсветить с подписью на 3 с — модель указывает пользователю пальцем.
     const found=findTargets({kind:'click',...(action.selector?{selector:action.selector}:{}),...(action.text?{text:action.text}:{}),...(action.near?{near:action.near}:{})});
     if(!found.length)throw new Error('Элемент не найден: '+(action.selector||action.text));
-    const el=action.selector?found[0]:clickTarget(found[0]);
+    const targets=(action.all?found.slice(0,10):[found[0]]).map(node=>action.selector?node:clickTarget(node)).filter((node,i,all)=>all.indexOf(node)===i);
+    const el=targets[0];
     el.scrollIntoView&&el.scrollIntoView({block:'center',inline:'nearest'});
-    showLabel(el,action.label||'Ассистент показывает');
-    return {page:pageInfo(),shown:describe(el)}
+    targets.forEach((node,i)=>showLabel(node,action.all?(action.label||'Ассистент показывает')+' '+(i+1):(action.label||'Ассистент показывает')));
+    return {page:pageInfo(),shown:describe(el),...(action.all?{shownCount:targets.length}:{})}
   }
   if(action.kind==='check'){
     // Проверка ожидания: человек смотрит, есть ли на экране «Войти», и говорит «есть»/«нет» — без исключений.
@@ -606,7 +619,9 @@ const run=(action)=>{
     const finish=({el,waitedMs})=>{
       actionable(el,true);flash(el);
       const before=visibleTexts();
+      if(action.secret)el.setAttribute('data-voicechat-secret','');
       const outcome=action.perKey?typePerKey(el,action.text,action.append===true,action.submit===true):typeInto(el,action.text,action.append===true,action.submit===true);
+      if(action.secret)outcome.value='';
       const options=suggestionsFor(el);
       const validation=action.submit?validationMessages(el.form||el.closest('form')||document):[];
       const after=visibleTexts();textSnapshot=after;const changes=diffTexts(before,after);
@@ -638,7 +653,8 @@ const run=(action)=>{
     const shown=[...document.querySelectorAll('[role=tooltip]')].filter(readingVisible).map(node=>readableText(node,EL_TEXT)).filter(Boolean).join(' ');
     const tooltip=(el.getAttribute('title')||el.closest('[title]')?.getAttribute('title')||described||shown||'').slice(0,EL_TEXT);
     // Что раскрылось при наведении — пункты меню, которые человек нажмёт следующими; меню с анимацией ждём waitMs.
-    const collect=()=>{const revealed=[...document.querySelectorAll(CLICKABLE)].filter(node=>node!==el&&!el.contains(node)&&!visibleBefore.has(node)&&actionVisible(node)).slice(0,10).map(describe);return {page:pageInfo(),hovered:describe(el),...(tooltip?{tooltip}:{}),...(revealed.length?{revealed}:{})}};
+    const cursor=(()=>{try{return getComputedStyle(el).cursor||''}catch{return ''}})();
+    const collect=()=>{const revealed=[...document.querySelectorAll(CLICKABLE)].filter(node=>node!==el&&!el.contains(node)&&!visibleBefore.has(node)&&actionVisible(node)).slice(0,10).map(describe);return {page:pageInfo(),hovered:describe(el),...(tooltip?{tooltip}:{}),...(cursor&&cursor!=='auto'?{cursor}:{}),...(revealed.length?{revealed}:{})}};
     if(typeof action.waitMs==='number'&&action.waitMs>0)return new Promise(ok=>setTimeout(()=>ok(collect()),Math.min(2000,action.waitMs)));
     return collect()
   }
@@ -870,6 +886,7 @@ const run=(action)=>{
     const inputs=pick('input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el),...(el.localName==='select'?{options:[...el.options].slice(0,20).map(o=>textOf(o).slice(0,EL_TEXT))}:{})}));
     const forms=pick('form').slice(0,10).map(form=>{const fields=[...form.querySelectorAll('input:not([type=hidden]),textarea,select')].filter(readingVisible).slice(0,20).map(el=>accessibleName(el)||el.getAttribute('placeholder')||el.name||el.localName);const submitter=[...form.querySelectorAll('button,input[type=submit],input[type=image]')].find(el=>readingVisible(el)&&(el.localName==='input'||!el.type||el.type==='submit'));return {selector:uniqueSelector(form),fields,...(submitter?{submit:accessibleName(submitter)}:{})}});
     // Таблицы построчно: заголовки и первые строки — так их читает человек.
+    const frames=[...document.querySelectorAll('iframe')].filter(readingVisible).slice(0,8).map(f=>({selector:uniqueSelector(f),src:unproxy(f.getAttribute('src')||'').slice(0,300),title:(f.getAttribute('title')||f.getAttribute('name')||'').slice(0,EL_TEXT)}));
     const tables=(!parts||parts.has('tables'))?pick('table').slice(0,5).map(table=>{const rowsAll=[...table.querySelectorAll('tr')].filter(readingVisible);const headers=[...table.querySelectorAll('th')].filter(readingVisible).slice(0,12).map(th=>readableText(th,EL_TEXT));const body=rowsAll.filter(tr=>!tr.querySelector('th')||headers.length===0);const rows=body.slice(0,10).map(tr=>[...tr.querySelectorAll('td,th')].slice(0,12).map(td=>readableText(td,EL_TEXT)));const cap=table.querySelector('caption');return {selector:uniqueSelector(table),...(cap?{caption:readableText(cap,EL_TEXT)}:{}),headers,rows,totalRows:body.length}}):[];
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached)),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
@@ -880,13 +897,13 @@ const run=(action)=>{
     if(!action.selector&&!section)textSnapshot=visibleTexts();
     const scroller=document.scrollingElement||document.documentElement,maxScroll=Math.max(0,scroller.scrollHeight-innerHeight),scroll={top:Math.round(scroller.scrollTop),max:Math.round(maxScroll),percent:maxScroll>0?Math.round(scroller.scrollTop/maxScroll*100):100};
     const briefBase=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; '):'';
-    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(frames.length?{frames}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };
 const reply=(requestId,ok,payload)=>parent.postMessage(ok?{type:RESULT,requestId,ok:true,result:payload}:{type:RESULT,requestId,ok:false,error:String(payload).slice(0,2000)},location.origin);
 let recording=false,diagnosticRunning=false,lastRecordedClickAt=0;
-const sensitive=(el)=>['input','textarea'].includes(el.localName)&&(el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
+const sensitive=(el)=>['input','textarea'].includes(el.localName)&&(el.hasAttribute('data-voicechat-secret')||el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
 const record=(step)=>{if(recording&&!diagnosticRunning&&!editActive)parent.postMessage({type:RECORD,step},location.origin)};
 const recordClick=(e)=>{const el=e.target instanceof Element?clickTarget(e.target):null;if(el&&!el.closest('[data-voicechat-inspector]')){lastRecordedClickAt=Date.now();record({kind:'click',selector:uniqueSelector(el),text:textOf(el).slice(0,EL_TEXT)})}};
 const recordInput=(e)=>{const el=e.target instanceof Element?e.target:null;if(!el||el.closest('[data-voicechat-inspector]')||!el.matches('input,textarea,select,[contenteditable=true]'))return;record({kind:'type',selector:uniqueSelector(el),text:sensitive(el)?'':String(el.value===undefined?el.textContent||'':el.value).slice(0,2000),sensitive:sensitive(el)})};

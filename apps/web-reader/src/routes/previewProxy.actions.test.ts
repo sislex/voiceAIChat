@@ -489,10 +489,11 @@ describe('скрипт превью: различать одинаковое, к
     const rows = document.querySelectorAll('button.del')
     let clicked: Element | null = null
     for (const button of rows) button.addEventListener('click', () => { clicked = button })
-    const ambiguous = await act({ kind: 'click', text: 'Удалить', exact: true })
+    const ambiguous = await act({ kind: 'click', text: 'Удалить', exact: true, confirm: true })
     expect(ambiguous.ok).toBe(false)
     expect(ambiguous.error).toContain('неоднозначен')
-    const near = await act({ kind: 'click', text: 'Удалить', near: 'Заказ №5', exact: true })
+    // «Удалить» — опасное слово: клик разрешён пользователем заранее (confirm).
+    const near = await act({ kind: 'click', text: 'Удалить', near: 'Заказ №5', exact: true, confirm: true })
     expect(near.ok).toBe(true)
     expect(clicked).toBe(rows[1])
     expect((near.result as { clicked: { context?: string } }).clicked.context).toContain('Заказ №5')
@@ -658,10 +659,10 @@ describe('скрипт превью: проверки тестировщика �
     const twins = document.querySelectorAll('button.twin')
     let clicked: Element | null = null
     for (const button of twins) button.addEventListener('click', () => { clicked = button })
-    const second = await act({ kind: 'click', text: 'Удалить', exact: true, nth: 2 })
+    const second = await act({ kind: 'click', text: 'Удалить', exact: true, nth: 2, confirm: true })
     expect(second.ok).toBe(true)
     expect(clicked).toBe(twins[1])
-    const missing = await act({ kind: 'click', text: 'Удалить', exact: true, nth: 5 })
+    const missing = await act({ kind: 'click', text: 'Удалить', exact: true, nth: 5, confirm: true })
     expect(missing.ok).toBe(false)
     expect(missing.error).toContain('№5')
     const heading = document.querySelector('h1') as HTMLElement
@@ -911,6 +912,38 @@ describe('скрипт превью: терпение и показ (круг 13
     document.querySelector('#cart p')!.textContent = 'Товар 1'
     const diff = await act({ kind: 'changes', selector: '#cart' })
     expect((diff.result as { changes: { added: string[]; removed: string[] } }).changes).toMatchObject({ added: ['Товар 1'], removed: ['Пусто'] })
+  })
+})
+
+describe('скрипт превью: осторожность как у человека (круг 14)', () => {
+  it('опасный клик останавливается до confirm, с confirm выполняется; скачивание тоже требует согласия', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button id="pay">Оплатить заказ</button><a id="report" href="/report.pdf">Отчёт PDF</a>`)
+    let paid = false
+    document.getElementById('pay')!.addEventListener('click', () => { paid = true })
+    document.getElementById('report')!.addEventListener('click', (event) => event.preventDefault())
+    const stopped = await act({ kind: 'click', text: 'Оплатить заказ' })
+    expect(stopped.ok).toBe(true)
+    expect(stopped.result).toMatchObject({ needsConfirmation: true, reason: 'оплата или перевод', target: { selector: '#pay' } })
+    expect(paid).toBe(false)
+    const download = await act({ kind: 'click', text: 'Отчёт PDF' })
+    expect(download.result).toMatchObject({ needsConfirmation: true, reason: 'скачивание файла' })
+    const confirmed = await act({ kind: 'click', text: 'Оплатить заказ', confirm: true })
+    expect((confirmed.result as { clicked?: unknown }).clicked).toBeTruthy()
+    expect(paid).toBe(true)
+  })
+
+  it('type secret не возвращает значение; show all подсвечивает все; hover сообщает курсор; read перечисляет iframe', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<input id="pin"><button class="dup">Удалить</button><button class="dup">Удалить</button><button id="pointer" style="cursor:pointer">Жми</button><iframe id="embed" src="https://video.example/embed/1" title="Видео"></iframe>`)
+    const secret = await act({ kind: 'type', selector: '#pin', text: '1234', secret: true })
+    expect((secret.result as { value: string }).value).toBe('')
+    expect((document.getElementById('pin') as HTMLInputElement).value).toBe('1234')
+    const shown = await act({ kind: 'show', text: 'Удалить', all: true })
+    expect((shown.result as { shownCount?: number }).shownCount).toBe(2)
+    const hovered = await act({ kind: 'hover', selector: '#pointer' })
+    expect((hovered.result as { cursor?: string }).cursor).toBe('pointer')
+    const read = await act({ kind: 'read', parts: ['headings'] })
+    expect((read.result as { frames?: { src: string; title: string }[] }).frames).toEqual([{ selector: '#embed', src: 'https://video.example/embed/1', title: 'Видео' }])
+    expect((read.result as { page: { icon?: string } }).page.icon).toContain('/favicon.ico')
   })
 })
 
