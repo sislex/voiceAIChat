@@ -373,3 +373,49 @@ describe('данные сайта в панели (круг 6)', () => {
     })))
   })
 })
+
+describe('понятный отказ действия (круг 7)', () => {
+  it('панель показывает причину, совет и похожие элементы вместо строки Playwright', async () => {
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+        if (req.command.action?.kind === 'click') {
+          return {
+            ok: false,
+            error: 'locator.click: Timeout 5000ms exceeded',
+            failure: {
+              kind: 'not-found',
+              reason: 'Такого элемента на странице нет — по крайней мере видимого.',
+              advice: 'Найди его через find по видимому тексту.',
+              candidates: [{ text: 'Сохранить как', tag: 'button', visible: true }]
+            }
+          }
+        }
+        return meta()
+      }) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium')
+    // Клик по кадру уходит как input; для селекторного отказа зовём поиск панели.
+    fireEvent.keyDown(screen.getByLabelText('Browser session'), { key: 'f', ctrlKey: true })
+    fireEvent.change(await screen.findByLabelText('Найти на странице'), { target: { value: 'Сохранить' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Найти$/ }))
+    expect(frame).toBeTruthy()
+  })
+
+  it('отказ селекторного действия не остаётся молчаливым', async () => {
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+        if (req.command.action?.kind === 'storage') {
+          return { ok: false, error: 'Доступный элемент не найден', failure: { kind: 'not-found', reason: 'Такого элемента на странице нет.', advice: 'Найди его через find.' } }
+        }
+        return meta()
+      }) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Среда' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Хранилище сайта' }))
+    await screen.findByText('Такого элемента на странице нет.')
+    await screen.findByText('Найди его через find.')
+  })
+})
