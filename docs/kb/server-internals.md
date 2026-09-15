@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-13
-checked: 33bf88a8
+updated: 2026-09-15
+checked: 68124e0f
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -777,3 +777,12 @@ UI Make остаётся в `packages/ui` и собирается общим web
 `writePublishRaw` для этого мало: он спасает от рваного чтения, но не от
 lost-update. Регрессионный тест — «переопубликация не воскрешает старый токен»
 в `workspace.test.ts` (красная проверка: без лока падает сразу).
+
+## Account profile query path
+
+`GET /api/me/profile` runs its independent reads concurrently. Conversation
+count uses `ChatRepo.conversationCount(userId)` and session activity uses
+`IdentityRepo.sessionActivityForUser(userId)`, so opening one account does not
+build global maps for every user. The response includes machine counts only;
+the existing `/api/agents` route remains the source for versions and telemetry
+when the Machines tab opens.

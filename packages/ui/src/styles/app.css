@@ -2396,6 +2396,69 @@
   gap: 6px;
   flex-wrap: wrap;
 }
+
+/* The account route keeps its navigation visible while independently loaded
+   profile sections settle below it. */
+.account-page {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.account-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex: 0 0 auto;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+.account-head__copy { min-width: 0; }
+.account-head__copy h1 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+.account-head__copy p { margin: 3px 0 0; color: var(--text-dim); font-size: 11px; }
+.account-page > .vcp { width: min(100%, 1180px); margin: 0 auto; }
+
+.account-page__fallback {
+  padding: 22px 24px;
+}
+.account-page__fallback-profile,
+.account-page__fallback-stats > i {
+  display: block;
+  border-radius: 12px;
+  background: linear-gradient(100deg, var(--panel) 30%, var(--surface-hover) 50%, var(--panel) 70%);
+  background-size: 220% 100%;
+  animation: account-placeholder 1.2s ease-in-out infinite;
+}
+.account-page__fallback-profile {
+  width: min(320px, 72%);
+  height: 52px;
+  margin-bottom: 18px;
+}
+.account-page__fallback-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.account-page__fallback-stats > i { height: 80px; }
+
+@keyframes account-placeholder {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-page__fallback-profile,
+  .account-page__fallback-stats > i { animation: none; }
+}
+
+@media (max-width: 720px) {
+  .account-head { align-items: flex-start; padding: 12px 14px; }
+  .account-head__copy { flex: 1 1 100%; }
+  .account-head__copy h1 { font-size: 18px; }
+  .account-head .uadmin-actions { width: 100%; }
+  .account-head .uadmin-actions .vc-btn { min-height: 44px; flex: 1 1 0; }
+  .account-page__fallback { padding: 16px; }
+  .account-page__fallback-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .uadmin-sec {
   margin-bottom: 16px;
 }

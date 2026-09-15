@@ -453,6 +453,14 @@ export class IdentityRepo extends BaseRepo {
     return new Map(rows.map((row) => [row.user, { lastSeen: row.lastSeen, live: row.live }]))
   }
 
+  /** Read one account's activity for self-service pages without a global scan. */
+  async sessionActivityForUser(user: string, at?: number): Promise<{ lastSeen: number; live: number } | null> {
+    const now = at ?? Date.now()
+    const row = (await this.sql.get(`SELECT MAX(last_seen) AS lastSeen, COUNT(*) AS live
+      FROM sessions WHERE user_name = ? AND revoked_at IS NULL AND expires_at > ?`, [user, now])) as { lastSeen: number | null; live: number }
+    return row.live > 0 && row.lastSeen !== null ? { lastSeen: row.lastSeen, live: row.live } : null
+  }
+
   /** Сколько живых сессий и сколько из них доверенных — сводка для админки. */
   async sessionStats(user: string, at?: number): Promise<{ total: number; trusted: number }> {
     const now = at ?? Date.now()
