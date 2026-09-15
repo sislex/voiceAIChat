@@ -793,6 +793,8 @@ export type BrowserCommand = BrowserFrameTarget & (
   | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
   /** Named state snapshots and their comparison with the page as it is now. */
   | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number }
+  /** A report of what was checked in the browser — for a task comment. */
+  | { type: 'report'; title?: string; limit?: number }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)
