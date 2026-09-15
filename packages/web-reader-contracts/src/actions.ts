@@ -39,7 +39,9 @@ function narrate(kind: string, result: Record<string, unknown> | undefined, addr
   const dialogs = Array.isArray(result.dialogs) ? result.dialogs.length : 0
   if ((kind === 'click' || kind === 'press' || kind === 'choose') && dialogs) return 'открылось окно'
   if ((kind === 'click' || kind === 'type' || kind === 'press' || kind === 'fill' || kind === 'choose') && result.navigated === true) return host() ? `перешёл на ${host()}` : 'перешёл на другую страницу'
+  if (kind === 'open' && result.crossSite === true) return host() ? `перешёл на другой сайт: ${host()}` : 'перешёл на другой сайт'
   if (kind === 'open' && result.redirected === true) return host() ? `перенаправлено на ${host()}` : 'перенаправлено'
+  if (result.needsConfirmation === true) return `ждёт подтверждения: ${typeof result.reason === 'string' ? result.reason : 'опасное действие'}`
   if (kind === 'click' && typeof result.obscuredBy === 'string') return 'цель перекрыта другим элементом'
   const changes = result.changes as { addedTotal?: number; removedTotal?: number } | undefined
   if (kind === 'click' && changes && ((changes.addedTotal ?? 0) || (changes.removedTotal ?? 0))) return `на странице появилось ${changes.addedTotal ?? 0}, исчезло ${changes.removedTotal ?? 0}`

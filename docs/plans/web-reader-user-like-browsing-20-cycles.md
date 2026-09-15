@@ -467,4 +467,38 @@ UI (desktop and phone):
 | 09 | Report button appears only when there is something to report | `WebReaderFrame` |
 | 10 | Kind filter select styled with panel tokens | `panel.css` |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-13.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-13.md`. Commit `bc366c7d`.
+
+## Cycle 14 — caution like a person: ask before paying, deleting or downloading
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | dangerous clicks (pay, delete, transfer, unsubscribe, downloads) stop with `needsConfirmation` until `confirm: true` | script `dangerReason` | script test |
+| 02 | MCP turns the stop into an explicit refusal telling the model to ask the person first | `previewMcp.ts` `run` | MCP test |
+| 03 | `confirm` accepted by click, fill and choose | shared, MCP | shared test |
+| 04 | `type {secret: true}` masks the value in results and marks the field as sensitive for recordings | script | script test |
+| 05 | `show {all: true}` highlights every match with numbers | script | script test |
+| 06 | `hover.cursor` — the computed cursor (pointer, not-allowed) | script | script test |
+| 07 | `read.frames` — embedded iframes with src and title | script | script test |
+| 08 | `open.crossSite` when the host changes; feed says «перешёл на другой сайт» | `hostBridge.ts`, relay | bridge test |
+| 09 | `status.checks` tallies passed/failed checks | `hostBridge.ts` | bridge test |
+| 10 | favicon falls back to /favicon.ico like browsers; hint documents confirm/secret/all/cursor/frames/crossSite | script, hint | script + shared tests |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Confirmation prompt in the panel («Ассистент хочет: нажимает Оплатить — оплата или перевод. Разрешить?») with Разрешить/Отказать | `WebReaderFrame`, App |
+| 02 | Approving runs the same action with `confirm: true` from the person's side | App |
+| 03 | Feed narrates «ждёт подтверждения: …» and «перешёл на другой сайт» | relay summary |
+| 04 | Manual-mode line shows how long the person has been in control | Recorder |
+| 05 | Confirmation uses `role=alertdialog` and assertive live region | `WebReaderFrame` |
+| 06 | 44 px confirmation buttons on touch | `panel.css` |
+| 07 | Secret typing never reaches the scenario recording (`data-voicechat-secret`) | script |
+| 08 | Numbered captions when several elements are shown | script `showLabel` |
+| 09 | Site favicon appears for sites without `<link rel=icon>` | script |
+| 10 | Confirmation prompt clears on conversation change | App |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-14.md`.

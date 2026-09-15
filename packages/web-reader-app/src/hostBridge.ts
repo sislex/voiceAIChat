@@ -176,7 +176,11 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       if (entry.action.kind === 'open') {
         // Итоговый адрес не совпал с запрошенным — сайт перенаправил; модели важно это знать.
         const finalUrl = approvedUrl ?? entry.action.url
-        const opened = { url: finalUrl, ...(pageTitle ? { title: pageTitle } : {}), ...(pageOutline ? { outline: pageOutline } : {}), ...(finalUrl !== entry.action.url ? { redirected: true } : {}) }
+        // Смена сайта заметна человеку по адресной строке — отмечаем её и для модели.
+        const hostOf = (value: string | null): string => { try { return value ? new URL(value).host : '' } catch { return '' } }
+        const previousHost = hostOf(history[1] ?? null)
+        const crossSite = Boolean(previousHost) && hostOf(finalUrl) !== previousHost
+        const opened = { url: finalUrl, ...(pageTitle ? { title: pageTitle } : {}), ...(pageOutline ? { outline: pageOutline } : {}), ...(finalUrl !== entry.action.url ? { redirected: true } : {}), ...(crossSite ? { crossSite: true } : {}) }
         const waitFor = entry.action.waitFor
         if (waitFor) {
           // open + wait одним действием: страница готова, теперь дождаться нужного текста.
@@ -218,7 +222,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         ...(manual ? { manual: true } : {}),
         ...(viewport ? { viewport } : {}),
         ...(pending.size ? { pending: pending.size } : {}),
-        ...(lastAction ? { lastAction } : {})
+        ...(lastAction ? { lastAction } : {}),
+        ...(checks.length ? { checks: { passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length } } : {})
       } })
     }
     // waitFor у действия: после успеха дождаться текста тем же ходом, как у open.

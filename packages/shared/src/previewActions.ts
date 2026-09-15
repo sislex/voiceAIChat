@@ -134,10 +134,12 @@ export type PreviewAction = BrowserFrameTarget & (
   /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
   /** x/y — клик по точке вьюпорта (карты, canvas), когда у цели нет текста и селектора. */
   /** waitFor — текст, которого дождаться после действия (click/type/press/choose/fill), одним ходом. */
-  | { kind: 'click'; selector?: string; text?: string; role?: string; near?: string; exact?: boolean; nth?: number; x?: number; y?: number; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; waitFor?: string; diagnostic?: boolean }
+  /** confirm — пользователь явно разрешил опасное действие (оплата, удаление, скачивание). */
+  | { kind: 'click'; selector?: string; text?: string; role?: string; near?: string; exact?: boolean; nth?: number; x?: number; y?: number; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; waitFor?: string; confirm?: boolean; diagnostic?: boolean }
   /** field — подпись, placeholder или name поля вместо CSS-селектора; append дописывает к текущему значению. */
   /** perKey — посимвольный ввод с событиями клавиатуры: для полей, слушающих keydown (маски, автодополнение). */
-  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; diagnostic?: boolean }
+  /** secret — значение не возвращать и не записывать в сценарий, даже если поле не помечено как пароль. */
+  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; secret?: boolean; diagnostic?: boolean }
   /** visible — только то, что сейчас в видимой области окна: экран пользователя, а не весь документ. */
   /** section — прочитать раздел под заголовком с этим текстом, как человек листает до нужного места. */
   /** brief — короткое человеческое описание страницы вместо полной структуры. */
@@ -187,15 +189,16 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Состояние панели без обращения к странице: подключена ли, что открыто, загружена ли страница. */
   | { kind: 'status'; diagnostic?: boolean }
   /** Заполнить несколько полей формы разом, как человек, и при submit отправить её. */
-  | { kind: 'fill'; fields: PreviewFillField[]; submit?: boolean; perKey?: boolean; waitFor?: string; diagnostic?: boolean }
+  | { kind: 'fill'; fields: PreviewFillField[]; submit?: boolean; perKey?: boolean; waitFor?: string; confirm?: boolean; diagnostic?: boolean }
   /** Выбрать пункт из выпадающего меню или списка: открыть триггер (in), дождаться пункта и нажать его. */
-  | { kind: 'choose'; text: string; in?: string; near?: string; waitFor?: string; diagnostic?: boolean }
+  | { kind: 'choose'; text: string; in?: string; near?: string; waitFor?: string; confirm?: boolean; diagnostic?: boolean }
   /** Что изменилось на странице с прошлого снимка (read/changes/действие): появившиеся и исчезнувшие тексты. */
   | { kind: 'changes'; selector?: string; diagnostic?: boolean }
   /** Отчёт о сеансе панели: где были, что проверили, что упало — для отчёта по задаче. */
   | { kind: 'report'; diagnostic?: boolean }
   /** Показать пользователю элемент: прокрутить к нему и подсветить с подписью на несколько секунд. */
-  | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; diagnostic?: boolean }
+  /** all — подсветить все совпадения (до 10), не только первое. */
+  | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; all?: boolean; diagnostic?: boolean }
   /** Проверка ожидания как у тестировщика: pass/fail с фактическим значением, без исключений. */
   /** url/title — проверка адреса и заголовка страницы (мост панели), без text/selector. */
   | { kind: 'check'; text?: string; selector?: string; near?: string; state?: 'visible' | 'hidden' | 'present' | 'absent'; value?: string; contains?: string; count?: number; enabled?: boolean; checked?: boolean; url?: string; title?: string; diagnostic?: boolean }
@@ -254,6 +257,8 @@ export interface PreviewStatusResult {
   pending?: number
   /** Последнее завершённое действие модели и его итог — чтобы продолжить после паузы. */
   lastAction?: { kind: string; ok: boolean; at: number; error?: string }
+  /** Итоги проверок за сеанс. */
+  checks?: { passed: number; failed: number }
   /** Размер видимой области страницы: понять, мобильная ли раскладка у пользователя. */
   viewport?: { width: number; height: number }
 }
@@ -353,6 +358,8 @@ export interface PreviewReadResult {
   landmarks?: { role: string; name: string; selector: string }[]
   /** Таблицы: заголовки и первые строки — человек читает таблицу по строкам. */
   tables?: { selector: string; caption?: string; headers: string[]; rows: string[][]; totalRows: number }[]
+  /** Встроенные iframe: часть содержимого живёт в них и недоступна прокси-панели. */
+  frames?: { selector: string; src: string; title: string }[]
   /** Элемент с фокусом — где сейчас «курсор» пользователя. */
   focus?: string
   /** Текст, выделенный пользователем на странице (до 2000 символов). */
@@ -386,6 +393,8 @@ export interface PreviewOpenResult {
   redirected?: boolean
   /** Итог ожидания waitFor: текст дождались или нет (с причиной). */
   waited?: { text: string; found: boolean; error?: string }
+  /** Новый адрес на другом сайте, чем прежний: человек заметил бы смену домена. */
+  crossSite?: boolean
 }
 
 export interface PreviewStylesResult {
@@ -399,6 +408,8 @@ export interface PreviewHoverResult {
   hovered: PreviewActionElement
   /** Подсказка, которую увидел бы пользователь: title, aria-describedby или появившийся role=tooltip. */
   tooltip?: string
+  /** Курсор над элементом (pointer, not-allowed, text…) — «рука» подсказывает кликабельность. */
+  cursor?: string
   /** Элементы, показавшиеся после наведения (пункты меню): их можно нажать следующим шагом. */
   revealed?: PreviewActionElement[]
 }
@@ -435,6 +446,17 @@ export interface PreviewScreenshotResult {
 export interface PreviewShowResult {
   page: PreviewPageInfo
   shown: PreviewActionElement
+  /** Сколько элементов подсвечено при all: true. */
+  shownCount?: number
+}
+
+/** Опасное действие остановлено до подтверждения: модель спрашивает человека и повторяет с confirm: true. */
+export interface PreviewConfirmationResult {
+  page: PreviewPageInfo
+  needsConfirmation: true
+  /** Почему: оплата, удаление, отправка, скачивание файла. */
+  reason: string
+  target: PreviewActionElement
 }
 
 /** Запись об ошибке страницы (кольцевой буфер инъецированного скрипта). */
@@ -606,6 +628,7 @@ export type PreviewActionResult =
   | PreviewSequenceResult
   | PreviewChangesResult
   | PreviewReportResult
+  | PreviewConfirmationResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -664,7 +687,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') && validNth(value.nth) &&
         (value.x === undefined && value.y === undefined || typeof value.x === 'number' && Number.isFinite(value.x) && typeof value.y === 'number' && Number.isFinite(value.y) && value.x >= 0 && value.y >= 0 && value.x <= 100_000 && value.y <= 100_000) &&
         (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
-        (value.text !== undefined || value.selector !== undefined || value.x !== undefined || value.role !== undefined) && optBounded(value.waitFor, L.text) &&
+        (value.text !== undefined || value.selector !== undefined || value.x !== undefined || value.role !== undefined) && optBounded(value.waitFor, L.text) && (value.confirm === undefined || typeof value.confirm === 'boolean') &&
         (value.button === undefined || value.button === 'left' || value.button === 'right') &&
         (value.dblclick === undefined || typeof value.dblclick === 'boolean') &&
         (value.modifiers === undefined || (Array.isArray(value.modifiers) && value.modifiers.length <= 4 && value.modifiers.every((item) => (PREVIEW_CLICK_MODIFIERS as readonly string[]).includes(item as string))))
@@ -675,7 +698,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         bounded(value.text, L.text) &&
         (value.submit === undefined || typeof value.submit === 'boolean') &&
         (value.append === undefined || typeof value.append === 'boolean') &&
-        (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text)
+        (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean')
     case 'read':
       return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) &&
         (value.visible === undefined || typeof value.visible === 'boolean') && (value.brief === undefined || typeof value.brief === 'boolean') &&
@@ -726,7 +749,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (value.clear === undefined || typeof value.clear === 'boolean') && (value.since === undefined || (typeof value.since === 'number' && Number.isFinite(value.since) && value.since >= 0)) &&
         (value.kinds === undefined || (Array.isArray(value.kinds) && value.kinds.length >= 1 && value.kinds.length <= 4 && value.kinds.every((kind) => ['error', 'unhandledrejection', 'console.error', 'network'].includes(kind as string))))
     case 'show':
-      return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) && optBounded(value.label, 120) &&
+      return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) && optBounded(value.label, 120) && (value.all === undefined || typeof value.all === 'boolean') &&
         (value.text !== undefined || value.selector !== undefined)
     case 'check':
       return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) && optBounded(value.value, L.text) && optBounded(value.contains, L.text) && optBounded(value.url, L.url) && optBounded(value.title, L.text) &&
@@ -749,9 +772,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return Array.isArray(value.fields) && value.fields.length >= 1 && value.fields.length <= 30 &&
         value.fields.every((item) => record(item) && bounded(item.value, L.text) && optBounded(item.selector, L.selector) && optBounded(item.field, L.text) && optBounded(item.near, L.text) &&
           (bounded(item.selector, L.selector) && item.selector.length > 0 || bounded(item.field, L.text) && item.field.trim().length > 0)) &&
-        (value.submit === undefined || typeof value.submit === 'boolean') && (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text)
+        (value.submit === undefined || typeof value.submit === 'boolean') && (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.confirm === undefined || typeof value.confirm === 'boolean')
     case 'choose':
-      return bounded(value.text, L.text) && value.text.trim().length > 0 && optBounded(value.in, L.text) && optBounded(value.near, L.text) && optBounded(value.waitFor, L.text)
+      return bounded(value.text, L.text) && value.text.trim().length > 0 && optBounded(value.in, L.text) && optBounded(value.near, L.text) && optBounded(value.waitFor, L.text) && (value.confirm === undefined || typeof value.confirm === 'boolean')
     case 'changes':
       return optBounded(value.selector, L.selector)
     case 'report':
@@ -942,6 +965,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'fill {perKey} печатает посимвольно; sequence {continueOnError: true} проходит все шаги как чек-лист и перечисляет провалы. ' +
     'report — отчёт о сеансе панели (история адресов, проверки с итогами, число действий) для отчёта по задаче; find {reveal: true} — найти и показать пользователю первое совпадение; ' +
     'click и type сами ждут цель до 1,5 с, если её ещё нет (waitedMs в ответе); changes {selector} сравнивает только область. ' +
+    'Опасные действия — оплата, удаление, отправка денег, скачивание файла — панель останавливает и отвечает needsConfirmation: спроси пользователя словами и повтори с confirm: true только после его согласия. ' +
+    'type {secret: true} не возвращает значение и не пишет его в сценарий; show {all: true} подсвечивает все совпадения; hover.cursor — «рука» над кликабельным; read.frames — встроенные iframe, недоступные панели; open.crossSite — перешли на другой сайт. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

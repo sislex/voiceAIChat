@@ -706,6 +706,15 @@ describe('previewMcp — инструменты browser', () => {
     expect(good.text).toContain('"completed":1')
   })
 
+  it('остановленное опасное действие приходит модели как отказ с инструкцией', async () => {
+    await makeApp()
+    client = (message) => { if (message.t === 'preview.action') relay.resolve(U, message.requestId, { ok: true, result: { page: { url: 'https://x', title: '' }, needsConfirmation: true, reason: 'оплата или перевод', target: { selector: '#pay', tag: 'button', text: 'Оплатить' } } }, CONV) }
+    const result = await call('click', { text: 'Оплатить' })
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('confirm: true')
+    expect(result.text).toContain('«Оплатить»')
+  })
+
   it('find без text и selector — ошибка аргументов', async () => {
     await makeApp()
     const result = await call('find', {})

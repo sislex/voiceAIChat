@@ -103,7 +103,16 @@ export function Recorder(): JSX.Element {
   const requestedUrl = useRef<string | null>(null)
   const manualRef = useRef(false)
   manualRef.current = manual
-  const setManualMode = (next: boolean): void => { setManual(next); reply({ kind: 'control', manual: next }) }
+  const [manualSince, setManualSince] = useState<number | null>(null)
+  const [manualMinutes, setManualMinutes] = useState(0)
+  useEffect(() => {
+    if (manualSince === null) { setManualMinutes(0); return }
+    const tick = (): void => setManualMinutes(Math.floor((Date.now() - manualSince) / 60_000))
+    tick()
+    const timer = setInterval(tick, 30_000)
+    return () => clearInterval(timer)
+  }, [manualSince])
+  const setManualMode = (next: boolean): void => { setManual(next); setManualSince(next ? Date.now() : null); reply({ kind: 'control', manual: next }) }
   // Actions that may start a navigation keep their result briefly: if the page begins
   // loading, the model learns `navigated: true` and the new page instead of a stale DOM.
   const commandKinds = useRef(new Map<string, string>())
@@ -657,7 +666,7 @@ export function Recorder(): JSX.Element {
     {error && <div className="webpreview-error webpreview-load-error" role="alert"><span>{error}</span><Button size="sm" variant="secondary" aria-label="Скопировать текст ошибки" onClick={() => { void navigator.clipboard?.writeText(error).catch(() => {}) }}>Скопировать</Button><Button size="sm" aria-label="Скрыть ошибку Reader" onClick={() => setError(null)}>×</Button></div>}
     {storageError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{storageError}</span><Button size="sm" onClick={saveScenario}>Повторить сохранение</Button></div>}
     {recording && <div className="webpreview-run-status" role="status" aria-live="polite">Идёт запись сценария: {steps.length} шаг.</div>}
-    {manual && <div className="webpreview-run-status webpreview-manual" role="status" aria-live="polite">Управляете только вы: действия ассистента отклоняются. <Button size="sm" onClick={() => setManualMode(false)}>Вернуть ассистенту</Button></div>}
+    {manual && <div className="webpreview-run-status webpreview-manual" role="status" aria-live="polite">Управляете только вы{manualMinutes > 0 ? ` уже ${manualMinutes} мин` : ''}: действия ассистента отклоняются. <Button size="sm" onClick={() => setManualMode(false)}>Вернуть ассистенту</Button></div>}
     {diagnostics && <DiagnosticHistory key={`${session.current?.conversationId}:${session.current?.registrationId}`} steps={diagnostics} />}
     {scenarioProgress && <div className="webpreview-run-status" role="status" aria-live="polite" data-status={scenarioProgress.status}>
       {scenarioProgress.status === 'running' ? 'Выполняется сценарий' : scenarioProgress.status === 'passed' ? 'Сценарий выполнен' : scenarioProgress.status === 'cancelled' ? 'Сценарий остановлен' : 'Ошибка сценария'}: {scenarioProgress.completed} из {scenarioProgress.total}

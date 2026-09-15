@@ -54,6 +54,15 @@ describe('WebReaderFrame', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('шаг 1 из 2: нажимает Войти'))
     expect(post).toHaveBeenCalled()
   })
+  it('показывает запрос подтверждения опасного действия с кнопками разрешить и отказать', () => {
+    const onSave = vi.fn(async () => undefined), onConfirmAction = vi.fn(), onDenyAction = vi.fn()
+    render(<WebReaderFrame platform={platform} conversationId="conv-confirm" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} confirmRequest={{ action: { kind: 'click', text: 'Оплатить' }, reason: 'оплата или перевод', target: 'Оплатить' }} onConfirmAction={onConfirmAction} onDenyAction={onDenyAction} />)
+    expect(screen.getByRole('alertdialog').textContent).toContain('нажимает Оплатить')
+    fireEvent.click(screen.getByRole('button', { name: 'Разрешить' }))
+    expect(onConfirmAction).toHaveBeenCalledWith({ kind: 'click', text: 'Оплатить', confirm: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Отказать' }))
+    expect(onDenyAction).toHaveBeenCalled()
+  })
   it('ошибку страницы можно скрыть; новая ошибка появляется снова', () => {
     const onSave = vi.fn(async () => undefined)
     const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-err" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pageError="TypeError: boom" />)
