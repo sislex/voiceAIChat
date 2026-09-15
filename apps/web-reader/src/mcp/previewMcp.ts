@@ -1,7 +1,7 @@
 import { PREVIEW_MCP_PATH, type PreviewActionRelay, type PreviewActionOutcome, type PreviewTurnContext } from '@voicechat/web-reader-contracts'
 export { PREVIEW_MCP_PATH, PreviewActionRelay, PREVIEW_ACTION_TIMEOUT_MS } from '@voicechat/web-reader-contracts'
 export type { PreviewActionOutcome, PreviewTurnContext, PreviewEnvironmentInfo } from '@voicechat/web-reader-contracts'
-import { BROWSER_EVALUATE_MIN_TIMEOUT, BROWSER_EVALUATE_MAX_TIMEOUT, normalizeBrowserEvaluateOptions } from '@voicechat/shared'
+import { BROWSER_EVALUATE_MIN_TIMEOUT, BROWSER_EVALUATE_MAX_TIMEOUT, isPreviewAction, normalizeBrowserEvaluateOptions } from '@voicechat/shared'
 import { browserDiagnosticsRequireChromium, normalizeBrowserDiagnosticOptions } from '@voicechat/shared'
 import { BROWSER_DOWNLOAD_MODEL_CHUNK, BROWSER_DOWNLOAD_TEXT_CHUNK, isBrowserDownloadInfo, isBrowserDownloadListResult, isBrowserDownloadReadResult } from '@voicechat/shared'
 import { BROWSER_DIALOG_ANSWER_LIMIT, normalizeBrowserDialogAnswer, isBrowserDialogListResult, isBrowserSessionMetadata } from '@voicechat/shared'
@@ -22,6 +22,7 @@ import type { BrowserActionOutcome, BrowserImageResult, BrowserControlCommand, B
 // (`reader/turnToken.ts`) — его выдаёт TurnManager или хуки CI в любом процессе.
 
 import { z } from 'zod'
+import { isRecording, recordAction, recordExpectation, scenarioOf, startRecording, stopRecording } from './turnRecorder.js'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -127,12 +128,17 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           if (!isPreviewAccessibilityResult(result)) return toolResult({ ok: false, error: 'The runner did not return valid native accessibility evidence. Update browser-runner and retry.' })
           return toolResult({ ok: true, result })
         }
+        // Успешное действие становится шагом сценария, если идёт запись: путь
+        // модели ничем не отличается от пути человека, а на выходе у неё
+        // оставался только текст хода, из которого сценарий не восстановить.
+        if (direct?.ok) recordAction(entry.conversationId, action)
         if (direct) return toolResult(direct)
         if ((action.kind === 'console' || action.kind === 'network') && browserDiagnosticsRequireChromium(action)) return toolResult({ ok: false, error: 'Вкладки, курсор и расширенные фильтры журналов доступны только в Playwright Reader или Chromium-проверке.' })
         if (action.kind === 'evaluate' && action.timeoutMs !== undefined) return toolResult({ ok: false, error: 'timeoutMs evaluate доступен только в Playwright Reader или Chromium-проверке.' })
         if (action.kind === 'accessibility') return toolResult({ ok: false, error: 'Native accessibility requires Chromium mode. Switch the Web Reader engine to Chromium.' })
         if (action.frame !== undefined) return toolResult({ ok: false, error: 'frame доступен только в Playwright Reader или Chromium-проверке.' })
         const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
+        if (outcome.ok) recordAction(entry.conversationId, action)
         if (outcome.ok && action.kind === 'probe' && !validProbeReport(outcome.result, 'proxy')) return toolResult({ ok: false, error: 'The proxy page did not return a valid control probe. Reload the Web Reader page and retry.' })
         return toolResult(outcome)
       }
@@ -885,6 +891,121 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             return { content: [{ type: 'text', text: 'У проекта нет тестовых пользователей. Их заводят в настройках проекта (секция «Тестовые пользователи»).' }] }
           }
           return { content: [{ type: 'text', text: JSON.stringify(users) }] }
+        }
+      )
+
+      server.registerTool(
+        'record',
+        {
+          description:
+            'Запись сценария из твоих же действий: start начинает, stop заканчивает, status показывает ход. ' +
+            'Человек в панели записывает свой проход и получает воспроизводимые шаги — у модели этого не было, ' +
+            'хотя проходит путь чаще всего она, в задаче канбана, где потом нужен автотест. ' +
+            'Читающие действия (read, find, screenshot) в запись не идут — прогонять их нечего.',
+          inputSchema: {
+            do: z.enum(['start', 'stop', 'status']).describe('Что сделать'),
+            name: z.string().max(120).optional().describe('Имя сценария (при start)'),
+            startUrl: z.string().max(L.url).optional().describe('Стартовый адрес; по умолчанию — адрес открытой страницы')
+          }
+        },
+        async ({ do: operation, name, startUrl }) => {
+          if (!entry) return noContext
+          if (operation === 'start') {
+            startRecording(entry.conversationId, startUrl ?? '', name)
+            return toolResult({ ok: true, result: { recording: true, steps: 0 } as never })
+          }
+          if (operation === 'stop') {
+            const scenario = scenarioOf(entry.conversationId)
+            stopRecording(entry.conversationId)
+            return toolResult({ ok: true, result: (scenario ?? { recording: false }) as never })
+          }
+          const scenario = scenarioOf(entry.conversationId)
+          return toolResult({ ok: true, result: { recording: isRecording(entry.conversationId), ...(scenario ? { steps: scenario.steps.length, scenario } : {}) } as never })
+        }
+      )
+
+      server.registerTool(
+        'replay',
+        {
+          description:
+            'Прогнать сценарий по шагам: записанный (record) или переданный целиком. ' +
+            'После каждого шага проверяется его ожидаемый текст. Отчёт говорит, какой шаг упал и почему — ' +
+            'это и есть автотест, который остаётся после проверки задачи. ' +
+            'Прогон останавливается на первом упавшем шаге: дальше страница уже не та.',
+          inputSchema: {
+            scenario: z.object({
+              name: z.string().max(120).optional(),
+              startUrl: z.string().max(L.url),
+              steps: z.array(z.object({
+                id: z.string().max(64),
+                title: z.string().max(200),
+                action: z.record(z.string(), z.unknown()),
+                expectText: z.string().max(L.text).optional(),
+                expectAbsentText: z.string().max(L.text).optional()
+              })).min(1).max(100)
+            }).optional().describe('Сценарий целиком; без него берётся записанный в этом разговоре'),
+            expectTimeoutMs: z.number().int().min(100).max(30_000).optional().describe('Сколько ждать ожидаемый текст после шага')
+          }
+        },
+        async ({ scenario, expectTimeoutMs }) => {
+          if (!entry) return noContext
+          const plan = scenario ?? scenarioOf(entry.conversationId)
+          if (!plan || !plan.steps.length) return toolResult({ ok: false, error: 'Нечего прогонять: сценарий пуст. Включи запись (record start) или передай scenario.' })
+          const send = async (action: PreviewAction): Promise<{ ok: boolean; error?: string }> => {
+            const direct = await opts.browserExecutor?.(entry.userId, entry.conversationId, action)
+            if (direct) return { ok: direct.ok, ...(direct.error ? { error: direct.error } : {}) }
+            const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
+            return { ok: outcome.ok, ...(outcome.error ? { error: outcome.error } : {}) }
+          }
+          const report: Array<{ id: string; title: string; ok: boolean; detail?: string }> = []
+          if (plan.startUrl) {
+            const opened = await send({ kind: 'open', url: plan.startUrl })
+            if (!opened.ok) return toolResult({ ok: false, error: `Стартовый адрес не открылся: ${opened.error ?? 'отказ'}` })
+          }
+          for (const step of plan.steps) {
+            if (!isPreviewAction(step.action)) { report.push({ id: step.id, title: step.title, ok: false, detail: 'Шаг содержит неизвестное действие' }); break }
+            const outcome = await send(step.action as PreviewAction)
+            if (!outcome.ok) { report.push({ id: step.id, title: step.title, ok: false, detail: outcome.error ?? 'Действие не выполнено' }); break }
+            // Проверка живёт на шаге: «нажал — увидел» это одно событие, и ждать
+            // текст нужно сразу после действия, а не перед следующим.
+            if (step.expectText) {
+              const waited = await send({ kind: 'wait', text: step.expectText, ...(expectTimeoutMs ? { timeoutMs: expectTimeoutMs } : {}) })
+              if (!waited.ok) { report.push({ id: step.id, title: step.title, ok: false, detail: `Не дождались текста «${step.expectText}»` }); break }
+            }
+            if (step.expectAbsentText) {
+              const hidden = await send({ kind: 'wait', text: step.expectAbsentText, state: 'hidden', ...(expectTimeoutMs ? { timeoutMs: expectTimeoutMs } : {}) })
+              if (!hidden.ok) { report.push({ id: step.id, title: step.title, ok: false, detail: `На странице остался текст «${step.expectAbsentText}»` }); break }
+            }
+            report.push({ id: step.id, title: step.title, ok: true })
+          }
+          const failed = report.find((item) => !item.ok)
+          return toolResult({
+            ok: !failed,
+            ...(failed ? { error: `Шаг «${failed.title}»: ${failed.detail ?? 'не выполнен'}` } : {}),
+            result: { passed: !failed, steps: report, total: plan.steps.length } as never
+          })
+        }
+      )
+
+      server.registerTool(
+        'record-check',
+        {
+          description:
+            'Прикрепить проверку к последнему записанному шагу: после него текст обязан быть на странице ' +
+            '(или обязан отсутствовать — absent). В сценарии «нажал — увидел» это одно событие, ' +
+            'поэтому проверка живёт на шаге, а не становится отдельным. ' +
+            'Сценарий без единой проверки проходит, даже если страница сломана.',
+          inputSchema: {
+            text: z.string().min(1).max(L.text).describe('Ожидаемый текст'),
+            absent: z.boolean().optional().describe('true — текста быть не должно')
+          }
+        },
+        async ({ text, absent }) => {
+          if (!entry) return noContext
+          const attached = recordExpectation(entry.conversationId, text, absent === true)
+          return toolResult(attached
+            ? { ok: true, result: { attached: true } as never }
+            : { ok: false, error: 'Нет записанного шага: включи запись (record start) и сделай действие.' })
         }
       )
 

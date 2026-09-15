@@ -7,7 +7,7 @@ import { fitScale, frameWidth, nextFrameZoom, panelShortcut, pinchDistance, touc
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserCookieInfo, type BrowserElementDescription, type BrowserEnvironmentState, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, moveStep, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toggleStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
@@ -1159,6 +1159,19 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
               setMessage('Сценарий скопирован')
             } catch (err) { setMessage(err instanceof Error ? err.message : 'Скопировать не удалось') }
           })()}>Скопировать</Button>
+          {/* Сценарий переносят между разговорами и машинами: без обмена JSON
+              его приходилось записывать заново на каждом стенде. */}
+          <Button size="sm" variant="ghost" onClick={() => {
+            const text = globalThis.prompt?.('Вставьте JSON сценария')
+            if (!text) return
+            try {
+              const parsed = JSON.parse(text) as { steps?: unknown[]; startUrl?: string }
+              if (!Array.isArray(parsed.steps) || !parsed.steps.length) throw new Error('В сценарии нет шагов')
+              setSteps(loadScenario({ startUrl: parsed.startUrl ?? '', steps: parsed.steps as never }))
+              setStepResults({})
+              setMessage('Сценарий загружен из JSON')
+            } catch (err) { setMessage(err instanceof Error ? `Сценарий не загружен: ${err.message}` : 'Сценарий не загружен') }
+          }}>Вставить JSON</Button>
           <IconButton size="sm" aria-label="Очистить запись" title="Очистить запись" onClick={() => { setSteps([]); setRecording(false) }}>✕</IconButton>
         </div>
         {!hasAssertions(steps) && (
@@ -1202,7 +1215,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         )}
         <ol className="playwright-reader-record__list">
           {steps.map((step) => (
-            <li key={step.id} data-stability={step.stability}>
+            <li key={step.id} data-stability={step.stability} data-skipped={step.skipped ? 'true' : undefined}>
               <span className="playwright-reader-record__row">
                 {/* Название читается в отчёте этапа — его правят чаще всего. */}
                 <input
@@ -1212,6 +1225,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
                   onChange={(event) => setSteps((current) => renameStep(current, step.id, event.target.value))}
                 />
                 <IconButton size="sm" aria-label={`Прогнать до шага «${step.title}»`} title="Прогнать до этого шага" disabled={running} onClick={() => void replay(step.id)}>▸</IconButton>
+                {/* Записанный проход почти никогда не идеален: шаг сделан рано,
+                    шаг лишний. Раньше это лечилось только записью заново. */}
+                <IconButton size="sm" aria-label={`Поднять шаг «${step.title}»`} title="Выше" onClick={() => { setSteps((current) => moveStep(current, step.id, -1)); setStepResults({}) }}>↑</IconButton>
+                <IconButton size="sm" aria-label={`Опустить шаг «${step.title}»`} title="Ниже" onClick={() => { setSteps((current) => moveStep(current, step.id, 1)); setStepResults({}) }}>↓</IconButton>
+                <IconButton size="sm" aria-label={step.skipped ? `Включить шаг «${step.title}»` : `Выключить шаг «${step.title}»`}
+                  title={step.skipped ? 'Включить шаг' : 'Выключить шаг: останется в записи, но в сценарий не уедет'}
+                  onClick={() => { setSteps((current) => toggleStep(current, step.id)); setStepResults({}) }}>{step.skipped ? '○' : '●'}</IconButton>
                 <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => {
                 // Отметки прогона ключуются по id, а `removeStep` перенумеровывает:
                 // без сброса «ок» удалённого шага доставался следующему.
