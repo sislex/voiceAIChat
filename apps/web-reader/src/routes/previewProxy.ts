@@ -278,7 +278,7 @@ const showLabel=(el,label)=>{try{
   setTimeout(()=>{tag.remove();if(el.getAttribute(FLASH_ATTR)!=='show')return;el.removeAttribute(FLASH_ATTR);el.style.outline=prev;el.style.outlineOffset=prevOffset},3000)
 }catch{}};
 // Снимок видимых текстов: по нему считается, что появилось и исчезло — так человек замечает изменения.
-let textSnapshot=null;
+let textSnapshot=null,scopedSnapshots=null;
 const visibleTexts=()=>{const set=new Set();let count=0;for(const el of document.querySelectorAll('body *')){if(count>6000)break;count++;if(el.children.length>0&&!el.matches(CLICKABLE))continue;if(!readingVisible(el))continue;const t=textOf(el).slice(0,120);if(t)set.add(t)}return set};
 const diffTexts=(before,after)=>{const added=[],removed=[];for(const t of after)if(!before.has(t))added.push(t);for(const t of before)if(!after.has(t))removed.push(t);return {added:added.slice(0,8),removed:removed.slice(0,8),addedTotal:added.length,removedTotal:removed.length}};
 const openDialogs=()=>[...document.querySelectorAll('dialog[open],[role=dialog],[role=alertdialog],[aria-modal="true"]')].filter(el=>readingVisible(el)&&!el.closest('[data-voicechat-inspector]')).slice(0,5).map(uniqueSelector);
@@ -434,27 +434,17 @@ const sectionScope=(title)=>{
   wrapper.prepend(heading.cloneNode(true));
   return {scope:wrapper,title:readableText(heading,EL_TEXT),detached:true}
 };
-const run=(action)=>{
-  if(action.kind==='audit')return runAudit(action);
-  if(action.kind==='accessibility')throw new Error('Native accessibility requires Chromium mode.');
-  if(action.kind==='probe')return runProbe(action);
-  if(action.kind==='find'){
-    const hrefNeedle=typeof action.href==='string'?action.href.toLowerCase():'';
-    const base=action.href&&!action.text&&!action.selector&&!action.role?bySelector('a[href]'):findTargets(action);
-    // Что на экране — сначала: человек видит ближайшее, а не первое в DOM.
-    const found=base.filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden')).filter(el=>!action.onScreen||onScreen(el))
-      .filter(el=>!hrefNeedle||(el.localName==='a'&&unproxy(el.getAttribute('href')||'').toLowerCase().includes(hrefNeedle)))
-      .filter(el=>action.enabled===undefined||(!el.matches(':disabled')&&!el.closest('[aria-disabled="true"],[inert]'))===action.enabled)
-      .filter(el=>action.checked===undefined||(el.checked===true||el.getAttribute('aria-checked')==='true')===action.checked)
-      .map((el,i)=>({el,i,on:onScreen(el)?0:1})).sort((a,b)=>a.on-b.on||a.i-b.i).map(item=>item.el);
-    const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
-    // Ничего не нашлось — подсказать похожие тексты, как человек оглядывается вокруг искомого слова.
-    const suggestions=!found.length&&action.text?suggestTexts(action.text):[];
-    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{}),...(suggestions.length?{suggestions}:{})}
+// Цель по тексту может прорисоваться чуть позже клика по предыдущей кнопке: ждём до 1,5 с, как ждёт человек.
+const AUTO_WAIT_MS=1500;
+const withAutoWait=(resolve,retryable)=>{
+  try{return {el:resolve(),waitedMs:0}}catch(first){
+    if(!retryable||!/не найден|не появился|не найдено/i.test(String(first&&first.message||first)))throw first;
+    const started=performance.now();
+    return new Promise((ok,fail)=>{const attempt=()=>{try{ok({el:resolve(),waitedMs:Math.round(performance.now()-started)})}catch(err){if(performance.now()-started>=AUTO_WAIT_MS){fail(first);return}setTimeout(attempt,150)}};setTimeout(attempt,150)})
   }
-  if(action.kind==='click'){
-    // Клик по точке: там, где у цели нет ни текста, ни селектора (карта, canvas), человек просто тыкает пальцем.
-    const el=typeof action.x==='number'&&!action.selector&&!action.text?(()=>{const hit=document.elementFromPoint?document.elementFromPoint(action.x,action.y):null;if(!hit)throw new Error('В точке ('+action.x+', '+action.y+') нет элемента: она вне видимой области');return hit})():chooseTarget(action,true);actionable(el);
+};
+const runClick=(action,el)=>{
+    actionable(el);
     if(el.localName==='select')throw new Error('Это выпадающий список: выбери значение через set {selector, value} или choose, клик его не раскроет.');
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
     const dialogsBefore=new Set(openDialogs()),errorsBefore=pageErrors.length,textsBefore=visibleTexts();
@@ -479,8 +469,42 @@ const run=(action)=>{
     const newErrors=pageErrors.slice(errorsBefore).slice(0,3).map((e)=>({kind:e.kind,message:e.message,at:e.at}));
     const textsAfter=visibleTexts();textSnapshot=textsAfter;const changes=diffTexts(textsBefore,textsAfter);
     return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{}),...(obscuredBy?{obscuredBy}:{}),...(changes.addedTotal||changes.removedTotal?{changes}:{})}
+};
+const run=(action)=>{
+  if(action.kind==='audit')return runAudit(action);
+  if(action.kind==='accessibility')throw new Error('Native accessibility requires Chromium mode.');
+  if(action.kind==='probe')return runProbe(action);
+  if(action.kind==='find'){
+    const hrefNeedle=typeof action.href==='string'?action.href.toLowerCase():'';
+    const base=action.href&&!action.text&&!action.selector&&!action.role?bySelector('a[href]'):findTargets(action);
+    // Что на экране — сначала: человек видит ближайшее, а не первое в DOM.
+    const found=base.filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden')).filter(el=>!action.onScreen||onScreen(el))
+      .filter(el=>!hrefNeedle||(el.localName==='a'&&unproxy(el.getAttribute('href')||'').toLowerCase().includes(hrefNeedle)))
+      .filter(el=>action.enabled===undefined||(!el.matches(':disabled')&&!el.closest('[aria-disabled="true"],[inert]'))===action.enabled)
+      .filter(el=>action.checked===undefined||(el.checked===true||el.getAttribute('aria-checked')==='true')===action.checked)
+      .map((el,i)=>({el,i,on:onScreen(el)?0:1})).sort((a,b)=>a.on-b.on||a.i-b.i).map(item=>item.el);
+    const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
+    // Ничего не нашлось — подсказать похожие тексты, как человек оглядывается вокруг искомого слова.
+    const suggestions=!found.length&&action.text?suggestTexts(action.text):[];
+    if(action.reveal&&found[0]){found[0].scrollIntoView&&found[0].scrollIntoView({block:'center',inline:'nearest'});showLabel(found[0],'Найдено')}
+    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{}),...(suggestions.length?{suggestions}:{})}
   }
+  if(action.kind==='click'){
+    // Клик по точке: там, где у цели нет ни текста, ни селектора (карта, canvas), человек просто тыкает пальцем.
+    const resolved=withAutoWait(()=>typeof action.x==='number'&&!action.selector&&!action.text?(()=>{const hit=document.elementFromPoint?document.elementFromPoint(action.x,action.y):null;if(!hit)throw new Error('В точке ('+action.x+', '+action.y+') нет элемента: она вне видимой области');return hit})():chooseTarget(action,true),Boolean(action.text||action.role));
+    if(resolved&&typeof resolved.then==='function')return resolved.then(({el,waitedMs})=>Object.assign(runClick(action,el),waitedMs?{waitedMs}:{}));
+    return runClick(action,resolved.el)
+  }
+
   if(action.kind==='changes'){
+    if(action.selector){
+      // Область: сравнение внутри контейнера, снимок области хранится отдельно от общего.
+      const scope=bySelector(action.selector)[0];if(!scope)throw new Error('Элемент не найден: '+action.selector);
+      const texts=new Set();for(const el of scope.querySelectorAll('*')){if(el.children.length>0&&!el.matches(CLICKABLE))continue;if(!readingVisible(el))continue;const t=textOf(el).slice(0,120);if(t)texts.add(t)}
+      scopedSnapshots=scopedSnapshots||new Map();const prev=scopedSnapshots.get(action.selector);scopedSnapshots.set(action.selector,texts);
+      if(!prev)return {page:pageInfo(),changes:{added:[],removed:[],addedTotal:0,removedTotal:0},baseline:true};
+      return {page:pageInfo(),changes:diffTexts(prev,texts)}
+    }
     const now=visibleTexts();
     if(!textSnapshot){textSnapshot=now;return {page:pageInfo(),changes:{added:[],removed:[],addedTotal:0,removedTotal:0},baseline:true}}
     const changes=diffTexts(textSnapshot,now);textSnapshot=now;
@@ -579,12 +603,17 @@ const run=(action)=>{
     })
   }
   if(action.kind==='type'){
-    const el=action.selector?chooseTarget(action):fieldTarget(action.field||'',action.near);actionable(el,true);
-    flash(el);
-    const outcome=action.perKey?typePerKey(el,action.text,action.append===true,action.submit===true):typeInto(el,action.text,action.append===true,action.submit===true);
-    const options=suggestionsFor(el);
-    const validation=action.submit?validationMessages(el.form||el.closest('form')||document):[];
-    return {...outcome,...(options.length?{options}:{}),...(validation.length?{validation}:{})}
+    const finish=({el,waitedMs})=>{
+      actionable(el,true);flash(el);
+      const before=visibleTexts();
+      const outcome=action.perKey?typePerKey(el,action.text,action.append===true,action.submit===true):typeInto(el,action.text,action.append===true,action.submit===true);
+      const options=suggestionsFor(el);
+      const validation=action.submit?validationMessages(el.form||el.closest('form')||document):[];
+      const after=visibleTexts();textSnapshot=after;const changes=diffTexts(before,after);
+      return {...outcome,...(options.length?{options}:{}),...(validation.length?{validation}:{}),...(changes.addedTotal||changes.removedTotal?{changes}:{}),...(waitedMs?{waitedMs}:{})}
+    };
+    const resolved=withAutoWait(()=>action.selector?chooseTarget(action):fieldTarget(action.field||'',action.near),Boolean(action.field));
+    return resolved&&typeof resolved.then==='function'?resolved.then(finish):finish(resolved)
   }
 
   if(action.kind==='styles'){

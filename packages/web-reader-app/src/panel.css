@@ -44,3 +44,6 @@
 .webpreview-history li { flex-wrap: wrap; }
 .webpreview-history-verdicts { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 .webpreview-history-count { color: var(--text-dim); }
+.webpreview-history-icon { color: var(--text-dim); }
+.webpreview-history-kind select { font: inherit; font-size: 12px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }
+.webpreview-report { margin: 0; padding: 2px 10px 4px; border-bottom: 1px solid var(--border); }

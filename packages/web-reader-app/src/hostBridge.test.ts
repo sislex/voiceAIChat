@@ -87,6 +87,23 @@ describe('wait по адресу, история и вопрос о выделе
   })
 })
 
+describe('report', () => {
+  it('собирает историю, проверки и число действий', async () => {
+    const h = harness()
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    const checking = h.bridge.run({ kind: 'check', text: 'Войти' })
+    await Promise.resolve()
+    const command = h.sent.filter((m) => m.kind === 'command').at(-1) as { requestId: string }
+    h.from(registrationId, { kind: 'result', requestId: command.requestId, ok: true, result: { page: { url: 'https://shop.example/', title: '' }, pass: true, summary: '«Войти» видно', expected: { state: 'visible' }, actual: { count: 1, visible: 1 } } })
+    await checking
+    await h.bridge.run({ kind: 'check', url: 'https://other.example/*' })
+    const report = await h.bridge.run({ kind: 'report' })
+    expect(report).toMatchObject({ ok: true, result: { history: ['https://shop.example/'], passed: 1, failed: 1, actions: 1, checks: [{ summary: '«Войти» видно', pass: true }, { pass: false }] } })
+  })
+})
+
 describe('sequence как чек-лист', () => {
   it('continueOnError проходит все шаги и перечисляет провалы', async () => {
     const h = harness()

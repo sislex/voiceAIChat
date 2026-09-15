@@ -29,6 +29,9 @@ export function ReaderActionHistory({ actions, onRepeat, onReveal, onClear, curr
   const [query, setQuery] = useState('')
   const [failedOnly, setFailedOnly] = useState(false)
   const [detailsFor, setDetailsFor] = useState<string | null>(null)
+  const [kindFilter, setKindFilter] = useState<'all' | 'actions' | 'checks' | 'reads'>('all')
+  const KIND_ICONS: Record<string, string> = { click: '🖱', type: '⌨', fill: '⌨', press: '⌨', choose: '☑', set: '☑', read: '👁', find: '🔍', check: '✅', open: '🌐', back: '↩', forward: '↪', scroll: '↕', hover: '👆', screenshot: '📷', errors: '⚠', wait: '⏳', show: '👉', sequence: '📋', status: 'ℹ' }
+  const kindGroup = (kind: string): 'actions' | 'checks' | 'reads' => kind === 'check' ? 'checks' : ['read', 'find', 'errors', 'status', 'screenshot', 'changes', 'report'].includes(kind) ? 'reads' : 'actions'
   const id = useId()
   const listRef = useRef<HTMLOListElement>(null)
   // New steps land at the bottom of a scrolling list; keep the latest one in view like a chat.
@@ -38,7 +41,7 @@ export function ReaderActionHistory({ actions, onRepeat, onReveal, onClear, curr
   const rows = actions.map((item, index) => ({ ...item, index, label: previewActionLabel(item.action), site: siteName(item.address) }))
   const failed = rows.filter(row => row.ok === false).length
   const passed = rows.filter(row => row.ok === true).length
-  const shown = rows.filter(row => (!needle || [row.label, row.title, row.site, row.summary].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle)) && (!failedOnly || row.ok === false))
+  const shown = rows.filter(row => (!needle || [row.label, row.title, row.site, row.summary].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle)) && (!failedOnly || row.ok === false) && (kindFilter === 'all' || kindGroup(row.action.kind) === kindFilter))
   return <section className="webpreview-scenario webpreview-history" aria-label="Действия ассистента">
     <div className="webpreview-scenario-header">
       <button type="button" className="vc-btn vc-btn--ghost" aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(value => !value)}>Действия ассистента</button>
@@ -49,13 +52,14 @@ export function ReaderActionHistory({ actions, onRepeat, onReveal, onClear, curr
       {onClear && <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" aria-label="Очистить ленту действий" onClick={onClear}>Очистить</button>}
     </div>
     <div id={id} hidden={!expanded}>
+      {actions.length > 3 && <label className="webpreview-history-kind"><span className="vc-sr-only">Показывать</span><select aria-label="Какие шаги показывать" value={kindFilter} onChange={event => setKindFilter(event.target.value as typeof kindFilter)}><option value="all">Все шаги</option><option value="actions">Действия</option><option value="checks">Проверки</option><option value="reads">Чтение</option></select></label>}
       {actions.length > 1 && <div className="webpreview-history-search">
         <input type="search" aria-label="Поиск действий" placeholder="Найти действие или страницу" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setQuery('') } }} />
         {query && <button type="button" className="vc-btn vc-btn--ghost" onClick={() => setQuery('')}>Очистить поиск</button>}
       </div>}
       {shown.length === 0 && <p role="status">Действия не найдены</p>}
       <ol ref={listRef}>{shown.map(item => <li key={item.id}>
-        <div className="webpreview-history-description" data-ok={item.ok === undefined ? undefined : item.ok ? 'true' : 'false'}><span>{item.ok !== undefined && <span className="webpreview-history-verdict" aria-label={item.ok ? 'Проверка пройдена' : 'Проверка не пройдена'}>{item.ok ? '✓' : '✗'} </span>}{item.label}{item.count && item.count > 1 ? <span className="webpreview-history-count" aria-label={`повторено ${item.count} раз`}> ×{item.count}</span> : null}</span>{item.summary && <small className="webpreview-history-summary">{item.summary}</small>}{item.title && <small>{item.title}</small>}{item.site && <small title={item.address ?? undefined}>{item.site}{timeLabel(item.at) ? ` · ${timeLabel(item.at)}` : ''}</small>}{!item.site && timeLabel(item.at) && <small>{timeLabel(item.at)}</small>}</div>
+        <div className="webpreview-history-description" data-ok={item.ok === undefined ? undefined : item.ok ? 'true' : 'false'}><span>{item.ok === undefined && KIND_ICONS[item.action.kind] && <span className="webpreview-history-icon" aria-hidden="true">{KIND_ICONS[item.action.kind]} </span>}{item.ok !== undefined && <span className="webpreview-history-verdict" aria-label={item.ok ? 'Проверка пройдена' : 'Проверка не пройдена'}>{item.ok ? '✓' : '✗'} </span>}{item.label}{item.count && item.count > 1 ? <span className="webpreview-history-count" aria-label={`повторено ${item.count} раз`}> ×{item.count}</span> : null}</span>{item.summary && <small className="webpreview-history-summary">{item.summary}</small>}{item.title && <small>{item.title}</small>}{item.site && <small title={item.address ?? undefined}>{item.site}{timeLabel(item.at) ? ` · ${timeLabel(item.at)}` : ''}</small>}{!item.site && timeLabel(item.at) && <small>{timeLabel(item.at)}</small>}</div>
         {onReveal && revealSelector(item.action) && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label={`Показать на странице элемент действия ${item.index + 1}`} disabled={manual || Boolean(currentUrl && item.address && item.address !== currentUrl)} title={manual ? 'Управляете вы' : currentUrl && item.address && item.address !== currentUrl ? 'Открыта другая страница' : undefined} onClick={() => onReveal(revealSelector(item.action)!)}>Показать</button>}
         {onRepeat && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label={`Повторить действие ${item.index + 1}: ${item.label}`} disabled={manual} title={manual ? 'Управляете вы' : undefined} onClick={() => onRepeat(item.action)}>Повторить</button>}
         <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-expanded={detailsFor === item.id} aria-label={`Подробности действия ${item.index + 1}`} onClick={() => setDetailsFor(current => current === item.id ? null : item.id)}>…</button>

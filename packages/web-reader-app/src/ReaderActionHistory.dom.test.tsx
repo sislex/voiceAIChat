@@ -5,7 +5,7 @@ const actions = [
   { id: 'a', action: { kind: 'click' as const, text: 'Continue' }, title: 'Account page', address: 'https://account.test/path?secret=hidden' },
   { id: 'b', action: { kind: 'read' as const }, title: 'News', address: 'https://news.test/' }
 ]
-afterEach(cleanup)
+afterEach(() => { cleanup(); sessionStorage.clear() })
 const mount = () => render(<ReaderActionHistory actions={actions} />)
 it('collapses and reopens the action list', () => {
   mount(); const toggle = screen.getByRole('button', { name: 'Действия ассистента' })
@@ -133,4 +133,18 @@ it('reveals steps by text when they have no selector and marks fresh steps as ju
   fireEvent.click(screen.getByRole('button', { name: /Показать на странице/ }))
   expect(onReveal).toHaveBeenCalledWith({ text: 'Купить' })
   expect(screen.getByRole('listitem').textContent).toContain('только что')
+})
+
+it('filters steps by kind and shows kind icons', () => {
+  render(<ReaderActionHistory actions={[
+    { id: '1', action: { kind: 'click', text: 'A' }, title: null, address: null },
+    { id: '2', action: { kind: 'read' }, title: null, address: null },
+    { id: '3', action: { kind: 'check', text: 'B' }, title: null, address: null, ok: true, summary: 'ok' },
+    { id: '4', action: { kind: 'type', selector: '#x', text: 'y' }, title: null, address: null }
+  ]} />)
+  expect(screen.getAllByRole('listitem')).toHaveLength(4)
+  fireEvent.change(screen.getByRole('combobox', { name: 'Какие шаги показывать' }), { target: { value: 'checks' } })
+  expect(screen.getAllByRole('listitem')).toHaveLength(1)
+  fireEvent.change(screen.getByRole('combobox', { name: 'Какие шаги показывать' }), { target: { value: 'actions' } })
+  expect(screen.getAllByRole('listitem')).toHaveLength(2)
 })

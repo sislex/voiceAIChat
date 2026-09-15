@@ -338,11 +338,17 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         inputSchema: { frame: frameSchema, text: z.string().min(1).max(L.text).describe('Видимый текст пункта'), in: z.string().max(L.text).optional().describe('Текст или селектор триггера, открывающего список'), near: z.string().max(L.text).optional().describe('Текст рядом с пунктом'), waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после выбора') }
       }, async ({ frame, text, in: trigger, near, waitFor }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}), ...(waitFor ? { waitFor } : {}) }))
 
+      server.registerTool('report', {
+        description: 'Отчёт о сеансе панели: где были (history), какие проверки check прошли и упали (с итогами и адресами), сколько действий выполнено, последнее действие. Используй в конце проверки задачи для отчёта человеку.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: {}
+      }, async () => run({ kind: 'report' }))
+
       server.registerTool('changes', {
         description: 'Что изменилось на странице с прошлого read, changes или действия: появившиеся и исчезнувшие видимые тексты. Первый вызов запоминает состояние (baseline). Так человек замечает, что произошло после клика.',
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
-        inputSchema: {}
-      }, async () => run({ kind: 'changes' }))
+        inputSchema: { selector: z.string().max(L.selector).optional().describe('Сравнивать только внутри этого контейнера') }
+      }, async ({ selector }) => run({ kind: 'changes', ...(selector ? { selector } : {}) }))
 
       server.registerTool('sequence', {
         description: 'Несколько действий панели одним вызовом (до 10): рутина вроде «нажать → ввести → нажать → проверить» без лишних ходов. ' +
@@ -864,11 +870,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             href: z.string().max(L.url).optional().describe('Подстрока адреса ссылки — найти ссылку по тому, куда она ведёт'),
             enabled: z.boolean().optional().describe('Только доступные (true) или только отключённые (false) контролы'),
             checked: z.boolean().optional().describe('Только отмеченные (true) или снятые (false) флажки и переключатели'),
+            reveal: z.boolean().optional().describe('Прокрутить к первому совпадению и подсветить его пользователю'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, role, near, exact, nth, href, enabled, checked, limit, visibleOnly }) => {
+        async ({ frame, text, selector, role, near, exact, nth, href, enabled, checked, reveal, limit, visibleOnly }) => {
           if (!text && !selector && !role && !href) {
             return { content: [{ type: 'text', text: 'Укажи text, role, selector или href.' }], isError: true }
           }
@@ -878,7 +885,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(selector ? { selector } : {}),
             ...(role ? { role: role.toLowerCase() } : {}),
             ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}), ...(href ? { href } : {}),
-            ...(enabled !== undefined ? { enabled } : {}), ...(checked !== undefined ? { checked } : {}),
+            ...(enabled !== undefined ? { enabled } : {}), ...(checked !== undefined ? { checked } : {}), ...(reveal ? { reveal: true } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })

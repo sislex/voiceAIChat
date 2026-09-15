@@ -7,7 +7,7 @@ import { browserId } from '@shared/browserId'
 import { prepareReaderPreview } from './preparePreview'
 import { ReaderActionHistory } from './ReaderActionHistory'
 import { previewActionProgressLabel } from './actionLabel'
-import { createReaderHostBridge, type ReaderHostBridge, type PreviewActionOutcome } from './hostBridge'
+import { createReaderHostBridge, type ReaderHostBridge, type ReaderHostRegistration, type PreviewActionOutcome } from './hostBridge'
 
 
 export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, onRevealAction, onClearActions, pageErrorCount = 0, onAsk, onControl, manual = false, actionError = null, onRetryAction, pageError, onAskError, pendingAction = null, onPageTitle, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
@@ -22,6 +22,21 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const [pendingSeconds, setPendingSeconds] = useState(0)
   // Progress of a multi-step sequence: "шаг 2 из 5" tells the person how long the routine still is.
   const [sequenceProgress, setSequenceProgress] = useState<{ done: number; total: number; action: PreviewAction } | null>(null)
+  // Report of this panel session goes to the chat draft: the person forwards it to the task or the team.
+  const registrationRef = useRef<ReaderHostRegistration | null>(null)
+  const reportToChat = async (): Promise<void> => {
+    const registration = registrationRef.current
+    if (!registration) return
+    const outcome = await registration.run({ kind: 'report' })
+    const report = outcome.ok ? outcome.result as { history?: string[]; checks?: { summary: string; pass: boolean }[]; passed?: number; failed?: number; actions?: number } : null
+    if (!report) return
+    const lines = [
+      `Отчёт Web Reader: действий ${report.actions ?? 0}, проверок пройдено ${report.passed ?? 0}, не пройдено ${report.failed ?? 0}.`,
+      ...(report.history?.length ? [`Страницы: ${report.history.join(', ')}`] : []),
+      ...(report.checks ?? []).map((item) => `${item.pass ? '✓' : '✗'} ${item.summary}`)
+    ]
+    callbacks.current.onAsk?.(lines.join('\n'))
+  }
   useEffect(() => {
     if (!pendingAction) { setPendingSeconds(0); return }
     const started = Date.now()
@@ -86,7 +101,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
         target.postMessage(message, platform.origin)
       },
       capabilities: ['mcp-actions', 'diagnostics', 'inspector', 'recording'],
-      onRegistration: (registration) => callbacks.current.onRegisterHost?.(registration ? {
+      onRegistration: (registration) => { registrationRef.current = registration ? { ...registration } : null; return callbacks.current.onRegisterHost?.(registration ? {
         ...registration,
         run: async function runRegistered(action: PreviewAction): Promise<PreviewActionOutcome> {
           if (action.kind !== 'open') {
@@ -116,7 +131,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
           catch { return { ok: false, error: 'Страница открыта, но её адрес не удалось сохранить.' } }
           return outcome
         }
-      } : null),
+      } : null) },
       onSaveUrl: (nextUrl) => { void save(nextUrl).catch(() => {}) },
       onPageTitle: (title) => callbacks.current.onPageTitle?.(title),
       onAsk: (text) => callbacks.current.onAsk?.(text),
@@ -188,6 +203,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {sequenceProgress ? `выполняет шаг ${sequenceProgress.done + 1} из ${sequenceProgress.total}: ${previewActionProgressLabel(sequenceProgress.action)}` : previewActionProgressLabel(pendingAction)}…{pendingSeconds >= 3 && <span className="webpreview-live__time"> {pendingSeconds} с</span>}</p>}
     {actionError && !pendingAction && <div className="webpreview-error webpreview-action-error" role="status" aria-live="polite"><span>Ассистент не смог: {previewActionProgressLabel(actionError.action)} — {actionError.error}</span>{onRetryAction && !/Только я управляю/.test(actionError.error) && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onRetryAction(actionError.action)}>Повторить</button>}</div>}
     <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} onReveal={onRevealAction} onClear={onClearActions} currentUrl={conversationUrl} manual={manual} />
+    {actions.length > 0 && onAsk && <p className="webpreview-report"><button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" disabled={manual} title={manual ? 'Управляете вы: отчёт соберётся после возврата управления' : undefined} onClick={() => { void reportToChat() }}>Отчёт в чат</button></p>}
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
     {previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retryOpen.current ? retryOpen.current() : setRetryKey((value) => value + 1)}>Повторить</button></div>}
     <iframe key={conversationId} ref={frameRef} className="webpreview-frame" src={src} title="Web Reader" aria-hidden={previewSession !== 'ready'} tabIndex={previewSession === 'ready' ? 0 : -1} {...{ inert: previewSession !== 'ready' ? '' : undefined }} />
