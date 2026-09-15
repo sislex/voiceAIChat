@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: 911e2eb0
+checked: 0311b57e
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -10,6 +10,9 @@ areas:
   - scripts/application-frontend-server.mjs
   - apps/server/src/routes/applicationFrontends.ts
   - packages/admin-app/src
+  - packages/admin-app/performance
+  - packages/shared/src/uiPerformance.ts
+  - apps/server/src/routes/uiPerformance.ts
   - packages/app-shell
   - packages/ui/src
   - packages/ui-kit/src
