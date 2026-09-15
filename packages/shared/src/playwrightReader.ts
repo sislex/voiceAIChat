@@ -31,7 +31,7 @@ export type BrowserControlCommand =
   | { type: 'ask'; text: string; timeoutMs?: number }
   | ({ type: 'device' } & BrowserDeviceOptions)
   | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
-  | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number }
+  | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number; fullPage?: boolean }
   | { type: 'report'; title?: string; limit?: number }
   | { type: 'tabs-do'; do: 'find' | 'wait-new' | 'close-others'; match?: string; timeoutMs?: number }
   | { type: 'session-info' }

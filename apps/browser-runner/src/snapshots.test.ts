@@ -3,7 +3,7 @@
 // описать словами разницу в пять пикселей невозможно.
 
 import { describe, expect, it } from 'vitest'
-import { diffText, SessionSnapshots } from './snapshots'
+import { diffText, SessionSnapshots, snapshotVerdict } from './snapshots'
 
 const shot = (name: string, over: Partial<{ at: number; url: string; title: string; dataUrl: string; text: string }> = {}) => ({
   name, at: over.at ?? Date.now(), url: over.url ?? 'https://a.b/', title: over.title ?? 'Страница',
@@ -70,5 +70,26 @@ describe('текстовая разница', () => {
     const diff = diffText('', after, 5)
     expect(diff.added).toHaveLength(5)
     expect(diff.addedTotal).toBe(50)
+  })
+})
+
+// Круг 16: вердикт словами. Живая проверка показала, что «различий 0» при
+// изменившемся тексте человек читает как «ничего не изменилось», хотя почти
+// всегда это изменение ниже сгиба.
+describe('вердикт сравнения', () => {
+  it('совпало — когда не изменились ни пиксели, ни текст', () => {
+    expect(snapshotVerdict({ ratio: 0, sizeChanged: false, textChanged: false })).toBe('identical')
+  })
+
+  it('видимое изменение называется видимым', () => {
+    expect(snapshotVerdict({ ratio: 0.12, sizeChanged: false, textChanged: true })).toBe('visual')
+  })
+
+  it('пиксели те же, а текст другой — это dom-only, а не «нет различий»', () => {
+    expect(snapshotVerdict({ ratio: 0, sizeChanged: false, textChanged: true })).toBe('dom-only')
+  })
+
+  it('изменившийся размер страницы важнее доли пикселей', () => {
+    expect(snapshotVerdict({ ratio: 0.9, sizeChanged: true, textChanged: true })).toBe('resized')
   })
 })

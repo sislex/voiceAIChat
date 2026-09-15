@@ -193,7 +193,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
    * Снимки состояния: «до» и «после» — то, чем человек проверяет вёрстку глазами.
    * Панель показывает их тем же списком, что видит модель.
    */
-  const [snapshots, setSnapshots] = useState<{ open: boolean; name: string; items: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; busy?: boolean; error?: string }>({ open: false, name: '', items: [] })
+  const [snapshots, setSnapshots] = useState<{ open: boolean; name: string; items: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; busy?: boolean; error?: string; fullPage?: boolean }>({ open: false, name: '', items: [] })
   /** Отчёт о проверке: тот же текст, который модель вставит в задачу. */
   const [report, setReport] = useState<{ markdown: string; passed: boolean; actions: number; failures: number } | null>(null)
   /** Правила сети: человеку они нужны там же, где модели, — и чтобы их снять. */
@@ -583,9 +583,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   }, [run])
 
   /** Снимок, сравнение и удаление — одной командой, как это делает модель. */
-  const runSnapshot = useCallback(async (operation: 'save' | 'list' | 'compare' | 'remove', name?: string): Promise<void> => {
+  const runSnapshot = useCallback(async (operation: 'save' | 'list' | 'compare' | 'remove', name?: string, fullPage?: boolean): Promise<void> => {
     setSnapshots((current) => ({ ...current, busy: true, error: undefined }))
-    const result = await run({ type: 'snapshot', do: operation, ...(name ? { name } : {}) } as never) as { snapshots?: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; error?: string } | undefined
+    // Признак приходит параметром, а не из замыкания: кнопка вызывает колбэк,
+    // созданный до клика по галочке, и снимок уходил бы без «всей страницы».
+    const result = await run({ type: 'snapshot', do: operation, ...(name ? { name } : {}), ...(fullPage ? { fullPage: true } : {}) } as never) as { snapshots?: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; error?: string } | undefined
     if (!result || result.error) { setSnapshots((current) => ({ ...current, busy: false, error: result?.error ?? 'Снимки недоступны' })); return }
     setSnapshots((current) => ({
       ...current, busy: false, items: result.snapshots ?? current.items,
@@ -1357,10 +1359,15 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             <input className="login-input" value={snapshots.name} placeholder="до правки"
               onChange={(event) => setSnapshots((current) => ({ ...current, name: event.target.value }))} />
           </label>
+          <label className="playwright-reader-testusers">
+            <input type="checkbox" checked={snapshots.fullPage === true}
+              onChange={(event) => setSnapshots((current) => ({ ...current, fullPage: event.target.checked }))} />
+            Вся страница
+          </label>
           <Button size="sm" variant="secondary" disabled={phase !== 'ready' || !snapshots.name.trim() || snapshots.busy}
-            onClick={() => void runSnapshot('save', snapshots.name.trim())}>Снять</Button>
+            onClick={() => void runSnapshot('save', snapshots.name.trim(), snapshots.fullPage)}>Снять</Button>
           <Button size="sm" disabled={phase !== 'ready' || !snapshots.name.trim() || snapshots.busy}
-            onClick={() => void runSnapshot('compare', snapshots.name.trim())}>Сравнить</Button>
+            onClick={() => void runSnapshot('compare', snapshots.name.trim(), snapshots.fullPage)}>Сравнить</Button>
           <IconButton size="sm" aria-label="Скрыть снимки" title="Скрыть снимки" onClick={() => setSnapshots((current) => ({ ...current, open: false }))}>✕</IconButton>
         </div>
         {snapshots.error && <p role="alert">{snapshots.error}</p>}
@@ -1368,6 +1375,12 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           <p role="status">
             {/* Доля сама по себе ничего не значит: «12% и всё в шапке» — диагноз,
                 «12%» — нет. Поэтому область различий идёт рядом с числом. */}
+            {/* Вердикт словами идёт первым: «0%» при изменившемся тексте человек
+                читает как «ничего не изменилось», хотя это изменение ниже сгиба. */}
+            {snapshots.comparison.verdict === 'identical' ? 'Совпало' :
+              snapshots.comparison.verdict === 'dom-only' ? 'Видимых различий нет, но текст изменился — возможно, ниже сгиба: снимите «Вся страница»' :
+                snapshots.comparison.verdict === 'resized' ? 'Размер страницы изменился' : 'Есть видимые различия'}
+            {' · '}
             Различий: {Math.round(snapshots.comparison.ratio * 1000) / 10}%
             {snapshots.comparison.area ? ` · область ${snapshots.comparison.area.width}×${snapshots.comparison.area.height} в точке ${snapshots.comparison.area.x},${snapshots.comparison.area.y}` : ' · совпало'}
             {snapshots.comparison.sizeChanged ? ' · размер страницы изменился' : ''}

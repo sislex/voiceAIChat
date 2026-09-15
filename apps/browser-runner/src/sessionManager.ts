@@ -11,7 +11,7 @@ import { applyEnvironment, applyEnvironmentToPage, runCookieCommand } from './en
 import { describeCommand, SessionHistory } from './sessionHistory.js'
 import { applyDevice, runTouchAction } from './deviceActions.js'
 import { NetworkRules, planRoute } from './networkRules.js'
-import { compareImagesScript, diffText, SessionSnapshots } from './snapshots.js'
+import { compareImagesScript, diffText, SessionSnapshots, snapshotVerdict } from './snapshots.js'
 import { buildSessionReport } from './sessionReport.js'
 import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
 import { clearSiteData, httpOrigin } from './siteData.js'
@@ -582,12 +582,15 @@ export class BrowserSessionManager {
       if (!page) throw new Error('stale_tab')
       if (command.do === 'list') return { snapshots: session.snapshots.list() }
       if (command.do === 'remove') { session.snapshots.remove(command.name); return { snapshots: session.snapshots.list() } }
-      const shot = await capturePage(page, { format: 'png', scale: 'css' }, (raw) => this.publicUrl(raw))
+      // Снимок всей страницы, а не только видимой части: сравнение «до/после» на
+      // длинной странице иначе смотрит один первый экран и объявляет «различий
+      // нет», когда сломалось всё ниже сгиба.
+      const shot = await capturePage(page, { format: 'png', scale: 'css', ...(command.fullPage ? { fullPage: true } : {}) }, (raw) => this.publicUrl(raw))
       const dataUrl = `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`
       const text = String(await page.evaluate('document.body ? document.body.innerText : ""').catch(() => '')).slice(0, 100_000)
       if (command.do === 'save') {
         if (!command.name) throw new Error('Снимку нужно имя')
-        session.snapshots.save({ name: command.name, at: Date.now(), url: this.publicUrl(page.url()), title: await page.title().catch(() => ''), dataUrl, text })
+        session.snapshots.save({ name: command.name, at: Date.now(), url: this.publicUrl(page.url()), title: await page.title().catch(() => ''), dataUrl, text, ...(command.fullPage ? { fullPage: true } : {}) })
         return { snapshots: session.snapshots.list() }
       }
       if (!command.name) throw new Error('Для сравнения нужно имя снимка')
@@ -598,9 +601,12 @@ export class BrowserSessionManager {
       const threshold = Math.min(Math.max(command.threshold ?? 8, 0), 64)
       const pixels = await page.evaluate(compareImagesScript(before.dataUrl, dataUrl, threshold)) as { error?: string } & Omit<BrowserSnapshotComparison, 'name' | 'text' | 'urlChanged'>
       if (pixels.error) throw new Error(pixels.error)
+      const textDiff = diffText(before.text, text)
       const comparison: BrowserSnapshotComparison = {
         name: command.name, ...pixels,
-        text: diffText(before.text, text),
+        verdict: snapshotVerdict({ ratio: pixels.ratio, sizeChanged: pixels.sizeChanged, textChanged: textDiff.addedTotal + textDiff.removedTotal > 0 }),
+        ...(before.fullPage ? { fullPage: true } : {}),
+        text: textDiff,
         ...(before.url !== this.publicUrl(page.url()) ? { urlChanged: true } : {})
       }
       return { snapshots: session.snapshots.list(), comparison }

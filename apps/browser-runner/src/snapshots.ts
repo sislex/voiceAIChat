@@ -22,6 +22,7 @@ interface StoredSnapshot {
   title: string
   dataUrl: string
   text: string
+  fullPage?: boolean
 }
 
 export class SessionSnapshots {
@@ -62,7 +63,8 @@ function describe(snapshot: StoredSnapshot): BrowserSnapshotInfo {
     // Размер картинки в байтах: человеку он говорит, насколько снимок «тяжёлый»,
     // а модели — почему снимков держим десять, а не сто.
     bytes: Math.round((snapshot.dataUrl.length * 3) / 4),
-    textLength: snapshot.text.length
+    textLength: snapshot.text.length,
+    ...(snapshot.fullPage ? { fullPage: true } : {})
   }
 }
 
@@ -114,6 +116,17 @@ export function compareImagesScript(before: string, after: string, threshold: nu
       sizeChanged: first.naturalWidth !== second.naturalWidth || first.naturalHeight !== second.naturalHeight
     }
   })()`
+}
+
+/**
+ * Вердикт словами. Доля пикселей не отвечает на вопрос человека: «различий нет»
+ * при изменившемся тексте почти всегда значит, что изменение ниже сгиба, —
+ * и именно это надо сказать, а не отдать ноль.
+ */
+export function snapshotVerdict(input: { ratio: number; sizeChanged: boolean; textChanged: boolean }): 'identical' | 'visual' | 'dom-only' | 'resized' {
+  if (input.sizeChanged) return 'resized'
+  if (input.ratio > 0) return 'visual'
+  return input.textChanged ? 'dom-only' : 'identical'
 }
 
 /** Текстовая разница: что появилось и что исчезло, строками. */
