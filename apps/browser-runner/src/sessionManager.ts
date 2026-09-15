@@ -503,6 +503,43 @@ export class BrowserSessionManager {
       return { environment }
     }
     if (command.type === 'cookies') return await runCookieCommand(session.context, command)
+    if (command.type === 'tabs-do') {
+      if (command.do === 'close-others') {
+        // «Закрыть лишние» — то, что человек делает одним пунктом меню; модель
+        // закрывала вкладки по одной и путалась в списке, который менялся.
+        const kept = session.activeTabId
+        for (const [id, page] of [...session.pages.entries()]) {
+          if (id === kept || page.isClosed()) continue
+          await page.close({ runBeforeUnload: !session.dialogs.forPage(page) }).catch(() => undefined)
+        }
+        return this.metadata(session)
+      }
+      const known = new Set(session.pages.keys())
+      if (command.do === 'wait-new') {
+        // Ожидание новой вкладки: после клика по «открыть в новой вкладке»
+        // модель опрашивала список в цикле и тратила на это ход.
+        const timeout = Math.min(Math.max(command.timeoutMs ?? 10_000, 500), 60_000)
+        const started = Date.now()
+        while (Date.now() - started < timeout) {
+          const fresh = [...session.pages.keys()].find((id) => !known.has(id))
+          if (fresh) { session.activeTabId = fresh; return this.metadata(session) }
+          await new Promise((resolve) => setTimeout(resolve, 150))
+        }
+        throw new Error('Новая вкладка не появилась за отведённое время')
+      }
+      const needle = (command.match ?? '').trim().toLowerCase()
+      if (!needle) throw new Error('Для поиска вкладки нужен текст: часть заголовка или адреса')
+      for (const [id, page] of session.pages.entries()) {
+        if (page.isClosed()) continue
+        const url = this.publicUrl(page.url()).toLowerCase()
+        const title = (await page.title().catch(() => '')).toLowerCase()
+        if (url.includes(needle) || title.includes(needle)) {
+          session.activeTabId = id
+          return this.metadata(session)
+        }
+      }
+      throw new Error(`Вкладки с «${command.match}» нет: посмотри tabs`)
+    }
     if (command.type === 'report') {
       const page = session.pages.get(request.tabId ?? session.activeTabId)
       return {

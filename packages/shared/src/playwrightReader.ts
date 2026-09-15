@@ -33,6 +33,7 @@ export type BrowserControlCommand =
   | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
   | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number }
   | { type: 'report'; title?: string; limit?: number }
+  | { type: 'tabs-do'; do: 'find' | 'wait-new' | 'close-others'; match?: string; timeoutMs?: number }
   | ({ type: 'touch' } & BrowserTouchAction)
 
 export type BrowserModelScreenshotOptions = Pick<BrowserScreenshotOptions, 'selector' | 'rect' | 'fullPage' | 'animations' | 'timeoutMs' | 'frame'>

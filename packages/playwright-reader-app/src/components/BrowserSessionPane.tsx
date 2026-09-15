@@ -863,6 +863,12 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           onClick={() => void run({ type: 'newTab' })}>+</IconButton>
         {/* За шестью вкладками начинается горизонтальная прокрутка, в которой
             нужную приходится искать глазами; список выбирает её по названию. */}
+        {/* «Закрыть лишние» — один пункт меню у человека: после проверки, которая
+            наоткрывала попапов, вкладки закрывались по одной. */}
+        {tabs.length > 1 && (
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'}
+            onClick={() => void run({ type: 'tabs-do', do: 'close-others' } as never)}>Закрыть лишние</Button>
+        )}
         {tabs.length > 5 && (
           <label className="playwright-reader-testusers">Вкладок: {tabs.length}
             <select className="sel" aria-label="Выбрать вкладку из списка" value={meta?.activeTabId ?? ''} disabled={phase !== 'ready'}

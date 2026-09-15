@@ -936,6 +936,52 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'find-tab',
+        {
+          description:
+            'Переключиться на вкладку по части её заголовка или адреса — так, как её называет человек ' +
+            '(«та, где корзина»), а не по идентификатору из tabs.',
+          inputSchema: { match: z.string().min(1).max(200).describe('Часть заголовка или адреса') }
+        },
+        async ({ match }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'tabs-do', do: 'find', match })
+          return toolResult(result ?? { ok: false, error: 'Вкладки доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'wait-new-tab',
+        {
+          description:
+            'Дождаться вкладки, которую откроет страница (ссылка target=_blank, кнопка «открыть в новой»), ' +
+            'и переключиться на неё. Без этого приходилось опрашивать tabs в цикле и тратить на это ход. ' +
+            'Зови сразу после действия, которое открывает вкладку.',
+          inputSchema: { timeoutMs: z.number().int().min(500).max(60_000).optional().describe('Сколько ждать (по умолчанию 10000)') }
+        },
+        async ({ timeoutMs }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'tabs-do', do: 'wait-new', ...(timeoutMs !== undefined ? { timeoutMs } : {}) })
+          return toolResult(result ?? { ok: false, error: 'Вкладки доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'close-other-tabs',
+        {
+          description:
+            'Закрыть все вкладки, кроме текущей — один пункт меню у человека. ' +
+            'Полезно после проверки, которая наоткрывала попапов: список вкладок перестаёт путать.',
+          inputSchema: {}
+        },
+        async () => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'tabs-do', do: 'close-others' })
+          return toolResult(result ?? { ok: false, error: 'Вкладки доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
         'report',
         {
           description:
