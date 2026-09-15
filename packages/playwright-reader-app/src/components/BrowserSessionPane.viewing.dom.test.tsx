@@ -350,3 +350,26 @@ describe('лента событий сессии (круг 5)', () => {
     })))
   })
 })
+
+describe('данные сайта в панели (круг 6)', () => {
+  it('хранилище показывается по областям и ключ удаляется на месте', async () => {
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string; do?: string } } }) => {
+        if (req.command.action?.kind === 'storage') {
+          return { ok: true, storage: { origin: 'https://a.b', local: [{ key: 'theme', value: 'dark', bytes: 4 }], localTotal: 1, session: [], sessionTotal: 0 } }
+        }
+        return meta()
+      }) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Среда' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Хранилище сайта' }))
+    await screen.findByText(/постоянное 1/)
+    await screen.findByText('theme')
+    fireEvent.click(screen.getByLabelText('Удалить theme'))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ action: expect.objectContaining({ kind: 'storage', do: 'remove', key: 'theme' }) })
+    })))
+  })
+})

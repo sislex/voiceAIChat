@@ -272,3 +272,18 @@ describe('проверки, лента и заметки', () => {
     expect(planModelAction({ kind: 'note', text: 'проверяю вход' })).toEqual({ kind: 'command', command: { type: 'note', text: 'проверяю вход' } })
   })
 })
+
+// Круг 6: данные страницы переводятся в селекторные команды.
+describe('данные страницы', () => {
+  it('хранилище, исходник и CSV доезжают со своими параметрами', () => {
+    expect(planModelAction({ kind: 'storage', area: 'local', do: 'set', key: 'a', value: 'b' })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'storage', area: 'local', do: 'set', key: 'a', value: 'b' } }
+    })
+    expect(planModelAction({ kind: 'source', selector: 'main', offset: 100 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'source', selector: 'main', offset: 100 } }
+    })
+    expect(planModelAction({ kind: 'csv', selector: 'table', limit: 50 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'csv', selector: 'table', limit: 50 } }
+    })
+  })
+})

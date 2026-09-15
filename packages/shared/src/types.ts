@@ -357,6 +357,17 @@ export type BrowserSelectorAction =
   /** Video and audio of the page: state, and play/pause/seek/mute as a person does. */
   | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number }
   /**
+   * Web storage of the site: what the page keeps between reloads. Half of the
+   * "works for me" bugs live here — a stale flag in localStorage, a leftover
+   * draft, a feature toggle — and the model could only reach it through
+   * `evaluate`, which the project policy gates as dangerous code.
+   */
+  | { kind: 'storage'; area?: 'local' | 'session' | 'both'; do?: 'read' | 'set' | 'remove' | 'clear'; key?: string; value?: string; limit?: number }
+  /** Source of the page itself, in slices — the markup a person would view. */
+  | { kind: 'source'; selector?: string; offset?: number; limit?: number }
+  /** A table taken out as CSV: the shape a person pastes into a spreadsheet. */
+  | { kind: 'csv'; selector: string; offset?: number; limit?: number }
+  /**
    * Several checks at once, answered as one verdict. A person looking at a page
    * says "the total is 500, the error is gone, three rows" in one breath; the
    * model had to read each of them separately and reason about raw text.
@@ -421,6 +432,12 @@ export interface BrowserSelectorResult {
   expected?: { passed: boolean; checks: Array<{ ok: boolean; describe: string; actual?: string }> }
   /** Session log for `history`: what happened in this browser, by whom. */
   history?: { total: number; entries: BrowserHistoryEntry[] }
+  /** Web storage for `storage`, per area, with the origin it belongs to. */
+  storage?: { origin: string; local?: Array<{ key: string; value: string; bytes: number }>; session?: Array<{ key: string; value: string; bytes: number }>; localTotal?: number; sessionTotal?: number; truncated?: boolean }
+  /** Page source for `source`, sliced like `read`. */
+  source?: { html: string; total: number; offset: number; nextOffset?: number }
+  /** Table as CSV text for `csv`, with the same paging as `table`. */
+  csv?: { text: string; rows: number; total: number; offset: number; nextOffset?: number }
   /**
    * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
    * проверкам сценария — «текста нет» и «до текста не дочитали» это разные

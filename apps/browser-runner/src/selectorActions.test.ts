@@ -529,3 +529,27 @@ describe('проверки страницы', () => {
     expect(result.expected?.passed).toBe(false)
   })
 })
+
+// Круг 6: данные страницы — хранилище, исходник и выгрузка таблицы.
+describe('данные страницы', () => {
+  it('хранилище возвращается по областям вместе с origin', async () => {
+    const storage = { origin: 'https://a.b', local: [{ key: 'theme', value: 'dark', bytes: 4 }], localTotal: 1, session: [], sessionTotal: 0 }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => storage) }), { kind: 'storage' })
+    expect(result).toMatchObject({ ok: true, storage: { origin: 'https://a.b', localTotal: 1 } })
+  })
+
+  it('исходник отдаётся порциями и сообщает продолжение', async () => {
+    const source = { html: '<div>', total: 1000, offset: 0, nextOffset: 400 }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => source) }), { kind: 'source' }))
+      .toMatchObject({ ok: true, source: { nextOffset: 400 } })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'source', selector: '#gone' }))
+      .toEqual({ ok: false, error: 'Элемент не найден' })
+  })
+
+  it('csv отдаёт текст и число строк, а пустую таблицу — отказом', async () => {
+    const csv = { text: 'Имя,Роль\nАлиса,админ', rows: 2, total: 2, offset: 0 }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => csv) }), { kind: 'csv', selector: 'table' }))
+      .toMatchObject({ ok: true, csv: { rows: 2 } })
+    expect((await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'csv', selector: 'table' })).ok).toBe(false)
+  })
+})

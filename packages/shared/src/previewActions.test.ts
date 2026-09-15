@@ -405,3 +405,22 @@ describe('проверки, лента и заметки', () => {
     expect(isPreviewAction({ kind: 'history', actor: 'robot' })).toBe(false)
   })
 })
+
+// Круг 6: хранилище, исходник и CSV.
+describe('данные страницы', () => {
+  it('запись в хранилище требует ключ и значение, удаление — ключ', () => {
+    expect(isPreviewAction({ kind: 'storage' })).toBe(true)
+    expect(isPreviewAction({ kind: 'storage', do: 'set', key: 'a', value: 'b' })).toBe(true)
+    expect(isPreviewAction({ kind: 'storage', do: 'set', key: 'a' })).toBe(false)
+    expect(isPreviewAction({ kind: 'storage', do: 'remove' })).toBe(false)
+    expect(isPreviewAction({ kind: 'storage', area: 'disk' })).toBe(false)
+  })
+
+  it('исходник и CSV ограничены разумными порциями', () => {
+    expect(isPreviewAction({ kind: 'source', limit: 20_000 })).toBe(true)
+    expect(isPreviewAction({ kind: 'source', limit: 20_001 })).toBe(false)
+    expect(isPreviewAction({ kind: 'csv', selector: 'table', limit: 500 })).toBe(true)
+    expect(isPreviewAction({ kind: 'csv', selector: 'table', limit: 501 })).toBe(false)
+    expect(isPreviewAction({ kind: 'csv' })).toBe(false)
+  })
+})

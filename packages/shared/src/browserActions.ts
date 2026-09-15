@@ -121,6 +121,12 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
       return { kind: 'command', command: { type: 'selector', action: { kind: 'metrics' } } }
     case 'measure':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'measure', selector: action.selector } } }
+    case 'storage':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'storage', ...(action.area ? { area: action.area } : {}), ...(action.do ? { do: action.do } : {}), ...(action.key !== undefined ? { key: action.key } : {}), ...(action.value !== undefined ? { value: action.value } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'source':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'source', ...(action.selector ? { selector: action.selector } : {}), ...(action.offset !== undefined ? { offset: action.offset } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'csv':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'csv', selector: action.selector, ...(action.offset !== undefined ? { offset: action.offset } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
     case 'expect':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'expect', checks: action.checks } } }
     case 'history': {
