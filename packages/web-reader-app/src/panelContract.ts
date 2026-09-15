@@ -49,7 +49,7 @@ export interface WebReaderFrameProps {
   /** Сколько ошибок страницы накоплено, кроме показанной первой. */
   pageErrorCount?: number
   /** Показать на странице элемент прошлого действия (прокрутить к селектору и подсветить). */
-  onRevealAction?: (selector: string) => void
+  onRevealAction?: (target: { selector?: string; text?: string }) => void
   pageError?: string | null
   onAskError?: (error: string) => void
   /** Действие модели, которое сейчас выполняется в панели: человек видит, что ассистент делает. */

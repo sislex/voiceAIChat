@@ -326,11 +326,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       server.registerTool('fill', {
         description: 'Заполнить несколько полей формы одним действием — как человек заполняет форму целиком — и при submit отправить её. ' +
           'Каждое поле задаётся selector или field (подпись/placeholder/name). Ответ перечисляет заполненные поля, submitted, validation (сообщения ошибок полей) и navigated.',
-        inputSchema: { frame: frameSchema, fields: z.array(fillField).min(1).max(30), submit: z.boolean().optional().describe('Отправить форму после заполнения'), waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после отправки') }
-      }, async ({ frame, fields, submit, waitFor }) => {
+        inputSchema: { frame: frameSchema, fields: z.array(fillField).min(1).max(30), submit: z.boolean().optional().describe('Отправить форму после заполнения'), perKey: z.boolean().optional().describe('Печатать посимвольно (маски ввода)'), waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после отправки') }
+      }, async ({ frame, fields, submit, perKey, waitFor }) => {
         const bad = fields.find((item) => !item.selector && !item.field?.trim())
         if (bad) return { content: [{ type: 'text', text: 'У каждого поля укажи selector или field.' }], isError: true }
-        return run({ kind: 'fill', ...(frame !== undefined ? { frame } : {}), fields: fields.map((item) => ({ ...(item.selector ? { selector: item.selector } : {}), ...(item.field?.trim() ? { field: item.field.trim() } : {}), ...(item.near ? { near: item.near } : {}), value: item.value })), ...(submit !== undefined ? { submit } : {}), ...(waitFor ? { waitFor } : {}) })
+        return run({ kind: 'fill', ...(frame !== undefined ? { frame } : {}), fields: fields.map((item) => ({ ...(item.selector ? { selector: item.selector } : {}), ...(item.field?.trim() ? { field: item.field.trim() } : {}), ...(item.near ? { near: item.near } : {}), value: item.value })), ...(submit !== undefined ? { submit } : {}), ...(perKey !== undefined ? { perKey } : {}), ...(waitFor ? { waitFor } : {}) })
       })
       server.registerTool('choose', {
         description: 'Выбрать пункт выпадающего меню, списка или автодополнения: при in сначала нажимается триггер (текст или селектор), затем ждётся и нажимается пункт с текстом text. ' +
@@ -347,9 +347,9 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       server.registerTool('sequence', {
         description: 'Несколько действий панели одним вызовом (до 10): рутина вроде «нажать → ввести → нажать → проверить» без лишних ходов. ' +
           'Шаги — те же объекты, что параметры инструментов, с полем kind (click, type, fill, press, wait, check, scroll, read…); open и вложенные sequence запрещены. Остановка на первой ошибке; ответ перечисляет итог каждого шага.',
-        inputSchema: { steps: z.array(z.record(z.string(), z.unknown())).min(1).max(10).describe('Шаги с полем kind') }
-      }, async ({ steps }) => {
-        const action = { kind: 'sequence' as const, steps: steps as never }
+        inputSchema: { steps: z.array(z.record(z.string(), z.unknown())).min(1).max(10).describe('Шаги с полем kind'), continueOnError: z.boolean().optional().describe('Пройти все шаги, даже если один провалился (чек-лист проверок)') }
+      }, async ({ steps, continueOnError }) => {
+        const action = { kind: 'sequence' as const, steps: steps as never, ...(continueOnError ? { continueOnError: true } : {}) }
         if (!isPreviewAction(action)) return { content: [{ type: 'text', text: 'Каждый шаг — корректное действие панели с полем kind; open и sequence внутри недопустимы.' }], isError: true }
         return run(action)
       })
@@ -380,12 +380,14 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           value: z.string().max(L.text).optional().describe('Ожидаемое значение поля или текст элемента (точно)'),
           contains: z.string().max(L.text).optional().describe('Ожидаемая подстрока значения или текста'),
           count: z.number().int().min(0).max(100000).optional().describe('Ожидаемое число совпадений'),
+          enabled: z.boolean().optional().describe('Ожидаемая доступность контрола'),
+          checked: z.boolean().optional().describe('Ожидаемое состояние флажка'),
           url: z.string().max(L.url).optional().describe('Ожидаемый адрес страницы, шаблон с * (без text/selector)'),
           title: z.string().max(L.text).optional().describe('Подстрока ожидаемого заголовка страницы (без text/selector)')
         }
-      }, async ({ frame, text, selector, near, state, value, contains, count, url, title }) => {
+      }, async ({ frame, text, selector, near, state, value, contains, count, enabled, checked, url, title }) => {
         if (!text && !selector && url === undefined && title === undefined) return { content: [{ type: 'text', text: 'Укажи text, selector, url или title.' }], isError: true }
-        return run({ kind: 'check', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(state ? { state } : {}), ...(value !== undefined ? { value } : {}), ...(contains !== undefined ? { contains } : {}), ...(count !== undefined ? { count } : {}), ...(url !== undefined ? { url } : {}), ...(title !== undefined ? { title } : {}) })
+        return run({ kind: 'check', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(state ? { state } : {}), ...(value !== undefined ? { value } : {}), ...(contains !== undefined ? { contains } : {}), ...(count !== undefined ? { count } : {}), ...(enabled !== undefined ? { enabled } : {}), ...(checked !== undefined ? { checked } : {}), ...(url !== undefined ? { url } : {}), ...(title !== undefined ? { title } : {}) })
       })
 
       server.registerTool('status', {
@@ -860,11 +862,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
             nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1)'),
             href: z.string().max(L.url).optional().describe('Подстрока адреса ссылки — найти ссылку по тому, куда она ведёт'),
+            enabled: z.boolean().optional().describe('Только доступные (true) или только отключённые (false) контролы'),
+            checked: z.boolean().optional().describe('Только отмеченные (true) или снятые (false) флажки и переключатели'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, role, near, exact, nth, href, limit, visibleOnly }) => {
+        async ({ frame, text, selector, role, near, exact, nth, href, enabled, checked, limit, visibleOnly }) => {
           if (!text && !selector && !role && !href) {
             return { content: [{ type: 'text', text: 'Укажи text, role, selector или href.' }], isError: true }
           }
@@ -874,6 +878,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(selector ? { selector } : {}),
             ...(role ? { role: role.toLowerCase() } : {}),
             ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}), ...(href ? { href } : {}),
+            ...(enabled !== undefined ? { enabled } : {}), ...(checked !== undefined ? { checked } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })
@@ -890,6 +895,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
             text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
+            role: z.string().regex(/^[a-zа-яё]+$/i).max(40).optional().describe('Роль цели: button, link, checkbox… («нажми кнопку Сохранить», не ссылку)'),
             near: z.string().max(L.text).optional().describe('Текст рядом с целью, различающий одинаковые кнопки («Удалить» near «Заказ №5»)'),
             exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
             nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1), если одинаковых несколько'),
@@ -901,14 +907,14 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
           }
         },
-        async ({ frame, selector, text, near, exact, nth, x, y, waitFor, button, dblclick, modifiers }) => {
-          if (!text && !selector && (x === undefined || y === undefined)) {
-            return { content: [{ type: 'text', text: 'Укажи selector, text или точку x и y.' }], isError: true }
+        async ({ frame, selector, text, role, near, exact, nth, x, y, waitFor, button, dblclick, modifiers }) => {
+          if (!text && !selector && !role && (x === undefined || y === undefined)) {
+            return { content: [{ type: 'text', text: 'Укажи selector, text, role или точку x и y.' }], isError: true }
           }
           return run({
             kind: 'click', ...(frame !== undefined ? { frame } : {}),
             ...(selector ? { selector } : {}),
-            ...(text ? { text } : {}),
+            ...(text ? { text } : {}), ...(role ? { role: role.toLowerCase() } : {}),
             ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}),
             ...(x !== undefined && y !== undefined ? { x, y } : {}), ...(waitFor ? { waitFor } : {}),
             ...(button ? { button } : {}),

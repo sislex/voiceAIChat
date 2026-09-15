@@ -859,6 +859,34 @@ describe('скрипт превью: что изменилось (круг 11)',
   }, 10_000)
 })
 
+describe('скрипт превью: состояние контролов и уведомления (круг 12)', () => {
+  it('find и check понимают enabled/checked; click с role берёт кнопку, а не ссылку', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<button id="save" disabled>Сохранить</button><a id="save-link" href="/save">Сохранить</a><input id="agree" type="checkbox" checked><input id="news" type="checkbox">`)
+    const enabled = await act({ kind: 'find', text: 'Сохранить', enabled: true })
+    expect((enabled.result as { elements: { selector: string }[] }).elements.map((el) => el.selector)).toEqual(['#save-link'])
+    const checked = await act({ kind: 'find', role: 'checkbox', checked: true })
+    expect((checked.result as { elements: { selector: string }[] }).elements.map((el) => el.selector)).toEqual(['#agree'])
+    const check = await act({ kind: 'check', selector: '#save', enabled: false })
+    expect(check.result).toMatchObject({ pass: true, summary: '#save отключено' })
+    ;(document.getElementById('save') as HTMLButtonElement).disabled = false
+    let clicked = ''
+    document.getElementById('save')!.addEventListener('click', () => { clicked = 'button' })
+    document.getElementById('save-link')!.addEventListener('click', (event) => { clicked = 'link'; event.preventDefault() })
+    const res = await act({ kind: 'click', role: 'button', text: 'Сохранить' })
+    expect(res.ok).toBe(true)
+    expect(clicked).toBe('button')
+  })
+
+  it('read перечисляет уведомления и индикаторы загрузки; brief упоминает уведомления', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<div role="alert">Сохранено</div><div class="toast">Письмо отправлено</div><progress id="upload" value="30" max="100"></progress><section aria-busy="true" aria-label="Лента"></section>`)
+    const res = await act({ kind: 'read', brief: true })
+    const result = res.result as { notices?: string[]; progress?: { selector: string; value?: number; max?: number; label?: string }[]; brief?: string }
+    expect(result.notices).toEqual(['Сохранено', 'Письмо отправлено'])
+    expect(result.progress).toEqual(expect.arrayContaining([expect.objectContaining({ selector: '#upload', value: 30, max: 100 }), expect.objectContaining({ label: 'Лента' })]))
+    expect(result.brief).toContain('уведомления: Сохранено')
+  })
+})
+
 describe('скрипт превью: screenshot', () => {
   it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
     const res = await act({ kind: 'screenshot', selector: 'main' })

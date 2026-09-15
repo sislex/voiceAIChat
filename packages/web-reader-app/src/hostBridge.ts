@@ -238,11 +238,14 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           const result = outcome.result as { page?: { url: string; title: string }; summary?: unknown } | undefined
           if (result?.page) lastPage = result.page
           results.push({ kind: step.kind, ok: outcome.ok, ...(outcome.error ? { error: outcome.error } : {}), ...(typeof result?.summary === 'string' ? { summary: result.summary } : {}) })
-          if (!outcome.ok) break
+          // Чек-лист проверок проходит до конца; обычная рутина останавливается на первом сбое.
+          if (!outcome.ok && !action.continueOnError) break
         }
         options.onSequenceProgress?.(null)
         const completed = results.filter((item) => item.ok).length
-        return { ok: completed === steps.length, result: { page: lastPage, steps: results, completed, total: steps.length }, ...(completed === steps.length ? {} : { error: `Шаг ${completed + 1} из ${steps.length} (${results[completed]?.kind}): ${results[completed]?.error ?? 'не выполнен'}` }) }
+        const failed = results.map((item, index) => ({ item, index })).filter(({ item }) => !item.ok)
+        const error = failed.length ? failed.map(({ item, index }) => `Шаг ${index + 1} из ${steps.length} (${item.kind}): ${item.error ?? 'не выполнен'}`).join('; ') : undefined
+        return { ok: completed === steps.length, result: { page: lastPage, steps: results, completed, total: steps.length }, ...(error ? { error } : {}) }
       })()
     }
     // check {url|title} — про адрес и заголовок панели: мост отвечает сам, страница не нужна.

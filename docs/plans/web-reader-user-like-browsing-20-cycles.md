@@ -399,4 +399,38 @@ UI (desktop and phone):
 | 09 | Feed site names show the full address on hover | `ReaderActionHistory` |
 | 10 | Title button announces «Скопировать ссылку: <title>» | Recorder |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-11.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-11.md`. Commit `99d28cc1`.
+
+## Cycle 12 — control states, notifications and a checklist mode
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `find {enabled, checked}` filters controls by state | script | script test |
+| 02 | `check {enabled, checked}` asserts control state with human summaries | script | script test |
+| 03 | `click`/`hover {role}` — «кнопку Сохранить», not the link with the same text | script (`byRole`), MCP | script test |
+| 04 | `read.notices` — alerts, statuses and toasts visible now | script | script test |
+| 05 | `read.progress` — progress bars and `aria-busy` regions | script | script test |
+| 06 | `brief` mentions current notifications | script | script test |
+| 07 | `fill {perKey}` types each field character by character | script | — (typePerKey covered) |
+| 08 | `sequence {continueOnError}` runs every step and lists all failures | `hostBridge.ts` | bridge test |
+| 09 | sequence errors name every failed step, not only the first | `hostBridge.ts` | bridge test |
+| 10 | hint documents notices/progress/enabled/checked/role/perKey/continueOnError | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Find in page: Ctrl/Cmd+F opens a search bar that uses the browser's own `window.find` inside the site | Recorder |
+| 02 | Alt+Shift+M toggles manual mode; `aria-keyshortcuts` on the tools summary | Recorder |
+| 03 | Drop a link or address anywhere on the panel to open it; dashed outline while dragging | Recorder |
+| 04 | «Скопировать» on Reader and load errors for bug reports | Recorder |
+| 05 | Viewport chip shows the preset name («iPhone 375 ×») | Recorder |
+| 06 | Feed «Показать» works for text-targeted steps too (show by text) | `ReaderActionHistory`, App |
+| 07 | Fresh feed steps read «только что» | `ReaderActionHistory` |
+| 08 | «Сайт» tab tooltip shows the full page title | App |
+| 09 | Find bar and search buttons get 44 px targets on touch | recorder.css |
+| 10 | «Найти на странице» also lives in the tools menu for phones without Ctrl+F | Recorder |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-12.md`.
