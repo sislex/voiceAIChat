@@ -41,6 +41,7 @@ function fakeApi(overrides: Partial<Record<string, unknown>> = {}): RendererApi 
     'me:security': vi.fn(async () => [{ id: 1, at: NOW - 600_000, user: 'marina', type: 'login' as const, ip: '10.0.0.1', userAgent: 'Chrome', details: 'новое устройство' }]),
     'llm:access': vi.fn(async () => [{ provider: 'codex' as const, modelId: '*' }]),
     'usage:report': vi.fn(async () => report),
+    'agents:list': vi.fn(async () => profile.agents ?? []),
     ...overrides
   } as unknown as RendererApi
 }
@@ -103,12 +104,61 @@ describe('AccountPage — экран', () => {
     expect(api['me:security']).not.toHaveBeenCalled()
   })
 
+  it('показывает профиль, не дожидаясь тяжёлых данных обзора', async () => {
+    const pending = new Promise<never>(() => {})
+    const api = fakeApi({
+      'llm:access': vi.fn(() => pending),
+      'usage:report': vi.fn(() => pending),
+      'me:security': vi.fn(() => pending)
+    })
+    renderPage(api)
+    expect(await screen.findByTestId('profile-head')).toHaveTextContent('marina')
+    expect(screen.getByTestId('profile-overview-events-skeleton-list')).toBeInTheDocument()
+    expect(screen.getByTestId('profile-overview-usage-skeleton-list')).toBeInTheDocument()
+  })
+
+  it('на вкладке доступа не запрашивает расход, журнал и машины', async () => {
+    const api = fakeApi()
+    renderPage(api, 'access')
+    await screen.findByTestId('access-tab')
+    expect(api['llm:access']).toHaveBeenCalledTimes(1)
+    expect(api['usage:report']).not.toHaveBeenCalled()
+    expect(api['me:security']).not.toHaveBeenCalled()
+    expect(api['agents:list']).not.toHaveBeenCalled()
+  })
+
+  it('полные данные машин запрашивает только после открытия их вкладки', async () => {
+    const me = { ...profile, agents: undefined, machinesTotal: 2, machinesOnline: 1 }
+    const api = fakeApi({ 'me:profile': vi.fn(async () => me) })
+    renderPage(api, 'machines')
+    await waitFor(() => expect(api['agents:list']).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('machines-tab')).toHaveTextContent('MacBook')
+    expect(api['usage:report']).not.toHaveBeenCalled()
+    expect(api['me:security']).not.toHaveBeenCalled()
+    expect(api['llm:access']).not.toHaveBeenCalled()
+  })
+
+  it('ошибка данных вкладки не скрывает уже загруженный профиль', async () => {
+    const api = fakeApi({ 'llm:access': vi.fn(async () => { throw new Error('доступ недоступен') }) })
+    renderPage(api, 'access')
+    expect(await screen.findByTestId('profile-head')).toHaveTextContent('marina')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось загрузить данные вкладки')
+  })
+
   it('экспорт журнала отдаёт CSV хосту', async () => {
     const onExportCsv = vi.fn()
     renderPage(fakeApi(), 'history', vi.fn(), onExportCsv)
     await waitFor(() => expect(screen.getByTestId('history-tab')).toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: 'Экспорт CSV' }))
     expect(onExportCsv.mock.calls[0][0]).toBe('security-marina.csv')
+  })
+
+  it('фильтр журнала перезапрашивает только выбранную группу', async () => {
+    const api = fakeApi()
+    renderPage(api, 'history')
+    await screen.findByTestId('history-tab')
+    await userEvent.selectOptions(screen.getByLabelText('Тип событий'), 'machines')
+    await waitFor(() => expect(api['me:security']).toHaveBeenLastCalledWith({ limit: 200, group: 'machines' }))
   })
 
   it('смена периода перезапрашивает расход с новыми границами', async () => {

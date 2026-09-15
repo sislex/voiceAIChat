@@ -872,8 +872,11 @@ describe('VoiceChatDb — пользователи и админ-данные', 
     await db.chat.createConversation('bob', 'Первый')
     await db.chat.createConversation('bob', 'Второй')
     expect((await db.chat.conversationCounts()).get('bob')).toBe(2)
+    expect(await db.chat.conversationCount('bob')).toBe(2)
+    expect(await db.chat.conversationCount('missing')).toBe(0)
     // Без живых сессий пользователя в карте активности нет — «активен сейчас» ложным не станет.
     expect((await db.identity.sessionActivity()).get('bob')).toBeUndefined()
+    expect(await db.identity.sessionActivityForUser('bob')).toBeNull()
   })
 
   it('usageReport суммирует токены ai-сообщений по моделям', async () => {

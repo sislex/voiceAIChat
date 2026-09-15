@@ -188,6 +188,18 @@ describe('ProfilePanel — использование', () => {
 })
 
 describe('ProfilePanel — журнал', () => {
+  it('длинный журнал раскрывается порциями, а экспорт сохраняет всю выборку', async () => {
+    const manyEvents = Array.from({ length: 75 }, (_, index) => ({ ...events[0]!, id: index + 1 }))
+    const onExportCsv = vi.fn()
+    setup({ tab: 'history', events: manyEvents, onExportCsv })
+    expect(screen.getAllByRole('listitem')).toHaveLength(50)
+    expect(screen.getByText('50 из 75')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Показать ещё 25' }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(75)
+    await userEvent.click(screen.getByRole('button', { name: 'Экспорт CSV' }))
+    expect(onExportCsv.mock.calls[0][1].split('\n')).toHaveLength(76)
+  })
+
   it('смена группы уходит наружу: фильтрует сервер, а не клиент', async () => {
     const onChangeSecurityGroup = vi.fn()
     setup({ tab: 'history', onChangeSecurityGroup })
