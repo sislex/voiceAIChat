@@ -4,7 +4,7 @@
 // `tabpanel`, без roving tabindex и без стрелок: скринридер объявлял вкладки,
 // а перейти между ними с клавиатуры было нельзя. Правило одно на всех — здесь.
 
-import { useRef, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 
 export interface TabItem {
   id: string
@@ -30,6 +30,19 @@ export interface TabsProps {
 export function Tabs({ items, activeId, onChange, label, panelId, className, testId = 'tabs' }: TabsProps): JSX.Element {
   const listRef = useRef<HTMLDivElement>(null)
   const visible = items.filter((item) => !item.hidden)
+
+  // Keep a routed active tab visible when a narrow viewport clips the row.
+  useEffect(() => {
+    const list = listRef.current
+    const active = list?.querySelector<HTMLButtonElement>(`[data-tab-id="${CSS.escape(activeId)}"]`)
+    if (!list || !active || typeof list.scrollTo !== 'function') return
+    const listRect = list.getBoundingClientRect()
+    const activeRect = active.getBoundingClientRect()
+    if (activeRect.left < listRect.left || activeRect.right > listRect.right) {
+      const targetLeft = active.offsetLeft - Math.max(0, (list.clientWidth - active.offsetWidth) / 2)
+      list.scrollTo({ left: targetLeft, behavior: 'smooth' })
+    }
+  }, [activeId])
 
   // Стрелки ходят по вкладкам, Home/End прыгают к краям — так вкладки ведут себя
   // во всех нативных реализациях, и человек не обязан угадывать нашу.

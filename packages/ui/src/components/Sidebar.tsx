@@ -268,6 +268,8 @@ export interface SidebarProps {
   onOpenPersonalization?: () => void
   /** «Мой аккаунт» — свой профиль, расход и журнал; доступен любой роли. */
   onOpenAccount?: () => void
+  /** Warm the lazy account chunk when pointer or keyboard intent is visible. */
+  onAccountIntent?: () => void
   onOpenSettings: () => void
   /** Открыть файловый проводник по машине-агенту (web). */
   onOpenFiles?: () => void
@@ -372,6 +374,7 @@ export function Sidebar({
   onOpenKnowledgeBase,
   onOpenPersonalization,
   onOpenAccount,
+  onAccountIntent,
   onOpenSettings,
   onOpenFiles,
   onOpenConsole,
@@ -1029,7 +1032,16 @@ export function Sidebar({
                   </Button>
                 )}
                 {onOpenAccount && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenAccount)}>
+                  <Button
+                    variant="ghost"
+                    fullWidth
+                    className="sidefoot-row"
+                    role="menuitem"
+                    onMouseEnter={onAccountIntent}
+                    onFocus={onAccountIntent}
+                    onTouchStart={onAccountIntent}
+                    onClick={acct(onOpenAccount)}
+                  >
                     <span className="footico">👤</span>
                     Мой аккаунт
                   </Button>

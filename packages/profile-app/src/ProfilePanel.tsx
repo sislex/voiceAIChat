@@ -45,6 +45,12 @@ export interface ProfilePanelProps extends ProfileCallbacks {
   events: readonly ProfileSecurityEvent[] | null
   /** Расход ещё грузится: показываем скелетон вместо пустого экрана. */
   usageLoading?: boolean
+  /** Access loads independently from the profile shell. */
+  accessLoading?: boolean
+  /** Full machine details load only after the tab opens. */
+  machinesLoading?: boolean
+  /** Security history loads separately and never blocks the profile header. */
+  eventsLoading?: boolean
   /** Группа событий журнала: фильтрует сервер, а не клиент. */
   securityGroup?: SecurityGroup
   onChangeSecurityGroup?: (group: SecurityGroup) => void
@@ -87,6 +93,9 @@ export function ProfilePanel({
   period = 'month',
   events,
   usageLoading = false,
+  accessLoading = false,
+  machinesLoading = false,
+  eventsLoading = false,
   securityGroup = 'all',
   onChangeSecurityGroup,
   error = null,
@@ -139,9 +148,10 @@ export function ProfilePanel({
         {...(onIssueResetCode ? { onIssueResetCode } : {})}
       />
 
-      <QuickStats user={user} access={{ allowed: summary.allowed, total: totalModels }} usage={usage} budget={budget} now={now} />
+      <QuickStats user={user} access={accessLoading ? null : { allowed: summary.allowed, total: totalModels }} usage={usage} usageLoading={usageLoading} budget={budget} now={now} />
 
       <Tabs
+        className="vcp-tabs"
         label="Разделы пользователя"
         activeId={active}
         onChange={(id) => goTab(id as ProfileTab)}
@@ -165,14 +175,16 @@ export function ProfilePanel({
             {...(onRetry ? { onRetry } : {})}
           />
         )}
-        {usageLoading && (active === 'overview' || active === 'usage') && (
+        {usageLoading && active === 'usage' && (
           <Skeleton variant="list" count={2} height={96} lines={3} testId="profile-usage-skeleton" />
         )}
-        {!usageLoading && active === 'overview' && (
+        {active === 'overview' && (
           <OverviewTab
             user={user}
             usage={usage}
-            events={events ?? []}
+            usageLoading={usageLoading}
+            events={events}
+            eventsLoading={eventsLoading}
             conversations={conversations}
             capabilities={capabilities}
             now={now}
@@ -183,10 +195,14 @@ export function ProfilePanel({
         )}
         {active === 'sessions' && sessionsSlot}
         {active === 'access' && (
-          <AccessTab providers={providers} denied={effectiveDenied} capabilities={capabilities} onChange={setDraft} />
+          accessLoading
+            ? <Skeleton variant="list" count={2} height={150} lines={4} testId="profile-access-skeleton" />
+            : <AccessTab providers={providers} denied={effectiveDenied} capabilities={capabilities} onChange={setDraft} />
         )}
         {active === 'machines' && (
-          <>
+          machinesLoading
+            ? <Skeleton variant="list" count={2} height={104} lines={3} testId="profile-machines-skeleton" />
+            : <>
             <MachinesTab
               machines={user.machines}
               capabilities={capabilities}
@@ -200,7 +216,9 @@ export function ProfilePanel({
         {!usageLoading && active === 'usage' && (
           <UsageTab usage={usage} period={period} {...(onSelectPeriod ? { onSelectPeriod } : {})} />
         )}
-        {active === 'history' && (
+        {active === 'history' && (eventsLoading
+          ? <Skeleton variant="list" count={4} height={72} lines={2} testId="profile-history-skeleton" />
+          : (
           <>
             <HistoryTab
               events={events}
@@ -211,7 +229,7 @@ export function ProfilePanel({
             />
             {historySlot}
           </>
-        )}
+          ))}
       </div>
 
       <StickyActionBar
