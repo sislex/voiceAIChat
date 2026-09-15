@@ -8,6 +8,8 @@ import { loadScenario, scenarioKey } from './scenarioStorage'
 import { createScenarioRunner, type ScenarioProgress } from './scenarioRunner'
 import { normalizeReaderAddress } from './readerAddress'
 import { loadRecentAddresses, recentAddressLabel, rememberRecentAddress, saveRecentAddresses } from './recentAddresses'
+import { loadZoomFor, saveZoomFor } from './zoomMemory'
+import { pageScrollState, toolbarHiddenAfterScroll } from './pageScroll'
 import { useEffect, useId, useRef, useState } from 'react'
 import { PREVIEW_ACTION_LIMITS, PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, PREVIEW_INSPECTOR_MESSAGE_TYPE, isPreviewInspectorCommand } from '@shared/previewInspector'
@@ -37,6 +39,18 @@ const RECORD = 'voicechat.preview.record.v1'
 const EDIT = 'voicechat.preview.edit.v1'
 // Режим скриншота области: тот же канал Reader ↔ инъецированный скрипт.
 const CAPTURE = 'voicechat.preview.capture.v1'
+// Link under the cursor or held on a phone, edge swipes and the reading mode: page → Reader channels of the injected script.
+const LINK = 'voicechat.preview.link.v1'
+const GESTURE = 'voicechat.preview.gesture.v1'
+const READER = 'voicechat.preview.reader.v1'
+// Same breakpoint as recorder.css: below it the panel behaves like a phone browser.
+const COMPACT_QUERY = '(max-width: 560px)'
+const hostOf = (value: string | null): string => { try { return value ? new URL(value).host : '' } catch { return '' } }
+/** Browser shortcuts of the panel — one list for the cheat sheet, so it cannot drift from the handlers. */
+const SHORTCUTS: readonly [string, string][] = [
+  ['Ctrl/Cmd+L', 'адресная строка'], ['Ctrl/Cmd+F', 'найти на странице'], ['Alt+← / Alt+→', 'назад и вперёд'], ['Alt+Home', 'к началу страницы'],
+  ['Alt+Shift+M', 'только я управляю'], ['Ctrl/Cmd+Enter в адресе', 'открыть в новой вкладке'], ['Shift+↻', 'сбросить сессию сайта и обновить'], ['Esc', 'закрыть меню, поиск, выделение']
+]
 const sameOrigin = window.location.origin
 /** Same document when only the fragment differs and a fragment is present. */
 const sameDocument = (current: string, next: string): boolean => {
@@ -96,10 +110,38 @@ export function Recorder(): JSX.Element {
   const [zoom, setZoom] = useState(100)
   const zoomRef = useRef(100)
   const [suggestionIndex, setSuggestionIndex] = useState(-1)
+  // Phone-browser behaviours: host-only address, toolbar that hides while reading, «to top», link menu on hold.
+  const [compact, setCompact] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia(COMPACT_QUERY).matches)
+  const compactRef = useRef(compact)
+  compactRef.current = compact
+  const [barHidden, setBarHidden] = useState(false)
+  const [showTop, setShowTop] = useState(false)
+  const lastScrollTop = useRef(0)
+  const [hoverLink, setHoverLink] = useState<{ href: string; text: string; newTab: boolean } | null>(null)
+  const [linkMenu, setLinkMenu] = useState<{ href: string; text: string } | null>(null)
+  const [readerMode, setReaderMode] = useState(false)
+  const readerRef = useRef(false)
+  readerRef.current = readerMode
+  const [keysOpen, setKeysOpen] = useState(false)
+  // Pages of this tab session: a long press or right-click on «Назад» lists them, like a browser's back-button menu.
+  const [visited, setVisited] = useState<{ url: string; title: string }[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const historyPress = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia(COMPACT_QUERY)
+    const update = (): void => setCompact(media.matches)
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
+  const zoomFrame = (percent: number): void => {
+    try { const doc = frame.current?.contentDocument; if (doc?.body) (doc.body.style as CSSStyleDeclaration & { zoom?: string }).zoom = percent === 100 ? '' : `${percent}%` } catch { /* cross-document */ }
+  }
   const applyZoom = (next: number): void => {
     const clamped = Math.min(200, Math.max(50, next))
     setZoom(clamped); zoomRef.current = clamped
-    try { const doc = frame.current?.contentDocument; if (doc?.body) (doc.body.style as CSSStyleDeclaration & { zoom?: string }).zoom = clamped === 100 ? '' : `${clamped}%` } catch { /* cross-document */ }
+    saveZoomFor(currentUrl.current, clamped)
+    zoomFrame(clamped)
   }
   const findInPage = (backwards: boolean): void => {
     const target = frame.current?.contentWindow as (Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean, wrap?: boolean) => boolean }) | null | undefined
@@ -109,6 +151,8 @@ export function Recorder(): JSX.Element {
   const suggestionsId = useId()
   // Rough history depth of this page session: «Назад» is disabled until there is somewhere to go.
   const [historyDepth, setHistoryDepth] = useState(0)
+  const historyDepthRef = useRef(0)
+  historyDepthRef.current = historyDepth
   const historyGrew = useRef(false)
   const [redirectedFrom, setRedirectedFrom] = useState<string | null>(null)
   const requestedUrl = useRef<string | null>(null)
@@ -187,6 +231,7 @@ export function Recorder(): JSX.Element {
     settleNavigationWatch(false)
     setPageTitle('')
     setSelection(''); setPageIcon(null); setRedirectedFrom(null); setPageLang(''); setReadProgress(0); setReadMinutes(0)
+    setHoverLink(null); setLinkMenu(null); setBarHidden(false); setShowTop(false); setHistoryOpen(false); lastScrollTop.current = 0
     requestedUrl.current = next
     setHistoryDepth(0); historyGrew.current = false
     setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
@@ -327,15 +372,29 @@ export function Recorder(): JSX.Element {
           ? { headings: (outline.headings as unknown[]).filter((item): item is string => typeof item === 'string').slice(0, 8).map(item => item.slice(0, 200)), links: outline.links as number, buttons: outline.buttons as number, inputs: outline.inputs as number, ...(typeof outline.words === 'number' ? { words: outline.words } : {}) }
           : null
         setPageTitle(title)
+        if (currentUrl.current) { const visitedUrl = currentUrl.current; setVisited(list => list.at(-1)?.url === visitedUrl ? list : [...list, { url: visitedUrl, title }].slice(-30)) }
         if (currentUrl.current) setRecent(list => { const updated = rememberRecentAddress(list, currentUrl.current!); saveRecentAddresses(updated); return updated })
         setLoadState('ready'); setLoadError(null)
         setReadMinutes(outline && typeof outline.words === 'number' ? Math.round(outline.words / 200) : 0)
         try {
           const win = frame.current?.contentWindow
           if (win) {
-            const update = (): void => { try { const doc = win.document.scrollingElement || win.document.documentElement; const max = Math.max(0, doc.scrollHeight - win.innerHeight); setReadProgress(max > 0 ? Math.min(100, Math.round(doc.scrollTop / max * 100)) : 100) } catch { /* cross-document */ } }
+            const update = (): void => {
+              try {
+                const doc = win.document.scrollingElement || win.document.documentElement
+                const state = pageScrollState(doc.scrollTop, doc.scrollHeight, win.innerHeight)
+                setReadProgress(state.progress); setShowTop(state.showTop)
+                // Read the ref now: the state updater runs later, when the ref already holds this position.
+                const previousTop = lastScrollTop.current, top = doc.scrollTop
+                lastScrollTop.current = top
+                setBarHidden(hidden => toolbarHiddenAfterScroll(hidden, previousTop, top, compactRef.current))
+              } catch { /* cross-document */ }
+            }
             win.addEventListener('scroll', update, { passive: true }); update()
-            if (zoomRef.current !== 100) applyZoom(zoomRef.current)
+            // Per-site zoom, like a browser: the level the person chose for this host comes back with the page.
+            const remembered = loadZoomFor(currentUrl.current)
+            zoomRef.current = remembered; setZoom(remembered)
+            if (remembered !== 100) zoomFrame(remembered)
           }
         } catch { /* cross-document */ }
         const vp = (message as { viewport?: unknown }).viewport as { width?: unknown; height?: unknown } | undefined
@@ -347,7 +406,7 @@ export function Recorder(): JSX.Element {
         reply({ kind: 'page-status', status: 'ready', url: currentUrl.current, ...(title ? { title } : {}), ...(summary ? { outline: summary } : {}), ...(viewportInfo ? { viewport: viewportInfo } : {}) })
         settleNavigationWatch(true, { url: currentUrl.current, title })
         const state = modes.current
-        for (const [type, enabled] of [[RECORD, state.recording], [PREVIEW_INSPECTOR_COMMAND_TYPE, state.inspecting], [EDIT, state.editing], [CAPTURE, state.capturing]] as const) {
+        for (const [type, enabled] of [[RECORD, state.recording], [PREVIEW_INSPECTOR_COMMAND_TYPE, state.inspecting], [EDIT, state.editing], [CAPTURE, state.capturing], [READER, readerRef.current]] as const) {
           frame.current?.contentWindow?.postMessage({ type, enabled }, sameOrigin)
         }
         return
@@ -406,6 +465,21 @@ export function Recorder(): JSX.Element {
         return
       }
       if (message?.type === PREVIEW_INSPECTOR_MESSAGE_TYPE) { reply({ kind: 'element-selected', element: message.payload as never }); return }
+      if (message?.type === LINK) {
+        const link = message as { href?: unknown; text?: unknown; newTab?: unknown; longPress?: unknown }
+        const href = typeof link.href === 'string' ? validUrl(link.href) : null
+        const text = typeof link.text === 'string' ? link.text.slice(0, 120) : ''
+        if (link.longPress === true && href) { setLinkMenu({ href, text }); setHoverLink(null); return }
+        setHoverLink(href ? { href, text, newTab: link.newTab === true } : null)
+        return
+      }
+      if (message?.type === GESTURE) {
+        // Edge swipe inside the page: back only when this tab has somewhere to go, so the host app never moves.
+        const gesture = (message as { gesture?: unknown }).gesture
+        if (gesture === 'back' && historyDepthRef.current > 0) historyGo(-1)
+        else if (gesture === 'forward') historyGo(1)
+        return
+      }
       if (message?.type === 'voicechat.preview.selection.v1') { const text = typeof (message as { text?: unknown }).text === 'string' ? String((message as { text: string }).text).slice(0, 2000) : ''; setSelection(text); return }
       if (message?.type === RECORD && modes.current.recording && !diagnosticsMode.current && !scenarioRunner.current?.isRunning()) {
         const step = normalizeWebRecorderStep(message.step)
@@ -447,6 +521,7 @@ export function Recorder(): JSX.Element {
   useEffect(() => () => { sessionReset.current?.abort(); sessionReset.current = null; if (sessionResetTimeout.current) clearTimeout(sessionResetTimeout.current); sessionResetTimeout.current = null }, [])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: EDIT, enabled: editing }, sameOrigin) }, [editing, url])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: CAPTURE, enabled: capturing }, sameOrigin) }, [capturing, url])
+  useEffect(() => { frame.current?.contentWindow?.postMessage({ type: READER, enabled: readerMode }, sameOrigin) }, [readerMode, url])
   const closeTools = (): void => { if (toolsMenu.current) toolsMenu.current.open = false }
   const activateMode = (mode: 'inspect' | 'edit' | 'capture' | null): void => {
     setInspecting(mode === 'inspect'); setEditing(mode === 'edit'); setCapturing(mode === 'capture')
@@ -589,7 +664,7 @@ export function Recorder(): JSX.Element {
     if (currentUrl.current) window.open(currentUrl.current, '_blank', 'noopener,noreferrer')
     closeTools()
   }
-  return <section className={`webpreview${dragging ? ' webpreview--dragging' : ''}`} aria-label="Web Reader" onDragOver={event => { if ([...event.dataTransfer.types].some(type => type === 'text/uri-list' || type === 'text/plain')) { event.preventDefault(); setDragging(true) } }} onDragLeave={() => setDragging(false)} onDrop={event => {
+  return <section className={`webpreview${dragging ? ' webpreview--dragging' : ''}${barHidden && compact ? ' webpreview--bar-hidden' : ''}`} aria-label="Web Reader" onDragOver={event => { if ([...event.dataTransfer.types].some(type => type === 'text/uri-list' || type === 'text/plain')) { event.preventDefault(); setDragging(true) } }} onDragLeave={() => setDragging(false)} onDrop={event => {
     // Drop a link or address text anywhere on the panel to open it — like dropping a link onto a browser tab.
     event.preventDefault(); setDragging(false)
     const dropped = (event.dataTransfer.getData('text/uri-list') || event.dataTransfer.getData('text/plain')).split('\n').map(line => line.trim()).find(line => line && !line.startsWith('#')) ?? ''
@@ -610,11 +685,17 @@ export function Recorder(): JSX.Element {
     if (event.altKey && event.key === 'Home' && url) { event.preventDefault(); try { frame.current?.contentWindow?.scrollTo({ top: 0, behavior: 'smooth' }) } catch { /* cross-document */ } }
   }}>
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
-      <IconButton variant="secondary" type="button" disabled={!url || historyDepth === 0} aria-label="Назад" aria-keyshortcuts="Alt+ArrowLeft" title="Назад (Alt+←)" onClick={() => historyGo(-1)}>‹</IconButton>
+      {/* Right-click or hold on the history buttons lists the pages of this tab, like a browser's back-button menu. */}
+      <span className="webpreview-history" role="group" aria-label="История" onContextMenu={event => { if (visited.length) { event.preventDefault(); setHistoryOpen(open => !open) } }}
+        onPointerDown={() => { if (historyPress.current) clearTimeout(historyPress.current); historyPress.current = setTimeout(() => { historyPress.current = null; if (visited.length) setHistoryOpen(true) }, 500) }}
+        onPointerUp={() => { if (historyPress.current) { clearTimeout(historyPress.current); historyPress.current = null } }} onPointerLeave={() => { if (historyPress.current) { clearTimeout(historyPress.current); historyPress.current = null } }}>
+      <IconButton variant="secondary" type="button" disabled={!url || historyDepth === 0} aria-label="Назад" aria-keyshortcuts="Alt+ArrowLeft" title="Назад (Alt+←). Удерживайте или правый клик — история вкладки" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" aria-keyshortcuts="Alt+ArrowRight" title="Вперёд (Alt+→)" onClick={() => historyGo(1)}>›</IconButton>
+      {historyOpen && visited.length > 0 && <ul className="webpreview-suggestions webpreview-history__list" role="listbox" aria-label="История этой вкладки">{[...visited].reverse().slice(0, 8).map((item, index) => <li key={item.url + index} role="option" aria-selected={item.url === currentUrl.current}><button type="button" onClick={() => { setHistoryOpen(false); if (item.url !== currentUrl.current) openAddress(item.url) }}>{item.title || recentAddressLabel(item.url)}<small>{hostOf(item.url)}</small></button></li>)}</ul>}
+      </span>
       <IconButton variant="secondary" aria-label="Обновить страницу" title={loadState === 'loading' ? 'Страница загружается…' : 'Обновить страницу'} disabled={!url || loadState === 'loading'} aria-busy={loadState === 'loading' || undefined} className={loadState === 'loading' ? 'webpreview-reload--busy' : undefined} onClick={event => { if (event.shiftKey) resetSession(); else reload() }}>↻</IconButton>
       <span className="webpreview-link" role="img" title={linked ? 'Панель связана с чатом: ассистент может управлять страницей' : 'Панель не связана с чатом: ассистент не видит эту страницу'} aria-label={linked ? 'Связь с чатом есть' : 'Связи с чатом нет'} data-linked={linked || undefined} data-manual={manual || undefined}>{linked ? '●' : '○'}</span>
-      <label className="webpreview-address">{url && <span className="webpreview-scheme" aria-hidden="true" title={url.startsWith('https:') ? 'Защищённое соединение' : 'Незащищённое соединение'}>{url.startsWith('https:') ? '🔒' : '⚠'}</span>}<span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} aria-keyshortcuts="Control+L Meta+L" value={draft} placeholder="https://example.com" onFocus={event => { event.currentTarget.select(); setAddressFocused(true) }} onBlur={() => setTimeout(() => setAddressFocused(false), 120)} aria-autocomplete="list" aria-controls={suggestionsId} aria-expanded={addressFocused && suggestions.length > 0} onPaste={event => {
+      <label className="webpreview-address">{url && <span className="webpreview-scheme" aria-hidden="true" title={url.startsWith('https:') ? 'Защищённое соединение' : 'Незащищённое соединение'}>{url.startsWith('https:') ? '🔒' : '⚠'}</span>}<span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} aria-keyshortcuts="Control+L Meta+L" value={compact && !addressFocused && url && draft === url ? hostOf(url) : draft} placeholder="https://example.com" onFocus={event => { event.currentTarget.select(); setAddressFocused(true) }} onBlur={() => setTimeout(() => setAddressFocused(false), 120)} aria-autocomplete="list" aria-controls={suggestionsId} aria-expanded={addressFocused && suggestions.length > 0} onPaste={event => {
         // Paste-and-go: a pasted full address opens at once, like mobile browsers do.
         const pasted = event.clipboardData.getData('text').trim()
         if (!draft.trim() && /^https?:\/\/\S+$/.test(pasted)) { event.preventDefault(); openAddress(pasted) }
@@ -649,7 +730,9 @@ export function Recorder(): JSX.Element {
           <Button variant="secondary" type="button" disabled={!url} onClick={copyLink}>Копировать ссылку с названием</Button>
           <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} aria-keyshortcuts="Control+F Meta+F" onClick={() => { setFindOpen(true); closeTools(); setTimeout(() => findRef.current?.focus(), 0) }}>Найти на странице</Button>
           <div className="webpreview-tools__zoom" role="group" aria-label="Масштаб страницы"><Button variant="secondary" size="sm" type="button" disabled={!url || loadState !== 'ready' || zoom <= 50} aria-label="Уменьшить текст" onClick={() => applyZoom(zoom - 10)}>A−</Button><span aria-live="polite">{zoom}%</span><Button variant="secondary" size="sm" type="button" disabled={!url || loadState !== 'ready' || zoom >= 200} aria-label="Увеличить текст" onClick={() => applyZoom(zoom + 10)}>A+</Button></div>
+          <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} aria-pressed={readerMode} onClick={() => { setReaderMode(value => !value); closeTools() }}>{readerMode ? 'Обычный вид' : 'Режим чтения'}</Button>
           <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} onClick={snapshotToChat}>Снимок страницы в чат</Button>
+          <Button variant="secondary" type="button" aria-pressed={keysOpen} onClick={() => { setKeysOpen(value => !value); closeTools() }}>Клавиши</Button>
           {typeof navigator.share === 'function' && <Button variant="secondary" type="button" disabled={!url} onClick={() => { const target = currentUrl.current; if (target) void navigator.share({ url: target, ...(pageTitle ? { title: pageTitle } : {}) }).catch(() => {}); closeTools() }}>Поделиться…</Button>}
           <Button variant="secondary" type="button" disabled={!url} onClick={openExternal}>Открыть в новой вкладке</Button>
           <Button variant="secondary" type="button" aria-pressed={manual} onClick={() => { setManualMode(!manualRef.current); closeTools() }}>{manual ? 'Вернуть управление ассистенту' : 'Только я управляю'}</Button>
@@ -675,6 +758,9 @@ export function Recorder(): JSX.Element {
     {pageTitle && loadState === 'ready' && <button type="button" className="webpreview-title" title="Скопировать ссылку с названием" aria-label={`Скопировать ссылку: ${pageTitle}`} onClick={copyLink}>{pageIcon && <img className="webpreview-title__icon" src={'/api/preview?url=' + encodeURIComponent(pageIcon)} alt="" onError={() => setPageIcon(null)} />}<span>{pageTitle}</span>{pageLang && <small className="webpreview-title__lang" title={`Язык страницы: ${pageLang}`}>{pageLang}</small>}{readMinutes >= 1 && <small className="webpreview-title__time" title="Примерное время чтения">~{readMinutes} мин</small>}</button>}
     {loadState === 'ready' && url && readProgress > 0 && readProgress < 100 && <div className="webpreview-readbar" role="progressbar" aria-label="Прочитано страницы" aria-valuemin={0} aria-valuemax={100} aria-valuenow={readProgress}><span style={{ width: `${readProgress}%` }} /></div>}
     {redirectedFrom && loadState === 'ready' && <div className="webpreview-load-status" role="status">Перенаправлено с {(() => { try { return new URL(redirectedFrom).host } catch { return redirectedFrom } })()}</div>}
+    {barHidden && compact && <button type="button" className="webpreview-peek" aria-label="Показать панель" onClick={() => setBarHidden(false)}>⌄</button>}
+    {keysOpen && <dl className="webpreview-keys" aria-label="Клавиши панели">{SHORTCUTS.map(([keys, action]) => <div key={keys}><dt><kbd>{keys}</kbd></dt><dd>{action}</dd></div>)}<IconButton size="sm" aria-label="Скрыть клавиши" title="Скрыть клавиши" onClick={() => setKeysOpen(false)}>×</IconButton></dl>}
+    {linkMenu && loadState === 'ready' && <div className="webpreview-selection webpreview-linkmenu" role="status"><span className="webpreview-selection__text" title={linkMenu.href}>{linkMenu.text ? `${linkMenu.text} · ` : ''}{hostOf(linkMenu.href)}</span><Button size="sm" onClick={() => { openAddress(linkMenu.href); setLinkMenu(null) }}>Открыть ссылку</Button><Button size="sm" variant="secondary" onClick={() => { void navigator.clipboard?.writeText(linkMenu.href).catch(() => setError('Не удалось скопировать ссылку.')); setLinkMenu(null) }}>Копировать ссылку</Button><Button size="sm" variant="secondary" onClick={() => { reply({ kind: 'ask', text: `Что по ссылке ${linkMenu.href}${linkMenu.text ? ` («${linkMenu.text}»)` : ''}?` }); setLinkMenu(null) }}>Спросить о ссылке</Button><Button size="sm" variant="secondary" onClick={() => { window.open(linkMenu.href, '_blank', 'noopener,noreferrer'); setLinkMenu(null) }}>В новой вкладке</Button><IconButton size="sm" aria-label="Скрыть меню ссылки" title="Скрыть меню ссылки" onClick={() => setLinkMenu(null)}>×</IconButton></div>}
     {findOpen && url && <form className="webpreview-find" role="search" aria-label="Поиск на странице" onSubmit={event => { event.preventDefault(); findInPage(event.nativeEvent instanceof SubmitEvent && (event.nativeEvent as SubmitEvent).submitter?.getAttribute('data-dir') === 'back') }}>
       <input ref={findRef} type="search" aria-label="Найти на странице" placeholder="Найти на странице" value={findText} onChange={event => setFindText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); findInPage(true) } }} />
       <Button size="sm" variant="secondary" type="submit" data-dir="back" aria-label="Предыдущее совпадение">↑</Button>
@@ -728,7 +814,7 @@ export function Recorder(): JSX.Element {
         {step.submit === true && <em>⏎ submit</em>}
         {step.sensitive && <em>секрет не сохраняется</em>}</li>)}
     </ol></section>}
-    {url ? <div className="webpreview-viewport"><iframe key={frameKey} ref={frame} className="webpreview-frame" aria-busy={loadState === 'loading' || undefined} style={viewport ? { width: viewport + 'px', minWidth: viewport + 'px', flex: 'none' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={event => loaded(event.currentTarget)} onError={() => failLoad('Не удалось загрузить сайт: сетевая ошибка.')} /></div> : <div className="webpreview-empty"><div>
+    {url ? <div className="webpreview-viewport">{hoverLink && !linkMenu && <div className="webpreview-linkbar" role="status" aria-live="polite">{hoverLink.href}{hostOf(hoverLink.href) && hostOf(hoverLink.href) !== hostOf(url) && <small> · другой сайт</small>}{hoverLink.newTab && <small> · новая вкладка</small>}</div>}{showTop && loadState === 'ready' && <button type="button" className="webpreview-totop" aria-label="К началу страницы" title="К началу страницы (Alt+Home)" onClick={() => { try { frame.current?.contentWindow?.scrollTo({ top: 0, behavior: 'smooth' }) } catch { /* cross-document */ } setShowTop(false) }}>↑</button>}<iframe key={frameKey} ref={frame} className="webpreview-frame" aria-busy={loadState === 'loading' || undefined} style={viewport ? { width: viewport + 'px', minWidth: viewport + 'px', flex: 'none' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={event => loaded(event.currentTarget)} onError={() => failLoad('Не удалось загрузить сайт: сетевая ошибка.')} /></div> : <div className="webpreview-empty"><div>
       <p>Укажите адрес сайта или проекта</p>
       <p className="webpreview-empty__hint">или попросите ассистента в чате: «открой …» — страница появится здесь. Вставленный в поле адрес открывается сразу.</p>
       <p className="webpreview-empty__hint webpreview-empty__keys">Ctrl/Cmd+L — адрес · Alt+←/→ — история · Esc — отмена</p>

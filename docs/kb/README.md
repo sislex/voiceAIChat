@@ -10,11 +10,11 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 15 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 37 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 38 коммит(ов) в areas после сверки: 834a490d feat(reader): круг 15 — чтение длинных страниц как у человека … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 45 коммит(ов) в areas после сверки: 0b7c9dad feat(reader): круг 6 — проверки как у тестировщика и лицо страницы во вкладке … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 5984db1d feat(reader): круг 9 — рутина одним вызовом, лента объясняет себя … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 18 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 19 коммит(ов) в areas после сверки: 834a490d feat(reader): круг 15 — чтение длинных страниц как у человека … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 15 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 181 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 5 коммит(ов) в areas после сверки: 0b7c9dad feat(reader): круг 6 — проверки как у тестировщика и лицо страницы во вкладке … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 123 коммит(ов) в areas после сверки: 0b7c9dad feat(reader): круг 6 — проверки как у тестировщика и лицо страницы во вкладке … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 49 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1467 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1468 коммит(ов) в areas после сверки: 834a490d feat(reader): круг 15 — чтение длинных страниц как у человека … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 12 коммит(ов) в areas после сверки: 5984db1d feat(reader): круг 9 — рутина одним вызовом, лента объясняет себя … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 38 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 40 коммит(ов) в areas после сверки: 4632bced Merge main into CHAT-466 (task 2c900bc5-86d3-4216-857c-529cc8951e5f) … |
@@ -36,7 +36,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 23 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 25 коммит(ов) в areas после сверки: 0b7c9dad feat(reader): круг 6 — проверки как у тестировщика и лицо страницы во вкладке … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-13 | ⚠ 15 коммит(ов) в areas после сверки: a6143646 feat(reader): круг 2 — модель видит экран пользователя, телефон видит модель … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 38 коммит(ов) в areas после сверки: db7be8e4 feat(reader): круг 14 — осторожность как у человека … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 39 коммит(ов) в areas после сверки: 834a490d feat(reader): круг 15 — чтение длинных страниц как у человека … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 201 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 838. Последние:
+Всего записей: 839. Последние:
 
+- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-16.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-16.md) — web-reader-user-like-cycle-16
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-15.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-15.md) — web-reader-user-like-cycle-15
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-14.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-14.md) — web-reader-user-like-cycle-14
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-13.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-13.md) — web-reader-user-like-cycle-13
@@ -85,7 +86,6 @@
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-09.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-09.md) — web-reader-user-like-cycle-09
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-08.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-08.md) — web-reader-user-like-cycle-08
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-07.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-07.md) — web-reader-user-like-cycle-07
-- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-06.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-06.md) — web-reader-user-like-cycle-06
 
 ## Исторические планы
 

@@ -8,7 +8,7 @@ function shortUrl(url: string): string {
 export function previewActionLabel(action: PreviewAction): string {
   switch (action.kind) {
     case 'open': return `Открыл ${shortUrl(action.url)}`
-    case 'click': return `Нажал ${action.text ?? action.selector ?? 'элемент'}`
+    case 'click': return action.peek ? `Посмотрел, куда ведёт ${action.text ?? action.selector ?? 'ссылка'}` : `Нажал ${action.text ?? action.selector ?? 'элемент'}`
     case 'type': return `Ввёл текст в ${action.selector ?? (action.field ? `поле «${action.field}»` : 'поле')}`
     case 'read': return `Прочитал ${action.selector ?? 'страницу'}`
     case 'accessibility': return `Inspected browser accessibility: ${action.selector}`
@@ -25,6 +25,8 @@ export function previewActionLabel(action: PreviewAction): string {
     case 'press': return `Нажал клавишу ${action.key}${action.repeat && action.repeat > 1 ? ` ×${action.repeat}` : ''}`
     case 'back': return 'Перешёл назад'
     case 'forward': return 'Перешёл вперёд'
+    case 'dismiss': return action.what === 'cookies' ? 'Убрал баннер cookie' : action.what === 'dialog' ? 'Закрыл окно' : 'Убрал баннер или окно'
+    case 'show': return `Показал ${action.text ?? action.selector ?? 'элемент'}`
     default: return `Выполнил: ${action.kind}`
   }
 }
@@ -49,6 +51,8 @@ export function previewActionProgressLabel(action: PreviewAction): string {
     case 'status': return 'смотрит состояние панели'
     case 'back': return 'переходит назад'
     case 'forward': return 'переходит вперёд'
+    case 'dismiss': return action.what === 'cookies' ? 'убирает баннер cookie' : 'закрывает окно или баннер'
+    case 'show': return `показывает ${action.text ?? action.selector ?? 'элемент'}`
     default: return `выполняет ${action.kind}`
   }
 }

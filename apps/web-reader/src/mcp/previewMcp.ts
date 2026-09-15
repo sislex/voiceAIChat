@@ -381,6 +381,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         return run({ kind: 'show', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(label ? { label } : {}), ...(all ? { all: true } : {}) })
       })
 
+      server.registerTool('dismiss', {
+        description: 'Убрать то, что мешает читать страницу: баннер cookie или всплывающее окно — как человек закрывает их первым делом. ' +
+          'Для cookie предпочитает «отклонить»/«только необходимые», иначе закрывает крестиком и лишь потом принимает; окна закрывает кнопкой «Закрыть» или Escape. Ответ: dismissed, how, remaining.',
+        annotations: { destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema, what: z.enum(['cookies', 'dialog', 'any']).optional().describe('Что убрать: баннер cookie, окно или любое из них (по умолчанию any)') }
+      }, async ({ frame, what }) => run({ kind: 'dismiss', ...(frame !== undefined ? { frame } : {}), ...(what ? { what } : {}) }))
+
       server.registerTool('check', {
         description: 'Проверка ожидания как у тестировщика: есть ли на странице элемент с текстом или по селектору, виден ли он, скрыт, отсутствует, совпадает ли value или число совпадений. ' +
           'Отвечает pass, actual и summary и не бросает ошибку — цитируй summary в отчёте о проверке фичи.',
@@ -854,7 +861,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
             visible: z.boolean().optional().describe('Только элементы и текст в видимой области окна'),
             brief: z.boolean().optional().describe('Короткое описание страницы словами (панель)'),
-            parts: z.array(z.enum(PREVIEW_READ_PARTS as unknown as [string, ...string[]])).min(1).max(8).optional().describe('Какие части вернуть: headings, links, buttons, inputs, forms, landmarks, tables, text'),
+            parts: z.array(z.enum(PREVIEW_READ_PARTS as unknown as [string, ...string[]])).min(1).max(9).optional().describe('Какие части вернуть: headings, links, buttons, inputs, forms, landmarks, tables, images, text'),
             around: z.string().max(L.text).optional().describe('Текст вокруг этой фразы (±600 символов)'),
             markdown: z.boolean().optional().describe('Текст с заголовками # и списками - (панель)'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
@@ -882,11 +889,16 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             checked: z.boolean().optional().describe('Только отмеченные (true) или снятые (false) флажки и переключатели'),
             reveal: z.boolean().optional().describe('Прокрутить к первому совпадению и подсветить его пользователю'),
             level: z.number().int().min(1).max(6).optional().describe('Уровень заголовка при role: heading'),
+            below: z.string().max(L.text).optional().describe('Текст-ориентир: цель ниже него («кнопка под ценой»)'),
+            above: z.string().max(L.text).optional().describe('Текст-ориентир: цель выше него'),
+            leftOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель левее него'),
+            rightOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель правее него («поле справа от подписи»)'),
+            details: z.boolean().optional().describe('Добавить подробности элемента: атрибуты, размер и путь по ориентирам страницы'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, role, near, exact, nth, href, enabled, checked, reveal, level, limit, visibleOnly }) => {
+        async ({ frame, text, selector, role, near, exact, nth, href, enabled, checked, reveal, level, below, above, leftOf, rightOf, details, limit, visibleOnly }) => {
           if (!text && !selector && !role && !href) {
             return { content: [{ type: 'text', text: 'Укажи text, role, selector или href.' }], isError: true }
           }
@@ -897,6 +909,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(role ? { role: role.toLowerCase() } : {}),
             ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}), ...(href ? { href } : {}),
             ...(enabled !== undefined ? { enabled } : {}), ...(checked !== undefined ? { checked } : {}), ...(reveal ? { reveal: true } : {}), ...(level !== undefined ? { level } : {}),
+            ...(below ? { below } : {}), ...(above ? { above } : {}), ...(leftOf ? { leftOf } : {}), ...(rightOf ? { rightOf } : {}), ...(details ? { details: true } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })
@@ -923,10 +936,15 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             confirm: z.boolean().optional().describe('Пользователь явно разрешил опасное действие (оплата, удаление, скачивание)'),
             button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
             dblclick: z.boolean().optional().describe('Двойной клик'),
-            modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
+            modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы'),
+            below: z.string().max(L.text).optional().describe('Текст-ориентир: цель ниже него («кнопка под ценой»)'),
+            above: z.string().max(L.text).optional().describe('Текст-ориентир: цель выше него'),
+            leftOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель левее него'),
+            rightOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель правее него («поле справа от подписи»)'),
+            peek: z.boolean().optional().describe('Не нажимать: узнать, куда ведёт ссылка (href, external, newTab)')
           }
         },
-        async ({ frame, selector, text, role, near, exact, nth, x, y, waitFor, confirm, button, dblclick, modifiers }) => {
+        async ({ frame, selector, text, role, near, exact, nth, x, y, waitFor, confirm, button, dblclick, modifiers, below, above, leftOf, rightOf, peek }) => {
           if (!text && !selector && !role && (x === undefined || y === undefined)) {
             return { content: [{ type: 'text', text: 'Укажи selector, text, role или точку x и y.' }], isError: true }
           }
@@ -938,7 +956,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             ...(x !== undefined && y !== undefined ? { x, y } : {}), ...(waitFor ? { waitFor } : {}), ...(confirm ? { confirm: true } : {}),
             ...(button ? { button } : {}),
             ...(dblclick !== undefined ? { dblclick } : {}),
-            ...(modifiers?.length ? { modifiers } : {})
+            ...(modifiers?.length ? { modifiers } : {}),
+            ...(below ? { below } : {}), ...(above ? { above } : {}), ...(leftOf ? { leftOf } : {}), ...(rightOf ? { rightOf } : {}), ...(peek ? { peek: true } : {})
           })
         }
       )

@@ -536,3 +536,37 @@ UI (desktop and phone):
 | 10 | Reading strip announced as a progressbar | Recorder |
 
 Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-15.md`.
+
+## Cycle 16 — pointing by place, links before clicking, and a phone browser's habits
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `find {below|above|leftOf|rightOf: anchor}` — the target on that side of a landmark text, nearest first | script `spatialFilter` | script test |
+| 02 | the same sides on `click`: «the button under the price» resolves to one target instead of «ambiguous» | `previewInteractions.ts` `chooseTarget` | script test |
+| 03 | `find {details: true}` — attributes, viewport box and a landmark path of the element | script `detailsOf` | script test |
+| 04 | `click {peek: true}` — where a link leads (`href`, `external`, `newTab`) without clicking it | script | script test |
+| 05 | `dismiss {what: cookies|dialog|any}` — reject the cookie banner, else close it, and accept only as a last resort | script | script test |
+| 06 | `read.overlays` — cookie banner, modal and large sticky bar covering the page | script `findOverlays` | script test |
+| 07 | `read {parts: [images]}` and `read.images` — visible pictures with alt, real src and size | script | script test |
+| 08 | `scroll.percent` — how far the page is scrolled after the move | script | script test |
+| 09 | feed narrates peek and dismiss («ссылка ведёт на other.example (другой сайт)», «отклонил cookie») | relay `narrate` | panel label test |
+| 10 | rewritten HTML is `private, no-store`: a cached document would keep yesterday's injected script | `previewProxy.ts` | alias route test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Link status line over the page while hovering, with «другой сайт» and «новая вкладка» marks | script bridge, Recorder |
+| 02 | Long press on a link opens its menu: open, copy, ask the assistant, new tab | script gestures, Recorder |
+| 03 | Edge swipe inside the page goes back or forward, and never moves the host app | script gestures, Recorder |
+| 04 | Reading mode hides navigation and columns, leaving comfortable text width | script `setReader`, Recorder |
+| 05 | «Клавиши» — the panel's shortcut cheat sheet, one list shared with the handlers | Recorder |
+| 06 | Right click or hold on «Назад» lists the pages of this tab session | Recorder |
+| 07 | Text zoom is remembered per site and returns with its pages | `zoomMemory.ts` |
+| 08 | On a phone the address bar shows only the site; focus reveals the full address | Recorder |
+| 09 | On a phone the toolbar hides while reading down and returns on the way up, with a peek strip | `pageScroll.ts`, `recorder.css` |
+| 10 | «К началу страницы» appears after a screen and a half of scrolling | `pageScroll.ts`, Recorder |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-16.md`.

@@ -203,7 +203,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'changes', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'report', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'changes', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'dismiss', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'report', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
   })
 
   it.each([
@@ -610,6 +610,26 @@ describe('previewMcp — инструменты browser', () => {
     expect(result.text).toContain('загружается')
   })
 
+  it('dismiss, find со стороной и details, click peek доходят до клиента как действия (круг 16)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, dismissed: true, how: 'rejected', remaining: 0 } })
+    }
+    const answer = await call('dismiss', { what: 'cookies' })
+    expect(answer.isError).toBeFalsy()
+    expect(answer.text).toContain('rejected')
+    await call('find', { role: 'button', below: 'Цена', details: true })
+    await call('click', { text: 'Подробнее', peek: true, rightOf: 'Товар' })
+    await call('read', { parts: ['images'] })
+    expect(seen).toEqual([
+      { kind: 'dismiss', what: 'cookies' },
+      { kind: 'find', role: 'button', below: 'Цена', details: true },
+      { kind: 'click', text: 'Подробнее', rightOf: 'Товар', peek: true },
+      { kind: 'read', parts: ['images'] }
+    ])
+  })
   it('hover/scroll/press доходят до клиента как действия', async () => {
     await makeApp()
     const seen: unknown[] = []
