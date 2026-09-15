@@ -91,6 +91,8 @@ export interface CiRunStartOptions {
   launch?: CiRunLaunch
   /** Явная машина запуска; без неё `parallel` подбирает машину сам. */
   agentId?: string
+  /** Persist QA diagnostics before enqueueing so the model sees them on its first turn. */
+  fixContext?: import('@voicechat/shared').CiFixDiagnosticContext
 }
 
 export interface CiRunManager {
@@ -103,7 +105,7 @@ export interface CiRunManager {
    * указанную машину и уходит в работу мимо очереди.
    */
   forceStartOnMachine(userId: string, projectId: string, taskId: string, agentId: string): Promise<{ run: CiRun } | { error: string }>
-  retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<{ run: CiRun } | { error: string }>
+  retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null; stepId?: string }): Promise<{ run: CiRun } | { error: string }>
   discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }>
   cancel(userId: string, runId: string): Promise<boolean>
   /** Убрать именно ожидающий ран; не маскирует уже начавшееся выполнение. */
@@ -111,6 +113,8 @@ export interface CiRunManager {
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   publish(message: ServerMessage, ownerUserId: string): void
   snapshot(userId: string, runId: string): Promise<void | ServerMessage>
+  commandContext(userId: string, projectId: string, taskId: string): Promise<import('@voicechat/shared').CiCommandContext | null>
+  queueSummary(userId: string, projectId: string): Promise<import('@voicechat/shared').CiRunDetail['queue']>
   /** Восстановить очередь и закрыть начатые раны после рестарта процесса. */
   reconcile(): Promise<{ queued: CiRun[]; interrupted: CiRun[] }>
   activeRunIds(): string[]
@@ -527,6 +531,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       kbContextMode: project.ciKbContextMode ?? 'auto',
       slotProgress: { done: 0, total, phase: 'В очереди' }
     })
+    if (launchOptions?.fixContext) {
+      await deps.db.ci.updateCiRun(run.id, { fixContext: launchOptions.fixContext })
+      run.fixContext = launchOptions.fixContext
+    }
     if (developmentColumnId && developmentColumnId !== task.columnId) {
       await deps.db.tasks.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
     }
@@ -931,7 +939,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
 
   /** Повтор с упавшего шага: тот же ран, переиспользуем рабочую директорию,
    *  перезапускаем стоп-шаг и всё после него; успешные ранее шаги сохраняются. */
-  async function retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<{ run: CiRun } | { error: string }> {
+  async function retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null; stepId?: string }): Promise<{ run: CiRun } | { error: string }> {
     const detail = await deps.db.ci.getCiRun(userId, runId)
     if (!detail) return { error: 'Ран недоступен' }
     const run = detail.run
@@ -939,7 +947,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       return { error: 'Повтор с шага доступен только для упавшего рана' }
     }
     if (await hasActiveRunForTask(run.taskId)) return { error: 'Для этой задачи уже выполняется ран' }
-    const failedModel = detail.steps
+    const selectedStep = model?.stepId ? detail.steps.find((step) => step.id === model.stepId) : undefined
+    if (model?.stepId && (!selectedStep || selectedStep.parentStepId || !['model_work', 'command'].includes(selectedStep.kind))) return { error: 'Выбранный шаг недоступен для повтора' }
+    let failedModel: import('@voicechat/shared').CiRunStep | undefined = detail.steps
       .filter((st) => st.kind === 'model_work' && (st.status === 'failed' || st.status === 'timeout'))
       .sort((a2, b2) => b2.position - a2.position)[0]
     const failedCandidates = detail.steps
@@ -949,6 +959,12 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     for (const st of failedCandidates) {
       const c = await deps.db.ci.getCiCommand(userId, st.commandId as string)
       if (c ? !c.allowFailure : true) { failedCommand = st; break }
+    }
+    const unresolvedPosition = Math.max(failedModel?.position ?? -1, failedCommand?.position ?? -1)
+    if (selectedStep && unresolvedPosition >= 0 && selectedStep.position > unresolvedPosition) return { error: 'Нельзя переиспользовать упавший шаг. Выберите его или более ранний шаг.' }
+    if (selectedStep) {
+      failedModel = selectedStep.kind === 'model_work' ? selectedStep : undefined
+      failedCommand = selectedStep.kind === 'command' ? selectedStep : undefined
     }
     let resume: ResumePoint
     let eventPayload: Record<string, unknown>
@@ -968,7 +984,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const failed = failedCommand
       const slot = failed.slot as CiSlot
       const slotIds = (await deps.db.ci.resolveTaskSlots(run.projectId, run.taskId))[slot === 'before_model' ? 'beforeModel' : 'afterModel']
-      const index = Math.max(0, slotIds.indexOf(failed.commandId as string))
+      const index = slotIds.indexOf(failed.commandId as string)
+      if (index < 0 || slotIds.lastIndexOf(failed.commandId as string) !== index) return { error: 'Команда удалена или повторяется в слоте. Запустите весь workflow заново.' }
       resume = { kind: 'command', slot, index }
       eventPayload = { slot, index }
     }
@@ -1884,13 +1901,17 @@ fi`
           modelError = error instanceof Error ? error.message : String(error)
         }
       } else {
-        const line = await deps.db.ci.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
+        if ((await deps.db.ci.getTaskBrowserCheck(task.id)).mode !== 'off') {
+          modelOk = false
+          modelError = 'browser_check:infrastructure_error — model_work hook is unavailable'
+        }
+        const line = await deps.db.ci.appendCiLog(runId, mwStep.id, 'system', modelError || 'Работа модели пропущена (хук не подключён)\n')
         broadcast({ t: 'ci.log', runId, line }, userId)
       }
       const stepStatus: CiStatus = modelOk ? 'success' : modelCancelled || signal.aborted ? 'cancelled' : 'failed'
       const mwFinished = now()
       const upd = (await deps.db.ci.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: mwFinished, durationMs: mwFinished - mwStart }))!
-      await deps.db.ci.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
+      await deps.db.ci.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : modelError || 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
       await emitStage(runId, userId)
       await emitStep(upd, userId)
       // Отмена пользователем: слот «после» и резюме не запускаем, карточку возвращаем.
@@ -1914,6 +1935,9 @@ fi`
           broadcast({ t: 'ci.log', runId, line }, userId)
           await deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: transport.kind, stepId: mwStep.id } })
           await progress(runId, done, total, `Инфраструктурная ошибка — ${CI_INFRA_LABEL[transport.kind]}`, userId)
+        } else if (modelError.startsWith('browser_check:')) {
+          await deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.browser_check_blocked', actorType: 'system', payload: { stepId: mwStep.id, reason: modelError } })
+          await progress(runId, done, total, modelError, userId)
         } else {
           await progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
         }
@@ -2407,11 +2431,58 @@ fi`
   }
   function publish(message: ServerMessage, ownerUserId: string): void { broadcast(message, ownerUserId) }
 
+  async function commandContext(userId: string, projectId: string, taskId: string): Promise<import('@voicechat/shared').CiCommandContext | null> {
+    const project = await deps.db.projects.getProject(userId, projectId)
+    const task = await deps.db.tasks.getCiTask(userId, projectId, taskId)
+    if (!project || !task) return null
+    const agentId = task.agentId ?? project.defaultAgentId
+    if (!agentId || !await deps.db.machines.canUseAgent(userId, agentId, projectId)) return null
+    const machine = project.machines.find((item) => item.agentId === agentId)
+    const machinePath = machine?.path?.trim().replace(/[\\/]+$/, '') || ''
+    const storage = (await deps.db.machines.listMachineStorages(userId, agentId))[0]
+    const projectSlug = slugify(project.name)
+    const taskNumber = issueKey(project.name, task)
+    const taskKey = `${projectSlug}-${task.seq ?? 0}`
+    const paths = storage ? managedCiWorkspacePaths(storage.rootPath, projectId, taskId, taskNumber) : null
+    const repoRoot = paths?.repoRoot ?? (machine?.reposRoot?.trim().replace(/[\\/]+$/, '') || machinePath.replace(/[\\/][^\\/]+$/, ''))
+    const workdir = paths?.repository ?? `${repoRoot}/${projectSlug}`
+    const workspace = paths?.workspace ?? `${workdir}/${taskNumber}`
+    const cache = paths?.npmCacheDir ?? `${repoRoot || workspace}/.npm-cache/${taskKey}`
+    return { agentId, workdir, env: {
+      TASK_NUMBER: taskNumber, TASK_KEY: taskKey, SLUG: taskNumber,
+      BRANCH: (project.ciBranchTemplate || '{task_number}').replace('{task_number}', taskNumber).replace('{slug}', slugify(task.title)),
+      BASE_BRANCH: project.ciBaseBranch || 'main', REPO_URL: project.gitUrl ?? '',
+      REPO_ROOT: repoRoot, WORKSPACE: workspace, PROJECT: projectSlug,
+      NPM_CACHE_DIR: cache, npm_config_cache: cache
+    } }
+  }
+
+  async function queueSummary(userId: string, projectId: string): Promise<import('@voicechat/shared').CiRunDetail['queue']> {
+    const board = await deps.db.tasks.getBoard(userId, projectId)
+    if (!board) return undefined
+    const order = new Map(board.tasks.map((task, index) => [task.id, index]))
+    const result: NonNullable<import('@voicechat/shared').CiRunDetail['queue']> = {
+      limit: (await deps.db.ci.getCiSettings()).maxConcurrentRuns,
+      occupied: running, waiting: [], busy: []
+    }
+    for (const [runId, owner] of active) {
+      if (owner.projectId !== projectId) continue
+      const run = await deps.db.ci.getCiRunRaw(runId)
+      if (!run) continue
+      const title = board.tasks.find((task) => task.id === run.taskId)?.title ?? run.taskId
+      const slot = runSlots.get(runId)
+      if (run.status === 'queued') result.waiting.push({ runId, taskId: run.taskId, title, createdAt: run.createdAt })
+      else if (run.status === 'running' && (slot?.held || slot?.bypass)) result.busy.push({ runId, taskId: run.taskId, title, agentId: run.agentId, bypass: !!slot?.bypass })
+    }
+    result.waiting.sort((a, b) => (order.get(a.taskId) ?? Infinity) - (order.get(b.taskId) ?? Infinity))
+    return result
+  }
+
   async function snapshot(userId: string, runId: string): Promise<void | ServerMessage> {
     const detail = await deps.db.ci.getCiRun(userId, runId)
     if (!detail) return
     const log = await deps.db.ci.getCiRunLog(userId, runId)
-    return { t: 'ci.snapshot', runId, detail, log }
+    return { t: 'ci.snapshot', runId, detail: { ...detail, queue: await queueSummary(userId, detail.run.projectId) }, log }
   }
 
   function activeRunIds(): string[] {
@@ -2441,7 +2512,7 @@ fi`
     }
   }
 
-  return { start, startForDevelopmentTransition, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, reconcile, activeRunIds, consoleExec, answerInteraction }
+  return { start, startForDevelopmentTransition, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, commandContext, queueSummary, reconcile, activeRunIds, consoleExec, answerInteraction }
 }
 
 /**

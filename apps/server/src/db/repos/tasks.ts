@@ -30,7 +30,7 @@ function normWorkItemType(raw: string): WorkItemType {
 const BOARD_TASK_COLUMNS = [
   'id', 'project_id', 'column_id', 'title', 'type', 'parent_id', 'source_task_id', 'priority', 'assignee',
   'created_by', 'created_by_name', 'agent_id', 'labels', 'skills', 'story_points', 'due_date', 'flagged',
-  'auto_pilot', 'auto_pilot_fix_cycles', 'done_at', 'preview_ready', 'seq', 'position', 'created_at', 'updated_at'
+  'auto_pilot', 'auto_pilot_requires_manual_qa', 'auto_pilot_fix_cycles', 'done_at', 'preview_ready', 'seq', 'position', 'created_at', 'updated_at'
 ].join(', ')
 
 /**
@@ -61,6 +61,7 @@ function mapTaskCore(r: TaskRow): Task {
     dueDate: r.due_date ?? null,
     flagged: r.flagged !== 0,
     autoPilot: r.auto_pilot !== 0,
+    autoPilotRequiresManualQa: r.auto_pilot_requires_manual_qa === 1,
     autoPilotFixCycles: r.auto_pilot_fix_cycles ?? 0,
     doneAt: r.done_at ?? null,
     previewReady: r.preview_ready !== 0,
@@ -737,7 +738,8 @@ export class TasksRepo extends BaseRepo {
     if (itemType === 'story' && parent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
     if (itemType === 'task' && parent && parent.type !== 'story' && parent.type !== 'epic') throw new Error('Недопустимый родитель задачи')
 
-    const autoPilotDefault = ((await this.sql.get(`SELECT autopilot_default FROM projects WHERE id = ?`, [projectId])) as { autopilot_default: number } | undefined)?.autopilot_default === 1
+    const automation = (await this.sql.get(`SELECT autopilot_default, autopilot_requires_manual_qa FROM projects WHERE id = ?`, [projectId])) as { autopilot_default: number; autopilot_requires_manual_qa: number } | undefined
+    const autoPilotDefault = automation?.autopilot_default === 1
     const id = this.newId()
     const ts = this.now()
     const created = await this.sql.transaction(async () => {
@@ -749,6 +751,9 @@ export class TasksRepo extends BaseRepo {
       const seq = await this.repos.projects.nextTaskSeq(projectId)
       await this.sql.run(`INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at, auto_pilot)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`, [id, projectId, args.columnId, args.title, args.description ?? '', args.acceptanceCriteria ?? '', itemType, args.parentId ?? null, normPriority(args.priority ?? 'medium'), assignee, createdBy, createdBy, await this.validateTaskAgent(userId, projectId, args.agentId), JSON.stringify(args.labels ?? []), JSON.stringify(skills), args.storyPoints ?? null, args.dueDate ?? null, (await this.repos.projects.isDoneColumn(args.columnId)) ? ts : null, seq, (max.m ?? 0) + RANK_STEP, ts, ts, itemType === 'task' && autoPilotDefault ? 1 : 0])
+      if (itemType === 'task' && automation?.autopilot_requires_manual_qa === 1) {
+        await this.sql.run(`UPDATE tasks SET auto_pilot_requires_manual_qa=1 WHERE id=?`, [id])
+      }
       await this.sql.run(`INSERT INTO task_creation_audit (id, project_id, task_id, created_by, created_by_name, assignee, source, assignment_method, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [this.newId(), projectId, id, createdBy, createdBy, assignee, args.source ?? 'system', userCreation ? (explicit ? 'explicit' : 'automatic') : 'system', ts])
       if (key) await this.sql.run(`INSERT INTO task_creation_requests (actor, idempotency_key, task_id) VALUES (?, ?, ?)`, [userId, key, id])
@@ -768,7 +773,7 @@ export class TasksRepo extends BaseRepo {
     userId: string,
     projectId: string,
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean; autoPilot?: boolean }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean; autoPilot?: boolean; autoPilotRequiresManualQa?: boolean }
   ): Promise<Task | null> {
     if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
     const current = await this.getTask(projectId, taskId)
@@ -846,8 +851,14 @@ export class TasksRepo extends BaseRepo {
       vals.push(fields.flagged ? 1 : 0)
     }
     if (fields.autoPilot !== undefined) {
+      if (typeof fields.autoPilot !== 'boolean') throw new Error('autoPilot must be a boolean')
       set.push('auto_pilot = ?')
       vals.push(fields.autoPilot ? 1 : 0)
+    }
+    if (fields.autoPilotRequiresManualQa !== undefined) {
+      if (typeof fields.autoPilotRequiresManualQa !== 'boolean') throw new Error('autoPilotRequiresManualQa must be a boolean')
+      set.push('auto_pilot_requires_manual_qa = ?')
+      vals.push(fields.autoPilotRequiresManualQa ? 1 : 0)
     }
     if (!set.length) return current
     const ts = this.now()
@@ -1721,7 +1732,7 @@ export class TasksRepo extends BaseRepo {
     if (!(await this.repos.projects.isProjectMember(userId,projectId))) return null
     const task = (await this.sql.get(`SELECT t.id,c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`, [taskId, projectId])) as {id:string;semantic_type:string}|undefined
     if (!task) return null
-    const allRuns=((await this.sql.all(`SELECT * FROM component_qa_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`, [taskId])) as Record<string,unknown>[]).map((row)=>this.repos.ci.mapComponentQaRun(row))
+    const allRuns=((await this.sql.all(`SELECT r.*,w.agent_id AS qa_machine_id FROM component_qa_runs r LEFT JOIN ci_runs d ON d.id=r.development_run_id LEFT JOIN ci_workspaces w ON w.id=d.workspace_id WHERE r.task_id=? ORDER BY r.attempt DESC,r.created_at DESC`, [taskId])) as Record<string,unknown>[]).map((row)=>this.repos.ci.mapComponentQaRun(row))
     const activeRun=allRuns.find((run)=>run.status==='queued'||run.status==='running') ?? null
     const latestRun=allRuns[0] ?? null
     const runs=trimHistoricalRunLogs(allRuns,[activeRun?.id,latestRun?.id])
@@ -2133,7 +2144,7 @@ export class TasksRepo extends BaseRepo {
     return await Promise.all(((await this.sql.all(`SELECT t.* FROM tasks t WHERE t.project_id=? AND t.auto_pilot=1 AND t.type='task'`, [projectId])) as TaskRow[]).map(async (row) => {
       const task = mapTask(row)
       const column = (await this.sql.get(`SELECT semantic_type FROM kanban_columns WHERE id=?`, [task.columnId])) as { semantic_type: string } | undefined
-      return { task, stage: normColumnSemantic(column?.semantic_type ?? 'custom'), userId: project.created_by, requiresManualQa: project.autopilot_requires_manual_qa !== 0 }
+      return { task, stage: normColumnSemantic(column?.semantic_type ?? 'custom'), userId: project.created_by, requiresManualQa: task.autoPilotRequiresManualQa === true }
     }))
   }
 
@@ -2184,7 +2195,8 @@ export class TasksRepo extends BaseRepo {
     const bug = await this.createTask(userId, projectId, { columnId: backlog, title: `Bug: ${stage} — ${task.title}`, description: `Автопроход исходной задачи завершился ошибкой.\n\n- Этап: ${stage}\n- Причина: ${reason}\n- Ран: ${runLink}${remarks.trim() ? `\n\n## Замечания этапа\n\n\`\`\`\n${remarks.trim().slice(-8000)}\n\`\`\`` : ''}`, type: 'task', labels: ['bug'] })
     if (!bug) throw new Error('failed to create autopilot bug')
     await this.sql.transaction(async () => {
-      await this.sql.run(`UPDATE tasks SET source_task_id=? WHERE id=?`, [taskId, bug.id])
+      // This bug records the original task's fix; another autopilot would duplicate that work.
+      await this.sql.run(`UPDATE tasks SET source_task_id=?, auto_pilot=0 WHERE id=?`, [taskId, bug.id])
       await this.sql.run(`UPDATE tasks SET auto_pilot_fix_cycles=auto_pilot_fix_cycles+1 WHERE id=?`, [taskId])
     })
     await this.transitionAutoPilotTask(projectId, taskId, 'development', 'autopilot.return_to_development')

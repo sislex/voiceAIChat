@@ -315,6 +315,20 @@ describe('App — завершённые задачи скрыты с доски
     expect(screen.getByRole('checkbox', { name: /Показать завершённые/ })).toBeChecked()
   })
 
+  it('protects an unsaved settings draft during hash navigation', async () => {
+    const { projectId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}/settings`
+    const input = await screen.findByLabelText('Название проекта')
+    await userEvent.type(input, ' draft')
+    window.location.hash = '#/projects'
+    await userEvent.click(await screen.findByRole('button', { name: 'Отмена' }))
+    expect((screen.getByLabelText('Название проекта') as HTMLInputElement).value).toContain('draft')
+    expect(window.location.hash).toContain('/settings')
+    window.location.hash = '#/projects'
+    await userEvent.click(await screen.findByRole('button', { name: 'Уйти' }))
+    await waitFor(() => expect(screen.queryByLabelText('Название проекта')).not.toBeInTheDocument())
+  })
+
   it('порог скрытия правится в настройках проекта', async () => {
     const { api, projectId } = await withCompleted()
     window.location.hash = `#/projects/${projectId}/settings`
@@ -324,6 +338,7 @@ describe('App — завершённые задачи скрыты с доски
     await userEvent.clear(input)
     await userEvent.type(input, '30')
     await userEvent.tab()
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await waitFor(async () => expect((await api['projects:get']({ id: projectId }))!.doneRetentionDays).toBe(30))
   })
 })
@@ -384,7 +399,8 @@ describe('App — чаты завершённых задач в сайдбаре
     expect(within(modal).queryByRole('button', { name: /Открыть чат/ })).not.toBeInTheDocument()
     await userEvent.click(within(modal).getByRole('tab', { name: 'AI-чат' }))
     expect(await within(modal).findByTestId('task-chat-surface')).toBeInTheDocument()
-    expect(window.location.hash).toBe(`#/projects/${projectId}/task/${taskId}`)
+    // @testCase TC-2
+    expect(window.location.hash).toBe(`#/projects/${projectId}/task/${taskId}/chat`)
   })
 
   it('возврат задачи из «Готово» возвращает чат в список', async () => {

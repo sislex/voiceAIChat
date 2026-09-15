@@ -16,9 +16,13 @@ it('не запускает standalone без секрета внутренне�
   await expect(buildImageStudioServer({ config: loadImageStudioStandaloneConfig({}) })).rejects.toThrow('VC_INTERNAL_TOKEN')
 })
 
+it('не запускает standalone без секрета MCP', async () => {
+  await expect(buildImageStudioServer({ config: loadImageStudioStandaloneConfig({ VC_INTERNAL_TOKEN: 'internal' }) })).rejects.toThrow('VC_MCP_SECRET')
+})
+
 it('без ядра закрывает приватный API, но оставляет здоровье и публичную маршрутизацию', async () => {
   dir = mkdtempSync(join(tmpdir(), 'studio-auth-'))
-  app = (await buildImageStudioServer({ config: loadImageStudioStandaloneConfig({ VC_DATA_DIR: dir, VC_INTERNAL_TOKEN: 'internal' }),
+  app = (await buildImageStudioServer({ config: loadImageStudioStandaloneConfig({ VC_DATA_DIR: dir, VC_INTERNAL_TOKEN: 'internal', VC_MCP_SECRET: 'mcp' }),
     core: fakeCore().core, fetchImpl: async () => { throw new Error('core offline') } })).app
   const response = await app.inject({ url: '/api/image-studio/x/files' })
   expect(response.statusCode).toBe(503)

@@ -57,6 +57,8 @@ it('показывает pending, завершение и длительност
 it('сбой без HTTP и HTTP503 входят в failedOnly, успешные исключены', async () => {
   await click('network')
   await expect.poll(async () => (await inspect({ kind: 'network', state: 'failed' })).network?.length).toBe(1)
+  // The independently issued HTTP 503 may arrive after the socket failure.
+  await expect.poll(async () => (await inspect({ kind: 'network', failedOnly: true })).network?.length).toBe(2)
   const rows = (await inspect({ kind: 'network', failedOnly: true })).network!
   expect(rows).toHaveLength(2)
   expect(rows.find((row) => row.url.endsWith('/broken'))).toMatchObject({

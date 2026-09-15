@@ -25,10 +25,21 @@ const css = [
 const styled = (cls: string): boolean => new RegExp(`\\.${cls}(?![\\w-])`).test(css)
 /** Тело первого правила с этим селектором — для проверки конкретных свойств. */
 function rule(selector: string): string {
-  return new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
 }
 
 describe('стили открытой карточки задачи', () => {
+  // @testCase TC5
+  it('keeps mobile identity, stage and avatar while hiding secondary rows and retaining touch controls', () => {
+    expect(rule('.jcard--mobile > :not(.jcard-top):not(.jcard-foot):not(.jcard-mobile-status):not(.vc-sr-only)')).toContain('display: none')
+    expect(css).toContain('.jcard-foot-right > :not(.jcard-assignee):not(.javatar--none)')
+    expect(rule('.jcard--mobile .jcard-reveal')).toContain('opacity: 1')
+    expect(rule('.jcard--mobile .jcard-grip')).toContain('min-width: 40px')
+    expect(rule('.jcard--mobile .jcard-grip')).toContain('min-height: 40px')
+    expect(rule('.jcard--mobile')).toContain('max-width: none')
+  })
+
   it.each([
     // Общий язык лент: раскрываемая строка, шеврон, точка статуса.
     'vc-feed', 'vc-feed-item', 'vc-feed-caret', 'vc-feed-status', 'vc-feed-dot',
@@ -73,11 +84,61 @@ describe('стили открытой карточки задачи', () => {
     'vc-attempts', 'vc-attempts__title', 'vc-attempts__list', 'vc-attempts__row',
     'vc-attempts__row--current', 'vc-attempts__num', 'vc-attempts__status', 'vc-attempts__at',
     'merge-chip', 'merge-badge',
+    // Новая карточка «Проект 19»: рейка этапов, бейджи, снимок workflow,
+    // проверки, попытки, очередь доработок и редактор связи с Make.
+    'new-task-stage-rail', 'new-task-stage-card', 'new-task-stage-card--selected', 'new-task-stage-index',
+    'new-task-stage-content', 'new-task-stage-heading', 'new-task-stage-details', 'new-task-stage-panel',
+    'new-task-workflow-snapshot', 'new-task-sent-reworks', 'new-task-source-box', 'new-task-attempts',
+    'new-task-attempt--selected', 'new-task-checks', 'new-task-check-ok', 'new-task-check-bad', 'new-task-metric-tiles',
+    'new-task-run-head', 'new-task-live-dot--live', 'new-task-workflow-time--live', 'new-task-subtabs',
+    'new-task-make-empty', 'new-task-make-editor', 'new-task-design-files', 'new-task-queue-head', 'new-task-bulk-bar',
+    'new-task-history-separator', 'new-task-cycle-row', 'new-task-cycle-num', 'new-task-chips', 'new-task-note',
     // Карточка на доске и шапка колонки.
     'jcard-epic', 'jcard-epic-dot', 'jcard-flag', 'jcard-due', 'jcard-pts',
-    'jcard-stage-actions', 'jcol-head', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
+    'jcard-updated', 'jcard-updated--fresh', 'jcard-updated--stale',
+    'jcard-stage-actions', 'jcard-menu-label', 'jcard-progress', 'jcard-progress-bar', 'jcard-progress-fill',
+    'jcard-progress-text', 'jcard-progress--empty', 'jcard-progress--complete',
+    'jboard-snapshot', 'jboard-snapshot--fresh', 'jboard-snapshot--stale',
+    'jboard-stale', 'jboard-stale-mark', 'jboard-stale-copy', 'jboard-filters-shell',
+    'jboard-mobile-filter-meta',
+    'jcol-head', 'jcol-grip', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
   ])('класс .%s имеет правила', (cls) => {
     expect(styled(cls)).toBe(true)
+  })
+
+  it('свёрнутая колонка остаётся узкой, а её содержимое действительно скрыто', () => {
+    expect(rule('.jcol[data-column-id].jcol--collapsed')).toMatch(/width:\s*60px/)
+    expect(rule('.jcol[data-column-id].jcol--collapsed')).toMatch(/min-width:\s*60px/)
+    expect(rule('.jcol-content[hidden]')).toMatch(/display:\s*none/)
+  })
+
+  it('свёрнутая дорожка не оставляет видимую сетку', () => {
+    expect(rule('.jlane-cols[hidden]')).toMatch(/display:\s*none/)
+    expect(rule('.jlane-collapse-actions')).toMatch(/display:\s*flex/)
+  })
+
+  it('справка по клавиатуре ограничена viewport и перестраивается на телефоне', () => {
+    expect(rule('.jboard-shortcuts-dialog')).toMatch(/max-height:\s*min\(/)
+    expect(rule('.jboard-shortcuts-dialog')).toMatch(/overflow:\s*auto/)
+    expect(rule('.jboard-shortcuts-list')).toMatch(/grid-template-columns:/)
+  })
+
+  it('совпадение поиска и его контекст имеют явную визуальную подачу', () => {
+    expect(rule('.jcard-search-hit')).toMatch(/background:/)
+    expect(rule('.jcard-search-context')).toMatch(/display:\s*grid/)
+    expect(rule('.jcard-search-context-row')).toMatch(/text-overflow:\s*ellipsis/)
+  })
+
+  it('поиск по вариантам ограничивает меню и оставляет список прокручиваемым', () => {
+    expect(rule('.jfilter-menu--searchable')).toMatch(/max-height:/)
+    expect(rule('.jfilter-menu--searchable')).toMatch(/overflow:\s*hidden/)
+    expect(rule('.jfilter-options')).toMatch(/overflow:\s*auto/)
+  })
+
+  it('подробный фильтр исполнителей не обрезает счётчик и умеет сокращать имя', () => {
+    expect(rule('.jfilter-option-label')).toMatch(/text-overflow:\s*ellipsis/)
+    expect(rule('.jfilter-option-meta')).toMatch(/margin-left:\s*auto/)
+    expect(rule('.jfilter-option-avatar')).toMatch(/width:\s*20px/)
   })
 
   it('обёртка панелей не переносит строки — иначе вкладка не скроллится', () => {
@@ -104,6 +165,21 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.task-chat-panel--surface .scroll')).toMatch(/overscroll-behavior:\s*contain/)
   })
 
+  it('рейка этапов новой карточки держит номер и содержимое в двух колонках', () => {
+    // Без сетки кружок с номером падал под заголовок, и «рейка» превращалась в
+    // простой список карточек — терялась вертикальная линия между этапами.
+    expect(rule('.new-task-stage-card')).toMatch(/grid-template-columns:\s*34px/)
+    expect(rule('.new-task-stage-index span')).toMatch(/flex:\s*1/)
+    expect(rule('.new-task-metric-tiles')).toMatch(/repeat\(4,/)
+  })
+
+  it('полоса вкладок новой карточки не сжимается телом', () => {
+    // На высоте окна 813px тело требовало 580px, и flex-колонка ужимала полосу
+    // вкладок до 1px — вкладки исчезали, хотя в DOM были.
+    expect(rule('.new-task-tabs')).toMatch(/flex:\s*none/)
+    expect(rule('.new-task-body')).toMatch(/min-height:\s*0/)
+  })
+
   it('панель «Общего» скрывается атрибутом hidden', () => {
     // У элемента с `display: flex` атрибут `hidden` сам по себе не действует —
     // без этого правила «Общее» было бы видно на всех вкладках сразу.
@@ -122,5 +198,12 @@ describe('стили открытой карточки задачи', () => {
     // в колонках начинались на разной высоте — верх доски выглядел рваным.
     expect(rule('.jcol-head')).toMatch(/min-height:\s*50px/)
     expect(rule('.jcol-name-text')).toMatch(/-webkit-line-clamp:\s*2/)
+  })
+
+  it('компактная плотность уменьшает геометрию, не скрывая меню карточки', () => {
+    expect(rule('.jboard--density-compact')).toMatch(/gap:\s*4px/)
+    expect(rule('.jboard--density-compact .jcol')).toMatch(/width:\s*240px/)
+    expect(rule('.jboard--density-compact .jcard:not(.jcard--compact)')).toMatch(/max-height:\s*240px/)
+    expect(rule('.jboard--density-compact .jcard-reveal')).toMatch(/opacity:\s*1/)
   })
 })

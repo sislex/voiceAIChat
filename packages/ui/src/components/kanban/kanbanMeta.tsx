@@ -1,7 +1,7 @@
 // Атрибутика Jira-карточек: иконки типов и приоритетов, ключи задач (PRJ-42),
 // цвета аватаров/эпиков, форматирование сроков. Чистые функции — без стора.
 
-import type { KanbanColumn, TaskPriority, WorkItemType } from '@shared/projects'
+import type { BoardView, KanbanColumn, TaskPriority, WorkItemType } from '@shared/projects'
 
 // Аватар, инициалы и цвет по логину переехали в @voicechat/ui-kit: их просит и
 // список пользователей, и карточка профиля, а копия неизбежно разошлась бы с
@@ -21,6 +21,94 @@ export function pluralTasks(n: number): string {
   if (m10 === 1 && m100 !== 11) return 'задача'
   if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'задачи'
   return 'задач'
+}
+
+export interface EmptyColumnPresentation {
+  state: 'empty' | 'filtered'
+  title: string
+  description: string
+  badge: string
+  hiddenCount: number
+  localFilterHidesMatches: boolean
+}
+
+/**
+ * Keeps the empty-column explanation based on the complete column rather than
+ * the currently rendered cards. This prevents a filter from presenting a
+ * populated workflow stage as a brand-new empty stage.
+ */
+export function emptyColumnPresentation(input: {
+  columnName: string
+  total: number
+  visible: number
+  globallyMatching: number
+  globalFiltersActive: boolean
+  localFilterActive: boolean
+}): EmptyColumnPresentation | null {
+  const total = Math.max(0, Math.trunc(input.total))
+  const visible = Math.max(0, Math.trunc(input.visible))
+  if (visible > 0) return null
+  if (total === 0) {
+    return {
+      state: 'empty',
+      title: `«${input.columnName}» пока пуста`,
+      description: 'Создайте первую задачу или перетащите сюда карточку из другой колонки.',
+      badge: 'Готова к работе',
+      hiddenCount: 0,
+      localFilterHidesMatches: false
+    }
+  }
+  const localFilterHidesMatches = input.localFilterActive && input.globallyMatching > 0
+  const source = localFilterHidesMatches && input.globalFiltersActive
+    ? 'Фильтры доски и исполнителей колонки скрывают её содержимое.'
+    : localFilterHidesMatches
+      ? 'Фильтр исполнителей этой колонки скрывает её содержимое.'
+      : 'Фильтры доски скрывают её содержимое.'
+  return {
+    state: 'filtered',
+    title: `В «${input.columnName}» нет подходящих задач`,
+    description: `${source} Сбросьте нужные условия, чтобы вернуть карточки.`,
+    badge: `Скрыто ${total} ${pluralTasks(total)}`,
+    hiddenCount: total,
+    localFilterHidesMatches
+  }
+}
+
+export interface WipPresentation {
+  state: 'available' | 'full' | 'over'
+  label: string
+  percentage: number
+  progressValue: number
+}
+
+function pluralPlaces(value: number): string {
+  const mod10 = value % 10
+  const mod100 = value % 100
+  if (mod10 === 1 && mod100 !== 11) return 'место'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'места'
+  return 'мест'
+}
+
+export function wipPresentation(total: number, limit: number | null): WipPresentation | null {
+  if (limit == null || !Number.isFinite(limit) || limit <= 0) return null
+  const safeTotal = Math.max(0, Math.trunc(total))
+  const safeLimit = Math.trunc(limit)
+  const remaining = safeLimit - safeTotal
+  const percentage = Math.min(100, Math.round((safeTotal / safeLimit) * 100))
+  if (remaining < 0) {
+    const over = Math.abs(remaining)
+    return {
+      state: 'over', percentage, progressValue: safeLimit,
+      label: `WIP-лимит превышен: ${safeTotal} из ${safeLimit}, превышение на ${over} ${pluralTasks(over)}`
+    }
+  }
+  if (remaining === 0) {
+    return { state: 'full', percentage, progressValue: safeLimit, label: `WIP-лимит заполнен: ${safeTotal} из ${safeLimit}` }
+  }
+  return {
+    state: 'available', percentage, progressValue: safeTotal,
+    label: `WIP: ${safeTotal} из ${safeLimit}, свободно ${remaining} ${pluralPlaces(remaining)}`
+  }
 }
 
 /**
@@ -58,6 +146,52 @@ export function dueState(ms: number, now = Date.now()): 'overdue' | 'soon' | 'ok
   const day = 24 * 60 * 60 * 1000
   if (ms < now - day + 1) return 'overdue'
   return ms - now < 2 * day ? 'soon' : 'ok'
+}
+
+export interface DuePresentation {
+  state: 'overdue' | 'soon' | 'ok'
+  short: string
+  label: string
+  days: number
+}
+
+function dayWord(value: number): string {
+  const mod10 = value % 10
+  const mod100 = value % 100
+  if (mod10 === 1 && mod100 !== 11) return 'день'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дня'
+  return 'дней'
+}
+
+export function duePresentation(ms: number, now = Date.now()): DuePresentation {
+  const startOfDay = (value: number): number => {
+    const date = new Date(value)
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  }
+  const days = Math.round((startOfDay(ms) - startOfDay(now)) / (24 * 60 * 60 * 1000))
+  const fullDate = new Intl.DateTimeFormat('ru', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(ms))
+  if (days < 0) {
+    const elapsed = Math.abs(days)
+    return { state: 'overdue', short: `Просрочено ${elapsed} ${dayWord(elapsed)}`, label: `Срок ${fullDate}. Просрочено на ${elapsed} ${dayWord(elapsed)}`, days }
+  }
+  if (days === 0) return { state: 'soon', short: 'Сегодня', label: `Срок сегодня, ${fullDate}`, days }
+  if (days === 1) return { state: 'soon', short: 'Завтра', label: `Срок завтра, ${fullDate}`, days }
+  return { state: 'ok', short: `Через ${days} ${dayWord(days)}`, label: `Срок через ${days} ${dayWord(days)}, ${fullDate}`, days }
+}
+
+export function matchesDueWindow(
+  dueDate: number | null,
+  dueWindow: BoardView['dueWindow'],
+  done: boolean,
+  now = Date.now()
+): boolean {
+  if (dueWindow === 'all') return true
+  if (dueWindow === 'none') return dueDate == null
+  if (dueDate == null) return false
+  const days = duePresentation(dueDate, now).days
+  if (dueWindow === 'overdue') return !done && days < 0
+  if (dueWindow === 'today') return days === 0
+  return days >= 0 && days < 7
 }
 
 /** Иконка типа Jira: цветной квадрат с глифом (эпик ⚡, история 🔖, задача ✓). */
@@ -101,4 +235,3 @@ export function PriorityIcon({ priority }: { priority: TaskPriority }): JSX.Elem
     </svg>
   )
 }
-

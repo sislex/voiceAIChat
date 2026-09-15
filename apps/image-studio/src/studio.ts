@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { IMAGE_STUDIO_LIMITS, isImageStudioPath, type ImageStudioFile } from '@voicechat/shared'
+import { IMAGE_STUDIO_LIMITS, isImageStudioPath, type ImageStudioFile, type ImageStudioOperation, type ImageStudioSelectionBounds } from '@voicechat/shared'
 
 export class ImageStudioError extends Error {
   constructor(readonly code: 'bad_path' | 'bad_media' | 'not_found' | 'too_big' | 'quota' | 'exists', message: string) {
@@ -43,9 +43,18 @@ function safeName(raw: string): string {
   return name
 }
 
-interface StudioMeta { prompt?: string; source?: string; tookMs?: number }
+export interface StudioMeta {
+  tags?: string[]
+  parameters?: import('@voicechat/shared').ImageStudioParameters
+  prompt?: string
+  source?: string
+  tookMs?: number
+  operation?: ImageStudioOperation
+  restoredFrom?: string
+  selection?: ImageStudioSelectionBounds
+}
 
-interface StudioPublication { token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null; days?: Record<string, number> }
+interface StudioPublication { settings?: import('@voicechat/shared').ImageStudioPublicationSettings; token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null; days?: Record<string, number> }
 
 const PUBLISH_FILE = '.studio-publish.json'
 const TRASH_DIR = '.trash'
@@ -95,7 +104,7 @@ export class ImageStudioStore {
    * пароль/название). password: undefined — не трогать, null/'' — снять,
    * строка — задать; сам пароль не хранится, только хэш с солью.
    */
-  async publish(conversationId: string, options: { password?: string | null; title?: string | null } = {}): Promise<StudioPublication> {
+  async publish(conversationId: string, options: { password?: string | null; title?: string | null; settings?: import('@voicechat/shared').ImageStudioPublicationSettings } = {}): Promise<StudioPublication> {
     return this.withPublishLock(conversationId, async () => {
       const existing = await this.readPublication(conversationId)
       let token = existing?.token
@@ -116,6 +125,8 @@ export class ImageStudioStore {
       }
       const raw: StudioPublication = {
         token,
+        settings: options.settings ?? existing?.settings,
+        days: existing?.days,
         publishedAt: existing?.publishedAt ?? Date.now(),
         views: existing?.views ?? 0,
         passwordHash,
@@ -227,6 +238,27 @@ export class ImageStudioStore {
     await this.writeMeta(conversationId, meta)
   }
 
+  async meta(conversationId: string, rawPath: string): Promise<StudioMeta | null> {
+    const name = safeName(rawPath)
+    return (await this.readMeta(conversationId))[name] ?? null
+  }
+
+  /** Find extraction placement through subsequent object edits. */
+  async extractionOrigin(conversationId: string, rawPath: string): Promise<{ path: string; bounds: ImageStudioSelectionBounds } | null> {
+    const meta = await this.readMeta(conversationId)
+    let path = safeName(rawPath)
+    const seen = new Set<string>()
+    while (!seen.has(path)) {
+      seen.add(path)
+      const entry = meta[path]
+      if (!entry) return null
+      if (entry.operation === 'extract' && entry.source && entry.selection) return { path: entry.source, bounds: entry.selection }
+      if (!entry.source) return null
+      path = entry.source
+    }
+    return null
+  }
+
   async list(conversationId: string): Promise<ImageStudioFile[]> {
     const dir = this.dirOf(conversationId)
     if (!existsSync(dir)) return []
@@ -238,9 +270,14 @@ export class ImageStudioStore {
       const origin = meta[entry.name]
       out.push({
         path: entry.name, size: st.size, updatedAt: Math.round(st.mtimeMs),
+        ...(origin?.tags ? { tags: origin.tags } : {}),
+        ...(origin?.parameters ? { parameters: origin.parameters } : {}),
         ...(origin?.prompt ? { prompt: origin.prompt } : {}),
         ...(origin?.source ? { source: origin.source } : {}),
-        ...(origin?.tookMs !== undefined ? { tookMs: origin.tookMs } : {})
+        ...(origin?.tookMs !== undefined ? { tookMs: origin.tookMs } : {}),
+        ...(origin?.operation ? { operation: origin.operation } : {}),
+        ...(origin?.restoredFrom ? { restoredFrom: origin.restoredFrom } : {}),
+        ...(origin?.selection ? { selection: origin.selection } : {})
       })
     }
     // Свежие сверху: студия — про «что я только что нарисовал».
@@ -389,6 +426,13 @@ export class ImageStudioStore {
     if (existsSync(join(dir, to))) throw new ImageStudioError('exists', `«${to}» уже есть в галерее`)
     await rename(join(dir, from), join(dir, to))
     const meta = await this.readMeta(conversationId)
-    if (meta[from]) { meta[to] = meta[from]; delete meta[from]; await this.writeMeta(conversationId, meta) }
+    if (meta[from]) { meta[to] = meta[from]; delete meta[from] }
+    // History is a graph by file name. Renaming a node must also retarget its
+    // descendants and restore references or the visible lineage splits.
+    for (const entry of Object.values(meta)) {
+      if (entry.source === from) entry.source = to
+      if (entry.restoredFrom === from) entry.restoredFrom = to
+    }
+    await this.writeMeta(conversationId, meta)
   }
 }

@@ -23,3 +23,8 @@
 .webpreview-tools > summary[data-active] { border-color: var(--accent); color: var(--accent); }
 .webpreview-tools__menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; gap: 4px; min-width: 200px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 32px rgba(31, 35, 48, .16); }
 .webpreview-tools__menu .vc-btn { justify-content: flex-start; text-align: left; }
+.webpreview-history-search { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.webpreview-history-search input { flex: 1 1 120px; min-width: 0; }
+.webpreview-history-description { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.webpreview-history-description small { display: block; color: var(--text-dim); }
+.webpreview-history li > button { flex: none; }

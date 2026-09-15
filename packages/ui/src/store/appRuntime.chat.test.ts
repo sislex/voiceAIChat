@@ -21,6 +21,103 @@ function makeStore(seed: string[] = []): { store: TestStore; api: FakeApi } {
   return { store, api }
 }
 
+// @testCase T1
+it('keeps drafts per conversation through remount and does not clear newer text on acknowledgement', async () => {
+  localStorage.clear()
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  store.actions.setDraft('draft A')
+  await store.actions.selectConversation(b)
+  store.actions.setDraft('draft B')
+  await store.actions.selectConversation(a)
+  expect(store.getState().draft).toBe('draft A')
+  const add = api['messages:add'].bind(api)
+  let finish!: () => void
+  vi.spyOn(api, 'messages:add').mockImplementationOnce((input) => new Promise((resolve) => { finish = () => { void add(input).then(resolve) } }))
+  const sending = store.actions.submitText()
+  store.actions.setDraft('new A')
+  await store.actions.selectConversation(b)
+  finish()
+  await sending
+  expect(store.getState().draft).toBe('draft B')
+  await store.actions.selectConversation(a)
+  expect(store.getState().draft).toBe('new A')
+  store.runtime.dispose()
+  const next = createTestStore({ api })
+  await next.actions.init(a)
+  expect(next.getState().draft).toBe('new A')
+  next.runtime.dispose()
+  localStorage.clear()
+})
+
+// @testCase T1
+it('removes acknowledged stored drafts and tolerates malformed or unavailable storage', async () => {
+  localStorage.setItem('vc.chat.drafts.v1', '{broken')
+  const { store } = makeStore(['A'])
+  await store.actions.init()
+  store.actions.setDraft('send')
+  await store.actions.submitText()
+  expect(JSON.parse(localStorage.getItem('vc.chat.drafts.v1')!)).toEqual({})
+  store.runtime.dispose()
+  const api = createFakeApi(['A'])
+  const unavailable = createTestStore({ api, prefs: {
+    get: () => null, set: () => { throw new Error('Quota') }, remove: () => {}
+  } })
+  await unavailable.actions.init()
+  expect(() => unavailable.actions.setDraft('still editable')).not.toThrow()
+  expect(unavailable.getState().draft).toBe('still editable')
+  unavailable.runtime.dispose()
+  localStorage.clear()
+})
+
+// @testCase T2
+it('captures an upload recipient before encoding and never restores a removed attachment', async () => {
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  let finish!: (value: ArrayBuffer) => void
+  const file = new File(['data'], 'context.txt', { type: 'text/plain' })
+  Object.defineProperty(file, 'arrayBuffer', { value: () => new Promise<ArrayBuffer>((resolve) => { finish = resolve }) })
+  const uploadSpy = vi.spyOn(api, 'uploads:add')
+  const uploading = store.actions.addAttachment(file)
+  store.actions.removeAttachment(store.getState().attachments[0].localId)
+  await store.actions.selectConversation(b)
+  finish(new Uint8Array([1]).buffer)
+  await uploading
+  expect(uploadSpy).toHaveBeenCalledWith(expect.objectContaining({ conversationId: a }))
+  expect(store.getState().attachments).toEqual([])
+  store.runtime.dispose()
+})
+
+// @testCase T4
+it('retries a failed submission to its captured recipient and rejects parallel retries', async () => {
+  localStorage.clear()
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  store.actions.setDraft('retry me')
+  const file = new File(['data'], 'context.txt', { type: 'text/plain' })
+  Object.defineProperty(file, 'arrayBuffer', { value: async () => new Uint8Array([1, 2]).buffer })
+  await store.actions.addAttachment(file)
+  vi.spyOn(api, 'messages:add').mockRejectedValueOnce(new Error('Offline'))
+  await expect(store.actions.submitText()).rejects.toThrow('Offline')
+  const failed = Object.values(store.getState().failedSubmits)[0]!
+  await store.actions.selectConversation(b)
+  store.actions.setDraft('keep B')
+  const retried = store.actions.retryFailedSubmit(failed.operationId)
+  expect(await store.actions.retryFailedSubmit(failed.operationId)).toBe(false)
+  expect(await retried).toBe(true)
+  expect(api['messages:add']).toHaveBeenLastCalledWith(expect.objectContaining({ conversationId: a, text: failed.messageText, messageId: failed.messageId, attachments: [expect.objectContaining({ uploadId: failed.attachmentIds[0], name: 'context.txt' })] }))
+  expect(store.getState().draft).toBe('keep B')
+  expect(store.getState().failedSubmits).toEqual({})
+  store.runtime.dispose()
+  localStorage.clear()
+})
+
 describe('voiceStore — интеграция стора с api-моком и машиной состояний', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
@@ -145,6 +242,8 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(api._state.messages.filter((message) => message.role === 'u1')).toHaveLength(1)
   })
 
+  // @testCase TC-INT-1
+  // @testCase TC-REG-1
   it('три быстрые отправки создают независимые операции и запросы', async () => {
     const { store, api } = makeStore(['Чат'])
     await store.actions.init()
@@ -176,6 +275,27 @@ describe('voiceStore — интеграция стора с api-моком и м
     await Promise.all(sends)
   })
 
+  it('резервирует карточку синхронно, пока сохранение сообщения ожидает сеть', async () => {
+    const { store, api } = makeStore(['Чат'])
+    await store.actions.init()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const original = api['messages:add']
+    vi.spyOn(api, 'messages:add').mockImplementation(async (args) => {
+      await gate
+      return original(args)
+    })
+
+    store.actions.setDraft('Покажи ожидание сразу')
+    const sending = store.actions.submitText()
+    expect(store.getState().preparingReply).toBe(true)
+    expect(store.getState().draft).toBe('')
+
+    release()
+    await expect(sending).resolves.toBe(true)
+  })
+
+  // @testCase TC-UI-1
   it('обычная отправка остаётся pending до события ленты и резервирует место ответа', async () => {
     const { store } = makeStore()
     await store.actions.init()
@@ -279,6 +399,7 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().draft).toBe('Новый текст')
   })
 
+  // @testCase TC-INT-1
   it('во время активного ответа синхронно показывает реплику только в оптимистичной очереди', async () => {
     const { store } = makeStore()
     await store.actions.init()
@@ -996,6 +1117,7 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
     expect(store.getState().messages.some((m) => m.text === 'Ответ')).toBe(true)
   })
 
+  // @testCase TC-NEG-1
   it('applyClaudeError показывает баннер и возвращает в idle', async () => {
     const { store } = makeClaudeStore()
     await store.actions.init()
@@ -1542,17 +1664,40 @@ describe('voiceStore — правки/удаление/вложения', () => 
     return { store, api, sendClaudePrompt, cancelClaude, editQueued, deleteQueued, sendQueuedNow }
   }
 
-  it('cancelRequest отменяет запрос и возвращает в idle', async () => {
-    const { store, cancelClaude } = makeClaudeStore()
-    await store.actions.init()
-    store.actions.setDraft('вопрос')
-    await store.actions.submitText()
-    expect(store.getState().voice).toBe('thinking')
-
-    store.actions.cancelRequest()
-    expect(store.getState().voice).toBe('idle')
+  // @testCase TC-NEG-1
+  it('терминальные события и смена чата очищают карточку подготовки', async () => {
+    const { store: cancelStore, cancelClaude } = makeClaudeStore()
+    await cancelStore.actions.init()
+    cancelStore.actions.setDraft('отмена')
+    await cancelStore.actions.submitText()
+    expect(cancelStore.getState().preparingReply).toBe(true)
+    cancelStore.actions.cancelRequest()
+    expect(cancelStore.getState().voice).toBe('idle')
+    expect(cancelStore.getState().preparingReply).toBe(false)
     expect(cancelClaude).toHaveBeenCalled()
-    expect(store.getState().streamingReply).toBe('')
+
+    const { store: doneStore } = makeClaudeStore()
+    await doneStore.actions.init()
+    doneStore.actions.setDraft('пустой ответ')
+    await doneStore.actions.submitText()
+    await doneStore.actions.applyClaudeDone('')
+    expect(doneStore.getState().preparingReply).toBe(false)
+
+    const { store: errorStore } = makeClaudeStore()
+    await errorStore.actions.init()
+    errorStore.actions.setDraft('ошибка')
+    await errorStore.actions.submitText()
+    errorStore.actions.applyClaudeError('network failed')
+    expect(errorStore.getState().preparingReply).toBe(false)
+
+    const { store: switchStore } = makeStore(['A', 'B'])
+    await switchStore.actions.init()
+    switchStore.actions.setDraft('другой чат')
+    await switchStore.actions.submitText()
+    expect(switchStore.getState().preparingReply).toBe(true)
+    const other = switchStore.getState().conversations.find((item) => item.id !== switchStore.getState().activeId)!
+    await switchStore.actions.selectConversation(other.id)
+    expect(switchStore.getState().preparingReply).toBe(false)
   })
 
   it('deleteMessage удаляет сообщение из ленты и БД', async () => {
@@ -1568,7 +1713,7 @@ describe('voiceStore — правки/удаление/вложения', () => 
     expect(api._state.messages.find((m) => m.id === msg.id)).toBeUndefined()
   })
 
-  it('editMessage удаляет сообщение и последующие, отправляет исправленный текст', async () => {
+  it('editMessage удаляет сообщение и последующие, сразу резервирует карточку и отправляет исправленный текст', async () => {
     const { store, api, sendClaudePrompt } = makeClaudeStore()
     await store.actions.init()
     // Готовим историю: реплика пользователя + ответ.
@@ -1581,7 +1726,9 @@ describe('voiceStore — правки/удаление/вложения', () => 
     expect(store.getState().messages.length).toBe(2)
 
     sendClaudePrompt.mockClear()
-    await store.actions.editMessage(first.id, 'новый вопрос')
+    const editing = store.actions.editMessage(first.id, 'новый вопрос')
+    expect(store.getState().preparingReply).toBe(true)
+    await editing
 
     const texts = store.getState().messages.map((m) => m.text)
     expect(texts).toEqual(['новый вопрос']) // старые удалены, добавлен исправленный
@@ -1910,6 +2057,7 @@ describe('voiceStore — ходы, переживающие обновление
 
   // @testCase TC-UI-1
   // @testCase TC-REG-1
+  // @testCase TC-NEG-1
   it('send → B → A сохраняет адресную реплику и ответ в исходном разговоре', async () => {
     const { store, api } = makeStore(['A'])
     await store.actions.init()
@@ -1925,9 +2073,11 @@ describe('voiceStore — ходы, переживающие обновление
 
     store.actions.setDraft('реплика A')
     const sending = store.actions.submitText()
+    expect(store.getState().preparingReply).toBe(true)
     await vi.advanceTimersByTimeAsync(0)
     await store.actions.selectConversation(b.id)
     expect(store.getState().activeId).toBe(b.id)
+    expect(store.getState().preparingReply).toBe(false)
     release()
     await sending
     expect(store.getState().messages.some((message) => message.text === 'реплика A')).toBe(false)
@@ -2191,6 +2341,7 @@ describe('voiceStore — машинные утилиты', () => {
     expect(fs.exec).toHaveBeenLastCalledWith('m1', 'sleep 1', ctrl.signal)
   })
 
+  // @testCase T1
   it('история команд консоли: по машине, без подряд идущих дублей, с капом', () => {
     const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     store.actions.pushConsoleCommand('m1', 'ls')
@@ -2201,11 +2352,11 @@ describe('voiceStore — машинные утилиты', () => {
     expect(store.getState().consoleHistory.m1).toEqual(['ls', 'pwd'])
     expect(store.getState().consoleHistory.m2).toEqual(['git status'])
 
-    for (let i = 0; i < 120; i += 1) store.actions.pushConsoleCommand('m3', `cmd${i}`)
+    for (let i = 0; i < 220; i += 1) store.actions.pushConsoleCommand('m3', `cmd${i}`)
     const m3 = store.getState().consoleHistory.m3 ?? []
-    expect(m3).toHaveLength(100)
+    expect(m3).toHaveLength(200)
     expect(m3[0]).toBe('cmd20')
-    expect(m3.at(-1)).toBe('cmd119')
+    expect(m3.at(-1)).toBe('cmd219')
   })
 
   it('openUtility предпочитает машину активного разговора', async () => {

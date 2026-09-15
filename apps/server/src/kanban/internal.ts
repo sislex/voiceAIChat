@@ -8,7 +8,7 @@
 // У канбана: `KanbanService` по RPC (снимок рана, `boardChanged` от соседей, обратные вызовы тоннелей)
 // и приём снимка машин: онлайн-статус, имя, платформа, политика и телеметрия читаются кластером
 // синхронно, поэтому в отдельном процессе их даёт зеркало, которое ядро обновляет пушем.
-import type { AgentPolicy, AgentTelemetry, QaRunStage, ServerMessage } from '@voicechat/shared'
+import type { AgentPolicy, AgentTelemetry, QaRunStage, ServerMessage, ReleaseStatus } from '@voicechat/shared'
 
 /** У ядра. */
 export const INTERNAL_KANBAN_CORE_PATH = '/internal/kanban/core'
@@ -25,8 +25,9 @@ export type KanbanEvent =
   | { kind: 'board'; projectId: string }
   | { kind: 'preparationRun'; update: { userId: string; projectId: string; taskId: string; runId: string } }
   | { kind: 'taskRepositories'; update: { projectId: string; taskId: string } }
-  | { kind: 'qaStage'; update: { projectId: string; taskId: string; stage: QaRunStage } }
+  | { kind: 'qaStage'; update: { projectId: string; taskId: string; stage: QaRunStage | 'manual_qa' } }
   | { kind: 'improvements'; projectId: string }
+  | { kind: 'release'; update: { projectId: string; releaseId: string; status: ReleaseStatus } }
   | { kind: 'notification'; event: { projectId: string; userId?: string; kind?: 'membership' } }
 export interface KanbanEventsRequest { events: KanbanEvent[] }
 

@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, fireEvent } from '@testing-library/react'
 import { useHotkeys, type HotkeyBinding, type HotkeyHandlers } from './useHotkeys'
+import { buildHotkeyBindings } from './appCommands'
 
 function Harness(props: Partial<HotkeyHandlers>): JSX.Element {
   useHotkeys({
@@ -17,10 +18,32 @@ function Harness(props: Partial<HotkeyHandlers>): JSX.Element {
 }
 
 describe('useHotkeys', () => {
+  // @testCase TC7
+  it('applies reassigned palette and new-chat bindings without capturing IME or recording', () => {
+    const togglePalette = vi.fn(), newChat = vi.fn()
+    const deps = { onboarded: true, voice: 'idle' as const, togglePalette, newChat, openCheatSheet: vi.fn(), shortcuts: { palette: 'mod+p', newChat: 'mod+j', send: 'Enter' } }
+    const view = render(<Harness bindings={buildHotkeyBindings(deps)} />)
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'n', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true, isComposing: true })
+    expect(togglePalette).not.toHaveBeenCalled()
+    expect(newChat).not.toHaveBeenCalled()
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'j', ctrlKey: true })
+    expect(togglePalette).toHaveBeenCalledOnce()
+    expect(newChat).toHaveBeenCalledOnce()
+    view.rerender(<Harness bindings={buildHotkeyBindings({ ...deps, voice: 'listening' })} />)
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'j', ctrlKey: true })
+    expect(togglePalette).toHaveBeenCalledOnce()
+    expect(newChat).toHaveBeenCalledOnce()
+  })
+
   beforeEach(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   })
 
+  // @testCase T6
   it('пробел (down/up) вызывает push start и end по разу', () => {
     const onPushStart = vi.fn()
     const onPushEnd = vi.fn()

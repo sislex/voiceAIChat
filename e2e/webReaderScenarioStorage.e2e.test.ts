@@ -40,6 +40,39 @@ describe('Reader: сохранение и редактирование сцен�
     const artifact = await download; expect(artifact.suggestedFilename()).toBe('web-reader-scenario.spec.ts')
     return readFile((await artifact.path())!, 'utf8')
   }
+  it('wraps the scenario editor at mobile width and keeps checkboxes compact', async () => {
+    await openScenario([typeStep('#name', 'hello'), typeStep('#password', '', true), click('#first')])
+    await page.setViewportSize({ width: 375, height: 760 })
+    const editor = shell().getByRole('region', { name: 'Сценарий автотеста' })
+    expect(await editor.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    const box = await shell().getByLabel('Секрет шага 1', { exact: true }).boundingBox(); expect(box!.width).toBeLessThanOrEqual(24)
+    const row = await editor.locator('li').first().boundingBox(), panel = await editor.boundingBox()
+    expect(row!.y + row!.height).toBeLessThanOrEqual(panel!.y + panel!.height)
+    if (process.env.VC_VISUAL_ARTIFACTS) {
+      await (await import('node:fs/promises')).mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
+      await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'reader-ten-cycle10-mobile.png') })
+    }
+  })
+  it('collapses editing while retaining playback and shows recording outside the menu', async () => {
+    await openScenario([click('#first')]); await shell().getByRole('button', { name: 'Скрыть шаги' }).click()
+    expect(await shell().getByLabel('Селектор шага 1').isVisible()).toBe(false); expect(await shell().getByRole('button', { name: 'Запустить' }).isVisible()).toBe(true)
+    await shell().getByRole('button', { name: 'Показать шаги' }).click(); expect(await shell().getByLabel('Селектор шага 1').isVisible()).toBe(true)
+    await shell().locator('summary').click(); await shell().getByRole('button', { name: 'Записать сценарий' }).click()
+    expect(await shell().getByText('Идёт запись сценария: 1 шаг.').isVisible()).toBe(true)
+  })
+  it('imports a portable scenario only after review and exports redacted JSON', async () => {
+    await openScenario([click('#first')])
+    const payload = { format: 'web-reader-scenario', version: 1, pageUrl: 'https://source.test/', steps: [typeStep('#password', 'never-export', true)] }
+    await shell().getByLabel('Файл сценария JSON').setInputFiles({ name: 'scenario.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(payload)) })
+    await shell().getByRole('group', { name: 'Проверка импорта' }).waitFor()
+    expect(await shell().getByLabel('Селектор шага 1').inputValue()).toBe('#first')
+    await shell().getByRole('button', { name: 'Применить к текущей странице' }).click()
+    expect(await shell().getByLabel('Селектор шага 1').inputValue()).toBe('#password')
+    expect(await shell().getByLabel('Адрес превью').inputValue()).toBe(site + '/page')
+    const download = page.waitForEvent('download'); await shell().getByRole('button', { name: 'Экспорт JSON' }).click()
+    const artifact = await download; expect(artifact.suggestedFilename()).toBe('web-reader-scenario.json')
+    const json = await readFile((await artifact.path())!, 'utf8'); expect(json).not.toContain('never-export'); expect(JSON.parse(json).steps[0].sensitive).toBe(true)
+  })
   it('загружает валидные шаги рядом с повреждёнными записями', async () => {
     await openScenario([null, false, 5, [], click('#first')])
     expect(await shell().getByLabel('Селектор шага 1').inputValue()).toBe('#first')

@@ -3,7 +3,10 @@ import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-fou
 import { act, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
-import { RunFeed, type RunFeedCache } from './RunFeed'
+import { CiConsole, isDangerousConsoleCommand } from './CiConsole'
+import { CiSlotEditor, previewCommand } from './CiSlotEditor'
+import { makeCommands } from '../../test/fixtures/index'
+import { BrowserLogArtifact, RunFeed, type RunFeedCache } from './RunFeed'
 import { listCommands, resetCommands } from '@voicechat/ui-foundation/runtime'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { KbRunUsageReport } from '@shared/kb'
@@ -27,6 +30,168 @@ function baseProps(cache: RunFeedCache | undefined) {
     now: () => NOW
   }
 }
+
+describe('browser artifacts in the run feed', () => {
+  it('loads an authenticated screenshot on demand and opens the image as a link', async () => {
+    const getBrowserShot = vi.fn(async () => 'blob:test-shot')
+    const oldCi = window.ci
+    const revoke = URL.revokeObjectURL
+    URL.revokeObjectURL = vi.fn()
+    window.ci = { ...createFakeCi(), getBrowserShot }
+    try {
+      const view = render(<BrowserLogArtifact line={mkLog({ stream: 'system', chunk: 'Снимок страницы проверки: /api/ci/runs/run-1/browser-shots/1.png\n' })} />)
+      expect(getBrowserShot).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Открыть снимок 1.png' }))
+      const img = await screen.findByRole('img', { name: 'Browser-check screenshot' })
+      expect(img.closest('a')).toHaveAttribute('href', 'blob:test-shot')
+      expect(getBrowserShot).toHaveBeenCalledWith('run-1', '1.png')
+      view.unmount()
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-shot')
+    } finally { window.ci = oldCi; URL.revokeObjectURL = revoke }
+  })
+  it('renders bounded evidence and leaves untrusted or malformed log lines as text', () => {
+    const view = render(<BrowserLogArtifact line={mkLog({ stream: 'system', chunk: 'Browser-check evidence: {"status":"blocked","viewports":[1440],"missing":["320:screenshot"]}' })} />)
+    expect(screen.getByText('Browser-check: blocked · 1440 px')).toBeInTheDocument()
+    view.rerender(<BrowserLogArtifact line={mkLog({ stream: 'stdout', chunk: 'Снимок страницы проверки: /api/ci/runs/run-1/browser-shots/1.png' })} />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+})
+
+describe('CI console and slots', () => {
+  it('confirms dangerous commands and keeps a usable history', async () => {
+    const old = window.ci
+    const exec = vi.fn(async () => ({ output: 'ok', exitCode: 0, rejected: false, message: '' }))
+    window.ci = { ...createFakeCi(), consoleExec: exec }
+    try {
+      render(<CiConsole runId="run-1" onClose={vi.fn()} />)
+      fireEvent.change(screen.getByRole('textbox', { name: 'Команда консоли' }), { target: { value: 'git reset --hard' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+      expect(exec).not.toHaveBeenCalled()
+      await userEvent.click(await screen.findByRole('button', { name: 'Выполнить команду' }))
+      await waitFor(() => expect(exec).toHaveBeenCalledWith('run-1', 'git reset --hard', false))
+      fireEvent.keyDown(screen.getByRole('textbox', { name: 'Команда консоли' }), { key: 'ArrowUp' })
+      expect(screen.getByRole('textbox', { name: 'Команда консоли' })).toHaveValue('git reset --hard')
+      expect(isDangerousConsoleCommand('rm -rf ./build')).toBe(true)
+      expect(isDangerousConsoleCommand('git status')).toBe(false)
+    } finally { window.ci = old }
+  })
+  it('checks a slot command only after confirmation and bounds its output', async () => {
+    const oldFs = window.fs
+    const exec = vi.fn(async () => ({ exitCode: 0, output: Array.from({ length: 60 }, (_, i) => 'output-' + (i + 1)).join('\n') }))
+    vi.stubGlobal('fs', { ...oldFs, exec })
+    try {
+      const commands = makeCommands()
+      render(<CiSlotEditor label="До" value={[commands[0].id]} commands={commands} onChange={vi.fn()} context={{ agentId: 'machine', workdir: '/repo', env: { WORKSPACE: '/repo/task' } }} />)
+      fireEvent.click(screen.getByText('Предпросмотр: До'))
+      fireEvent.click(screen.getByRole('button', { name: 'Проверить на машине' }))
+      expect(exec).not.toHaveBeenCalled()
+      await userEvent.click(await screen.findByRole('button', { name: 'Выполнить проверку' }))
+      await waitFor(() => expect(exec).toHaveBeenCalled())
+      expect(screen.getByRole('status')).toHaveTextContent('output-50')
+      expect(screen.getByRole('status')).not.toHaveTextContent('output-51')
+    } finally { vi.stubGlobal('fs', oldFs) }
+  })
+  it('leaves quoted and escaped shell variables literal in the preview', () => {
+    expect(previewCommand("echo '$WORKSPACE' \\$WORKSPACE \"$WORKSPACE\"", { WORKSPACE: '/task' }))
+      .toBe("echo '$WORKSPACE' \\$WORKSPACE \"/task\"")
+  })
+  it('previews both slot order and environment substitutions', () => {
+    const commands = makeCommands()
+    commands[0] = { ...commands[0], script: 'echo "$WORKSPACE" "${BRANCH}"' }
+    render(<CiSlotEditor label="До работы модели" value={[commands[0].id]} commands={commands} onChange={vi.fn()} context={{ agentId: 'machine', workdir: '/repo', env: { WORKSPACE: '/repo/task', BRANCH: 'CHAT-460' } }} />)
+    fireEvent.click(screen.getByText('Предпросмотр: До работы модели'))
+    expect(screen.getByText('echo "/repo/task" "CHAT-460"')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Проверить на машине' })).toBeEnabled()
+  })
+})
+
+describe('RunFeed navigation', () => {
+  afterEach(() => { window.history.replaceState(null, '', window.location.pathname); sessionStorage.clear() })
+  const navigationCache = (): RunFeedCache => ({
+    detail: { run: mkRun({ status: 'failed' }), steps: [
+      mkStep({ id: 'ok', title: 'Install', status: 'success', kind: 'command', position: 0 }),
+      mkStep({ id: 'bad', title: 'Test', status: 'failed', kind: 'command', position: 1 }),
+      mkStep({ id: 'model', title: 'Develop', status: 'success', kind: 'model_work', position: 2 })
+    ], fixAttempts: [], interactions: [] },
+    log: [mkLog({ stepId: 'ok', chunk: 'first\nnee', seq: 1 }), mkLog({ stepId: 'ok', chunk: 'dle\nlast\n', seq: 2 })], conclusion: null
+  })
+  it('filters steps and expands/collapses all', async () => {
+    render(<RunFeed {...baseProps(navigationCache())} />)
+    fireEvent.change(screen.getByLabelText('Шаги'), { target: { value: 'failed' } })
+    expect(screen.getByText('Test')).toBeInTheDocument()
+    expect(screen.queryByText('Install')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Шаги'), { target: { value: 'model' } })
+    expect(screen.getByText('Develop')).toBeInTheDocument()
+    expect(screen.queryByText('Test')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Шаги'), { target: { value: 'all' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть всё' }))
+    expect(screen.getByText('first')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть всё' }))
+    expect(screen.queryByText('first')).not.toBeInTheDocument()
+  })
+  it('searches across chunks, highlights matches and reveals a numbered line', async () => {
+    render(<RunFeed {...baseProps(navigationCache())} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Поиск по логу' }), { target: { value: 'needle' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Следующее' }))
+    expect(screen.getByText('needle').tagName).toBe('MARK')
+    expect(screen.getByRole('link', { name: 'Строка 2' })).toHaveAttribute('href', '#step-ok-L2')
+    expect(document.getElementById('step-ok-L2')).toHaveClass('ci-log-line--target')
+    fireEvent.click(screen.getByRole('button', { name: 'Следить' }))
+    expect(document.getElementById('step-ok-L2')).not.toHaveClass('ci-log-line--target')
+    await expectNoViolations()
+  })
+  it('opens collapsed steps from a line permalink', () => {
+    window.history.replaceState(null, '', '#step-ok-L2')
+    render(<RunFeed {...baseProps(navigationCache())} />)
+    expect(screen.getByText('needle')).toBeInTheDocument()
+    expect(document.getElementById('step-ok-L2')).toBeInTheDocument()
+  })
+  it('confirms bypass and reports dequeue races without cancelling a running task', async () => {
+    const old = window.ci
+    const start = vi.fn(async () => mkRun())
+    const dequeue = vi.fn(async () => ({ status: 'running' as const, run: mkRun() }))
+    window.ci = { ...createFakeCi(), startRun: start, dequeueRun: dequeue }
+    try {
+      const cache = navigationCache()
+      cache.detail!.queue = { limit: 1, occupied: 1, busy: [], waiting: [{ runId: 'queued', taskId: 'task-q', title: 'Queued task', createdAt: NOW - 1000 }] }
+      render(<RunFeed {...baseProps(cache)} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Убрать из очереди' }))
+      await waitFor(() => expect(dequeue).toHaveBeenCalledWith('queued'))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Запустить мимо очереди' })).toBeEnabled())
+      fireEvent.click(screen.getByRole('button', { name: 'Запустить мимо очереди' }))
+      expect(start).not.toHaveBeenCalled()
+      const dialog = await screen.findByTestId('confirm-dialog')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Запустить мимо очереди' }))
+      await waitFor(() => expect(start).toHaveBeenCalledWith(cache.detail!.run.projectId, 'task-q', { launch: 'parallel' }))
+    } finally { window.ci = old }
+  })
+  it('previews retained steps and submits the selected step', () => {
+    const cache = navigationCache()
+    const retry = vi.fn()
+    render(<RunFeed {...baseProps(cache)} onRetryFromStep={retry} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить с упавшего шага' }))
+    const preview = screen.getByRole('region', { name: 'Предпросмотр повтора' })
+    expect(within(preview).getByText('Переиспользуется')).toBeInTheDocument()
+    expect(within(preview).getByText('Install', { selector: 'li' })).toBeInTheDocument()
+    expect(retry).not.toHaveBeenCalled()
+    fireEvent.click(within(preview).getByRole('button', { name: 'Подтвердить повтор' }))
+    expect(retry).toHaveBeenCalledWith('run-1', expect.objectContaining({ stepId: 'bad' }))
+  })
+  it('saves an incomplete question draft and restores it after replying later', async () => {
+    const interaction = mkInteraction()
+    const cache = navigationCache()
+    cache.detail!.steps = [mkStep({ id: interaction.stepId, kind: 'model_work', status: 'awaiting_input' })]
+    cache.detail!.interactions = [interaction]
+    render(<RunFeed {...baseProps(cache)} onAnswerInteraction={vi.fn()} />)
+    const input = screen.getByPlaceholderText('Свой вариант…')
+    fireEvent.change(input, { target: { value: 'draft answer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ответить позже' }))
+    expect(screen.getByText(/Черновик сохранён/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ответить модели' }))
+    expect(screen.getByPlaceholderText('Свой вариант…')).toHaveValue('draft answer')
+    expect(screen.getByText(/Ожидает ответа/)).toBeInTheDocument()
+  })
+})
 
 describe('RunFeed', () => {
   it('подписывается на ран и подгружает его при монтировании', () => {

@@ -46,6 +46,23 @@ function setMobile(mobile: boolean): void {
   })) as unknown as typeof window.matchMedia
 }
 
+// @testCase TC8
+it('groups repeated messages and resumes remaining time after cancelled holding', () => {
+  vi.useFakeTimers()
+  setup()
+  for (let i = 0; i < 3; i++) fireEvent.click(screen.getByText('успех'))
+  expect(screen.getAllByTestId('toast-success')).toHaveLength(1)
+  expect(screen.getByText('×3')).toBeInTheDocument()
+  act(() => vi.advanceTimersByTime(2000))
+  fireEvent.pointerDown(screen.getByTestId('toasts'))
+  act(() => vi.advanceTimersByTime(8000))
+  expect(screen.getByTestId('toast-success')).toBeInTheDocument()
+  fireEvent.pointerCancel(screen.getByTestId('toasts'))
+  act(() => vi.advanceTimersByTime(2200))
+  expect(screen.queryByTestId('toast-success')).toBeNull()
+  vi.useRealTimers()
+})
+
 describe('Toast', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -145,8 +162,8 @@ describe('Toast', () => {
     fireEvent.click(screen.getByText('успех'))
     const region = screen.getByTestId('toasts')
     expect(region.className).toContain('vc-toasts--phone')
-    // 120px композера + 12px зазора; calc jsdom сворачивает в одно значение.
-    expect(region.style.bottom).toMatch(/132px/)
+    // Reserve the composer, the gap and the measured mobile navigation height.
+    expect(region.style.bottom).toBe('calc(120px + 12px + var(--vc-shell-bottom, 0px))')
     voicebar.remove()
   })
   it('на телефоне публикует высоту стека, чтобы страница отодвинула нижние кнопки', () => {

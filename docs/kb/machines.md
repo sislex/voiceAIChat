@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-09-10
-checked: 8c54ade4
+updated: 2026-09-14
+checked: 4632bced
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -139,6 +139,206 @@ token, подтверждение атомарно заменяет зашифр
 `application/x-apple-diskimage` и attachment filename. Путь задаёт
 `VC_LOGIN_APPLICATION` либо autodiscovery `apps/login-application/release`;
 неподдерживаемая пара и отсутствующий файл — явные 404.
+
+## Tailscale VPN management (CHAT-465)
+
+The machine fleet exposes VPN through
+`packages/ui/src/components/MachineVpn.tsx`, mounted in `MachineStatus.tsx`.
+The transport is `window.agents.vpn`, implemented by
+`packages/ui/src/remote/vpnBridge.ts`. The shared contract lives in
+`packages/shared/src/vpn.ts`; agent capability `vpn` requires version 0.18.0.
+Old agents and unsupported platforms display a preparation error, not an
+assumed off state. The UI keeps desired and observed modes separate, expires
+observations after 90 seconds, clears unavailable external IPs, and asks for
+confirmation before sending a role change.
+
+Routes are registered alongside the existing agent routes, including in the
+standalone machines process:
+
+- `POST /api/agents/vpn/network`: explicit tailnet name and administrative
+  API credential; validates device access and an ETag-protected policy write.
+- `GET /api/agents/:id/vpn`: owner-only inspection and eligible gateways.
+- `PUT /api/agents/:id/vpn`: desired mode, ChatAI gateway ID, LAN setting,
+  operation ID and expected revision.
+
+`machine_vpn_networks` belongs to the machines repository. Its unique tailnet
+column prevents attaching the same named network to two ChatAI owners. A
+per-owner generation CAS serializes changes across both endpoints, while
+machine revisions correlate observed attempts after reconnect. The JSON state
+stores verified node-ID/address bindings, desired state, operation state and
+the exact grants managed by ChatAI. Names are never identity proofs. Project
+sharing does not grant VPN management rights. Self-selection, dependent gateway
+changes and stale revisions are rejected. Explicit off can supersede an
+unresolved operation and does not call the administrative Tailscale API.
+
+Administrative credentials use AES-256-GCM, random nonces and user-ID associated
+data. Set `VC_VPN_SECRET_KEY` to a 64-character hexadecimal key in the machines
+service's secret environment. Losing this key prevents credential decryption;
+keep it backed up securely. Credentials are absent from public DTOs and agent
+messages. Upstream bodies and CLI errors are replaced by allowlisted error
+codes; the dedicated `vpn.request` / `vpn.result` path does not use the machine
+shell-command journal.
+
+The Tailscale integration preserves unrelated local policy entries and writes
+with `If-Match`. It conservatively rejects broad or ambiguous existing internet
+permissions instead of silently narrowing them. Managed internet grants use
+verified client addresses and `via` tags scoped to the chosen bound machine.
+Gateway preparation preserves existing tags and enabled subnet routes, adds
+the managed tag, approves both default routes, and reads the approval back.
+Subsequent device inspections check authorization, tags and enabled routes.
+External/shared Tailscale devices are excluded.
+
+### System preparation and privileged protection
+
+The regular agent calls the installed system CLI with argument arrays, never
+with shell commands. It checks a running authenticated system backend, version
+1.88.0 or newer, and a kernel tunnel; this is the implementation's minimum,
+not a claim about every upstream installation variant. Linux exit-node readiness
+also checks IPv4 and IPv6 forwarding sysctls. macOS uses the CLI inside
+`/Applications/Tailscale.app` when present. Tailscale installation, OS permission
+dialogs and service installation remain explicit local administrator steps.
+
+Client routing requires the separately installed
+`apps/agent/src/vpn/guardMain.ts` service. A missing or mismatched helper blocks
+client activation. Build the helper from the installed monorepo with
+`npm exec -- esbuild apps/agent/src/vpn/guardMain.ts --bundle --platform=node --target=node22 --format=esm --outfile=/absolute/build/vpn-guard.mjs`.
+An administrator installs the artifact in a root-owned, non-writable directory
+and runs `node /absolute/install/vpn-guard.mjs /etc/chatai-vpn/config.json` as
+a root system service (systemd on Linux, launchd on macOS). Do not run the helper
+from a user-writable checkout as root.
+
+The config file and its parent must be root-owned and not group/world writable.
+Use an operator group on the config file; the helper creates a group-accessible
+`runtime/guard.sock` next to it. Configure the ordinary agent with
+`VC_VPN_GUARD_SOCKET=/etc/chatai-vpn/runtime/guard.sock` and
+`VC_VPN_CONTROL_IP` equal to the literal control IP. The agent uses this IP for
+its WebSocket lookup while retaining TLS hostname verification. Helper readiness
+requires an exact match of the agent's WSS hostname, port and pinned IP; insecure
+TLS is not accepted as VPN recovery readiness.
+
+Example shape (documentation addresses must be replaced with actual lab values):
+
+```json
+{
+  "interface": "eth0",
+  "tunnelInterface": "tailscale0",
+  "gateway": "192.168.1.1",
+  "control": { "ip": "203.0.113.7", "hostname": "chat.example.test", "port": 443 },
+  "transport": [{ "ip": "203.0.113.8", "protocol": "udp", "port": 41641 }],
+  "lanCidrs": ["192.168.1.0/24"]
+}
+```
+
+The helper verifies that the configured tunnel carries an authenticated
+Tailscale address. On Linux it uses an independent nftables `inet chatai_vpn`
+output table and a narrow priority-5100 control-destination rule selecting the
+physical main routing table. An occupied conflicting priority is rejected.
+That service-channel rule is part of helper preparation and remains while the
+helper is installed. Tailscaled's marked underlay sockets are exempted; ordinary
+application output is not. Direct TCP/UDP DNS and TCP 853 are blocked before LAN
+exceptions. IPv6 defaults to drop except the verified tunnel and link-local
+neighbor discovery. LAN configuration currently accepts explicit private IPv4
+CIDRs with prefixes 16–32; unsupported direct IPv6 LAN traffic stays blocked.
+
+On macOS, PF must already be enabled and its first root filter rule must be
+`anchor "chatai-vpn"`; a `load anchor "chatai-vpn" from "/etc/pf.anchors/chatai-vpn"`
+can initialize an empty anchor. Only loopback may skip filtering. The helper
+rejects incompatible existing PF configuration rather than rewriting it.
+Use the actual `en*` and authenticated `utun*` interfaces in the config.
+Control and explicitly configured Tailscale transport endpoints are routed
+through the physical gateway; their address family must match that gateway.
+No generic direct TCP/UDP allowance is generated. Existing PF states are killed
+on activation, which is why the UI warns about broken connections. Transport
+endpoints must be maintained when the network/DERP/peer addresses change.
+
+Intent is persisted before protection changes; nft updates are applied in one
+transaction and PF updates target only the managed anchor. A helper watchdog
+reapplies intended protection if the observed rules differ. Closing or crashing
+the agent/helper does not invoke release. Off restores the saved Tailscale DNS preference while clearing the exit-node
+role, checks actual state, and explicitly releases protection. The agent's operation journal and DNS baseline live under
+`<rootDir>/.voicechat/vpn-operation.json*` and survive agent restarts.
+
+### Verification and acceptance limits
+
+Automated cases have `// @testCase` coverage markers next to the tests:
+shared contract validation; server ownership, HTTP boundaries, policy conflicts
+and credential encryption; agent sequencing, repeated operations, partial
+failure and firewall generation; UI role/gateway/LAN selection, confirmation,
+safe secret input and existing machine actions. UI tests and Storybook share
+`packages/ui/src/test/fixtures/vpn.ts`. Stories live in
+`MachineVpn.stories.tsx` under `Machines/VPN`, including the interactive
+`ChangeRole` play scenario. Existing fleet regression tests remain in
+`MachineStatus.dom.test.tsx`.
+
+`apps/agent/src/vpn/network.integration.test.ts` contains an opt-in real-host
+matrix for both directions, external IPv4/IPv6 comparison, direct-interface
+probes, physical-interface DNS capture, LAN switching and explicit cleanup.
+Default gates **skip** these tests. Running them requires
+`VC_VPN_NETWORK_TESTS=1`, `VC_VPN_TEST_TOKEN` (never place the token in a chat),
+and `VC_VPN_TEST_LAB` JSON containing `api`, `dnsName`, and `linux`/`mac`
+objects with `id`, `ssh`, `interface`, `os`, and `lanUrl`. Both hosts must
+start with observed and requested VPN off. SSH must use keys; probes require
+curl/dig and passwordless tcpdump plus GNU timeout (gtimeout on macOS).
+Use dedicated machines with local recovery access.
+
+As of this development run, all project Macs were offline and only Prod was
+online. No real-host VPN changes, packet captures, gateway sleep/failure tests,
+or OS/Tailscale version measurements have been performed. Generated nft/PF
+rules and mocked tests are **not** proof of leak protection, macOS Network
+Extension interaction, service-channel recovery, or boot-time ordering.
+The real network matrix, foreign-exit attempts outside ChatAI, physical sleep
+tests and reboot behavior remain acceptance work. Chromium Component QA in
+`e2e/machine-vpn.e2e.test.ts` starts an isolated loopback Storybook, verifies the
+keyboard-driven role/gateway/LAN flow and gateway-failure controls at a 390px
+viewport, and captures desktop/mobile screenshots. Both browser cases passed;
+the machine fleet's existing 31 DOM regression cases also passed.
+The web application catalog includes this Component QA suite in `e2eFiles`
+and maps VPN component/story changes through `browserPaths`. A uniquely owned
+E2E file explicitly listed in `browserPaths` is resolved by `applicationForPath`;
+other E2E files retain their existing gate selection and fallback behavior.
+
+The shared-protocol diff also selects Desktop, Agent Tray and Login application
+in `gate:fast`. They are outside root npm workspaces and require their own
+dependencies: `npm ci --prefix apps/desktop`, `npm ci --prefix apps/agent-tray`
+and `npm ci --prefix apps/login-application`.
+All three targeted application gates passed on the development host after
+restoring these lockfile dependencies.
+
+Final development verification on 2026-09-13: `npm run gate:fast` completed
+with exit code 0. Agent tests passed in 17 files (the opt-in network file was
+skipped), server tests in 179 files (5 existing skipped files), shared tests in
+106 files, and UI tests in 153 files. Selected consumer checks, Storybook and
+production builds passed. Chromium passed both VPN Component QA tests and both
+release-center regression tests. The real-host `TC-NETWORK` and gateway
+sleep/failure acceptance checks remain unexecuted; mock and browser results do
+not substitute for them.
+
+This implementation must not be described as production-verified VPN protection.
+
+CHAT-466 regression follow-up (2026-09-14): expired observations cannot complete
+an apply operation or establish client readiness in `VpnService`. The UI hides
+current gateway/protection claims for expired observations and offline machines.
+Targeted tests passed for both stale apply outcomes (client/off), stale readiness,
+offline/expired UI observations, changed gateway ownership, and rejection of
+replacement of an active legacy network without agent or policy mutations.
+The new markers identify partial regression coverage, not full acceptance:
+`TC-NETWORK` in `system.test.ts` checks preparation failures on Linux/macOS and
+the existing Windows rejection; `TC-LINUX-SERVICES` in `firewall.test.ts` checks
+the narrow management endpoint and DNS restrictions only; `TC-MIGRATION` in
+`service.test.ts` checks the active-tailnet replacement conflict only.
+These tests do not exercise WireGuard, three simultaneous clients, inbound
+published-service replies, installer updates, or migration/rollback. Those
+mandatory scenarios remain unverified and must not be marked passed based on
+marker discovery or this mocked suite. The current system and UI still support
+only Linux/macOS through Tailscale; Windows remains unsupported.
+The existing Chromium flow now uses `selectOption` for the native mode menu and
+keyboard Enter for both apply and confirmation. Native select keyboard input
+left the value at `off` in headless macOS Chromium; both browser cases passed
+after this adjustment. Keyboard navigation inside the native menu itself is
+not verified by this browser test.
+The final `npm run gate:fast` rerun completed with exit code 0 on 2026-09-14,
+including the selected agent/server/UI/web checks, builds, and browser suites.
+The opt-in real-host network suite remained skipped.
 
 ## Токены агентов: срок, отзыв, привязка к IP
 
@@ -390,6 +590,8 @@ online-машин, «Выбрать все», поле команды, свод�
 
 ## Журнал команд машины
 
+The UI combines command-text search, source and result filters (success, error, or duration at least 30 seconds). TXT export uses exactly the currently visible records in their displayed order. CSV remains available and uses the same filtered rows. Empty exports are disabled; TXT export failures are visible.
+
 Всё, что проходит через `AgentRegistry.exec`, попадает в `machine_commands` (`db.addMachineCommand`,
 по 5000 последних записей на машину): `registry.exec(agentId, command, timeoutMs, signal, meta)` принимает
 `ExecMeta {source: 'console'|'chat'|'system', userId?, conversationId?}` и после завершения (в том числе отказа
@@ -574,6 +776,10 @@ CI-рана) модель видит остальные машины проек�
 
 ## Живой PTY-терминал
 
+`ToolSpec.kind` now distinguishes `console` (one-shot commands) from `terminal` (PTY), including tool-block parsing and «открой терминал» detection. Explorer-to-PTY directory changes use POSIX, cmd.exe or PowerShell quoting according to the machine's reported shell.
+
+The terminal toolbar copies the xterm buffer, clears its screen, searches and selects buffer text, and toggles between fitted columns and a 1000-column horizontally scrollable view. Its action definitions supply both the registered commands and the local `?` help: Ctrl/Cmd+Shift+C/L/F/W. Fleet preferences use `vc.machines.filter` and `vc.machines.sort`: online/offline, outdated agent, battery strictly below 20% (unknown is excluded), name or most recent lastSeen.
+
 Отдельный опциональный канал, `docs/plans/PTY_CONSOLE.md`. Фронт — `@xterm/xterm`
 + `addon-fit` (`packages/ui/src/components/MachineTerminal.tsx`), на агенте —
 `@lydell/node-pty`, shell — `fish` с фолбэком zsh→bash→`$SHELL`. Клиентский WS
@@ -596,6 +802,8 @@ CI-рана) модель видит остальные машины проек�
 
 ## Однострочная консоль машины (MachineConsole)
 
+Command history now persists in localStorage under a separate key per agent, capped at 200 entries. `machineHistory` supplies a memory fallback when storage fails; `operationsStore` preserves the same cap. Arrow navigation does not execute commands. Ctrl/Cmd+R opens reverse substring search, and clearing affects only the selected machine. `machineListing` caches successful explorer listings by agent and directory. Console Tab and explorer path suggestions read this cache synchronously, without a network request; ambiguous shell syntax is left unchanged.
+
 Деградация терминала, когда моста PTY нет (`MachineUtility` выбирает по наличию
 `pty`): поле ввода → `POST /api/agents/:id/exec` → `registry.exec` → вывод одним
 куском в конце. Живого построчного вывода у неё нет: `AgentRegistry.execStream`
@@ -605,13 +813,13 @@ CI-рана) модель видит остальные машины проек�
 Что консоль умеет помимо запуска команды:
 
 - **История ↑/↓** — набранные команды по машине. Живёт в сторе
-  (`AppState.consoleHistory`, `pushConsoleCommand`, кап 100 на машину, подряд
+  (`AppState.consoleHistory`, `pushConsoleCommand`, кап 200 на машину, подряд
   повторённая не дублируется), а `MachineConsole` получает её контрактом
   `ConsoleHistoryStore` (`packages/ui-foundation/src/components/machine.ts`) пропом
-  `historyStore` — от `App.tsx` через `MachineUtility`/`ChatColumn`. В самом
-  компоненте историю держать нельзя: утилиту закрывают и открывают заново, и
-  локальный стейт умирает вместе с окном. Без пропа консоль помнит команды только
-  до закрытия (фолбэк для сториз и тестов). ↓ ниже последней команды возвращает
+  `historyStore` — от `App.tsx` через `MachineUtility`/`ChatColumn`. Both the store
+  and the standalone component persist through `machineHistory`; without the prop,
+  reopening still restores that agent's history. Failed storage uses an in-memory
+  fallback. ↓ ниже последней команды возвращает
   строку, которую затёрло листание, Esc её очищает.
 - **Esc** — в `variant="modal"` до input не доходит (общий стек окон
   `useDialogStack` глушит событие в фазе перехвата), поэтому его отдаёт
@@ -737,9 +945,9 @@ git-процесса встречаются на `index.lock`, и вторая �
 
 ### Просмотр и правка файлов
 
-Клик по файлу в `FileExplorer` вызывает `MachineOps.read`, не скачивание. До
-запроса проводник отсеивает файлы больше 1 МБ; для них показано объяснение и
-кнопка скачивания. Поддерживаемые по расширению картинки (`avif`, `bmp`, `gif`,
+Клик по файлу открывает предпросмотр без скачивания. Для изображений сохраняется лимит автоматического предпросмотра 1 МиБ; для текста больше 204800 байт появляется команда «Показать первые 200 КБ». Она вызывает отдельный `MachineOps.readPrefix` через `operationsStore`, `RendererFsBridge.readPrefix` и `GET /api/agents/:id/fs/preview?path=…&projectId=…`; маршрут проходит ту же авторизацию машины. Реестр отправляет `fs.read-prefix` только агенту с возможностью `fs-preview` (версия 0.17.0 и новее) и принципиально не подменяет ограниченный предпросмотр полным чтением на старом агенте (`apps/server/src/agents/registry.ts`, `packages/shared/src/version.ts`).
+
+Ограниченный и полный режимы различаются на самом агенте (`apps/agent/src/fileOps.ts`). `fsReadPrefix` применяет существующую проверку нормализованного пути, открывает один дескриптор и циклами `readSync` читает от начала суммарно не более `FS_PREVIEW_BYTES` = 204800 байт — в том числе у файла больше 32 МиБ; дескриптор закрывается в `finally`, результат содержит `bytesRead`, `fileSize` и `truncated`. Обычный `fsRead` по-прежнему читает файл целиком через `readFileSync`, сохраняет предел `FS_MAX_BYTES` = 32 МиБ и те же проверки доступа. В UI потоковый fatal UTF-8 decoder отбрасывает только незавершённую конечную последовательность усечённого ответа; повреждение внутри текста и NUL по-прежнему считаются неподдерживаемым бинарным содержимым. Усечённый текст нельзя открыть в редакторе или сохранить, а поколения запросов отбрасывают опоздавший ответ после смены файла, машины или закрытия превью. Поддерживаемые по расширению картинки (`avif`, `bmp`, `gif`,
 `ico`, `jpeg/jpg`, `png`, `svg`, `webp`) показываются как `data:`-изображение.
 Остальные файлы декодируются как UTF-8 с фатальной проверкой: невалидная
 кодировка или нулевой байт означают бинарный файл и честный отказ от
@@ -939,6 +1147,8 @@ Windows уедет в `resolve()` как есть и снова даст ENOENT.
 
 ## Шапка утилиты машины (MachineUtilityHeader)
 
+The segmented switch exposes console, explorer and terminal independently (`console`, `explorer`, `terminal`). At 390px the machine name can truncate while status stays on the same row; version details hide. Icon buttons carry both accessible labels and titles. `MachineUtilityHeader.layout.test.tsx` checks real Chromium geometry; the DOM test applies axe and the labelled-icon guard.
+
 Одна шапка на все три виджета утилиты — `MachineConsole`, `MachineTerminal`,
 `FileExplorer` (`packages/ui/src/components/MachineUtilityHeader.tsx`, рядом с
 `MachineUtility.tsx`). Раньше каждый рисовал свой `.fsbar` со своим селектором
@@ -978,6 +1188,10 @@ Windows уедет в `resolve()` как есть и снова даст ENOENT.
 `MachineUtility.dom.test.tsx` (переключение в обе стороны через `MachineUtility`).
 
 ## Связка проводника и терминала
+
+`FileExplorer` accepts `initialDir` (open inside a directory), `initialFilePath` (open the parent and select the file), and `onSwitchUtility` (carry agent and path). Folder rows can open the terminal on that same machine. If its active linked PTY exists, `MachineTerminal` sends a quoted `cd` and updates the tab cwd; otherwise it starts a session with cwd. Offline/read-only machines do not receive the directory command.
+
+Explorer selection supports Shift ranges, Ctrl/Cmd toggles and checkboxes. Copy joins selected paths with newlines. Group removal requires a dialog listing all paths, respects write permissions and existing trash support, and reports individual failures.
 
 Кнопки «проводник»/«консоль» в сайдбаре открываются не на «первой онлайн-машине», а
 на ЭФФЕКТИВНОЙ машине и папке активного чата: `openUtilityForActiveChat` берёт

@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-11
-checked: ec5657cf
+updated: 2026-09-13
+checked: 62166a80
 areas:
   - package.json
   - scripts
@@ -43,6 +43,13 @@ areas:
 
 Корневой `npm install` обслуживает `packages/shared`, `packages/ui`, `apps/llm-runner`, `apps/server`, `apps/web`, `apps/agent`. `apps/desktop` и `apps/agent-tray` устанавливаются отдельно из-за Electron/native ABI и собственных lockfiles.
 
+`apps/login-application` also has its own `package-lock.json` and is outside
+root workspaces (`applicationCatalog.ts` lists an empty `workspaces` array for
+this application). Install it with `npm ci --prefix apps/login-application`.
+A shared-protocol diff selects all three Electron applications in `gate:fast`;
+missing their separate dependencies produces TS2307 for `electron` and
+`electron-vite` even after a successful root install.
+
 Не переносить Electron-пакеты в workspaces без отдельного решения миграции: корневой hoisting способен подменить native module сборкой под другой runtime.
 
 ## Development
@@ -81,6 +88,13 @@ areas:
 до кнопки. Каждому пользователю в тесте нужен свой `PUT /api/settings` с
 `onboarded: true`. Пароль в `POST /api/admin/users` не должен содержать логин —
 политика такие отклоняет.
+
+Project creation also requires an online machine in the host UI (`App.tsx`,
+`requireMachine`). The Projects E2E fixture currently starts no companion, so
+clicking “New project” opens the device connection dialog instead of
+`new-project-dialog`. A missing name-field timeout in this setup is followed by
+cascading missing-project failures; it does not establish a project-form defect.
+Provide an online test companion before treating this suite as delivery evidence.
 
 **Ловушка: брошенный `tsx watch` без `VC_DATA_DIR` правит базу по умолчанию.**
 `npm run -w @voicechat/server dev` — это `tsx watch`: процесс перезапускается на
@@ -490,22 +504,20 @@ Electron main/preload код тестируется без запуска реа
 уникальность каталога даёт файловая система (`mkdtempSync`), а `afterEach` его
 удаляет — иначе каталоги копятся в `tmpdir` каждым прогоном.
 
-**`findBy*` ждёт ленивый чанк дольше секунды.** У Testing Library
-`asyncUtilTimeout` по умолчанию 1 с, а половина экранов приложения грузится
-лениво (`Suspense` + dynamic import). На полном прогоне пакета и особенно в
-release-gate (где параллельно идут другие наборы) чанк успевает не всегда:
-`App.projects.dom.test.tsx` видел fallback «Загрузка настроек проекта…» вместо
-`project-settings` и падал, хотя изолированно тот же тест проходит за ~900 мс —
-из-за этого падал шаг Regression у релиза. В `packages/ui/src/test/setup.ts`
-стоит `configure({ asyncUtilTimeout: 5000 })`: это ожидание загрузки, а не
-ожидание починки — сломанный экран не появится и за минуту, а класс флейков,
-зависящих от загрузки машины, уходит. Свой таймаут в отдельном `findBy` заводить
-не нужно; `testTimeout` пакета остаётся 20 с. Отдельные ожидания, зависящие
-от очереди сообщений и повторного рендера (мост Web Reader: команда доезжает до
-iframe через очередь и новый рендер панели), получают явный `{ timeout: 10_000 }`
-в своём `waitFor` — общего запаса им не хватало именно на полном прогоне гейта,
-где пакеты идут параллельно. Признак такого флейка: тест падает в гейте, но
-проходит и одним файлом, и полным набором пакета.
+**`findBy*` must allow for a cold lazy chunk.** Testing Library defaults to a
+one-second async timeout, while many application screens use `Suspense` and
+dynamic imports. Full package runs and release regression execute other suites
+in parallel, so the first lazy import can be much slower than an isolated test.
+`App.projects.dom.test.tsx` previously timed out on the project settings chunk;
+release `0.1.299` later timed out on the first TaskModal chunk after five seconds,
+although the whole `App.dom.test.tsx` file passed in isolation. The shared setup
+in `packages/ui-foundation/src/test/setup.ts` therefore configures
+`asyncUtilTimeout: 10_000`. This only bounds asynchronous loading: successful
+queries still return immediately, while the package-level 60-second test timeout
+remains the outer guard for hangs. Do not add per-query `findBy` timeouts for
+ordinary lazy screens. Multi-render queue assertions may keep an explicit
+10-second `waitFor` to document that dependency. The characteristic signal is a
+release-gate failure that passes both as a focused test and as its complete file.
 
 **Код возврата гейта читается у самого гейта, а не у последней команды строки.**
 `npm run gate > log 2>&1; echo "RC=$?"; grep …` — здесь фоновая задача сообщает
@@ -547,6 +559,8 @@ positive tests». `terminate()` безопасен в любом состоян�
 как тест принял решение» (`src/session.test.ts`).
 
 ## Диагностика по слоям
+
+Фикстура Browser Runner в `apps/browser-runner/src/sessionDiagnostics.test.ts` запускает `/broken`, `/bad` (HTTP 503) и `/slow` независимо. Сокетная ошибка `/broken` и HTTP-ответ 503 приходят в диагностику без гарантированного порядка, поэтому появление одной записи `state: failed` ещё не означает, что `/bad` уже зарегистрирован. Регрессия `failedOnly` сначала через `expect.poll` дожидается обеих записей и только затем проверяет их статусы; предположение о порядке событий делало прежний тест плавающим.
 
 1. `/api/health` — процесс и HTTP доступны.
 2. `/api/session/me` — bearer token и пользователь.

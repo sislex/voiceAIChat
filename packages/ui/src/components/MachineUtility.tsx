@@ -60,9 +60,9 @@ export function MachineUtility({
         />
       )
   }
-  if (tool.kind === 'console') {
+  if (tool.kind === 'console' || tool.kind === 'terminal') {
     // Настоящий терминал (xterm+PTY), если доступен мост; иначе — однострочная консоль.
-    if (pty) {
+    if (pty && tool.kind === 'terminal') {
       return (
         <MachineTerminal
           agents={agents}

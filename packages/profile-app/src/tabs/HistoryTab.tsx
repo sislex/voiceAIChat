@@ -1,5 +1,6 @@
 // История: журнал безопасности с фильтром по группе событий и выгрузкой в CSV.
 
+import { useEffect, useState } from 'react'
 import { Button, EmptyState } from '@voicechat/ui-kit'
 import type { ProfileSecurityEvent } from '../contracts'
 import { formatDateTime } from '../format'
@@ -22,13 +23,17 @@ export interface HistoryTabProps {
 const GROUPS: Array<{ id: SecurityGroup; label: string }> = [
   { id: 'all', label: 'Все события' },
   { id: 'auth', label: 'Входы и сессии' },
+  { id: 'login', label: 'Последние 50 входов' },
   { id: 'account', label: 'Изменения учётки' },
   { id: 'machines', label: 'Машины' }
 ]
 
 export function HistoryTab({ events, userName, group = 'all', onChangeGroup, onExportCsv }: HistoryTabProps): JSX.Element {
+  const [visibleCount, setVisibleCount] = useState(50)
+  useEffect(() => { setVisibleCount(50) }, [events, group])
   if (events === null) return <p className="vcp-loading">Загружаем журнал…</p>
-  const visible = events
+  const visible = events.slice(0, visibleCount)
+  const remaining = events.length - visible.length
 
   return (
     <section className="vcp-history" data-testid="history-tab">
@@ -38,7 +43,7 @@ export function HistoryTab({ events, userName, group = 'all', onChangeGroup, onE
           <select aria-label="Тип событий" value={group} onChange={(event) => onChangeGroup?.(event.target.value as SecurityGroup)}>
             {GROUPS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
-          {onExportCsv && visible.length > 0 && (
+          {onExportCsv && events.length > 0 && (
             <Button
               size="sm"
               variant="ghost"
@@ -46,7 +51,7 @@ export function HistoryTab({ events, userName, group = 'all', onChangeGroup, onE
                 // Имя файла запоминает выборку: три выгрузки по разным группам
                 // иначе лежат в загрузках под одним именем.
                 group === 'all' ? `security-${userName}.csv` : `security-${userName}-${group}.csv`,
-                securityEventsToCsv(visible, formatDateTime)
+                securityEventsToCsv(events, formatDateTime)
               )}
             >
               Экспорт CSV
@@ -70,6 +75,14 @@ export function HistoryTab({ events, userName, group = 'all', onChangeGroup, onE
             ))}
           </ul>
         )}
+      {remaining > 0 && (
+        <div className="vcp-history__more">
+          <Button size="sm" variant="ghost" onClick={() => setVisibleCount((count) => count + 50)}>
+            Показать ещё {Math.min(50, remaining)}
+          </Button>
+          <span>{visible.length} из {events.length}</span>
+        </div>
+      )}
     </section>
   )
 }

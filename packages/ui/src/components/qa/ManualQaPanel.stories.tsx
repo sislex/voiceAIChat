@@ -19,3 +19,4 @@ export const Blocked:Story={parameters:{qaState:state('blocked')}}
 export const Stale:Story={parameters:{qaState:state('stale')}}
 export const RequirementChange:Story={parameters:{qaState:state('failed')}}
 export const Successful:Story={parameters:{qaState:state('passed')}}
+export const MobileChecklist:Story={parameters:{qaState:state('not_tested'),viewport:{defaultViewport:'mobile1'}}}

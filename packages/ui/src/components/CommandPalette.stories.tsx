@@ -77,11 +77,11 @@ export const NothingFound: Story = {
 
 /** «Недавние» сверху: они читаются из localStorage. */
 export const Recent: Story = {
+  args: { userId: 'storybook-recent' },
   render: (args) => {
     const [ready, setReady] = useState(false)
     useEffect(() => {
-      rememberCommand('app.settings')
-      rememberCommand('task:1')
+      for (const id of ['app.settings', 'task:1', 'chat:1', 'project:1', 'machine:1']) rememberCommand(id, 'storybook-recent')
       setReady(true)
     }, [])
     return ready ? <CommandPalette {...args} /> : <p style={{ padding: 20 }}>Готовим историю…</p>

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { ClaudeCli, type SpawnFn } from './claudeCli'
 import type { LlmStreamHandlers } from '@voicechat/shared'
@@ -28,6 +30,11 @@ function makeHandlers(): LlmStreamHandlers & { calls: Record<string, unknown[]> 
 }
 
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
+
+function attachmentRe(name: string): RegExp {
+  const directory = tmpdir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`${directory}[/\\\\]+voicechat-llm-run-[^\\s]+[/\\\\]1-${name.replace('.', '\\.')}`)
+}
 
 describe('ClaudeCli', () => {
   it('стримит дельты, ловит session_id и финальный текст', async () => {
@@ -63,6 +70,24 @@ describe('ClaudeCli', () => {
     expect(h.calls.delta).toEqual(['При', 'вет'])
     expect(h.calls.done).toEqual(['Привет'])
     expect(h.calls.error).toHaveLength(0)
+  })
+
+  it('локально раскладывает вложения и удаляет их после завершения', async () => {
+    const { child, stdout } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send({
+      prompt: 'Открой /studio/selection.png', sessionId: null, model: 'sonnet',
+      attachments: [{ serverPath: '/studio/selection.png', runnerName: 'selection.png', dataBase64: Buffer.from('pixels').toString('base64') }]
+    }, makeHandlers())
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const prompt = args[args.indexOf('-p') + 1]
+    expect(prompt).not.toContain('/studio/selection.png')
+    const path = prompt.match(attachmentRe('selection.png'))?.[0]
+    expect(path).toBeTruthy()
+    expect(readFileSync(path!, 'utf8')).toBe('pixels')
+    stdout.write(JSON.stringify({ type: 'result', is_error: false, result: 'Готово' }) + '\n')
+    await tick()
+    expect(existsSync(path!)).toBe(false)
   })
 
   it('добавляет --resume при наличии sessionId и --model', () => {
@@ -162,6 +187,21 @@ describe('ClaudeCli', () => {
     expect(allowed).toContain('mcp__make_design_1__make_list_files')
     expect(allowed).toContain('mcp__make_design_2__make_read_file')
     expect(allowed).not.toMatch(/write|edit|delete|rename|apply/)
+  })
+
+  it('подключает Image Studio MCP и разрешает полный набор инструментов', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send({
+      prompt: 'отретушируй лицо', sessionId: null, model: 'opus',
+      imageStudioMcpUrl: 'http://image-studio:8796/mcp/image-studio?k=s&conv=c1&user=admin'
+    }, makeHandlers())
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as { mcpServers: Record<string, { url: string }> }
+    expect(config.mcpServers.image_studio?.url).toContain('conv=c1')
+    expect(args[args.indexOf('--allowedTools') + 1]).toContain('mcp__image_studio__image_retouch')
+    expect(args[args.indexOf('--allowedTools') + 1]).toContain('mcp__image_studio__image_restore')
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('image_extract')
   })
 
   it('projectMachines: другие машины проекта в хинте, machines в allow-list; без них — нет', () => {
@@ -318,7 +358,7 @@ describe('ClaudeCli', () => {
     expect(hint).toContain('изолированный Chromium')
     const allowed = args[args.indexOf('--allowedTools') + 1]
     // Смотреть страницу — снимок, ошибки и ожидание — без автоодобрения бесполезно.
-    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network', 'frames', 'styles', 'reset-session', 'downloads', 'read-download', 'cancel-download', 'delete-download', 'dialogs', 'handle-dialog', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
+    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network', 'viewport', 'evaluate', 'frames', 'styles', 'reset-session', 'downloads', 'read-download', 'cancel-download', 'delete-download', 'dialogs', 'handle-dialog', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
   })
 
   it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {

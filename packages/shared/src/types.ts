@@ -3,6 +3,7 @@ import type { BrowserEvaluateOptions, BrowserEvaluationSummary } from './browser
 import type { BrowserConsoleOptions, BrowserDiagnosticValue, BrowserLogContext, BrowserLogSummary, BrowserNetworkOptions, BrowserNetworkState } from './browserDiagnostics'
 import type { BrowserDownloadCommand, BrowserDownloadInfo } from './browserDownloads'
 import type { BrowserDialogAnswer, BrowserDialogInfo } from './browserDialogs'
+import type { CodexThreadUsage } from './codexUsage'
 import type { BrowserProfileMode, BrowserSiteDataResetOptions } from './browserProfile'
 // Общие типы, разделяемые между main, preload и renderer.
 
@@ -1145,6 +1146,12 @@ export interface TurnMeta extends TurnUsage {
   costUsd?: number
   /** Модель, которой отправлен ход (алиас claude / id codex). */
   model?: string
+  /**
+   * Cumulative thread totals reported by Codex `turn.completed` (whole thread,
+   * not this turn). Kept so the next turn of the thread can be priced as the
+   * difference; the `TurnUsage` fields above already hold that difference.
+   */
+  codexThreadUsage?: CodexThreadUsage
   /** Что именно ушло модели этим ходом — для панели «Подробнее». */
   request?: TurnRequestInfo
   /** Legacy-предложение одной задачи; читается UI для обратной совместимости. */
@@ -1416,7 +1423,7 @@ export interface Settings {
   /** Режим консоли: показывать активность агента (команды, thinking, mode…). */
   showConsole: boolean
   /** Тема интерфейса. */
-  theme: 'light' | 'dark' | 'green'
+  theme: 'light' | 'dark' | 'green' | 'system'
   /** Пользователь прошёл (или пропустил) приветственный мастер. */
   onboarded: boolean
   /** Режим прав агента для Claude CLI. */
@@ -1836,7 +1843,7 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
 
   if (typeof input.model === 'string') patch.model = normalizeClaudeModel(input.model)
   oneOf('whisperModel', WHISPER_MODELS)
-  oneOf('theme', ['light', 'dark', 'green'] as const)
+  oneOf('theme', ['light', 'dark', 'green', 'system'] as const)
   oneOf('permissionMode', PERMISSION_MODES.map((mode) => mode.id))
   oneOf('llmProvider', ['claude', 'codex'] as const)
   oneOf('aiAssistProvider', ['claude', 'codex'] as const)

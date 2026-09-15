@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { APPLICATION_CATALOG, type ApplicationReleaseManifest, type ApplicationReleaseOverview } from '@voicechat/shared'
 import { ApplicationReleaseCenter } from '../../../packages/ui/src/components/releases/ApplicationReleaseCenter'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
+import { UiProviders } from '@voicechat/ui-kit'
 import '@voicechat/ui-kit/styles.css'
 import '../../../packages/ui/src/styles/global.css'
 import '../../../packages/ui/src/styles/app.css'
@@ -14,4 +15,5 @@ api['releases:applicationCatalog']=async()=>[...APPLICATION_CATALOG]
 api['releases:applicationOverview']=async({environment})=>environment==='staging'?structuredClone(overview):{...structuredClone(overview),environment:{...overview.environment,applications:[{manifest:manifest('core','2.0.0'),healthy:true,installedAt:1}]}}
 api['releases:applicationDeploy']=async({input,environment})=>{const record={id:'deployment',projectId:'fixture',environment,requestId:input.requestId,status:'released' as const,releases:[make],previous:structuredClone(overview.environment),result:null,rollbackOf:null,createdAt:1,finishedAt:2,triggeredBy:'fixture',log:'Digest и container ID проверены'};overview.deployments.unshift(record);overview.environment.applications.push({manifest:make,healthy:true,installedAt:2});overview.environment.revision++;return record}
 document.body.style.overflow='auto'
-createRoot(document.getElementById('root')!).render(<main style={{padding:'24px',maxWidth:'1100px',margin:'auto'}}><h1>Релизы приложений</h1><ApplicationReleaseCenter projectId="fixture" baseBranch="main" owner api={api}/></main>)
+// The panel confirms production deploys through the shared providers, like in the app.
+createRoot(document.getElementById('root')!).render(<UiProviders><main style={{padding:'24px',maxWidth:'1100px',margin:'auto'}}><h1>Релизы приложений</h1><ApplicationReleaseCenter projectId="fixture" baseBranch="main" owner api={api}/></main></UiProviders>)

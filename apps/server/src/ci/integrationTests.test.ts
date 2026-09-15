@@ -140,6 +140,16 @@ describe('createIntegrationTestRunner', () => {
   })
 
   // @testCase TC-NORMAL-COMMIT
+  it('частичное покрытие не проходит даже при наличии кэшированного зелёного гейта', async () => {
+    const testCases = [{ id: 'TC-A', required: true, automatable: true }, { id: 'TC-B', required: true, automatable: true }] as IntegrationTestRun['testCases']
+    const s = await setup(['npm test'], [], { cached: true, testCases, markers: 'src/app.test.ts:@testCase TC-A\n' })
+    await s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.finished[0]).toMatchObject({ status: 'blocked', blockerReasons: ['missing_automation:TC-B'] })
+    expect(s.gateResults).toEqual([])
+  })
+
+  // @testCase TC-NORMAL-COMMIT
   it('ставит зависимости перед стадиями тем же кэшем задачи', async () => {
     const s = await setup(['npm run affected-check'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
     s.runner.launch('run1', 'user')
@@ -167,22 +177,21 @@ describe('createIntegrationTestRunner', () => {
     expect(s.completions[0]?.classification).toBe('infrastructure')
   })
 
-  // Регрессия CHAT-411: `split(/\\r?\\n/)` искал литерал «\r», дифф приходил в
-  // валидацию одной склейкой, и коммит разработки проезжал проверку.
+  // The stage reads the complete feature branch; implementation files must not block tests.
   // @testCase TC-REG-1
-  it('нетестовые файлы в коммите блокируют ран', async () => {
-    const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }], { diff: 'apps/server/src/db/database.ts\napps/server/src/db/schema.ts\npackages/ui/src/test/fakeApi.ts\n' })
+  it('смешанный дифф реализации и тестов проверяется полным гейтом', async () => {
+    const s = await setup(['npm run test'], [], {
+      diff: 'apps/server/src/db/database.ts\napps/server/src/db/schema.ts\napps/server/src/db/database.test.ts\n',
+      testCases: [{ id: 'TC-1', required: true, automatable: true }] as IntegrationTestRun['testCases'],
+      markers: 'apps/server/src/db/database.test.ts:@testCase TC-1\n'
+    })
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     const input = s.finished[0]
-    expect(input.status).toBe('blocked')
-    expect(input.failureReason).toBe('non_test_files_changed')
-    expect(input.blockerReasons).toEqual(['non_test_file:apps/server/src/db/database.ts', 'non_test_file:apps/server/src/db/schema.ts'])
-    // Стадии не запускались: дальше разбора коммита ран не пошёл.
-    expect(s.calls.some((call) => call.script.includes('npm'))).toBe(false)
-    // Автопроход обязан узнать об исходе: без уведомления карточка застревала в
-    // integration_tests, а board-событие запускало следующий такой же ран по кругу.
-    expect(s.completions).toEqual([{ passed: false, reason: input.summary, classification: 'implementation_defect' }])
+    expect(input.status).toBe('passed')
+    expect(s.calls.some((call) => call.script === 'npm run test')).toBe(true)
+    expect(s.links).toEqual([{ testId: 'TC-1', path: 'apps/server/src/db/database.test.ts' }])
+    expect(s.calls.find((call) => call.script.startsWith('grep'))!.script).not.toContain("'apps/server/src/db/database.ts'")
   })
 
   // @testCase TC-COVER-2
@@ -205,13 +214,14 @@ describe('createIntegrationTestRunner', () => {
   })
 
   // @testCase TC-FALLBACK-MARKERS
-  it('без маркеров покрытие синтезируется из диффа, как раньше', async () => {
+  it('без маркеров обязательные кейсы возвращаются на доработку', async () => {
     const testCases = [{ id: 'TC-1', required: true, automatable: true }] as unknown as IntegrationTestRun['testCases']
     const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], { testCases, diff: 'packages/ui/src/test/fakeApi.ts\n' })
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
-    expect(s.links).toEqual([{ testId: 'TC-1', path: 'packages/ui/src/test/fakeApi.ts' }])
-    expect(s.logs.join('')).toContain('покрытие синтезировано из диффа')
+    expect(s.links).toEqual([])
+    expect(s.finished[0]).toMatchObject({ status: 'blocked', failureReason: 'missing_automation', blockerReasons: ['missing_automation:TC-1'] })
+    expect(s.completions[0]?.classification).toBe('implementation_defect')
   })
 
   it('зелёный прогон запоминается, а готовый результат того же коммита переиспользуется', async () => {

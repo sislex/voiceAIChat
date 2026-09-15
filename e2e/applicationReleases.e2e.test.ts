@@ -17,7 +17,8 @@ it('установка приложения в браузере обновляе
  await page.getByRole('checkbox').check()
  await expect.poll(()=>page.getByText('Выбранный состав совместим с окружением.').isVisible()).toBe(true)
  await page.getByRole('button',{name:'Установить выбранные версии'}).click()
- await expect.poll(()=>page.getByText('make 1.1.0 · Установлен',{exact:true}).count()).toBeGreaterThan(0)
+ // The release row now prints the catalog name and a status pill instead of one raw text node.
+ await expect.poll(async()=>(await page.locator('.application-release-item').filter({hasText:'Make 1.1.0'}).filter({hasText:'Установлен'}).count())).toBeGreaterThan(0)
  await page.getByText('Артефакты установленной версии',{exact:true}).click()
  await expect.poll(()=>page.getByText('registry.test/make@sha256:'+'b'.repeat(64),{exact:true}).first().isVisible()).toBe(true)
  const path=process.env.VC_VISUAL_ARTIFACTS??'/tmp/voicechat-application-releases-browser';await mkdir(path,{recursive:true});await page.screenshot({path:resolve(path,'release-center-desktop.png'),fullPage:true})

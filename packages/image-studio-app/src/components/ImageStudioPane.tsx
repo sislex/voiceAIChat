@@ -6,8 +6,9 @@ export type { ImageStudioPaneProps } from '../panelContract'
 // добавляет прямые действия: загрузить свои (кнопкой или перетаскиванием),
 // сгенерировать по промпту, поправить выбранную по промпту, переименовать,
 // удалить, скачать, скопировать в буфер и рассмотреть в полный размер.
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ImageStudioFile } from '@shared/imageStudio'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { nearestByCenterY, usePointerDrag } from '@voicechat/ui-foundation/lib/dnd'
+import type { ImageStudioPublicationSettings, ImageStudioFile, ImageStudioTask } from '@shared/imageStudio'
 import { IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioPath } from '@shared/imageStudio'
 import { countRu } from '@shared/plural'
 import { Button, Dialog, EmptyState, ErrorState, IconButton, Skeleton, useConfirm, useToast } from '@voicechat/ui-kit'
@@ -39,13 +40,17 @@ import { averageColor, BIG_FILE_BYTES, colorDistance, colorHue, DOWNSCALE_SIDE, 
 import { approxColorCount, extensionMismatch, hasAlphaPixels, notesMarkdown, sniffImageType, versionTree } from '../lib/imageFacts'
 import { IMAGE_STUDIO_COMPOSER_KEY, IMAGE_STUDIO_PAGE_KEY, IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_FILTERS_KEY, IMAGE_STUDIO_FIT_KEY, IMAGE_STUDIO_GRID_BG_KEY, IMAGE_STUDIO_NEGATIVE_KEY, IMAGE_STUDIO_NEGATIVE_OPEN_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, IMAGE_STUDIO_STYLE_KEY, imageStudioDraftKey, imageStudioNegativeKey, imageStudioNotesKey, imageStudioPinnedKey, imageStudioPromptsKey, imageStudioScrollKey, imageStudioSeenKey, imageStudioSetsKey, imageStudioSizeKey, imageStudioStarsKey, imageStudioFoldedKey, imageStudioRecipesKey, imageStudioStatusKey, imageStudioTemplatesKey, imageStudioStyleKey, imageStudioViewsKey } from '@voicechat/ui-foundation/persistence'
 
+function StudioComposer({ phone, onClose, children }: { phone: boolean; onClose: () => void; children: ReactNode }): JSX.Element {
+  return phone ? <Dialog title="Рисование" padded className="image-studio-mobile-composer" onClose={onClose}>{children}</Dialog> : <div className="image-studio-composer">{children}</div>
+}
+
 /** Пресеты стиля: пустой — модель решает сама. */
 const STYLE_PRESETS = ['', 'акварель', 'флэт-иллюстрация', 'пиксель-арт', 'скетч карандашом', 'фотореализм'] as const
 
 /** Пресеты размера: пустой — модель решает сама. */
 const SIZE_PRESETS = ['', '512×512', '1024×1024', '1920×1080', '1200×630', '1080×1080', '1280×720', '1080×1350', '1500×500'] as const
 /** Сколько последних промптов помним на разговор. */
-const RECENT_LIMIT = 4
+const RECENT_LIMIT = 50
 /** Фильтр по имени появляется, когда глазами искать уже неудобно. */
 const FILTER_THRESHOLD = 7
 /** Сколько карточек рендерим сразу; дальше — «Показать ещё». */
@@ -57,7 +62,7 @@ const PREVIEW_CONCURRENCY = 6
  * виртуализация лишняя: DOM и так небольшой, а лишние измерения только
  * усложняют поведение.
  */
-const VIRTUAL_THRESHOLD = 80
+const VIRTUAL_THRESHOLD = 200
 /** Частое «чего не должно быть»: печатать это каждый раз — лишняя работа. */
 const NEGATIVE_PRESETS = ['текст и надписи', 'люди', 'водяные знаки', 'рамка и поля'] as const
 
@@ -128,7 +133,7 @@ function loadRecent(conversationId: string): string[] {
   try {
     const raw = localStorage.getItem(imageStudioPromptsKey(conversationId))
     const parsed: unknown = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string').slice(0, RECENT_LIMIT) : []
   } catch {
     return []
   }
@@ -324,6 +329,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [journal, setJournal] = useState<Array<{ id: number; at: number; text: string; undo?: () => void }>>([])
   const [journalOpen, setJournalOpen] = useState(false)
   /** Панель рисования раскрыта: свернув её, галерею разбирают на целом экране. */
+  const [mobileComposerOpen, setMobileComposerOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState<boolean>(() => {
     try { return localStorage.getItem(IMAGE_STUDIO_COMPOSER_KEY) !== '0' } catch { return true }
   })
@@ -599,7 +605,21 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       return saved === 'light' || saved === 'dark' ? saved : 'checker'
     } catch { return 'checker' }
   })
+  const publicationDrag = usePointerDrag()
+  const [publicationDraft, setPublicationDraft] = useState<ImageStudioPublicationSettings | null>(null)
+  const [publicationError, setPublicationError] = useState<string | null>(null)
+  const [publicationSaving, setPublicationSaving] = useState(false)
+  const [tasks, setTasks] = useState<ImageStudioTask[]>([])
+  const [taskError, setTaskError] = useState<string | null>(null)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [recent, setRecent] = useState<string[]>(() => loadRecent(conversationId))
+  const [recentParameters, setRecentParameters] = useState<Record<string, { style: string; size: string; negative: string; noText: boolean }>>(() => {
+    try {
+      const raw: unknown = JSON.parse(localStorage.getItem(imageStudioPromptsKey(conversationId) + '.parameters') ?? '{}')
+      return raw && typeof raw === 'object' && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter(([, value]) => value && typeof value.style === 'string' && typeof value.size === 'string' && typeof value.negative === 'string' && typeof value.noText === 'boolean')) : {}
+    } catch { return {} }
+  })
   const [pinned, setPinned] = useState<string[]>(() => {
     try {
       const parsed: unknown = JSON.parse(localStorage.getItem(imageStudioPinnedKey(conversationId)) ?? '[]')
@@ -663,7 +683,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const syncViewport = useCallback((): void => {
     const pane = paneRef.current
     if (!pane) return
-    const top = pane.scrollTop
+    const grid = gridRef.current
+    const top = grid ? Math.max(0, pane.getBoundingClientRect().top - grid.getBoundingClientRect().top) : pane.scrollTop
     const height = pane.clientHeight
     setViewport((prev) => Math.abs(prev.top - top) < 8 && prev.height === height ? prev : { top, height })
   }, [])
@@ -674,7 +695,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   }, [syncViewport])
   useEffect(() => () => { if (viewportFrame.current) cancelAnimationFrame(viewportFrame.current) }, [])
   /** Геометрия сетки: колонок и высота строки — из самой сетки, не из констант. */
-  const [metrics, setMetrics] = useState<{ columns: number; rowHeight: number }>({ columns: 1, rowHeight: 0 })
+  const [metrics, setMetrics] = useState<{ columns: number; rowHeight: number; gap: number }>({ columns: 1, rowHeight: 0, gap: 0 })
   // Сверка после перерисовки: если событие прокрутки потерялось или страница
   // выросла (доехали до «Показать ещё», сменилась геометрия), окно осталось бы
   // на прежних строках, а экран — пустым. Сверка идемпотентна: при совпадении
@@ -825,6 +846,25 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
 
   useEffect(() => { void reload() }, [reload])
   useEffect(() => {
+    if (!api['imgstudio:tasks']) return
+    let alive = true
+    let timer: ReturnType<typeof setTimeout>
+    let snapshot = ''
+    const poll = async (): Promise<void> => {
+      try {
+        const next = await api['imgstudio:tasks']!({ conversationId })
+        if (!alive) return
+        const current = JSON.stringify(next.map(task => [task.id, task.state, task.updatedAt]))
+        setTasks(next)
+        setTaskError(null)
+        if (current !== snapshot) { snapshot = current; void reload() }
+      } catch (error) { if (alive) setTaskError(error instanceof Error ? error.message : String(error)) }
+      if (alive) timer = setTimeout(() => void poll(), 1500)
+    }
+    void poll()
+    return () => { alive = false; clearTimeout(timer) }
+  }, [api, conversationId, reload])
+  useEffect(() => {
     let alive = true
     void api['imgstudio:publication']({ conversationId }).then((info) => { if (alive) { setShareUrl(info.url); setShareViews(info.views ?? null); setShareViews7(info.views7 ?? null); setShareProtected(Boolean(info.passwordProtected)) } }).catch(() => { if (alive) setShareUrl(null) })
     return () => { alive = false }
@@ -832,6 +872,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   // Перезагрузили страницу во время генерации — ран живёт на сервере; панель
   // обязана это показать, иначе результат «появится когда-нибудь молча».
   useEffect(() => {
+    if (api['imgstudio:tasks']) return
     let alive = true
     let timer: ReturnType<typeof setTimeout> | null = null
     const poll = async (): Promise<void> => {
@@ -910,7 +951,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       const card = grid.querySelector<HTMLElement>('.image-studio-card')
       const gap = Number.parseFloat(getComputedStyle(grid).rowGap || '0') || 0
       const rowHeight = card ? card.getBoundingClientRect().height + gap : 0
-      setMetrics((prev) => prev.columns === columns && Math.abs(prev.rowHeight - rowHeight) < 1 ? prev : { columns, rowHeight })
+      setMetrics((prev) => prev.columns === columns && Math.abs(prev.rowHeight - rowHeight) < 1 ? prev : { columns, rowHeight, gap })
     }
     measure()
     if (typeof ResizeObserver !== 'function') return
@@ -1497,7 +1538,17 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     for (const step of plan) moveMarks(step.from, step.to)
   }
 
+  const useRecentPrompt = (text: string): void => {
+    const parameters = recentParameters[text]
+    if (parameters) applyRecipe(parameters)
+    setPrompt(text)
+    promptRef.current?.focus()
+  }
   const rememberPrompt = (text: string): void => {
+    const keep = new Set([text, ...recent.slice(0, RECENT_LIMIT - 1), ...pinned])
+    const nextParameters = Object.fromEntries(Object.entries({ ...recentParameters, [text]: { style, size, negative, noText } }).filter(([key]) => keep.has(key)))
+    setRecentParameters(nextParameters)
+    try { localStorage.setItem(imageStudioPromptsKey(conversationId) + '.parameters', JSON.stringify(nextParameters)) } catch { /* Storage is optional. */ }
     setRecent((prev) => {
       const next = [text, ...prev.filter((item) => item !== text)].slice(0, RECENT_LIMIT)
       try { localStorage.setItem(imageStudioPromptsKey(conversationId), JSON.stringify(next)) } catch { /* приватный режим */ }
@@ -1507,7 +1558,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
 
   const togglePin = (text: string): void => {
     setPinned((prev) => {
-      const next = prev.includes(text) ? prev.filter((item) => item !== text) : [...prev, text].slice(-8)
+      const next = prev.includes(text) ? prev.filter((item) => item !== text) : [...prev, text]
       try { localStorage.setItem(imageStudioPinnedKey(conversationId), JSON.stringify(next)) } catch { /* приватный режим */ }
       return next
     })
@@ -1534,6 +1585,19 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       : nameFromPrompt(cleaned)
     const target = selected
     rememberPrompt(cleaned)
+    if (api['imgstudio:enqueue']) {
+      setBusy(true)
+      void api['imgstudio:enqueue']({ conversationId, prompt: cleaned, ...(target ? { path: target } : {}), ...(name ? { name } : {}), parameters: { ...(!target ? { style, negative, size } : {}), noText } })
+        .then(task => {
+          setTasks(previous => [...previous.filter(item => item.id !== task.id), task])
+          setPrompt('')
+          setTaskError(null)
+          try { localStorage.removeItem(imageStudioDraftKey(conversationId)) } catch { /* Storage is optional. */ }
+        })
+        .catch(error => setTaskError(error instanceof Error ? error.message : String(error)))
+        .finally(() => setBusy(false))
+      return
+    }
     // Запуск захватывает все аргументы: «Повторить» из баннера ошибки гоняет
     // ровно тот же ран, а не то, что успело поменяться в полях.
     const launch = (): Promise<boolean> => run(async () => {
@@ -1836,6 +1900,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     }).catch((error) => { toast.error(error instanceof Error ? error.message : String(error)) })
 
   const downloadAll = (list: ImageStudioFile[]): void => {
+    if (!list.length) return
+    if (api['imgstudio:archive']) {
+      void api['imgstudio:archive']({ conversationId, paths: list.map(file => file.path) }).catch(error => toast.error(error instanceof Error ? error.message : String(error)))
+      return
+    }
     void (async () => {
       try {
         // Один ZIP вместо лавины скачиваний: браузеру и пользователю так проще.
@@ -1958,7 +2027,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     .filter((file) => !shapeFilter || shapeOf(dimensions[file.path]) === null || shapeOf(dimensions[file.path]) === shapeFilter)
     // Искать по промпту так же естественно, как по имени: «где был кит» —
     // это про содержание картинки, а имя у неё часто автоматическое.
-    .filter((file) => matchesQuery(filter.trim(), [file.path, file.prompt, notes[file.path]]))
+    .filter((file) => !dateFrom || file.updatedAt >= new Date(`${dateFrom}T00:00:00`).getTime())
+    .filter((file) => !dateTo || file.updatedAt < new Date(new Date(`${dateTo}T00:00:00`).setDate(new Date(`${dateTo}T00:00:00`).getDate() + 1)).getTime())
+    .filter((file) => matchesQuery(filter.trim(), [file.path, file.prompt, notes[file.path], ...(file.tags ?? [])]))
     .sort((left, right) => {
       if (order === 'name') return left.path.localeCompare(right.path, 'ru', { numeric: true })
       if (order === 'size') return right.size - left.size
@@ -1994,7 +2065,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   // Сортировка «по цвету» без цветов бессмысленна: досчитываем их, как только
   // режим включили (партиями, чтобы не подвесить вкладку).
   if (order === 'tint') ensureTints(shown)
-  const paged = shown.slice(0, Math.max(visibleCount, pageSize))
+  const windowing = !grouped && shown.length >= VIRTUAL_THRESHOLD
+  const paged = windowing ? shown : shown.slice(0, Math.max(visibleCount, pageSize))
   /**
    * Окно видимых карточек. Включается от порога и только в обычной сетке:
    * в режиме групп строки разной длины, и одна высота строки там не работает.
@@ -2002,9 +2074,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
    * остался бы пустым.
    */
   const virtual = !grouped && paged.length >= VIRTUAL_THRESHOLD && metrics.rowHeight > 0
-    ? gridWindow(paged.length, metrics.columns, metrics.rowHeight, viewport.top, viewport.height)
+    ? gridWindow(paged.length, metrics.columns, metrics.rowHeight, viewport.top, viewport.height || metrics.rowHeight * 3)
     : null
-  const windowed = virtual ? paged.slice(virtual.from, virtual.to) : paged
+  const windowed = virtual ? paged.slice(virtual.from, virtual.to) : windowing ? paged.slice(0, PAGE_SIZE) : paged
   /** Поиск побайтовых дубликатов в галерее: читаем только файлы того же размера. */
   const findGalleryDuplicates = (): void => void (async () => {
 
@@ -2476,7 +2548,21 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                   event.preventDefault()
                   setMenu({ path: file.path, x: event.clientX, y: event.clientY })
                 }}>
-              <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={selected === file.path} onClick={() => setSelected(selected === file.path ? null : file.path)} onDoubleClick={() => setViewing(file.path)} title={selected === file.path ? 'Снять выбор (двойной клик — на весь экран)' : 'Выбрать для правки (двойной клик — на весь экран)'}>
+              <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={multi ? multi.has(file.path) : selected === file.path} onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || multi) {
+                  const anchor = lastPicked.current ?? selected
+                  const range = event.shiftKey && anchor ? rangeBetween(shown.findIndex(item => item.path === anchor), shown.findIndex(item => item.path === file.path)).map(index => shown[index]?.path).filter((path): path is string => Boolean(path)) : []
+                  setMulti(previous => {
+                    const next = new Set(previous ?? [])
+                    if (range.length) for (const path of range) next.add(path)
+                    else if (next.has(file.path)) next.delete(file.path)
+                    else next.add(file.path)
+                    return next
+                  })
+                  setSelected(null)
+                } else setSelected(selected === file.path ? null : file.path)
+                lastPicked.current = file.path
+              }} onDoubleClick={() => setViewing(file.path)} title={selected === file.path ? 'Снять выбор (двойной клик — на весь экран)' : 'Выбрать для правки (двойной клик — на весь экран)'}>
                 {previews[file.path]
                   ? <img loading="lazy" src={previews[file.path]} alt="" onLoad={(event) => {
                       const img = event.currentTarget
@@ -2954,13 +3040,13 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       {/* Панель рисования сворачивается: когда разбираешь готовую галерею, поле
           промпта с настройками занимает экран впустую. Баннеры прогресса и
           отмены остаются видимыми — они про уже запущенное. */}
-      <Button size="sm" variant="ghost" className="image-studio-composer-toggle" aria-expanded={composerOpen} title={composerOpen ? 'Скрыть панель рисования' : 'Показать панель рисования'} onClick={() => setComposerOpen((prev) => {
+      <Button size="sm" variant="ghost" className="image-studio-composer-toggle" aria-expanded={phone ? mobileComposerOpen : composerOpen} title={composerOpen ? 'Скрыть панель рисования' : 'Показать панель рисования'} onClick={() => { if (phone) { setMobileComposerOpen(true); return }; setComposerOpen((prev) => {
         try { localStorage.setItem(IMAGE_STUDIO_COMPOSER_KEY, prev ? '0' : '1') } catch { /* приватный режим */ }
         return !prev
-      })}>
+      }) }}>
         {composerOpen ? '▾ Рисование' : '▸ Рисование'}
       </Button>
-      {composerOpen && <>
+      {(phone ? mobileComposerOpen : composerOpen) && <StudioComposer phone={phone} onClose={() => setMobileComposerOpen(false)}>
       <textarea
         ref={promptRef}
         aria-label="Промпт для изображения"
@@ -2999,19 +3085,19 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       {(pinned.length > 0 || recent.length > 0) && !prompt && <div className="image-studio-recent" aria-label="Недавние промпты">
         {/* Поиск по истории появляется, когда чипов больше десятка: глазами в
             них уже не найти «того самого кота в шляпе». */}
-        {recent.length > 10 && <input
+        {recent.length + pinned.length > 10 && <input
           className="image-studio-filename"
           aria-label="Поиск по истории промптов"
           placeholder="искать в истории…"
           value={promptSearch}
           onChange={(event) => setPromptSearch(event.target.value)}
         />}
-        {pinned.map((text) => <span key={`pin-${text}`} className="image-studio-chip image-studio-chip--pinned">
-          <button type="button" className="image-studio-chip-text" title={text} onClick={() => { setPrompt(text); promptRef.current?.focus() }}>★ {text.length > 36 ? `${text.slice(0, 36)}…` : text}</button>
+        {pinned.filter((text) => matchesQuery(promptSearch.trim(), [text])).map((text) => <span key={`pin-${text}`} className="image-studio-chip image-studio-chip--pinned">
+          <button type="button" className="image-studio-chip-text" title={text} onClick={() => useRecentPrompt(text)}>★ {text.length > 36 ? `${text.slice(0, 36)}…` : text}</button>
           <button type="button" className="image-studio-chip-pin" aria-label={`Открепить промпт: ${text.slice(0, 40)}`} title="Открепить" onClick={() => togglePin(text)}>×</button>
         </span>)}
         {recent.filter((text) => !pinned.includes(text)).filter((text) => matchesQuery(promptSearch.trim(), [text])).map((text) => <span key={text} className="image-studio-chip">
-          <button type="button" className="image-studio-chip-text" title={text} onClick={() => { setPrompt(text); promptRef.current?.focus() }}>{text.length > 36 ? `${text.slice(0, 36)}…` : text}</button>
+          <button type="button" className="image-studio-chip-text" title={text} onClick={() => useRecentPrompt(text)}>{text.length > 36 ? `${text.slice(0, 36)}…` : text}</button>
           <button type="button" className="image-studio-chip-pin" aria-label={`Закрепить промпт: ${text.slice(0, 40)}`} title="Закрепить" onClick={() => togglePin(text)}>☆</button>
         </span>)}
         {recent[0] && !selected && <button type="button" className="image-studio-chip image-studio-chip--pinned" title={`Повторить: ${recent[0]}`} onClick={() => {
@@ -3119,7 +3205,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         {selected && <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>Снять выбор</Button>}
         <input ref={uploadRef} type="file" accept="image/*,.svg" multiple hidden aria-label="Файл изображения" onChange={(event) => { if (event.target.files?.length) upload(event.target.files); event.target.value = '' }} />
       </div>
-      </>}
+      </StudioComposer>}
       {progress && <p className="image-studio-progress" role="status">
         {progress.label}… {progress.seconds} с. {(() => {
           const usual = usualSeconds(files)
@@ -3178,6 +3264,18 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           void run(() => applyRenamePlan(plan.map((step) => ({ from: step.to, to: step.from }))), 'Имена возвращены')
         }}>Вернуть имена</button>
       </p>}
+      {api['imgstudio:tasks'] && <section aria-label="Очередь генерации">
+        <p role="status">Очередь: {tasks.filter(task => ['queued', 'running', 'saving'].includes(task.state)).length}</p>
+        {taskError && <ErrorState compact message={taskError} />}
+        {tasks.slice(-50).map(task => <div key={task.id}>
+          <span>{task.prompt.slice(0, 60)} · {{ queued: 'Ожидает', running: 'Модель рисует', saving: 'Сохраняется', completed: 'Готово', cancelled: 'Отменена', failed: 'Ошибка' }[task.state]}</span>
+          {['running', 'saving'].includes(task.state) && <progress aria-label="Генерация выполняется" />}
+          {task.error && <span role="alert">{task.error}</span>}
+          {['queued', 'running'].includes(task.state) && <Button size="sm" variant="ghost" onClick={() => {
+            void api['imgstudio:cancelTask']?.({ conversationId, taskId: task.id }).catch(error => setTaskError(error instanceof Error ? error.message : String(error)))
+          }}>Отменить задачу</Button>}
+        </div>)}
+      </section>}
       {lastError && !busy && <ErrorState compact message={lastError} {...(lastAttempt ? { onRetry: () => { setLastError(null); lastAttempt() } } : {})} />}
     </div>
 
@@ -3185,6 +3283,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         занимали пол-экрана. Ящик «Отбор» свёрнут по умолчанию: включённые
         условия видно чипами, а поиск, порядок и группы остаются на виду. */}
     {files.length >= 2 && <div className="image-studio-filter">
+      <div className="image-studio-actions">
+        <label>С даты <input type="date" value={dateFrom} onChange={event => setDateFrom(event.target.value)} /></label>
+        <label>По дату <input type="date" value={dateTo} onChange={event => setDateTo(event.target.value)} /></label>
+      </div>
       <ImageStudioFilters
         expanded={filtersOpen}
         onToggleExpanded={() => setFiltersOpen((prev) => {
@@ -3201,6 +3303,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         onReset={() => {
           setFilter('')
           setKindFilter('')
+          setDateFrom('')
+          setDateTo('')
           setOriginFilter('')
           setMarkFilter('')
           setActiveSet('')
@@ -3274,6 +3378,66 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         Показаны все версии «{familyOf}»{' '}
         <button type="button" className="image-studio-cancel" onClick={() => { setFamilyOf(null); setVisibleCount(PAGE_SIZE) }}>Показать всё</button>
       </p>}
+      <Button size="sm" variant="ghost" onClick={() => {
+        setPublicationError(null)
+        void api['imgstudio:publication']({ conversationId }).then(info => setPublicationDraft(info.settings ?? { items: files.map(file => ({ path: file.path, caption: file.prompt ?? '' })), watermark: null })).catch(error => toast.error(String(error)))
+      }}>Настроить публикацию</Button>
+      {multi && multi.size > 0 && <Button size="sm" variant="ghost" onClick={() => {
+        setPublicationError(null)
+        void api['imgstudio:publication']({ conversationId }).then(info => {
+          const items = info.settings?.items ?? []
+          const existing = new Set(items.map(item => item.path))
+          setPublicationDraft({ items: [...items, ...files.filter(file => multi.has(file.path) && !existing.has(file.path)).map(file => ({ path: file.path, caption: file.prompt ?? '' }))], watermark: info.settings?.watermark ?? null })
+        }).catch(error => toast.error(String(error)))
+      }}>Добавить выбранные в публикацию</Button>}
+      {publicationDraft && <Dialog title="Настройки публикации" onClose={() => setPublicationDraft(null)} actions={<>
+        <Button disabled={publicationSaving || !publicationDraft.items.length} onClick={() => {
+          setPublicationSaving(true)
+          void api['imgstudio:publish']({ conversationId, settings: publicationDraft }).then(({ url }) => {
+            setShareUrl(url)
+            setPublicationDraft(null)
+            toast.success('Публикация сохранена')
+          }).catch(error => setPublicationError(String(error))).finally(() => setPublicationSaving(false))
+        }}>Сохранить публикацию</Button>
+        {api['imgstudio:preview'] && <Button variant="ghost" disabled={publicationSaving || !publicationDraft.items.length} onClick={() => {
+          const previewWindow = window.open('about:blank', '_blank')
+          if (previewWindow) previewWindow.opener = null
+          setPublicationSaving(true)
+          void api['imgstudio:preview']!({ conversationId, settings: publicationDraft }).then(({ url }) => {
+            if (previewWindow) previewWindow.location.href = url
+            else setPublicationError('Браузер заблокировал окно предпросмотра')
+          }).catch(error => { previewWindow?.close(); setPublicationError(String(error)) }).finally(() => setPublicationSaving(false))
+        }}>Предпросмотр</Button>}
+      </>}>
+        {publicationError && <ErrorState compact message={publicationError} />}
+        <p>Перетащите за ручку, чтобы изменить порядок. Предпросмотр показывает текущий состав, подписи и серверный водяной знак.</p>
+        <ol aria-label="Состав публикации">
+          {publicationDraft.items.map((item, index) => <li key={item.path} data-publication-index={index}>
+            <Button size="sm" variant="ghost" style={{ touchAction: 'none' }} aria-label={`Переместить ${item.path}`} onPointerDown={event => {
+              const list = event.currentTarget.closest('ol')
+              publicationDrag.begin(event, { lift: event.currentTarget.closest('li'), immediate: true, onStart() {}, onMove() {}, onCancel() {}, onDrop(point) {
+                const target = nearestByCenterY(Array.from(list?.querySelectorAll<HTMLElement>('[data-publication-index]') ?? []), point.y)
+                if (!target) return
+                const to = Number(target.dataset.publicationIndex)
+                setPublicationDraft(previous => {
+                  if (!previous) return previous
+                  const items = [...previous.items]
+                  items.splice(to, 0, ...items.splice(index, 1))
+                  return { ...previous, items }
+                })
+              } })
+            }}>↕</Button>
+            <span>{item.path}</span>
+            <input aria-label={`Подпись ${item.path}`} maxLength={1000} value={item.caption} onChange={event => setPublicationDraft({ ...publicationDraft, items: publicationDraft.items.map((entry, i) => i === index ? { ...entry, caption: event.target.value } : entry) })} />
+            <Button size="sm" variant="ghost" aria-label={`Выше ${item.path}`} disabled={index === 0} onClick={() => { const items = [...publicationDraft.items]; items.splice(index - 1, 0, ...items.splice(index, 1)); setPublicationDraft({ ...publicationDraft, items }) }}>↑</Button>
+            <Button size="sm" variant="ghost" aria-label={`Исключить ${item.path}`} onClick={() => setPublicationDraft({ ...publicationDraft, items: publicationDraft.items.filter(entry => entry.path !== item.path) })}>Исключить</Button>
+          </li>)}
+        </ol>
+        <label>Водяной знак <input maxLength={120} value={publicationDraft.watermark?.text ?? ''} onChange={event => setPublicationDraft({ ...publicationDraft, watermark: event.target.value ? { text: event.target.value, position: publicationDraft.watermark?.position ?? 'bottom-right' } : null })} /></label>
+        <select aria-label="Положение водяного знака" value={publicationDraft.watermark?.position ?? 'bottom-right'} onChange={event => { if (publicationDraft.watermark) setPublicationDraft({ ...publicationDraft, watermark: { ...publicationDraft.watermark, position: event.target.value as NonNullable<ImageStudioPublicationSettings['watermark']>['position'] } }) }}>
+          <option value="top-left">Сверху слева</option><option value="top-right">Сверху справа</option><option value="bottom-left">Снизу слева</option><option value="bottom-right">Снизу справа</option>
+        </select>
+      </Dialog>}
       <ImageStudioShareBar
         url={shareUrl}
         views={shareViews}
@@ -3566,11 +3730,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                   <div className="image-studio-thumb image-studio-thumb--ghost"><Skeleton item="block" height={120} /></div>
                   <span className="image-studio-name">{progress.label}…</span>
                 </div>}
-              {virtual && virtual.padTop > 0 && <div className="image-studio-spacer" style={{ height: virtual.padTop }} aria-hidden="true" />}
+              {virtual && virtual.padTop > 0 && <div className="image-studio-spacer" style={{ height: Math.max(0, virtual.padTop - metrics.gap) }} aria-hidden="true" />}
               {windowed.map(renderCard)}
-              {virtual && virtual.padBottom > 0 && <div className="image-studio-spacer" style={{ height: virtual.padBottom }} aria-hidden="true" />}
+              {virtual && virtual.padBottom > 0 && <div className="image-studio-spacer" style={{ height: Math.max(0, virtual.padBottom - metrics.gap) }} aria-hidden="true" />}
             </div>}
-          {shown.length > visibleCount && <div ref={moreRef} className="image-studio-more">
+          {!windowing && shown.length > visibleCount && <div ref={moreRef} className="image-studio-more">
             <Button size="sm" variant="ghost" onClick={() => setVisibleCount((prev) => prev + pageSize)}>
               Показать ещё ({shown.length - visibleCount})
             </Button>
@@ -3892,9 +4056,46 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       onCompareChange={setCompare}
       onView={setViewing}
       onStep={viewStep}
-      onUsePrompt={(text) => { setPrompt(text); setViewing(null); promptRef.current?.focus() }}
+      onTagsChange={api['imgstudio:tags'] ? async (path, tags) => { const next = await api['imgstudio:tags']!({ conversationId, path, tags }); setFiles(next) } : undefined}
+      onUsePrompt={(text) => { setPrompt(text); const parameters = files?.find(file => file.path === viewing)?.parameters; applyRecipe({ style: parameters?.style ?? '', negative: parameters?.negative ?? '', size: parameters?.size ?? '', noText: parameters?.noText ?? false }); setSelected(null); if (phone) setMobileComposerOpen(true); setViewing(null); promptRef.current?.focus() }}
       onPickForEdit={(path) => { setSelected(path); setViewing(null); setCompare(false); promptRef.current?.focus() }}
       onVariate={(path) => { setViewing(null); setCompare(false); variate(files.find((file) => file.path === path) ?? { path, size: 0, updatedAt: 0 }) }}
+      onRetouch={async (path, selection, prompt) => {
+        let next: string | null = null
+        const ok = await run(async () => {
+          const result = await api['imgstudio:retouch']({ conversationId, path, selection, prompt })
+          next = result.file.path
+        }, 'Ретушь сохранена новой версией', 'Модель ретуширует выделение')
+        if (!ok || !next) throw new Error('Ретушь не выполнена')
+        setViewing(next)
+      }}
+      onExtract={async (path, selection) => {
+        let next: string | null = null
+        const ok = await run(async () => {
+          const result = await api['imgstudio:extract']({ conversationId, path, selection })
+          next = result.file.path
+        }, 'Объект извлечён в отдельный PNG')
+        if (!ok || !next) throw new Error('Объект не извлечён')
+        setViewing(next)
+      }}
+      onPlace={async (objectPath, basePath) => {
+        let next: string | null = null
+        const ok = await run(async () => {
+          const result = await api['imgstudio:place']({ conversationId, objectPath, basePath })
+          next = result.file.path
+        }, 'Объект возвращён новой версией')
+        if (!ok || !next) throw new Error('Объект не возвращён')
+        setViewing(next)
+      }}
+      onRestoreVersion={async (currentPath, targetPath) => {
+        let next: string | null = null
+        const ok = await run(async () => {
+          const result = await api['imgstudio:restoreVersion']({ conversationId, currentPath, targetPath })
+          next = result.file.path
+        }, `Восстановлена версия «${targetPath}»`)
+        if (!ok || !next) throw new Error('Версия не восстановлена')
+        setViewing(next)
+      }}
       onDownload={(path) => void download(path)}
       onCopy={(path) => copy(files.find((file) => file.path === path) ?? { path, size: 0, updatedAt: 0 })}
       {...(notes[viewing] !== undefined ? { note: notes[viewing] } : {})}
@@ -3973,7 +4174,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         const buffer = new Uint8Array(await result.arrayBuffer())
         let binary = ''
         for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
-        await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: path })
+        const nextFiles = await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: path })
+        setFiles(nextFiles)
         setViewing(name)
       }, 'Кроп сохранён новым файлом')}
       onAnnotate={(path, strokes, displaySize) => void run(async () => {
@@ -3983,7 +4185,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         const buffer = new Uint8Array(await result.arrayBuffer())
         let binary = ''
         for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
-        await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: path })
+        const nextFiles = await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: path })
+        setFiles(nextFiles)
         setViewing(name)
       }, 'Разметка сохранена новым файлом')}
       position={viewListIndex >= 0 ? { index: viewListIndex, total: viewList.length } : undefined}
@@ -3995,7 +4198,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         if (selected === path) setSelected(null)
         await run(() => api['imgstudio:delete']({ conversationId, path }), 'Удалено')
       })()}
-      onClose={() => { setViewing(null); setCompare(false); setCompareWith(null); setCompareGrid(null) }}
+      onClose={() => {
+        // Clear the route in the same action, before delayed route effects can reopen the image.
+        if (inThisStudio) navigate(`/images/${conversationId}`, { replace: true })
+        setViewing(null); setCompare(false); setCompareWith(null); setCompareGrid(null)
+      }}
     />}
   </div>
 }

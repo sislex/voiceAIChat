@@ -6,20 +6,23 @@ export const INTERNAL_IMAGE_STUDIO_CORE_PATH = '/internal/image-studio/core'
 export const INTERNAL_IMAGE_STUDIO_SERVICE_PATH = '/internal/image-studio/service'
 export const INTERNAL_IMAGE_STUDIO_GENERATE_PATH = '/internal/image-studio/generate'
 export const IMAGE_STUDIO_HEALTH_PATH = '/v1/health'
+export const IMAGE_STUDIO_MCP_PATH = '/mcp/image-studio'
 export const IMAGE_STUDIO_PROXY_PREFIXES = ['/api/image-studio', '/g'] as const
 export const IMAGE_STUDIO_CORE_METHODS = ['conversation', 'renameConversation', 'readGenerated'] as const
 export const IMAGE_STUDIO_SERVICE_METHODS = ['promptContext', 'captureImages'] as const
 /** Генерация дольше обычного RPC; одинаковый предел у прокси и канала к исполнителю. */
 export const IMAGE_STUDIO_GENERATION_TIMEOUT_MS = 10 * 60_000
 export const IMAGE_STUDIO_API_BODY_LIMIT = 20 * 1024 * 1024
-/** Четыре референса по 12 МБ в base64 + запас на JSON. */
-export const IMAGE_STUDIO_RPC_BODY_LIMIT = 4 * Math.ceil(IMAGE_STUDIO_LIMITS.maxFileBytes / 3) * 4 + 1024 * 1024
+/** Source, mask, four references in base64, plus JSON overhead. */
+export const IMAGE_STUDIO_RPC_BODY_LIMIT = 6 * Math.ceil(IMAGE_STUDIO_LIMITS.maxFileBytes / 3) * 4 + 1024 * 1024
 
 export interface ImageStudioWireFile { name: string; dataBase64: string }
 export interface ImageStudioGenerateRequest {
   userId: string
   prompt: string
   source?: ImageStudioWireFile
+  mask?: ImageStudioWireFile
+  targetSize?: { width: number; height: number }
   references?: ImageStudioWireFile[]
 }
 
@@ -31,6 +34,9 @@ export function isImageStudioGenerateRequest(value: unknown): value is ImageStud
   return typeof v.userId === 'string' && v.userId.length > 0
     && typeof v.prompt === 'string' && v.prompt.trim().length > 0 && v.prompt.length <= IMAGE_STUDIO_LIMITS.maxPromptChars
     && (v.source === undefined || file(v.source))
+    && (v.mask === undefined || file(v.mask))
+    && (v.targetSize === undefined || (Number.isInteger(v.targetSize.width) && Number.isInteger(v.targetSize.height)
+      && v.targetSize.width > 0 && v.targetSize.height > 0 && v.targetSize.width <= 16_384 && v.targetSize.height <= 16_384))
     && (v.references === undefined || (Array.isArray(v.references) && v.references.length <= 4 && v.references.every(file)))
-    && !(v.source && v.references?.length)
+    && (v.mask === undefined || (v.source !== undefined && v.targetSize !== undefined))
 }

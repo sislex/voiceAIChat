@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-09
-checked: c8fcb5e8
+updated: 2026-09-13
+checked: 5d1e1a59
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -152,8 +152,9 @@ relay. В фазе плана браузер не подключается — �
 системную строку со ссылкой `GET /api/ci/runs/:runId/browser-shots/:name`
 (`REST.ciRunBrowserShot`, роут — в `routes/browserShots.ts`, доступ решает `getCiRun`,
 имя обязано быть номером). Base64 в лог не кладётся: лента реплеится целиком
-после каждого reconnect. `RunFeed` ссылку **не линкует** — она остаётся текстом,
-кадр открывается копированием адреса; картинок в ленте по-прежнему нет. Уборка
+после каждого reconnect. `RunFeed` recognizes the exact screenshot log marker and
+loads the PNG on demand through the authenticated CI bridge. The image links to
+a full-size Blob URL, revoked when its log component unmounts. Cleanup
 идёт при старте и раз в сутки: каталоги исчезнувших ранов удаляются сразу,
 остальные — через 7 дней (снимки вердикта QA живут 30, но их по одному на ран).
 
@@ -165,6 +166,47 @@ relay. В фазе плана браузер не подключается — �
 Сброс стоит на старте, а не в конце прошлого рана, чтобы работать и после
 падения сервера; профиль Chromium остаётся в томе, поэтому входы на
 проверяемом сайте переживают сброс.
+
+### Обязательное свидетельство browser-check
+
+`model_work` один раз фиксирует настройку браузерной проверки задачи. Функции
+`ciBrowserCheckPrompt` и `ciBrowserCheckUrl` из `packages/shared/src/ci.ts`
+передают в development точный URL назначенной машины с портом и hash-маршрутом,
+в том числе при переходе от одобренного плана. Промпт требует поднять
+dev-окружение и проверить ширины 1440, 1024, 390 и 320 px. Для Chromium в
+allow-list Claude CLI добавлены `viewport` и `evaluate`, поэтому обязательные
+проверки не ждут интерактивного разрешения.
+
+Подписанный turn-токен связывает наблюдения Reader с пользователем, разговором,
+раном, текущим шагом `model_work` и точным целевым URL
+(`packages/web-reader-contracts/src/turnToken.ts`). MCP записывает только
+фактически завершившиеся browser-действия через
+`ReaderCore.logBrowserEvidence`; если ответ инструмента не содержит URL или
+viewport, сборщик запрашивает состояние доверенной browser-сессии, а не считает
+запрошенный адрес фактически открытым. Core дополнительно проверяет доступ к
+рану, автора, разговор и то, что указанный шаг ещё выполняется. В
+`browser.observed` сохраняются только вид действия, успех, совпадение с целью и
+ширина; содержимое страницы, введённые значения, сырые ошибки и секреты
+отбрасываются. Реализация проходит через
+`apps/web-reader/src/mcp/previewMcp.ts`,
+`apps/server/src/readerBridge/localCore.ts` и
+`apps/server/src/db/repos/ci.ts`.
+
+Перед успешным завершением хук оценивает durable-события только своего шага:
+нужно открыть точный URL, выполнить клавиатурное и интерактивное действие, а на
+каждой обязательной ширине — `read`, `a11y`, `styles`, `evaluate`,
+`errors`, `console`, `network` и `screenshot`. Текст модели и строки лога
+не являются доказательством; новый retry-шаг не переиспользует наблюдения
+старого. Итог сохраняется событием `browser.checked` и показывается в ленте.
+Неполный набор даёт `browser_check:blocked`, а недоступность сессии, транспорта
+или Reader — `browser_check:infrastructure_error`; шаг и ран остаются
+`failed`, конкретная причина сохраняется в outcome/progress, последующие
+команды не запускаются.
+
+Этот gate подтверждает минимальный набор выполненных инструментальных действий,
+но не отсутствие дефектов. Сценарные результаты, визуальная оценка и исправление
+находок по-прежнему требуют содержательного анализа; один HTTP 200 dev-сервера
+не считается браузерным свидетельством.
 
 ## Защита диска и очистка development-рана
 
@@ -2173,6 +2215,57 @@ $14–15, то есть замер попал в тот же порядок, ч�
 мерялось: там $0.11 на ран и пересказ готового списка шагов.
 
 ## Контракт и UI
+
+Лента рана фильтрует шаги (все, упавшие/timeout/interrupted, команды, ходы
+модели), ищет по логу без учёта регистра, переходит между совпадениями и умеет
+сворачивать/разворачивать все шаги. `CiLogLine` — транспортный chunk, а не
+физическая строка: `logRows` в `packages/ui/src/components/ci/ciFormat.ts`
+сначала склеивает chunks шага и снимает ANSI, и только затем делит текст для
+нумерации и поиска. Построчные ссылки имеют вид `#step-<id>-L<n>` и раскрывают
+свёрнутых родителей. Номер строки начинает диапазон, Shift выбирает его конец;
+копирование не включает ANSI. У каждого шага своё слежение за концом и
+ограниченная область прокрутки. Browser artifacts сохраняют authenticated loader.
+
+Ожидающий вопрос показывает длительность ожидания. «Ответить позже» сохраняет
+частичный ответ в sessionStorage по идентификаторам рана и interaction и скрывает
+форму, не отвечая серверу; повторное открытие восстанавливает черновик. Одобрение
+плана показывает prefix/suffix diff с предыдущей plan interaction. Вопросы
+приходят отдельными realtime-событиями: и `TaskRunFeed`, и `DevelopmentRunFeed`
+в `packages/ui/src/components/ci/TaskRunFeed.tsx` обязаны подписываться на
+`onInteraction`, заменять interaction с тем же id в своём cache и снимать
+подписку при unmount.
+
+Run details and snapshots include an optional project queue summary: visible
+waiting/busy task identities, project-local ordering, and server-wide occupied
+slot count and limit. Queue ordering follows the board order used by the
+scheduler. Removing a queued run uses dequeue and reports a race with start;
+confirmed bypass uses the existing parallel start, promoting the queued run.
+An active feed refreshes its queue snapshot every five seconds.
+
+The feed loads getRunReport and refreshes active usage every 15 seconds. Its
+token bar and report table use the existing stage/model aggregates and retain
+estimated/unknown-cost semantics. The console uses the shared Dialog, command
+history, read-only path completion and confirmation for destructive shell
+commands. Mobile layouts use step cards, bounded logs, sticky bottom actions
+and a full-screen console.
+
+Task command settings receive commandContext (machine, command workdir and
+environment) from the server. Slot previews expand known environment references
+for display; execution keeps shell evaluation and passes the environment as
+quoted arguments. An explicit confirmed machine check uses the existing fs.exec
+bridge, is aborted after at most 30 seconds and displays the first 50 output
+lines. Built-in steps and PROD_DIR-routed commands are identified separately and
+are not executed by this local check. The cleanup warning remains.
+
+`retry-from-step` принимает необязательный `stepId` корневого model-work или
+каталожного command-шагa. Перед отправкой лента показывает, какие шаги останутся
+в истории и какие выполнятся снова. Это продолжение того же `runId` в той же
+рабочей директории; точка возобновления строится по текущей конфигурации слотов,
+а не по сохранённой копии старого workflow (см. `retryFromFailed` в
+`apps/server/src/ci/runManager.ts`). Если command id удалён из слота или встречается
+там несколько раз, точку нельзя определить однозначно и сервер требует полный
+повтор вместо молчаливого выбора другого вхождения.
+
 
 Типы — `packages/shared/src/ci.ts`; REST-пути и WS-сообщения `ci.*` — в
 `protocol.ts` (union'ы + `*_MESSAGE_TYPES`). Роуты — `routes/ci.ts`. Мост

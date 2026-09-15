@@ -105,6 +105,8 @@ export interface LlmRequest {
    * превью которого открыто у пользователя справа.
    */
   makeMcpUrl?: string
+  /** Image Studio MCP endpoint for the current images conversation. */
+  imageStudioMcpUrl?: string
   /** Связанные с задачей живые Make-проекты; всегда только list/read. */
   makeSources?: LlmMakeSource[]
   /**

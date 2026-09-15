@@ -1,5 +1,5 @@
 import { createChunkSink } from '../ci/chunkSink.js'
-import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseTimeouts } from '@voicechat/shared'
+import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, suggestNextReleaseVersion, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseStatus, type ReleaseStepKind, type ReleaseStepStatus, type ReleaseTimeouts } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
 export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; gitUrl:string; prepareCheckout:boolean; limits?:ReleaseTimeouts }
@@ -54,7 +54,10 @@ export function releaseKnowledgeBaseCommand(target:ReleaseProjectTarget,releaseB
 export function releaseSwitchCommand(target:ProductionTarget,release:Pick<ProjectRelease,'id'|'branch'|'sha'>):string {
   const fetchedRef=`refs/voicechat/releases/${release.id}`
   const refspec=quote(`+refs/heads/${release.branch}:${fetchedRef}`)
-  return at(target,`test -z "$(git status --porcelain)" && test "$(git config --get remote.origin.url)" = ${quote(target.expectedRepository)} && git fetch origin ${refspec} && test "$(git rev-parse ${quote(fetchedRef)})" = ${quote(release.sha)} && git cat-file -e ${quote(`${release.sha}^{commit}`)} && git checkout -B ${quote(release.branch)} ${quote(release.sha)} && git reset --hard ${quote(release.sha)} && git update-ref -d ${quote(fetchedRef)}`)
+  // Every precondition names itself: a bare `test -z … && …` chain failed with
+  // an empty log, and a stray file in the production checkout looked like a
+  // network problem.
+  return at(target,`if [ -n "$(git status --porcelain)" ]; then echo 'Production checkout содержит незакоммиченные изменения — переключение остановлено:'; git status --porcelain; exit 1; fi && if [ "$(git config --get remote.origin.url)" != ${quote(target.expectedRepository)} ]; then echo 'Production checkout смотрит на другой remote.origin.url:'; git config --get remote.origin.url; exit 1; fi && git fetch origin ${refspec} && if [ "$(git rev-parse ${quote(fetchedRef)})" != ${quote(release.sha)} ]; then echo ${quote(`SHA ветки ${release.branch} в origin изменился после подготовки: ожидался ${release.sha}`)}; git rev-parse ${quote(fetchedRef)}; exit 1; fi && git cat-file -e ${quote(`${release.sha}^{commit}`)} && git checkout -B ${quote(release.branch)} ${quote(release.sha)} && git reset --hard ${quote(release.sha)} && git update-ref -d ${quote(fetchedRef)}`)
 }
 
 /**
@@ -70,8 +73,14 @@ export function releaseDeployCommand(target:ProductionTarget,version:string,expe
   return at(target,`export VC_RELEASE_VERSION=${quote(version)} VC_RELEASE_VERSION_SOURCE='release-manager' && echo ${quote(expectedMetadata)} && ${refreshLauncher}${target.deployCommand}`)
 }
 
-/** Свободное место на диске production в КиБ (roadmap-3 п.1): без запаса docker падает на распаковке слоёв с «no space left on device». */
-export const RELEASE_MIN_FREE_KB = 5 * 1024 * 1024
+/**
+ * Свободное место на диске production в КиБ (roadmap-3 п.1): без запаса docker падает на распаковке слоёв с «no space left on device».
+ * 5 ГБ не хватило: деплой 0.1.301 (2026-09-12) упал на распаковке слоя browser-runner при 5,7 ГБ свободных —
+ * сборка всех образов сразу пишет несколько гигабайт слоёв и кэша.
+ */
+export const RELEASE_MIN_FREE_KB = 10 * 1024 * 1024
+/** Как часто живой лог health-check переписывается последним ответом production. */
+export const HEALTH_LOG_INTERVAL_MS = 30_000
 export function diskFreeCommand(target:ProductionTarget):string { return at(target,"df -Pk / | awk 'NR==2{print $4}'") }
 export function dockerPruneCommand(target:ProductionTarget):string {
   return at(target,"docker builder prune -af --filter until=24h >/dev/null 2>&1; docker image prune -f >/dev/null 2>&1; df -Pk / | awk 'NR==2{print $4}'")
@@ -121,22 +130,48 @@ export const releaseRegressionInstallCommand=(target:ReleaseProjectTarget,releas
 export const releaseRegressionCleanupCommand=(target:ReleaseProjectTarget,releaseId:string):string=>
   at(target,`git worktree remove --force ${quote(regressionWorktreePath(target,releaseId))}`)
 
+/** `git ls-remote` against origin costs a network round-trip on the CI machine; the list is read on every refresh. */
+export const BRANCH_LIST_TTL_MS = 10_000
 export class ReleaseManager {
   private readonly preparing=new Set<string>()
   private readonly deploying=new Set<string>()
-  constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime){}
+  private readonly branchCache=new Map<string,{at:number;branches:ReleaseBranch[]}>()
+  constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime,private readonly options:{healthLogIntervalMs?:number;branchListTtlMs?:number;onChange?:(update:{projectId:string;releaseId:string;status:ReleaseStatus})=>void}={}){}
+
+  /** Every persisted change also goes to the live feed, so the Release Center stops polling. */
+  private async setStep(projectId:string,releaseId:string,kind:ReleaseStepKind,status:ReleaseStepStatus,log:string,actor:string):Promise<void> {
+    await this.db.releases.setProjectReleaseStep(releaseId,kind,status,log,actor)
+    this.notify(projectId,releaseId)
+  }
+  private async setStatus(projectId:string,releaseId:string,status:ReleaseStatus,actor:string):Promise<void> {
+    await this.db.releases.setProjectReleaseStatus(releaseId,status,actor)
+    this.notify(projectId,releaseId,status)
+  }
+  private notify(projectId:string,releaseId:string,status?:ReleaseStatus):void {
+    if(!this.options.onChange)return
+    const emit=(value:ReleaseStatus):void=>{try{this.options.onChange?.({projectId,releaseId,status:value})}catch{/* подписчик не должен ронять релиз */}}
+    if(status){emit(status);return}
+    void this.db.releases.getProjectReleaseStatus(releaseId).then(value=>{if(value)emit(value)}).catch(()=>undefined)
+  }
 
   isOnline(agentId:string):boolean{return this.runtime.isOnline?.(agentId)!==false}
   runPreflight(target:ReleaseProjectTarget,command:string):Promise<ReleaseCommandResult>{return this.runtime.exec(target,command,30_000)}
 
-  async listBranches(target:ReleaseProjectTarget):Promise<ReleaseBranch[]> {
+  async listBranches(target:ReleaseProjectTarget,options:{fresh?:boolean}={}):Promise<ReleaseBranch[]> {
+    const key=`${target.agentId}:${target.gitUrl}`
+    const cached=this.branchCache.get(key)
+    if(!options.fresh&&cached&&Date.now()-cached.at<(this.options.branchListTtlMs??BRANCH_LIST_TTL_MS))return cached.branches.map(item=>({...item}))
     const result=await this.runtime.exec(target,`git ls-remote --heads ${quote(target.gitUrl)} ${quote('refs/heads/release/*')}`,120_000)
     if(result.exitCode!==0)throw new Error(result.output||'Не удалось получить release-ветки из origin')
-    return result.output.split(/\r?\n/).map(line=>line.trim().split(/\s+/)).filter(parts=>parts.length===2).flatMap(([sha,ref])=>{
+    const branches=result.output.split(/\r?\n/).map(line=>line.trim().split(/\s+/)).filter(parts=>parts.length===2).flatMap(([sha,ref])=>{
       const branch=ref!.replace(/^refs\/heads\//,'')
       try{return [{branch,version:assertReleaseBranch(branch),sha:sha!}]}catch{return []}
     }).sort((a,b)=>b.version.localeCompare(a.version,undefined,{numeric:true}))
+    this.branchCache.set(key,{at:Date.now(),branches})
+    return branches.map(item=>({...item}))
   }
+  /** Writes to origin (create, delete, KB commit) make the cached list stale at once. */
+  private forgetBranches(target:ReleaseProjectTarget):void{this.branchCache.delete(`${target.agentId}:${target.gitUrl}`)}
 
   async deleteBranch(userId:string,target:ReleaseProjectTarget,releaseId:string,branch:string):Promise<void> {
     assertReleaseBranch(branch)
@@ -145,6 +180,7 @@ export class ReleaseManager {
     if(!release||release.branch!==branch||release.previousReleaseId)throw new Error('Release не найден')
     if(!['ready','failed'].includes(release.status))throw new Error('Активный релиз удалить нельзя')
     const deleted=await this.runtime.exec(target,git(target,`push origin --delete ${quote(branch)}`),120_000)
+    this.forgetBranches(target)
     if(deleted.exitCode!==0||deleted.timedOut)throw new Error(deleted.output||'Не удалось удалить release-ветку из origin')
     await this.db.releases.softDeleteProjectRelease(userId,target.projectId,releaseId)
   }
@@ -153,7 +189,8 @@ export class ReleaseManager {
     const version=assertReleaseBranch(branch)
     if(this.preparing.has(target.projectId))throw new Error('Подготовка release-ветки уже выполняется')
     if(baseBranch!==target.baseBranch&&!assertReleaseBranch(baseBranch))throw new Error('Недопустимая базовая ветка')
-    if((await this.listBranches(target)).some(item=>item.branch===branch))throw new Error('Release-ветка уже существует')
+    const existing=await this.listBranches(target,{fresh:true})
+    if(existing.some(item=>item.branch===branch))throw new Error(`Release-ветка ${branch} уже существует; следующая свободная версия — ${suggestNextReleaseVersion(existing.map(item=>item.branch))}`)
     const release=await this.db.releases.createProjectRelease(userId,target.projectId,{branch,version,sha:'',status:'preparing',agentId:target.agentId,checkoutPath:target.path,limits:target.limits??DEFAULT_RELEASE_TIMEOUTS})
     this.preparing.add(target.projectId)
     void this.prepare(userId,target,release,baseBranch).finally(()=>this.preparing.delete(target.projectId))
@@ -172,13 +209,13 @@ export class ReleaseManager {
     const prepared=preparedSummary?await this.db.releases.getProjectRelease(userId,ciTarget.projectId,preparedSummary.id):null
     if(!prepared)throw new Error('Release-ветка не прошла подготовку')
     if(prepared.version!==branchVersion)throw new Error(`Версия подготовки ${prepared.version} не соответствует ветке ${branch} (${branchVersion})`)
-    const remote=(await this.listBranches(ciTarget)).find(item=>item.branch===branch)
+    const remote=(await this.listBranches(ciTarget,{fresh:true})).find(item=>item.branch===branch)
     if(!remote)throw new Error('Выбранная release-ветка отсутствует в origin')
     if(remote.sha!==prepared.sha)throw new Error('SHA release-ветки изменился после подготовки')
     const attempt=await this.db.releases.createProjectRelease(userId,ciTarget.projectId,{branch,version:prepared.version,sha:prepared.sha,previousReleaseId:prepared.id,status:'queued',agentId:production.agentId,checkoutPath:production.path,limits:production.limits??DEFAULT_RELEASE_TIMEOUTS})
-    await this.db.releases.setProjectReleaseStep(attempt.id,'checkout','skipped','Checkout подготовлен при создании release-ветки',userId)
-    await this.db.releases.setProjectReleaseStep(attempt.id,'regression','skipped','Проверка пройдена при подготовке ветки',userId)
-    await this.db.releases.setProjectReleaseStep(attempt.id,'knowledge_base','skipped','Проверка пройдена при подготовке ветки',userId)
+    await this.setStep(ciTarget.projectId,attempt.id,'checkout','skipped','Checkout подготовлен при создании release-ветки',userId)
+    await this.setStep(ciTarget.projectId,attempt.id,'regression','skipped','Проверка пройдена при подготовке ветки',userId)
+    await this.setStep(ciTarget.projectId,attempt.id,'knowledge_base','skipped','Проверка пройдена при подготовке ветки',userId)
     this.deploying.add(ciTarget.projectId)
     void this.deploy(userId,production,attempt).finally(()=>this.deploying.delete(ciTarget.projectId))
     return attempt
@@ -187,23 +224,25 @@ export class ReleaseManager {
   private async prepare(actor:string,target:ReleaseProjectTarget,release:ProjectRelease,baseBranch:string):Promise<void> {
     try{
       if(target.prepareCheckout){
-        await this.db.releases.setProjectReleaseStep(release.id,'checkout','running','',actor)
+        await this.setStep(target.projectId,release.id,'checkout','running','',actor)
         const checkout=await this.ensureCheckout(target)
         if(checkout.timedOut)throw new Error(`Подготовка checkout превысила лимит ${Math.round((target.limits?.checkoutMs??DEFAULT_RELEASE_TIMEOUTS.checkoutMs)/1000)} с\n${checkout.output}`)
         if(checkout.exitCode!==0)throw new Error(checkout.output||'Не удалось подготовить release checkout')
-        await this.db.releases.setProjectReleaseStep(release.id,'checkout','passed',checkout.output,actor)
-      }else await this.db.releases.setProjectReleaseStep(release.id,'checkout','skipped','Используется существующий checkout',actor)
+        await this.setStep(target.projectId,release.id,'checkout','passed',checkout.output,actor)
+      }else await this.setStep(target.projectId,release.id,'checkout','skipped','Используется существующий checkout',actor)
       const created=await this.runtime.exec(target,git(target,`fetch origin ${quote(baseBranch)} && git branch ${quote(release.branch)} FETCH_HEAD && git push origin ${quote(release.branch)}:refs/heads/${quote(release.branch)} && git rev-parse ${quote(release.branch)}`),120_000)
+      this.forgetBranches(target)
       if(created.exitCode!==0)throw new Error(created.output||'Не удалось создать release-ветку')
       await this.db.releases.setProjectReleaseSha(release.id,created.output.trim().split(/\r?\n/).at(-1)!)
-      await this.db.releases.setProjectReleaseStatus(release.id,'checking',actor)
-      await this.db.releases.setProjectReleaseStep(release.id,'knowledge_base','running','',actor)
+      await this.setStatus(target.projectId,release.id,'checking',actor)
+      await this.setStep(target.projectId,release.id,'knowledge_base','running','',actor)
       await this.runtime.prepareKnowledgeBase(release.branch,target)
-      const found=(await this.listBranches(target)).find(item=>item.branch===release.branch)
+      this.forgetBranches(target)
+      const found=(await this.listBranches(target,{fresh:true})).find(item=>item.branch===release.branch)
       if(!found)throw new Error('Release-ветка отсутствует в origin после проверки БЗ')
       await this.db.releases.setProjectReleaseSha(release.id,found.sha)
-      await this.db.releases.setProjectReleaseStep(release.id,'knowledge_base','passed','Индекс БЗ проверен и зафиксирован',actor)
-      await this.db.releases.setProjectReleaseStep(release.id,'regression','running','',actor)
+      await this.setStep(target.projectId,release.id,'knowledge_base','passed','Индекс БЗ проверен и зафиксирован',actor)
+      await this.setStep(target.projectId,release.id,'regression','running','',actor)
       const logs:string[]=[]
       const commands=releaseTestCommands(target.testCommand)
       const setup=await this.runtime.exec(target,releaseRegressionSetupCommand(target,release.id,found.sha),30_000)
@@ -215,7 +254,7 @@ export class ReleaseManager {
           // Живой лог шага переписывается целиком, поэтому не чаще раза в секунду и не больше одной записи в
           // полёте: на каждый чанк это давало тысячи копий лога в памяти (потолок кучи ядра на проде 2026-09-08).
           const live=createChunkSink(async()=>{
-            await this.db.releases.setProjectReleaseStep(release.id,'regression','running',[...logs,`$ ${command}\n${stageOutput}`].join('\n\n'),actor)
+            await this.setStep(target.projectId,release.id,'regression','running',[...logs,`$ ${command}\n${stageOutput}`].join('\n\n'),actor)
           },{intervalMs:1_000,maxBytes:Number.MAX_SAFE_INTEGER})
           const regression=await this.runtime.exec(target,releaseRegressionStageCommand(target,release.id,command),limit,async (chunk)=>{
             stageOutput+=chunk
@@ -235,15 +274,15 @@ export class ReleaseManager {
       }finally{
         await this.runtime.exec(target,releaseRegressionCleanupCommand(target,release.id),30_000)
       }
-      await this.db.releases.setProjectReleaseStep(release.id,'regression','passed',logs.join('\n\n'),actor)
-      for(const kind of ['switching','building','health_check'] as const)await this.db.releases.setProjectReleaseStep(release.id,kind,'skipped','Выполняется только при deploy',actor)
-      await this.db.releases.setProjectReleaseStatus(release.id,'ready',actor)
+      await this.setStep(target.projectId,release.id,'regression','passed',logs.join('\n\n'),actor)
+      for(const kind of ['switching','building','health_check'] as const)await this.setStep(target.projectId,release.id,kind,'skipped','Выполняется только при deploy',actor)
+      await this.setStatus(target.projectId,release.id,'ready',actor)
     }catch(error){
       const log=error instanceof Error?error.message:String(error)
       const current=await this.db.releases.getProjectRelease(actor,target.projectId,release.id)
       const kind=current?.steps.find(step=>step.status==='running')?.kind??'checkout'
-      await this.db.releases.setProjectReleaseStep(release.id,kind,'failed',log,actor)
-      await this.db.releases.setProjectReleaseStatus(release.id,'failed',actor)
+      await this.setStep(target.projectId,release.id,kind,'failed',log,actor)
+      await this.setStatus(target.projectId,release.id,'failed',actor)
     }
   }
 
@@ -252,26 +291,26 @@ export class ReleaseManager {
     // некому, а статус `checking` иначе висел бы вечно и релиз нельзя было бы ни удалить, ни повторить.
     for(const release of await this.db.releases.listInterruptedPreparations()){
       const kind=release.steps.find(step=>step.status==='running')?.kind??'checkout'
-      await this.db.releases.setProjectReleaseStep(release.id,kind,'failed','Подготовка прервана перезапуском сервера — повторите релиз',release.triggeredBy)
-      await this.db.releases.setProjectReleaseStatus(release.id,'failed',release.triggeredBy)
+      await this.setStep(release.projectId,release.id,kind,'failed','Подготовка прервана перезапуском сервера — повторите релиз',release.triggeredBy)
+      await this.setStatus(release.projectId,release.id,'failed',release.triggeredBy)
     }
     for(const release of await this.db.releases.listActiveProjectReleases()){
       const actor=release.triggeredBy
       const target=await resolveTarget(release)
       if(!target){
         const kind=release.steps.find(step=>step.status==='running')?.kind
-        if(kind)await this.db.releases.setProjectReleaseStep(release.id,kind,'failed','Production-конфигурация недоступна после рестарта',actor)
-        await this.db.releases.setProjectReleaseStatus(release.id,'failed',actor)
+        if(kind)await this.setStep(release.projectId,release.id,kind,'failed','Production-конфигурация недоступна после рестарта',actor)
+        await this.setStatus(release.projectId,release.id,'failed',actor)
         continue
       }
       if(release.status==='switching'){
-        await this.db.releases.setProjectReleaseStep(release.id,'switching','failed','Перезапуск во время переключения checkout',actor)
-        await this.db.releases.setProjectReleaseStatus(release.id,'failed',actor)
+        await this.setStep(release.projectId,release.id,'switching','failed','Перезапуск во время переключения checkout',actor)
+        await this.setStatus(release.projectId,release.id,'failed',actor)
         continue
       }
-      if(release.status==='building')await this.db.releases.setProjectReleaseStep(release.id,'building','passed','Production deploy продолжен после рестарта',actor)
-      await this.db.releases.setProjectReleaseStatus(release.id,'health_check',actor)
-      await this.db.releases.setProjectReleaseStep(release.id,'health_check','running',`Ожидание production после рестарта: version=${release.version}, commit=${release.sha}`,actor)
+      if(release.status==='building')await this.setStep(release.projectId,release.id,'building','passed','Production deploy продолжен после рестарта',actor)
+      await this.setStatus(release.projectId,release.id,'health_check',actor)
+      await this.setStep(release.projectId,release.id,'health_check','running',`Ожидание production после рестарта: version=${release.version}, commit=${release.sha}`,actor)
       this.deploying.add(release.projectId)
       void this.monitorHealth(actor,target,release).finally(()=>this.deploying.delete(release.projectId))
     }
@@ -279,29 +318,39 @@ export class ReleaseManager {
 
   private async monitorHealth(actor:string,target:ProductionTarget,release:ProjectRelease):Promise<void> {
     let last='Production ещё не ответил'
-    const limit=(await this.db.releases.getProjectRelease(actor,target.projectId,release.id))?.steps.find(step=>step.kind==='health_check')?.limitMs??DEFAULT_RELEASE_TIMEOUTS.healthCheckMs
+    const current=await this.db.releases.getProjectRelease(actor,target.projectId,release.id)
+    const limit=current?.steps.find(step=>step.kind==='health_check')?.limitMs??DEFAULT_RELEASE_TIMEOUTS.healthCheckMs
+    const header=current?.steps.find(step=>step.kind==='health_check')?.log||`Ожидание production: version=${release.version}, commit=${release.sha}`
     const started=Date.now()
+    // The step log is rewritten with the latest probe answer every half minute:
+    // a 20-minute wait used to show nothing until the final verdict.
+    const logEvery=this.options.healthLogIntervalMs??HEALTH_LOG_INTERVAL_MS
+    let logged=started
     for(let attempt=0;Date.now()-started<limit;attempt+=1){
       try{
         const result=await this.runtime.exec(target,at(target,target.healthCheckCommand),15_000)
         const metadata=result.exitCode===0&&!result.timedOut?healthMetadata(result.output):null
         if(metadata&&sameCommit(metadata.commit,release.sha)&&metadata.version===release.version){
-          await this.db.releases.setProjectReleaseStep(release.id,'health_check','passed',result.output,actor)
-          await this.db.releases.setProjectReleaseStatus(release.id,'released',actor)
+          await this.setStep(target.projectId,release.id,'health_check','passed',result.output,actor)
+          await this.setStatus(target.projectId,release.id,'released',actor)
           return
         }
         last=metadata?`Production отвечает SHA ${metadata.commit}, version=${metadata.version??'не указана'}; ожидаются ${release.sha}, version=${release.version}`:(result.output||'Health-check не вернул метаданные релиза')
       }catch(error){last=error instanceof Error?error.message:String(error)}
+      if(Date.now()-logged>=logEvery){
+        logged=Date.now()
+        await this.setStep(target.projectId,release.id,'health_check','running',`${header}\nПрошло ${Math.round((Date.now()-started)/1000)} с из ${Math.round(limit/1000)} с. ${last}`,actor).catch(()=>undefined)
+      }
       if(Date.now()-started<limit)await sleep(Math.min(2_000,Math.max(0,limit-(Date.now()-started))))
     }
-    await this.db.releases.setProjectReleaseStep(release.id,'health_check','failed',`Health-check: фактическая длительность ${Math.round((Date.now()-started)/1000)} с, лимит ${Math.round(limit/1000)} с. ${last}`,actor)
-    await this.db.releases.setProjectReleaseStatus(release.id,'failed',actor)
+    await this.setStep(target.projectId,release.id,'health_check','failed',`Health-check: фактическая длительность ${Math.round((Date.now()-started)/1000)} с, лимит ${Math.round(limit/1000)} с. ${last}\nСборка контейнеров идёт в фоне после шага «Сборка»: причину смотрите в /var/log/voicechat-deploy.log на production-машине (ошибка docker build не возвращается сюда).`,actor)
+    await this.setStatus(target.projectId,release.id,'failed',actor)
   }
 
   private async deploy(actor:string,target:ProductionTarget,release:ProjectRelease):Promise<void> {
     try{
-      await this.db.releases.setProjectReleaseStatus(release.id,'switching',actor)
-      await this.db.releases.setProjectReleaseStep(release.id,'switching','running','',actor)
+      await this.setStatus(target.projectId,release.id,'switching',actor)
+      await this.setStep(target.projectId,release.id,'switching','running','',actor)
       if(target.mode==='managed'){
         if(!target.managedRoot||!target.managedManifest||!target.managedManifestPath||!target.managedDirectories)throw new Error('Managed production identity отсутствует')
         const manifestJson=JSON.stringify(target.managedManifest,null,2)+'\\n', temp=`${target.managedManifestPath}.tmp-${release.id}`
@@ -313,10 +362,10 @@ export class ReleaseManager {
       const switched=await this.runtime.exec(target,switchCommand,switchLimit)
       if(switched.timedOut)throw new Error(`Переключение checkout: фактическая длительность превысила лимит ${Math.round(switchLimit/1000)} с\n${switched.output}`)
       if(switched.exitCode!==0)throw new Error(switched.output||'Не удалось синхронизировать production checkout')
-      await this.db.releases.setProjectReleaseStep(release.id,'switching','passed',switched.output,actor)
+      await this.setStep(target.projectId,release.id,'switching','passed',switched.output,actor)
 
-      await this.db.releases.setProjectReleaseStatus(release.id,'building',actor)
-      await this.db.releases.setProjectReleaseStep(release.id,'building','running','',actor)
+      await this.setStatus(target.projectId,release.id,'building',actor)
+      await this.setStep(target.projectId,release.id,'building','running','',actor)
       const buildLimit=(await this.db.releases.getProjectRelease(actor,target.projectId,release.id))?.steps.find(step=>step.kind==='building')?.limitMs??300_000
       const expectedMetadata=`Ожидаемые production metadata: version=${release.version} commit=${release.sha} source=release-manager`
       // Место на диске (roadmap-3 п.1): мало — чистим docker-кэш; всё ещё мало — падаем здесь явно, а не через 20 минут на health-check.
@@ -327,21 +376,21 @@ export class ReleaseManager {
         diskNote=`Свободно было ${gb(free)} ГБ (< ${gb(RELEASE_MIN_FREE_KB)} ГБ) — очищен docker build cache и висячие образы, свободно ${after===null?'?':gb(after)} ГБ`
         if(after!==null&&after<RELEASE_MIN_FREE_KB)throw new Error(`Сборка и обновление контейнеров: на диске production свободно ${gb(after)} ГБ, нужно не меньше ${gb(RELEASE_MIN_FREE_KB)} ГБ. Освободите место (docker system df, старые образы/тома) и повторите деплой.`)
       }else if(free!==null){ diskNote=`Свободно на диске: ${gb(free)} ГБ` }
-      await this.db.releases.setProjectReleaseStep(release.id,'building','running',[expectedMetadata,diskNote].filter(Boolean).join('\n'),actor)
+      await this.setStep(target.projectId,release.id,'building','running',[expectedMetadata,diskNote].filter(Boolean).join('\n'),actor)
       const built=await this.runtime.exec(target,releaseDeployCommand(target,release.version,expectedMetadata),buildLimit)
       if(built.timedOut)throw new Error(`Сборка и обновление контейнеров: фактическая длительность превысила лимит ${Math.round(buildLimit/1000)} с\n${built.output}`)
       if(built.exitCode!==0)throw new Error(built.output||'Production build завершился с ошибкой')
-      await this.db.releases.setProjectReleaseStep(release.id,'building','passed',built.output,actor)
+      await this.setStep(target.projectId,release.id,'building','passed',built.output,actor)
 
-      await this.db.releases.setProjectReleaseStatus(release.id,'health_check',actor)
-      await this.db.releases.setProjectReleaseStep(release.id,'health_check','running',`Ожидание production: version=${release.version}, commit=${release.sha}`,actor)
+      await this.setStatus(target.projectId,release.id,'health_check',actor)
+      await this.setStep(target.projectId,release.id,'health_check','running',`Ожидание production: version=${release.version}, commit=${release.sha}`,actor)
       await this.monitorHealth(actor,target,release)
     }catch(error){
       const log=error instanceof Error?error.message:String(error)
       const current=await this.db.releases.getProjectRelease(actor,target.projectId,release.id)
       const kind=current?.steps.find(step=>step.status==='running')?.kind
-      if(kind)await this.db.releases.setProjectReleaseStep(release.id,kind,'failed',log,actor)
-      await this.db.releases.setProjectReleaseStatus(release.id,'failed',actor)
+      if(kind)await this.setStep(target.projectId,release.id,kind,'failed',log,actor)
+      await this.setStatus(target.projectId,release.id,'failed',actor)
     }
   }
 }

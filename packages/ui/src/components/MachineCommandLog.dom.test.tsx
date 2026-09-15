@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MachineCommandLog, commandsToCsv } from './MachineCommandLog'
+import { saveTextFile } from '../lib/saveFile'
+vi.mock('../lib/saveFile', () => ({ saveTextFile: vi.fn() }))
 import type { MachineCommandRecord } from '@shared/agentProtocol'
 
 const rows: MachineCommandRecord[] = [
@@ -9,6 +11,24 @@ const rows: MachineCommandRecord[] = [
 ]
 
 describe('MachineCommandLog', () => {
+  // @testCase T7
+  it('exports exactly the visible command search and result filter in display order', async () => {
+    const load = vi.fn(async () => [...rows, { ...rows[1], id: 3, command: 'npm build', durationMs: 30000 }])
+    render(<MachineCommandLog machineId="m1" machineName="Mac" load={load} />)
+    await screen.findByText('npm test')
+    fireEvent.change(screen.getByLabelText('Поиск по команде'), { target: { value: 'npm' } })
+    fireEvent.change(screen.getByLabelText('Результат команды'), { target: { value: 'error' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Экспорт TXT' }))
+    const call = vi.mocked(saveTextFile).mock.calls[0]
+    expect(call[0]).toBe('commands-Mac.txt')
+    expect(call[1]).toContain('npm test')
+    expect(call[1]).not.toContain('uptime')
+    expect(call[1]).not.toContain('npm build')
+    fireEvent.change(screen.getByLabelText('Результат команды'), { target: { value: 'long' } })
+    expect(screen.getByTestId('command-row-3')).toBeInTheDocument()
+    expect(screen.queryByTestId('command-row-2')).toBeNull()
+  })
+
   it('показывает записи, фильтрует по источнику и ведёт в чат', async () => {
     const load = vi.fn(async (f: { source?: string }) => (f.source ? rows.filter((r) => r.source === f.source) : rows))
     const onOpenConversation = vi.fn()

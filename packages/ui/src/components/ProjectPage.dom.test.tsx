@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
@@ -115,6 +115,7 @@ describe('ProjectPage — крайние случаи раздела', () => {
 
 
 describe('ReleaseCenter — список, деплой и лента', () => {
+  beforeEach(() => window.localStorage.removeItem('vc.releases.tab'))
   const prepared: ProjectRelease = {
     id: 'prepare-1', projectId: 'p1', version: '1.2.3', branch: 'release/1.2.3', sha: 'a'.repeat(40), status: 'ready', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: 1_700_000_000_000, releasedAt: null,
     steps: [
@@ -214,7 +215,7 @@ describe('ReleaseCenter — список, деплой и лента', () => {
     value['releases:createBranch'] = vi.fn(async ({ projectId, branch }) => ({ ...prepared, projectId, branch, version: branch.slice('release/'.length) }))
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
     expect(await screen.findByRole('combobox', { name: 'Машина сборки релиза' })).toHaveValue('last')
-    await userEvent.type(screen.getByPlaceholderText('1.2.3'), '2.0.0')
+    await userEvent.type(screen.getByLabelText('Новая версия'), '2.0.0')
     await userEvent.click(screen.getByRole('button', { name: 'Собрать новый релиз' }))
     expect(value['releases:createBranch']).toHaveBeenCalledWith({ projectId:'p1',branch:'release/2.0.0',baseBranch:'main',agentId:'last' })
   })
@@ -232,7 +233,7 @@ describe('ReleaseCenter — список, деплой и лента', () => {
   it.each<[ReleaseMachine[]]>([[[]],[ [{agentId:'offline',name:'Offline',ownership:'mine',access:'owner',online:false,path:'/app',reposRoot:'',eligible:false,unavailableReason:'Машина offline'}] ]])('блокирует сборку без пригодных машин', async (machines) => {
     const value=api();value['releases:machines']=vi.fn(async()=>({machines,lastAgentId:null}));value['releases:createBranch']=vi.fn(value['releases:createBranch'])
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value}/>)
-    await userEvent.type(screen.getByPlaceholderText('1.2.3'),'2.0.0')
+    await userEvent.type(screen.getByLabelText('Новая версия'),'2.0.0')
     expect(await screen.findByRole('button',{name:'Собрать новый релиз'})).toBeDisabled()
     expect(value['releases:createBranch']).not.toHaveBeenCalled()
   })

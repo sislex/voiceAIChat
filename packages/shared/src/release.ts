@@ -100,6 +100,10 @@ export interface ProjectReleaseSummary {
   previousReleaseId: string | null
   createdAt: number
   durationMs: number | null
+  /** Deploy attempt number of the branch; preparations are attempt 1. */
+  attempt?: number
+  /** Short cause of a failed step, so the list explains a red row without opening it. */
+  failure?: string | null
 }
 
 export interface ProjectRelease {
@@ -136,6 +140,55 @@ export function compareReleaseBranches(left: string, right: string): number | nu
     if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index]
   }
   return 0
+}
+/**
+ * Next patch version after the highest existing `release/x.y.z` branch. The
+ * Release Center offers it as a one-click default: typing the version by hand
+ * was the most frequent source of "branch already exists" errors.
+ */
+export function suggestNextReleaseVersion(branches: readonly string[], fallback = '0.1.0'): string {
+  let best: string | null = null
+  for (const branch of branches) {
+    if (!releaseVersion(branch)) continue
+    if (best === null || (compareReleaseBranches(branch, best) ?? 0) > 0) best = branch
+  }
+  if (best === null) return fallback
+  const [major, minor, patch] = releaseVersion(best)!.split('.').map(Number) as [number, number, number]
+  return `${major}.${minor}.${patch + 1}`
+}
+/** What the Release Center needs to know about production before offering «Задеплоить». */
+export interface ProductionReadiness {
+  ready: boolean
+  mode: 'legacy' | 'managed'
+  /** Human-readable names of the missing settings, in the order of the settings form. */
+  missing: string[]
+}
+/**
+ * Mirrors `releaseProductionTarget` on the server: the deploy button used to
+ * answer with a 400 after the click, now the tab explains what to configure.
+ */
+export function productionReadiness(detail: {
+  productionAgentId?: string | null
+  productionEnvironmentMode?: 'legacy' | 'managed'
+  productionDeployCommand?: string
+  productionHealthCheckCommand?: string
+  productionCheckoutPath?: string
+  gitUrl?: string | null
+  machines?: ReadonlyArray<{ agentId: string }>
+}): ProductionReadiness {
+  const mode = detail.productionEnvironmentMode === 'managed' ? 'managed' : 'legacy'
+  const missing: string[] = []
+  if (!detail.gitUrl) missing.push('gitUrl проекта')
+  if (!detail.productionAgentId) missing.push('production-машина')
+  else if (detail.machines && !detail.machines.some((machine) => machine.agentId === detail.productionAgentId)) missing.push('production-машина не привязана к проекту')
+  if (mode === 'legacy' && !detail.productionCheckoutPath?.trim()) missing.push('production checkout')
+  if (!detail.productionDeployCommand?.trim()) missing.push('команда деплоя')
+  if (!detail.productionHealthCheckCommand?.trim()) missing.push('команда health-check')
+  return { ready: missing.length === 0, mode, missing }
+}
+/** «release/1.2.3», «v1.2.3» and spaces pasted into the version field become «1.2.3». */
+export function normalizeReleaseVersionInput(value: string): string {
+  return value.trim().replace(/^release\//i, '').replace(/^v/i, '').trim()
 }
 export function assertReleaseBranch(branch: string): string {
   const version = releaseVersion(branch)
