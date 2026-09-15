@@ -122,7 +122,8 @@ describe('App — StrictMode (dev double-effect)', () => {
 })
 
 describe('App — онбординг первого запуска', () => {
-  it('показывается при onboarded=false и скрывается после «Начать»', async () => {
+  // @testCase TC-DEGRADED-1
+  it('показывается при onboarded=false и закрывается без обязательной настройки', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: false })
     render(<App api={api} delays={SLOW} />)
@@ -130,7 +131,7 @@ describe('App — онбординг первого запуска', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Добро пожаловать' })
     expect(dialog).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /Начать/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Продолжить в чате' }))
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Добро пожаловать' })).not.toBeInTheDocument()
     )

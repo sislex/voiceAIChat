@@ -161,3 +161,16 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
   .webpreview-crumbs button, .webpreview-pager .vc-btn { min-height: 44px; }
   .webpreview-tools__site-search input { min-height: 44px; }
 }
+/* Cycle 18: working through a long page — contents, scroll-until, reading time left. */
+.webpreview-longread { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.webpreview-longread__until { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.webpreview-longread__until input { flex: 1 1 auto; min-width: 0; }
+.webpreview-toc { flex: none; max-height: 40vh; overflow: auto; padding: 4px 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.webpreview-toc ol { list-style: none; margin: 0; padding: 0; }
+.webpreview-toc li[data-level='2'] { padding-left: 12px; }
+.webpreview-toc li[data-level='3'] { padding-left: 24px; }
+.webpreview-toc li[data-level='4'] { padding-left: 36px; }
+.webpreview-toc button { display: block; width: 100%; padding: 4px 2px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.webpreview-toc button:hover { background: var(--surface-hover, var(--surface)); }
+@media (pointer: coarse) { .webpreview-toc button, .webpreview-longread .vc-btn, .webpreview-longread__until input { min-height: 44px; } }
+@media (max-width: 560px) { .webpreview-toc { max-height: 55vh; } }

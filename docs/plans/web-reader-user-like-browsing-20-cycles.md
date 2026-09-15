@@ -604,3 +604,113 @@ UI (desktop and phone):
 | 10 | Phone: path and pager scroll horizontally with 44 px targets | `recorder.css` |
 
 Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-17.md`.
+
+## Cycle 18 — long pages, lists and tables; bookmarks both sides can see
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `read {next: true}` — continue reading where the previous read of this page stopped | script `readCursor` | script test |
+| 02 | `read {toc: true}` — the contents: headings with levels and selectors to jump to | script `tocOf` | script test |
+| 03 | `read {table, rowOffset}` — one table, twenty rows at a time, with `nextRowOffset` | script `tableByName` | script test |
+| 04 | `read.lists` — repeated cards of a list with their count and first entries | script `listsOf` | script test |
+| 05 | `find {in: heading}` — search only inside that section | script `sectionRange` | script test |
+| 06 | `scroll {until: text, maxScreens}` — page a lazy feed until the text shows up | script | script test |
+| 07 | `scroll {until}` stops honestly when the feed ends without loading more | script | script test |
+| 08 | `bookmark {label?}` / `bookmark {remove}` — session bookmarks kept by the panel | `hostBridge.ts` | bridge test |
+| 09 | `status.bookmarks` and `report.bookmarks` carry the same list | `hostBridge.ts` | bridge test |
+| 10 | Feed phrases and step labels for bookmarks, paged reading and `scroll {until}` | relay, `actionLabel.ts` | label test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Bookmarks row in the panel: a chip opens the page, the cross removes it | `WebReaderFrame` |
+| 02 | «Запомнить страницу» — the person adds a bookmark from the same list | `WebReaderFrame` |
+| 03 | «Оглавление (N)» drawer built from the page headings | Recorder |
+| 04 | A heading in the drawer scrolls the page to that section | Recorder |
+| 05 | Escape closes the drawer and returns focus to its button | Recorder |
+| 06 | «Листать до…» scrolls a lazy feed to the text the person typed | Recorder |
+| 07 | Reading time turns into «осталось ~N мин» while reading | Recorder |
+| 08 | The reading bar announces the percentage and the time left | Recorder |
+| 09 | Alt+End scrolls to the end of the page, next to Alt+Home | Recorder |
+| 10 | «Копировать текст страницы»; phone gets 44 px rows in the drawer | Recorder, `recorder.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-18.md`.
+
+## Cycle 19 — asking the person instead of guessing
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `question {question, options?, timeoutMs?}` — ask the person in the panel and wait for a live answer | `hostBridge.ts` | bridge test |
+| 02 | The answer comes back as `answer`; a declined or timed-out question returns `answered: false` | `hostBridge.ts` | bridge test |
+| 03 | `handover {reason}` — hand the step to the person and wait until they return control | `hostBridge.ts` | bridge test |
+| 04 | A second question while one is open is refused with the pending text | `hostBridge.ts` | bridge test |
+| 05 | While the panel waits, page actions are refused: no acting behind the person's back | `hostBridge.ts` | bridge test |
+| 06 | `status.waitingFor` — what the panel is waiting for and since when | `hostBridge.ts` | bridge test |
+| 07 | `report.questions` — questions with answers as part of the task report | `hostBridge.ts` | bridge test |
+| 08 | Closing the panel releases a pending question instead of hanging the turn | `hostBridge.ts` | bridge test |
+| 09 | MCP tools `ask-user` and `hand-over` | `previewMcp.ts` | MCP test |
+| 10 | Feed phrases and labels: «Спросил: …», «вы ответили: …», «Передал шаг вам» | relay, `actionLabel.ts` | shared + MCP tests |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Question card in the panel, announced assertively | `WebReaderFrame` |
+| 02 | Quick answers as buttons from `options` | `WebReaderFrame` |
+| 03 | Free-text answer with «Ответить» | `WebReaderFrame` |
+| 04 | Escape and «Не сейчас» decline the question | `WebReaderFrame` |
+| 05 | Focus lands on the answer field as the question appears | `WebReaderFrame` |
+| 06 | Handover banner with «Готово, продолжай» | `WebReaderFrame` |
+| 07 | The card shows how long the assistant has been waiting | `WebReaderFrame` |
+| 08 | The live line reads «ждёт вашего ответа» while the question is open | `actionLabel.ts` |
+| 09 | The card clears when the conversation changes | `WebReaderFrame` |
+| 10 | Phone: 44 px answer field and buttons | `panel.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-19.md`.
+
+## Cycle 20 — handing the result back: notes, a readable report, a feed by page
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `note {text}` — leave the person a note in the panel without interrupting the work | `hostBridge.ts` | bridge test |
+| 02 | Notes remember the page they were made on and reach `report.notes` | `hostBridge.ts` | bridge test |
+| 03 | `report {readable: true}` — a ready-to-read text of the session | `hostBridge.ts` | bridge test |
+| 04 | The readable report carries pages, failed checks, questions with answers, notes and bookmarks | `hostBridge.ts` | bridge test |
+| 05 | `report.durationMs` — how long the session lasted | `hostBridge.ts` | bridge test |
+| 06 | `status.actions` and `status.since` — the session's size and start | `hostBridge.ts` | bridge test |
+| 07 | MCP tool `note` | `previewMcp.ts` | MCP test |
+| 08 | MCP `report {readable}` | `previewMcp.ts` | MCP test |
+| 09 | Labels «Оставил заметку: …» and «Собрал отчёт о сеансе» | `actionLabel.ts` | label test |
+| 10 | Feed phrases: notes counted, report narrated with its duration | relay | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Notes row in the panel with the host each note was made on | `WebReaderFrame` |
+| 02 | «Скопировать заметки» copies them as plain lines | `WebReaderFrame` |
+| 03 | «Скопировать отчёт» puts the readable report in the clipboard | `WebReaderFrame` |
+| 04 | The report text is shown in the panel and hidden with «Скрыть отчёт» | `WebReaderFrame` |
+| 05 | «Отчёт в чат» sends the same readable text the person sees | `WebReaderFrame` |
+| 06 | The action feed is split by page with a header per page | `ReaderActionHistory` |
+| 07 | A step no longer repeats the page title under its own line | `ReaderActionHistory` |
+| 08 | Notes and the report clear when the conversation changes | `WebReaderFrame` |
+| 09 | Phone: 44 px note actions, the report text scrolls | `panel.css` |
+| 10 | The report keeps its line breaks as a preformatted block | `panel.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-20.md`.
+
+## Результат серии
+
+Двадцать кругов закрыты. Модель ходит по сайту словами человека (роль, текст рядом, сторона, номер, раздел),
+читает как человек (разделы, оглавление, таблицы постранично, основное содержимое, картинки, уведомления),
+проверяет как тестировщик, останавливается перед опасным, спрашивает, когда выбор за человеком, и оставляет
+после себя отчёт. Панель показывает то же самое человеку: живую строку действия, ленту шагов по страницам,
+подтверждения, закладки, заметки, ориентиры страницы и привычки браузера телефона.

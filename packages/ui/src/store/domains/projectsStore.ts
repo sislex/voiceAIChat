@@ -1280,7 +1280,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         const id = getState().activeProjectId
         const prev = getState().board
         if (!id || !prev) return false
-        const tasks = prev.tasks.map((t) => ({ ...t }))
+        const tasks = prev.tasks.map((t) => t.id === taskId ? { ...t } : t)
         const moving = tasks.find((t) => t.id === taskId)
         const fromColumnId = moving?.columnId ?? null
         if (moving) {
@@ -1308,7 +1308,16 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           void deps.chat.refreshConversations({ keepActiveListed: true }).catch(() => {})
           return true
         } catch (err) {
-          setState({ board: prev })
+          // Roll back only this still-owned optimistic task, never a newer snapshot or another project.
+          const current = getState()
+          const original = prev.tasks.find((task) => task.id === taskId)
+          if (current.activeProjectId === id && current.board && original && moving) {
+            const optimistic = moving
+            setState({ board: {
+              ...current.board,
+              tasks: current.board.tasks.map((task) => task.id === taskId && task === optimistic ? original : task)
+            } })
+          }
           fail(err, () => void actions.moveTask(taskId, columnId, afterId, beforeId))
           return false
         }

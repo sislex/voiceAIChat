@@ -18,6 +18,11 @@ export function runBrowserInput(page: Page, action: BrowserInputAction): Promise
   return pending
 }
 
+/** Held key, not an autofire: the bound keeps one call from typing forever. */
+function boundedRepeat(value: number | undefined): number {
+  return value === undefined ? 1 : Math.min(Math.max(Math.trunc(value), 1), 50)
+}
+
 async function performInput(page: Page, action: BrowserInputAction): Promise<void> {
   const keys = held.get(page) ?? new Set<string>()
   held.set(page, keys)
@@ -73,8 +78,19 @@ async function performInput(page: Page, action: BrowserInputAction): Promise<voi
       await page.mouse.up()
     }
   } else if (action.type === 'type') await page.keyboard.type(action.text)
-  else if (action.type === 'press') await page.keyboard.press(action.key)
-  else if (action.type === 'keyDown') {
+  else if (action.type === 'press') {
+    for (let time = 0; time < boundedRepeat(action.repeat); time++) await page.keyboard.press(action.key)
+  } else if (action.type === 'hotkey') {
+    if (!Array.isArray(action.modifiers) || action.modifiers.length === 0 ||
+      action.modifiers.some((key) => !['Shift', 'Control', 'Alt', 'Meta', 'ControlOrMeta'].includes(key)))
+      throw new Error('Некорректные модификаторы сочетания')
+    // One press of "Control+a" instead of down/press/up by hand: Playwright
+    // releases the modifiers itself, so a failure in the middle cannot leave one
+    // stuck down for the rest of the session. It also resolves ControlOrMeta to
+    // the modifier of the platform the runner actually runs on.
+    const chord = [...new Set(action.modifiers), action.key].join('+')
+    for (let time = 0; time < boundedRepeat(action.repeat); time++) await page.keyboard.press(chord)
+  } else if (action.type === 'keyDown') {
     await page.keyboard.down(action.key)
     keys.add(action.key)
   } else if (action.type === 'keyUp') {

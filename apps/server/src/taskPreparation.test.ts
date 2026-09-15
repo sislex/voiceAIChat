@@ -18,9 +18,24 @@ import { DEFAULT_CODEX_MODEL, DEFAULT_SETTINGS, type Board, type LlmClient, type
 
 import { preparationJsonObject } from './kanban/preparation.js'
 
+// @testCase TC-BRIEF-KB-1
+it('keeps the documented complete-response rule executable', () => {
+  const documentation = readFileSync(join(process.cwd(), '../../docs/kb/features/task-preparation.md'), 'utf8')
+  expect(documentation).toContain('preparationJsonObject')
+  expect(documentation).toContain('schemaVersion=2')
+  expect(documentation).toContain('questionId')
+  const original = { schemaVersion: 2, scope: ['Preserve every requirement'], decisions: [{ questionId: null, text: 'No change' }] }
+  const normalized = preparationJsonObject(JSON.stringify(original))
+  expect(normalized).toEqual({ ...original, decisions: [{ text: 'No change' }] })
+  for (const prefix of ['Подготовка завершена.\n', 'Исправленный Development Brief:\n']) {
+    expect(() => preparationJsonObject(prefix + JSON.stringify(original))).toThrow()
+  }
+})
+
 const SECRET = 'test-secret'
 
 // @testCase TC9
+// @testCase TC-BRIEF-03
 it('keeps the existing preparation KB section linked to verified strict-response regressions', () => {
   const article = readFileSync(new URL('../../../docs/kb/features/task-preparation.md', import.meta.url), 'utf8')
   expect(article).toContain('## DevelopmentReadiness и readiness-гейт')
@@ -58,8 +73,10 @@ it('preserves repeated names in independent objects and punctuation inside strin
 // @testCase TC-BRIEF-02
 // @testCase T12
 // @testCase T9
+// @testCase TC-BRIEF-2
 it('normalizes only absent decision references and preserves compatible nulls and requirements', () => {
   const original = JSON.parse(READINESS)
+  original.scope = ['Keep columnId as status', 'Keep onMoveTask(taskId, columnId, afterId, beforeId)', 'Keep autoPilot=true and autoPilotRequiresManualQa=false']
   original.decisions = [{ id: 'D1', text: 'Preserve {braces} and "quotes"', rationale: 'No scope changes', questionId: null }]
   original.openQuestions = [{ questionId: 'Q1', text: 'Resolved later', material: false, answer: null }]
   original.affectedComponents = [{ id: 'C1', name: 'Card', reusable: true, storybookStoryId: null, exclusionReason: 'DOM coverage', alternativeVerification: 'DOM test', coverage: { required: ['TC1'] } }]
@@ -82,9 +99,11 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
 // @testCase TC-BRIEF-03
 // @testCase T13
 // @testCase TC-11
+// @testCase TC-BRIEF-1
 // @testCase TC6
 // @testCase T9
-it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects a prefixed brief without saving partial requirements: %s', async prefix => {
+// @testCase TC-BRIEF-01
+it.each(['Подготовка завершена.', 'Исправленный Development Brief:', 'Development Brief готов:'])('rejects a prefixed brief without saving partial requirements: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
   original.decisions = [{ id: 'D1', text: 'Keep requirements', rationale: 'Confirmed scope', questionId: null }]
@@ -777,6 +796,8 @@ describe('подготовка к разработке: диагностика �
   // @testCase T9
   // @testCase TC6
   // @testCase T7
+  // @testCase TC-BRIEF-1
+  // @testCase TC-BRIEF-01
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })
@@ -955,6 +976,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC6
+  // @testCase TC-BRIEF-1
   it('rejects an unknown test type with a precise schema diagnostic', async () => {
     const { project, task } = await taskInBacklog()
     const invalid = JSON.parse(compatibleReadiness())

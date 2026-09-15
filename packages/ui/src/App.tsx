@@ -527,6 +527,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [foreignContextId, setForeignContextId] = useState<string | null>(null)
   const [sessionsOpen, setSessionsOpen] = useState(() => window.location.hash === '#/security/sessions')
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(() => window.location.hash === '#/security/password')
   // Открытая регистрация: спрашиваем сервер один раз, пока пользователь не вошёл.
   const [signupOpen, setSignupOpen] = useState(() => window.location.hash === '#/signup')
@@ -921,6 +923,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [api])
   const toast = useToast()
   const shellUserId = session.currentUser?.name || (session.authRequired ? '' : 'local')
+  useEffect(() => { setOnboardingOpen(false); setOnboardingDismissed(false) }, [shellUserId])
   const [shortcuts] = useShortcuts(shellUserId)
   useEffect(() => { toast.clear?.() }, [shellUserId, toast])
   useEffect(() => {
@@ -3751,15 +3754,29 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         </ToolFrame>
       )}
 
-      {!settingsState.settings.onboarded && (
+      {settingsState.settingsLoaded && (
         <OnboardingModal
+          api={api}
+          key={shellUserId}
+          open={onboardingOpen || (!settingsState.settings.onboarded && !onboardingDismissed)}
+          settings={settingsState.settings}
+          unavailableSteps={[
+            ...(settingsState.capabilities?.stt.available === false ? ['microphone' as const] : []),
+            ...(settingsState.capabilities?.tts.available === false ? ['tts' as const] : []),
+            ...(settingsState.loginStatus && settingsActions.selectAllowedProviders().every(p => !settingsState.loginStatus?.[p].loggedIn) ? ['llm' as const] : [])
+          ]}
+          onSave={(onboarding) => settingsActions.updateSettings({ onboarding })}
           modelPresent={settingsState.modelPresent}
           modelLabel={settingsState.settings.whisperModel}
           downloading={settingsState.downloading}
           downloadPercent={settingsState.downloadPercent}
           onDownloadModel={settingsActions.downloadModel}
           hasVoice={settingsState.ttsVoices.length > 0}
-          onDone={settingsActions.completeOnboarding}
+          onDone={() => {
+            setOnboardingOpen(false)
+            setOnboardingDismissed(true)
+            void settingsActions.completeOnboarding().catch(() => {})
+          }}
         />
       )}
 
@@ -3768,6 +3785,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
       {globalSettingsSection && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
+          onOpenOnboarding={() => { navigate('/'); setOnboardingOpen(true) }}
           catalogErrors={settingsState.catalogErrors}
           catalogLoading={settingsState.catalogLoading.filter(name => !settingsState.catalogLoaded[name])}
           catalogRefreshing={settingsState.catalogLoading.some(name => settingsState.catalogLoaded[name])}

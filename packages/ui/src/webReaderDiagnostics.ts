@@ -147,7 +147,7 @@ export async function runWebReaderDiagnostics(options: DiagnosticsOptions): Prom
       for (;;) {
         if (options.signal.aborted) throw new DOMException('Диагностика отменена повторным запуском.', 'AbortError')
         const read = await options.run({ kind: 'read', diagnostic: true })
-        if (read.ok && read.result && 'text' in read.result && read.result.text.includes('Diagnostics destination')) return read.result
+        if (read.ok && read.result && 'text' in read.result && typeof read.result.text === 'string' && read.result.text.includes('Diagnostics destination')) return read.result
         if (performance.now() > deadline) throw new Error(read.error ?? 'Навигация не подтверждена.')
         await new Promise((resolve) => setTimeout(resolve, 200))
       }
