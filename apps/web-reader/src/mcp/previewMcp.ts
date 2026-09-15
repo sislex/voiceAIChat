@@ -936,6 +936,38 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'network-rules',
+        {
+          description:
+            'Правила сети: подменить ответ (mock), заблокировать запрос (block) или задержать его (delay). ' +
+            'То, что человек делает в devtools за минуту: «а если этот запрос вернёт 500», «а как выглядит ' +
+            'страница без аналитики», «а если сеть медленная». Пустая корзина, ошибка сервера и подвисший ' +
+            'ответ — половина состояний интерфейса, и раньше они были недостижимы. ' +
+            'url — шаблон с *; do: add ставит правило, remove снимает (без url — все), list показывает текущие. ' +
+            'Не забудь снять правила после проверки: они живут до конца сессии.',
+          inputSchema: {
+            do: z.enum(['add', 'remove', 'list']).describe('Что сделать'),
+            url: z.string().max(L.url).optional().describe('Шаблон адреса (для add и remove)'),
+            action: z.enum(['mock', 'block', 'delay']).optional().describe('Что делать с запросом (для add)'),
+            status: z.number().int().min(100).max(599).optional().describe('Код ответа подмены'),
+            body: z.string().max(256 * 1024).optional().describe('Тело подменного ответа'),
+            contentType: z.string().max(200).optional().describe('Content-Type подмены (по умолчанию JSON)'),
+            delayMs: z.number().int().min(0).max(60_000).optional().describe('Задержка перед ответом')
+          }
+        },
+        async ({ do: operation, url, action, status, body, contentType, delayMs }) => {
+          if (!entry) return noContext
+          if (operation === 'add' && (!url || !action)) return { content: [{ type: 'text', text: 'Для add нужны url и action.' }], isError: true }
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, {
+            type: 'network-rules', do: operation,
+            ...(url ? { url } : {}),
+            ...(operation === 'add' ? { rule: { url: url!, action: action!, ...(status !== undefined ? { status } : {}), ...(body !== undefined ? { body } : {}), ...(contentType ? { contentType } : {}), ...(delayMs !== undefined ? { delayMs } : {}) } } : {})
+          })
+          return toolResult(result ?? { ok: false, error: 'Правила сети доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
         'ask',
         {
           description:

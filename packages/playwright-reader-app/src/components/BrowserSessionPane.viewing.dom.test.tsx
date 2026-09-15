@@ -501,3 +501,30 @@ describe('просьба модели к человеку (круг 10)', () => 
     expect(screen.queryByText('Пройдите капчу')).toBeNull()
   })
 })
+
+describe('правила сети в панели (круг 11)', () => {
+  const withRules = () => fakeBrowser({
+    command: vi.fn(async (_id: string, req: { command: { type: string; do?: string; url?: string } }) => {
+      if (req.command.type === 'network-rules') {
+        if (req.command.do === 'remove') return { network: { rules: [], total: 0 } }
+        return { network: { rules: [{ url: '**/api/cart', action: 'mock', status: 500 }], total: 1 } }
+      }
+      return meta()
+    }) as unknown as RendererBrowserBridge['command']
+  })
+
+  it('человек видит, что сеть подменена, и снимает правило', async () => {
+    const browser = withRules()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Среда' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Правила сети' }))
+    await screen.findByText(/Правила сети: 1/)
+    await screen.findByText('**/api/cart')
+    fireEvent.click(screen.getByLabelText('Снять правило **/api/cart'))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'network-rules', do: 'remove', url: '**/api/cart' })
+    })))
+    await screen.findByText(/настоящей сетью/)
+  })
+})

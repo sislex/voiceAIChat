@@ -189,6 +189,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const [cookies, setCookies] = useState<{ loading?: boolean; error?: string; items?: BrowserCookieInfo[]; total?: number } | null>(null)
   /** Хранилище сайта: тут живёт половина дефектов «у меня работает». */
   const [storage, setStorage] = useState<{ loading?: boolean; error?: string; data?: BrowserSelectorResult['storage'] } | null>(null)
+  /** Правила сети: человеку они нужны там же, где модели, — и чтобы их снять. */
+  const [networkRules, setNetworkRules] = useState<{ rules: Array<{ url: string; action: string; status?: number; delayMs?: number }>; total: number } | null>(null)
   /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
   const touch = useRef<{ x: number; y: number; moved: boolean; pinch: number | null } | null>(null)
   /** Долгое нажатие вместо правой кнопки и двойной тап вместо двойного клика. */
@@ -565,6 +567,12 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     const result = await run({ type: 'selector', action: { kind: 'storage' } }) as BrowserSelectorResult | undefined
     if (!result || result.ok === false) { setStorage({ error: result?.error ?? 'Хранилище недоступно' }); return }
     setStorage({ data: result.storage })
+  }, [run])
+
+  /** Правила сети сессии: их ставит модель, а снимать приходится человеку. */
+  const loadNetworkRules = useCallback(async (operation: 'list' | 'remove' = 'list', url?: string): Promise<void> => {
+    const result = await run({ type: 'network-rules', do: operation, ...(url ? { url } : {}) } as never) as { network?: { rules: Array<{ url: string; action: string }>; total: number } } | undefined
+    if (result?.network) setNetworkRules(result.network)
   }, [run])
 
   /** Метрики страницы: обновляются по требованию, не поллингом — это команда. */
@@ -1344,6 +1352,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           ))}
           <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadCookies()}>Cookies</Button>
           <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadStorage()}>Хранилище сайта</Button>
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadNetworkRules()}>Правила сети</Button>
         </div>
         {environment?.geolocation && <p className="proj-muted">Позиция: {environment.geolocation.latitude}, {environment.geolocation.longitude}</p>}
         {cookies?.loading && <p role="status">Читаем cookies…</p>}
@@ -1370,6 +1379,25 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
                 </li>
               ))}
             </ul>
+          </>
+        )}
+        {networkRules && (
+          <>
+            <p className="proj-muted">
+              Правила сети: {networkRules.total}.
+              {networkRules.total ? ' Подменённый ответ и заблокированный запрос остаются до конца сессии.' : ' Страница работает с настоящей сетью.'}
+            </p>
+            {Boolean(networkRules.total) && (
+              <ul className="playwright-reader-diagnostics__list">
+                {networkRules.rules.map((rule) => (
+                  <li key={rule.url}>
+                    <code>{rule.url}</code> · {rule.action === 'mock' ? `подмена ${rule.status ?? 200}` : rule.action === 'block' ? 'блокировка' : `задержка ${rule.delayMs ?? 0} мс`}
+                    <IconButton size="sm" aria-label={`Снять правило ${rule.url}`} title="Снять правило" disabled={phase !== 'ready'}
+                      onClick={() => void loadNetworkRules('remove', rule.url)}>✕</IconButton>
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
         {cookies?.items && (
