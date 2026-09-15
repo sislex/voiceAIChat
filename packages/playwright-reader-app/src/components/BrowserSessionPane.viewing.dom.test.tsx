@@ -537,7 +537,7 @@ describe('снимки состояния (круг 12)', () => {
         return {
           snapshots: items,
           ...(req.command.do === 'compare'
-            ? { comparison: { name: 'до правки', ratio: 0.1234, changed: 100, total: 810, width: 30, height: 27, area: { x: 0, y: 0, width: 300, height: 64 }, sizeChanged: false, text: { added: ['Итого 200'], removed: ['Итого 100'], addedTotal: 1, removedTotal: 1 } } }
+            ? { comparison: { name: 'до правки', verdict: 'visual', ratio: 0.1234, changed: 100, total: 810, width: 30, height: 27, area: { x: 0, y: 0, width: 300, height: 64 }, sizeChanged: false, text: { added: ['Итого 200'], removed: ['Итого 100'], addedTotal: 1, removedTotal: 1 } } }
             : {})
         }
       }
@@ -629,5 +629,43 @@ describe('вкладки в панели (круг 14)', () => {
     render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ start: vi.fn(async () => meta({ tabs: [{ id: 't1', url: 'https://a.b/', title: 'Главная', active: true }] })) as unknown as RendererBrowserBridge['start'] })} />)
     await screen.findByAltText('Кадр Chromium')
     expect(screen.queryByRole('button', { name: 'Закрыть лишние' })).toBeNull()
+  })
+})
+
+describe('вердикт сравнения в панели (круг 16)', () => {
+  it('«пиксели те же, текст другой» объясняется словами, а не нулём процентов', async () => {
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string; do?: string } }) => (
+        req.command.type === 'snapshot'
+          ? {
+              snapshots: [],
+              ...(req.command.do === 'compare'
+                ? { comparison: { name: 'до', verdict: 'dom-only', ratio: 0, changed: 0, total: 100, width: 10, height: 10, sizeChanged: false, text: { added: ['Итого 200'], removed: [], addedTotal: 1, removedTotal: 0 } } }
+                : {})
+            }
+          : meta()
+      )) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Снимки' }))
+    fireEvent.change(await screen.findByLabelText('Имя снимка'), { target: { value: 'до' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сравнить' }))
+    await screen.findByText(/ниже сгиба/)
+  })
+
+  it('«вся страница» уходит в команду снимка', async () => {
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string } }) => (req.command.type === 'snapshot' ? { snapshots: [] } : meta())) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Снимки' }))
+    fireEvent.click(await screen.findByLabelText('Вся страница'))
+    fireEvent.change(screen.getByLabelText('Имя снимка'), { target: { value: 'длинная' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Снять' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'snapshot', do: 'save', fullPage: true })
+    })))
   })
 })

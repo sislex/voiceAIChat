@@ -1025,21 +1025,24 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'Именованный снимок состояния и сравнение с текущей страницей. ' +
             '«Не сломалась ли вёрстка после правки» человек проверяет глазами: смотрит до, смотрит после. ' +
             'Сделай snapshot save с именем до изменения, затем snapshot compare с тем же именем — ответ ' +
-            'скажет долю различающихся пикселей, прямоугольник, в который они уместились («всё в шапке» — ' +
-            'это диагноз, а «12%» — нет), и что появилось или исчезло в тексте. ' +
+            'скажет вердикт (identical, visual, dom-only, resized), долю различающихся пикселей, ' +
+            'прямоугольник, в который они уместились («всё в шапке» — это диагноз, а «12%» — нет), ' +
+            'и что появилось или исчезло в тексте. dom-only значит «пиксели те же, а текст другой» — ' +
+            'почти всегда это изменение ниже сгиба: повтори со снимком fullPage. ' +
             'Снимки живут в памяти сессии, их держится не больше десяти.',
           inputSchema: {
             do: z.enum(['save', 'list', 'compare', 'remove']).describe('Что сделать'),
             name: z.string().max(120).optional().describe('Имя снимка (нужно для save, compare и точечного remove)'),
-            threshold: z.number().int().min(0).max(64).optional().describe('Порог различия канала: сжатие шевелит пиксели на пару единиц (по умолчанию 8)')
+            threshold: z.number().int().min(0).max(64).optional().describe('Порог различия канала: сжатие шевелит пиксели на пару единиц (по умолчанию 8)'),
+            fullPage: z.boolean().optional().describe('Снять всю страницу, а не видимую часть: на длинной странице сравнение иначе смотрит только первый экран')
           }
         },
-        async ({ do: operation, name, threshold }) => {
+        async ({ do: operation, name, threshold, fullPage }) => {
           if (!entry) return noContext
           if ((operation === 'save' || operation === 'compare') && !name) {
             return { content: [{ type: 'text', text: `Для ${operation} нужно имя снимка.` }], isError: true }
           }
-          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'snapshot', do: operation, ...(name ? { name } : {}), ...(threshold !== undefined ? { threshold } : {}) })
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'snapshot', do: operation, ...(name ? { name } : {}), ...(threshold !== undefined ? { threshold } : {}), ...(fullPage !== undefined ? { fullPage } : {}) })
           return toolResult(result ?? { ok: false, error: 'Снимки состояния доступны только в Playwright Reader или Chromium-проверке.' })
         }
       )

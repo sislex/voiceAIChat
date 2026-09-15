@@ -541,6 +541,7 @@ export interface BrowserAskRequest {
  */
 export interface BrowserSnapshotInfo {
   name: string
+  fullPage?: boolean
   at: number
   url: string
   title: string
@@ -551,6 +552,14 @@ export interface BrowserSnapshotInfo {
 /** Итог сравнения снимка с текущим состоянием страницы. */
 export interface BrowserSnapshotComparison {
   name: string
+  /**
+   * Вердикт словами. Доля пикселей сама по себе не отвечает на вопрос человека:
+   * «нет различий» при изменившемся тексте почти всегда значит, что изменение
+   * ниже сгиба, а не что его нет.
+   */
+  verdict: 'identical' | 'visual' | 'dom-only' | 'resized'
+  /** Снимок сделан во всю длину страницы, а не только видимой части. */
+  fullPage?: boolean
   /** Доля различающихся пикселей: 0 — совпало, 1 — не совпало нигде. */
   ratio: number
   changed: number
@@ -792,7 +801,7 @@ export type BrowserCommand = BrowserFrameTarget & (
   /** Network rules: mock a response, block a request, slow it down. */
   | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
   /** Named state snapshots and their comparison with the page as it is now. */
-  | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number }
+  | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number; fullPage?: boolean }
   /** A report of what was checked in the browser — for a task comment. */
   | { type: 'report'; title?: string; limit?: number }
   /**
