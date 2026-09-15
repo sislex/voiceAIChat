@@ -607,18 +607,6 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
-        'focus',
-        {
-          description:
-            'Поставить фокус на элемент без клика — так работает переход по Tab, и именно так ловятся ' +
-            'ошибки клавиатурной доступности: клик по пункту меню и переход на него фокусом дают разные события. ' +
-            'Возвращает элемент в фокусе: селектор, роль, значение, видимое кольцо фокуса и признак «внутри диалога».',
-          inputSchema: { frame: frameSchema, selector: z.string().max(L.selector).describe('CSS-селектор элемента') }
-        },
-        async ({ frame, selector }) => run({ kind: 'focus', ...(frame !== undefined ? { frame } : {}), selector })
-      )
-
-      server.registerTool(
         'focused',
         {
           description:
@@ -1215,10 +1203,10 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
-        'report',
+        'check-report',
         {
           description:
-            'Собрать отчёт о проверке: что проверялось (твои note), что не получилось, на что жаловалась ' +
+            'Собрать отчёт о проверке для задачи: что проверялось (твои note), что не получилось, на что жаловалась ' +
             'страница, снимки состояния и последние шаги — готовым markdown для комментария в задаче. ' +
             'Итог «всё работает» человеку в канбане не говорит ни что проверялось, ни где проверка споткнулась; ' +
             'всё нужное уже лежит в сессии, отчёт просто собирает это в один текст.',
