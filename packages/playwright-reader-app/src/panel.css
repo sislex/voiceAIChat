@@ -131,3 +131,7 @@
    меняет их парами: «тёмная тема + высокий контраст», «без сети + перезагрузка». */
 .playwright-reader-env { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
 @media (max-width: 720px) { .playwright-reader-env .vc-btn { min-height: 40px; } }
+
+/* Выключенный шаг виден, но приглушён: он остаётся заготовкой, а не мусором. */
+.playwright-reader-record__list li[data-skipped='true'] { opacity: 0.55; }
+.playwright-reader-record__list li[data-skipped='true'] .playwright-reader-record__title { text-decoration: line-through; }
