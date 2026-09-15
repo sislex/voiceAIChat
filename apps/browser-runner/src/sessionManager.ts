@@ -20,7 +20,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserCommandRequest, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserAskRequest, BrowserAskResult, BrowserCommandRequest, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -58,6 +58,8 @@ interface Session {
   environment?: BrowserEnvironmentState
   /** Эмулированное устройство: размер, тач, плотность пикселей, ориентация. */
   device?: BrowserDeviceState
+  /** Открытая просьба модели к человеку и его ответ на неё. */
+  ask?: BrowserAskRequest
   /** Что происходило в сессии: единственное место, где видны обе стороны. */
   history: SessionHistory
 }
@@ -316,7 +318,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
@@ -332,6 +334,38 @@ export class BrowserSessionManager {
     }
     const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe', 'accessibility'].includes(command.action.kind))
     if (!observing && request.actor === 'assistant' && session.queue.owner === 'user') throw new Error('human_control: Управление у пользователя. Дождитесь возврата управления модели.')
+    // Просьба и ответ идут мимо очереди команд. Иначе просьба блокирует ровно
+    // того, кого просят: человек не смог бы ни ввести код в браузере, ни нажать
+    // «Сделал» — его команды встали бы за ожидающей просьбой модели.
+    if (command.type === 'ask') {
+      // Просьба ждёт человека прямо здесь: модель делает один вызов и получает
+      // ответ, а не опрашивает состояние в цикле, тратя ход на ожидание.
+      const timeoutMs = Math.min(Math.max(command.timeoutMs ?? 120_000, 5_000), 600_000)
+      const ask = { id: randomUUID().slice(0, 8), text: command.text.trim().slice(0, 500), at: Date.now(), timeoutMs }
+      if (!ask.text) throw new Error('Просьба не может быть пустой')
+      session.ask = ask
+      session.history.record({ at: ask.at, actor: request.actor, title: `просьба человеку: ${ask.text}`, kind: 'ask', ok: true, note: ask.text })
+      const started = Date.now()
+      while (Date.now() - started < timeoutMs) {
+        if (session.ask?.id !== ask.id) return { ask: { id: ask.id, done: false, timedOut: false, waitedMs: Date.now() - started } }
+        if (session.ask.answered) {
+          const answered = session.ask.answered
+          session.ask = undefined
+          return { ask: { id: ask.id, done: answered.done, ...(answered.text ? { text: answered.text } : {}), waitedMs: Date.now() - started } }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250))
+      }
+      session.ask = undefined
+      session.history.record({ at: Date.now(), actor: request.actor, title: 'человек не ответил на просьбу', kind: 'ask', ok: false })
+      return { ask: { id: ask.id, done: false, timedOut: true, waitedMs: Date.now() - started } }
+    }
+    if (command.type === 'answer') {
+      if (request.actor !== 'user') throw new Error('human_control: Отвечать на просьбу может только человек')
+      if (!session.ask || session.ask.id !== command.askId) throw new Error('Просьба уже закрыта')
+      session.ask = { ...session.ask, answered: { done: command.done, ...(command.text ? { text: command.text.slice(0, 500) } : {}), at: Date.now() } }
+      session.history.record({ at: Date.now(), actor: 'user', title: command.done ? 'человек сделал, что просили' : 'человек отказался', kind: 'ask', ok: command.done })
+      return this.metadata(session)
+    }
     if (command.type === 'history') {
       if (command.clear) { session.history.clear(); return { history: { total: 0, entries: [] } } }
       return { history: session.history.list(command) }
@@ -365,7 +399,7 @@ export class BrowserSessionManager {
   }
 
   /** Разбор команды без журнала: вынесен, чтобы запись велась в одном месте. */
-  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult> {
+  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult> {
     const command = request.command
     const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe', 'accessibility'].includes(command.action.kind))
     if (command.type === 'inspect' && command.action.kind === 'evaluate') {
@@ -406,7 +440,7 @@ export class BrowserSessionManager {
     }, observing)
   }
 
-  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult> {
+  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult | BrowserAskResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -598,6 +632,7 @@ export class BrowserSessionManager {
       // отдельного опроса, а он стоил бы ещё одного запроса на каждый кадр.
       history: session.history.list({ limit: 20 }).entries,
       ...(session.device ? { device: session.device } : {}),
+      ...(session.ask ? { ask: session.ask } : {}),
       activeTabId: session.activeTabId,
       tabs,
       viewport: session.viewport,

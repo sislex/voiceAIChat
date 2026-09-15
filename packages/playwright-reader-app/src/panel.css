@@ -135,3 +135,10 @@
 /* Выключенный шаг виден, но приглушён: он остаётся заготовкой, а не мусором. */
 .playwright-reader-record__list li[data-skipped='true'] { opacity: 0.55; }
 .playwright-reader-record__list li[data-skipped='true'] .playwright-reader-record__title { text-decoration: line-through; }
+
+/* Просьба модели: заметнее обычного сообщения, потому что без ответа человека
+   работа стоит — код из СМС или капчу за него никто не введёт. */
+.playwright-reader-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100);
+  padding: var(--space-100) var(--space-150); border-top: 1px solid var(--accent); background: var(--accent-soft); }
+.playwright-reader-ask strong { color: var(--accent); }
+@media (max-width: 720px) { .playwright-reader-ask .vc-btn { min-height: 40px; } }

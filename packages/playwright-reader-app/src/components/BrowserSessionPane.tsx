@@ -1384,6 +1384,18 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         )}
       </div>
     )}
+    {/* Просьба модели живёт над кадром: человек смотрит на экран браузера, и
+        вопрос должен быть там же, где то, чего он касается. */}
+    {meta?.ask && !meta.ask.answered && (
+      <div className="playwright-reader-ask" role="alert">
+        <strong>Модель просит вас:</strong>
+        <span>{meta.ask.text}</span>
+        <Button size="sm" variant="primary" disabled={phase !== 'ready'}
+          onClick={() => void run({ type: 'answer', askId: meta.ask!.id, done: true } as never)}>Сделал</Button>
+        <Button size="sm" variant="ghost" disabled={phase !== 'ready'}
+          onClick={() => void run({ type: 'answer', askId: meta.ask!.id, done: false } as never)}>Не буду</Button>
+      </div>
+    )}
     {formInfo && (
       <div className="playwright-reader-diagnostics" role="region" aria-label="Поля формы">
         <div className="playwright-reader-diagnostics__head">

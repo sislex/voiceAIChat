@@ -469,3 +469,35 @@ describe('устройство целиком (круг 9)', () => {
     })))
   })
 })
+
+describe('просьба модели к человеку (круг 10)', () => {
+  const asking = () => fakeBrowser({
+    start: vi.fn(async () => meta({ ask: { id: 'a1', text: 'Введите код из СМС', at: Date.now(), timeoutMs: 120_000 } })) as unknown as RendererBrowserBridge['start']
+  })
+
+  it('просьба видна над кадром, а не теряется в переписке', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={asking()} />)
+    await screen.findByAltText('Кадр Chromium')
+    await screen.findByText('Введите код из СМС')
+    expect(screen.getByRole('button', { name: 'Сделал' })).toBeTruthy()
+  })
+
+  it('«Сделал» и «Не буду» — оба ответы, и оба доходят до раннера', async () => {
+    const browser = asking()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(await screen.findByRole('button', { name: 'Не буду' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: { type: 'answer', askId: 'a1', done: false }
+    })))
+  })
+
+  it('отвеченная просьба с экрана уходит', async () => {
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ ask: { id: 'a1', text: 'Пройдите капчу', at: Date.now(), timeoutMs: 1_000, answered: { done: true, at: Date.now() } } })) as unknown as RendererBrowserBridge['start']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.queryByText('Пройдите капчу')).toBeNull()
+  })
+})
