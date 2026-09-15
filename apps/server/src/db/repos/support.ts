@@ -96,6 +96,7 @@ export interface TaskRow {
   due_date: number | null
   flagged: number
   auto_pilot: number
+  auto_pilot_requires_manual_qa: number
   auto_pilot_fix_cycles: number
   done_at: number | null
   preview_ready: number

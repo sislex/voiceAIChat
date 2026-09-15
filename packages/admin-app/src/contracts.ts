@@ -6,7 +6,7 @@ import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { Conversation, Message, SessionInfo, SessionUser, UserRole } from '@shared/types'
 
 export interface AdminClient {
-  listUsers(): Promise<AdminUserInfo[]>
+  listUsers(input?: { limit?: number; offset?: number; q?: string; role?: string; state?: string; sort?: string; asc?: string }): Promise<AdminUserInfo[]>
   usageSummary(range?: { from?: number; to?: number }): Promise<UserUsageSummary[]>
   /** Метрики Make (п.38); у старых клиентов метода может не быть — стор это переживает. */
   makeStats?(): Promise<AdminMakeStats>
@@ -15,6 +15,7 @@ export interface AdminClient {
   /** Сессии пользователя и отзыв (auth-roadmap п.4); у старых клиентов может не быть. */
   userSessions?(input: { name: string }): Promise<SessionInfo[]>
   revokeSession?(input: { sid: string }): Promise<void>
+  revokeUserSessions?(input: { name: string; exceptCurrent?: boolean }): Promise<void>
   /** Журнал безопасности (auth-roadmap п.7). */
   securityEvents?(input: { user?: string; limit?: number; group?: string }): Promise<SecurityEvent[]>
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */
@@ -23,7 +24,7 @@ export interface AdminClient {
   deleteInvite?(input: { token: string }): Promise<void>
   createUser(input: { name: string; password: string; role: UserRole; mustChangePassword?: boolean }): Promise<AdminUserInfo>
   /** Одноразовый код сброса пароля (auth-roadmap п.10). */
-  resetCode?(input: { name: string }): Promise<{ code: string; expiresAt: number }>
+  resetCode?(input: { name: string; action?: 'status' | 'revoke' }): Promise<{ code: string; expiresAt: number }>
   /** Месячный лимит расхода LLM (auth-roadmap п.17). */
   setUserLlmLimit?(input: { name: string; llmLimitUsd: number | null }): Promise<AdminUserInfo>
   /** Открытая регистрация с подтверждением email. */

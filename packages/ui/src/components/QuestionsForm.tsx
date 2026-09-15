@@ -2,7 +2,7 @@
 // Радио — один вариант, чекбоксы — multi; всегда доступен «свой вариант».
 // Кнопка отправки активируется, когда отвечены ВСЕ вопросы.
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Button } from '@voicechat/ui-kit'
 import { formatAnswers, type QuestionSpec } from '@shared/questions'
 
@@ -12,6 +12,8 @@ export interface QuestionsFormProps {
   onSubmit: (text: string) => void
   /** true — форма только для чтения (идёт другой запрос). */
   disabled?: boolean
+  draftKey?: string
+  onLater?: () => void
 }
 
 interface AnswerDraft {
@@ -30,8 +32,23 @@ function answerText(q: QuestionSpec, d: AnswerDraft): string {
   return [...picked, ...(custom ? [custom] : [])].join('; ')
 }
 
-export function QuestionsForm({ questions, onSubmit, disabled = false }: QuestionsFormProps): JSX.Element {
-  const [drafts, setDrafts] = useState<AnswerDraft[]>(() => emptyDrafts(questions.length))
+export function QuestionsForm({ questions, onSubmit, disabled = false, draftKey, onLater }: QuestionsFormProps): JSX.Element {
+  const formId = useId()
+  const [drafts, setDrafts] = useState<AnswerDraft[]>(() => {
+    try {
+      const saved = draftKey ? JSON.parse(sessionStorage.getItem(draftKey) ?? 'null') : null
+      if (Array.isArray(saved) && saved.length === questions.length) return saved.map((item) => ({ selected: new Set<number>(item.selected), custom: String(item.custom ?? '') }))
+    } catch { /* A damaged or unavailable session store must not hide questions. */ }
+    return emptyDrafts(questions.length)
+  })
+  const [draftError, setDraftError] = useState<string | null>(null)
+  const saveLater = (): void => {
+    try {
+      if (draftKey) sessionStorage.setItem(draftKey, JSON.stringify(drafts.map((draft) => ({ selected: [...draft.selected], custom: draft.custom }))))
+      setDraftError(null)
+      onLater?.()
+    } catch { setDraftError('Не удалось сохранить черновик. Ответ остаётся в открытой форме.') }
+  }
 
   const update = (qi: number, patch: (d: AnswerDraft) => AnswerDraft): void => {
     setDrafts((prev) => prev.map((d, i) => (i === qi ? patch(d) : d)))
@@ -76,7 +93,7 @@ export function QuestionsForm({ questions, onSubmit, disabled = false }: Questio
               <label className="qopt" key={oi}>
                 <input
                   type={q.multi ? 'checkbox' : 'radio'}
-                  name={`q${qi}`}
+                  name={`${formId}-q${qi}`}
                   checked={drafts[qi].selected.has(oi)}
                   onChange={q.multi ? () => toggle(qi, oi, true) : undefined}
                   onClick={q.multi ? undefined : () => toggle(qi, oi, false)}
@@ -96,7 +113,9 @@ export function QuestionsForm({ questions, onSubmit, disabled = false }: Questio
           </div>
         </fieldset>
       ))}
+      {draftError && <p role="alert">{draftError}</p>}
       <div className="qfoot">
+        {onLater && <Button disabled={disabled} onClick={saveLater}>Ответить позже</Button>}
         <span className="qcount">
           Отвечено {answeredCount} из {questions.length}
         </span>

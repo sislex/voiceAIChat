@@ -51,6 +51,23 @@ export function hashAgentToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 export class MachinesRepo extends BaseRepo {
+  async readVpnNetwork(userId: string): Promise<{ tailnet: string; encryptedSecret: string; generation: number; state: string } | null> {
+    const row = await this.sql.get('SELECT tailnet,encrypted_secret,generation,state FROM machine_vpn_networks WHERE user_id=?', [userId]) as { tailnet: string; encrypted_secret: string; generation: number; state: string } | undefined
+    return row ? { tailnet: row.tailnet, encryptedSecret: row.encrypted_secret, generation: row.generation, state: row.state } : null
+  }
+
+  /** A single per-owner CAS serializes both endpoints and survives process restarts. */
+  async saveVpnNetwork(userId: string, row: { tailnet: string; encryptedSecret: string; generation: number; state: string }, expected: number | null): Promise<boolean> {
+    if (expected === null) {
+      const result = await this.sql.run('INSERT INTO machine_vpn_networks(user_id,tailnet,encrypted_secret,generation,state) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING',
+        [userId, row.tailnet, row.encryptedSecret, row.generation, row.state])
+      return result.changes === 1
+    }
+    const result = await this.sql.run('UPDATE machine_vpn_networks SET tailnet=?,encrypted_secret=?,generation=?,state=? WHERE user_id=? AND generation=?',
+      [row.tailnet, row.encryptedSecret, row.generation, row.state, userId, expected])
+    return result.changes === 1
+  }
+
   /** Владелец машины (user_id агента); null — машина неизвестна. */
   async agentOwnerId(agentId: string): Promise<string | null> {
     const r = (await this.sql.get(`SELECT user_id FROM agents WHERE id = ?`, [agentId])) as { user_id?: string | null } | undefined

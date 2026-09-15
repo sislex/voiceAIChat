@@ -6,6 +6,9 @@ export interface ImageStudioGeneration {
   prompt: string
   source?: Buffer
   sourceName?: string
+  /** Selection retouch: white pixels may change, black pixels are context. */
+  mask?: Buffer
+  targetSize?: { width: number; height: number }
   references?: Array<{ name: string; data: Buffer }>
   onCancel?: (cancel: () => void) => void
 }

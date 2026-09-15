@@ -1,3 +1,8 @@
+import Fastify from 'fastify'
+import type { MakeCore } from './core.js'
+import { MakeHub } from './hub.js'
+import { registerMakeRoutes } from './routes.js'
+import type { MakeLibrary } from './library.js'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -14,6 +19,135 @@ async function fresh(): Promise<MakeWorkspaces> {
 }
 
 describe('MakeWorkspaces', () => {
+  // @testCase T1
+  it('persists empty directories and moves or deletes whole directory trees', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'empty/nested', '', { kind: 'directory' })
+    await ws.write(CONV, 'empty/a.txt', 'draft source')
+    await ws.rename(CONV, 'empty', 'moved')
+    expect((await ws.state(CONV)).directories).toEqual(['moved', 'moved/nested'])
+    expect((await ws.read(CONV, 'moved/a.txt')).content).toBe('draft source')
+    await expect(ws.rename(CONV, 'moved', 'moved/child')).rejects.toThrow('itself')
+    await expect(ws.write(CONV, 'moved/a.txt', '', { createOnly: true })).rejects.toThrow()
+    expect((await ws.read(CONV, 'moved/a.txt')).content).toBe('draft source')
+    await ws.delete(CONV, 'moved')
+    expect((await ws.state(CONV)).directories).toEqual([])
+    await expect(ws.read(CONV, 'moved/a.txt')).rejects.toThrow()
+  })
+
+  // @testCase T2
+  it('requires the reviewed contents to remain unchanged and replaces one occurrence', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'a.txt', 'needle needle\nneedle')
+    const snapshotsBefore = await ws.snapshots(CONV)
+    const preview = await ws.replaceAll(CONV, 'needle', 'result', { dryRun: true })
+    expect(preview.replacements).toBe(3)
+    expect((await ws.read(CONV, 'a.txt')).content).toBe('needle needle\nneedle')
+    expect(await ws.snapshots(CONV)).toEqual(snapshotsBefore)
+    await ws.write(CONV, 'a.txt', 'needle needle\nchanged')
+    await expect(ws.replaceAll(CONV, 'needle', 'result', { previewToken: preview.previewToken })).rejects.toThrow('stale')
+    expect((await ws.read(CONV, 'a.txt')).content).toBe('needle needle\nchanged')
+    const single = await ws.replaceAll(CONV, 'needle', '$1', { path: 'a.txt', matchIndex: 1, dryRun: true })
+    await ws.replaceAll(CONV, 'needle', '$1', { path: 'a.txt', matchIndex: 1, previewToken: single.previewToken })
+    expect((await ws.read(CONV, 'a.txt')).content).toBe('needle $1\nchanged')
+    const refreshed = await ws.replaceAll(CONV, 'needle', 'done', { dryRun: true })
+    await ws.replaceAll(CONV, 'needle', 'done', { previewToken: refreshed.previewToken })
+    expect((await ws.read(CONV, 'a.txt')).content).toBe('done $1\nchanged')
+  })
+
+  // @testCase T3
+  it('compares arbitrary snapshots without reading the working revision', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'a.txt', 'first')
+    const first = (await ws.snapshot(CONV, 'first')).snapshots[0]!.id
+    await ws.write(CONV, 'a.txt', 'second')
+    const second = (await ws.snapshot(CONV, 'second')).snapshots[0]!.id
+    await ws.write(CONV, 'a.txt', 'working copy')
+    const pair = await ws.snapshotDiff(CONV, first, second)
+    expect(pair.compareSnapshotId).toBe(second)
+    expect(pair.files.find((file) => file.path === 'a.txt')).toMatchObject({ status: 'changed', before: 5, after: 6 })
+    expect((await ws.snapshotFile(CONV, first, 'a.txt')).content).toBe('first')
+    expect((await ws.snapshotFile(CONV, second, 'a.txt')).content).toBe('second')
+    expect((await ws.read(CONV, 'a.txt')).content).toBe('working copy')
+    await expect(ws.snapshotDiff(CONV, first, 'missing')).rejects.toThrow()
+    await expect(ws.snapshotFile(CONV, first, 'absent.txt')).rejects.toThrow()
+    await expect(ws.snapshotFile(CONV, first, 'image.png')).rejects.toThrow()
+  })
+
+  // @testCase T2
+  it('requires a dry-run token on the HTTP replacement route without emitting changes for previews', async () => {
+    const ws = await fresh(); await ws.ensure(CONV); await ws.write(CONV, 'a.txt', 'needle')
+    const core = { conversation: async () => ({ assistantKind: 'make' }) } as unknown as MakeCore
+    const hub = new MakeHub(), events: unknown[] = []; hub.subscribe('owner', (event) => events.push(event))
+    const app = Fastify(); app.addHook('onRequest', async (request) => { Object.assign(request, { user: { name: 'owner' } }) })
+    registerMakeRoutes(app, { core, workspaces: ws, hub, library: {} as MakeLibrary })
+    const url = '/api/make/' + CONV + '/replace', payload = { query: 'needle', replacement: 'changed' }
+    try {
+      expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(400)
+      const preview = await app.inject({ method: 'POST', url, payload: { ...payload, dryRun: true } })
+      expect(preview.statusCode).toBe(200); expect(events).toEqual([])
+      await ws.write(CONV, 'a.txt', 'needle again')
+      expect((await app.inject({ method: 'POST', url, payload: { ...payload, previewToken: preview.json().previewToken } })).statusCode).toBe(400)
+      expect((await ws.read(CONV, 'a.txt')).content).toBe('needle again')
+      const current = await app.inject({ method: 'POST', url, payload: { ...payload, dryRun: true } })
+      expect((await app.inject({ method: 'POST', url, payload: { ...payload, previewToken: current.json().previewToken } })).statusCode).toBe(200)
+      expect((await ws.read(CONV, 'a.txt')).content).toBe('changed again'); expect(events).toHaveLength(1)
+    } finally { await app.close() }
+  })
+
+  // @testCase T5
+  it('exposes private reply content only to the owner across route responses and events', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const [comment] = await ws.addComment(CONV, { selector: 'h1', elementLabel: 'Title', text: 'Feedback', author: 'guest' })
+    await ws.setShareGrant(CONV, 'editor', 'editor')
+    const core = {
+      conversation: async (user: string) => user === 'owner' ? { assistantKind: 'make' } : null,
+      conversationOwner: async () => 'owner',
+      isProjectViewer: async (user: string) => user === 'viewer'
+    } as unknown as MakeCore
+    const hub = new MakeHub()
+    const events: unknown[] = []
+    hub.subscribe('owner', (event) => events.push(event))
+    const app = Fastify()
+    app.addHook('onRequest', async (request) => { Object.assign(request, { user: { name: request.headers['x-user'] ?? '' } }) })
+    registerMakeRoutes(app, { core, workspaces: ws, hub, library: {} as MakeLibrary })
+    try {
+      const url = '/api/make/' + CONV + '/comments'
+      const saved = await app.inject({ method: 'PATCH', url: url + '/' + comment!.id, headers: { 'x-user': 'owner' }, payload: { ownerReply: 'SECRET-454' } })
+      expect(saved.statusCode).toBe(200)
+      expect(saved.body).toContain('SECRET-454')
+      expect((await app.inject({ url, headers: { 'x-user': 'owner' } })).body).toContain('SECRET-454')
+      for (const user of ['viewer', 'editor', 'guest', '']) {
+        expect((await app.inject({ url, headers: { 'x-user': user } })).body).not.toContain('SECRET-454')
+        const denied = await app.inject({ method: 'PATCH', url: url + '/' + comment!.id, headers: { 'x-user': user }, payload: { ownerReply: 'tampered' } })
+        expect(denied.statusCode).toBe(404)
+        expect(denied.body).not.toContain('SECRET-454')
+      }
+      const edited = await app.inject({ method: 'PATCH', url: url + '/' + comment!.id, headers: { 'x-user': 'editor' }, payload: { resolved: true } })
+      expect(edited.statusCode).toBe(200)
+      expect(edited.body).not.toContain('SECRET-454')
+      expect(JSON.stringify(events)).not.toContain('SECRET-454')
+    } finally { await app.close() }
+  })
+
+  // @testCase T5
+  it('persists owner replies separately from comments and public representations', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const [comment] = await ws.addComment(CONV, { selector: 'h1', elementLabel: 'Title', text: 'Feedback', author: 'guest', status: 'approved' })
+    await ws.replyToComment(CONV, comment!.id, 'PRIVATE-CONTROL-454')
+    expect(await ws.ownerReplies(CONV)).toEqual({ [comment!.id]: 'PRIVATE-CONTROL-454' })
+    expect(JSON.stringify(await ws.comments(CONV))).not.toContain('PRIVATE-CONTROL-454')
+    expect(JSON.stringify(await ws.publicComments(CONV))).not.toContain('PRIVATE-CONTROL-454')
+    expect(JSON.stringify(await ws.state(CONV))).not.toContain('PRIVATE-CONTROL-454')
+    await expect(ws.read(CONV, '.owner-replies.json')).rejects.toThrow()
+    await expect(ws.replyToComment(CONV, 'missing', 'secret')).rejects.toThrow()
+  })
+
   // @testCase TC-6
   it('normalizes missing, unknown and damaged settings without rewriting them', async () => {
     const ws = await fresh()
@@ -293,7 +427,8 @@ describe('MakeWorkspaces', () => {
     const ws = await fresh()
     await ws.write(CONV, 'styles.css', ':root { --bg: #fff; --fg: #000; }')
     const found = await ws.search(CONV, '--(bg|fg)', 200, { regex: true })
-    expect(found).toHaveLength(1)
+    expect(found).toHaveLength(2)
+    expect(found.map((match) => match.matchIndex)).toEqual([0, 1])
     const dry = await ws.replaceAll(CONV, '--(\\w+): #fff', '--$1: white', { regex: true, dryRun: true })
     expect(dry.replacements).toBe(1)
     expect(dry.preview).toEqual([{ path: 'styles.css', line: 1, before: ':root { --bg: #fff; --fg: #000; }', after: ':root { --bg: white; --fg: #000; }' }])

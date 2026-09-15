@@ -35,6 +35,7 @@ export interface AppCommandDeps {
   voice: VoiceState
   /** Автоозвучка ответов включена — от неё зависит подпись команды. */
   autoSpeak: boolean
+  shortcuts?: { palette: string; newChat: string; send: string }
   theme: 'light' | 'dark' | 'green'
   /** Web-режим: есть мосты машин и сессии (в desktop команд машин и выхода нет). */
   web: boolean
@@ -79,6 +80,7 @@ function baseCommands(deps: AppCommandDeps): Command[] {
   return [
     {
       id: 'app.new-chat',
+      hotkey: deps.shortcuts?.newChat ?? 'mod+n',
       title: 'Новая беседа',
       section: 'action',
       keywords: ['создать чат', 'new chat'],
@@ -177,7 +179,7 @@ function baseCommands(deps: AppCommandDeps): Command[] {
       id: 'app.palette',
       title: 'Командная палитра',
       section: 'action',
-      hotkey: 'mod+k',
+      hotkey: deps.shortcuts?.palette ?? 'mod+k',
       keywords: ['команды', 'palette'],
       enabled: () => !deps.paletteOpen,
       run: deps.openPalette
@@ -248,6 +250,8 @@ export function buildAppCommands(deps: AppCommandDeps): Command[] {
 // ---- Глобальные биндинги палитры и шпаргалки ---------------------------------
 
 export interface AppHotkeyDeps {
+  shortcuts?: { palette: string; newChat: string; send: string }
+  newChat?: () => void
   /** Приветственный мастер пройден: до него горячие клавиши не нужны. */
   onboarded: boolean
   voice: VoiceState
@@ -266,13 +270,19 @@ export function buildHotkeyBindings(deps: AppHotkeyDeps): HotkeyBinding[] {
   const allowed = (): boolean => deps.onboarded && deps.voice !== 'listening'
   return [
     {
-      combo: 'mod+k',
+      combo: deps.shortcuts?.palette ?? 'mod+k',
       // С модификатором ловим и в поле ввода: палитра нужна в том числе из
       // композера, а пробел и «?» там должны печататься.
       inInput: true,
       enabled: allowed,
       onDown: deps.togglePalette
     },
+    ...(deps.newChat ? [{
+      combo: deps.shortcuts?.newChat ?? 'mod+n',
+      enabled: allowed,
+      inInput: true,
+      onDown: () => deps.newChat?.()
+    }] : []),
     {
       combo: '?',
       enabled: allowed,

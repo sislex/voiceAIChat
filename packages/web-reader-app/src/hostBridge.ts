@@ -1,4 +1,4 @@
-import type { PreviewAction, PreviewActionResult } from '@shared/previewActions'
+import { isPreviewAction, type PreviewAction, type PreviewActionResult } from '@shared/previewActions'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import {
   WEB_RECORDER_MESSAGE_TYPE,
@@ -91,7 +91,10 @@ interface PendingEntry {
 }
 
 export function createReaderHostBridge(options: ReaderHostBridgeOptions): ReaderHostBridge {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs! > 0
+    ? Math.min(options.timeoutMs!, 120_000) : DEFAULT_TIMEOUT_MS
+  let requestSequence = 0
+  let diagnosticsMode = false
   const pending = new Map<string, PendingEntry>()
   let registration: string | null = null
   let shellCapabilities: readonly string[] = []
@@ -162,7 +165,11 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     })
   }
 
-  const run: PreviewActionRunner = (action) => {
+  const run: PreviewActionRunner = (input) => {
+    if (!isPreviewAction(input)) return Promise.resolve({ ok: false, error: 'Некорректное действие Web Reader.' })
+    let action: PreviewAction
+    try { action = structuredClone(input) }
+    catch { return Promise.resolve({ ok: false, error: 'Не удалось скопировать действие Web Reader.' }) }
     if (disposed) return Promise.resolve({ ok: false, error: 'Панель Web Reader закрыта.' })
     if (registration === null) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
     if (action.kind === 'open') rejectAll('Открывается другая страница — повтори действие.')
@@ -172,8 +179,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     if (pageStatus === 'error' && action.kind !== 'open' && action.kind !== 'viewport') {
       return Promise.resolve({ ok: false, error: 'Сайт или страница недоступны: ' + (pageError ?? 'ошибка загрузки.') })
     }
+    if (pending.size >= 64) return Promise.resolve({ ok: false, error: 'Слишком много ожидающих действий Reader. Дождитесь завершения.' })
     return new Promise((resolve) => {
-      const requestId = 'wr-' + options.newId()
+      const requestId = 'wr-' + options.newId() + '-' + ++requestSequence
       const timer = setTimeout(() => settle(requestId, {
         ok: false,
         error: pageStatus === 'loading'
@@ -191,7 +199,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         if (!post({ kind: 'set-url', url: null })) return
         // Микрозадача прежнего open не должна оживлять отменённую навигацию.
         queueMicrotask(() => {
-          if (disposed || generation !== navigationGeneration || registered !== registration) return
+          if (disposed || !pending.has(requestId) || generation !== navigationGeneration || registered !== registration) return
           post({ kind: 'set-url', url: action.url })
         })
       }
@@ -207,8 +215,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       registrationId: id,
       capabilities: shellCapabilities,
       run: action => current() ? run(action) : Promise.resolve({ ok: false, error: 'Регистрация Web Reader устарела — повтори действие.' }),
-      beginDiagnostics: () => { if (current()) post({ kind: 'diagnostics-start', active: true }) },
-      endDiagnostics: () => { if (current()) post({ kind: 'diagnostics-start', active: false }) }
+      beginDiagnostics: () => { if (current()) { diagnosticsMode = true; post({ kind: 'diagnostics-start', active: true }) } },
+      endDiagnostics: () => { if (current()) { diagnosticsMode = false; post({ kind: 'diagnostics-start', active: false }) } }
     }
   }
 
@@ -216,7 +224,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     getStatus: () => status,
     registrationId: () => registration,
     setUrl(url) {
-      if (disposed) return
+      if (disposed || url === approvedUrl && pageStatus !== 'error') return
       navigationGeneration++
       if (url === null || url !== approvedUrl) rejectAll(url ? 'Адрес страницы изменён — повтори действие.' : 'Страница закрыта.')
       approvedUrl = url
@@ -228,8 +236,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     run,
     setInspector: (enabled) => { inspectorMode = enabled; post({ kind: 'inspector-state', enabled }) },
     setRecording: (enabled) => { recordingMode = enabled; post({ kind: 'recording-state', enabled }) },
-    beginDiagnostics: () => post({ kind: 'diagnostics-start', active: true }),
-    endDiagnostics: () => post({ kind: 'diagnostics-start', active: false }),
+    beginDiagnostics: () => { diagnosticsMode = true; post({ kind: 'diagnostics-start', active: true }) },
+    endDiagnostics: () => { diagnosticsMode = false; post({ kind: 'diagnostics-start', active: false }) },
     receive(message) {
       if (disposed || !isWebRecorderClientMessage(message)) return
       if (message.kind === 'ready') {
@@ -247,8 +255,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         pageStatus = approvedUrl ? 'loading' : 'empty'
         pageError = undefined
         if (!sendInit()) return
-        if (inspectorMode !== undefined) post({ kind: 'inspector-state', enabled: inspectorMode })
-        if (recordingMode !== undefined) post({ kind: 'recording-state', enabled: recordingMode })
+        if (inspectorMode !== undefined && !post({ kind: 'inspector-state', enabled: inspectorMode })) return
+        if (recordingMode !== undefined && !post({ kind: 'recording-state', enabled: recordingMode })) return
+        if (diagnosticsMode && !post({ kind: 'diagnostics-start', active: true })) return
         syncPageStatus()
         options.onRegistration?.(registrationHandle())
         return
@@ -272,6 +281,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           if (message.status === 'error') rejectAll('Сайт или страница недоступны: ' + (message.error ?? 'ошибка загрузки.'))
           return
         case 'result':
+          if (!pending.get(message.requestId)?.sent) return
           settle(message.requestId, message.ok
             ? { ok: true, ...(message.result !== undefined ? { result: message.result } : {}) }
             : { ok: false, error: message.error ?? 'Действие в превью не выполнено.' })

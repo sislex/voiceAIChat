@@ -122,7 +122,7 @@ export interface ProjectsActions {
   loadProjectTypes(): Promise<ProjectTypeNode[]>
   loadProjectInvitations(id: string): Promise<void>
   /** Результат нужен вызывающему: ушло письмо или приглашение только в списке. */
-  inviteToProject(id: string, invitee: string, role: 'owner' | 'member'): Promise<{ mailed: boolean; email: string | null; link: string } | null>
+  inviteToProject(id: string, invitee: string, role: 'owner' | 'member', ttlDays?: number): Promise<{ mailed: boolean; email: string | null; link: string } | null>
   resendProjectInvitation(id: string, invitationId: string): Promise<void>
   revokeProjectInvitation(id: string, invitationId: string): Promise<void>
   loadMyInvitations(): Promise<void>
@@ -180,7 +180,7 @@ export interface ProjectsActions {
   createTaskFromProposalInPreparation(projectId: string, proposalId: string, input: Pick<Task, 'title' | 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'> & { selection?: import('@voicechat/shared').TaskPreparationLlmSelection; sourceConversationId?: string }): Promise<import('@voicechat/shared').TaskLaunchResult>
   updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean; autoPilot?: boolean; autoPilotRequiresManualQa?: boolean }
   ): Promise<void>
   moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<boolean>
   deleteTask(taskId: string): Promise<void>
@@ -202,7 +202,7 @@ export interface ProjectsActions {
   cancelCiRun(runId: string): Promise<void>
   dequeueCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
-  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null>
+  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null; stepId?: string }): Promise<CiRun | null>
   discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null>
   loadCiRun(runId: string): Promise<void>
   openCiRun(runId: string): void
@@ -858,9 +858,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           fail(err, () => void actions.loadProjectInvitations(id))
         }
       },
-      async inviteToProject(id, invitee, role) {
+      async inviteToProject(id, invitee, role, ttlDays) {
         try {
-          const { invitation, mailed, link } = await client['projects:invite']({ id, invitee, role })
+          const { invitation, mailed, link } = await client['projects:invite']({ id, invitee, role, ...(ttlDays === undefined ? {} : { ttlDays }) })
           await actions.loadProjectInvitations(id)
           return { mailed, email: invitation.email, link }
         } catch (err) {
@@ -1561,4 +1561,3 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
 
   return { getState, subscribe: core.subscribe, dispose: core.dispose, actions }
 }
-

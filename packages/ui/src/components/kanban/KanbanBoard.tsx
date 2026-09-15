@@ -11,10 +11,10 @@
 // стрелки — выбрать место, Enter — положить, Esc — отмена; каждый шаг
 // проговаривается в aria-live. Колонка = статус.
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
-import { kanbanFilterKey } from '@voicechat/ui-foundation/persistence'
+import { kanbanFilterKey, kanbanDensityKey, kanbanColumnKey } from '@voicechat/ui-foundation/persistence'
 import type { ProjectFeatureSet } from '@shared/projectTypes'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Board, BoardView, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
@@ -26,19 +26,22 @@ import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
-import { TaskCard, epicOf } from './TaskCard'
-import { type TaskModalTab, type TaskUpdateFields } from './TaskModal'
+import { TaskCard, epicOf, updatedPresentation } from './TaskCard'
+import { type TaskModalProps, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
-import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, epicColor, issueKey } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, PriorityIcon, TYPE_LABEL, columnRegionLabel, duePresentation, emptyColumnPresentation, epicColor, issueKey, matchesDueWindow, pluralTasks, wipPresentation } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
-import { Button } from '@voicechat/ui-kit'
+import { Button, useToast } from '@voicechat/ui-kit'
+import { usePreference, EMPTY_IDS, isStringList, userKey, readPreference, writePreference } from '../../lib/shellPreferences'
+import { Dialog } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { useCommandSource } from '@voicechat/ui-foundation/runtime'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { DotsIcon, GripIcon } from '../icons'
@@ -52,6 +55,7 @@ import {
 } from '@voicechat/ui-foundation/lib/dnd'
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
+export type BoardDensity = 'comfortable' | 'compact'
 
 interface ColumnAssigneeFilter {
   assigneeIds: string[]
@@ -188,7 +192,7 @@ export interface KanbanBoardProps {
   openTaskId?: string | null
   onOpenTaskChange?: (taskId: string | null, tab?: TaskModalTab) => void
   initialOpenTaskTab?: TaskModalTab
-  onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
+  onSelectedFieldChange?: TaskModalProps['onSelectedFieldChange']
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
   /**
@@ -269,33 +273,239 @@ const RECENT_MS = 24 * 60 * 60 * 1000
  * занимали пол-экрана до первой карточки, особенно после увеличения целей
  * нажатия под палец.
  */
-function FilterShell({ mobile, count, children }: { mobile: boolean; count: number; children: ReactNode }): JSX.Element {
+function FilterShell({ mobile, count, visibleTasks, snapshot, refreshing, children, onReset }: {
+  mobile: boolean
+  count: number
+  visibleTasks: number
+  snapshot: string
+  refreshing: boolean
+  children: ReactNode
+  onReset: () => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
   if (!mobile) return <div className="jboard-filters" data-testid="board-filters">{children}</div>
   return (
-    <details className="jboard-filters-shell" data-testid="board-filters-shell">
+    <div className="jboard-filters-shell" data-testid="board-filters-shell">
+      <Button aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
+        Фильтры ({count} активных)
+      </Button>
+      <span className="jboard-mobile-filter-meta" aria-label={`${visibleTasks} ${pluralTasks(visibleTasks)}. ${refreshing ? 'Доска обновляется' : `Данные: ${snapshot}`}`}>
+        {visibleTasks} {pluralTasks(visibleTasks)} · {refreshing ? 'обновляется…' : snapshot}
+      </span>
+      {open && <Dialog title="Фильтры и меню доски" size="full" className="jboard-mobile-filters" padded
+        onClose={() => setOpen(false)}
+        footer={<Button onClick={onReset}>Сбросить все</Button>}>
+        <div className="jboard-filters" data-testid="board-filters">{children}</div>
+      </Dialog>}
+    </div>
+  )
+}
+
+interface FilterOption { value: string; label: string; leading?: ReactNode; meta?: string }
+
+export function formatVisibleBoardList(input: {
+  projectName: string
+  columns: ReadonlyArray<{ column: KanbanColumn; tasks: readonly Task[] }>
+  totalTasks: number
+  activeFilters: readonly string[]
+}): string {
+  const visibleCount = input.columns.reduce((total, entry) => total + entry.tasks.length, 0)
+  const lines = [
+    `# ${input.projectName} — канбан`,
+    `Показано: ${visibleCount} из ${input.totalTasks}`,
+    `Фильтры: ${input.activeFilters.length > 0 ? input.activeFilters.join('; ') : 'нет'}`
+  ]
+  for (const { column, tasks } of input.columns) {
+    lines.push('', `## ${column.name}${column.hidden ? ' (скрытая)' : ''} — ${tasks.length}`)
+    if (tasks.length === 0) {
+      lines.push('- Нет задач')
+      continue
+    }
+    for (const task of tasks) {
+      const details = [
+        TYPE_LABEL[task.type],
+        PRIORITY_LABEL[task.priority],
+        `исполнитель: ${task.assignee ?? 'не назначено'}`
+      ]
+      if (task.storyPoints != null) details.push(`${task.storyPoints} SP`)
+      if (task.dueDate != null) details.push(`срок: ${new Date(task.dueDate).toISOString().slice(0, 10)}`)
+      if (task.labels.length > 0) details.push(`метки: ${task.labels.join(', ')}`)
+      if (task.flagged) details.push('с флагом')
+      lines.push(`- [${issueKey(input.projectName, task)}] ${task.title} · ${details.join(' · ')}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+export function taskPermalink(
+  task: Pick<Task, 'projectId' | 'id'>,
+  page: Pick<Location, 'origin' | 'pathname'> | null = typeof window === 'undefined' ? null : window.location
+): string {
+  const route = `#/projects/${encodeURIComponent(task.projectId)}/task/${encodeURIComponent(task.id)}`
+  return page ? `${page.origin}${page.pathname}${route}` : route
+}
+
+export interface BoardDiagnosticsSnapshot {
+  projectName: string
+  snapshotState: 'current' | 'refreshing' | 'stale'
+  snapshotAge: 'fresh' | 'recent' | 'stale'
+  snapshotAt: string
+  refreshing: boolean
+  loadedTasks: number
+  displayedTasks: number
+  visibleTasks: number
+  totalColumns: number
+  displayedColumns: number
+  hiddenColumns: number
+  collapsedColumns: number
+  activeColumn: string | null
+  density: BoardDensity
+  swimlane: Swimlane
+  showHidden: boolean
+  showCompleted: boolean
+  activeFilters: readonly string[]
+  metrics: {
+    storyPoints: number
+    overdue: number
+    unassigned: number
+    flagged: number
+    completed: number
+  }
+  columns: Array<{
+    id: string
+    name: string
+    hidden: boolean
+    visibleTasks: number
+    totalTasks: number
+    wipLimit: number | null
+  }>
+}
+
+const DIAGNOSTIC_STATE_LABEL: Record<BoardDiagnosticsSnapshot['snapshotState'], string> = {
+  current: 'Актуальный снимок',
+  refreshing: 'Обновляется',
+  stale: 'Устаревший снимок'
+}
+
+const SWIMLANE_LABEL: Record<Swimlane, string> = {
+  none: 'нет',
+  epic: 'по эпикам',
+  assignee: 'по исполнителям'
+}
+
+const SNAPSHOT_AGE_LABEL: Record<BoardDiagnosticsSnapshot['snapshotAge'], string> = {
+  fresh: 'свежий',
+  recent: 'недавний',
+  stale: 'давний'
+}
+
+export function formatBoardDiagnostics(snapshot: BoardDiagnosticsSnapshot): string {
+  const lines = [
+    `# ${snapshot.projectName} — диагностика канбана`,
+    `Статус данных: ${DIAGNOSTIC_STATE_LABEL[snapshot.snapshotState]}`,
+    `Свежесть снимка: ${SNAPSHOT_AGE_LABEL[snapshot.snapshotAge]}`,
+    `Снимок: ${snapshot.snapshotAt}`,
+    `Фоновое обновление: ${snapshot.refreshing ? 'да' : 'нет'}`,
+    `Задачи: загружено ${snapshot.loadedTasks}; в показанных колонках ${snapshot.displayedTasks}; видно ${snapshot.visibleTasks}`,
+    `Колонки: всего ${snapshot.totalColumns}; показано ${snapshot.displayedColumns}; скрыто ${snapshot.hiddenColumns}; свёрнуто ${snapshot.collapsedColumns}`,
+    `Активная колонка: ${snapshot.activeColumn ?? 'нет'}`,
+    `Представление: плотность ${snapshot.density === 'compact' ? 'компактная' : 'обычная'}; свимлейны ${SWIMLANE_LABEL[snapshot.swimlane]}; скрытые ${snapshot.showHidden ? 'показаны' : 'скрыты'}; завершённые ${snapshot.showCompleted ? 'загружены' : 'не загружены'}`,
+    `Фильтры (${snapshot.activeFilters.length}): ${snapshot.activeFilters.length > 0 ? snapshot.activeFilters.join('; ') : 'нет'}`,
+    `Сводка: ${snapshot.metrics.storyPoints} SP; просрочено ${snapshot.metrics.overdue}; без исполнителя ${snapshot.metrics.unassigned}; с флагом ${snapshot.metrics.flagged}; завершено ${snapshot.metrics.completed}`,
+    '',
+    '## Показанные колонки'
+  ]
+  for (const column of snapshot.columns) {
+    const wip = wipPresentation(column.totalTasks, column.wipLimit)?.label ?? 'WIP-лимит не задан'
+    lines.push(`- ${column.name}${column.hidden ? ' (скрытая)' : ''}: видно ${column.visibleTasks} из ${column.totalTasks}; ${wip}`)
+  }
+  if (snapshot.columns.length === 0) lines.push('- Нет колонок')
+  return lines.join('\n')
+}
+
+/** Searchable multi-select with bulk operations over the currently visible options. */
+function FilterDropdown({ label, selected, options, onChange }: {
+  label: string
+  selected: ReadonlySet<string>
+  options: FilterOption[]
+  onChange: (next: ReadonlySet<string>) => void
+}): JSX.Element {
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const visible = options.filter((option) => option.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const selectVisible = (): void => onChange(new Set([...selected, ...visible.map((option) => option.value)]))
+  const clearVisible = (): void => {
+    const values = new Set(visible.map((option) => option.value))
+    onChange(new Set([...selected].filter((value) => !values.has(value))))
+  }
+  const toggleOption = (value: string): void => {
+    const next = new Set(selected)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    onChange(next)
+  }
+  return (
+    <details className="jfilter" onToggle={(event) => { if (event.currentTarget.open) requestAnimationFrame(() => searchRef.current?.focus()) }}>
       <summary>
-        Фильтры
-        {count > 0 && <span className="jfilter-count">{count}</span>}
+        {label}
+        {selected.size > 0 && <span className="jfilter-count">{selected.size}</span>}
       </summary>
-      <div className="jboard-filters" data-testid="board-filters">{children}</div>
+      <div className="jfilter-menu jfilter-menu--searchable">
+        <input
+          ref={searchRef}
+          type="search"
+          className="login-input jfilter-search"
+          value={query}
+          aria-label={`Поиск в фильтре «${label}»`}
+          placeholder={`Найти: ${label.toLocaleLowerCase()}`}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && query) {
+              event.preventDefault()
+              event.stopPropagation()
+              setQuery('')
+            }
+          }}
+        />
+        <span className="jfilter-results" role="status" aria-live="polite">Показано {visible.length} из {options.length}</span>
+        <div className="jfilter-bulk" role="group" aria-label={`Массовый выбор фильтра «${label}»`}>
+          <button type="button" disabled={visible.length === 0 || visible.every((option) => selected.has(option.value))} onClick={selectVisible}>Выбрать найденные</button>
+          <button type="button" disabled={!visible.some((option) => selected.has(option.value))} onClick={clearVisible}>Снять найденные</button>
+          <button type="button" disabled={selected.size === 0} onClick={() => onChange(new Set())}>Сбросить всё</button>
+        </div>
+        <div className="jfilter-options">
+          {visible.map((option) => (
+            <label key={option.value}>
+              <input type="checkbox" checked={selected.has(option.value)} onChange={() => toggleOption(option.value)} />
+              {option.leading && <span className="jfilter-option-leading" aria-hidden="true">{option.leading}</span>}
+              <span className="jfilter-option-label">{option.label}</span>
+              {option.meta && <span className="jfilter-option-meta">{option.meta}</span>}
+            </label>
+          ))}
+          {visible.length === 0 && <p className="jfilter-empty">Нет подходящих вариантов</p>}
+        </div>
+      </div>
     </details>
   )
 }
 
-/** Мультивыбор в выпадашке фильтра (details/summary — без своего позиционирования). */
-function FilterDropdown({ label, active, children }: { label: string; active: number; children: JSX.Element }): JSX.Element {
+function ActiveFilterChip({ label, onRemove }: { label: string; onRemove: () => void }): JSX.Element {
   return (
-    <details className="jfilter">
-      <summary>
-        {label}
-        {active > 0 && <span className="jfilter-count">{active}</span>}
-      </summary>
-      <div className="jfilter-menu">{children}</div>
-    </details>
+    <Button
+      variant="secondary"
+      size="sm"
+      className="jactive-filter-chip"
+      aria-label={`Удалить фильтр: ${label}`}
+      onClick={onRemove}
+    >
+      <span className="jactive-filter-chip-text">{label}</span>
+      <span aria-hidden="true">×</span>
+    </Button>
   )
 }
 
 export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
+  const staleMessageId = useId()
   // Телефонная раскладка: тот же порог, что у карточки задачи (720px).
   const compact = useMediaQuery(MOBILE_QUERY)
   const { loading, members } = props
@@ -354,14 +564,29 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [filtersHydrated, setFiltersHydrated] = useState(false)
   const [flaggedOnly, setFlaggedOnly] = useState(false)
   const [recentOnly, setRecentOnly] = useState(false)
+  const [dueWindow, setDueWindow] = useState<BoardView['dueWindow']>('all')
+  const [completedOnly, setCompletedOnly] = useState(false)
+  const [density, setDensity] = useState<BoardDensity>('comfortable')
+  const [densityHydrated, setDensityHydrated] = useState(false)
+  const [collapsedColumns, setCollapsedColumns] = useState<ReadonlySet<string>>(new Set())
+  const [collapsedColumnsHydrated, setCollapsedColumnsHydrated] = useState(false)
   const [swimlane, setSwimlane] = useState<Swimlane>(props.defaultSwimlane ?? 'none')
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
+  const [collapsedLanesHydrated, setCollapsedLanesHydrated] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  const [copyDiagnosticsStatus, setCopyDiagnosticsStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [copyBoardStatus, setCopyBoardStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [copyTaskLinkStatus, setCopyTaskLinkStatus] = useState<{ title: string; copied: boolean } | null>(null)
+  useEffect(() => setCopyTaskLinkStatus(null), [improvementsProjectId])
+  const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
   const [dragTask, setDragTask] = useState<string | null>(null)
   const [dragColumn, setDragColumn] = useState<string | null>(null)
   // Перенос: место вставки (общее для указателя и клавиатуры), высота
   // приподнятой карточки (её занимает плейсхолдер), колонка-цель при переносе
   // колонки, состояние клавиатурного переноса и текст для скринридера.
   const [dropAt, setDropAt] = useState<DropAt | null>(null)
+  const pointerAnnouncementRef = useRef('')
   const [liftHeight, setLiftHeight] = useState(0)
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
   const [grab, setGrab] = useState<KeyboardGrab | null>(null)
@@ -372,6 +597,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [automationInfoColumn, setAutomationInfoColumn] = useState<KanbanColumn | null>(null)
   const automationInfoButtonRef = useRef<HTMLButtonElement | null>(null)
   const automationInfoCloseRef = useRef<HTMLButtonElement | null>(null)
+  const shortcutsButtonRef = useRef<HTMLButtonElement | null>(null)
+  const shortcutsCloseRef = useRef<HTMLButtonElement | null>(null)
   const [wipEditing, setWipEditing] = useState<string | null>(null)
   const [wipDraft, setWipDraft] = useState('')
   const [composerCol, setComposerCol] = useState<string | null>(null)
@@ -391,14 +618,29 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     else setInternalOpenTask(taskId)
   }
   const composerRef = useRef<HTMLInputElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const boardScrollRef = useRef(new Map<string, { left: number; top: number }>())
   const colMenuRef = useRef<HTMLSpanElement | null>(null)
+  const colMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const colMenuPanelRef = useRef<HTMLDivElement | null>(null)
   const assigneeFilterRef = useRef<HTMLDivElement | null>(null)
   const drag = usePointerDrag()
 
   useDismissibleMenu(Boolean(colMenu), colMenuRef, () => setColMenu(null))
   useDismissibleMenu(Boolean(openAssigneeFilter), assigneeFilterRef, () => setOpenAssigneeFilter(null))
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent): void => {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      event.preventDefault()
+      searchRef.current?.focus()
+      searchRef.current?.select()
+    }
+    document.addEventListener('keydown', focusSearch)
+    return () => document.removeEventListener('keydown', focusSearch)
+  }, [])
   useEffect(() => {
     if (!automationInfoColumn) return
     automationInfoCloseRef.current?.focus()
@@ -415,6 +657,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     window.addEventListener('keydown', closeOnEscape, true)
     return () => window.removeEventListener('keydown', closeOnEscape, true)
   }, [automationInfoColumn])
+  useEffect(() => {
+    if (!shortcutsOpen) return
+    shortcutsCloseRef.current?.focus()
+    const close = (): void => {
+      setShortcutsOpen(false)
+      requestAnimationFrame(() => shortcutsButtonRef.current?.focus())
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      close()
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => window.removeEventListener('keydown', closeOnEscape, true)
+  }, [shortcutsOpen])
   // Esc клавиатурного переноса нужно поймать раньше Esc страницы-обёртки
   // (useDialogStack слушает тот же window в фазе перехвата): иначе доска
   // закрывалась бы вместо отмены переноса. Поэтому именно useLayoutEffect —
@@ -436,6 +694,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const board = useMemo(() => normalizeBoard(props.board), [props.board])
   const allTasks = useMemo(() => board?.tasks ?? [], [board])
+  const snapshotUpdatedAt = useMemo(() => {
+    const latestTaskUpdate = board?.tasks.reduce((latest, task) => Math.max(latest, task.updatedAt), 0) ?? 0
+    return latestTaskUpdate || Date.now()
+  }, [board])
+  const snapshotUpdated = updatedPresentation(snapshotUpdatedAt)
   const scrollScopeId = props.scrollScopeId ?? board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? null
 
   // Блокирующие обновления (например, переключение завершённых задач) временно
@@ -457,6 +720,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
   }, [scrollScopeId, board != null, swimlane])
   const currentUserId = props.currentUserId ?? props.currentUser ?? null
+  const [hiddenCards, setHiddenCards] = usePreference(currentUserId ?? 'local', 'hidden-cards', EMPTY_IDS, isStringList)
+  const hideToast = useToast()
   /** Прежняя запись вида в предпочтениях браузера — источник разового переноса. */
   const readLocalView = (key: string): Partial<BoardView> | null => {
     try {
@@ -481,6 +746,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setOnlyMine(view.onlyMine)
     setFlaggedOnly(view.flaggedOnly)
     setRecentOnly(view.recentOnly)
+    setDueWindow(view.dueWindow === 'all' && view.overdueOnly ? 'overdue' : view.dueWindow)
+    setCompletedOnly(view.completedOnly)
     setColumnAssigneeFilters(Object.fromEntries(Object.entries(view.columnAssignees).map(([columnId, filter]) => [columnId, { assigneeIds: filter.assigneeIds, includeUnassigned: filter.unassigned }])))
     setSwimlane(view.swimlane)
     setShowHidden(view.showHidden)
@@ -496,6 +763,70 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const projectId = board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? (board ? props.projectName : null)
     return currentUserId && projectId ? kanbanFilterKey(currentUserId, projectId) : null
   }, [allTasks, board, currentUserId, props.projectName])
+  const densityProjectId = board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? (board ? props.projectName : null)
+  const densityStorageKey = currentUserId && densityProjectId ? kanbanDensityKey(currentUserId, densityProjectId) : null
+  const collapsedColumnsStorageKey = filterStorageKey?.replace('voicechat.kanban.filters.v3.', 'voicechat.kanban.collapsed-columns.v1.') ?? null
+  const collapsedLanesStorageKey = filterStorageKey?.replace('voicechat.kanban.filters.v3.', 'voicechat.kanban.collapsed-lanes.v1.') ?? null
+  useEffect(() => {
+    setDensityHydrated(false)
+    setDensity('comfortable')
+    if (!densityStorageKey) {
+      setDensityHydrated(true)
+      return
+    }
+    try {
+      const saved = localStorage.getItem(densityStorageKey)
+      if (saved === 'compact' || saved === 'comfortable') setDensity(saved)
+    } catch { /* Browser preferences may be unavailable. */ }
+    setDensityHydrated(true)
+  }, [densityStorageKey])
+  useEffect(() => {
+    if (!densityHydrated || !densityStorageKey) return
+    try { localStorage.setItem(densityStorageKey, density) } catch { /* Browser preferences may be unavailable. */ }
+  }, [density, densityHydrated, densityStorageKey])
+  useEffect(() => {
+    setCollapsedColumnsHydrated(false)
+    setCollapsedColumns(new Set())
+    if (!collapsedColumnsStorageKey) {
+      setCollapsedColumnsHydrated(true)
+      return
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem(collapsedColumnsStorageKey) ?? '[]') as unknown
+      if (Array.isArray(saved)) setCollapsedColumns(new Set(saved.filter((id): id is string => typeof id === 'string')))
+    } catch { /* Browser preferences may be unavailable or damaged. */ }
+    setCollapsedColumnsHydrated(true)
+  }, [collapsedColumnsStorageKey])
+  useEffect(() => {
+    if (!collapsedColumnsHydrated || !collapsedColumnsStorageKey) return
+    try { localStorage.setItem(collapsedColumnsStorageKey, JSON.stringify([...collapsedColumns])) } catch { /* Browser preferences may be unavailable. */ }
+  }, [collapsedColumns, collapsedColumnsHydrated, collapsedColumnsStorageKey])
+  useEffect(() => {
+    setCollapsedLanesHydrated(false)
+    setCollapsedLanes(new Set())
+    if (!collapsedLanesStorageKey || swimlane === 'none') {
+      setCollapsedLanesHydrated(true)
+      return
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem(collapsedLanesStorageKey) ?? '{}') as unknown
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+        const ids = (saved as Record<string, unknown>)[swimlane]
+        if (Array.isArray(ids)) setCollapsedLanes(new Set(ids.filter((id): id is string => typeof id === 'string')))
+      }
+    } catch { /* Browser preferences may be unavailable or damaged. */ }
+    setCollapsedLanesHydrated(true)
+  }, [collapsedLanesStorageKey, swimlane])
+  useEffect(() => {
+    if (!collapsedLanesHydrated || !collapsedLanesStorageKey || swimlane === 'none') return
+    try {
+      const raw = JSON.parse(localStorage.getItem(collapsedLanesStorageKey) ?? '{}') as unknown
+      const saved = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+      localStorage.setItem(collapsedLanesStorageKey, JSON.stringify({ ...saved, [swimlane]: [...collapsedLanes] }))
+    } catch {
+      try { localStorage.setItem(collapsedLanesStorageKey, JSON.stringify({ [swimlane]: [...collapsedLanes] })) } catch { /* Browser preferences may be unavailable. */ }
+    }
+  }, [collapsedLanes, collapsedLanesHydrated, collapsedLanesStorageKey, swimlane])
   useEffect(() => {
     setFiltersHydrated(false)
     // Сначала очищаем предыдущий контекст: состояние другого пользователя,
@@ -510,6 +841,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setColumnAssigneeFilters({})
     setFlaggedOnly(false)
     setRecentOnly(false)
+    setDueWindow('all')
+    setCompletedOnly(false)
     setSwimlane(props.defaultSwimlane ?? 'none')
     setShowHidden(false)
     if (!filterStorageKey) {
@@ -545,7 +878,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       }
       const raw = localStorage.getItem(filterStorageKey)
       if (raw) {
-        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; columnAssigneeFilters?: Record<string, ColumnAssigneeFilter>; swimlane?: Swimlane; showHidden?: boolean }
+        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; overdueOnly?: boolean; dueWindow?: BoardView['dueWindow']; completedOnly?: boolean; columnAssigneeFilters?: Record<string, ColumnAssigneeFilter>; swimlane?: Swimlane; showHidden?: boolean }
         if (typeof saved.search === 'string') setSearch(saved.search)
         if (Array.isArray(saved.assignees)) setAssignees(new Set(saved.assignees))
         if (Array.isArray(saved.types)) setTypes(new Set(saved.types))
@@ -555,6 +888,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         if (typeof saved.onlyMine === 'boolean') setOnlyMine(saved.onlyMine)
         if (typeof saved.flaggedOnly === 'boolean') setFlaggedOnly(saved.flaggedOnly)
         if (typeof saved.recentOnly === 'boolean') setRecentOnly(saved.recentOnly)
+        if (saved.dueWindow === 'all' || saved.dueWindow === 'overdue' || saved.dueWindow === 'today' || saved.dueWindow === 'week' || saved.dueWindow === 'none') setDueWindow(saved.dueWindow)
+        else if (saved.overdueOnly === true) setDueWindow('overdue')
+        if (typeof saved.completedOnly === 'boolean') setCompletedOnly(saved.completedOnly)
         if (saved.columnAssigneeFilters && typeof saved.columnAssigneeFilters === 'object') setColumnAssigneeFilters(saved.columnAssigneeFilters)
         // Вид доски — такая же настройка взгляда, как фильтры: свимлейны и показ
         // скрытых колонок раньше жили только в памяти и терялись на перезагрузке.
@@ -576,6 +912,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onlyMine,
       flaggedOnly,
       recentOnly,
+      overdueOnly: dueWindow === 'overdue',
+      dueWindow,
+      completedOnly,
       columnAssignees: Object.fromEntries(Object.entries(columnAssigneeFilters).map(([columnId, filter]) => [columnId, { assigneeIds: [...filter.assigneeIds], unassigned: filter.includeUnassigned }])),
       swimlane,
       showHidden,
@@ -591,10 +930,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
     if (!filterStorageKey) return
     try {
-      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, columnAssigneeFilters, swimlane, showHidden }))
+      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, overdueOnly: dueWindow === 'overdue', dueWindow, completedOnly, columnAssigneeFilters, swimlane, showHidden }))
     } catch { /* предпочтения браузера недоступны */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignees, columnAssigneeFilters, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, priorities, recentOnly, search, showHidden, swimlane, types])
+  }, [assignees, columnAssigneeFilters, completedOnly, dueWindow, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, priorities, recentOnly, search, showHidden, swimlane, types])
   useEffect(() => {
     const allowed = new Set(members.filter((member) => member.active !== false).map((member) => member.username))
     setColumnAssigneeFilters((prev) => {
@@ -607,11 +946,71 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       return changed ? next : prev
     })
   }, [members])
-  const columns = (board?.columns ?? []).filter((c) => showHidden || !c.hidden)
   const doneColumnIds = useMemo(
     () => new Set((board?.columns ?? []).filter((c) => c.semanticType === 'done').map((c) => c.id)),
     [board]
   )
+  const columns = (board?.columns ?? [])
+    .filter((c) => showHidden || !c.hidden)
+    .filter((c) => !completedOnly || c.semanticType === 'done')
+  const columnIdsKey = columns.map((column) => column.id).join('\u001f')
+  const [mobileColumnId, setMobileColumnId] = useState<string | null>(null)
+  const mobileColumnIndex = Math.max(0, columns.findIndex((column) => column.id === mobileColumnId))
+  const mobileColumn = columns[mobileColumnIndex] ?? null
+  const columnSessionKey = scrollScopeId ? kanbanColumnKey(scrollScopeId) : null
+  const selectMobileColumn = (id: string): void => {
+    setMobileColumnId(id)
+    if (columnSessionKey) {
+      try { sessionStorage.setItem(columnSessionKey, id) } catch { /* Storage must not block navigation. */ }
+    }
+    const root = boardRef.current
+    const target = Array.from(root?.querySelectorAll<HTMLElement>('[data-testid="kanban-column"]') ?? [])
+      .find((element) => element.dataset.columnId === id)
+    if (root && target) root.scrollLeft += target.getBoundingClientRect().left - root.getBoundingClientRect().left - 12
+  }
+  useLayoutEffect(() => {
+    if (!compact || !boardRef.current) return
+    let saved: string | null = null
+    try { saved = columnSessionKey ? sessionStorage.getItem(columnSessionKey) : null } catch { /* Use the first available column. */ }
+    const selected = columns.find((column) => column.id === saved) ?? columns[0]
+    if (selected) selectMobileColumn(selected.id)
+    else setMobileColumnId(null)
+    const root = boardRef.current
+    const remember = (): void => {
+      const left = root.getBoundingClientRect().left + 12
+      const candidates = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="kanban-column"]'))
+      const target = candidates.reduce<HTMLElement | null>((best, element) =>
+        !best || Math.abs(element.getBoundingClientRect().left - left) < Math.abs(best.getBoundingClientRect().left - left) ? element : best, null)
+      const id = target?.dataset.columnId
+      if (!id) return
+      setMobileColumnId(id)
+      if (columnSessionKey) {
+        try { sessionStorage.setItem(columnSessionKey, id) } catch { /* Storage is optional. */ }
+      }
+    }
+    const resize = (): void => {
+      let id: string | null = null
+      try { id = columnSessionKey ? sessionStorage.getItem(columnSessionKey) : null } catch { /* Keep a valid fallback. */ }
+      selectMobileColumn(columns.find((column) => column.id === id)?.id ?? columns[0]?.id ?? '')
+    }
+    root.addEventListener('scroll', remember, { passive: true })
+    window.addEventListener('resize', resize)
+    return () => {
+      root.removeEventListener('scroll', remember)
+      window.removeEventListener('resize', resize)
+    }
+  }, [compact, columnSessionKey, columnIdsKey, board != null, swimlane, collapsedColumns])
+
+  useEffect(() => {
+    const allowed = new Set((board?.columns ?? []).map((column) => column.id))
+    setCollapsedColumns((current) => {
+      const next = new Set([...current].filter((id) => allowed.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [board])
+  useEffect(() => {
+    setActiveColumnId((current) => columns.some((column) => column.id === current) ? current : columns[0]?.id ?? null)
+  }, [columnIdsKey])
   const allEpics = allTasks.filter((t) => t.type === 'epic')
   const allLabels = useMemo(() => [...new Set(allTasks.flatMap((t) => t.labels))].sort(), [allTasks])
 
@@ -623,9 +1022,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   }
 
   const hasColumnAssigneeFilter = Object.values(columnAssigneeFilters).some((value) => value.assigneeIds.length > 0 || value.includeUnassigned)
-  const filtersActive =
+  const globalFiltersActive =
     search.trim() !== '' || assignees.size > 0 || types.size > 0 || priorities.size > 0 ||
-    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || hasColumnAssigneeFilter
+    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || dueWindow !== 'all' || completedOnly
+  const filtersActive = globalFiltersActive || hasColumnAssigneeFilter
 
   /**
    * Сколько фильтров включено. Нужен подписи свёрнутого блока на телефоне:
@@ -633,10 +1033,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
    */
   const activeFilterCount =
     (search.trim() ? 1 : 0) + assignees.size + types.size + priorities.size + labels.size + epics.size +
-    (onlyMine ? 1 : 0) + (flaggedOnly ? 1 : 0) + (recentOnly ? 1 : 0) +
+    (onlyMine ? 1 : 0) + (flaggedOnly ? 1 : 0) + (recentOnly ? 1 : 0) + (dueWindow !== 'all' ? 1 : 0) + (completedOnly ? 1 : 0) +
     Object.values(columnAssigneeFilters).filter((value) => value.assigneeIds.length > 0 || value.includeUnassigned).length
 
-  const resetFilters = (): void => {
+  const resetGlobalFilters = (): void => {
     setSearch('')
     setAssignees(new Set())
     setTypes(new Set())
@@ -644,17 +1044,32 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setLabels(new Set())
     setEpics(new Set())
     setOnlyMine(false)
-    setColumnAssigneeFilters({})
     setFlaggedOnly(false)
     setRecentOnly(false)
+    setDueWindow('all')
+    setCompletedOnly(false)
   }
 
-  const matches = (t: Task): boolean => {
+  const resetFilters = (): void => {
+    resetGlobalFilters()
+    setColumnAssigneeFilters({})
+  }
+
+  const matches = (t: Task, ignorePriority = false): boolean => {
+    if (hiddenCards.includes(t.id)) return false
     const q = search.trim().toLowerCase()
-    if (q && !t.title.toLowerCase().includes(q) && !issueKey(props.projectName, t).toLowerCase().includes(q)) return false
+    const searchable = [
+      t.title,
+      issueKey(props.projectName, t),
+      t.description,
+      t.acceptanceCriteria,
+      t.assignee ?? '',
+      ...t.labels
+    ]
+    if (q && !searchable.some((value) => value.toLowerCase().includes(q))) return false
     if (assignees.size > 0 && !assignees.has(t.assignee ?? '')) return false
     if (types.size > 0 && !types.has(t.type)) return false
-    if (priorities.size > 0 && !priorities.has(t.priority)) return false
+    if (!ignorePriority && priorities.size > 0 && !priorities.has(t.priority)) return false
     if (labels.size > 0 && !t.labels.some((l) => labels.has(l))) return false
     if (epics.size > 0) {
       const epic = epicOf(t, allTasks)
@@ -663,28 +1078,260 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     if (onlyMine && t.assignee !== currentUserId) return false
     if (flaggedOnly && !t.flagged) return false
     if (recentOnly && Date.now() - t.updatedAt > RECENT_MS) return false
+    if (!matchesDueWindow(t.dueDate, dueWindow, doneColumnIds.has(t.columnId))) return false
+    if (completedOnly && !doneColumnIds.has(t.columnId)) return false
     return true
+  }
+
+  const matchesColumnAssignee = (task: Task, columnId: string): boolean => {
+    if (onlyMine) return true
+    const selected = columnAssigneeFilters[columnId] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
+    if (selected.assigneeIds.length === 0 && !selected.includeUnassigned) return true
+    return task.assignee == null ? selected.includeUnassigned : selected.assigneeIds.includes(task.assignee)
+  }
+
+  const taskBelongsToLane = (task: Task, lane: { kind: Swimlane; id: string }): boolean => {
+    if (lane.kind === 'none') return true
+    if (lane.kind === 'epic') {
+      if (task.type === 'epic') return false
+      return (epicOf(task, allTasks)?.id ?? '') === lane.id
+    }
+    return (task.assignee ?? '') === lane.id
   }
 
   const tasksOf = (columnId: string, lane?: { kind: Swimlane; id: string }): Task[] =>
     allTasks
       .filter((t) => t.columnId === columnId && matches(t))
-      .filter((t) => {
-        if (onlyMine) return true // глобальный режим временно имеет приоритет
-        const selected = columnAssigneeFilters[columnId] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
-        if (selected.assigneeIds.length === 0 && !selected.includeUnassigned) return true
-        return t.assignee == null ? selected.includeUnassigned : selected.assigneeIds.includes(t.assignee)
-      })
-      .filter((t) => {
-        if (!lane || lane.kind === 'none') return true
-        if (lane.kind === 'epic') {
-          if (t.type === 'epic') return false
-          const epic = epicOf(t, allTasks)
-          return (epic?.id ?? '') === lane.id
-        }
-        return (t.assignee ?? '') === lane.id
-      })
+      .filter((t) => matchesColumnAssignee(t, columnId))
+      .filter((t) => !lane || taskBelongsToLane(t, lane))
       .sort((a, b) => compareTasksInColumn(a, b, board?.columns.find((c) => c.id === columnId)?.semanticType ?? 'custom'))
+
+  const visibleTasks = columns.flatMap((column) => tasksOf(column.id))
+  const visibleTaskCount = visibleTasks.length
+  const displayedTaskTotal = columns.reduce(
+    (count, column) => count + allTasks.filter((task) => task.columnId === column.id).length,
+    0
+  )
+  const visibleStoryPoints = visibleTasks.reduce((total, task) => total + (task.storyPoints ?? 0), 0)
+  const visibleOverdue = visibleTasks.filter(
+    (task) => task.dueDate != null && !doneColumnIds.has(task.columnId) && duePresentation(task.dueDate).state === 'overdue'
+  ).length
+  const visibleUnassigned = visibleTasks.filter((task) => task.assignee == null).length
+  const visibleFlagged = visibleTasks.filter((task) => task.flagged).length
+  const visibleCompleted = visibleTasks.filter((task) => doneColumnIds.has(task.columnId)).length
+  const priorityBaseTasks = columns.flatMap((column) => allTasks.filter(
+    (task) => task.columnId === column.id && matches(task, true) && matchesColumnAssignee(task, column.id)
+  ))
+  const priorityCounts = Object.fromEntries(TASK_PRIORITIES.map((priority) => [
+    priority,
+    priorityBaseTasks.filter((task) => task.priority === priority).length
+  ])) as Record<TaskPriority, number>
+  const toggleCompletedOnly = (): void => {
+    const next = !completedOnly
+    setCompletedOnly(next)
+    if (next && !showCompleted) setShowCompleted(true)
+  }
+  const boardSummary: Array<{
+    label: string
+    value: number
+    unit: string
+    active?: boolean
+    onClick?: () => void
+  }> = [
+    { label: 'Видно', value: visibleTaskCount, unit: pluralTasks(visibleTaskCount) },
+    { label: 'Оценка', value: visibleStoryPoints, unit: 'SP' },
+    { label: 'Просрочено', value: visibleOverdue, unit: pluralTasks(visibleOverdue), active: dueWindow === 'overdue', onClick: () => setDueWindow((value) => value === 'overdue' ? 'all' : 'overdue') },
+    { label: 'Без исполнителя', value: visibleUnassigned, unit: pluralTasks(visibleUnassigned), active: assignees.has(''), onClick: () => setAssignees((value) => toggle(value, '')) },
+    { label: 'С флагом', value: visibleFlagged, unit: pluralTasks(visibleFlagged), active: flaggedOnly, onClick: () => setFlaggedOnly((value) => !value) },
+    { label: 'Завершено', value: visibleCompleted, unit: pluralTasks(visibleCompleted), active: completedOnly, onClick: toggleCompletedOnly }
+  ]
+  const effectiveActiveColumnId = columns.some((column) => column.id === activeColumnId)
+    ? activeColumnId
+    : columns[0]?.id ?? null
+  const activeColumnIndex = columns.findIndex((column) => column.id === effectiveActiveColumnId)
+
+  const copyVisibleBoard = async (): Promise<void> => {
+    const copied = await copyText(formatVisibleBoardList({
+      projectName: props.projectName,
+      columns: columns.map((column) => ({ column, tasks: tasksOf(column.id) })),
+      totalTasks: displayedTaskTotal,
+      activeFilters: activeFilterChips.map((chip) => chip.label)
+    }))
+    setCopyBoardStatus(copied ? 'success' : 'error')
+    setAnnounce(copied
+      ? `Список скопирован: ${visibleTaskCount} ${pluralTasks(visibleTaskCount)}.`
+      : 'Не удалось скопировать список задач.')
+  }
+
+  const jumpToColumn = (columnId: string): void => {
+    const column = columns.find((item) => item.id === columnId)
+    if (!column) return
+    setActiveColumnId(columnId)
+    const target = Array.from(
+      boardRef.current?.querySelectorAll<HTMLElement>('[data-column-nav-target]') ?? []
+    ).find((element) => element.dataset.columnNavTarget === columnId)
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+    setAnnounce(columnRegionLabel(column, tasksOf(column.id).length) + '.')
+  }
+
+  const navigateBoard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget) return
+    const surface = event.currentTarget
+    const firstColumn = surface.querySelector<HTMLElement>('[data-column-id]')
+    const step = (firstColumn?.getBoundingClientRect().width || 272) + 8
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      surface.scrollLeft += event.key === 'ArrowRight' ? step : -step
+      const nextIndex = Math.min(
+        Math.max(activeColumnIndex + (event.key === 'ArrowRight' ? 1 : -1), 0),
+        columns.length - 1
+      )
+      const next = columns[nextIndex]
+      if (next) {
+        setActiveColumnId(next.id)
+        setAnnounce(columnRegionLabel(next, tasksOf(next.id).length) + '.')
+      }
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      surface.scrollLeft = 0
+      const first = columns[0]
+      if (first) {
+        setActiveColumnId(first.id)
+        setAnnounce(columnRegionLabel(first, tasksOf(first.id).length) + '.')
+      }
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      surface.scrollLeft = surface.scrollWidth
+      const last = columns[columns.length - 1]
+      if (last) {
+        setActiveColumnId(last.id)
+        setAnnounce(columnRegionLabel(last, tasksOf(last.id).length) + '.')
+      }
+    }
+  }
+
+  const activeFilterChips: Array<{ key: string; label: string; onRemove: () => void }> = []
+  if (search.trim()) {
+    activeFilterChips.push({ key: 'search', label: `Поиск: ${search.trim()}`, onRemove: () => setSearch('') })
+  }
+  for (const assignee of assignees) {
+    activeFilterChips.push({
+      key: `assignee:${assignee}`,
+      label: `Исполнитель: ${assignee || 'не назначено'}`,
+      onRemove: () => setAssignees((current) => {
+        const next = new Set(current)
+        next.delete(assignee)
+        return next
+      })
+    })
+  }
+  for (const type of types) {
+    activeFilterChips.push({
+      key: `type:${type}`,
+      label: `Тип: ${TYPE_LABEL[type]}`,
+      onRemove: () => setTypes((current) => {
+        const next = new Set(current)
+        next.delete(type)
+        return next
+      })
+    })
+  }
+  for (const priority of priorities) {
+    activeFilterChips.push({
+      key: `priority:${priority}`,
+      label: `Приоритет: ${PRIORITY_LABEL[priority]}`,
+      onRemove: () => setPriorities((current) => {
+        const next = new Set(current)
+        next.delete(priority)
+        return next
+      })
+    })
+  }
+  for (const label of labels) {
+    activeFilterChips.push({
+      key: `label:${label}`,
+      label: `Метка: ${label}`,
+      onRemove: () => setLabels((current) => {
+        const next = new Set(current)
+        next.delete(label)
+        return next
+      })
+    })
+  }
+  for (const epicId of epics) {
+    activeFilterChips.push({
+      key: `epic:${epicId}`,
+      label: `Эпик: ${allEpics.find((epic) => epic.id === epicId)?.title ?? epicId}`,
+      onRemove: () => setEpics((current) => {
+        const next = new Set(current)
+        next.delete(epicId)
+        return next
+      })
+    })
+  }
+  if (onlyMine) activeFilterChips.push({ key: 'onlyMine', label: 'Только мои задачи', onRemove: () => setOnlyMine(false) })
+  if (flaggedOnly) activeFilterChips.push({ key: 'flagged', label: 'С флагом', onRemove: () => setFlaggedOnly(false) })
+  if (recentOnly) activeFilterChips.push({ key: 'recent', label: 'Обновлены за сутки', onRemove: () => setRecentOnly(false) })
+  if (dueWindow !== 'all') {
+    const labels: Record<Exclude<BoardView['dueWindow'], 'all'>, string> = {
+      overdue: 'Срок: просрочено', today: 'Срок: сегодня', week: 'Срок: 7 дней', none: 'Срок: не указан'
+    }
+    activeFilterChips.push({ key: 'due', label: labels[dueWindow], onRemove: () => setDueWindow('all') })
+  }
+  if (completedOnly) activeFilterChips.push({ key: 'completed', label: 'Завершено', onRemove: () => setCompletedOnly(false) })
+  for (const [columnId, filter] of Object.entries(columnAssigneeFilters)) {
+    if (filter.assigneeIds.length === 0 && !filter.includeUnassigned) continue
+    const column = board?.columns.find((item) => item.id === columnId)
+    const values = [...filter.assigneeIds, ...(filter.includeUnassigned ? ['без исполнителя'] : [])]
+    activeFilterChips.push({
+      key: `column:${columnId}`,
+      label: `Колонка «${column?.name ?? columnId}»: ${values.join(', ')}`,
+      onRemove: () => setColumnAssigneeFilters((current) => ({ ...current, [columnId]: EMPTY_COLUMN_ASSIGNEE_FILTER }))
+    })
+  }
+
+  const boardDiagnostics: BoardDiagnosticsSnapshot = {
+    projectName: props.projectName,
+    snapshotState: !loading && props.error ? 'stale' : loading ? 'refreshing' : 'current',
+    snapshotAge: snapshotUpdated.state,
+    snapshotAt: new Date(snapshotUpdatedAt).toISOString(),
+    refreshing: loading,
+    loadedTasks: allTasks.length,
+    displayedTasks: displayedTaskTotal,
+    visibleTasks: visibleTaskCount,
+    totalColumns: board?.columns.length ?? 0,
+    displayedColumns: columns.length,
+    hiddenColumns: board?.columns.filter((column) => column.hidden).length ?? 0,
+    collapsedColumns: columns.filter((column) => collapsedColumns.has(column.id)).length,
+    activeColumn: columns.find((column) => column.id === effectiveActiveColumnId)?.name ?? null,
+    density,
+    swimlane,
+    showHidden,
+    showCompleted,
+    activeFilters: activeFilterChips.map((chip) => chip.label),
+    metrics: {
+      storyPoints: visibleStoryPoints,
+      overdue: visibleOverdue,
+      unassigned: visibleUnassigned,
+      flagged: visibleFlagged,
+      completed: visibleCompleted
+    },
+    columns: columns.map((column) => ({
+      id: column.id,
+      name: column.name,
+      hidden: column.hidden,
+      visibleTasks: tasksOf(column.id).length,
+      totalTasks: allTasks.filter((task) => task.columnId === column.id).length,
+      wipLimit: column.wipLimit
+    }))
+  }
+
+  const copyBoardDiagnostics = async (): Promise<void> => {
+    const copied = await copyText(formatBoardDiagnostics(boardDiagnostics))
+    setCopyDiagnosticsStatus(copied ? 'success' : 'error')
+    setAnnounce(copied ? 'Диагностика доски скопирована.' : 'Не удалось скопировать диагностику доски.')
+  }
 
   // Перенос колонки moving перед target.
   const reorderTo = (targetId: string, moving: string): void => {
@@ -693,6 +1340,23 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const at = ids.indexOf(targetId)
     ids.splice(at < 0 ? ids.length : at, 0, moving)
     props.onReorderColumns(ids)
+  }
+
+  const reorderColumnByKeyboard = (columnId: string, direction: -1 | 1, trigger: HTMLButtonElement): void => {
+    if (!board) return
+    const visibleIndex = columns.findIndex((column) => column.id === columnId)
+    const target = columns[visibleIndex + direction]
+    const current = board.columns.find((column) => column.id === columnId)
+    if (!target || !current) {
+      setAnnounce(`Колонка «${current?.name ?? 'без названия'}» уже ${direction < 0 ? 'первая' : 'последняя'}.`)
+      return
+    }
+    const ids = board.columns.map((column) => column.id).filter((id) => id !== columnId)
+    const targetIndex = ids.indexOf(target.id)
+    ids.splice(direction < 0 ? targetIndex : targetIndex + 1, 0, columnId)
+    props.onReorderColumns(ids)
+    setAnnounce(`Колонка «${current.name}» перемещена на позицию ${visibleIndex + direction + 1} из ${columns.length}.`)
+    trigger.focus()
   }
 
   const columnName = (columnId: string): string =>
@@ -749,38 +1413,70 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const root = boardRef.current
     if (!root) return
     autoScroll(root, p, 'x')
-    autoScroll(root, p, 'y')
+    const vertical = compact ? bodyAt(p)?.closest<HTMLElement>('.jcol-content') ?? bodyAt(p) : root
+    if (vertical) autoScroll(vertical, p, 'y')
   }
 
   /** Положить задачу в выбранное место. Обратно на своё — молча, без запроса. */
-  const applyDrop = (taskId: string, at: DropAt): void => {
-    if (at.afterId === taskId || at.beforeId === taskId) return
+  const applyDrop = (taskId: string, at: DropAt): boolean => {
+    if (at.afterId === taskId || at.beforeId === taskId) return false
     props.onMoveTask(taskId, at.columnId, at.afterId, at.beforeId)
+    return true
   }
 
   const endPointerDrag = (): void => {
     setDragTask(null)
     setDropAt(null)
+    pointerAnnouncementRef.current = ''
   }
 
   const grabTask = (e: ReactPointerEvent<HTMLElement>, card: HTMLElement, taskId: string, immediate: boolean): void => {
     if (grab) return
+    const draggedTask = allTasks.find((task) => task.id === taskId)
+    if (!draggedTask) return
+    const describeTarget = (at: DropAt): string => {
+      const laneId = at.bodyKey.split('|')[0] || null
+      const list = neighbours(taskId, at.columnId, laneId)
+      const before = at.beforeId ? list.findIndex((task) => task.id === at.beforeId) : -1
+      const position = before >= 0 ? before + 1 : list.length + 1
+      return `Колонка «${columnName(at.columnId)}», позиция ${position} из ${list.length + 1}.`
+    }
+    const updatePointerTarget = (p: DragPoint): void => {
+      const at = findDropAt(p)
+      setDropAt(at)
+      if (!at) return
+      const description = describeTarget(at)
+      if (description === pointerAnnouncementRef.current) return
+      pointerAnnouncementRef.current = description
+      setAnnounce(`Цель переноса задачи «${draggedTask.title}»: ${description}`)
+    }
     drag.begin(e, {
       lift: card,
       immediate,
       onStart: (p) => {
         setLiftHeight(Math.round(card.getBoundingClientRect().height))
         setDragTask(taskId)
-        setDropAt(findDropAt(p))
+        const at = findDropAt(p)
+        setDropAt(at)
+        pointerAnnouncementRef.current = at ? describeTarget(at) : ''
+        setAnnounce(`Задача «${draggedTask.title}» взята указателем. Исходная колонка «${columnName(draggedTask.columnId)}».`)
       },
-      onMove: (p) => setDropAt(findDropAt(p)),
-      tick: autoScrollTo,
+      onMove: updatePointerTarget,
+      tick: (p) => { autoScrollTo(p); updatePointerTarget(p) },
       onDrop: (p) => {
         const at = findDropAt(p)
         endPointerDrag()
-        if (at) applyDrop(taskId, at)
+        if (!at) {
+          setAnnounce(`Перенос задачи «${draggedTask.title}» отменён: цель не выбрана.`)
+          return
+        }
+        if (applyDrop(taskId, at)) setAnnounce(`Задача «${draggedTask.title}» перенесена. ${describeTarget(at)}`)
+        else setAnnounce(`Задача «${draggedTask.title}» осталась на месте.`)
       },
-      onCancel: endPointerDrag
+      onCancel: () => {
+        endPointerDrag()
+        setAnnounce(`Перенос задачи «${draggedTask.title}» отменён.`)
+      }
     })
   }
 
@@ -828,7 +1524,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setGrab(next)
     setDropAt(dropOfGrab(next))
     const total = neighbours(next.taskId, next.columnId, next.laneId).length + 1
-    setAnnounce(`Задача «${next.title}», колонка «${columnName(next.columnId)}», позиция ${next.index + 1} из ${total}.`)
+    setAnnounce(`Задача ${next.title}: колонка ${columnName(next.columnId)}, позиция ${next.index + 1} из ${total}.`)
+    if (compact) selectMobileColumn(next.columnId)
   }
 
   const cancelGrab = (): void => {
@@ -842,7 +1539,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const onCardKeys = (task: Task) => (e: ReactKeyboardEvent<HTMLElement>, card: HTMLElement): void => {
     // Клавиши кнопок внутри карточки (⋯, «Чат», CI) остаются их собственными.
     if (e.target !== e.currentTarget) return
-    const take = e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter'
+    const take = e.key === ' ' || e.key === 'Spacebar'
     if (!grab) {
       if (!take) return
       e.preventDefault()
@@ -885,7 +1582,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       stepGrab({ ...grab, index })
       return
     }
-    if (take) {
+    if (take || e.key === 'Enter') {
       e.preventDefault()
       const at = dropOfGrab(grab)
       const sameSpot = grab.columnId === grab.from.columnId && grab.index === grab.from.index
@@ -963,6 +1660,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onOpen={setOpenTaskId}
       onUpdate={props.onUpdateTask}
       onDelete={props.onDeleteTask}
+      onHide={id => {
+        setHiddenCards([...hiddenCards, id])
+        const key = userKey(currentUserId ?? 'local', 'hidden-cards')
+        hideToast.info('Карточка скрыта', { action: { label: 'Отменить', onClick: () => writePreference(key, readPreference(key, EMPTY_IDS, isStringList).filter(value => value !== id)) } })
+      }}
       onMoveTop={moveTop}
       onMoveBottom={moveBottom}
       onOpenChat={props.onOpenChat}
@@ -975,6 +1677,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onStartMerge={props.onStartMerge}
       previousColumn={previousColumn ? { id: previousColumn.id, name: previousColumn.name } : null}
       nextColumn={nextColumn ? { id: nextColumn.id, name: nextColumn.name } : null}
+      moveColumns={fullColumns.map((column) => ({ id: column.id, name: column.name, hidden: column.hidden }))}
       onMoveToColumn={async (taskId, fromColumnId, targetColumnId) => {
         const current = allTasks.find((task) => task.id === taskId)
         if (!current || current.columnId !== fromColumnId) return
@@ -985,6 +1688,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         if (moved === false) return
         setAnnounce(`Задача «${current.title}» перенесена в колонку «${columnName(targetColumnId)}».`)
       }}
+      onCopyLink={async (taskId) => {
+        const current = allTasks.find((task) => task.id === taskId)
+        if (!current) return
+        const copied = await copyText(taskPermalink(current))
+        setCopyTaskLinkStatus({ title: current.title, copied })
+        setAnnounce(copied
+          ? `Ссылка на задачу «${current.title}» скопирована.`
+          : `Не удалось скопировать ссылку на задачу «${current.title}».`)
+      }}
       onGrab={(e, card, immediate) => grabTask(e, card, t.id, immediate)}
       onCardKeys={onCardKeys(t)}
       onCardBlur={() => {
@@ -992,34 +1704,122 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       }}
       dragging={dragTask === t.id}
       grabbed={grab?.taskId === t.id}
+      searchQuery={search}
     />
     )
   }
 
-  const columnHead = (col: KanbanColumn): JSX.Element => {
+  const toggleColumnCollapsed = (columnId: string, restoreFocus = false): void => {
+    setCollapsedColumns((current) => toggle(current, columnId))
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        const header = Array.from(boardRef.current?.querySelectorAll<HTMLElement>('[data-column-nav-target]') ?? [])
+          .find((element) => element.dataset.columnNavTarget === columnId)
+        header?.querySelector<HTMLButtonElement>('[data-column-collapse-toggle]')?.focus()
+      })
+    }
+  }
+
+  const openColumnMenu = (columnId: string, trigger: HTMLButtonElement): void => {
+    colMenuTriggerRef.current = trigger
+    setColMenu(columnId)
+    requestAnimationFrame(() => colMenuPanelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
+  }
+
+  const closeColumnMenu = (restoreFocus = false): void => {
+    setColMenu(null)
+    if (restoreFocus) requestAnimationFrame(() => colMenuTriggerRef.current?.focus())
+  }
+
+  const navigateColumnMenu = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if ((event.target as HTMLElement).closest('input')) return
+    const items = Array.from(colMenuPanelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeColumnMenu(true)
+      return
+    }
+    if (event.key === 'Tab') {
+      closeColumnMenu()
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || items.length === 0) return
+    event.preventDefault()
+    const current = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? items.length - 1
+        : event.key === 'ArrowDown' ? (current + 1 + items.length) % items.length
+          : (current - 1 + items.length) % items.length
+    items[next]?.focus()
+  }
+
+  const columnHead = (col: KanbanColumn, controls = `kanban-column-content-${col.id}`): JSX.Element => {
     const visible = tasksOf(col.id).length
     const total = allTasks.filter((t) => t.columnId === col.id).length
-    const overWip = col.wipLimit != null && total > col.wipLimit
+    const wip = wipPresentation(total, col.wipLimit)
+    const overWip = wip?.state === 'over'
+    const fullWip = wip?.state === 'full'
+    const collapsed = collapsedColumns.has(col.id)
+    if (collapsed) {
+      return (
+        <header
+          className={`jcol-head jcol-head--collapsed${overWip ? ' jcol-head--over' : ''}${fullWip ? ' jcol-head--full' : ''}`}
+          data-column-nav-target={col.id}
+          tabIndex={-1}
+          aria-label={`${columnRegionLabel(col, visible)}, свёрнута`}
+        >
+          <IconButton
+            size="sm"
+            data-column-collapse-toggle=""
+            aria-label={`Развернуть колонку «${col.name}»`}
+            aria-expanded="false"
+            aria-controls={controls}
+            title="Развернуть колонку"
+            onClick={() => toggleColumnCollapsed(col.id, true)}
+          >
+            <span aria-hidden="true">›</span>
+          </IconButton>
+          <span className="jcol-collapsed-name" title={col.name}>{col.name}</span>
+          <span className="jcol-collapsed-count" aria-label={`${total} ${pluralTasks(total)}${wip ? `. ${wip.label}` : ''}`}>
+            {total}{col.wipLimit != null ? `/${col.wipLimit}` : ''}
+          </span>
+        </header>
+      )
+    }
     return (
       <header
-        className={`jcol-head${overWip ? ' jcol-head--over' : ''}${
+        className={`jcol-head${overWip ? ' jcol-head--over' : ''}${fullWip ? ' jcol-head--full' : ''}${
           dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol-head--drop' : ''
         }${dragColumn === col.id ? ' jcol-head--lifted' : ''}`}
+        data-column-nav-target={col.id}
+        tabIndex={-1}
+        aria-label={columnRegionLabel(col, visible)}
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
           grabColumn(e, e.currentTarget, col.id, false)
         }}
       >
-        <span
+        <button
+          type="button"
           className="jcol-grip"
-          aria-hidden="true"
+          aria-label={`Переместить колонку «${col.name}»`}
+          aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+          title="Перетащите или нажмите Alt+←/→"
           onPointerDown={(e) => {
             e.stopPropagation()
             grabColumn(e, e.currentTarget, col.id, true)
           }}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return
+            event.preventDefault()
+            event.stopPropagation()
+            reorderColumnByKeyboard(col.id, event.key === 'ArrowLeft' ? -1 : 1, event.currentTarget)
+          }}
         >
           <GripIcon />
-        </span>
+        </button>
         {renaming === col.id ? (
           <input
             className="ctitle-edit"
@@ -1051,9 +1851,21 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 а он несовместим с флекс-раскладкой счётчика и бейджей рядом. */}
             <span className="jcol-name-text">{col.name}</span>
             <span className="jcol-count">{filtersActive || hasColumnAssigneeFilter ? `${visible} из ${total}` : total}</span>
-            {col.wipLimit != null && (
-              <span className={`jcol-wip${overWip ? ' jcol-wip--over' : ''}`} title={`WIP-лимит: ${col.wipLimit}`}>
-                {total}/{col.wipLimit}
+            {wip && col.wipLimit != null && (
+              <span className={`jcol-wip jcol-wip--${wip.state}`} title={wip.label}>
+                <span>{total}/{col.wipLimit}</span>
+                <span
+                  className="jcol-wip-track"
+                  role="progressbar"
+                  aria-label={`Заполнение WIP колонки «${col.name}»`}
+                  aria-valuemin={0}
+                  aria-valuemax={col.wipLimit}
+                  aria-valuenow={wip.progressValue}
+                  aria-valuetext={wip.label}
+                >
+                  <span className="jcol-wip-fill" style={{ width: `${wip.percentage}%` }} />
+                </span>
+                <span className="vc-sr-only">{wip.label}</span>
               </span>
             )}
             {col.hidden && <span className="jcol-hidden-mark">скрыта</span>}
@@ -1075,6 +1887,18 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             i
           </button>
         )}
+        <IconButton
+          className="jcol-collapse-button"
+          size="sm"
+          data-column-collapse-toggle=""
+          aria-label={`Свернуть колонку «${col.name}»`}
+          aria-expanded="true"
+          aria-controls={controls}
+          title="Свернуть колонку"
+          onClick={() => toggleColumnCollapsed(col.id, true)}
+        >
+          <span aria-hidden="true">‹</span>
+        </IconButton>
         {(() => {
           const activeMembers = members.filter((member) => member.active !== false)
           const filter = columnAssigneeFilters[col.id] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
@@ -1172,14 +1996,28 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             size="sm"
             aria-label={`Меню колонки «${col.name}»`}
             title="Меню колонки"
+            aria-haspopup="menu"
             aria-expanded={colMenu === col.id}
-            onClick={() => setColMenu((v) => (v === col.id ? null : col.id))}
+            aria-controls={`column-menu-${col.id}`}
+            onClick={(event) => {
+              if (colMenu === col.id) closeColumnMenu()
+              else openColumnMenu(col.id, event.currentTarget)
+            }}
           >
             <DotsIcon />
           </IconButton>
           {colMenu === col.id && (
-            <div className="jcard-menu" data-testid="column-menu">
+            <div
+              id={`column-menu-${col.id}`}
+              ref={colMenuPanelRef}
+              className="jcard-menu"
+              data-testid="column-menu"
+              role="menu"
+              aria-label={`Действия колонки «${col.name}»`}
+              onKeyDown={navigateColumnMenu}
+            >
               <button
+                role="menuitem"
                 onClick={() => {
                   setColMenu(null)
                   setRenaming(col.id)
@@ -1208,6 +2046,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 />
               ) : (
                 <button
+                  role="menuitem"
                   onClick={() => {
                     setWipEditing(col.id)
                     setWipDraft(col.wipLimit != null ? String(col.wipLimit) : '')
@@ -1217,6 +2056,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 </button>
               )}
               <button
+                role="menuitem"
                 onClick={() => {
                   setColMenu(null)
                   props.onSetColumnHidden(col.id, !col.hidden)
@@ -1226,6 +2066,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               </button>
               {col.semanticType === 'custom' && (
                 <button
+                  role="menuitem"
                   className="jcard-menu-danger"
                   onClick={() => {
                     setColMenu(null)
@@ -1312,6 +2153,16 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     // предлагать на пустом экране.
     const columnFilter = columnAssigneeFilters[col.id] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
     const columnFilterActive = columnFilter.assigneeIds.length > 0 || columnFilter.includeUnassigned
+    const completeColumnTasks = allTasks.filter((task) => task.columnId === col.id)
+    const globallyMatchingTasks = completeColumnTasks.filter((task) => matches(task))
+    const empty = !lane ? emptyColumnPresentation({
+      columnName: col.name,
+      total: completeColumnTasks.length,
+      visible: tasks.length,
+      globallyMatching: globallyMatchingTasks.length,
+      globalFiltersActive,
+      localFilterActive: columnFilterActive
+    }) : null
     const key = bodyKey(lane ? lane.id : null, col.id)
     // Зона вставки между соседями after (сверху) и before (снизу): по ней
     // считается место указателя, из неё же берутся afterId/beforeId. Активная
@@ -1326,6 +2177,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             data-slot={slot}
             data-after={after ?? ''}
             data-before={before ?? ''}
+            data-drop-active={active || undefined}
           />
           {active && (
             <div
@@ -1350,25 +2202,41 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             </div>
           )
         })}
-        {/* Пустая колонка объясняет, чем её наполнить. В свимлейнах подсказку не
-            повторяем в каждой ячейке — там пустых пересечений много по природе. */}
-        {tasks.length === 0 && !lane && (
-          <EmptyState
-            compact
-            className="jcol-empty"
-            icon="＋"
-            title={filtersActive ? 'Нет задач под фильтром' : 'Здесь пока пусто'}
-            description={filtersActive ? 'Измените или сбросьте фильтр этой колонки, чтобы увидеть остальные задачи.' : 'Перетащите карточку сюда или создайте задачу кнопкой ниже.'}
-            {...(columnFilterActive
-              // Пусто из-за фильтра самой колонки — сбрасываем его.
-              ? {
-                actionLabel: 'Сбросить фильтр колонки',
-                onAction: () => setColumnAssigneeFilters((prev) => ({ ...prev, [col.id]: EMPTY_COLUMN_ASSIGNEE_FILTER }))
-              }
-              // Пусто из-за фильтров доски — сброс колонки ничего бы не изменил,
-              // и кнопка выглядела бы сломанной.
-              : filtersActive ? { actionLabel: 'Сбросить фильтры доски', onAction: resetFilters } : {})}
-          />
+        {/* Swimlane intersections are intentionally silent because sparse
+            matrices would repeat the same guidance dozens of times. */}
+        {compact && tasks.length === 0 && filtersActive && <EmptyState compact
+          title="Под фильтр ничего не попало — сбросить" actionLabel="Сбросить все" onAction={resetFilters} />}
+        {empty && !(compact && filtersActive && tasks.length === 0) && (
+          <div
+            id={`kanban-column-empty-${col.id}`}
+            className={`vc-state vc-state--empty vc-state--compact jcol-empty jcol-empty--${empty.state}`}
+            data-testid="column-empty-state"
+            data-empty-kind={empty.state}
+            data-hidden-count={empty.hiddenCount}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="jcol-empty-icon" aria-hidden="true">{empty.state === 'empty' ? '＋' : '⌕'}</span>
+            <span className="jcol-empty-badge">{empty.badge}</span>
+            <p className="vc-state__title">{empty.title}</p>
+            <p className="vc-state__text">{empty.description}</p>
+            <div className="jcol-empty-actions">
+              {empty.state === 'empty' ? (
+                !compact && <Button variant="primary" size="sm" onClick={() => openComposer(col.id)}>Создать задачу</Button>
+              ) : (
+                <>
+                  {empty.localFilterHidesMatches && (
+                    <Button variant="secondary" size="sm" onClick={() => setColumnAssigneeFilters((prev) => ({ ...prev, [col.id]: EMPTY_COLUMN_ASSIGNEE_FILTER }))}>
+                      Сбросить исполнителей
+                    </Button>
+                  )}
+                  {globalFiltersActive && (
+                    <Button variant="secondary" size="sm" onClick={resetGlobalFilters}>Сбросить фильтры доски</Button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
     )
@@ -1376,43 +2244,72 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   // Свимлейны: по эпикам (эпики-карточки скрыты, «Без эпика» — последний) или
   // по исполнителям («Не назначено» — последний).
-  const lanes: Array<{ id: string; title: JSX.Element; count: number }> =
+  const laneTotal = (kind: Swimlane, id: string): number => columns.reduce(
+    (count, column) => count + allTasks.filter((task) => task.columnId === column.id && taskBelongsToLane(task, { kind, id })).length,
+    0
+  )
+  const lanes: Array<{ id: string; name: string; title: JSX.Element; count: number; total: number }> =
     swimlane === 'epic'
       ? [
           ...allEpics.map((e) => ({
             id: e.id,
+            name: e.title,
             title: (
               <span className="jlane-title">
                 <span className="jcard-epic-dot" style={{ background: epicColor(e.id) }} />
                 {e.title}
               </span>
             ),
-            count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'epic', id: e.id }).length, 0)
+            count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'epic', id: e.id }).length, 0),
+            total: laneTotal('epic', e.id)
           })),
           {
             id: '',
+            name: 'Без эпика',
             title: <span className="jlane-title">Без эпика</span>,
-            count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'epic', id: '' }).length, 0)
+            count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'epic', id: '' }).length, 0),
+            total: laneTotal('epic', '')
           }
         ]
       : swimlane === 'assignee'
         ? [
             ...members.map((m) => ({
               id: m.username,
+              name: m.username,
               title: (
                 <span className="jlane-title">
                   <Avatar username={m.username} size={20} /> {m.username}
                 </span>
               ),
-              count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'assignee', id: m.username }).length, 0)
+              count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'assignee', id: m.username }).length, 0),
+              total: laneTotal('assignee', m.username)
             })),
             {
               id: '',
+              name: 'Не назначено',
               title: <span className="jlane-title">Не назначено</span>,
-              count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'assignee', id: '' }).length, 0)
+              count: columns.reduce((n, c) => n + tasksOf(c.id, { kind: 'assignee', id: '' }).length, 0),
+              total: laneTotal('assignee', '')
             }
           ]
         : []
+
+  useEffect(() => {
+    if (!collapsedLanesHydrated || swimlane === 'none') return
+    const valid = new Set(lanes.map((lane) => lane.id))
+    setCollapsedLanes((current) => {
+      const next = new Set([...current].filter((id) => valid.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [collapsedLanesHydrated, lanes.map((lane) => lane.id).join('\0'), swimlane])
+
+  const toggleLaneCollapsed = (laneId: string): void => {
+    setCollapsedLanes((current) => toggle(current, laneId))
+    requestAnimationFrame(() => {
+      Array.from(boardRef.current?.querySelectorAll<HTMLButtonElement>('[data-lane-collapse-toggle]') ?? [])
+        .find((button) => button.dataset.laneId === laneId)?.focus()
+    })
+  }
 
   const boardOpenTask = openTaskId ? allTasks.find((t) => t.id === openTaskId) : undefined
   // Доска отдаёт лёгкую карточку без тяжёлых текстов; при открытии догружаем
@@ -1516,29 +2413,129 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         />
       )}
       {view.state === 'data' && board && (
-        <div className="jboard-wrap">
+        <div
+          className="jboard-wrap"
+          aria-busy={view.refreshing}
+          aria-describedby={view.staleError ? staleMessageId : undefined}
+          data-stale={view.staleError || undefined}
+        >
           {/* Перенос с клавиатуры не видно фокусом — его проговаривает эта область. */}
-          <div className="vc-sr-only" role="status" aria-live="polite" data-testid="kanban-live">
+          <div className="vc-sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="kanban-live">
             {announce}
           </div>
           {view.staleError && (
-            <ErrorState
-              compact
-              className="jboard-error"
-              message="Последнее действие не сохранилось"
-              detail={props.error}
-              {...(props.onRetry ? { onRetry: props.onRetry } : {})}
-            />
+            <section id={staleMessageId} className="jboard-stale" role="alert" aria-live="assertive" data-testid="board-stale-warning">
+              <span className="jboard-stale-mark" aria-hidden="true">!</span>
+              <span className="jboard-stale-copy">
+                <strong>Показаны сохранённые данные</strong>
+                <span>Не удалось обновить доску: {props.error}</span>
+              </span>
+              <time dateTime={new Date(snapshotUpdatedAt).toISOString()} title={snapshotUpdated.label}>
+                Последний снимок: {snapshotUpdated.short}
+              </time>
+              {props.onRetry && <Button variant="secondary" size="sm" onClick={props.onRetry}>Повторить загрузку</Button>}
+            </section>
           )}
-          <FilterShell mobile={compact} count={activeFilterCount}>
-            <input
-              className="login-input jsearch"
-              type="search"
-              placeholder="Поиск на доске"
-              aria-label="Поиск на доске"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <FilterShell
+            mobile={compact}
+            count={activeFilterCount}
+            onReset={resetFilters}
+            visibleTasks={visibleTaskCount}
+            snapshot={snapshotUpdated.short}
+            refreshing={view.refreshing}
+          >
+            <span className="jsearch-wrap">
+              <input
+                ref={searchRef}
+                className="login-input jsearch"
+                type="search"
+                placeholder="Поиск на доске"
+                aria-label="Поиск на доске"
+                aria-keyshortcuts="/"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && search) {
+                    event.preventDefault()
+                    setSearch('')
+                  }
+                }}
+              />
+              {search && (
+                <IconButton
+                  className="jsearch-clear"
+                  size="sm"
+                  aria-label="Очистить поиск на доске"
+                  title="Очистить поиск"
+                  onClick={() => {
+                    setSearch('')
+                    searchRef.current?.focus()
+                  }}
+                >
+                  <span aria-hidden="true">×</span>
+                </IconButton>
+              )}
+            </span>
+            <span
+              className="jboard-result-count"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              data-testid="board-result-count"
+            >
+              Показано {visibleTaskCount} из {displayedTaskTotal}
+            </span>
+            <time
+              className={`jboard-snapshot jboard-snapshot--${snapshotUpdated.state}`}
+              data-testid="board-snapshot-time"
+              data-refreshing={view.refreshing || undefined}
+              dateTime={new Date(snapshotUpdatedAt).toISOString()}
+              aria-label={`Снимок доски. ${snapshotUpdated.label}`}
+              aria-live="polite"
+              title={`Снимок доски. ${snapshotUpdated.label}`}
+            >
+              {view.refreshing ? 'Обновляется…' : `Данные: ${snapshotUpdated.short}`}
+            </time>
+            {columns.length > 0 && (
+              <span className="jcolumn-nav" role="group" aria-label="Навигация по колонкам">
+                <IconButton
+                  size="sm"
+                  aria-label="Перейти к предыдущей колонке"
+                  title="Предыдущая колонка"
+                  disabled={activeColumnIndex <= 0}
+                  onClick={() => {
+                    const previous = columns[activeColumnIndex - 1]
+                    if (previous) jumpToColumn(previous.id)
+                  }}
+                >
+                  <span aria-hidden="true">←</span>
+                </IconButton>
+                <select
+                  className="sel jcolumn-nav-select"
+                  aria-label="Перейти к колонке"
+                  value={effectiveActiveColumnId ?? ''}
+                  onChange={(event) => jumpToColumn(event.target.value)}
+                >
+                  {columns.map((column) => (
+                    <option key={column.id} value={column.id}>
+                      {column.name} ({tasksOf(column.id).length})
+                    </option>
+                  ))}
+                </select>
+                <IconButton
+                  size="sm"
+                  aria-label="Перейти к следующей колонке"
+                  title="Следующая колонка"
+                  disabled={activeColumnIndex < 0 || activeColumnIndex >= columns.length - 1}
+                  onClick={() => {
+                    const next = columns[activeColumnIndex + 1]
+                    if (next) jumpToColumn(next.id)
+                  }}
+                >
+                  <span aria-hidden="true">→</span>
+                </IconButton>
+              </span>
+            )}
             <span className="javatars" role="group" aria-label="Фильтр по исполнителям">
               {members.map((m) => (
                 <button
@@ -1562,6 +2559,26 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 <span className="javatar javatar--none">?</span>
               </button>
             </span>
+            <FilterDropdown
+              label="Исполнители"
+              selected={assignees}
+              options={[
+                ...members.map((member) => ({
+                  value: member.username,
+                  label: member.username,
+                  leading: <Avatar username={member.username} size={20} />,
+                  meta: `${allTasks.filter((task) => columns.some((column) => column.id === task.columnId) && task.assignee === member.username).length}`
+                })),
+                {
+                  value: '',
+                  label: 'Не назначено',
+                  leading: <span className="javatar javatar--none jfilter-option-avatar">?</span>,
+                  meta: `${allTasks.filter((task) => columns.some((column) => column.id === task.columnId) && task.assignee == null).length}`
+                }
+              ]}
+              onChange={setAssignees}
+            />
+            {hiddenCards.length > 0 && <Button size="sm" variant="ghost" onClick={() => setHiddenCards([])}>Показать скрытые карточки</Button>}
             {currentUserId && (
               <label className={`jquick jquick-checkbox${onlyMine ? ' on' : ''}`}>
                 <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
@@ -1574,45 +2591,28 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             <button className={`jquick${recentOnly ? ' on' : ''}`} aria-pressed={recentOnly} onClick={() => setRecentOnly((v) => !v)}>
               Обновлены за сутки
             </button>
-            <FilterDropdown label="Тип" active={types.size}>
-              <>
-                {WORK_ITEM_TYPES.map((t) => (
-                  <label key={t}>
-                    <input type="checkbox" checked={types.has(t)} onChange={() => setTypes(toggle(types, t))} /> {TYPE_LABEL[t]}
-                  </label>
-                ))}
-              </>
-            </FilterDropdown>
-            <FilterDropdown label="Приоритет" active={priorities.size}>
-              <>
-                {TASK_PRIORITIES.map((p) => (
-                  <label key={p}>
-                    <input type="checkbox" checked={priorities.has(p)} onChange={() => setPriorities(toggle(priorities, p))} /> {PRIORITY_LABEL[p]}
-                  </label>
-                ))}
-              </>
-            </FilterDropdown>
+            <FilterDropdown label="Тип" selected={types} options={WORK_ITEM_TYPES.map((type) => ({ value: type, label: TYPE_LABEL[type] }))} onChange={(next) => setTypes(new Set([...next] as WorkItemType[]))} />
+            <FilterDropdown label="Приоритет" selected={priorities} options={TASK_PRIORITIES.map((priority) => ({ value: priority, label: PRIORITY_LABEL[priority] }))} onChange={(next) => setPriorities(new Set([...next] as TaskPriority[]))} />
+            <label className="jdue-window">
+              Срок
+              <select
+                className="sel"
+                aria-label="Срок задач"
+                value={dueWindow}
+                onChange={(event) => setDueWindow(event.target.value as BoardView['dueWindow'])}
+              >
+                <option value="all">Все</option>
+                <option value="overdue">Просрочено</option>
+                <option value="today">Сегодня</option>
+                <option value="week">Ближайшие 7 дней</option>
+                <option value="none">Без срока</option>
+              </select>
+            </label>
             {allLabels.length > 0 && (
-              <FilterDropdown label="Метка" active={labels.size}>
-                <>
-                  {allLabels.map((l) => (
-                    <label key={l}>
-                      <input type="checkbox" checked={labels.has(l)} onChange={() => setLabels(toggle(labels, l))} /> {l}
-                    </label>
-                  ))}
-                </>
-              </FilterDropdown>
+              <FilterDropdown label="Метка" selected={labels} options={allLabels.map((label) => ({ value: label, label }))} onChange={setLabels} />
             )}
             {allEpics.length > 0 && (
-              <FilterDropdown label="Эпик" active={epics.size}>
-                <>
-                  {allEpics.map((e) => (
-                    <label key={e.id}>
-                      <input type="checkbox" checked={epics.has(e.id)} onChange={() => setEpics(toggle(epics, e.id))} /> {e.title}
-                    </label>
-                  ))}
-                </>
-              </FilterDropdown>
+              <FilterDropdown label="Эпик" selected={epics} options={allEpics.map((epic) => ({ value: epic.id, label: epic.title }))} onChange={setEpics} />
             )}
             <label className="jswimlane">
               Свимлейны
@@ -1622,6 +2622,74 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 <option value="assignee">По исполнителям</option>
               </select>
             </label>
+            <span className="jboard-density-control" role="group" aria-label="Плотность доски">
+              <span className="jboard-density-label">Плотность</span>
+              <button
+                type="button"
+                className={`jquick${density === 'comfortable' ? ' on' : ''}`}
+                aria-label="Обычная плотность"
+                aria-pressed={density === 'comfortable'}
+                onClick={() => setDensity('comfortable')}
+              >
+                Обычно
+              </button>
+              <button
+                type="button"
+                className={`jquick${density === 'compact' ? ' on' : ''}`}
+                aria-label="Компактная плотность"
+                aria-pressed={density === 'compact'}
+                onClick={() => setDensity('compact')}
+              >
+                Компактно
+              </button>
+            </span>
+            <button
+              ref={shortcutsButtonRef}
+              type="button"
+              className="jquick jboard-shortcuts-button"
+              aria-haspopup="dialog"
+              aria-expanded={shortcutsOpen}
+              aria-controls="kanban-shortcuts-dialog"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              Клавиши
+            </button>
+            <Button
+              variant="secondary"
+              size="sm"
+              data-testid="open-board-diagnostics"
+              aria-haspopup="dialog"
+              aria-expanded={diagnosticsOpen}
+              onClick={() => {
+                setCopyDiagnosticsStatus('idle')
+                setDiagnosticsOpen(true)
+              }}
+            >
+              Диагностика
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="jboard-copy-list"
+              data-testid="copy-board-list"
+              disabled={visibleTaskCount === 0}
+              aria-label={`Копировать список видимых задач, ${visibleTaskCount} ${pluralTasks(visibleTaskCount)}`}
+              onClick={() => void copyVisibleBoard()}
+            >
+              {copyBoardStatus === 'success' ? 'Скопировано' : copyBoardStatus === 'error' ? 'Повторить копирование' : 'Копировать список'}
+            </Button>
+            {copyTaskLinkStatus && (
+              <span
+                className="jboard-copy-feedback"
+                data-testid="copy-task-link-status"
+                data-error={!copyTaskLinkStatus.copied || undefined}
+                role="status"
+              >
+                {copyTaskLinkStatus.copied
+                  ? `Ссылка на «${copyTaskLinkStatus.title}» скопирована`
+                  : `Не удалось скопировать ссылку на «${copyTaskLinkStatus.title}»`}
+              </span>
+            )}
             <label className="kanban-showhidden">
               <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
             </label>
@@ -1648,13 +2716,95 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 Показывать чаты завершённых задач
               </label>
             )}
-            {filtersActive && (
-              <button className="jquick jquick--clear" onClick={resetFilters}>
-                Сбросить фильтры
-              </button>
-            )}
             {view.refreshing && <RefreshIndicator label="Обновляем доску…" />}
           </FilterShell>
+
+          <section className="jboard-summary" aria-label="Сводка доски" data-testid="board-summary">
+            {boardSummary.map(({ label, value, unit, active, onClick }) => {
+              const content = <><span className="jboard-summary-label">{label}</span><strong>{value} {unit}</strong></>
+              return onClick ? (
+                <Button
+                  key={label}
+                  variant="ghost"
+                  size="sm"
+                  className="jboard-summary-item"
+                  aria-label={`${label}: ${value} ${unit}`}
+                  aria-pressed={active}
+                  onClick={onClick}
+                >
+                  {content}
+                </Button>
+              ) : (
+                <div key={label} className="jboard-summary-item" aria-label={`${label}: ${value} ${unit}`}>{content}</div>
+              )
+            })}
+          </section>
+
+          <section className="jpriority-overview" aria-label="Обзор приоритетов" data-testid="priority-overview">
+            <span className="jpriority-overview-label">Приоритеты</span>
+            {TASK_PRIORITIES.map((priority) => {
+              const active = priorities.has(priority)
+              const count = priorityCounts[priority]
+              return (
+                <Button
+                  key={priority}
+                  variant="secondary"
+                  size="sm"
+                  className={`jpriority-overview-item jpriority-overview-item--${priority}`}
+                  aria-label={`${PRIORITY_LABEL[priority]}: ${count} ${pluralTasks(count)}`}
+                  aria-pressed={active}
+                  disabled={count === 0 && !active}
+                  onClick={() => setPriorities(toggle(priorities, priority))}
+                >
+                  <PriorityIcon priority={priority} />
+                  <span>{PRIORITY_LABEL[priority]}</span>
+                  <strong>{count}</strong>
+                </Button>
+              )
+            })}
+            {priorities.size > 0 && (
+              <Button variant="ghost" size="sm" className="jpriority-overview-clear" onClick={() => setPriorities(new Set())}>
+                Все приоритеты
+              </Button>
+            )}
+          </section>
+
+          {columns.length > 1 && (
+            <section className="jcolumn-collapse-actions" role="group" aria-label="Управление свёрнутыми колонками">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={columns.every((column) => collapsedColumns.has(column.id))}
+                onClick={() => setCollapsedColumns((current) => new Set([...current, ...columns.map((column) => column.id)]))}
+              >
+                Свернуть все
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={columns.every((column) => !collapsedColumns.has(column.id))}
+                onClick={() => setCollapsedColumns((current) => {
+                  const displayed = new Set(columns.map((column) => column.id))
+                  return new Set([...current].filter((id) => !displayed.has(id)))
+                })}
+              >
+                Развернуть все
+              </Button>
+              <span role="status" aria-live="polite">
+                Свёрнуто {columns.filter((column) => collapsedColumns.has(column.id)).length} из {columns.length}
+              </span>
+            </section>
+          )}
+
+          {activeFilterChips.length > 0 && (
+            <div className="jactive-filters" role="region" aria-label="Активные фильтры" data-testid="active-filters">
+              <span className="jactive-filters-label">Активные фильтры</span>
+              {activeFilterChips.map((chip) => <ActiveFilterChip key={chip.key} label={chip.label} onRemove={chip.onRemove} />)}
+              <Button variant="ghost" size="sm" className="jactive-filters-clear" onClick={resetFilters}>
+                Сбросить все
+              </Button>
+            </div>
+          )}
 
           {/* Именно «колонок нет вообще»: при снятом чекбоксе «скрытые» видимых
               колонок тоже нет, но подсказка про создание там была бы неправдой. */}
@@ -1667,24 +2817,67 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             />
           )}
 
+          {filtersActive && displayedTaskTotal > 0 && visibleTaskCount === 0 && (
+            <EmptyState
+              compact
+              className="kanban-filter-empty"
+              testId="kanban-filter-empty"
+              icon="⌕"
+              title="По выбранным фильтрам задач не найдено"
+              description="Измените запрос или сбросьте фильтры, чтобы снова увидеть задачи."
+              actionLabel="Сбросить все фильтры"
+              onAction={resetFilters}
+            />
+          )}
+
+          {compact && <nav className="jboard-mobile-navigation" aria-label="Навигация по колонкам">
+            <IconButton title="Предыдущая колонка" aria-label="Предыдущая колонка" disabled={!mobileColumn || mobileColumnIndex === 0}
+              onClick={() => selectMobileColumn(columns[mobileColumnIndex - 1].id)}>‹</IconButton>
+            <span role="status">{mobileColumn ? `Колонка ${mobileColumnIndex + 1} из ${columns.length}` : 'Нет колонок'}</span>
+            <IconButton title="Следующая колонка" aria-label="Следующая колонка" disabled={!mobileColumn || mobileColumnIndex === columns.length - 1}
+              onClick={() => selectMobileColumn(columns[mobileColumnIndex + 1].id)}>›</IconButton>
+          </nav>}
+          {compact && <Button variant="primary" className="jboard-mobile-create" data-testid="board-mobile-create"
+            disabled={!mobileColumn} onClick={() => { if (mobileColumn) openComposer(mobileColumn.id) }}>+ Создать</Button>}
+          {compact && composerCol && columns.some((column) => column.id === composerCol) && <Dialog
+            title={`Создать задачу: ${columnName(composerCol)}`} onClose={() => setComposerCol(null)} padded
+            footer={<Button variant="primary" disabled={!newTitle.trim()} onClick={() => submitComposer(composerCol)}>Создать задачу</Button>}>
+            {composer(columns.find((column) => column.id === composerCol)!)}
+          </Dialog>}
           {swimlane === 'none' ? (
-            <div className="kanban-board jboard" data-testid="kanban-board" ref={boardRef}>
+            <div
+              className={`kanban-board jboard jboard--density-${density}`}
+              data-testid="kanban-board"
+              data-density={density}
+              ref={boardRef}
+              role="region"
+              aria-label={`Канбан-доска проекта «${props.projectName}». Стрелки влево и вправо прокручивают колонки, Home и End переходят к краям.`}
+              aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+              data-dragging={dragTask ? 'pointer' : grab ? 'keyboard' : undefined}
+              data-drag-task-id={dragTask ?? grab?.taskId}
+              tabIndex={0}
+              onKeyDown={navigateBoard}
+            >
               {columns.map((col) => (
                 <section
                   key={col.id}
-                  className={`jcol${col.hidden ? ' jcol--hidden' : ''}${
+                  className={`jcol${collapsedColumns.has(col.id) ? ' jcol--collapsed' : ''}${col.hidden ? ' jcol--hidden' : ''}${
                     dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol--drop' : ''
                   }`}
                   data-testid="kanban-column"
                   data-column-id={col.id}
+                  data-drop-target={dropAt?.columnId === col.id || undefined}
                   /* Имя делает колонку регионом: скринридер объявляет «Колонка
                      «В работе», 3 задачи» и умеет прыгать по ним. Без имени
                      section для доступности — обычный div. */
-                  aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
+                  aria-label={`${columnRegionLabel(col, tasksOf(col.id).length)}${collapsedColumns.has(col.id) ? ', свёрнута' : ''}`}
+                  aria-describedby={!collapsedColumns.has(col.id) && tasksOf(col.id).length === 0 ? `kanban-column-empty-${col.id}` : undefined}
                 >
                   {columnHead(col)}
-                  {columnBody(col)}
-                  {composer(col)}
+                  <div id={`kanban-column-content-${col.id}`} className="jcol-content" hidden={collapsedColumns.has(col.id)}>
+                    {!collapsedColumns.has(col.id) && columnBody(col)}
+                    {!compact && !collapsedColumns.has(col.id) && composer(col)}
+                  </div>
                 </section>
               ))}
               <section
@@ -1727,45 +2920,94 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               {addColumnBox}
             </div>
           ) : (
-            <div className="kanban-board jboard jboard--lanes" data-testid="kanban-board" ref={boardRef}>
+            <div
+              className={`kanban-board jboard jboard--lanes jboard--density-${density}`}
+              data-testid="kanban-board"
+              data-density={density}
+              ref={boardRef}
+              role="region"
+              aria-label={`Канбан-доска проекта «${props.projectName}». Стрелки влево и вправо прокручивают колонки, Home и End переходят к краям.`}
+              aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+              data-dragging={dragTask ? 'pointer' : grab ? 'keyboard' : undefined}
+              data-drag-task-id={dragTask ?? grab?.taskId}
+              tabIndex={0}
+              onKeyDown={navigateBoard}
+            >
+              {lanes.length > 1 && (
+                <div className="jlane-collapse-actions" role="group" aria-label="Управление дорожками">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={lanes.every((lane) => collapsedLanes.has(lane.id))}
+                    onClick={() => setCollapsedLanes(new Set(lanes.map((lane) => lane.id)))}
+                  >
+                    Свернуть дорожки
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={lanes.every((lane) => !collapsedLanes.has(lane.id))}
+                    onClick={() => setCollapsedLanes(new Set())}
+                  >
+                    Развернуть дорожки
+                  </Button>
+                  <span className="jlane-collapse-status" role="status" aria-live="polite">
+                    Свёрнуто дорожек {lanes.filter((lane) => collapsedLanes.has(lane.id)).length} из {lanes.length}
+                  </span>
+                </div>
+              )}
               <div className="jlane-heads">
                 {columns.map((col) => (
                   <section
                     key={col.id}
-                    className={`jcol jcol--headonly${col.hidden ? ' jcol--hidden' : ''}${
+                    className={`jcol jcol--headonly${collapsedColumns.has(col.id) ? ' jcol--collapsed' : ''}${col.hidden ? ' jcol--hidden' : ''}${
                       dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol--drop' : ''
                     }`}
                     data-testid="kanban-column"
                     data-column-id={col.id}
-                    aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
+                  data-drop-target={dropAt?.columnId === col.id || undefined}
+                    aria-label={`${columnRegionLabel(col, tasksOf(col.id).length)}${collapsedColumns.has(col.id) ? ', свёрнута' : ''}`}
                   >
-                    {columnHead(col)}
+                    {columnHead(col, lanes.map((lane) => `kanban-column-cell-${col.id}-${lane.id || 'none'}`).join(' '))}
                   </section>
                 ))}
                 {addColumnBox}
               </div>
               {lanes.map((lane) => (
-                <section key={lane.id || '·'} className="jlane" data-testid="swimlane">
+                <section key={lane.id || '·'} className="jlane" data-testid="swimlane" data-lane-id={lane.id}>
                   <button
                     className="jlane-head"
+                    data-lane-collapse-toggle=""
+                    data-lane-id={lane.id}
+                    aria-label={`${collapsedLanes.has(lane.id) ? 'Развернуть' : 'Свернуть'} дорожку «${lane.name}», ${lane.count} ${pluralTasks(lane.count)}${filtersActive ? ` из ${lane.total}` : ''}`}
                     aria-expanded={!collapsedLanes.has(lane.id)}
-                    onClick={() => setCollapsedLanes(toggle(collapsedLanes, lane.id))}
+                    aria-controls={`kanban-lane-content-${lane.id || 'none'}`}
+                    onClick={() => toggleLaneCollapsed(lane.id)}
                   >
                     {/* Раскрытие дорожки — общий шеврон, как у лент карточки. */}
                     <span className="vc-feed-caret" aria-hidden="true" />
                     {lane.title}
-                    <span className="jcol-count">{lane.count}</span>
+                    <span className="jcol-count">{filtersActive ? `${lane.count} из ${lane.total}` : lane.total}</span>
                   </button>
-                  {!collapsedLanes.has(lane.id) && (
-                    <div className="jlane-cols">
+                  <div id={`kanban-lane-content-${lane.id || 'none'}`} className="jlane-cols" hidden={collapsedLanes.has(lane.id)}>
+                    {!collapsedLanes.has(lane.id) && (
+                      <>
                       {columns.map((col) => (
-                        <div key={col.id} className="jcol jcol--incell">
-                          {columnBody(col, { kind: swimlane, id: lane.id })}
-                          {lane.id === '' ? composer(col) : null}
+                        <div
+                          key={col.id}
+                          id={`kanban-column-cell-${col.id}-${lane.id || 'none'}`}
+                          className={`jcol jcol--incell${collapsedColumns.has(col.id) ? ' jcol--collapsed jcol--collapsed-cell' : ''}`}
+                          data-column-id={col.id}
+                  data-drop-target={dropAt?.columnId === col.id || undefined}
+                          aria-hidden={collapsedColumns.has(col.id) || undefined}
+                        >
+                          {!collapsedColumns.has(col.id) && columnBody(col, { kind: swimlane, id: lane.id })}
+                          {!compact && !collapsedColumns.has(col.id) && lane.id === '' ? composer(col) : null}
                         </div>
                       ))}
-                    </div>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </section>
               ))}
             </div>
@@ -1812,6 +3054,143 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           </div>
         )
       })()}
+      {shortcutsOpen && (() => {
+        const close = (): void => {
+          setShortcutsOpen(false)
+          requestAnimationFrame(() => shortcutsButtonRef.current?.focus())
+        }
+        const shortcuts = [
+          { keys: ['/'], action: 'Перейти к поиску по доске' },
+          { keys: ['←', '→'], action: 'Перейти к соседней колонке, когда доска в фокусе' },
+          { keys: ['Home', 'End'], action: 'Перейти к первой или последней колонке' },
+          { keys: ['Enter'], action: 'Открыть карточку задачи' },
+          { keys: ['Пробел'], action: 'Взять карточку для переноса' },
+          { keys: ['←', '→', '↑', '↓'], action: 'Выбрать колонку и место взятой карточки' },
+          { keys: ['Enter'], action: 'Положить взятую карточку' },
+          { keys: ['Esc'], action: 'Отменить перенос или очистить поиск' },
+          { keys: ['Shift', 'F10'], action: 'Открыть меню действий карточки' }
+        ]
+        return (
+          <div className="jautomation-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) close() }}>
+            <section
+              id="kanban-shortcuts-dialog"
+              className="jboard-shortcuts-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="kanban-shortcuts-title"
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key !== 'Tab') return
+                event.preventDefault()
+                shortcutsCloseRef.current?.focus()
+              }}
+            >
+              <header className="jautomation-dialog-head">
+                <div>
+                  <div className="jautomation-eyebrow">Канбан-доска</div>
+                  <h2 id="kanban-shortcuts-title">Сочетания клавиш</h2>
+                </div>
+                <button ref={shortcutsCloseRef} type="button" className="jautomation-close" aria-label="Закрыть справку по клавиатуре" onClick={close}>×</button>
+              </header>
+              <dl className="jboard-shortcuts-list">
+                {shortcuts.map((shortcut, index) => (
+                  <Fragment key={`${shortcut.action}-${index}`}>
+                    <dt>{shortcut.keys.map((key) => <kbd key={key}>{key}</kbd>)}</dt>
+                    <dd>{shortcut.action}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+              <p className="jboard-shortcuts-note">Во время ввода в поле команды доски не перехватываются.</p>
+            </section>
+          </div>
+        )
+      })()}
+      {diagnosticsOpen && (
+        <Dialog
+          title="Диагностика доски"
+          ariaLabel={`Диагностика доски проекта «${props.projectName}»`}
+          size="md"
+          className="jboard-diagnostics-dialog"
+          testId="board-diagnostics-dialog"
+          onClose={() => setDiagnosticsOpen(false)}
+          padded
+          footer={(
+            <>
+              <span className="jboard-diagnostics-copy-status" role="status" data-error={copyDiagnosticsStatus === 'error' || undefined}>
+                {copyDiagnosticsStatus === 'success' ? 'Отчёт скопирован' : copyDiagnosticsStatus === 'error' ? 'Не удалось скопировать отчёт' : ''}
+              </span>
+              <Button variant="secondary" onClick={() => void copyBoardDiagnostics()}>
+                {copyDiagnosticsStatus === 'error' ? 'Повторить копирование' : 'Копировать отчёт'}
+              </Button>
+              <Button variant="primary" onClick={() => setDiagnosticsOpen(false)}>Готово</Button>
+            </>
+          )}
+        >
+          <div
+            className="jboard-diagnostics"
+            data-testid="board-diagnostics"
+            data-snapshot-state={boardDiagnostics.snapshotState}
+            data-snapshot-age={boardDiagnostics.snapshotAge}
+            data-visible-tasks={boardDiagnostics.visibleTasks}
+            data-displayed-columns={boardDiagnostics.displayedColumns}
+          >
+            <section className={`jboard-diagnostics-state jboard-diagnostics-state--${boardDiagnostics.snapshotState}`} aria-label="Состояние данных">
+              <strong>{DIAGNOSTIC_STATE_LABEL[boardDiagnostics.snapshotState]}</strong>
+              <time dateTime={boardDiagnostics.snapshotAt}>Снимок: {snapshotUpdated.label}</time>
+              <span>Свежесть: {SNAPSHOT_AGE_LABEL[boardDiagnostics.snapshotAge]} · фоновое обновление: {boardDiagnostics.refreshing ? 'идёт' : 'нет'}</span>
+            </section>
+
+            <section aria-labelledby="board-diagnostics-counts">
+              <h3 id="board-diagnostics-counts">Объём данных</h3>
+              <dl className="jboard-diagnostics-grid">
+                <div><dt>Задачи</dt><dd>{boardDiagnostics.visibleTasks} видно · {boardDiagnostics.displayedTasks} в показанных колонках · {boardDiagnostics.loadedTasks} загружено</dd></div>
+                <div><dt>Колонки</dt><dd>{boardDiagnostics.displayedColumns} показано · {boardDiagnostics.totalColumns} всего</dd></div>
+                <div><dt>Скрытые</dt><dd>{boardDiagnostics.hiddenColumns}</dd></div>
+                <div><dt>Свёрнутые</dt><dd>{boardDiagnostics.collapsedColumns}</dd></div>
+                <div><dt>Активная колонка</dt><dd>{boardDiagnostics.activeColumn ?? 'нет'}</dd></div>
+                <div><dt>Представление</dt><dd>{boardDiagnostics.density === 'compact' ? 'Компактное' : 'Обычное'} · свимлейны {SWIMLANE_LABEL[boardDiagnostics.swimlane]}</dd></div>
+              </dl>
+            </section>
+
+            <section aria-labelledby="board-diagnostics-health">
+              <h3 id="board-diagnostics-health">Сводка видимых задач</h3>
+              <dl className="jboard-diagnostics-grid jboard-diagnostics-grid--compact">
+                <div><dt>Оценка</dt><dd>{boardDiagnostics.metrics.storyPoints} SP</dd></div>
+                <div><dt>Просрочено</dt><dd>{boardDiagnostics.metrics.overdue}</dd></div>
+                <div><dt>Без исполнителя</dt><dd>{boardDiagnostics.metrics.unassigned}</dd></div>
+                <div><dt>С флагом</dt><dd>{boardDiagnostics.metrics.flagged}</dd></div>
+                <div><dt>Завершено</dt><dd>{boardDiagnostics.metrics.completed}</dd></div>
+              </dl>
+            </section>
+
+            <section aria-labelledby="board-diagnostics-filters">
+              <h3 id="board-diagnostics-filters">Активные фильтры <span>{boardDiagnostics.activeFilters.length}</span></h3>
+              {boardDiagnostics.activeFilters.length > 0
+                ? <ul className="jboard-diagnostics-filters">{boardDiagnostics.activeFilters.map((filter) => <li key={filter}>{filter}</li>)}</ul>
+                : <p className="jboard-diagnostics-empty">Нет активных фильтров</p>}
+            </section>
+
+            <section aria-labelledby="board-diagnostics-columns">
+              <h3 id="board-diagnostics-columns">Показанные колонки</h3>
+              <div className="jboard-diagnostics-table-wrap">
+                <table>
+                  <thead><tr><th scope="col">Колонка</th><th scope="col">Видно</th><th scope="col">Всего</th><th scope="col">WIP</th></tr></thead>
+                  <tbody>
+                    {boardDiagnostics.columns.map((column) => (
+                      <tr key={column.id}>
+                        <th scope="row">{column.name}{column.hidden ? ' · скрытая' : ''}</th>
+                        <td>{column.visibleTasks}</td>
+                        <td>{column.totalTasks}</td>
+                        <td>{column.wipLimit == null ? '—' : `${column.totalTasks}/${column.wipLimit}`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </Dialog>
+      )}
       {openImprovement && board && (
         <ImprovementModal
           improvement={openImprovement}
@@ -1848,6 +3227,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onStartCi={props.onStartCi}
           onStartPreparation={props.onStartPreparation}
           initialTab={openTaskTab}
+          onTabChange={(tab) => props.onOpenTaskChange?.(openTask.id, tab)}
           initialChatDraft={openTaskChatDraft}
           loadPreparationRuns={props.loadPreparationRuns}
           loadPreparationRun={props.loadPreparationRun}

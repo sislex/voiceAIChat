@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-09-11
-checked: 17dd72ff
+checked: 29171e8f
 areas:
   - packages/shared/src
 ---
@@ -37,6 +37,13 @@ areas:
 | `tools.ts`, `questions.ts`, `images.ts` | Разбор fenced-блоков `tool`, `questions`, `image` из ответа модели. |
 | `sentences.ts`, `textPrep.ts` | Отделение произносимого текста от Markdown/служебных блоков и подготовка фраз для TTS. |
 | `pcm.ts`, `format.ts`, `export.ts` | PCM/WAV-утилиты, форматирование и экспорт разговора. |
+
+`projects.ts` owns the persisted `BoardView` contract and its defensive
+`sanitizeBoardView` boundary. The `dueWindow` enum accepts `all`, `overdue`,
+`today`, `week`, and `none`; `overdueOnly` remains as a compatibility field for
+older clients and stored records. Quick completed slices remain explicit boolean
+fields with false defaults. Unknown enum and non-boolean values are discarded at
+the boundary.
 
 `normalizeWebRecorderStep` отбрасывает повреждённые поля и принудительно стирает
 текст sensitive-шага. `parseWebRecorderScenario` принимает до 1 МБ JSON и первые

@@ -7,7 +7,7 @@ import type { Task } from '@shared/projects'
 import type { CiRun, CiRunSummary } from '@shared/ci'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
-import { TaskCard, type TaskCardProps } from './TaskCard'
+import { TaskCard, type TaskCardProps, updatedPresentation } from './TaskCard'
 
 function mkTask(over: Partial<Task> = {}): Task {
   return {
@@ -24,6 +24,202 @@ function props(over: Partial<TaskCardProps> = {}): TaskCardProps {
     dragging: false, ...over
   }
 }
+
+describe('TaskCard — клавиатура и меню действий', () => {
+  it('описывает карточку и открывает её Enter, оставляя Space переносу', () => {
+    const onOpen = vi.fn()
+    const onCardKeys = vi.fn()
+    render(<TaskCard {...props({ onOpen, onCardKeys })} />)
+    const card = screen.getByTestId('task-card')
+    expect(card).toHaveAttribute('role', 'article')
+    expect(card).toHaveAttribute('aria-keyshortcuts', 'Enter Space Shift+F10')
+    expect(card).toHaveAccessibleDescription('Enter — открыть; Пробел — перенести; Shift+F10 — открыть действия.')
+
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(onOpen).toHaveBeenCalledWith('t1')
+    expect(onCardKeys).not.toHaveBeenCalled()
+    fireEvent.keyDown(card, { key: ' ' })
+    expect(onCardKeys).toHaveBeenCalledTimes(1)
+  })
+
+  it('Shift+F10 открывает именованное меню, фокусирует первый пункт и ходит стрелками', async () => {
+    render(<TaskCard {...props()} />)
+    const card = screen.getByTestId('task-card')
+    card.focus()
+    fireEvent.keyDown(card, { key: 'F10', shiftKey: true })
+    const menu = await screen.findByRole('menu', { name: 'Действия с «Задача A»' })
+    const items = within(menu).getAllByRole('menuitem')
+    await waitFor(() => expect(items[0]).toHaveFocus())
+
+    await userEvent.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await userEvent.keyboard('{End}')
+    expect(items.at(-1)).toHaveFocus()
+    await userEvent.keyboard('{Home}')
+    expect(items[0]).toHaveFocus()
+    await userEvent.keyboard('{ArrowUp}')
+    expect(items.at(-1)).toHaveFocus()
+  })
+
+  it('Escape закрывает меню и возвращает фокус карточке', async () => {
+    render(<TaskCard {...props()} />)
+    const card = screen.getByTestId('task-card')
+    fireEvent.keyDown(card, { key: 'ContextMenu' })
+    const menu = await screen.findByRole('menu')
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus())
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(card).toHaveFocus())
+  })
+
+  it('кнопка и правый клик раскрывают одно меню с полным aria-контрактом', async () => {
+    render(<TaskCard {...props()} />)
+    const card = screen.getByTestId('task-card')
+    const trigger = screen.getByRole('button', { name: 'Действия с «Задача A»' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(trigger)
+    const menu = await screen.findByRole('menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(trigger).toHaveAttribute('aria-controls', menu.id)
+    await userEvent.keyboard('{Escape}')
+    fireEvent.contextMenu(card)
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+  })
+
+  it('копирует ссылку отдельным пунктом и закрывает меню без открытия карточки', async () => {
+    const onCopyLink = vi.fn().mockResolvedValue(undefined)
+    const onOpen = vi.fn()
+    render(<TaskCard {...props({ onCopyLink, onOpen })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «Задача A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Копировать ссылку' }))
+
+    expect(onCopyLink).toHaveBeenCalledOnce()
+    expect(onCopyLink).toHaveBeenCalledWith('t1')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('клавиши внутренних кнопок не открывают карточку и не запускают перенос', async () => {
+    const onOpen = vi.fn()
+    const onOpenChat = vi.fn()
+    const onCardKeys = vi.fn()
+    render(<TaskCard {...props({ onOpen, onOpenChat, onCardKeys })} />)
+    const chat = screen.getByRole('button', { name: 'Связанный чат' })
+    chat.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onOpenChat).toHaveBeenCalledWith('t1')
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(onCardKeys).not.toHaveBeenCalled()
+  })
+
+  it('Enter у уже взятой карточки передаётся доске для завершения переноса', () => {
+    const onOpen = vi.fn()
+    const onCardKeys = vi.fn()
+    render(<TaskCard {...props({ grabbed: true, onOpen, onCardKeys })} />)
+    const card = screen.getByTestId('task-card')
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(onCardKeys).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('TaskCard — объяснение результатов поиска', () => {
+  it('подсвечивает все совпадения без учёта регистра, сохраняя доступное имя карточки', () => {
+    render(<TaskCard {...props({ task: mkTask({ title: 'Alpha alpha', labels: ['Alpha-team'] }), searchQuery: 'ALPHA' })} />)
+    const card = screen.getByTestId('task-card')
+    expect(card.querySelectorAll('mark.jcard-search-hit')).toHaveLength(3)
+    expect(Array.from(card.querySelectorAll('mark')).map((mark) => mark.textContent)).toEqual(['Alpha', 'alpha', 'Alpha'])
+    expect(card).toHaveAccessibleName(/Alpha alpha/)
+  })
+
+  it('показывает источник совпадения в скрытых полях и безопасно принимает спецсимволы', () => {
+    const task = mkTask({
+      assignee: 'alice',
+      labels: ['one', 'two', 'three', 'release[1]'],
+      description: 'Префикс с искомым [value] и продолжением описания',
+      acceptanceCriteria: 'Ответ содержит [value]'
+    })
+    const { rerender } = render(<TaskCard {...props({ task, searchQuery: 'ALICE' })} />)
+    expect(screen.getByLabelText('Совпадения поиска')).toHaveTextContent('Исполнитель: alice')
+    expect(screen.getByLabelText('Совпадения поиска').querySelectorAll('mark')).toHaveLength(1)
+
+    rerender(<TaskCard {...props({ task, searchQuery: '[value]' })} />)
+    const context = screen.getByLabelText('Совпадения поиска')
+    expect(context).toHaveTextContent('Описание:')
+    expect(context).toHaveTextContent('Критерии:')
+    expect(context.querySelectorAll('mark')).toHaveLength(2)
+  })
+
+  it('не добавляет разметку подсветки для пустого запроса', () => {
+    render(<TaskCard {...props({ searchQuery: '   ' })} />)
+    expect(screen.getByTestId('task-card').querySelector('mark')).toBeNull()
+    expect(screen.queryByLabelText('Совпадения поиска')).not.toBeInTheDocument()
+  })
+})
+
+describe('TaskCard — прогресс подзадач', () => {
+  const parent = mkTask({ id: 'parent', title: 'Родитель', columnId: 'development' })
+  const first = mkTask({ id: 'child-1', parentId: 'parent', columnId: 'done' })
+  const second = mkTask({ id: 'child-2', parentId: 'parent', columnId: 'development' })
+
+  it('показывает прогресс на любом этапе с числовым и текстовым aria-контрактом', () => {
+    render(<TaskCard {...props({
+      task: parent,
+      allTasks: [parent, first, second],
+      doneColumnIds: new Set(['done']),
+      columnSemanticType: 'development'
+    })} />)
+
+    const progress = screen.getByRole('progressbar', { name: 'Прогресс подзадач' })
+    expect(progress).toHaveAttribute('aria-valuemin', '0')
+    expect(progress).toHaveAttribute('aria-valuemax', '2')
+    expect(progress).toHaveAttribute('aria-valuenow', '1')
+    expect(progress).toHaveAttribute('aria-valuetext', 'Выполнено 1 из 2, осталось 1, 50%')
+    expect(progress).toHaveTextContent('50%1/2осталось 1')
+    expect(progress.querySelector('.jcard-progress-fill')).toHaveStyle({ width: '50%' })
+  })
+
+  it('различает нулевой и полный прогресс и не рисует его без подзадач', () => {
+    const { rerender } = render(<TaskCard {...props({ task: parent, allTasks: [parent, second], columnSemanticType: 'ready' })} />)
+    let progress = screen.getByRole('progressbar')
+    expect(progress).toHaveClass('jcard-progress--empty')
+    expect(progress).toHaveTextContent('0%0/1осталось 1')
+
+    rerender(<TaskCard {...props({ task: parent, allTasks: [parent, first], doneColumnIds: new Set(['done']), columnSemanticType: 'manual_qa' })} />)
+    progress = screen.getByRole('progressbar')
+    expect(progress).toHaveClass('jcard-progress--complete')
+    expect(progress).toHaveTextContent('100%1/1готово')
+
+    rerender(<TaskCard {...props({ task: parent, allTasks: [parent] })} />)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+})
+
+describe('TaskCard — время последнего обновления', () => {
+  const now = new Date(2026, 8, 11, 18, 0).getTime()
+
+  it('выбирает короткие состояния от текущего момента до старой даты', () => {
+    expect(updatedPresentation(now - 20_000, now)).toMatchObject({ short: 'сейчас', state: 'fresh' })
+    expect(updatedPresentation(now - 5 * 60_000, now)).toMatchObject({ short: '5 мин', state: 'fresh' })
+    expect(updatedPresentation(now - 2 * 3_600_000, now)).toMatchObject({ short: '2 ч', state: 'fresh' })
+    expect(updatedPresentation(new Date(2026, 8, 11, 7).getTime(), now)).toMatchObject({ short: 'сегодня', state: 'fresh' })
+    expect(updatedPresentation(new Date(2026, 8, 10, 18).getTime(), now)).toMatchObject({ short: 'вчера', state: 'recent' })
+    expect(updatedPresentation(new Date(2026, 8, 6, 18).getTime(), now)).toMatchObject({ short: '5 дн', state: 'recent' })
+    expect(updatedPresentation(new Date(2026, 7, 20, 18).getTime(), now)).toMatchObject({ short: '20.08', state: 'stale' })
+  })
+
+  it('рендерит точное машинное и доступное время вместе с состоянием свежести', () => {
+    const updatedAt = Date.now() - 5 * 60_000
+    const expected = updatedPresentation(updatedAt)
+    render(<TaskCard {...props({ task: mkTask({ updatedAt }) })} />)
+    const time = screen.getByLabelText(expected.label)
+    expect(time).toHaveAttribute('dateTime', new Date(updatedAt).toISOString())
+    expect(time).toHaveAttribute('title', expected.label)
+    expect(time).toHaveClass('jcard-updated--fresh')
+    expect(time).toHaveTextContent('5 мин')
+  })
+})
 
 
 function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
@@ -42,10 +238,42 @@ describe('TaskCard связанный чат', () => {
     expect(chip.querySelector('.jcard-epic-dot')!.getAttribute('style')).toMatch(/background/)
   })
 
-  // В подписи только «29 авг.» — без года; раньше подсказка говорила просто «Срок».
+  // The visible relative state stays compact while the tooltip preserves the exact date.
   it('подсказка срока показывает полную дату', () => {
     render(<TaskCard {...props({ task: mkTask({ dueDate: Date.UTC(2026, 7, 29, 9) }) })} />)
-    expect(screen.getByTitle(/^Срок: \d{2}\.\d{2}\.\d{4}$/)).toBeInTheDocument()
+    expect(screen.getByTitle(/^Срок \d{2}\.\d{2}\.\d{4}\. Просрочено на \d+ /)).toBeInTheDocument()
+  })
+
+  it('объясняет срок и метаданные карточки без открытия модалки', () => {
+    const now = Date.now()
+    render(<TaskCard {...props({
+      columnSemanticType: 'development',
+      task: mkTask({
+        title: 'Проверить платёж',
+        priority: 'high',
+        assignee: 'alexey.rozhnov',
+        storyPoints: 8,
+        dueDate: now,
+        labels: ['payments', 'ui', 'critical', 'release', 'frontend']
+      })
+    })} />)
+
+    const card = screen.getByTestId('task-card')
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('PROJ-1. Задача. Проверить платёж'))
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('Приоритет: Высокий'))
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('Исполнитель: alexey.rozhnov'))
+    expect(card).toHaveAttribute('aria-label', expect.stringContaining('Срок сегодня'))
+    expect(screen.getByRole('img', { name: 'Приоритет: Высокий' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Исполнитель: alexey.rozhnov' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Оценка: 8 story points')).toHaveTextContent('8 SP')
+
+    const labels = screen.getByRole('list', { name: 'Метки задачи: payments, ui, critical, release, frontend' })
+    expect(within(labels).getAllByRole('listitem')).toHaveLength(4)
+    expect(within(labels).getByText('payments')).toBeInTheDocument()
+    const more = within(labels).getByLabelText('Ещё 2 метки: release, frontend')
+    expect(more).toHaveTextContent('+2')
+    expect(more).toHaveAttribute('title', 'Все метки: payments, ui, critical, release, frontend')
+    expect(screen.getByLabelText(/^Срок сегодня,/)).toHaveTextContent('Сегодня')
   })
 
   it('постоянно показывает действие и открывает чат, не открывая карточку', () => {
@@ -466,6 +694,28 @@ describe('TaskCard — содержимое по стадиям', () => {
 })
 
 describe('TaskCard — переход между этапами', () => {
+  it('меню перечисляет все другие колонки по порядку и помечает скрытые', async () => {
+    const move = vi.fn()
+    render(<TaskCard {...props({
+      moveColumns: [
+        { id: 'c0', name: 'Backlog' },
+        { id: 'c1', name: 'Current' },
+        { id: 'c2', name: 'Archive', hidden: true }
+      ],
+      onMoveToColumn: move
+    })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «Задача A»' }))
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByText('Переместить в колонку')).toBeInTheDocument()
+    const destinations = within(menu).getAllByRole('menuitem', { name: /В колонку/ })
+    expect(destinations.map((item) => item.textContent)).toEqual(['В колонку «Backlog»', 'В колонку «Archive» · скрытая'])
+    expect(within(menu).queryByRole('menuitem', { name: /Current/ })).not.toBeInTheDocument()
+
+    await userEvent.click(destinations[1]!)
+    expect(move).toHaveBeenCalledWith('t1', 'c1', 'c2')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
   it('показывает disabled-состояния первой, средней и последней колонок', () => {
     const move = vi.fn()
     const { rerender } = render(<TaskCard {...props({ previousColumn: null, nextColumn: { id: 'c2', name: 'Development' }, onMoveToColumn: move })} />)

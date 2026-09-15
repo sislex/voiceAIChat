@@ -9,7 +9,7 @@ import type { AgentInfo } from './agentProtocol'
 
 /** Какую утилиту открыть в сообщении и на какой машине. */
 export interface ToolSpec {
-  kind: 'console' | 'explorer' | 'git'
+  kind: 'console' | 'terminal' | 'explorer' | 'git'
   /** id машины-агента; если не задан — UI выберет доступную. */
   agentId?: string
   /** Файл для выделения в проводнике или начальный cwd терминала. */
@@ -47,7 +47,7 @@ export function toolHint(kinds: readonly ToolSpec['kind'][]): string {
   const allowed = TOOL_KINDS.filter((kind) => kinds.includes(kind))
   if (allowed.length === 0) return ''
   const names = allowed.map((kind) => TOOL_KIND_TITLES[kind])
-  const list = names.length === 2 ? `${names[0]} или ${names[1]}` : names[0]
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} или ${names[names.length - 1]}` : names[0]
   const legend = allowed.map((kind) => `"kind": "${kind}" — ${TOOL_KIND_TITLES[kind]}`).join(', ')
   return [
     `Если пользователь просит открыть ${list} на его машине,`,
@@ -62,8 +62,8 @@ export function toolHint(kinds: readonly ToolSpec['kind'][]): string {
 }
 
 /** Порядок видов в подсказке; названия — как их произносит пользователь. */
-export const TOOL_KINDS: readonly ToolSpec['kind'][] = ['console', 'explorer', 'git']
-const TOOL_KIND_TITLES: Record<ToolSpec['kind'], string> = { console: 'терминал', explorer: 'файловый проводник', git: 'панель кода с изменениями git' }
+export const TOOL_KINDS: readonly ToolSpec['kind'][] = ['console', 'terminal', 'explorer', 'git']
+const TOOL_KIND_TITLES: Record<ToolSpec['kind'], string> = { console: 'консоль', terminal: 'терминал', explorer: 'файловый проводник', git: 'панель кода с изменениями git' }
 
 /** Инструкция модели о формате открытия утилиты (оба вида; добавляется к промпту). */
 export const TOOL_HINT = toolHint(TOOL_KINDS)
@@ -116,7 +116,9 @@ export function detectOpenUtility(text: string, agents: AgentInfo[] = []): ToolS
     t
   )
   if (!m) return null
-  const kind: ToolSpec['kind'] = /(консоль|терминал|console|terminal)/.test(m[1])
+  const kind: ToolSpec['kind'] = /^(терминал|terminal)$/.test(m[1])
+    ? 'terminal'
+    : /^(консоль|console)$/.test(m[1])
     ? 'console'
     : /(код|изменения|git|diff)/.test(m[1])
       ? 'git'

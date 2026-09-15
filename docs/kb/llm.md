@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-10
-checked: 9724b402
+updated: 2026-09-14
+checked: 3fcc921c
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -156,13 +156,16 @@ stdout CLI, поэтому разбор stream-json/JSONL, usage и `session_id`
 сервере: `turns.ts`, CI-раннер и парсеры `packages/shared` не отличают удалённый
 ход от локального.
 
-`LlmRequest.attachments` решает проблему серверных абсолютных путей в prompt: сервер
-по-прежнему собирает prompt с путями из своей ФС, но вместе с запросом передаёт
-байты вложений и исходный `serverPath`. Исполнитель создаёт временный каталог рана,
-кладёт туда файлы, переписывает prompt по карте `serverPath → runnerPath` и удаляет
-каталог после завершения или отмены рана. Аналогично `cwd` стал «желаемым»: сервер
-его больше не проверяет через `existsSync`, а исполнитель сам решает, можно ли
-сделать `chdir`; несуществующий путь просто игнорируется.
+`LlmRequest.attachments` carries file bytes together with the authoritative
+`serverPath` used in the prompt. `prepareLlmAttachments` in
+`apps/llm-runner/src/cli/attachments.ts` materializes those bytes in a temporary
+`voicechat-llm-run-*` directory and rewrites every mentioned `serverPath` to the
+local copy. Both embedded `ClaudeCli`/`CodexCli` and the HTTP `RunManager` call
+the same helper and clean the directory after completion, cancellation, client
+disconnect, or a synchronous spawn failure. A producer must mention the exact
+`serverPath` in its prompt; `runnerName` alone does not create a path that the
+model can discover. `cwd` remains a desired path: the HTTP runner validates it
+on its own host and simply omits an unavailable directory from `spawn`.
 
 Общее место разбора — `llm/sinks.ts`: приёмник строк (`createClaudeSink` /
 `createCodexSink`) отделён от способа их получить, им пользуются и локальные
@@ -220,6 +223,18 @@ codex `model: ''` намеренно.
 потока без `exit` → «соединение оборвалось до конца ответа — ход остановлен»
 (ход обязан закрыться, иначе он висит до перезапуска сервера).
 
+The runner sends a blank NDJSON line every 15 seconds while a run is open
+(`DEFAULT_HEARTBEAT_MS` in `apps/llm-runner/src/run/rawRun.ts`). This keeps the
+HTTP response body active when the CLI produces no stdout/stderr, avoiding a
+body inactivity timeout during long reasoning or tool calls. Existing
+`parseLlmRunFrame` clients ignore blank lines, so heartbeats do not become model
+output, usage, or completion events. The interval stops on completion, process
+error, or client disconnect. A blocked heartbeat write arms the existing orphan
+timer; further heartbeats pause until drain and cannot postpone that deadline.
+Cancellation still sends SIGTERM/SIGKILL and closes the stream after CLI exit.
+Tests cover ten minutes of silent Claude/Codex output, actual HTTP keepalive
+bytes, backpressure, disconnect, errors, and cancellation without spawning a CLI.
+
 Env (реестра исполнителей пока нет, срез 2 плана `docs/plans/llm-runners.md`):
 `VC_LLM_RUNNER_URL` — общий адрес, `VC_LLM_RUNNER_CLAUDE_URL` /
 `VC_LLM_RUNNER_CODEX_URL` — переопределение по движку, `VC_LLM_RUNNER_TOKEN` —
@@ -227,6 +242,34 @@ Bearer, `VC_LLM_RUNNER_TIMEOUT_MS` — ожидание заголовков `/v
 ограничен). Эти переменные читает `config.ts`, а решение «remote или локальный
 spawn» принимается в `buildServer()`. Не задано — сервер работает как раньше,
 через `spawn`.
+
+### Local Make with a server-hosted model runner
+
+For browser QA, run core with embedded Make, an isolated `VC_DATA_DIR`, and a
+free loopback port. Build the product frontends and web shell first. Forward a
+local port over SSH to the remote runner container's port 8790, then set
+`VC_LLM_RUNNER_URL` and `VC_LLM_RUNNER_TOKEN` for the local core. Read the runner
+credential privately; it is separate from the browser user's login password.
+This keeps conversations and workshop files local while the CLI runs remotely.
+
+The connection must work in both directions. In embedded mode, `server.ts`
+builds the Make MCP URL from `VC_MCP_PUBLIC_BASE`; `VC_MAKE_MCP_PUBLIC_BASE` is
+used by remote Make mode. Verify `/api/health` from inside the runner at the
+callback base before sending a model prompt. A healthy `/v1/health` in the
+forward direction alone does not prove that the model can read or edit Make
+files. An unreachable callback can produce an ordinary model answer saying
+that Make tools are unavailable.
+
+In the September 11 local QA setup, a callback listener on the Docker host's
+bridge address timed out from the runner container. A working alternative was
+an SSH reverse Unix-socket forward to the local core, plus a temporary Python
+TCP-to-Unix-socket relay launched with `nsenter -t <runner-pid> -n`. The relay
+listened on loopback inside the runner network namespace while retaining the
+host filesystem namespace containing the SSH socket. Its loopback URL became
+`VC_MCP_PUBLIC_BASE`. No firewall or production service configuration change
+was needed. Discover the current container IP and PID at launch, keep relay
+ports distinct from service ports, and stop the relay/tunnel when the local
+test instance is no longer needed.
 
 ## Разбор потока
 
@@ -240,9 +283,38 @@ spawn» принимается в `buildServer()`. Не задано — сер�
 
 Usage нормализуется в `TurnUsage` и рассылается как `claude.usage`. Claude CLI
 отдаёт промежуточные usage-снапшоты, поэтому его счётчик растёт во время ответа.
-`codex exec --json` отдаёт точные input/output/cached только в `turn.completed`:
-`CodexCli` проводит этот итог через `onUsage` перед `onDone`, а `TurnManager`
-подмешивает последний usage-снапшот в сохраняемый `TurnMeta`.
+`codex exec --json` отдаёт input/output/cached только в `turn.completed`:
+`CodexCli`/`sinks.ts` проводят этот итог через `onUsage` перед `onDone`, а
+`TurnManager` подмешивает последний usage-снапшот в сохраняемый `TurnMeta`.
+
+**`usage` в `turn.completed` у Codex — накопительный итог всего треда, а не
+хода.** В исходниках Codex CLI (`event_processor_with_jsonl_output.rs`) кадр
+собирается из `ThreadTokenUsage.total`, а не `.last`; при `codex exec resume`
+итог продолжает расти с прошлых ходов, `input_tokens` включает
+`cached_input_tokens`. До 13.09.2026 сервер записывал эти числа как расход
+сообщения: каждый ответ выглядел дороже предыдущего (ответ «Принято» из одного
+вызова модели показывал +54k входа), а стоимость беседы росла квадратично
+($85 в сайдбаре при реальных ≈$9). Теперь `codexStream.ts` дублирует сырые
+итоги в `TurnMeta.codexThreadUsage`, а `TurnManager` перед ходом читает
+`chat.lastCodexThreadUsage(conversationId)` (итоги последнего оценённого
+ответа беседы) и через `codexTurnUsage` (`packages/shared/src/codexUsage.ts`)
+пишет в `inputTokens/outputTokens/cacheReadTokens/cacheCreationTokens` разницу
+— и в живой счётчик `claude.usage`, и в сохраняемую мету. Другой id треда или
+уменьшившийся счётчик означают новый тред: тогда расходом считается сам итог.
+`inputTokens` при этом приводится к единой семантике «вход без кэша», как у
+Claude и как ждёт `estimateCostUsd`; SQL сайдбара/отчёта кэш больше не вычитает.
+Старые ответы переписаны разово при старте (`runOnce('codex_thread_usage_v2')`
+→ `chat.migrateCodexThreadUsage()`, оба бэкенда): по порядку сообщений беседы,
+идемпотентно — ответы с `codexThreadUsage` не трогаются. **Мета читается по
+одному сообщению**, а не одним `SELECT`: в `meta` лежит вся активность хода
+(на проде 3.2k ответов Codex, ~500 МБ меты, один ответ до 12 МБ), а ядро живёт с
+кучей ~512 МБ — первая версия (релиз 0.1.304, 14.09.2026) читала всё разом и
+роняла ядро heap-OOM через 4 с после старта, до `/api/health`; ключ `v1` на
+проде помечен выполненным вручную, чтобы остановить цикл рестартов, поэтому в
+коде ключ `v2`. То же правило у `lastCodexThreadUsage`: сначала id, потом мета. В CI тот же расчёт
+делает `codexRunTurnSpend` в `modelHooks.ts` с базой в памяти по id рана:
+после рестарта сервера первый ход продолженного рана запишется целым итогом
+треда (редкий перекос вверх, виден в отчёте как всплеск).
 
 `session_id` сохраняется в `conversations.claude_session_id`: следующий ход идёт
 с `--resume`, поэтому в промпт кладётся только новая реплика (`buildPrompt`), а
@@ -719,9 +791,9 @@ Make-контекст приклеиваются к сообщению **каж�
 `contextBlocks.ts`/`shared` и зови из обоих мест. Иначе инспектор перестаёт
 отвечать на вопрос, ради которого сделан.
 
-## Генерация картинок для студии (2026-09-03)
+## Генерация картинок для студии (2026-09-12)
 
-`apps/server/src/llm/imageStudioGenerator.ts` — один ход codex без сессии.
+`apps/server/src/imageStudioBridge/generator.ts` — один ход codex без сессии.
 Три обязательных условия, без любого из них модель отвечает текстом и ран
 падает «AI не вернул файл изображения» (сниппет ответа уходит в лог сервера с
 префиксом `[image-studio]`): (1) исполнение разрешено —
@@ -737,9 +809,25 @@ Make-контекст приклеиваются к сообщению **каж�
 генерация может получить до 4 референсов (`references` в generate) — файлы
 галереи уходят вложениями reference-N-<имя> с подсказкой «повтори стиль и
 палитру, не копируя композицию».
+
+Localized retouch sends the crop, monochrome mask, and optional references as
+inline attachments. The generated prompt names their exact `/studio/...`
+`serverPath` values so attachment preparation can substitute paths that the
+selected local or HTTP runner can actually read. The Image Studio service then
+composites the returned crop through the original mask and preserves every
+pixel outside it.
 Обычный ход чата студии (assistantKind `images`) получает блок «Студия
 картинок» через `deps.studioContext` в turns.ts: список галереи (до 30 файлов
 с промптами) и правило «покажи результат fenced-блоком image с абсолютным
 путём — иначе он не попадёт в галерею»; сам захват делает
 `captureStudioImages` после done (сквозной цикл проверен живьём: модель
 нарисовала в чате → файл появился в галерее с бейджем «новое»).
+
+Since 2026-09-12, an `images` turn also receives the conversation-scoped Image
+Studio MCP URL. Claude registers it as the `image_studio` HTTP server and allows
+the shared `IMAGE_STUDIO_TOOLS`; Codex receives the equivalent `-c mcp_servers`
+arguments. Both runners prepend `IMAGE_STUDIO_ASSISTANT_HINT`, which tells the
+model to list and visually open files first, use localized retouch for people
+and objects, extract/edit/place isolated objects, and restore versions without
+destroying history. Plan turns receive the same endpoint with `ro=1`, enforced
+again by every mutating MCP handler.

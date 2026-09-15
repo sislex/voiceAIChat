@@ -10,6 +10,8 @@ import { IMAGE_STUDIO_VIEWER_BG_KEY } from '@voicechat/ui-foundation/persistence
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
+import type { ImageStudioSelection } from '@shared/imageStudio'
+import { ImageStudioSelectionEditor } from './ImageStudioSelectionEditor'
 
 interface Props {
   viewing: string
@@ -29,9 +31,18 @@ interface Props {
   onView: (path: string) => void
   onStep: (delta: number) => void
   onUsePrompt: (prompt: string) => void
+  onTagsChange?: (path: string, tags: string[]) => Promise<void>
   /** Закрыть вьюер и выбрать файл для правки (фокус уйдёт в промпт). */
   onPickForEdit: (path: string) => void
   onVariate: (path: string) => void
+  /** Safe model edit: pixels outside the selection are copied from the source. */
+  onRetouch: (path: string, selection: ImageStudioSelection, prompt: string) => Promise<void>
+  /** Save the selected object as a transparent, independently editable file. */
+  onExtract: (path: string, selection: ImageStudioSelection) => Promise<void>
+  /** Place an extracted object or one of its edited descendants back on its base. */
+  onPlace: (objectPath: string, basePath: string) => Promise<void>
+  /** Non-destructive rollback creates a new version from historical pixels. */
+  onRestoreVersion: (currentPath: string, targetPath: string) => Promise<void>
   /** Обрезка: rect в натуральных пикселях картинки. */
   onCrop: (path: string, rect: CropRect) => void
   /** Разметка: фигуры в CSS-пикселях + размер, в котором рисовали. */
@@ -92,7 +103,7 @@ const GUIDE_MODES = ['thirds', 'center', 'golden', 'none'] as const
 type GuideMode = (typeof GUIDE_MODES)[number]
 const GUIDE_LABELS: Record<GuideMode, string> = { thirds: 'трети', center: 'центр', golden: 'золотое сечение', none: 'выключены' }
 
-export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onChannels, starred, onToggleStar, status, onCycleStatus, sets, versions, onFacts, onLocate, autoSlideshow, onAutoSlideshowUsed, autoProps, onAutoPropsUsed, onDelete, onClose, position }: Props): JSX.Element {
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onTagsChange, onPickForEdit, onVariate, onRetouch, onExtract, onPlace, onRestoreVersion, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onChannels, starred, onToggleStar, status, onCycleStatus, sets, versions, onFacts, onLocate, autoSlideshow, onAutoSlideshowUsed, autoProps, onAutoPropsUsed, onDelete, onClose, position }: Props): JSX.Element {
   /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
   const [wipe, setWipe] = useState(50)
   /**
@@ -121,6 +132,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const panStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
   /** Начальная точка свайпа (телефон). */
   const touchX = useRef<number | null>(null)
+  const touchY = useRef(0)
+  const pinch = useRef<{ distance: number; scale: number } | null>(null)
   /** Подложка под картинкой: у прозрачного PNG края видно только на контрасте. */
   const [background, setBackground] = useState<ViewerBackground>(() => {
     try {
@@ -176,6 +189,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   }, [autoProps, onAutoPropsUsed])
   /** Меню «Ещё» шапки: вид, а не состояние картинки — держим здесь. */
   const [more, setMore] = useState(false)
+  const [selectionOpen, setSelectionOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const moreButtonRef = useRef<HTMLButtonElement | null>(null)
   const moreMenuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -190,6 +205,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   useEffect(() => setMore(false), [viewing])
   /** Раскрытая панель свойств: полная мета и заметка одним списком. */
   const [propsOpen, setPropsOpen] = useState(false)
+  const [tagError, setTagError] = useState<string | null>(null)
   /** Полный экран: браузерный fullscreen на теле лайтбокса. */
   const [fullscreen, setFullscreen] = useState(false)
   const frameRef = useRef<HTMLDivElement | null>(null)
@@ -252,6 +268,13 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   }, [onStep, onDelete, viewing, onToggleStar])
   const meta = files.find((file) => file.path === viewing)
   const sourceInGallery = meta?.source && files.some((file) => file.path === meta.source)
+  const extraction = versionChain(files, viewing).map((path) => files.find((file) => file.path === path)).find((file) => file?.operation === 'extract' && file.selection && file.source)
+  const showNaturalSize = (): void => {
+    const img = imgRef.current
+    if (!img || !img.naturalWidth || !img.clientWidth) return
+    const natural = Math.min(4, Math.max(1, Math.round(img.naturalWidth / img.clientWidth * 100) / 100))
+    setZoom(natural <= 1 ? { scale: 1, x: 0, y: 0 } : { scale: natural, x: 0, y: 0 })
+  }
 
   useEffect(() => { setZoom({ scale: 1, x: 0, y: 0 }) }, [viewing])
   useEffect(() => { if (!compare) setBlend(false) }, [compare])
@@ -282,18 +305,13 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         <IconButton size="sm" aria-label="Предыдущая картинка" title="Предыдущая (←)" onClick={() => { onCompareChange(false); onStep(-1) }}>‹</IconButton>
         <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => { onCompareChange(false); onStep(1) }}>›</IconButton>
       </>}
-      {!compare && !cropping && !annotating && <>
+      {!phone && !compare && !cropping && !annotating && <>
         <IconButton size="sm" aria-label="Уменьшить масштаб" title="Уменьшить (колесо мыши тоже)" disabled={zoom.scale <= 1} onClick={() => zoomBy(-0.25)}>−</IconButton>
         <IconButton size="sm" aria-label={`Масштаб ${Math.round(zoom.scale * 100)} процентов, сбросить к 100`} title="Сбросить масштаб" disabled={zoom.scale === 1} onClick={() => setZoom({ scale: 1, x: 0, y: 0 })}>{`${Math.round(zoom.scale * 100)}%`}</IconButton>
         <IconButton size="sm" aria-label="Увеличить масштаб" title="Увеличить (колесо мыши тоже)" disabled={zoom.scale >= 4} onClick={() => zoomBy(0.25)}>+</IconButton>
         {/* 1:1 — пиксель картинки в пиксель экрана: разглядеть шум и артефакты
             иначе нельзя, вписанная в окно картинка их сглаживает. */}
-        <IconButton size="sm" aria-label="Натуральный размер, один к одному" title="1:1 — натуральный размер" onClick={() => {
-          const img = imgRef.current
-          if (!img || !img.naturalWidth || !img.clientWidth) return
-          const natural = Math.min(4, Math.max(1, Math.round(img.naturalWidth / img.clientWidth * 100) / 100))
-          setZoom(natural <= 1 ? { scale: 1, x: 0, y: 0 } : { scale: natural, x: 0, y: 0 })
-        }}>1:1</IconButton>
+        <IconButton size="sm" aria-label="Натуральный размер, один к одному" title="1:1 — натуральный размер" onClick={showNaturalSize}>1:1</IconButton>
       </>}
       {/* Режимные кнопки остаются в шапке, пока режим включён: выход из
           разметки или обрезки не должен требовать захода в меню. */}
@@ -313,12 +331,12 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           {SLIDESHOW_STEPS.map((step) => <option key={step} value={step}>{step / 1000} с</option>)}
         </select>
       </>}
-      {onToggleStar && <IconButton size="sm" aria-label={starred ? `Убрать ${viewing} из избранного` : `В избранное ${viewing}`} title={starred ? 'Убрать из избранного' : 'В избранное'} aria-pressed={starred} onClick={() => onToggleStar(viewing)}>{starred ? '★' : '☆'}</IconButton>}
-      <IconButton size="sm" aria-label={fullscreen ? 'Выйти из полного экрана' : 'Показать на весь экран'} title={fullscreen ? 'Обычный размер' : 'Полный экран'} aria-pressed={fullscreen} onClick={() => {
+      {!phone && onToggleStar && <IconButton size="sm" aria-label={starred ? `Убрать ${viewing} из избранного` : `В избранное ${viewing}`} title={starred ? 'Убрать из избранного' : 'В избранное'} aria-pressed={starred} onClick={() => onToggleStar(viewing)}>{starred ? '★' : '☆'}</IconButton>}
+      {!phone && <IconButton size="sm" aria-label={fullscreen ? 'Выйти из полного экрана' : 'Показать на весь экран'} title={fullscreen ? 'Обычный размер' : 'Полный экран'} aria-pressed={fullscreen} onClick={() => {
         const node = frameRef.current
         if (document.fullscreenElement) { void document.exitFullscreen?.().catch(() => undefined); return }
         void node?.requestFullscreen?.().catch(() => undefined)
-      }}>⛶</IconButton>
+      }}>⛶</IconButton>}
       {/* В шапке было двадцать пять иконок подряд: подписей нет, порядок
           случайный, нужную ищут перебором. Частое осталось снаружи, остальное
           живёт в меню — том же по устройству, что у карточки галереи. */}
@@ -351,9 +369,18 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           }}
         >
           {(sourceInGallery || compareWith || (compareGrid?.length ?? 0) > 2) && <button type="button" role="menuitem" onClick={() => { setMore(false); onCompareChange(!compare) }}>{compare ? 'Скрыть исходник' : 'Сравнить с исходником'}</button>}
+          {phone && !compare && !cropping && !annotating && <>
+            <button type="button" role="menuitem" disabled={zoom.scale <= 1} onClick={() => { setMore(false); zoomBy(-0.25) }}>Уменьшить масштаб</button>
+            <button type="button" role="menuitem" disabled={zoom.scale >= 4} onClick={() => { setMore(false); zoomBy(0.25) }}>Увеличить масштаб</button>
+            <button type="button" role="menuitem" onClick={() => { setMore(false); showNaturalSize() }}>Натуральный размер 1:1</button>
+          </>}
+          {phone && onToggleStar && <button type="button" role="menuitem" onClick={() => { setMore(false); onToggleStar(viewing) }}>{starred ? 'Убрать из избранного' : 'Добавить в избранное'}</button>}
           <button type="button" role="menuitem" onClick={() => { setMore(false); stopSlideshow(); setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>{annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'}</button>
           <button type="button" role="menuitem" onClick={() => { setMore(false); stopSlideshow(); setCropping((prev) => !prev); setCropBox(null); setAnnotating(false); setStrokes([]); onCompareChange(false) }}>{cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'}</button>
           <button type="button" role="menuitem" onClick={() => { setMore(false); onPickForEdit(viewing) }}>Править по промпту</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); stopSlideshow(); setSelectionOpen(true); setHistoryOpen(false); setCropping(false); setAnnotating(false); onCompareChange(false) }}>Выделить объект или ретушировать</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); setHistoryOpen((open) => !open); setSelectionOpen(false) }}>{historyOpen ? 'Скрыть историю версий' : 'История версий'}</button>
+          {extraction?.source && <button type="button" role="menuitem" disabled={busy} onClick={() => { setMore(false); void onPlace(viewing, extraction.source!) }}>Вернуть объект в исходник</button>}
           <button type="button" role="menuitem" disabled={busy} onClick={() => { setMore(false); onVariate(viewing) }}>Вариация</button>
           {'EyeDropper' in globalThis && <button type="button" role="menuitem" onClick={() => {
             setMore(false)
@@ -386,17 +413,51 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
     </>}>
     <div ref={frameRef} className={`imgbody image-studio-bg--${background}${fullscreen ? ' imgbody--fullscreen' : ''}`} tabIndex={-1}
       onKeyDown={(event) => {
-        if (event.key === 'ArrowLeft') onStep(-1)
-        if (event.key === 'ArrowRight') onStep(1)
+        if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault()
+          event.stopPropagation()
+          onStep(event.key === 'ArrowLeft' ? -1 : 1)
+        }
       }}
-      onTouchStart={(event) => { touchX.current = event.touches[0]?.clientX ?? null }}
-      onTouchEnd={(event) => {
-        if (touchX.current === null) return
-        const delta = (event.changedTouches[0]?.clientX ?? touchX.current) - touchX.current
+      onTouchStart={(event) => {
+        if (cropping || annotating || selectionOpen || compare) return
+        const [first, second] = Array.from(event.touches)
+        if (!first) return
+        if (second) {
+          touchX.current = null
+          pinch.current = { distance: Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY), scale: zoom.scale }
+        } else if (zoom.scale === 1) {
+          touchX.current = first.clientX
+          touchY.current = first.clientY
+        }
+      }}
+      onTouchMove={(event) => {
+        const [first, second] = Array.from(event.touches)
+        if (!pinch.current || !first || !second || !pinch.current.distance) return
         touchX.current = null
-        if (Math.abs(delta) > 48) { onCompareChange(false); onStep(delta > 0 ? -1 : 1) }
+        const scale = Math.max(1, Math.min(8, pinch.current.scale * Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY) / pinch.current.distance))
+        setZoom((previous) => scale === 1 ? { scale: 1, x: 0, y: 0 } : { ...previous, scale })
+      }}
+      onTouchCancel={() => { touchX.current = null; pinch.current = null }}
+      onTouchEnd={(event) => {
+        if (pinch.current) { pinch.current = null; touchX.current = null; return }
+        if (touchX.current === null || zoom.scale !== 1) return
+        const end = event.changedTouches[0]
+        const delta = (end?.clientX ?? touchX.current) - touchX.current
+        const vertical = (end?.clientY ?? touchY.current) - touchY.current
+        touchX.current = null
+        if (canStep && Math.abs(delta) > 48 && Math.abs(delta) > Math.abs(vertical)) { onCompareChange(false); onStep(delta > 0 ? -1 : 1) }
       }}>
       {(() => {
+        if (selectionOpen && previews[viewing]) return <ImageStudioSelectionEditor
+          path={viewing}
+          src={previews[viewing]}
+          busy={busy}
+          onCancel={() => setSelectionOpen(false)}
+          onRetouch={async (selection, prompt) => { await onRetouch(viewing, selection, prompt); setSelectionOpen(false) }}
+          onExtract={async (selection) => { await onExtract(viewing, selection); setSelectionOpen(false) }}
+        />
         // Сетка сравнения: три-четыре картинки рядом, подписи под каждой.
         if (compare && compareGrid && compareGrid.length > 2) {
           return <div className="image-studio-compare-grid" role="group" aria-label={`Сравнение ${compareGrid.length} картинок`}>
@@ -566,22 +627,34 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         return <div className="image-studio-crop-stage"
           onPointerDown={(event) => {
             const box = event.currentTarget.getBoundingClientRect()
-            dragStart.current = { x: event.clientX - box.left, y: event.clientY - box.top }
+            const img = imgRef.current
+            const left = img?.offsetLeft ?? 0
+            const top = img?.offsetTop ?? 0
+            dragStart.current = {
+              x: Math.max(left, Math.min(left + (img?.clientWidth || Infinity), event.clientX - box.left)),
+              y: Math.max(top, Math.min(top + (img?.clientHeight || Infinity), event.clientY - box.top))
+            }
             setCropBox(null)
             event.currentTarget.setPointerCapture(event.pointerId)
           }}
           onPointerMove={(event) => {
             if (!dragStart.current) return
             const box = event.currentTarget.getBoundingClientRect()
-            const x = event.clientX - box.left
-            const y = event.clientY - box.top
-            const w = Math.abs(x - dragStart.current.x)
-            // Фиксированное соотношение: высота следует за шириной.
-            const h = cropRatio > 0 ? w / cropRatio : Math.abs(y - dragStart.current.y)
-            const top = cropRatio > 0
-              ? (y >= dragStart.current.y ? dragStart.current.y : dragStart.current.y - h)
-              : Math.min(y, dragStart.current.y)
-            setCropBox({ x: Math.min(x, dragStart.current.x), y: top, w, h })
+            const img = imgRef.current
+            const left = img?.offsetLeft ?? 0
+            const top = img?.offsetTop ?? 0
+            const width = img?.clientWidth || Infinity
+            const height = img?.clientHeight || Infinity
+            const x = Math.max(left, Math.min(left + width, event.clientX - box.left))
+            const y = Math.max(top, Math.min(top + height, event.clientY - box.top))
+            const start = dragStart.current
+            const ratio = cropRatio && img?.naturalWidth && img.naturalHeight && Number.isFinite(width) && Number.isFinite(height)
+              ? cropRatio * width * img.naturalHeight / (height * img.naturalWidth) : cropRatio
+            // Bound both dimensions together; clipping only the saved crop breaks its aspect ratio.
+            const availableHeight = y >= start.y ? top + height - start.y : start.y - top
+            const w = ratio > 0 ? Math.min(Math.abs(x - start.x), availableHeight * ratio) : Math.abs(x - start.x)
+            const h = ratio > 0 ? w / ratio : Math.abs(y - start.y)
+            setCropBox({ x: x >= start.x ? start.x : start.x - w, y: y >= start.y ? start.y : start.y - h, w, h })
           }}
           onPointerUp={() => { dragStart.current = null }}>
           <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false} />
@@ -591,6 +664,29 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           <p className="image-studio-origin"><span className="image-studio-dim">Выделите область мышью и нажмите «Вырезать».</span></p>
         </div>
       })()}
+      {historyOpen && <section className="image-studio-history" aria-label={`История версий ${viewing}`}>
+        <header><strong>История изменений</strong><span className="image-studio-dim">Откат создаёт новую версию и сохраняет последующие варианты.</span></header>
+        <ol>
+          {(versions?.length ? versions : [{ path: viewing, depth: 0 }]).map((node) => {
+            const file = files.find((candidate) => candidate.path === node.path)
+            const operation = file?.operation === 'upload' ? 'загрузка'
+              : file?.operation === 'generate' ? 'генерация'
+                : file?.operation === 'retouch' ? 'ретушь выделения'
+                  : file?.operation === 'extract' ? 'извлечён объект'
+                    : file?.operation === 'place' ? 'объект возвращён'
+                      : file?.operation === 'restore' ? `откат к ${file.restoredFrom ?? 'версии'}`
+                        : file?.operation === 'transform' ? 'локальная обработка'
+                          : file?.operation === 'edit' ? 'правка моделью' : 'версия'
+            return <li key={node.path} data-depth={node.depth} style={{ paddingLeft: Math.min(node.depth * 10, 50) }}>
+              <button type="button" className="image-studio-history-preview" onClick={() => onView(node.path)} aria-current={node.path === viewing ? 'true' : undefined}>
+                {previews[node.path] && <img src={previews[node.path]} alt="" />}
+                <span><strong>{node.path}</strong><small>{operation}{file ? ` · ${new Date(file.updatedAt).toLocaleString('ru-RU')}` : ''}</small></span>
+              </button>
+              {node.path !== viewing && <button type="button" className="image-studio-cancel" disabled={busy} onClick={() => void onRestoreVersion(viewing, node.path)}>Откатиться сюда</button>}
+            </li>
+          })}
+        </ol>
+      </section>}
       {annotating && <p className="image-studio-origin image-studio-annotate-controls">
         {ANNOTATE_TOOLS.map((item) => <button key={item.tool} type="button" className="image-studio-cancel" aria-pressed={tool === item.tool} style={tool === item.tool ? { fontWeight: 700 } : undefined} onClick={() => setTool(item.tool)}>{item.label}</button>)}
         {tool === 'text' && <input className="image-studio-filename" aria-label="Текст метки" placeholder="Текст метки — затем кликните по картинке" value={labelText} onChange={(event) => setLabelText(event.target.value)} />}
@@ -607,7 +703,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         }}>Сохранить разметку</button>
       </p>}
       {cropping && <p className="image-studio-origin">
-        {[{ r: 0, label: 'Свободно' }, { r: 1, label: '1:1' }, { r: 16 / 9, label: '16:9' }, { r: 4 / 3, label: '4:3' }, { r: 9 / 16, label: '9:16' }, { r: 1200 / 630, label: 'OG' }].map((item) => (
+        {[{ r: 0, label: 'Свободно' }, { r: 1, label: '1:1' }, { r: 4 / 5, label: '4:5' }, { r: 16 / 9, label: '16:9' }, { r: 4 / 3, label: '4:3' }, { r: 9 / 16, label: '9:16' }, { r: 1200 / 630, label: 'OG' }].map((item) => (
           <button key={item.label} type="button" className="image-studio-cancel" aria-pressed={cropRatio === item.r} style={cropRatio === item.r ? { fontWeight: 700 } : undefined} onClick={() => { setCropRatio(item.r); setCropBox(null) }}>{item.label}</button>
         ))}
         {' '}
@@ -653,6 +749,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           {meta.tookMs !== undefined && <><dt>Ран</dt><dd>{Math.round(meta.tookMs / 1000)} с</dd></>}
           {meta.source && <><dt>Исходник</dt><dd>{meta.source}</dd></>}
           {meta.prompt && <><dt>Промпт</dt><dd>{meta.prompt}</dd></>}
+          {meta.parameters && <><dt>Параметры запроса</dt><dd>{[meta.parameters.style, meta.parameters.size, meta.parameters.negative, meta.parameters.noText ? 'Без текста' : ''].filter(Boolean).join(' · ')}</dd></>}
+          {meta.tags?.length ? <><dt>Теги</dt><dd>{meta.tags.join(', ')}</dd></> : null}
         </dl>
         <button type="button" className="image-studio-cancel" onClick={() => {
           // Сводку удобно вставить в задачу: она объясняет, что это за файл.
@@ -666,6 +764,15 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           ].filter(Boolean)
           void navigator.clipboard?.writeText(lines.join('\n')).catch(() => undefined)
         }}>Скопировать сводку</button>
+        {onTagsChange && <div>
+          <label>Теги через запятую <input key={viewing + (meta.tags ?? []).join(',')} defaultValue={(meta.tags ?? []).join(', ')} onBlur={event => {
+            void onTagsChange(viewing, [...new Set(event.target.value.split(',').map(tag => tag.trim()).filter(Boolean))]).then(() => setTagError(null)).catch(error => setTagError(String(error)))
+          }} /></label>
+          {[...new Set((meta.prompt ?? '').match(/[\p{L}\p{N}]{4,}/gu) ?? [])].slice(0, 6).filter(tag => !meta.tags?.includes(tag)).map(tag => <button key={tag} type="button" onClick={() => {
+            void onTagsChange(viewing, [...(meta.tags ?? []), tag]).then(() => setTagError(null)).catch(error => setTagError(String(error)))
+          }}>+ {tag}</button>)}
+          {tagError && <span role="alert">{tagError}</span>}
+        </div>}
         {sets && sets.length > 0 && <span className="image-studio-dim">В наборах: {sets.join(', ')}</span>}
         {versions && versions.length > 1 && <span className="image-studio-versions" role="group" aria-label="Дерево версий">
           {versions.map((node) => <span key={node.path} className="image-studio-dim" style={{ paddingLeft: node.depth * 12 }}>

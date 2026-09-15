@@ -18,10 +18,11 @@ export async function buildImageStudioServer(opts: {
 }) {
   const { config } = opts
   if (!config.internalToken) throw new Error('Image Studio standalone requires VC_INTERNAL_TOKEN')
+  if (!config.mcpSecret) throw new Error('Image Studio standalone requires VC_MCP_SECRET')
   const app = Fastify({ logger: opts.logger ?? false })
   const core = opts.core ?? new HttpImageStudioCore({ coreUrl: config.coreUrl, token: config.internalToken, fetchImpl: opts.fetchImpl })
   registerForwardedAuth(app, { coreUrl: config.coreUrl, token: config.internalToken, fetchImpl: opts.fetchImpl })
-  const studio = createImageStudioModule({ dataDir: config.dataDir, core })
+  const studio = createImageStudioModule({ dataDir: config.dataDir, core, mcpSecret: config.mcpSecret })
   studio.register(app)
   const dispatch = createRpcDispatcher(studio.service, IMAGE_STUDIO_SERVICE_METHODS)
   // Секрет проверяется до разбора тела: пользовательский Bearer здесь не подходит.

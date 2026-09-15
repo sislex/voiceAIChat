@@ -120,7 +120,7 @@ describe('ProjectBoard', () => {
   it('меню карточки: «Добавить флаг» зовёт onUpdateTask(flagged)', async () => {
     const p = renderBoard()
     await userEvent.click(screen.getByLabelText('Действия с «A»'))
-    await userEvent.click(screen.getByRole('button', { name: 'Добавить флаг' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Добавить флаг' }))
     expect(p.onUpdateTask).toHaveBeenCalledWith('t1', { flagged: true })
   })
 
@@ -143,13 +143,15 @@ describe('ProjectBoard', () => {
     expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
   })
 
-  it('WIP-лимит: превышение подсвечивает счётчик «N/лимит»', () => {
+  it('WIP-лимит: превышение подсвечивает счётчик и объясняет величину', () => {
     renderBoard({
       board: { ...board, columns: [{ ...board.columns[0], wipLimit: 1 }, board.columns[1]] }
     })
-    const wip = screen.getByTitle('WIP-лимит: 1')
+    const progress = screen.getByRole('progressbar', { name: 'Заполнение WIP колонки «To Do»' })
+    const wip = progress.closest('.jcol-wip')!
     expect(wip).toHaveTextContent('2/1')
     expect(wip.className).toContain('jcol-wip--over')
+    expect(progress).toHaveAttribute('aria-valuetext', 'WIP-лимит превышен: 2 из 1, превышение на 1 задача')
   })
 
   it('свимлейны по эпикам: карточки группируются, эпики не показываются как карточки', async () => {
@@ -167,7 +169,7 @@ describe('ProjectBoard', () => {
   it('меню колонки: WIP-лимит сохраняется через onUpdateColumn', async () => {
     const p = renderBoard()
     await userEvent.click(screen.getByLabelText('Меню колонки «To Do»'))
-    await userEvent.click(screen.getByRole('button', { name: 'WIP-лимит…' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'WIP-лимит…' }))
     await userEvent.type(screen.getByLabelText('WIP-лимит'), '3{enter}')
     expect(p.onUpdateColumn).toHaveBeenCalledWith('c1', { wipLimit: 3 })
   })

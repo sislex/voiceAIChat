@@ -9,39 +9,39 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 92 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 13 коммит(ов) в areas после сверки: 2ddbc0f5 feat(playwright-reader): emulate a real phone, not a narrow window (cycle 9) … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ✓ |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 14 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 30 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-10 | ⚠ 28 коммит(ов) в areas после сверки: 2ddbc0f5 feat(playwright-reader): emulate a real phone, not a narrow window (cycle 9) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-10 | ⚠ 6 коммит(ов) в areas после сверки: ac340e14 feat(web-reader): expose native accessibility evidence … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 27 коммит(ов) в areas после сверки: 517f7602 fix(make): register localization dependencies in gate graphs … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 2 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 9 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ✓ |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 143 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 306 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 199 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 78 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ✓ |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 98 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1356 коммит(ов) в areas после сверки: 2ddbc0f5 feat(playwright-reader): emulate a real phone, not a narrow window (cycle 9) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 62 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 4 коммит(ов) в areas после сверки: e1ef30b9 feat(web-reader): add 30 typography diagnostics (QA cycle 03) … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 104 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 327 коммит(ов) в areas после сверки: 2ddbc0f5 feat(playwright-reader): emulate a real phone, not a narrow window (cycle 9) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 1 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1357 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ✓ |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ✓ |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ✓ |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-14 | ✓ |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 328 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 21 коммит(ов) в areas после сверки: 1c660e41 docs(make): use English for comments and documentation … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-10 | ⚠ 9 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ⚠ 2 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-14 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 222 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-10 | ⚠ 12 коммит(ов) в areas после сверки: 2ddbc0f5 feat(playwright-reader): emulate a real phone, not a narrow window (cycle 9) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 8 коммит(ов) в areas после сверки: 2ddbc0f5 feat(playwright-reader): emulate a real phone, not a narrow window (cycle 9) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 15 коммит(ов) в areas после сверки: 2ddbc0f5 feat(playwright-reader): emulate a real phone, not a narrow window (cycle 9) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 9 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-15 | ⚠ 4 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 9 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 198 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: fc240494 fix(gate): stabilize rebased application validation |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ⚠ 7 коммит(ов) в areas после сверки: 2ddbc0f5 feat(playwright-reader): emulate a real phone, not a narrow window (cycle 9) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ⚠ 10 коммит(ов) в areas после сверки: dbda09b0 feat(playwright-reader): let the model ask the person for help (cycle 10) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,18 +74,18 @@
 
 ## Журнал сессий
 
-Всего записей: 742. Последние:
+Всего записей: 824. Последние:
 
-- [2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-rebase-main.md) — web-reader-rebase-main
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-08.md) — web-reader-qa-cycle-08
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-07.md) — web-reader-qa-cycle-07
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-06.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-06.md) — web-reader-qa-cycle-06
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-05.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-05.md) — web-reader-qa-cycle-05
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-04.md) — web-reader-qa-cycle-04
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-03.md) — web-reader-qa-cycle-03
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md) — web-reader-qa-cycle-02
-- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md) — Web Reader QA cycle 01 - evidence-based markup audit
-- [2026-09-11-alexeys-macbook-air-2-web-reader-gate-timing.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-gate-timing.md) — Замер отдельных гейтов Web Reader и его UI
+- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-account-progressive-loading-mobile.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-account-progressive-loading-mobile.md) — account-progressive-loading-mobile
+- [2026-09-14-alexeys-macbook-air-tailae39a6-ts-net-chat-466-vpn-preparation.md](log/2026-09-14-alexeys-macbook-air-tailae39a6-ts-net-chat-466-vpn-preparation.md) — chat-466-vpn-preparation
+- [2026-09-13-germany-4-8-60-machine-vpn-and-electron-deps.md](log/2026-09-13-germany-4-8-60-machine-vpn-and-electron-deps.md) — machine-vpn-and-electron-deps
+- [2026-09-13-germany-4-8-60-kanban-mobile-kb.md](log/2026-09-13-germany-4-8-60-kanban-mobile-kb.md) — kanban-mobile-kb
+- [2026-09-13-germany-4-8-60-integration-readiness-classification.md](log/2026-09-13-germany-4-8-60-integration-readiness-classification.md) — integration-readiness-classification
+- [2026-09-13-germany-4-8-60-feature-preview-launch-readiness.md](log/2026-09-13-germany-4-8-60-feature-preview-launch-readiness.md) — feature-preview-launch-readiness
+- [2026-09-13-germany-4-8-60-chat451-machine-console-kb.md](log/2026-09-13-germany-4-8-60-chat451-machine-console-kb.md) — chat451-machine-console-kb
+- [2026-09-13-alexeys-macbook-air-tailae39a6-ts-net-codex-cumulative-usage.md](log/2026-09-13-alexeys-macbook-air-tailae39a6-ts-net-codex-cumulative-usage.md) — codex-cumulative-usage
+- [2026-09-13-alexeys-macbook-air-2-qa-panels-selective-retry.md](log/2026-09-13-alexeys-macbook-air-2-qa-panels-selective-retry.md) — qa-panels-selective-retry
+- [2026-09-13-alexeys-macbook-air-2-qa-panels-qa-workflow-kb.md](log/2026-09-13-alexeys-macbook-air-2-qa-panels-qa-workflow-kb.md) — qa-panels-qa-workflow-kb
 
 ## Исторические планы
 

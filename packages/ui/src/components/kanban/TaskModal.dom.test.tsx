@@ -38,6 +38,22 @@ function props(over: Partial<TaskModalProps> = {}): TaskModalProps {
 const openProgress = async (): Promise<void> => {
   await userEvent.click(screen.getByRole('tab', { name: 'Ход выполнения' }))
 }
+describe('TaskModal — настройки автопрохода', () => {
+  it('сохраняет отдельную остановку на QA и показывает подтверждённое сервером состояние', async () => {
+    const onUpdate = vi.fn()
+    const view = render(<TaskModal {...props({ onUpdate, task: mkTask({ autoPilot: true, autoPilotRequiresManualQa: false }) })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    const checkbox = await screen.findByRole('checkbox', { name: 'Остановить на ручном QA' })
+    expect(checkbox).not.toBeChecked()
+    fireEvent.click(checkbox)
+    expect(onUpdate).toHaveBeenCalledWith('t1', { autoPilotRequiresManualQa: true })
+    view.rerender(<TaskModal {...props({ onUpdate, task: mkTask({ autoPilot: true, autoPilotRequiresManualQa: true }) })} />)
+    expect(screen.getByRole('checkbox', { name: 'Остановить на ручном QA' })).toBeChecked()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Автоматически доставлять задачу в main' }))
+    expect(onUpdate).toHaveBeenCalledWith('t1', { autoPilot: false })
+  })
+})
+
 describe('TaskModal — синхронизация полных данных задачи', () => {
   it('подставляет поздно загруженные описание и критерии для того же task.id', () => {
     const { rerender } = render(<TaskModal {...props()} />)
@@ -1638,10 +1654,13 @@ describe('TaskModal — создание чата задачи', () => {
   })
 })
 
+// @testCase TC-3
+// @testCase TC-6
 describe('TaskModal — встроенный AI-чат', () => {
   const message = (id: string, role: 'u1' | 'ai', text: string) => ({ id, conversationId: 'chat-1', role, text, time: '10:00', createdAt: 1 }) as never
 
   // @testCase TC-UI-CHAT-LEGACY
+  // @testCase TC-2
   it('открывает AI-чат только вкладкой и не показывает прежние входы', async () => {
     render(<TaskModal {...props({ onOpenChat: vi.fn() })} />)
     expect(screen.getByRole('tab', { name: 'AI-чат' })).toBeInTheDocument()
@@ -1735,6 +1754,7 @@ describe('TaskModal — встроенный AI-чат', () => {
   })
 
   // @testCase TC-UI-TASK-CHAT-SETTINGS
+  // @testCase TC-4
   it('открывает настройки связанного task-разговора', async () => {
     const originalApi = window.api
     const onOpenConversationSettings = vi.fn()

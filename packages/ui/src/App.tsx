@@ -8,7 +8,7 @@ import { runReaderModelRequest, readReaderErrors } from './webReaderModelRequest
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
-import { buildProjectsRoute, parseProjectsRoute } from '@voicechat/projects-app'
+import { buildProjectsRoute, isTaskRouteTab, parseProjectsRoute } from '@voicechat/projects-app'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
 import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import type { RendererApi } from '@shared/ipc'
@@ -49,6 +49,7 @@ import { EnginesObserver, type ObserverEngine } from './components/EnginesObserv
 import { PersonalizationPage } from './components/SettingsPage'
 import type { TaskUpdateFields } from './components/kanban/TaskModal'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
+import { productionReadiness } from '@shared/release'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
 import { KanbanAssistant } from './components/KanbanAssistant'
 import { CiCommands } from './components/ci/CiCommands'
@@ -66,6 +67,13 @@ import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { NotificationContainer } from './components/ClarificationNotification'
 import { KbUsagePanel } from './components/kb/KbUsagePanel'
+import { useShortcuts } from './components/ShortcutSettings'
+import { MobileNavigation, type ShellSection } from './components/MobileNavigation'
+import { ShellTour } from './components/ShellTour'
+import { useShellTheme } from './lib/shellTheme'
+import { NotificationCenter } from './components/NotificationCenter'
+import { ConnectionStatus } from './components/ConnectionBanner'
+import { addNotification, safeStorageGet, safeStorageSet } from './lib/shellPreferences'
 import { CommandPalette } from './components/CommandPalette'
 import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
 import {
@@ -142,10 +150,31 @@ const UsersAdmin = lazy(async () => {
 
 // Страница «Мой аккаунт» ленивая по той же причине, что и админка: главный чанк
 // уже почти упёрся в бюджет сборки (frontend-quality/bundle-baseline.json).
+const loadAccountPage = async () => import('./components/AccountPage')
 const AccountPage = lazy(async () => {
-  const module = await import('./components/AccountPage')
+  const module = await loadAccountPage()
   return { default: module.AccountPage }
 })
+
+function AccountPageFallback(): JSX.Element {
+  return (
+    <section className="admin-page account-page account-page--loading" aria-label="Мой аккаунт" aria-busy="true">
+      <header className="admin-head account-head">
+        <div className="account-head__copy">
+          <h1>Мой аккаунт</h1>
+          <p>Профиль, доступ, устройства и использование моделей</p>
+        </div>
+      </header>
+      <div className="account-page__fallback" role="status">
+        <span className="vc-sr-only">Загрузка аккаунта…</span>
+        <div className="account-page__fallback-profile" aria-hidden="true" />
+        <div className="account-page__fallback-stats" aria-hidden="true">
+          <i /><i /><i /><i />
+        </div>
+      </div>
+    </section>
+  )
+}
 
 // Карточка задачи (85 КБ исходника со всеми панелями) нужна хосту ровно в одном
 // месте — черновик задачи, предложенной моделью в чате. Статический импорт
@@ -309,8 +338,9 @@ function initialChatIdFromPath(path: string, segments: string[]): string | null 
   if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader' || segments[0] === 'make') {
     return segments[1] ?? null
   }
-  const route = parseProjectsRoute(path)
-  return route?.kind === 'task-chat' ? route.conversationId : null
+  void path
+  void segments
+  return null
 }
 
 /**
@@ -355,7 +385,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const routeCodeWorkspace = projectsRoute?.kind === 'code' ? projectsRoute.workspaceId ?? null : null
   // Проектный parser владеет deep links карточки, подготовки и связанного чата.
   const routeTaskId = projectsRoute && 'taskId' in projectsRoute ? projectsRoute.taskId : null
-  const routeTaskChatId = projectsRoute?.kind === 'task-chat' ? projectsRoute.conversationId : null
+  const routeTaskTab = projectsRoute?.kind === 'task-tab' ? projectsRoute.tab : undefined
+  // Парсер отвергает неизвестный child-сегмент, но карточка должна остаться
+  // доступной: нормализуем именно task URL на каноническое «Общее».
+  const invalidTaskTabRoute = segments[0] === 'projects' && segments[2] === 'task' && segments.length === 5 && Boolean(segments[1] && segments[3]) && !isTaskRouteTab(segments[4])
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
   // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
   // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
@@ -392,7 +425,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
   const chatRoute = parseChatRoute(path)
-  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'settings' || chatRoute?.kind === 'legacy-context' ? chatRoute.conversationId : routeTaskChatId
+  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'settings' || chatRoute?.kind === 'legacy-context' ? chatRoute.conversationId : null
   const legacyReaderRoute = segments[0] === 'web-recorder'
   const inReader = segments[0] === 'web-reader' || legacyReaderRoute
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
@@ -413,7 +446,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Sidebar. Reader-режимы по-прежнему изолированы от оболочки навигации.
   const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
   const sidebarAvailable = !inSplit || splitSidebarMode !== null
-  const inTaskChat = routeTaskChatId !== null
+  const inTaskChat = false
   const inChat = (!inProjects && !onUtilityPage && !inSplit && !globalSettingsRoute) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
   // Каждый домен — своя подписка: обновление аудио или админских данных не
@@ -438,7 +471,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // и его состояние держит сам модуль, стору админки хранить их незачем.
   const adminSessionsClient = useMemo(() => ({
     list: () => adminActions.loadAdminSessions(),
-    revoke: (sid: string) => adminActions.revokeAdminSession(sid)
+    revoke: (sid: string) => adminActions.revokeAdminSession(sid),
+    revokeOthers: () => adminActions.revokeOtherAdminSessions()
   }), [adminActions])
   const projectsActions = useProjectsActions()
   // Возможности типа открытого проекта. Пока detail грузится, берём их из
@@ -564,7 +598,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [voice.voice, chat.messages.length])
   const makeUsage = useMemo(() => (inMake ? summarizeConversationUsage(chat.messages) : null), [inMake, chat.messages])
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
-  const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem(KANBAN_ASSISTANT_OPEN_KEY) === '1')
+  const [assistantOpen, setAssistantOpen] = useState(() => safeStorageGet(KANBAN_ASSISTANT_OPEN_KEY) === '1')
   const [assistantConversationId, setAssistantConversationId] = useState<string | null>(null)
   const [assistantTaskId, setAssistantTaskId] = useState<string | null>(null)
   const [assistantField, setAssistantField] = useState<keyof SupportedTaskPatch | null>(null)
@@ -572,7 +606,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [clarificationNotifications, setClarificationNotifications] = useState<PreparationClarificationNotification[]>([])
   const [clarificationErrors, setClarificationErrors] = useState<Record<string, string>>({})
   const [clarificationNavigatingId, setClarificationNavigatingId] = useState<string | null>(null)
-  const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); globalThis.localStorage?.setItem(KANBAN_ASSISTANT_OPEN_KEY, open ? '1' : '0') }
+  const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); safeStorageSet(KANBAN_ASSISTANT_OPEN_KEY, open ? '1' : '0') }
   const rememberWidgetAction = useCallback((kind: string, label: string, targetId?: string): void => {
     setWidgetActions((items) => appendWidgetAction(items, { kind, label, ...(targetId ? { targetId } : {}) }))
   }, [])
@@ -582,7 +616,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (taskId) rememberWidgetAction(field ? 'field.select' : 'task.open', field ? `Выбрано поле ${field}` : 'Открыта карточка', taskId)
   }, [rememberWidgetAction])
   const [previewWidth, setPreviewWidth] = useState(() => {
-    const saved = Number(globalThis.localStorage?.getItem(PREVIEW_WIDTH_KEY))
+    const saved = Number(safeStorageGet(PREVIEW_WIDTH_KEY))
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
   useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null) }, [chat.activeId])
@@ -608,7 +642,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const registerReaderHost = useCallback((registration: ReaderHostRegistration | null) => {
     if (registration && registration.conversationId === chat.activeId) {
       previewRunnerRef.current = registration
-      globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
+      safeStorageSet(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
     }
     // Снятие регистрации размонтированным host не должно стирать регистрацию
     // нового: обнуляем только запись собственного разговора.
@@ -617,7 +651,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   useEffect(() => {
     const claimActiveTab = (): void => {
       const registration = previewRunnerRef.current
-      if (registration) globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
+      if (registration) safeStorageSet(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
     }
     window.addEventListener('focus', claimActiveTab)
     return () => window.removeEventListener('focus', claimActiveTab)
@@ -647,7 +681,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       void runReaderModelRequest({
         conversationId, activeConversationId: chat.activeId,
         registration: previewRunnerRef.current,
-        activeRegistrationId: globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null,
+        activeRegistrationId: safeStorageGet(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null,
         readerRoute: inReader || inPlaywrightReader, action
       }).then(outcome => bridge.result({ conversationId, requestId, ...outcome }))
     })
@@ -667,7 +701,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       const rect = container.getBoundingClientRect()
       const next = Math.min(75, Math.max(25, ((rect.right - pointer.clientX) / rect.width) * 100))
       setPreviewWidth(next)
-      globalThis.localStorage?.setItem(PREVIEW_WIDTH_KEY, String(next))
+      safeStorageSet(PREVIEW_WIDTH_KEY, String(next))
     }
     const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
@@ -686,7 +720,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     // Ширину настраивают один раз и надолго: без записи она сбрасывалась на 42%
     // при каждом заходе, и человек тянул разделитель заново.
     const surface = workshopSurfaceRef.current
-    if (surface) globalThis.localStorage?.setItem(workshopChatWidthKey(surface), String(Math.round(next)))
+    if (surface) safeStorageSet(workshopChatWidthKey(surface), String(Math.round(next)))
   }, [clampWorkshopChatWidth])
   const stopWorkshopResize = useCallback((): void => {
     const pointerId = workshopPointerIdRef.current
@@ -723,16 +757,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   useEffect(() => {
     workshopSurfaceRef.current = workshopSurface
     if (!workshopSurface) return
-    const saved = Number(globalThis.localStorage?.getItem(workshopChatWidthKey(workshopSurface)))
+    const saved = Number(safeStorageGet(workshopChatWidthKey(workshopSurface)))
     const valid = Number.isFinite(saved) && saved >= WORKSHOP_MIN_PERCENT && saved <= WORKSHOP_MAX_PERCENT
     setWorkshopChatWidth(valid ? saved : WORKSHOP_DEFAULT_CHAT_WIDTH)
-    setWorkshopChatCollapsed(globalThis.localStorage?.getItem(workshopChatCollapsedKey(workshopSurface)) === '1')
+    setWorkshopChatCollapsed(safeStorageGet(workshopChatCollapsedKey(workshopSurface)) === '1')
   }, [workshopSurface])
   const toggleWorkshopChat = useCallback((): void => {
     setWorkshopChatCollapsed((collapsed) => {
       const next = !collapsed
       const surface = workshopSurfaceRef.current
-      if (surface) globalThis.localStorage?.setItem(workshopChatCollapsedKey(surface), next ? '1' : '0')
+      if (surface) safeStorageSet(workshopChatCollapsedKey(surface), next ? '1' : '0')
       return next
     })
   }, [])
@@ -764,6 +798,33 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     })
   }, [api])
   const toast = useToast()
+  const shellUserId = session.currentUser?.name || (session.authRequired ? '' : 'local')
+  const [shortcuts] = useShortcuts(shellUserId)
+  useEffect(() => { toast.clear?.() }, [shellUserId, toast])
+  useEffect(() => {
+    if (!shellUserId) return
+    const receive = (event: Event): void => {
+      const value = (event as CustomEvent).detail
+      if (value && typeof value.text === 'string') addNotification(shellUserId, { ...value, source: 'toast', read: false })
+    }
+    window.addEventListener('vc:toast', receive)
+    return () => window.removeEventListener('vc:toast', receive)
+  }, [shellUserId])
+  useEffect(() => {
+    for (const invitation of projects.myInvitations) addNotification(shellUserId, {
+      id: `invitation:${invitation.id}`, text: `Приглашение в проект «${invitation.projectName}»`,
+      kind: 'info', source: 'invitation', time: Date.now(), read: false
+    })
+  }, [shellUserId, projects.myInvitations])
+  useEffect(() => window.ci?.onDone?.(event => addNotification(shellUserId, {
+    id: `run:${event.runId}:${event.run.status}`, text: `Ран завершён: ${event.run.status}`,
+    kind: 'info', source: 'run', time: Date.now(), read: false
+  })), [shellUserId])
+  useEffect(() => window.board?.onReleaseUpdated?.(event => addNotification(shellUserId, {
+    id: `release:${event.releaseId}:${event.status}`, text: `Релиз: ${event.status}`,
+    kind: 'info', source: 'release', time: Date.now(), read: false
+  })), [shellUserId])
+
   // Долгая команда машины завершилась: тост с переходом к логу/журналу; во вкладке в фоне — системное уведомление, если разрешено.
   useEffect(() => {
     const realtime = window.realtime
@@ -1127,12 +1188,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // иначе каждый неудачный тумблер оставлял бы необработанный промис.
   const applySettings = (patch: Partial<Settings>): void => { void settingsActions.updateSettings(patch).catch(() => {}) }
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = Number(globalThis.localStorage?.getItem(SIDEBAR_WIDTH_KEY))
+    const saved = Number(safeStorageGet(SIDEBAR_WIDTH_KEY))
     return Number.isFinite(saved) && saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH ? saved : 264
   })
   const changeSidebarWidth = (next: number): void => {
     setSidebarWidth(next)
-    globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next))
+    safeStorageSet(SIDEBAR_WIDTH_KEY, String(next))
   }
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   // Индекс чатов грузится тем, кто его показывает. На доске сайдбар открыт на
@@ -1162,9 +1223,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
   // Тема дублируется на <html>: модальные окна уходят порталом в document.body,
   // вне .app, и без этого теряли бы токены [data-theme='dark'].
-  useEffect(() => {
-    document.documentElement.dataset.theme = settingsState.settings.theme
-  }, [settingsState.settings.theme])
+  const theme = useShellTheme(settingsState.settings.theme)
 
   // Командная палитра (⌘K) и шпаргалка (?) — окна поверх всего остального.
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -1185,6 +1244,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const hotkeyBindings: HotkeyBinding[] = buildHotkeyBindings({
     onboarded: settingsState.settings.onboarded,
     voice: voice.voice,
+    shortcuts,
+    newChat: () => openCreateChat(),
     togglePalette: () => setPaletteOpen((v) => !v),
     openCheatSheet: () => setCheatSheetOpen(true)
   })
@@ -1287,9 +1348,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       voiceEnabled: VOICE_INPUT_ENABLED,
       voice: voice.voice,
       autoSpeak: settingsState.settings.autoSpeak,
-      theme: settingsState.settings.theme,
+      theme,
       web: session.authRequired,
       paletteOpen,
+      shortcuts,
       boardProjectId: projects.activeProjectId ?? projects.projects[0]?.id ?? null,
       chats: chat.conversations,
       projects: projects.projects,
@@ -1518,6 +1580,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // снимок доски, её вид и состояния карточек — это лишние запросы, а подписка
   // на board.changed при работающем ране перечитывает доску каждые пару секунд.
   const routeNeedsBoard = !(routeReleases || routeSettings || routeCode)
+  useEffect(() => {
+    if (!invalidTaskTabRoute) return
+    navigate(`/projects/${encodeURIComponent(segments[1]! )}/task/${encodeURIComponent(segments[3]! )}/general`, { replace: true })
+  }, [invalidTaskTabRoute, navigate, segments])
   useEffect(() => {
     if (!authed || !inProjects) return
     if (routeProjectId) {
@@ -1761,7 +1827,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         registrationId: registration.registrationId,
         capabilities: registration.capabilities,
         expectedConversationId: conversationId,
-        claimedRegistrationId: globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null
+        claimedRegistrationId: safeStorageGet(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null
       },
       ensurePreview: window.session?.ensurePreview,
       signal: controller.signal,
@@ -2138,6 +2204,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     ? {
         list: operationsActions.fsList,
         read: operationsActions.fsRead,
+        readPrefix: operationsActions.fsReadPrefix,
         write: operationsActions.fsWrite,
         remove: operationsActions.fsRemove,
         trash: operationsActions.fsTrash,
@@ -2155,7 +2222,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // каждый рендер (как machineOps) — в зависимости эффектов его не кладут.
   const consoleHistory: ConsoleHistoryStore = {
     get: (agentId) => operations.consoleHistory[agentId] ?? [],
-    push: operationsActions.pushConsoleCommand
+    push: operationsActions.pushConsoleCommand,
+    clear: operationsActions.clearConsoleHistory
   }
 
   // Закрывает мобильный сайдбар и выполняет действие пункта меню.
@@ -2168,7 +2236,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // логина мигает у уже вошедшего пользователя; не вошли — экран логина.
   if (session.authRequired && !session.currentUser && session.checking) {
     return (
-      <div className="login-screen auth-loading" data-theme={settingsState.settings.theme} role="status" aria-live="polite" data-testid="auth-loading">
+      <div className="login-screen auth-loading" data-theme={theme} role="status" aria-live="polite" data-testid="auth-loading">
         <span className="auth-loading__spinner" aria-hidden="true" />
         <span className="vc-sr-only">Проверка сессии…</span>
       </div>
@@ -2184,7 +2252,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <InviteScreen
         token={decodeURIComponent(projectInviteToken)}
         loadPreview={(token) => preview(token)}
-        theme={settingsState.settings.theme}
+        theme={theme}
         onLogin={() => { window.location.hash = '#/' }}
         onSignup={() => { window.location.hash = '#/signup' }}
         onDone={() => { window.location.hash = '#/' }}
@@ -2193,24 +2261,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }
   const resetEmailToken = /^#\/reset\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   if (session.authRequired && !session.currentUser && resetEmailToken && window.session?.resetPasswordByEmail) {
-    return <ResetPasswordScreen token={decodeURIComponent(resetEmailToken)} reset={window.session.resetPasswordByEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/' }} onBack={() => { window.location.hash = '#/' }} />
+    return <ResetPasswordScreen token={decodeURIComponent(resetEmailToken)} reset={window.session.resetPasswordByEmail} theme={theme} onDone={() => { window.location.hash = '#/' }} onBack={() => { window.location.hash = '#/' }} />
   }
   const verifyToken = /^#\/verify\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   if (session.authRequired && !session.currentUser && verifyToken && window.session?.verifyEmail) {
-    return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
+    return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
   }
   if (session.authRequired && !session.currentUser && signupOpen && window.session?.signup && window.session.signupResend) {
-    return <SignupScreen api={{ signup: window.session.signup, resend: window.session.signupResend }} theme={settingsState.settings.theme} onBack={() => setSignupOpen(false)} />
+    return <SignupScreen api={{ signup: window.session.signup, resend: window.session.signupResend }} theme={theme} onBack={() => setSignupOpen(false)} />
   }
   if (session.authRequired && !session.currentUser && inviteToken && window.session?.inviteInfo && window.session.register) {
-    return <InviteRegister token={decodeURIComponent(inviteToken)} api={{ inviteInfo: window.session.inviteInfo, register: window.session.register }} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} />
+    return <InviteRegister token={decodeURIComponent(inviteToken)} api={{ inviteInfo: window.session.inviteInfo, register: window.session.register }} theme={theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} />
   }
   if (session.authRequired && !session.currentUser) {
     return (
       <LoginScreen
         onLogin={(name, password, remember) => void runtime.login(name, password, remember)}
         error={session.authError}
-        theme={settingsState.settings.theme}
+        theme={theme}
         twoFactor={Boolean(session.twoFactorTicket)}
         onCode={(code) => void runtime.loginCode(code)}
         onCancelTwoFactor={() => runtime.cancelTwoFactor()}
@@ -2221,6 +2289,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     )
   }
 
+  const navigateShell = (section: ShellSection): void => {
+    const projectId = routeProjectId ?? projects.projects[0]?.id
+    setSidebarOpen(false)
+    navigate(section === 'chat' ? (chat.activeId ? `/chat/${chat.activeId}` : '/') : section === 'machines' ? '/machines' : projectId ? `/projects/${projectId}${section === 'releases' ? '/releases' : ''}` : '/projects')
+  }
   const openCreateProject = (): void => requireMachine(() => {
     setSidebarOpen(false)
     setNewProjectOpen(true)
@@ -2249,9 +2322,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         // Студия картинок живёт в той же раскладке, что и Make: чат + панель.
         inImageStudio && 'app--image-studio'
       ].filter(Boolean).join(' ')}
-      data-theme={settingsState.settings.theme}
+      data-theme={theme}
       style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
     >
+      <header className="shell-toolbar" aria-label="Оболочка приложения">
+        <nav className="shell-desktop-navigation" aria-label="Разделы приложения">
+          {(['chat', 'machines', 'board', 'releases'] as const).map((id, index) => <Button key={id} variant="ghost" size="sm" data-tour={id} onClick={() => navigateShell(id)}>{['Чат', 'Машины', 'Канбан', 'Релизы'][index]}</Button>)}
+        </nav>
+        <NotificationCenter key={shellUserId} userId={shellUserId} />
+      </header>
+      <ConnectionStatus key={shellUserId} bridge={window.realtime} />
+      <MobileNavigation active={utilitySeg === 'machines' ? 'machines' : routeReleases ? 'releases' : inProjects ? 'board' : inChat ? 'chat' : null} onNavigate={navigateShell} onMore={() => sidebarAvailable ? setSidebarOpen(true) : setPaletteOpen(true)} />
+      {session.currentUser?.name && settingsState.settings.onboarded && <ShellTour key={shellUserId} userId={shellUserId} onNavigate={navigateShell} />}
       {staleBuild && (
         <div className="stale-build" role="status" data-testid="stale-build">
           <span>Вышла новая версия приложения — обновите страницу, чтобы она заработала целиком.</span>
@@ -2319,6 +2401,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       />
       <Sidebar
         open={sidebarOpen}
+        onCloseMobile={() => setSidebarOpen(false)}
+        paletteShortcut={shortcuts.palette}
         width={sidebarWidth}
         onWidthChange={compactChat ? undefined : changeSidebarWidth}
         onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
@@ -2370,6 +2454,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
+        onAccountIntent={session.authRequired && session.currentUser ? () => { void loadAccountPage() } : undefined}
         onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
         onOpenSettings={menu(() => navigate('/settings/llm'))}
         onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
@@ -2446,7 +2531,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <InviteScreen
           token={decodeURIComponent(projectInviteToken)}
           loadPreview={(token) => window.session!.projectInvitationPreview!(token)}
-          theme={settingsState.settings.theme}
+          theme={theme}
           onAccept={async (token) => {
             const projectId = await projectsActions.acceptInvitation(token)
             if (projectId) navigate(`/projects/${projectId}`)
@@ -2646,6 +2731,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         speakingMessageId={voice.speakingMessageId}
         onSpeakMessage={voiceActions.replayMessage}
         onDeleteMessage={chatActions.deleteMessage}
+        failedSubmits={Object.values(chat.failedSubmits)}
+        onRetryFailedSubmit={(id) => { void chatActions.retryFailedSubmit(id) }}
+        onDeleteFailedSubmit={chatActions.deleteFailedSubmit}
         onEditMessage={chatActions.editMessage}
         onAnswerQuestions={(text) => void chatActions.answerQuestions(text)}
         onAnswerCiInteraction={(runId, interactionId, text) => void projectsActions.answerCiInteraction(runId, interactionId, { text })}
@@ -2704,6 +2792,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
+            sendShortcut={shortcuts.send}
+            captureActive={voice.captureActive}
             defaultCollapsed={compactChat && !isEmptyPreparedChat}
             allowCollapse={compactChat && !isEmptyPreparedChat}
             layout={isEmptyPreparedChat ? 'centered' : 'docked'}
@@ -2880,7 +2970,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                       onRetry={() => void loadGitWorkspaces(routeProjectId)}
                     />
             ) : routeReleases ? (
-            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} releaseTimeouts={projects.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} releaseTimeouts={projects.projectDetail!.releaseTimeouts} gitUrl={projects.projectDetail!.gitUrl} production={{ ...productionReadiness(projects.projectDetail!), machineName: projects.projectDetail!.machines.find((machine) => machine.agentId === projects.projectDetail!.productionAgentId)?.name ?? null, ...(projects.projectDetail!.productionHealthCheckCommand ? { healthCheckCommand: projects.projectDetail!.productionHealthCheckCommand } : {}) }} onOpenSettings={() => navigate(buildProjectsRoute({ kind: 'settings', projectId: routeProjectId }))} initialReleaseId={projectsRoute?.kind === 'releases' ? projectsRoute.releaseId : undefined} onOpenRelease={(releaseId) => navigate(buildProjectsRoute({ kind: 'releases', projectId: routeProjectId, ...(releaseId ? { releaseId } : {}) }), { replace: true })} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             projects.projectDetail?.id === routeProjectId ? (
               <Suspense fallback={<div role="status">Загрузка настроек проекта…</div>}><ProjectSettings
@@ -2889,10 +2979,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onTabChange={(tab, opts) => navigate(buildProjectsRoute({ kind: 'settings', projectId: routeProjectId, tab }), opts)}
                 projectTypes={projects.projectTypes}
                 invitations={projects.projectInvitations}
+                ciCommands={projects.ciCommands}
+                onLoadCommands={() => projectsActions.reloadCiCommands(routeProjectId).catch(error => { toast.error(error instanceof Error ? error.message : 'Не удалось загрузить каталог команд') })}
+                onCheckTestLogin={async (projectId, username) => {
+                  const id = await chatActions.newConversation('web-recorder')
+                  if (!id) throw new Error('Не удалось открыть Web Reader')
+                  await chatActions.setConversationProject(id, projectId)
+                  await chatActions.setConversationPreviewUrl(id, projects.projectDetail?.previewUrl ?? null)
+                  navigate(`/web-reader/${id}`)
+                  chatActions.setDraft(`Проверь вход тестового пользователя ${JSON.stringify(username)} в тестовое окружение проекта через Web Reader. Получи учётные данные инструментом test-users, открой URL превью, выполни вход через форму и проверь признак успешной авторизации. Сообщи результат и причину отказа. Не выводи пароль в ответе и не меняй данные приложения.`)
+                  await chatActions.submitText()
+                }}
                 onDeriveType={async (id, name) => { await projectsActions.deriveProjectType(id, name) }}
-                onInvite={async (id, invitee, role) => {
-                  const result = await projectsActions.inviteToProject(id, invitee, role)
-                  if (!result) return
+                onInvite={async (id, invitee, role, ttlDays) => {
+                  const result = await projectsActions.inviteToProject(id, invitee, role, ttlDays)
+                  if (!result) throw new Error('Не удалось создать приглашение. Проверьте адресата и повторите.')
                   // Владелец должен понимать, ушло ли письмо: без этого он не
                   // знает, почему приглашённый молчит.
                   if (result.mailed && result.email) {
@@ -2912,13 +3013,27 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                     }
                   })
                 }}
-                onResendInvitation={(id, invitationId) => projectsActions.resendProjectInvitation(id, invitationId)}
+                onResendInvitation={async (id, invitationId) => {
+                  try {
+                  const result = await api['projects:resendInvitation']({ id, invitationId })
+                  await projectsActions.loadProjectInvitations(id)
+                  toast.success(result.mailed ? 'Приглашение отправлено повторно' : 'Новая ссылка приглашения готова', {
+                    action: { label: 'Скопировать ссылку', onClick: () => {
+                      void navigator.clipboard.writeText(result.link).then(() => toast.success('Ссылка скопирована'), () => toast.error('Скопируйте ссылку: ' + result.link))
+                    } }
+                  })
+                  } catch (error) { toast.error(error instanceof Error ? error.message : 'Не удалось перевыпустить приглашение') }
+                }}
                 onRevokeInvitation={(id, invitationId) => projectsActions.revokeProjectInvitation(id, invitationId)}
                 agents={operations.agents}
                 currentUsername={session.currentUser?.name}
                 llmAccess={settingsState.llmAccess}
                 llmEngines={settingsState.llmEngines}
-                onUpdate={(id, fields) => void projectsActions.updateProject(id, fields)}
+                onUpdate={async (id, fields) => {
+                  await api['projects:update']({ id, ...fields })
+                  await projectsActions.selectProject(id)
+                  await projectsActions.refreshProjects()
+                }}
                 checkAutomatedQa={async (id, scenarioIndex) => (await api['projects:checkAutomatedQa']({ id, ...(scenarioIndex === undefined ? {} : { scenarioIndex }) })).results}
                 onDelete={(id) => {
                   // Удалили проект — уводим на другой доступный, а если их не
@@ -2963,8 +3078,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             <ProjectBoard
                 projectFeatures={projectFeatures}
               initialOpenTaskId={routeTaskId}
-              initialOpenTaskTab={segments[4] === 'preparation' ? 'preparation' : undefined}
-              onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}${tab ? `/${tab}` : ''}` : `/projects/${routeProjectId}`)}
+              initialOpenTaskTab={routeTaskTab}
+              onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}/${tab ?? 'general'}` : `/projects/${routeProjectId}`)}
               projectName={routeProjectName}
               scrollScopeId={routeProjectId!}
               board={projects.board}
@@ -2991,7 +3106,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onUpdateTask={(taskId, fields) => void projectsActions.updateTask(taskId, fields)}
               onMoveTask={(taskId, columnId, afterId, beforeId) => projectsActions.moveTask(taskId, columnId, afterId, beforeId)}
               onDeleteTask={(taskId) => void projectsActions.deleteTask(taskId)}
-              onOpenChat={(taskId) => void projectsActions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
+              // Task chat always remains a task-card surface; the panel opens its linked conversation itself.
+              onOpenChat={(taskId) => navigate(`/projects/${routeProjectId}/task/${taskId}/chat`)}
               onOpenMake={(conversationId) => navigate(`/make/${conversationId}`)}
               onEnsureChat={(taskId) => void projectsActions.ensureTaskChat(taskId)}
               onOpenConversationSettings={(conversationId, projectId) => void openConversationSettings(conversationId, projectId)}
@@ -3069,7 +3185,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
 
       {utilitySeg === 'account' && session.currentUser && (
-        <Suspense fallback={<div role="status">Загрузка аккаунта…</div>}>
+        <Suspense fallback={<AccountPageFallback />}>
           <AccountPage
             api={api}
             tab={accountTab}
@@ -3131,6 +3247,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <Suspense fallback={<div role="status">Загрузка парка машин…</div>}><MachineStatus
           variant="page"
           agents={operations.agents}
+          vpn={window.agents?.vpn}
           status={operations.agentsStatus}
           error={operations.agentsError}
           onRetry={() => void operationsActions.refreshAgents()}
@@ -3190,12 +3307,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           currentUserName={session.currentUser?.name ?? ''}
           onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
           onCreate={(name, password, role, mustChangePassword) => void adminActions.createUserAccount(name, password, role, mustChangePassword)}
-          onResetCode={(name) => adminActions.issueResetCode(name)}
+          onResetCode={adminActions.issueResetCode}
           onSetLlmLimit={(name, usd) => void adminActions.setUserLlmLimit(name, usd)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
           onSetBlocked={(name, blocked, reason) => void adminActions.setUserBlocked(name, blocked, reason)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
+          onLoadPriceHistory={adminActions.loadPriceHistory}
+          onLoadUsersPage={adminActions.loadUsersPage}
+          onBulkUsers={adminActions.bulkUsers}
           sessionsClient={adminSessionsClient}
           security={admin.adminSecurity}
           onLoadSecurity={(limit, group) => void adminActions.loadAdminSecurity(limit, group)}
@@ -3490,7 +3610,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette userId={shellUserId} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
       {globalSettingsSection && (

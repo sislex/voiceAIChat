@@ -56,7 +56,7 @@ import type {
   AdminUserInfo,
   UserProfileInfo,
   UsageReport,
-  UsageUnit, SecurityEvent, InviteInfo, SignupConfig } from './admin'
+  UsageUnit, SecurityEvent, SecurityGroup, InviteInfo, SignupConfig } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { EnrollmentIssued, EnrollmentStatusResult, LoginApplicationArtifact } from './enrollment'
@@ -180,7 +180,7 @@ export interface IpcInvokeMap {
   /** Make: состояние проекта разговора (файлы, снимки, rev) и операции с файлами. */
   'make:state': { arg: { conversationId: string }; result: MakeProjectState }
   'make:read': { arg: { conversationId: string; path: string }; result: MakeFileContent }
-  'make:write': { arg: { conversationId: string; path: string; content: string }; result: MakeProjectState }
+  'make:write': { arg: { conversationId: string; path: string; content: string; kind?: 'file' | 'directory'; createOnly?: boolean }; result: MakeProjectState }
   'make:delete': { arg: { conversationId: string; path: string }; result: MakeProjectState }
   'make:rename': { arg: { conversationId: string; from: string; to: string }; result: MakeProjectState }
   'make:snapshot': { arg: { conversationId: string; label?: string }; result: MakeProjectState }
@@ -197,8 +197,8 @@ export interface IpcInvokeMap {
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
   /** Замена по всем текстовым файлам проекта; перед заменой — снимок. */
   /** `dryRun` — только предпросмотр (`preview`), файлы не меняются. `regex` — запрос как регулярное выражение с `$1`-подстановками. */
-  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] } }
-  'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
+  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean; previewToken?: string; path?: string; matchIndex?: number }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[]; previewToken?: string } }
+  'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string; compareSnapshotId?: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
   'make:library': { arg: Record<string, never>; result: { items: MakeLibraryItem[] } }
   /** Сохранить файлы проекта в библиотеку под именем. */
@@ -330,7 +330,7 @@ export interface IpcInvokeMap {
   'llm:access': { arg: void; result: import('./llmAccess').UserLlmAccess[] }
   /** Свой профиль и свой журнал безопасности: те же данные, что видит админ, но только о себе. */
   'me:profile': { arg: void; result: UserProfileInfo }
-  'me:security': { arg: { limit?: number }; result: SecurityEvent[] }
+  'me:security': { arg: { limit?: number; group?: SecurityGroup }; result: SecurityEvent[] }
   'llm:engines': { arg: void; result: LlmEngineOption[] }
   /**
    * Патч настроек: сервер применяет только присланные поля. Полный объект тоже
@@ -412,10 +412,11 @@ export interface IpcInvokeMap {
    */
   'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
   // --- Админ-страница пользователей (только admin) ---
-  'admin:users': { arg: void; result: AdminUserInfo[] }
+  'admin:users': { arg: { limit?: number; offset?: number; q?: string; role?: string; state?: string; sort?: string; asc?: string } | void; result: AdminUserInfo[] }
   /** Сессии пользователя и их отзыв администратором (auth-roadmap п.4). */
   'admin:userSessions': { arg: { name: string }; result: { sessions: SessionInfo[] } }
   'admin:revokeSession': { arg: { sid: string }; result: { ok: true } }
+  'admin:revokeUserSessions': { arg: { name: string; exceptCurrent?: boolean }; result: { ok: true } }
   /** Журнал безопасности (auth-roadmap п.7). */
   'admin:securityEvents': { arg: { user?: string; limit?: number; group?: string }; result: { events: SecurityEvent[] } }
   /** Инвайты (auth-roadmap п.8). */
@@ -423,7 +424,7 @@ export interface IpcInvokeMap {
   'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }; result: InviteInfo }
   'admin:inviteDelete': { arg: { token: string }; result: { ok: true } }
   /** Одноразовый код сброса пароля (auth-roadmap п.10). */
-  'admin:resetCode': { arg: { name: string }; result: { code: string; expiresAt: number } }
+  'admin:resetCode': { arg: { name: string; action?: 'status' | 'revoke' }; result: { code: string; expiresAt: number } }
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
   'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
   /** Обновить агента на машине любого пользователя (machines-roadmap п.16). */
@@ -478,7 +479,7 @@ export interface IpcInvokeMap {
   /** Живые приглашения проекта (владельцу). */
   'projects:invitations': { arg: { id: string }; result: import('./projects').ProjectInvitation[] }
   'projects:invite': {
-    arg: { id: string; invitee: string; role?: import('./projects').ProjectRole }
+    arg: { id: string; invitee: string; role?: import('./projects').ProjectRole; ttlDays?: number }
     /** `link` — одноразовая ссылка приглашения; в списках её нет. */
     result: { invitation: import('./projects').ProjectInvitation; mailed: boolean; link: string }
   }
@@ -716,6 +717,8 @@ export interface IpcInvokeMap {
       storyPoints?: number | null
       dueDate?: number | null
       flagged?: boolean
+      autoPilot?: boolean
+      autoPilotRequiresManualQa?: boolean
     }
     result: Task
   }
@@ -758,6 +761,12 @@ export interface IpcInvokeMap {
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
   /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
   /** Студия картинок: галерея разговора, генерация и правка по промпту. */
+  'imgstudio:preview': { arg: { conversationId: string; settings: import('./imageStudio').ImageStudioPublicationSettings }; result: { url: string } }
+  'imgstudio:archive': { arg: { conversationId: string; paths: string[] }; result: void }
+  'imgstudio:enqueue': { arg: { conversationId: string } & import('./imageStudio').ImageStudioTaskInput; result: import('./imageStudio').ImageStudioTask }
+  'imgstudio:tasks': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioTask[] }
+  'imgstudio:cancelTask': { arg: { conversationId: string; taskId: string }; result: { cancelled: boolean } }
+  'imgstudio:tags': { arg: { conversationId: string; path: string; tags: string[] }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:list': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:read': { arg: { conversationId: string; path: string }; result: { path: string; dataBase64: string } }
   'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string; source?: string }; result: import('./imageStudio').ImageStudioFile[] }
@@ -765,9 +774,13 @@ export interface IpcInvokeMap {
   'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:retouch': { arg: { conversationId: string; path: string; prompt: string; selection: import('./imageStudio').ImageStudioSelection; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:extract': { arg: { conversationId: string; path: string; selection: import('./imageStudio').ImageStudioSelection }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:place': { arg: { conversationId: string; basePath: string; objectPath: string; x?: number; y?: number; width?: number; height?: number }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:restoreVersion': { arg: { conversationId: string; currentPath: string; targetPath: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
-  'imgstudio:publish': { arg: { conversationId: string; password?: string | null }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
-  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean } }
+  'imgstudio:publish': { arg: { conversationId: string; password?: string | null; settings?: import('./imageStudio').ImageStudioPublicationSettings }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
+  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean; settings?: import('./imageStudio').ImageStudioPublicationSettings } }
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
   'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
@@ -983,6 +996,7 @@ export interface RendererSttBridge {
  * обновления статуса/списка по WebSocket (web-режим). В desktop отсутствует.
  */
 export interface RendererAgentsBridge {
+  vpn?: import('./vpn').VpnBridge
   onChange(cb: (agents: AgentInfo[]) => void): () => void
 }
 
@@ -991,6 +1005,9 @@ export interface RendererAgentsBridge {
  * инвалидаций board.changed. В desktop отсутствует → без живой синхронизации.
  */
 export interface RendererRealtimeBridge {
+  /** UI connection episode; machine status is a separate event. */
+  onDisconnected?(cb: () => void): () => void
+  retry?(): void
   /** Каждое успешное WS-подключение, включая reconnect. */
   onConnected(cb: () => void): () => void
   /** Открыт ли WS прямо сейчас (для самодиагностики транспорта). */
@@ -1021,9 +1038,11 @@ export interface RendererBoardBridge {
   /** Адресная инвалидация списка репозиториев задачи. */
   onTaskRepositoriesUpdated(cb: (m: { projectId: string; taskId: string }) => void): () => void
   /** Адресная инвалидация состояния QA-этапа: панель перечитывает снимок вместо опроса. */
-  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage }) => void): () => void
+  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage | 'manual_qa' }) => void): () => void
   /** Адресная инвалидация очереди «Улучшения» проекта. */
   onImprovementsUpdated(cb: (m: { projectId: string }) => void): () => void
+  /** Release Center: релиз сменил статус или шаг — перечитать список/подробности. Необязателен у старых мостов. */
+  onReleaseUpdated?(cb: (m: { projectId: string; releaseId: string; status: import('./release').ReleaseStatus }) => void): () => void
   /** Успешное восстановление WS после уже состоявшегося подключения. */
   onReconnect(cb: () => void): () => void
 }
@@ -1178,6 +1197,7 @@ export interface RendererSessionBridge {
 export interface RendererFsBridge {
   list(agentId: string, path: string, projectId?: string): Promise<FsResult>
   read(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  readPrefix?(agentId: string, path: string, projectId?: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string, projectId?: string): Promise<FsResult>
   remove(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /** Корзина машины (агент ≥ 0.15.0): результат содержит trashedPath для отката. */
@@ -1412,6 +1432,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:users',
   'admin:userSessions',
   'admin:revokeSession',
+  'admin:revokeUserSessions',
   'admin:securityEvents',
   'admin:invites',
   'admin:inviteCreate',
@@ -1574,6 +1595,12 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:deleteAttachment',
   'tasks:readAttachment',
   'tasks:reworkMakeFiles',
+  'imgstudio:preview',
+  'imgstudio:archive',
+  'imgstudio:enqueue',
+  'imgstudio:tasks',
+  'imgstudio:cancelTask',
+  'imgstudio:tags',
   'imgstudio:list',
   'imgstudio:read',
   'imgstudio:upload',
@@ -1581,6 +1608,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'imgstudio:rename',
   'imgstudio:generate',
   'imgstudio:edit',
+  'imgstudio:retouch',
+  'imgstudio:extract',
+  'imgstudio:place',
+  'imgstudio:restoreVersion',
   'imgstudio:cancel',
   'imgstudio:publish',
   'imgstudio:publication',

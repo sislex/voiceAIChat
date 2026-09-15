@@ -63,7 +63,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         await deps.db.ci.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
         // Без этого уведомления автопроход не узнаёт, что этап кончился, и
         // board-событие просто запускает следующий такой же ран по кругу.
-        deps.completed?.(runId, userId, false, 'Development workspace недоступен', 'infrastructure')
+        await deps.completed?.(runId, userId, false, 'Development workspace недоступен', 'infrastructure')
       }
       if (run) { deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) }
       return
@@ -100,7 +100,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
           const reason=fallback.timedOut?'command_timeout':'executor_disconnected'
           const summary='Не удалось определить изменённые файлы задачи через merge-base и first-parent diff'
           await deps.db.ci.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'infrastructure',failureReason:reason,blockerReasons:[reason]})
-          deps.completed?.(runId,userId,false,summary,'infrastructure')
+          await deps.completed?.(runId,userId,false,summary,'infrastructure')
           return
         }
         changed=pathsFrom(fallback.output)
@@ -108,40 +108,30 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
       if(!changed.length){
         const summary='Не удалось определить изменённые файлы задачи: merge-base diff и first-parent diff пусты'
         await deps.db.ci.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'infrastructure',failureReason:'diff_parse_failed',blockerReasons:['diff_parse_failed']})
-        deps.completed?.(runId,userId,false,summary,'infrastructure')
+        await deps.completed?.(runId,userId,false,summary,'infrastructure')
         return
       }
-      // Многофайловый вывод разбирается по настоящим переводам строк; иначе
-      // нетестовый файл мог скрыться внутри строки с допустимым тестовым путём.
-      const invalid=validateIntegrationTestDiff(changed)
-      if(invalid.length){
-        const summary='Изменены нетестовые файлы: '+invalid.join(', ')
-        await deps.db.ci.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'implementation_defect',failureReason:'non_test_files_changed',blockerReasons:invalid.map((path)=>'non_test_file:'+path)})
-        deps.completed?.(runId,userId,false,summary,'implementation_defect')
-        return
-      }
+      // The diff covers the entire feature, so implementation files are expected.
+      // Select test files for coverage markers; gate commands still verify the
+      // complete checkout, including the implementation.
+      const changedTests = changed.filter((path) => validateIntegrationTestDiff([path]).length === 0)
       const shaResult=await inspect('git rev-parse HEAD'),sha=shaResult.output.trim().split(/\s/)[0]??''
-      if(!sha){await deps.db.ci.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось определить SHA тестового коммита',failureClassification:'infrastructure',failureReason:'executor_disconnected',blockerReasons:['executor_disconnected']});deps.completed?.(runId,userId,false,'Не удалось определить SHA тестового коммита','infrastructure');deps.boardChanged?.(run.projectId);return}
-      // Покрытие берём из маркеров `@testCase <id>` в самих тестах: разработка
-      // ставит их рядом с тестом, закрывающим кейс. Fallback на прежний синтез
-      // («первый тестовый путь всем обязательным кейсам») остаётся для веток,
-      // написанных до появления маркеров, но честным покрытием он не является.
-      const testPath=changed.find((path)=>validateIntegrationTestDiff([path]).length===0)
-      const markers=changed.length?await inspect(`grep -HoE '${AUTOMATION_MARKER}[[:space:]:]+[A-Za-z0-9._-]+' -- ${changed.map(shellQuote).join(' ')} || true`):{exitCode:0,timedOut:false,output:''}
+      if(!sha){await deps.db.ci.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось определить SHA тестового коммита',failureClassification:'infrastructure',failureReason:'executor_disconnected',blockerReasons:['executor_disconnected']});await deps.completed?.(runId,userId,false,'Не удалось определить SHA тестового коммита','infrastructure');deps.boardChanged?.(run.projectId);return}
+      // A test must explicitly reference the case it covers. Assigning the first
+      // test file to every required case previously produced invented coverage.
+      const markers=changedTests.length?await inspect(`grep -HoE '${AUTOMATION_MARKER}[[:space:]:]+[A-Za-z0-9._-]+' -- ${changedTests.map(shellQuote).join(' ')} || true`):{exitCode:0,timedOut:false,output:''}
       if(controller.signal.aborted)return
       const marked=parseAutomationMarkers(markers.output)
       const byTestId=new Map(marked.map((item)=>[item.testId,item.path]))
       const required=run.testCases.filter((item)=>item.required&&item.automatable)
-      const covered=byTestId.size
-        ? required.filter((item)=>byTestId.has(item.id)).map((item)=>({testId:item.id,path:byTestId.get(item.id)!}))
-        : required.filter(()=>Boolean(testPath)).map((item)=>({testId:item.id,path:testPath!}))
+      const covered=required.filter((item)=>byTestId.has(item.id)).map((item)=>({testId:item.id,path:byTestId.get(item.id)!}))
       if(byTestId.size) await deps.db.ci.appendIntegrationTestLog(runId,`Покрытие по маркерам ${AUTOMATION_MARKER}: ${covered.length} из ${required.length} обязательных кейсов\n`)
-      else if(required.length) await deps.db.ci.appendIntegrationTestLog(runId,`Маркеров ${AUTOMATION_MARKER} в тестах нет — покрытие синтезировано из диффа и требует ручной сверки\n`)
-      if(required.length&&covered.length===0){
-        const blockerReasons=required.map((item)=>`missing_automation:${item.id}`)
-        const summary=`Не найдены тесты для обязательных automatable-кейсов: ${required.map((item)=>item.id).join(', ')}`
+      const missing = required.filter((item) => !byTestId.has(item.id))
+      if(missing.length){
+        const blockerReasons=missing.map((item)=>`missing_automation:${item.id}`)
+        const summary=`Не найдены тесты для обязательных automatable-кейсов: ${missing.map((item)=>item.id).join(', ')}. Добавьте в тесты маркеры ${AUTOMATION_MARKER} <id> и проверьте сценарии.`
         await deps.db.ci.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'implementation_defect',failureReason:'missing_automation',blockerReasons})
-        deps.completed?.(runId,userId,false,summary,'implementation_defect')
+        await deps.completed?.(runId,userId,false,summary,'implementation_defect')
         return
       }
       await deps.db.ci.recordIntegrationAutomationLinks(userId,runId,covered,sha)
@@ -182,7 +172,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
             failureClassification: null,
             blockerReasons: []
           })
-          deps.completed?.(runId, userId, true, 'Integration tests пройдены')
+          await deps.completed?.(runId, userId, true, 'Integration tests пройдены')
         }
         return
       }
@@ -208,12 +198,12 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         failureClassification: passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect',
         blockerReasons: infrastructure && failedStage ? [failedStage.diagnostic] : []
       })
-      deps.completed?.(runId, userId, passed, passed ? 'Integration tests пройдены' : failedStage?.diagnostic || 'Integration tests failed', passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect')
+      await deps.completed?.(runId, userId, passed, passed ? 'Integration tests пройдены' : failedStage?.diagnostic || 'Integration tests failed', passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect')
     })().catch(async (error) => {
       const current = await deps.db.ci.getIntegrationTestRun(userId, runId)
       if (current?.status === 'running') {
         await deps.db.ci.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
-        deps.completed?.(runId, userId, false, String(error), 'infrastructure')
+        await deps.completed?.(runId, userId, false, String(error), 'infrastructure')
       }
     }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) })
   }

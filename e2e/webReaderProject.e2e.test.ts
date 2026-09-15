@@ -63,6 +63,8 @@ describe.each(['embedded', 'remote'] as const)('Reader %s: вход на соб�
     await api(`/api/conversations/${id}/preview-url`, 'POST', { previewUrl: 'https://app.internal/#/machines' })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     page.setDefaultTimeout(10_000)
     await page.addInitScript(token => localStorage.setItem('vc.session.token', token), token)
     await page.goto(`${base}/#/web-reader/${id}`)
@@ -91,6 +93,8 @@ describe.each(['embedded', 'remote'] as const)('Reader %s: вход на соб�
     await site.getByLabel('Пароль', { exact: true }).fill(PASSWORD)
     await site.getByRole('button', { name: 'Войти', exact: true }).click()
     await site.getByRole('button', { name: 'Добавить машину', exact: true }).waitFor()
+    const tourSkip = site.getByRole('button', { name: 'Пропустить знакомство', exact: true })
+    if (await tourSkip.count()) await tourSkip.click()
     expect(await site.getByRole('button', { name: 'Войти', exact: true }).count()).toBe(0)
     const originTime = await site.locator('html').evaluate(() => performance.timeOrigin)
     const saved = page.waitForResponse(response => response.url().startsWith(base + '/api/conversations/') && response.url().endsWith('/preview-url') && response.request().method() === 'POST')

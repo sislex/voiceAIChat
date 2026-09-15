@@ -173,6 +173,70 @@ describe('turns: канбан-ассистент', () => {
   })
 })
 
+describe('turns: расход хода Codex', () => {
+  /** Codex-like engine: thread.started, then the cumulative thread totals in turn.completed. */
+  function codexThread(totals: Array<{ input: number; cached: number; output: number }>): { client: LlmClient; sessions: Array<string | null> } {
+    let call = 0
+    const sessions: Array<string | null> = []
+    return {
+      sessions,
+      client: {
+        send(req, h) {
+          sessions.push(req.sessionId ?? null)
+          const t = totals[Math.min(call++, totals.length - 1)]
+          const meta = {
+            inputTokens: t.input, cacheReadTokens: t.cached, outputTokens: t.output,
+            codexThreadUsage: { inputTokens: t.input, cacheReadTokens: t.cached, outputTokens: t.output, cacheCreationTokens: 0 }
+          }
+          void h.onSession('thread-1')
+          h.onUsage?.(meta)
+          void h.onDone('ок', meta)
+          return { cancel: () => {} }
+        }
+      }
+    }
+  }
+
+  it('turn.completed totals of the thread are stored as the difference from the previous reply', async () => {
+    const db = await freshDb()
+    await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: 'codex' })
+    const conv = await db.chat.createConversation(U, 'Codex')
+    const engine = codexThread([
+      { input: 1_000, cached: 800, output: 10 },
+      { input: 2_500, cached: 2_000, output: 30 }
+    ])
+    const turns = createTurnManager({ db, claude: engine.client, codex: engine.client })
+    const liveUsage: unknown[] = []
+    const run = async (): Promise<void> => new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => {
+        if (m.t === 'claude.usage') liveUsage.push(m.usage)
+        if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() }
+      })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'раз' }] })
+    })
+    await run()
+    await run()
+    await turns.idle()
+
+    const replies = (await db.chat.listMessages(U, conv.id)).filter((m) => m.role === 'ai')
+    expect(replies).toHaveLength(2)
+    // First turn: input without the cached part; totals kept for the next turn.
+    expect(replies[0].meta).toMatchObject({
+      inputTokens: 200, cacheReadTokens: 800, outputTokens: 10,
+      codexThreadUsage: { sessionId: 'thread-1', inputTokens: 1_000, cacheReadTokens: 800, outputTokens: 10 }
+    })
+    // Second turn resumed the thread: its spend is the growth of the totals.
+    expect(engine.sessions[1]).toBe('thread-1')
+    expect(replies[1].meta).toMatchObject({
+      inputTokens: 300, cacheReadTokens: 1_200, outputTokens: 20,
+      codexThreadUsage: { sessionId: 'thread-1', inputTokens: 2_500, cacheReadTokens: 2_000, outputTokens: 30 }
+    })
+    // The live counter shows the same per-turn numbers, not the thread totals.
+    expect(liveUsage[1]).toMatchObject({ inputTokens: 300, cacheReadTokens: 1_200, outputTokens: 20 })
+    db.close()
+  })
+})
+
 describe('turns: claude.start', () => {
   it('в начале хода сервер сообщает движок, модель и машину', async () => {
     const db = await freshDb()
@@ -401,6 +465,25 @@ describe('turns: инструкции чата', () => {
     expect(rec.last()?.prompt).toContain('```questions')
     expect(rec.last()?.makeMcpUrl).toMatch(/\/mcp\/make\?k=secret&conv=.+&turn=.+/)
     expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    await turns.idle()
+    db.close()
+  })
+
+  it('у студии картинок подключает MCP текущего пользователя и делает его read-only в плане', async () => {
+    const db = await freshDb()
+    const conv = await db.chat.createConversation(U, 'Студия', 'images')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, imageStudioMcpBaseUrl: 'http://127.0.0.1:8787/mcp/image-studio?k=secret' })
+    const run = async (): Promise<void> => new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'отретушируй лицо' }] })
+    })
+    await run()
+    expect(rec.last()?.imageStudioMcpUrl).toContain(`conv=${conv.id}&user=admin`)
+    expect(rec.last()?.imageStudioMcpUrl).not.toContain('ro=1')
+    await db.chat.setConversationExecTarget(U, conv.id, 'none', undefined, undefined, undefined, undefined, 'plan')
+    await run()
+    expect(rec.last()?.imageStudioMcpUrl).toContain('ro=1')
     await turns.idle()
     db.close()
   })

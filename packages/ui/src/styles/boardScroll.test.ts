@@ -19,9 +19,21 @@
 
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { decl, mediaBody } from './cssRules'
+import { decl, mediaBody, atRuleBodies } from './cssRules'
 
 describe('app.css — скролл длинной колонки доски', () => {
+  // @testCase TC5
+  it('uses mandatory mobile snap and independent card scrolling with a sticky header', () => {
+    const mobile = atRuleBodies('@media (max-width: 720px)').join('\n')
+    expect(mobile).toContain('scroll-snap-type: x mandatory')
+    expect(mobile).toContain('scroll-snap-align: start')
+    expect(mobile).toMatch(/\.jboard \.jcol-content:not\(\[hidden\]\)[^{]*\{[^}]*overflow-y: auto/)
+    expect(mobile).toMatch(/\.jboard \.jcol-head[^}]*position: sticky; top: 0/)
+    expect(mobile).toContain('env(safe-area-inset-bottom, 0px)')
+    expect(mobile).toContain('.jcard--mobile > :not(.jcard-top):not(.jcard-foot):not(.jcard-mobile-status)')
+    expect(decl('.jcard-grip, .jcol-grip', 'touch-action')).toBe('none')
+  })
+
   it('корень приложения ограничивает обе оси доступным viewport', () => {
     expect(decl('.app', 'display')).toBe('grid')
     expect(decl('.app', 'grid-template-columns')).toBe('var(--sidebar-width, 264px) minmax(0, 1fr)')

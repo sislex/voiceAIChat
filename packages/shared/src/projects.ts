@@ -1027,6 +1027,8 @@ export interface Task {
   flagged: boolean
   /** Карточка автоматически проходит development и QA-конвейер. */
   autoPilot?: boolean
+  /** Pause autopilot at manual QA; new tasks inherit the project's default. */
+  autoPilotRequiresManualQa?: boolean
   /** Уже использованные автоматические круги доработки. */
   autoPilotFixCycles?: number
   /**
@@ -1390,6 +1392,9 @@ export interface BoardView {
   onlyMine: boolean
   flaggedOnly: boolean
   recentOnly: boolean
+  overdueOnly: boolean
+  dueWindow: 'all' | 'overdue' | 'today' | 'week' | 'none'
+  completedOnly: boolean
   /** Фильтр исполнителей по колонкам: id колонки → выбор. */
   columnAssignees: Record<string, { assigneeIds: string[]; unassigned: boolean }>
   swimlane: 'none' | 'epic' | 'assignee'
@@ -1407,6 +1412,9 @@ export const DEFAULT_BOARD_VIEW: BoardView = {
   onlyMine: false,
   flaggedOnly: false,
   recentOnly: false,
+  overdueOnly: false,
+  dueWindow: 'all',
+  completedOnly: false,
   columnAssignees: {},
   swimlane: 'none',
   showHidden: false,
@@ -1432,8 +1440,11 @@ export function sanitizeBoardView(raw: unknown): Partial<BoardView> {
   if (types) view.types = types
   const priorities = strings(input.priorities)?.filter((item): item is TaskPriority => (TASK_PRIORITIES as readonly string[]).includes(item))
   if (priorities) view.priorities = priorities
-  for (const key of ['onlyMine', 'flaggedOnly', 'recentOnly', 'showHidden', 'showCompleted'] as const) {
+  for (const key of ['onlyMine', 'flaggedOnly', 'recentOnly', 'overdueOnly', 'completedOnly', 'showHidden', 'showCompleted'] as const) {
     if (typeof input[key] === 'boolean') view[key] = input[key]
+  }
+  if (input.dueWindow === 'all' || input.dueWindow === 'overdue' || input.dueWindow === 'today' || input.dueWindow === 'week' || input.dueWindow === 'none') {
+    view.dueWindow = input.dueWindow
   }
   if (input.swimlane === 'none' || input.swimlane === 'epic' || input.swimlane === 'assignee') view.swimlane = input.swimlane
   if (typeof input.columnAssignees === 'object' && input.columnAssignees !== null) {

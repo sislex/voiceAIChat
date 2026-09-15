@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-10
-checked: 11105f5c
+updated: 2026-09-13
+checked: 0b6c1d15
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -60,11 +60,19 @@ REST preview-url только для собственного web-recorder; об
   `VoiceChatDb` на том же файле, обязан `await db.ready` / `await db.close()`; тест с изменяемыми
   часами (`now: () => clock`) обязан ждать каждый вызов — иначе тело прочитает уже переставленные часы.
 
-**Установка схемы Postgres под замком (2026-09-08).** `VoiceChatDb.init()` на Postgres ставит `PG_SCHEMA.sql`
-внутри транзакции после `SELECT pg_advisory_xact_lock(<константа>)`: соседние процессы стенда (ядро, канбан,
-машины, ридер) открывают базу одновременно, и без замка `CREATE TABLE IF NOT EXISTS` двух сессий упирается в
-deadlock (40P01), а `CREATE SCHEMA IF NOT EXISTS` — в duplicate key по `pg_namespace`. Регрессия —
-`db/database.pgBootstrap.test.ts` (только с `VC_TEST_DB_URL`).
+**PostgreSQL schema installation and additive upgrades (2026-09-11).**
+`VoiceChatDb.init()` holds the schema advisory lock for the whole transaction.
+It creates missing tables first, compares every generated `PG_SCHEMA.columns`
+entry with `information_schema.columns`, adds missing columns, and only then
+creates indexes, seeds, foreign keys, and PostgreSQL-specific objects. This
+ordering prevents a release from starting with code that queries a column which
+`CREATE TABLE IF NOT EXISTS` left absent in an older table. The upgrade plan is
+derived from the same `schema.ts` definitions as a fresh PostgreSQL schema, so a
+future additive column change does not require a second handwritten PostgreSQL
+DDL statement. Semantic data transformations still remain explicit; for example,
+the task-level manual-QA flag is copied from its project only when that column is
+first added. `database.pgBootstrap.test.ts` recreates this production upgrade
+path against a real server when `VC_TEST_DB_URL` is set.
 
 **Postgres как движок всей базы (`VC_DB_URL`, 2026-09-07, `docs/plans/db-postgres.md`).** Тот же
 `VoiceChatDb`, тот же код репозиториев: `new VoiceChatDb(path, { postgres: { url } })` открывает
@@ -79,11 +87,11 @@ truthy/bucket`). Схема Postgres выводится из `schema.ts` ген�
 BIGINT, REAL → DOUBLE PRECISION, AUTOINCREMENT → BIGSERIAL, у каждой таблицы явный `rowid`, FK
 отдельными `ALTER` после всех таблиц, сиды через транслятор) плюс `PG_EXTRA_SQL`: полнотекстовый
 индекс `messages.text_tsv` (tsvector, GIN; `toPgTsQuery` в `fts.ts`) вместо FTS5 и plpgsql-триггеры
-`cost_dirty`. Поэтому **новая колонка объявляется в `CREATE TABLE` в `schema.ts`**, а ALTER в
-`migrate()` — только для старых SQLite-файлов; гейт `schemaPg.test.ts` требует и то и другое.
-Миграции `migrate()` на Postgres не выполняются: база создаётся переносом
-(`db/copyToPostgres.ts`, CLI `npx tsx apps/server/src/db/copyToPostgres.cli.ts --sqlite <файл> --url <postgres://…>`)
-уже в актуальной схеме. Прод работает на Postgres с 2026-09-08 (см. deploy.md). Тесты: `VC_TEST_DB_URL=postgres://…` заставляет каждую `:memory:`-базу
+`cost_dirty`. A new column is declared once in `schema.ts`: `migrate()` upgrades
+legacy SQLite files, while the generated PostgreSQL column reconciliation upgrades
+existing PostgreSQL tables before the server starts accepting requests. Data can
+also be copied initially with `db/copyToPostgres.ts` and its CLI. Прод работает
+на Postgres с 2026-09-08 (см. deploy.md). Тесты: `VC_TEST_DB_URL=postgres://…` заставляет каждую `:memory:`-базу
 открываться свежей схемой `t_<id>` в Postgres и удалять её в `close()` — так гоняется вся матрица
 сервера; контейнеру нужен `-c max_locks_per_transaction=1024` (схемы с сотней таблиц дропаются
 одной транзакцией). Тесты сырого драйвера и файловых баз помечены `ON_POSTGRES`; тесты
@@ -313,13 +321,36 @@ Claude, Codex и других внешних сервисов.
 
 ## Админка
 
+Access management (CHAT-453): `GET /api/admin/users` accepts `limit` (1–200),
+`offset` (non-negative), `q`, `role`, `state` (`online`, `blocked`, `inactive`),
+`sort` (`activity`, `login`, `name`, `spend`) and `asc=1`. Filtering and sorting
+precede slicing; requests without pagination retain the full array response.
+`DELETE /api/admin/users/:name/sessions` revokes the user's sessions in one
+repository update; `{ exceptCurrent: true }` preserves the authenticated SID.
+If the current SID is unavailable when targeting oneself, the server refuses
+with 409 rather than accidentally ending the current session.
+Inactive means no login for 30 days; never-used accounts qualify only after
+30 days from creation. Login sorting uses `lastLogin`, not session activity.
+`IdentityRepo.setUserRole` locks administrators inside a transaction before
+counting them; demoting the last one returns HTTP 409 with an explanatory Russian error.
+
+`GET /api/admin/security?user=<login>&group=login` returns the last 50 login
+results, filtering in SQL before LIMIT. `group=prices` selects model-price audit
+entries (actor, timestamp and changed base rates) from the same existing journal.
+New price writes require finite non-negative values with at most two decimals.
+Reset codes remain one hash per user: issuing a new one replaces the previous
+code. GET on the existing `/reset-code` path returns expiry with an empty code;
+DELETE clears the hash and expiry. The plaintext is only returned on issuance.
+
 `/api/admin/users*` (`routes/admin.ts`, типы в `packages/shared/src/admin.ts`):
 список, создание/удаление, блокировка, отчёт по использованию
 (`UsageReport`/`UsageUnit`), просмотр чужих разговоров и сообщений. Отчёт принимает
 `from`, `to`, `unit` и необязательный `conversationId`, возвращает агрегаты по
 бакетам, моделям и разговорам. Для сообщений Codex без `meta.costUsd`
-`model_prices` редактируются только админом через `GET/PUT/DELETE /api/admin/model-prices`. `usageReport` всегда возвращает две независимые суммы: `costUsd` (что сообщил CLI) и `costFromPrices` (пересчёт по `model_prices`) для Claude и Codex; обычный вход считается как
-`inputTokens - cacheReadTokens`, чтобы кэш не оплачивался дважды. Таблица содержит
+`model_prices` редактируются только админом через `GET/PUT/DELETE /api/admin/model-prices`. `usageReport` всегда возвращает две независимые суммы: `costUsd` (что сообщил CLI) и `costFromPrices` (пересчёт по `model_prices`) для Claude и Codex; `meta.inputTokens`
+у всех движков — вход **без** кэша (Codex приводится `TurnManager` и разовой
+миграцией `migrateCodexThreadUsage`, см. [llm.md](llm.md)), поэтому SQL берёт его
+как есть и отдельно платит за `cacheReadTokens`. Таблица содержит
 USD за 1M обычных/кэшированных/записанных в кэш/выходных токенов, URL источника и
 даты тарифа/обновления. Базовые четыре поля — Standard/short context; дополнительные
 официальные сочетания режима (`standard`/`batch`/`flex`/`fast`) и контекста

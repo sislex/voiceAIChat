@@ -87,6 +87,7 @@ export function useHotkeys(handlers: HotkeyHandlers): void {
     }
 
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.isComposing || event.defaultPrevented) return
       const typing = isTyping()
       for (const binding of table()) {
         const combo: ParsedCombo = parseCombo(binding.combo)

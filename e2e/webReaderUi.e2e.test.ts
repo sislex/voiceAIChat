@@ -82,4 +82,22 @@ describe('Reader: адресная строка и адаптивный инте
     expect(await shell().getByRole('button', { name: 'Остановить запись', includeHidden: true }).getAttribute('aria-pressed')).toBe('true')
     if (process.env.VC_VISUAL_ARTIFACTS) { await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true }); await page.screenshot({ path: resolve(process.env.VC_VISUAL_ARTIFACTS, 'reader-cycle09-mobile.png') }) }
   })
+  it('keeps URL validation attached to the address and supports Escape recovery', async () => {
+    const address = shell().getByLabel('Адрес превью')
+    await address.fill('file:///tmp/unsupported'); await shell().getByRole('button', { name: 'Открыть', exact: true }).click()
+    expect(await address.getAttribute('aria-invalid')).toBe('true')
+    expect(await address.getAttribute('aria-describedby')).toBeTruthy()
+    await address.press('Escape')
+    expect(await address.inputValue()).toBe(site + '/page')
+    expect(await address.getAttribute('aria-invalid')).toBe('false')
+  })
+  it('selects the Reader address by keyboard and clears the open page', async () => {
+    const address = shell().getByLabel('Адрес превью')
+    await address.click(); await address.press('ControlOrMeta+l')
+    expect(await address.evaluate((el: HTMLInputElement) => el.selectionEnd! - el.selectionStart!)).toBe(site.length + '/page'.length)
+    await shell().getByRole('button', { name: 'Очистить страницу' }).click()
+    expect(await shell().locator('iframe').count()).toBe(0)
+    expect(await address.inputValue()).toBe('')
+  })
+
 })

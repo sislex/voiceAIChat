@@ -1,10 +1,13 @@
 import { READER_PROJECT_ORIGIN, readerProjectUrl } from '@shared/previewProject'
 import { Button, IconButton } from '@voicechat/ui-kit'
 import { appendWebRecorderStep, normalizeWebRecorderStep } from '@shared/webRecorderScenario'
+import { DiagnosticHistory, type DiagnosticsStep } from './DiagnosticHistory'
+import { ScenarioTransfer } from './ScenarioTransfer'
+import { useScenarioEditor } from './scenarioEditor'
 import { loadScenario, scenarioKey } from './scenarioStorage'
 import { createScenarioRunner, type ScenarioProgress } from './scenarioRunner'
 import { normalizeReaderAddress } from './readerAddress'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { PREVIEW_ACTION_LIMITS, PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, PREVIEW_INSPECTOR_MESSAGE_TYPE, isPreviewInspectorCommand } from '@shared/previewInspector'
 import {
@@ -28,7 +31,6 @@ type Step = WebRecorderScenarioStep
 /** Адресованные ответы Reader (без ready); Omit не дистрибутивен над union. */
 type Addressed = Extract<WebRecorderClientMessage, { registrationId: string }>
 type ReplyBody = Addressed extends infer M ? M extends Addressed ? Omit<M, 'type' | 'conversationId' | 'registrationId'> : never : never
-interface DiagnosticsStep { requestId: string; action: string; ok: boolean; durationMs: number }
 const RECORD = 'voicechat.preview.record.v1'
 // Режим правок страницы: канал Reader ↔ инъецированный скрипт previewProxy.
 const EDIT = 'voicechat.preview.edit.v1'
@@ -42,9 +44,17 @@ const VIEWPORTS = [['', 'Адаптив'], ['375', 'iPhone 375'], ['768', 'Пл�
 export function Recorder(): JSX.Element {
   const [url, setUrl] = useState<string | null>(null); const [draft, setDraft] = useState(''); const [recording, setRecording] = useState(false)
   const [inspecting, setInspecting] = useState(false); const [editing, setEditing] = useState(false); const [capturing, setCapturing] = useState(false); const [disposed, setDisposed] = useState(false)
-  const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null)
+  const addressRef = useRef<HTMLInputElement>(null)
+  const addressErrorId = useId()
+  const [addressError, setAddressError] = useState<string | null>(null)
+  const { steps, setSteps, editSteps, past, future, undo, redo } = useScenarioEditor(); const [error, setError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<DiagnosticsStep[] | null>(null)
   const [scenarioUrl, setScenarioUrl] = useState<string | null>(null)
+  const [scenarioCollapsed, setScenarioCollapsed] = useState(false)
+  const [storageError, setStorageError] = useState<string | null>(null)
+  const sessionReset = useRef<AbortController | null>(null)
+  const sessionResetTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [resettingSession, setResettingSession] = useState(false)
   const [scenarioProgress, setScenarioProgress] = useState<ScenarioProgress | null>(null)
   const scenarioRunner = useRef<ReturnType<typeof createScenarioRunner> | null>(null)
   const scenarioRunning = scenarioProgress?.status === 'running'
@@ -80,16 +90,20 @@ export function Recorder(): JSX.Element {
     frame.current?.contentWindow?.postMessage({ type: RECORD, enabled }, sameOrigin)
     setRecording(enabled)
   }
+  const cancelSessionReset = (): void => { sessionReset.current?.abort(); sessionReset.current = null; if (sessionResetTimeout.current) clearTimeout(sessionResetTimeout.current); sessionResetTimeout.current = null; setResettingSession(false) }
   const applyUrl = (next: string | null): void => {
     if (next) next = readerProjectUrl(next, sameOrigin)
     loadGeneration.current++
+    cancelSessionReset()
+    setScenarioCollapsed(false); setStorageError(null)
+    diagnosticStarts.current.clear()
     scenarioRunner.current?.cancel('Открывается другая страница — запуск отменён.')
     scenarioRunner.current?.setReady(false)
     pageReady.current = false
     setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
     currentUrl.current = next
     if (next) setFrameKey((value) => value + 1)
-    setUrl(next); setDraft(next ?? ''); setError(null)
+    setUrl(next); setDraft(next ?? ''); setError(null); setAddressError(null)
     // Сценарий этой страницы сохраняется в браузере — восстанавливаем при открытии.
     setScenarioUrl(next); setSteps(loadScenario(next)); setSecretValues({})
     reply({ kind: 'page-status', status: next ? 'loading' : 'empty', url: next })
@@ -118,6 +132,7 @@ export function Recorder(): JSX.Element {
       const message = data
       if (message.kind === 'init') {
         const same = session.current && session.current.conversationId === message.conversationId && session.current.registrationId === message.registrationId
+        if (!same) { diagnosticStarts.current.clear(); diagnosticsMode.current = false; setDiagnostics(null) }
         session.current = { conversationId: message.conversationId, registrationId: message.registrationId }
         setDisposed(false)
         // Идемпотентный повтор init той же регистрации не перезагружает страницу.
@@ -145,6 +160,7 @@ export function Recorder(): JSX.Element {
           return
         }
         if (diagnosticsMode.current || message.action.diagnostic === true) {
+          if (diagnosticStarts.current.size >= 64) diagnosticStarts.current.delete(diagnosticStarts.current.keys().next().value!)
           diagnosticStarts.current.set(message.requestId, { action: message.action.kind, started: performance.now() })
         }
         frame.current.contentWindow.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId: message.requestId, action: message.action }, sameOrigin)
@@ -158,7 +174,7 @@ export function Recorder(): JSX.Element {
       }
       if (message.kind === 'recording-state') { setRecordingMode(message.enabled); return }
       if (message.kind === 'diagnostics-start') {
-        if (message.active) { diagnosticsMode.current = true; setDiagnostics([]) }
+        if (message.active) { diagnosticStarts.current.clear(); diagnosticsMode.current = true; setDiagnostics([]) }
         else {
           diagnosticsMode.current = false
           setDiagnostics((current) => {
@@ -170,6 +186,7 @@ export function Recorder(): JSX.Element {
         return
       }
       if (message.kind === 'dispose') {
+        cancelSessionReset()
         scenarioRunner.current?.cancel('Reader отключён — запуск отменён.')
         scenarioRunner.current?.setReady(false)
         reply({ kind: 'disposed' })
@@ -191,6 +208,7 @@ export function Recorder(): JSX.Element {
           }
         }
         if (next && next !== currentUrl.current) {
+          cancelSessionReset()
           const previous = currentUrl.current
           currentUrl.current = next
           // Это подтверждённая навигация живого iframe: его src менять нельзя.
@@ -211,13 +229,13 @@ export function Recorder(): JSX.Element {
         }
         return
       }
-      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { loadGeneration.current++; scenarioRunner.current?.setReady(false); pageReady.current = false; setLoadState('loading'); setLoadError(null); reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
+      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { cancelSessionReset(); loadGeneration.current++; scenarioRunner.current?.setReady(false); pageReady.current = false; setLoadState('loading'); setLoadError(null); reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
       if (message?.type === PREVIEW_ACTION_RESULT_TYPE && typeof message.requestId === 'string') {
         const diagnostic = diagnosticStarts.current.get(message.requestId)
         if (diagnostic) {
           diagnosticStarts.current.delete(message.requestId)
           const progress = { requestId: message.requestId, action: diagnostic.action, ok: message.ok === true, durationMs: Math.round(performance.now() - diagnostic.started) }
-          setDiagnostics((current) => current ? [...current, progress] : current)
+          setDiagnostics((current) => [...(current ?? []), progress])
           reply({ kind: 'diagnostics-progress', ...progress })
         }
         // Локальные шаги сценария не имеют pending на стороне host — не отвечаем.
@@ -266,14 +284,16 @@ export function Recorder(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (!scenarioUrl) return
-    const key = scenarioKey(scenarioUrl)
-    if (!key) return
+  const saveScenario = (): void => {
+    const key = scenarioUrl ? scenarioKey(scenarioUrl) : null
+    if (!key) { setStorageError(null); return }
     try {
       localStorage.setItem(key, JSON.stringify(steps.map(normalizeWebRecorderStep).filter(Boolean)))
-    } catch { /* квота браузера — сценарий просто не сохранится */ }
-  }, [steps, scenarioUrl])
+      setStorageError(null)
+    } catch { setStorageError('Сценарий не сохранён в браузере. Освободите место или разрешите хранилище и повторите сохранение.') }
+  }
+  useEffect(() => { saveScenario() }, [steps, scenarioUrl])
+  useEffect(() => () => { sessionReset.current?.abort(); sessionReset.current = null; if (sessionResetTimeout.current) clearTimeout(sessionResetTimeout.current); sessionResetTimeout.current = null }, [])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: EDIT, enabled: editing }, sameOrigin) }, [editing, url])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: CAPTURE, enabled: capturing }, sameOrigin) }, [capturing, url])
   const closeTools = (): void => { if (toolsMenu.current) toolsMenu.current.open = false }
@@ -294,7 +314,7 @@ export function Recorder(): JSX.Element {
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled: inspecting }, sameOrigin) }, [inspecting, url])
   const open = (): void => {
     const result = normalizeReaderAddress(draft, currentUrl.current)
-    if (result.error) { setError(result.error); return }
+    if (result.error) { setAddressError(result.error); addressRef.current?.focus(); return }
     applyUrl(result.url)
     reply({ kind: 'save-url', url: result.url })
   }
@@ -341,24 +361,40 @@ export function Recorder(): JSX.Element {
     try { delta === -1 ? frame.current?.contentWindow?.history.back() : frame.current?.contentWindow?.history.forward() } catch { /* cross-doc сразу после загрузки */ }
   }
   const resetSession = (): void => {
-    void fetch('/api/preview/reset-cookies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-      .then((res) => {
+    if (sessionReset.current) return
+    const controller = new AbortController()
+    sessionReset.current = controller; setResettingSession(true); setError(null)
+    const target = currentUrl.current
+    const generation = loadGeneration.current
+    const timeout = sessionResetTimeout.current = setTimeout(() => {
+      if (sessionReset.current === controller) { setError('Сброс сессии занял слишком много времени. Повторите попытку.'); controller.abort() }
+    }, 15_000)
+    void fetch('/api/preview/reset-cookies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: controller.signal })
+      .then(res => {
         if (!res.ok) throw new Error('HTTP ' + res.status)
-        // Разлогиненное состояние видно после перезагрузки страницы.
-        if (currentUrl.current) applyUrl(currentUrl.current)
+        if (sessionReset.current === controller && !controller.signal.aborted && target && currentUrl.current === target && generation === loadGeneration.current) applyUrl(target)
       })
-      .catch(() => setError('Не удалось сбросить сессии превью.'))
+      .catch(() => { if (sessionReset.current === controller && !controller.signal.aborted) setError('Не удалось сбросить сессии превью.') })
+      .finally(() => {
+        clearTimeout(timeout)
+        if (sessionResetTimeout.current === timeout) sessionResetTimeout.current = null
+        if (sessionReset.current === controller) { sessionReset.current = null; setResettingSession(false) }
+      })
   }
   const editStepOrder = (index: number, direction: -1 | 1 | 0): void => {
     if (scenarioRunning) return
     setSecretValues({})
-    setSteps(all => {
+    editSteps(all => {
       if (direction === 0) return all.filter((_, i) => i !== index)
       const next = [...all], target = index + direction
       if (target < 0 || target >= next.length) return all
       ;[next[index], next[target]] = [next[target], next[index]]
       return next
     })
+  }
+  const addStep = (kind: Step['kind']): void => {
+    if (scenarioRunning || steps.length >= 200) return
+    setSecretValues({}); editSteps(all => [...all, { kind, selector: '', text: '', sensitive: false }]); closeTools()
   }
   const exportPlaywright = (): void => {
     if (!scenarioUrl || !steps.length) return
@@ -370,13 +406,18 @@ export function Recorder(): JSX.Element {
     URL.revokeObjectURL(link.href)
   }
   if (disposed) return <section className="webpreview" aria-label="Web Reader"><div className="webpreview-empty" role="status">Панель Web Reader отключена host-приложением</div></section>
-  return <section className="webpreview" aria-label="Web Reader">
+  return <section className="webpreview" aria-label="Web Reader" onKeyDown={event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
+      event.preventDefault(); addressRef.current?.focus(); addressRef.current?.select()
+    }
+  }}>
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Назад" title="Назад" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" title="Вперёд" onClick={() => historyGo(1)}>›</IconButton>
       <IconButton variant="secondary" aria-label="Обновить страницу" title="Обновить страницу" disabled={!url} onClick={reload}>↻</IconButton>
-      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
+      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onChange={(event) => { setDraft(event.target.value); setAddressError(null) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) } }} /></label>
       <Button variant="secondary" type="submit">Открыть</Button>
+      <IconButton variant="secondary" type="button" aria-label="Очистить страницу" title="Очистить страницу" disabled={!url && !draft} onClick={() => { applyUrl(null); reply({ kind: 'save-url', url: null }); addressRef.current?.focus() }}>×</IconButton>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
       {/* Инструменты страницы собраны в свёрнутое меню, чтобы тулбар не переполнял
           узкую панель превью. Активные режимы подсвечивают саму сводку меню. */}
@@ -384,7 +425,9 @@ export function Recorder(): JSX.Element {
         <summary className="vc-btn vc-btn--secondary" aria-label="Инструменты страницы" data-active={(inspecting || editing || capturing || recording) || undefined}>Инструменты ▾</summary>
         <div className="webpreview-tools__menu" role="group" aria-label="Инструменты страницы">
           <Button variant="secondary" type="button" onClick={() => { applyUrl(READER_PROJECT_ORIGIN + '/'); toolsMenu.current?.removeAttribute('open') }}>Текущий проект</Button>
-          <Button variant="secondary" type="button" disabled={!url} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>⟲ Сессия</Button>
+          <Button variant="secondary" type="button" disabled={!url || scenarioRunning || steps.length >= 200} onClick={() => addStep('click')}>Добавить клик</Button>
+          <Button variant="secondary" type="button" disabled={!url || scenarioRunning || steps.length >= 200} onClick={() => addStep('type')}>Добавить ввод</Button>
+          <Button variant="secondary" type="button" disabled={!url || resettingSession} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>{resettingSession ? 'Сбрасываем сессию…' : '⟲ Сессия'}</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={() => activateMode(inspecting ? null : 'inspect')}>⌖ Выбор элемента</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => activateMode(editing ? null : 'edit')}>✎ Редактировать</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={capturing} onClick={() => activateMode(capturing ? null : 'capture')}>📸 Область</Button>
@@ -392,31 +435,44 @@ export function Recorder(): JSX.Element {
         </div>
       </details>
     </form>
+    <ScenarioTransfer key={frameKey} pageUrl={scenarioUrl} steps={steps} disabled={scenarioRunning} onImport={next => { setSecretValues({}); setScenarioProgress(null); setSteps(next) }} />
+    {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
     {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем страницу…</div>}
     {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button></div>}
-    {error && <p className="webpreview-error" role="alert">{error}</p>}
-    {diagnostics && <section className="webpreview-scenario" aria-label="Диагностика Web Reader">
-      <strong>Диагностика: {diagnostics.length} шаг.</strong>
-      <ol>{diagnostics.map((step) => <li key={step.requestId} data-status={step.ok ? 'passed' : 'failed'}>{step.ok ? '✓' : '✕'} <code>{step.action}</code> — {step.durationMs} мс</li>)}</ol>
-    </section>}
+    {error && <div className="webpreview-error webpreview-load-error" role="alert"><span>{error}</span><Button size="sm" aria-label="Скрыть ошибку Reader" onClick={() => setError(null)}>×</Button></div>}
+    {storageError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{storageError}</span><Button size="sm" onClick={saveScenario}>Повторить сохранение</Button></div>}
+    {recording && <div className="webpreview-run-status" role="status" aria-live="polite">Идёт запись сценария: {steps.length} шаг.</div>}
+    {diagnostics && <DiagnosticHistory key={`${session.current?.conversationId}:${session.current?.registrationId}`} steps={diagnostics} />}
     {scenarioProgress && <div className="webpreview-run-status" role="status" aria-live="polite" data-status={scenarioProgress.status}>
       {scenarioProgress.status === 'running' ? 'Выполняется сценарий' : scenarioProgress.status === 'passed' ? 'Сценарий выполнен' : scenarioProgress.status === 'cancelled' ? 'Сценарий остановлен' : 'Ошибка сценария'}: {scenarioProgress.completed} из {scenarioProgress.total}
       {scenarioProgress.error && <span> — {scenarioProgress.error}</span>}
+      {!scenarioRunning && <Button size="sm" aria-label="Скрыть результат сценария" onClick={() => setScenarioProgress(null)}>×</Button>}
     </div>}
-    {steps.length > 0 && <section className="webpreview-scenario" aria-label="Сценарий автотеста">
-      <Button variant="secondary" disabled={scenarioRunning || loadState !== 'ready'} onClick={run}>Запустить</Button>
+    {(steps.length > 0 || past.length > 0 || future.length > 0) && <section className="webpreview-scenario" aria-label="Сценарий автотеста">
+      <div className="webpreview-scenario-header">
+      <Button size="sm" aria-expanded={!scenarioCollapsed} onClick={() => setScenarioCollapsed(value => !value)}>{scenarioCollapsed ? 'Показать шаги' : 'Скрыть шаги'}</Button>
+      <Button variant="secondary" disabled={scenarioRunning || loadState !== 'ready' || !steps.length || steps.some(step => !step.selector.trim())} onClick={run}>Запустить</Button>
       {scenarioRunning && <Button variant="secondary" onClick={() => scenarioRunner.current?.cancel()}>Остановить сценарий</Button>}
-      <Button variant="secondary" type="button" onClick={exportPlaywright}>Экспорт в Playwright</Button>
-      <Button variant="secondary" type="button" disabled={scenarioRunning} onClick={() => { setSteps([]); setSecretValues({}); setScenarioProgress(null) }}>Очистить</Button>
-      <ol>
-      {steps.map((step, index) => <li key={index}><code>{step.kind}</code><input maxLength={PREVIEW_ACTION_LIMITS.selector} disabled={scenarioRunning} aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item))} />
-        {step.kind === 'type' && !step.sensitive && <input maxLength={PREVIEW_ACTION_LIMITS.text} disabled={scenarioRunning} aria-label={'Значение шага ' + (index + 1)} value={step.text} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
+      <strong>Шагов: {steps.length} / 200</strong>
+      <Button variant="secondary" disabled={scenarioRunning || !past.length} onClick={() => { setSecretValues({}); undo() }}>Отменить правку</Button>
+      <Button variant="secondary" disabled={scenarioRunning || !future.length} onClick={() => { setSecretValues({}); redo() }}>Повторить правку</Button>
+      <Button variant="secondary" type="button" disabled={!steps.length || steps.some(step => !step.selector.trim())} onClick={exportPlaywright}>Экспорт в Playwright</Button>
+      <Button variant="secondary" type="button" disabled={scenarioRunning} onClick={() => { editSteps([]); setSecretValues({}); setScenarioProgress(null) }}>Очистить</Button>
+      </div>
+      <ol hidden={scenarioCollapsed}>
+      {steps.map((step, index) => <li key={index}><span>Шаг {index + 1}</span><select aria-label={'Действие шага ' + (index + 1)} value={step.kind} disabled={scenarioRunning} onChange={event => {
+        const kind = event.target.value as Step['kind']; setSecretValues({}); editSteps(all => all.map((item, i) => i === index ? { kind, selector: item.selector, text: '', sensitive: false } : item))
+      }}><option value="click">Клик</option><option value="type">Ввод</option></select><input aria-invalid={!step.selector.trim()} maxLength={PREVIEW_ACTION_LIMITS.selector} disabled={scenarioRunning} aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => { setSecretValues({}); editSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item)) }} />
+        {step.kind === 'type' && !step.sensitive && <input maxLength={PREVIEW_ACTION_LIMITS.text} disabled={scenarioRunning} aria-label={'Значение шага ' + (index + 1)} value={step.text} onChange={(event) => editSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
         {step.kind === 'type' && step.sensitive && <input maxLength={PREVIEW_ACTION_LIMITS.text} disabled={scenarioRunning} aria-label={'Секретное значение шага ' + (index + 1)} type="password" value={secretValues[index] ?? ''} placeholder="введите для запуска" onChange={(event) => setSecretValues((all) => ({ ...all, [index]: event.target.value }))} />}
         {step.kind === 'type' && <label><input type="checkbox" disabled={scenarioRunning} aria-label={'Секрет шага ' + (index + 1)} checked={step.sensitive} onChange={event => {
           const sensitive = event.target.checked
           setSecretValues({})
           setSteps(all => all.map((item, i) => i === index ? { ...item, sensitive, text: '' } : item))
         }} />Секрет</label>}
+        {!step.selector.trim() && <span role="status">Шаг {index + 1}: укажите селектор</span>}
+        {step.kind === 'type' && <label><input type="checkbox" aria-label={'Enter после шага ' + (index + 1)} checked={step.submit === true} disabled={scenarioRunning} onChange={event => { const submit = event.target.checked; editSteps(all => all.map((item, i) => i === index ? { ...item, submit } : item)) }} />Enter</label>}
+        <Button size="sm" disabled={scenarioRunning || steps.length >= 200} aria-label={'Дублировать шаг ' + (index + 1)} onClick={() => { setSecretValues({}); editSteps(all => [...all.slice(0, index + 1), { ...all[index] }, ...all.slice(index + 1)]) }}>Дублировать</Button>
         <IconButton size="sm" disabled={scenarioRunning || index === 0} title="Поднять шаг" aria-label={'Поднять шаг ' + (index + 1)} onClick={() => editStepOrder(index, -1)}>↑</IconButton>
         <IconButton size="sm" disabled={scenarioRunning || index === steps.length - 1} title="Опустить шаг" aria-label={'Опустить шаг ' + (index + 1)} onClick={() => editStepOrder(index, 1)}>↓</IconButton>
         <IconButton size="sm" disabled={scenarioRunning} title="Удалить шаг" aria-label={'Удалить шаг ' + (index + 1)} onClick={() => editStepOrder(index, 0)}>×</IconButton>

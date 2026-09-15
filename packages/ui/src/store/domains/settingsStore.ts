@@ -151,8 +151,8 @@ function initialState(ttsAvailable: boolean, theme: Settings['theme'] = DEFAULT_
 /** Тема на момент создания стора: человек ещё может быть неизвестен. */
 function startTheme(deps: SettingsDeps): Settings['theme'] {
   const login = deps.currentUser?.()
-  const raw = (login ? deps.prefs?.get(userThemeKey(login)) : null) ?? deps.prefs?.get(THEME_KEY)
-  return raw === 'dark' || raw === 'light' || raw === 'green' ? raw : DEFAULT_SETTINGS.theme
+  const raw = login ? deps.prefs?.get(userThemeKey(login)) : deps.prefs?.get(THEME_KEY)
+  return raw === 'dark' || raw === 'light' || raw === 'green' || raw === 'system' ? raw : DEFAULT_SETTINGS.theme
 }
 
 export function createSettingsStore(deps: SettingsDeps): SettingsStore {
@@ -174,8 +174,8 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
 
   /** Тема из предпочтений: сначала личная, иначе последняя тема браузера. */
   function readTheme(login?: string | null): Settings['theme'] {
-    const raw = (login ? deps.prefs?.get(userThemeKey(login)) : null) ?? deps.prefs?.get(THEME_KEY)
-    return raw === 'dark' || raw === 'light' || raw === 'green' ? raw : DEFAULT_SETTINGS.theme
+    const raw = login ? deps.prefs?.get(userThemeKey(login)) : deps.prefs?.get(THEME_KEY)
+    return raw === 'dark' || raw === 'light' || raw === 'green' || raw === 'system' ? raw : DEFAULT_SETTINGS.theme
   }
 
   /**

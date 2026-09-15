@@ -31,6 +31,10 @@ function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: 
     'imgstudio:rename': async ({ from, to }: { from: string; to: string }) => { files = files.map((file) => file.path === from ? { ...file, path: to } : file); return [...files] },
     'imgstudio:generate': async ({ prompt }: { prompt: string }) => { const file = { path: 'новая.png', size: prompt.length, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
     'imgstudio:edit': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-2.png'), size: 10, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:retouch': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-ретушь.png'), size: 10, updatedAt: Date.now(), source: path, operation: 'retouch' as const }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:extract': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-объект.png'), size: 10, updatedAt: Date.now(), source: path, operation: 'extract' as const }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:place': async ({ basePath }: { basePath: string }) => { const file = { path: basePath.replace('.png', '-с-объектом.png'), size: 10, updatedAt: Date.now(), source: basePath, operation: 'place' as const }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:restoreVersion': async ({ currentPath, targetPath }: { currentPath: string; targetPath: string }) => { const file = { path: currentPath.replace('.png', '-восстановлено.png'), size: 10, updatedAt: Date.now(), source: currentPath, restoredFrom: targetPath, operation: 'restore' as const }; files = [file, ...files]; return { file, files: [...files] } },
     'imgstudio:cancel': async () => ({ cancelled: false }),
     'imgstudio:trash': async () => ({ items: [...(opts.trash ?? []), ...trashed.map((item) => ({ name: item.file.path, deletedAt: item.deletedAt }))] }),
     'imgstudio:restore': async ({ name }: { name: string }) => {
@@ -61,6 +65,26 @@ type Story = StoryObj<typeof ImageStudioPane>
 
 /** Галерея с правкой, оригиналом и загруженным руками файлом. */
 export const Default: Story = {}
+
+export const VirtualGallery500: Story = {
+  args: { api: storyApi(Array.from({ length: 500 }, (_, index) => ({ path: `image-${index}.png`, size: 100, updatedAt: index }))) as never },
+  render: args => <div style={{ height: 720, overflow: 'hidden' }}><ImageStudioPane {...args} /></div>
+}
+
+export const QueueStates: Story = {
+  args: { api: { ...storyApi(), 'imgstudio:tasks': async () => [
+    { id: 'running', conversationId: 'story-conv', prompt: 'Акварельный портрет', state: 'running', createdAt: 1, updatedAt: 1 },
+    { id: 'queued', conversationId: 'story-conv', prompt: 'Пейзаж', state: 'queued', createdAt: 2, updatedAt: 2 },
+    { id: 'failed', conversationId: 'story-conv', prompt: 'Логотип', state: 'failed', error: 'Генератор недоступен', createdAt: 3, updatedAt: 3 }
+  ], 'imgstudio:cancelTask': async () => ({ cancelled: false }) } as never }
+}
+
+export const PublicationEditor: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Настроить публикацию' }))
+    await within(canvasElement.ownerDocument.body).findByRole('dialog', { name: 'Настройки публикации' })
+  }
+}
 
 /** Пустая галерея: подсказка следующего шага и чипы-примеры промптов. */
 export const Empty: Story = { args: { api: storyApi([]) as never } }

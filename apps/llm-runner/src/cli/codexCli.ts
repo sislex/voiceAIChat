@@ -5,10 +5,11 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { KANBAN_ASSISTANT_HINT, MAKE_ASSISTANT_HINT, kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
+import { IMAGE_STUDIO_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, MAKE_ASSISTANT_HINT, kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
 import { cliProfileEnv } from './cliProfiles.js'
 import { killCliChild } from './childKill.js'
+import { prepareLlmAttachments } from './attachments.js'
 
 export type SpawnFn = (
   command: string,
@@ -113,6 +114,10 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
     args.push(...mcpServerArgs('make', req.makeMcpUrl))
     prompt = MAKE_ASSISTANT_HINT + '\n\n' + prompt
   }
+  if (req.imageStudioMcpUrl) {
+    args.push(...mcpServerArgs('image_studio', req.imageStudioMcpUrl))
+    prompt = IMAGE_STUDIO_ASSISTANT_HINT + '\n\n' + prompt
+  }
 
   // Связанные с задачей Make-проекты: независимые read-only MCP-серверы.
   for (const source of req.makeSources ?? []) {
@@ -174,8 +179,15 @@ export class CodexCli implements LlmClient {
 
   send(req: LlmRequest, handlers: LlmStreamHandlers): LlmHandle {
     const spawnFn = this.opts.spawn ?? (nodeSpawn as unknown as SpawnFn)
-
-    const { args, prompt } = codexInvocation(req)
+    let prepared: ReturnType<typeof prepareLlmAttachments>
+    try {
+      prepared = prepareLlmAttachments(req)
+    } catch (error) {
+      handlers.onError(`Не удалось подготовить вложения: ${error instanceof Error ? error.message : String(error)}`)
+      return { cancel: () => {} }
+    }
+    const request = prepared.request
+    const { args, prompt } = codexInvocation(request)
 
     let finished = false
     let stderr = ''
@@ -185,20 +197,22 @@ export class CodexCli implements LlmClient {
     const fail = (message: string): void => {
       if (finished) return
       finished = true
+      prepared.cleanup()
       handlers.onError(message)
     }
     const done = (text: string): void => {
       if (finished) return
       finished = true
+      prepared.cleanup()
       handlers.onDone(text, lastMeta)
     }
 
     let child: ChildProcess
     try {
-      const home = req.userId ? this.opts.profileHome?.(req.userId) : undefined
+      const home = request.userId ? this.opts.profileHome?.(request.userId) : undefined
       const spawnOptions =
-        req.cwd || home
-          ? { ...(req.cwd ? { cwd: req.cwd } : {}), ...(home ? { env: cliProfileEnv(home) } : {}) }
+        request.cwd || home
+          ? { ...(request.cwd ? { cwd: request.cwd } : {}), ...(home ? { env: cliProfileEnv(home) } : {}) }
           : undefined
       child = spawnFn(this.opts.binPath ?? 'codex', args, spawnOptions)
     } catch (err) {
@@ -269,6 +283,7 @@ export class CodexCli implements LlmClient {
     return {
       cancel: () => {
         finished = true
+        prepared.cleanup()
         // SIGTERM, через 5с — SIGKILL: зависший CLI не должен переживать отмену.
         killCliChild(child)
       }

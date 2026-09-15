@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-10
-checked: 8c54ade4
+updated: 2026-09-13
+checked: 06c94c52
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -158,10 +158,10 @@ workflow в `migrate()` дописывала конвейер разработк
 остальные по имени; без общего правила выбор при создании и каталог показывали бы
 разный порядок.
 
-**Смена типа спрашивает подтверждение, если набор сужается** (`ConfirmDialog` с
-перечислением того, что станет недоступно). Молчаливое переключение выглядит как
-поломка: со страницы исчезают целые разделы. Расширение набора не спрашивает
-ничего. Каталог отдаёт `usageCount` — сколько проектов используют узел; кнопка
+**Type changes preview both enabled and disabled capabilities before saving.** The confirmation lists task tabs gated by git (Code, Merge), CI (Preparation, Improvements, Run feed) and QA (Component QA, Integration tests, Automated QA, Manual QA), matching TaskModal; stage-specific tabs may already be hidden for a particular task. Existing data remains. The selection enters the project draft; only Save persists it. Published-type refusal remains explained by the existing server policy and a catalog hint.
+
+`ConfirmDialog` previews every type change, including both expansion and
+reduction. Silent switching would make disappearing sections look like a failure. Каталог отдаёт `usageCount` — сколько проектов используют узел; кнопка
 удаления заблокирована с объяснением, а не отказом после нажатия.
 
 **Ярлык типа виден в шапке проекта** (`ToolFrame.titleExtra`). Слот отдельный и
@@ -253,7 +253,7 @@ Make-проект хранится в `task_designs`; актуальный ко�
 
 **Панель канбан-ассистента сохраняет функции доски, но визуально следует живому Make-макету «Проект 14»** (CHAT-391; макет — `index.html`/`styles.css` Make-проекта, связь хранится в карточке задачи). Первая реализация (02.09.2026) ограничилась палитрой и строкой статуса поверх прежнего `ChatColumn`/`VoiceBar`, и на проде «новый шаблон» не был виден; со второй итерации `KanbanAssistant` (`packages/ui/src/components/KanbanAssistant.tsx`) рисует разметку макета сам, без `ChatColumn`: боковая колонка «Чаты канбана» (`ProjectAssistantChatSelector` — поиск, «＋ Новый чат», точки статуса working/waiting/ready/done по `conversation.status`, удаление обычных чатов, легенда), шапка со знаком ассистента, eyebrow-названием проекта, заголовком чата, статус-пилюлей (`role=status`, при ошибке/отсутствии транспорта — `role=alert`) и кнопкой настроек LLM, приветственный экран «С чего начнём?» с четырьмя подсказками (клик подставляет текст в композер), композер с тумблером «Автопилот» и кнопкой модели, который после первого сообщения прижимается к низу ленты; ответы — строки со знаком ассистента и Markdown, пользователь — пузырь справа, стрим — три точки. Предложения и планы работ выводятся карточками внутри ленты. `WidgetAssistantFrame` получил `hideHeader`: рамка не дублирует шапку, крестик закрытия отдаёт `onClose` ассистента, выбор чата — `onSelectConversation` (App хранит `assistantConversationId`). Ширина решается container query по `.widget-assistant-panel`: до 900 px колонка чатов выдвижная (кнопка «Открыть канбан-чаты» + затемнение), от 900 px (страница ассистента) — постоянная; до 640 px шапка и подсказки сжимаются как в макете; переключение виджета и чата на телефоне остаётся на 820 px. Стили — правила `.ka-*` в `packages/ui/src/styles/app.css` (токены `--assistant-*` повторяют `:root` макета). Состояния — в `KanbanAssistant.stories.tsx`, поведение — в `WidgetAssistantFrame.dom.test.tsx`.
 
-**Подготовка Development Brief сохраняет фактическую доступность источников.** Валидатор в `apps/server/src/server.ts` нормализует только однозначно совместимые формы: строковую версию схемы `"2"`, булевы строки `"true"`/`"false"`, одиночный `refs`, известные алиасы `kind` и регистр/пробелы только у канонических статусов `available|absent|unavailable`. Неизвестный статус остаётся ошибкой и запускает повторную попытку, а `absent`/`unavailable` никогда не подменяются на `available`. Источник, который нужен лишь на этапе визуальной реализации или приёмки, остаётся некритичным и не блокирует подтверждение готовности; его проверка должна оставаться в scope и тест-кейсах. Это поведение закреплено в `apps/server/src/taskPreparation.test.ts` и `packages/shared/src/qa.test.ts`.
+**Подготовка Development Brief сохраняет фактическую доступность источников.** Валидатор в `apps/server/src/kanban/module.ts` принимает только единственный JSON-объект с числовым `schemaVersion=2` и нормализует лишь однозначные совместимые представления; полный перечень и причины отказа описаны в [интерактивной подготовке задачи](features/task-preparation.md). Неизвестные `kind` и статусы остаются ошибкой, а `absent`/`unavailable` никогда не подменяются на `available`. Источник, который нужен лишь на этапе визуальной реализации или приёмки, остаётся некритичным и не блокирует подтверждение готовности; его проверка должна оставаться в scope и тест-кейсах. Это поведение закреплено в `apps/server/src/taskPreparation.test.ts` и `packages/shared/src/qa.test.ts`.
 
 **Тип проекта уходит в промпт модели** (`apps/server/src/turns.ts`): ярлык
 цепочки и список включённых подсистем. Без него модель предлагала запускать CI и
@@ -280,6 +280,22 @@ git/превью/тестовых пользователей в настройк
 проекта в сайдбаре и меняется владельцем на вкладке «Общее»; опции подписаны
 путём от корня, чтобы одноимённые подтипы различались.
 
+## Маршруты вкладок карточки задачи
+
+Открытая вкладка карточки имеет стабильный дочерний маршрут
+`/projects/:projectId/task/:taskId/:tab`; полный допустимый словарь и его parser
+находятся в `packages/projects-app/src/routes/projectsRoute.ts`. Выбор вкладки
+обновляет URL, а прямое открытие и навигация по history синхронизируют состояние
+у новой и legacy-карточки через `TaskModal` и `TaskCardContainer`. Все входы в
+чат задачи ведут на сегмент `chat`: разговор остаётся встроенным
+`TaskChatPanel` карточки, а не становится глобальным экраном чата.
+
+Неизвестный child-сегмент не считается проектным маршрутом и `App` заменяет
+его каноническим `general`. Допустимый сегмент сам по себе не открывает
+недоступную панель: `TaskModal` строит фактический набор вкладок по возможностям
+проекта и стадии задачи, а скрытую или неприменимую вкладку переключает на
+«Общее» и синхронизирует маршрут тем же `onTabChange`.
+
 ## Приглашения участников
 
 Участник не добавляется молча: владелец приглашает по логину или адресу, уходит
@@ -300,8 +316,15 @@ owner-гейт срезал бы его на входе. Публичный пр
 подтверждённого `users.email`. Иначе утёкшая ссылка пускала бы в проект любого.
 Параметр роута — токен из письма **либо id приглашения** из списка в интерфейсе:
 приглашённому по логину письма нет вовсе, и id — его единственный способ
-ответить; id не секрет, доступ всё равно решает проверка адресата. Токен наружу
-отдаётся единственный раз, в письме: в API его нет даже в списке у владельца.
+ответить; id не секрет, доступ всё равно решает проверка адресата. The raw token is returned only in the newly issued link (creation or resend)
+and in email; owner invitation lists do not contain the token or link.
+
+Invitation creation accepts optional `ttlDays` (integer, 1–30; default 7).
+The UI offers 1, 7 or 30 days together with the role. Resending rotates the
+token and restarts the original lifetime; the former URL becomes invalid.
+Mail includes the actual expiry timestamp. Owners can also resend username-only
+invitations and copy the newly issued link. The server rejects self-demotion of
+the last owner before updating membership, independently of disabled UI controls.
 
 Рассылка ограничена по автору и по IP (`SlidingWindowLimiter`): раз проект теперь
 заводит любой пользователь, без лимита приложение становится спам-релеем. Ошибка
@@ -687,6 +710,9 @@ Done ставит её заново; перенос между done-колонк
 `voicechat.kanban.filters.v3.<user>.<projectId>`. Ключ строится только по
 реальному `projectId` загруженной доски — пока её нет, ключа нет вовсе, иначе
 вид писался бы под временным ключом с именем проекта и терялся при его подмене.
+`BoardView` also stores `overdueOnly` and `completedOnly`; the shared sanitizer
+accepts only booleans, so old saved JSON receives false defaults and malformed
+clients cannot persist truthy strings or numbers.
 Раньше и то и другое жило только в памяти, и каждая перезагрузка (а на проде —
 каждый деплой) возвращала доску к исходному виду.
 
@@ -696,8 +722,41 @@ Done ставит её заново; перенос между done-колонк
 «Участники» и «Машины». На вкладке «Общее» владелец задаёт `previewUrl` проекта — только абсолютный `http/https`; он служит адресом веб-превью по умолчанию для связанных разговоров, пока у разговора нет собственного `previewUrl`. Вкладка LLM объединяет проектную пару движок/модель,
 режим запуска, глубину уточнений и режим базы знаний для следующего CI-рана.
 Смена проектной пары сразу обновляет привязанные чаты; задачи получают её через
-`resolveTaskLlmConfig` по обычной цепочке наследования. Активная вкладка хранится
-локально в компоненте и не сбрасывается, когда сервер обновляет detail проекта.
+`resolveTaskLlmConfig` по обычной цепочке наследования.
+
+The active settings tab comes from `/projects/:id/settings/:tab`; stories and
+standalone tests fall back to local state. Server detail refreshes preserve the tab
+and unsaved project-field patches. `ProjectSettingsDraft` batches `onUpdate`
+fields into one save and retains them on rejection. Its sticky Save/Cancel bar
+reports validation errors; browser unload and hash-router navigation warn before
+discarding a draft. Switching settings tabs keeps the draft.
+
+Git URLs accept HTTPS, SSH URLs and SCP-style SSH syntax. CI branch names reject
+spaces and invalid Git ref syntax. Branch templates support `{task_number}` and
+legacy `{slug}`, each once, matching `ci/runManager.ts`. Edited command fields
+must be nonempty; existing empty optional overrides remain compatible with
+inheritance. Errors appear below fields and set `aria-invalid`.
+CI commands have multiline input, shell syntax preview, catalog suggestions from
+CI/CiCommands and an explicit machine check. Checks use the project default
+machine and its path, preserve the command exit code, support cancellation and
+display at most 50 output lines.
+
+Production checks require saved settings. Legacy checks verify checkout, exact
+origin and a clean worktree, then run the health-check command. Managed checks
+reuse managed preflight to obtain the canonical checkout before health-check.
+The result lists individual successes and failures with repair hints; no deploy
+command runs.
+
+Test-user passwords are masked. “Check login” opens a project-bound Web Reader
+conversation and asks its assistant to fetch credentials using `test-users`,
+exercise the login form and report the authentication result there. The MCP
+tool itself only returns credentials; it does not authenticate. Passwords are
+not copied into the request text. Unsaved credentials or a missing preview URL
+disable the action. Production-password warnings remain visible.
+
+At phone widths, tabs scroll horizontally, forms use one column and the save bar
+includes the bottom safe area. Stories cover validation, unsaved changes,
+production results and a 390px layout.
 
 ## Чаты завершённых задач скрыты из списка бесед
 
@@ -769,7 +828,7 @@ Per-connection подписка в `session.ts` принимает `board.subscr
 
 Тот же hub имеет отдельный лёгкий канал `emitPreparationRun` /
 `onPreparationRunChange`: сессия фильтрует его по владельцу соединения и отправляет
-`preparation.run.updated` с `projectId`, `taskId`, `runId`, не перечитывая доску.
+`preparation.run.updated` с `projectId`, `taskId`, `runId`, не перечитывая доску. Тем же путём (BoardHub → KanbanService → standalone-шина → remote-мост → session) идёт `release.updated {projectId, releaseId, status}` для Release Center — см. [releases.md](features/releases.md).
 Текстовые дельты подготовки используют только этот адресный канал и не создают
 `board.changed` для каждого фрагмента лога.
 
@@ -886,6 +945,373 @@ variant="page"`: в заголовке имя проекта, в слоте `act
 
 DnD строит `afterId`/`beforeId` по полному порядку задач ячейки, включая скрытые фильтрами карточки, и передаёт только целевую колонку и соседей: активный фильтр не меняет порядок и сам по себе не переназначает исполнителя. То же вычисление применяется в обычной раскладке и swimlanes.
 
+### Board search and keyboard navigation (2026-09-11)
+
+The board search covers the issue key, title, description, acceptance criteria,
+labels, and assignee. Its result counter uses the currently displayed columns as
+the denominator, updates through a polite live region, and remains visible even
+when no tasks match. The zero-result state offers one action that clears every
+global and per-column filter. A dedicated clear button keeps focus in the search
+field, while `Escape` clears the query in place and `/` focuses search unless the
+user is already editing another field.
+
+Visible matches are highlighted case-insensitively in the issue key, title, and
+the first three label chips. If a card matched data that is normally hidden or
+compressed, it adds at most two compact context rows for the assignee, an
+overflow label, the description, or acceptance criteria. Description and
+criteria rows contain a bounded excerpt around the match. Matching uses literal
+substring indexes, so punctuation and regular-expression characters are safe;
+the original text remains the accessible text of the card. Empty searches add
+no highlight markup. DOM tests cover repeated matches, case folding, hidden
+sources, special characters, and accessible names; built Chromium verifies
+rendered color and mobile card overflow.
+
+The shared board scroll surface is a named, focusable region. When the surface
+itself has focus, Left and Right move by one column width and Home/End move to the
+horizontal edges. Child controls keep their native key handling. Each movement is
+also announced through the existing `kanban-live` region. This behavior applies
+to both the normal layout and swimlanes and is covered in
+`KanbanBoard.dom.test.tsx`; the `ManyColumns` Storybook story is the manual browser
+check for actual horizontal scrolling.
+
+### Column navigator (2026-09-11)
+
+The filter bar contains a column navigator with a select and previous/next
+buttons. It lists the currently displayed columns in board order, includes each
+visible task count, disables directional actions at the edges, and preserves the
+current selection when hidden columns are revealed. If the selected column is no
+longer displayed, the first available column becomes current.
+
+Choosing a column scrolls its header into view, moves focus to that header, and
+announces the column name, visible task count, and hidden state through
+`kanban-live`. Arrow, Home, and End navigation on the board surface updates the
+same selection. Header targets are shared by the regular layout and swimlane
+layout, so both modes have the same navigation behavior. DOM tests cover focus,
+edge states, hidden columns, and swimlanes; the `ManyColumns`, `HiddenColumns`,
+and `SwimlanesByAssignee` Storybook stories are used for Chromium verification.
+
+### Active filter strip (2026-09-11)
+
+Every active task filter is repeated as a removable chip below the filter bar:
+search, each assignee, type, priority, label, epic, the three quick modes, and
+each per-column assignee selection. Epic and column identifiers are resolved to
+their visible names. Removing a chip changes only its condition; `Reset all`
+clears the same complete set as the zero-result recovery action.
+
+The strip is outside the mobile `details` element, so a collapsed filter panel
+cannot hide the reason for a reduced or empty board. Long values are truncated
+visually while their full accessible button name remains available. DOM tests
+cover every chip category, isolated removal, complete reset, and placement on a
+mobile board. The interactive Storybook board is the Chromium check for desktop
+and collapsed mobile behavior.
+
+Type, priority, label, and epic dropdowns share a searchable multi-select. The
+search field receives focus when the native `details` opens, reports
+`visible из total`, and shows an explicit empty result. Bulk actions select or
+clear only the currently visible values, while a separate reset removes the
+whole facet selection. Searching never removes already selected hidden values;
+Escape clears the dropdown query in place. Each option remains a native
+checkbox. The option list scrolls independently inside a viewport-bounded menu,
+including on phones. DOM tests cover partial bulk changes, preservation, empty
+results, focus, and Escape; built Chromium verifies the eight-label story and
+real responsive geometry.
+
+The same component also provides a detailed `Исполнители` facet next to the
+quick avatar buttons. It lists readable usernames, decorative avatars, complete
+task counts for the displayed columns, and a separate unassigned option. Avatar
+initials are hidden from the checkbox accessible name, which remains
+`username count`. Search and bulk actions operate on people while the active
+selection stays synchronized in both directions with the quick avatar buttons.
+The summary count and existing active-filter chips use the same `assignees`
+state. DOM and built-Chromium tests cover counts, decoration semantics, search,
+bulk selection, quick-button synchronization, result filtering, and mobile
+menu width.
+
+### Compact task-card metadata (2026-09-11)
+
+Each task card exposes a composite accessible name with the issue key, type,
+title, full priority name, assignee, and due state. Due dates use local calendar
+days and render compact relative states (`Overdue`, `Today`, `Tomorrow`, or days
+remaining); the `time` element keeps the exact date and full state in its
+accessible label and tooltip. Assignee avatars and story-point values have named
+accessible units instead of relying on initials or bare numbers.
+
+Labels remain visible in every workflow stage. A card renders the first three
+labels and a `+N` overflow item whose tooltip and accessible name list every
+hidden label, which prevents wide metadata from changing the board geometry.
+`TaskCard.dom.test.tsx` covers the complete semantic contract, and the
+`AllAttributes` and `LongTitles` Storybook states are the Chromium checks for
+relative deadlines and label overflow.
+
+### Child task progress (2026-09-11)
+
+Every task with direct children shows their completion progress regardless of
+the parent's current workflow stage. The compact row combines a visual track,
+percentage, completed/total count, and remaining count; zero and complete states
+have explicit styles. Its `progressbar` exposes the child count as min/max/current
+values and a complete text alternative with completed, remaining, and percentage
+values. Compact density and phone layouts hide only the redundant remaining
+caption while preserving the semantic value and keeping the row inside the card.
+
+### Task update freshness (2026-09-11)
+
+Every task card renders `updatedAt` as a semantic `time` value in its footer.
+The visible value progresses from now, minutes and hours through today,
+yesterday, recent calendar days, and a short date. Its accessible label and
+tooltip retain the exact local date and time. Fresh, recent, and stale states
+provide stable styling hooks; stale timestamps use the attention color, while
+compact and phone layouts bound the label width without hiding it.
+
+### Board snapshot status (2026-09-11)
+
+The filter toolbar identifies the current board snapshot using the greatest
+task `updatedAt` value, or the arrival time for an empty board. The semantic
+`time` element keeps an ISO value, an exact local tooltip, a relative visible
+caption, and the same fresh/recent/stale states as cards. Client-side filtering
+does not change the snapshot timestamp. During a background reload the existing
+board remains visible with `aria-busy="true"`, the timestamp becomes a polite
+`Обновляется…` status, and a reduced-motion-safe dot indicates activity.
+
+When a reload or mutation fails while a snapshot is already available, the UI
+keeps the board usable and marks its wrapper with `data-stale`. An assertive,
+responsive warning explains that saved data is being shown, includes the error
+detail and last snapshot age, and offers an explicit reload action. The board
+references that warning through `aria-describedby`, allowing both assistive
+technology and browser automation to distinguish stale data from a fatal empty
+state. A successful replacement snapshot removes the marker with the error.
+
+On phone layouts the collapsed filter summary is a sticky 44-pixel control. It
+keeps the visible task count and snapshot age available without opening the
+large filter panel; active filter count remains a separate badge. The sticky
+surface accounts for the top safe area, uses a translucent blurred background,
+and stays above columns while they scroll. The expanded filter content remains
+inside the same surface, and desktop rendering still uses the ordinary
+non-sticky toolbar.
+
+### Visible board summary (2026-09-11)
+
+The board keeps a compact summary directly below its filters: visible tasks,
+visible story points, overdue active tasks, unassigned tasks, flagged tasks, and
+completed tasks in the current snapshot. Every metric uses the fully filtered
+task set across currently displayed columns, so global filters, per-column
+assignee filters, hidden-column visibility, and incoming board snapshots update
+the figures without a separate data source. Completed tasks are excluded from
+the overdue count even when historical completed tasks are loaded.
+
+The summary is a named region with explicit accessible units and correct Russian
+task plurals. Its flexible layout wraps on narrow screens and remains outside
+the collapsible mobile filter panel. `KanbanBoard.dom.test.tsx` covers metric
+values, filtering, and a replacement snapshot; `FullFeaturedCard` is the
+desktop and mobile Chromium check.
+
+The overdue, unassigned, flagged, and completed metrics are also toggle buttons.
+They stay synchronized with the ordinary filters, expose `aria-pressed`, create
+the same removable active-filter chips, and participate in `Reset all`. The
+completed slice requests completed history when needed and limits the board to
+semantic `done` columns. The overdue slice excludes completed tasks and uses the
+same local-calendar deadline calculation as task cards.
+
+### Visible board text export (2026-09-12)
+
+The filter toolbar can copy the current board view as structured plain text. The
+export uses displayed column order and the same fully filtered, locally sorted
+task lists as the rendered board. It records the visible/loaded count, active
+filter labels, empty columns, hidden-column markers, and each task's issue key,
+type, priority, assignee, story points, ISO due date, labels, and flag. This makes
+the visible snapshot portable to a message, issue, or model context without
+silently including cards that the current filters hide.
+
+The action is disabled for a zero-result view. Clipboard success and failure have
+distinct button text and are announced through the board live region. The pure
+`formatVisibleBoardList` formatter has deterministic DOM coverage; the Storybook
+Chromium check grants clipboard permission, applies a search filter, and verifies
+that the copied task count and filter description match the screen.
+
+### Board diagnostics snapshot (2026-09-12)
+
+The filter toolbar opens a semantic `Dialog` containing one self-consistent
+diagnostic snapshot of the current board view. It records transport state
+(`current`, `refreshing`, or `stale`), the exact snapshot timestamp and age,
+loading state, loaded/displayed/visible task counts, total/displayed/hidden and
+collapsed column counts, active column, density, swimlane mode, completed and
+hidden-column visibility, active filters, and the visible summary metrics. A
+column table adds visible/total task load and each WIP limit in display order.
+All values are derived from the same render as the board, so the dialog does not
+trigger a second request or combine data from different snapshots.
+
+The root exposes stable `data-snapshot-state`, `data-snapshot-age`,
+`data-visible-tasks`, and `data-displayed-columns` evidence for browser tools.
+`formatBoardDiagnostics` produces the same information as structured plain text
+for model context or defect reports, including an ISO timestamp and one line per
+column. Clipboard state is announced in the fixed dialog footer. The shared
+dialog primitive provides focus trapping, Escape handling, opener-focus return,
+and a full-screen phone layout; the column table remains horizontally scrollable.
+`KanbanBoard.dom.test.tsx` fixes the semantics, filtered counts, report contents,
+clipboard behavior, accessibility, and focus contract. Built Storybook Chromium
+checks desktop and phone geometry, clipboard output, scrollability, and console
+errors.
+
+### WIP capacity feedback (2026-09-11)
+
+Every column with a positive WIP limit shows its current load as `current/limit`
+and a semantic progress bar. The accessible value describes the actionable
+state: available capacity and its free slots, an exactly full limit, or an
+overflow and its exact number of excess tasks. The visual fill is capped at
+100%, while the text keeps the real count, so an over-limit column cannot distort
+the header layout.
+
+WIP load always uses the complete task collection in the column. Search,
+assignee, and other view filters may reduce the rendered cards but cannot make a
+full column appear to have free capacity. Available, full, and over-limit states
+have separate header and badge treatments, and the compact grid keeps the count
+and progress track readable at mobile widths. Pure presentation logic lives in
+`kanbanMeta.tsx`; DOM tests cover semantic values, filter independence, and all
+three capacity states, while the `WipExceeded` story is the Chromium check.
+
+### Column empty states (2026-09-11)
+
+An empty rendered column is classified from its complete task collection. A
+truly empty stage names the column, explains both creation and drag-and-drop,
+and opens a focused inline composer from its primary action. A populated stage
+hidden by filters instead shows the exact hidden task count and identifies
+whether board filters, the column assignee filter, or both caused the result.
+
+Reset actions follow that diagnosis. Clearing board filters preserves a column's
+assignee selection, and the local reset is offered only when it can reveal a
+globally matching task. This avoids an action that appears to do nothing. Each
+state is a polite status with stable `data-empty-kind` and `data-hidden-count`
+evidence, and the column region references it through `aria-describedby`.
+Swimlane cells omit repeated explanations. `emptyColumnPresentation` holds the
+pure classification, while unit, DOM, and Chromium checks cover the interaction
+and the compact mobile layout.
+
+### Board density (2026-09-11)
+
+The filter toolbar exposes an `Обычно`/`Компактно` density group with pressed
+state semantics. Compact mode reduces columns from 272 to 240 pixels, tightens
+board, header, body, drop-zone, card, chip, and footer spacing, and keeps the card
+action menu visible. Card titles and metadata remain readable instead of being
+removed, so density changes geometry without changing the information model.
+
+The choice is stored separately from the server-backed board view under
+`voicechat.kanban.density.v1.<user>.<project>`. Hydration validates the two known
+values, falls back to comfortable density for missing or damaged data, and
+resets before a user/project context change to prevent preference leakage. Both
+regular and swimlane surfaces expose `data-density` and the same CSS modifier.
+Mobile controls fill the filter row and keep 40-pixel targets. DOM tests cover
+semantics, persistence, isolation, and damaged storage; Chromium checks exact
+desktop geometry, reload restoration, and mobile target size.
+
+### Task card keyboard contract (2026-09-11)
+
+Focusable task cards expose themselves as named articles with an accessible
+shortcut description. `Enter` opens a normal card, `Space` starts keyboard
+dragging, and `Enter` commits a card that is already grabbed. `Shift+F10`, the
+Context Menu key, and a pointer context click open the same action menu without
+starting a drag or opening the task. Keyboard events from chat, CI, and other
+nested controls remain owned by those controls.
+
+The action trigger exposes `aria-haspopup="menu"`, expansion state, and the menu
+id. The named menu uses menuitem semantics, focuses its first action when opened,
+wraps with Up/Down, supports Home/End, closes on Tab, and restores card focus on
+Escape. Moving focus between the card and its descendant controls no longer
+cancels a pending board operation through a bubbled blur. DOM tests cover the
+complete contract and Chromium verifies it against both normal and already
+grabbed Storybook cards.
+
+The card menu also contains an ordered “Move to column” group. It lists every
+other project column, includes hidden destinations with an explicit marker, and
+omits the current column. Selection closes the menu and uses the guarded board
+move path, which rejects duplicate requests and announces the destination. The
+menu keeps its existing top/bottom actions and uses a bounded, scrollable height
+when projects have many workflow stages.
+
+The same menu can copy a stable absolute task permalink. The route keeps the
+current deployment pathname and encodes both project and task identifiers before
+building `#/projects/:projectId/task/:taskId`. Selection closes the menu without
+opening the card. The board reports success or clipboard failure both visibly in
+the filter toolbar and through its live region, and clears that report when the
+project changes. `taskPermalink` has deterministic encoding coverage; TaskCard
+and board DOM tests cover menu isolation and both clipboard outcomes, while the
+FullFeaturedCard Chromium check verifies the real clipboard value.
+
+### Due-date windows (2026-09-11)
+
+The board toolbar provides one mutually exclusive due-date selector: all tasks,
+overdue, today, the next seven local calendar days, or tasks without a due date.
+The seven-day window includes day zero through day six. Today and the window use
+calendar boundaries instead of elapsed 24-hour intervals; overdue excludes done
+tasks, matching the summary metric and task-card presentation.
+
+The selection participates in result counts, empty-state diagnosis, active
+filter chips, global reset, server-backed `BoardView`, and legacy local storage.
+The overdue summary button selects the same enum value, so it cannot conflict
+with `today`, `week`, or `none`. `overdueOnly` is written alongside the enum for
+old clients and is migrated to `dueWindow: overdue` when no enum exists. Pure
+boundary tests cover every interval, DOM tests cover selection and persistence,
+and Chromium verifies the full option set, metric synchronization, chips, reset,
+and mobile layout.
+
+### Priority overview (2026-09-11)
+
+A named priority region below the board summary exposes low, medium, high, and
+urgent task counts as icon buttons. Counts apply every active condition except
+the priority filter itself, including per-column assignee filters. They therefore
+remain stable and actionable while one or more priorities are selected instead
+of collapsing all unselected values to zero.
+
+Buttons mirror the existing multi-select priority filter and active chips, expose
+pressed state and full count units, and combine selections with OR. A zero-count
+button is disabled only while unselected; an active zero-count value remains
+available for removal. `Все приоритеты` clears the complete priority selection.
+Urgent/high selections use the danger palette, other selections use the board
+accent, and each retains its semantic priority icon. The compact row scrolls
+horizontally on narrow screens. DOM tests cover counts, OR selection, reset, and
+other-filter interaction; Chromium verifies semantics, synchronization, and
+mobile overflow.
+
+### Board keyboard help (2026-09-11)
+
+The filter toolbar has a `Клавиши` control that opens a modal reference generated
+from the board's implemented keyboard contract: search focus, surface column
+navigation, card opening, keyboard dragging, commit/cancel, and the card action
+menu. The trigger exposes dialog and expanded semantics. Opening moves focus to
+the close button; Tab remains trapped, while Escape, the close button, and the
+backdrop close the dialog and return focus to the trigger. A note explains that
+commands are not intercepted while the user edits a field. The definition list
+uses visual `kbd` tokens, becomes one column below 600 pixels, and remains
+bounded and scrollable within the viewport. DOM tests verify content and focus;
+built Chromium checks desktop semantics, focus trapping, Escape, and mobile
+geometry.
+
+### Collapsible board columns (2026-09-11)
+
+Each displayed board column can be reduced to a 60-pixel rail from its header.
+The rail keeps the column name, complete task count, WIP limit and WIP state, so
+freeing horizontal space does not hide the information needed to decide where a
+task can move. Column order and the toolbar navigator stay unchanged. In
+swimlane mode the matching cell in every lane is reduced with the header, while
+the lane grid keeps its column alignment.
+
+The header toggle exposes `aria-expanded` and `aria-controls`; after either
+collapse or expansion, focus moves to the replacement toggle. Toolbar commands
+collapse or expand every displayed column and announce `N из M`. The preference
+is stored locally under
+`voicechat.kanban.collapsed-columns.v1.<user>.<project>`, isolated by user and
+stable project id. Hydration accepts only string identifiers and removes ids
+that no longer exist in the board snapshot. DOM tests cover focus, semantics,
+bulk commands, persistence, stale-id cleanup, and swimlanes. Chromium verifies
+the built Storybook at desktop and mobile widths, including reload restoration.
+
+Swimlane rows have equivalent bulk and per-row controls. Their headers keep the
+complete task count and show `visible из total` while any board or per-column
+filter is active. A row toggle controls a stable content element and retains
+focus across collapse/expansion. Collapsed row ids are stored per swimlane mode
+under `voicechat.kanban.collapsed-lanes.v1.<user>.<project>`; assignee and epic
+choices cannot overwrite one another, and ids absent from the current lane set
+are removed. The grid content uses an explicit `[hidden]` rule so author styles
+cannot accidentally expose a collapsed row.
+
 ### Меню колонки
 
 `KanbanBoard` хранит id открытого меню в едином состоянии `colMenu`, поэтому открытие
@@ -902,6 +1328,15 @@ DOM-сценарии внешнего и внутреннего pointer-нажа
 `packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx`; внешний клик там
 одновременно проверяет, что целевая карточка продолжает получать событие и
 открывает свою модалку.
+
+The column action popup exposes a complete keyboard menu contract. Its trigger
+announces `aria-haspopup="menu"`, expanded state, and the controlled menu id; the
+popup uses `role="menu"` and each available action uses `role="menuitem"`.
+Opening a menu focuses its first action. Arrow keys move between actions with
+wrapping, Home and End jump to the edges, Escape closes the popup and returns
+focus to its trigger, and Tab closes it while preserving normal tab order.
+Opening another column menu replaces the current popup and transfers focus to
+the new menu after React has committed it.
 
 ### Универсальный ассистент виджета
 
@@ -1096,12 +1531,19 @@ DOM-узлы доски, колонок и карточек сохраняют �
   указателем (клон без `data-testid`/`id`, чтобы не двоиться в тестах и хит-тесте),
   а на месте вставки — плейсхолдер `.jcard-placeholder` высотой с карточку;
   исходная карточка скрыта (`.jcard.dragging { display: none }`).
+  The board also exposes `data-dragging="pointer"` and `data-drag-task-id`, while
+  the selected insertion gap exposes `data-drop-active`. The atomic live region
+  announces pointer lift with the source column, each distinct target with its
+  column and position, successful placement, same-position placement, and every
+  cancellation path. Repeated pointer events inside one gap do not repeat the
+  announcement.
 - **Цель считает доска, а не движок.** Ячейка (колонка × дорожка свимлейна) — по
   `[data-drop-body]`, внутри неё ближайшая по вертикали зона `[data-dropzone]`
   даёт `afterId`/`beforeId` (контракт `move` не изменился) и `data-slot` для
-  плейсхолдера. При переносе карточки `autoScroll` двигает `.jboard` по обеим
-  осям: горизонтальная сохраняет доступ к колонкам, вертикальная синхронно двигает
-  всю доску. `[data-drop-body]` остаётся целью hit-test, но не scroll-контейнером.
+  плейсхолдера. Desktop card autoscroll uses both axes of `.jboard`. Mobile card
+  autoscroll uses `.jboard` horizontally and the target `.jcol-content` vertically
+  (the drop body is the fallback in swimlanes). Hit testing is refreshed every
+  animation frame, and `data-drop-target` highlights the selected column.
   При переносе колонки автоскролл работает исключительно по горизонтальной оси
   `.jboard` и не меняет общий `scrollTop`.
 - **Отмена** — Esc и `pointercancel` (входящий звонок, системный жест): карточка
@@ -1113,7 +1555,13 @@ DOM-узлы доски, колонок и карточек сохраняют �
   стрелки ←→ между колонками и ↑↓ по позициям, Enter — положить, Esc — отмена.
   Взятая карточка остаётся на месте (иначе слетел бы фокус) и подсвечивается
   `.jcard--grabbed`. Каждый шаг проговаривается в `aria-live`
-  («Задача X, колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
+  («Задача X: колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
+- **Column keyboard ordering.** Each column grip is a named button with
+  `Alt+ArrowLeft` and `Alt+ArrowRight` shortcuts. A move jumps to the adjacent
+  displayed column while producing the complete persisted order, including
+  hidden columns. The live region announces the resulting visible position or
+  an edge boundary, and focus remains on the same grip. Plain arrow keys keep
+  their board-navigation behavior and do not reorder columns.
 - **Тач в Chrome:** после долгого тапа мало отменить `pointermove` — он для тача
   не `cancelable`; гасить надо `touchmove` (`passive: false`), иначе браузер уводит
   жест в скролл и присылает `pointercancel` вместо переноса.
@@ -1144,6 +1592,8 @@ DOM-узлы доски, колонок и карточек сохраняют �
 вкладке «Настройки» страницы проекта (`ProjectSettings`) — там же и удаление
 проекта: после него уводим на другой доступный проект, а если их не осталось —
 в пустое состояние.
+
+Machine rows show project-default/release and production roles separately from the user's personal default. Directory checks call `window.fs.list(agentId, path, projectId)` on the selected machine, accept an empty directory as success and explain access or missing-path errors. Editing a path clears its previous check result. On phones, settings render table rows as single-column cards.
 
 Каталог во вкладке «Настройки проекта → Машины» показывает для каждой машины
 текущую загрузку. Поле `ProjectMachine.load` — это одно целое число: количество
@@ -1405,11 +1855,79 @@ Make-проект проекта: `tasks:unlinkDesign` + `tasks:linkDesign`) и 
 байты идут мостом `tasks:readAttachment` (`GET …/attachments/:attachmentId`) —
 прямой `<img src>` на `/api` получил бы 401, как и в студии картинок.
 
-Вкладки, кроме «Общего» и «Доработок», карточка не рисует сама: `TaskCardContainer`
-отдаёт их через `renderPanel`, подставляя те же компоненты, что и старая карточка
-(`TaskPreparationTab`, `CiTaskSettings`, `TaskTimeline`, `ComponentQaPanel`,
-`QaStageRunPanel`, `ManualQaPanel`, `MergePanel`, `TaskRunFeed`). Второй копии их
-логики в новой оболочке нет и заводить её не надо.
+**Функциональные вкладки по макету (2026-09-12, CHAT-445).** Вкладки, кроме
+«Общего» и «Доработок», `TaskCardContainer` отдаёт через `renderPanel`, но уже не
+голыми legacy-панелями, а панелями новой карточки из `components/kanban/NewTask*Panel.tsx`:
+каждая владеет своими формами, результатами и представлением выбранного рана,
+переиспользуя существующие доменные API и общие примитивы `NewTaskStages.tsx`.
+Целые legacy-панели больше не монтируются. `NewDevelopmentRunFeed` самостоятельно
+подписывается на development-ран и показывает его лог; с legacy-лентой разделяется
+только небольшой примитив `InteractionCard`. `useNewTaskResource` сохраняет
+последние загруженные данные при ошибке обновления, изолирует ресурсы по ключу и
+игнорирует запоздалые ответы, а `useNewTaskAction` блокирует параллельные повторы
+действия и после успеха или ошибки перечитывает фактическое состояние. Выбор
+исторической попытки не перенаправляет ответ или отмену на активный ран.
+
+Этапы рейки — чистая функция `assignToCycles` (`taskCycles.ts`): этап 1 — исходная
+постановка, дальше по одному этапу на каждый **отправленный** цикл доработки
+(черновики этапов не образуют, цикл без ранов показывается как «Ожидает»). Раны
+относятся к циклу по времени (последний цикл, отправленный до старта рана), у
+подготовки `preparationRunId` цикла пересиливает время. Словарь статусов один на все
+вкладки (`StageStatus` + `STAGE_STATUS_LABEL`, конвертеры `ciStageStatus`,
+`qaRunStageStatus`, `qaStageRunStatus`, `mergeStageStatus`, `qaSessionStageStatus`,
+`preparationStageStatus`); тон бейджа — `stageStatusTone`. Панель одна на вкладку и
+стоит в выбранном этапе; остальные этапы показывают сводку и кнопку «Показать».
+
+«Подготовка» владеет выбором машины и модели, попытками каждого цикла,
+вопросами и ответами, readiness-гейтами, Development Brief и шагами рана. Из
+истории отправленных доработок открывается соответствующий цикл подготовки;
+ответы адресуются только выбранной активной попытке. «Ход выполнения» — под-разделы
+`SubTabs` (Обзор · Работа модели · Проверки · База знаний · Ресурсы · Временная шкала),
+данные — `ci.getTaskReport` (метрики этапа: шаги, проверки-команды, время, попытки
+починки), лента выбранного рана — `NewDevelopmentRunFeed` со своей подпиской, кнопка
+«В очередь на разработку» по `canStartCiRun`; QA-вкладки — «история проходов»,
+проверки «Запуск прохода / Результат» из статуса; «Ручное QA» — блок «Тестовое
+окружение» (`appUrl`/`storybookUrl` сессии) и проходы по QA-сессиям; «Merge» —
+проверки «Актуальность main» (нет конфликтов) и «CI и конфликты»; «Лента рана» —
+шапка «движок · этап» с живой точкой и «Остановить ран» (отмена через
+`ci.cancelRun`/`cancelMerge` после подтверждения `useConfirm`). «Общее» получило
+редактор связи с Make (`onLinkMake`/`onReplaceMake` с `{conversationId, mode, paths}`,
+список файлов — `tasks:reworkMakeFiles`) и время этапов workflow из
+`ci.getTaskTimeline` (`TIMELINE_TYPE`: `preparation → task_preparation`, остальные —
+по имени); у текущего этапа — живой счётчик от `stage.startedAt`. «Доработки» —
+очередь с выбором нескольких черновиков: «Отправить выбранные» сливает их в самый
+старый (`mergeDraftInputs`: описания «№ N — …», объединённые критерии и Make-источники,
+`uploadIds` всех вложений — id вложения совпадает с id загрузки), удаляет остальные и
+отправляет один цикл, потому что сервер после первой отправки переводит задачу в
+подготовку и второй `submit` отвечает 409. Make-связи новая карточка грузит сама
+через `tasks:designs` — в задаче доски поля `designs` нет. Выбранная версия карточки
+хранится в `localStorage` (`TASK_CARD_VERSION_KEY = 'vc.taskCard.version'`), дефолт
+без записи — legacy; `initialVersion` пропа сильнее. Полоса вкладок — `flex: none`,
+тело `min-height: 0`: раньше на высоте окна ~800px тело требовало 580px и flex-колонка
+ужимала вкладки до 1px (закреплено в `taskCardStyles.test.ts`).
+
+**Детали реализации и регрессии CHAT-445.** Замена Make-связи не атомарна:
+`tasks:unlinkDesign` выполняется перед `tasks:linkDesign`. Контейнер сразу сохраняет
+подтверждённый результат отвязки, а при сбое перечитывает фактические связи; повтор
+не пытается отвязать уже удалённый источник. Групповая отправка черновиков также
+последовательна: самый старый выбранный черновик обновляется объединёнными данными,
+остальные выбранные удаляются, затем выполняется единственный submit. При частичном
+сбое очередь перечитывается и ошибка показывается пользователю; невыбранные
+черновики не меняются.
+
+Завершённые этапы workflow показывают записанную длительность; счётчик продолжает
+идти только у этапа со `startedAt` в состоянии выполнения или ожидания ввода.
+Снимок development-цикла берёт названия корневых шагов из выбранного отчёта и явно
+сообщает об отсутствии шагов. Другие панели помечают workflow текущей задачи как
+текущий, а не выдают его за сохранённый исторический снимок.
+
+`NewTaskPanels.stories.tsx` provides `kanban-newtaskcard-functionalpanels--*`
+stories for all eleven tabs. The DOM suite covers both themes and widths, cycle
+isolation and action routing; container tests cover Make, selected draft batches,
+partial failures and version persistence without task writes. The Playwright
+script `NewTaskPanels.browser.mjs` checks the same 44 tab/theme/width combinations
+and writes screenshots to `.generated_images`. Real deployed preview availability
+still requires manual verification.
 
 **Черновики доработок (2026-09-08).** У `task_rework_cycles` появилась колонка
 `status` (`draft` | `submitted`; миграция в `database.ts` проставляет старым

@@ -31,6 +31,12 @@ function splitTopLevel(body: string, sep = ','): string[] {
 
 interface ForeignKey { table: string; columns: string; refTable: string; refColumns: string; onDelete: string | null }
 
+export interface PostgresColumn {
+  table: string
+  name: string
+  definition: string
+}
+
 function mapType(def: string): string {
   return def
     .replace(/\bINTEGER PRIMARY KEY AUTOINCREMENT\b/i, 'BIGSERIAL PRIMARY KEY')
@@ -39,7 +45,7 @@ function mapType(def: string): string {
     .replace(/\bBLOB\b/i, 'BYTEA')
 }
 
-function translateTable(name: string, body: string, fks: ForeignKey[]): string {
+function translateTable(name: string, body: string, fks: ForeignKey[], schemaColumns: PostgresColumn[]): string {
   const items = splitTopLevel(body)
   const columns: string[] = []
   let hasSerialId = false
@@ -61,10 +67,16 @@ function translateTable(name: string, body: string, fks: ForeignKey[]): string {
       col = col.slice(0, ref.index) + col.slice(ref.index + ref[0].length)
     }
     if (/\bINTEGER PRIMARY KEY AUTOINCREMENT\b/i.test(col)) hasSerialId = true
-    columns.push(mapType(col))
+    const definition = mapType(col)
+    const columnName = /^(\w+)\s+/.exec(definition)?.[1]
+    if (!columnName) throw new Error(`column name was not parsed in ${name}: ${definition}`)
+    columns.push(definition)
+    schemaColumns.push({ table: name, name: columnName, definition })
   }
   if (columns.some((c) => /^rowid\b/i.test(c))) throw new Error(`у таблицы ${name} уже есть колонка rowid`)
-  columns.push(hasSerialId ? 'rowid BIGINT GENERATED ALWAYS AS (id) STORED' : 'rowid BIGSERIAL')
+  const rowid = hasSerialId ? 'rowid BIGINT GENERATED ALWAYS AS (id) STORED' : 'rowid BIGSERIAL'
+  columns.push(rowid)
+  schemaColumns.push({ table: name, name: 'rowid', definition: rowid })
   return `CREATE TABLE IF NOT EXISTS ${name} (\n  ${columns.join(',\n  ')}\n);`
 }
 
@@ -90,15 +102,40 @@ CREATE TRIGGER trg_messages_cost_dirty AFTER INSERT OR UPDATE OR DELETE ON messa
   FOR EACH ROW EXECUTE FUNCTION messages_cost_dirty();
 `
 
-export interface PostgresSchema { tables: string[]; indexes: string[]; seeds: string[]; foreignKeys: string[]; sql: string }
+export interface PostgresSchema {
+  tables: string[]
+  columns: PostgresColumn[]
+  indexes: string[]
+  seeds: string[]
+  foreignKeys: string[]
+  afterColumnsSql: string
+  sql: string
+}
+
+/**
+ * Builds the additive part of a PostgreSQL schema upgrade. `CREATE TABLE IF NOT
+ * EXISTS` leaves old tables untouched, so every missing column must be added
+ * before indexes, seeds, or foreign keys can refer to it.
+ */
+export function postgresColumnUpgradePlan(
+  columns: readonly PostgresColumn[],
+  existing: readonly { table_name: string; column_name: string }[]
+): { keys: Set<string>; sql: string } {
+  const known = new Set(existing.map((column) => `${column.table_name}.${column.column_name}`))
+  const missing = columns.filter((column) => !known.has(`${column.table}.${column.name}`))
+  return {
+    keys: new Set(missing.map((column) => `${column.table}.${column.name}`)),
+    sql: missing.map((column) => `ALTER TABLE ${column.table} ADD COLUMN IF NOT EXISTS ${column.definition};`).join('\n')
+  }
+}
 
 export function postgresSchemaFrom(sqliteSchema: string): PostgresSchema {
   // Комментарии `--` снимаем до разбора: в DDL литералов с `--` нет, а комментарий может стоять и после `;`.
   const statements = splitTopLevel(sqliteSchema.replace(/--[^\n]*/g, ''), ';').map((s) => s.trim()).filter(Boolean)
-  const tables: string[] = [], indexes: string[] = [], seeds: string[] = [], fks: ForeignKey[] = []
+  const tables: string[] = [], columns: PostgresColumn[] = [], indexes: string[] = [], seeds: string[] = [], fks: ForeignKey[] = []
   for (const st of statements) {
     const table = /^CREATE TABLE IF NOT EXISTS\s+(\w+)\s*\(([\s\S]*)\)\s*$/i.exec(st)
-    if (table) { tables.push(translateTable(table[1]!, table[2]!, fks)); continue }
+    if (table) { tables.push(translateTable(table[1]!, table[2]!, fks, columns)); continue }
     if (/^CREATE (UNIQUE )?INDEX/i.test(st)) { indexes.push(mapType(st) + ';'); continue }
     // PRAGMA — настройки соединения SQLite, у Postgres их нет.
     if (/^PRAGMA\b/i.test(st)) continue
@@ -113,7 +150,8 @@ export function postgresSchemaFrom(sqliteSchema: string): PostgresSchema {
   ALTER TABLE ${fk.table} ADD CONSTRAINT ${cname} FOREIGN KEY (${fk.columns}) REFERENCES ${fk.refTable} (${fk.refColumns})${fk.onDelete ? ` ON DELETE ${fk.onDelete}` : ''};
 END IF; END $$;`
   })
-  return { tables, indexes, seeds, foreignKeys, sql: [...tables, ...indexes, ...seeds, ...foreignKeys, PG_EXTRA_SQL].join('\n') }
+  const afterColumnsSql = [...indexes, ...seeds, ...foreignKeys, PG_EXTRA_SQL].join('\n')
+  return { tables, columns, indexes, seeds, foreignKeys, afterColumnsSql, sql: [...tables, afterColumnsSql].join('\n') }
 }
 
 /** Готовая схема Postgres для текущей SQLite-схемы. */

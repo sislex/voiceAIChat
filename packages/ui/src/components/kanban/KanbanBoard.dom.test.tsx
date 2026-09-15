@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { MobileScroll, MobileFilters } from './KanbanBoard.stories'
 import { MOBILE_QUERY } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, fireEvent, screen, within, waitFor, cleanup } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
-import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
+import { formatVisibleBoardList, KanbanBoard, taskPermalink, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
 import { DEFAULT_BOARD_VIEW } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
@@ -49,11 +50,396 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
   return full
 }
 
+// @testCase TC8
+it('undoes hiding the actual card without changing task data', () => {
+  renderBoard({ currentUserId: 'chat457-undo' })
+  const card = document.querySelector('[data-task-id="t1"]')!
+  fireEvent.click(within(card as HTMLElement).getByRole('button', { name: /Действия/ }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Скрыть карточку' }))
+  expect(document.querySelector('[data-task-id="t1"]')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Отменить' }))
+  expect(document.querySelector('[data-task-id="t1"]')).toBeInTheDocument()
+  expect(board.tasks[0]!.title).toBe('A')
+})
+
 describe('KanbanBoard (изолированный)', () => {
+  it('показывает и копирует диагностический снимок текущего представления', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderBoard()
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'A')
+    const opener = screen.getByTestId('open-board-diagnostics')
+    await userEvent.click(opener)
+
+    const dialog = screen.getByRole('dialog', { name: 'Диагностика доски проекта «P1»' })
+    const diagnostics = within(dialog).getByTestId('board-diagnostics')
+    expect(diagnostics).toHaveAttribute('data-snapshot-state', 'current')
+    expect(diagnostics).toHaveAttribute('data-snapshot-age', 'stale')
+    expect(diagnostics).toHaveAttribute('data-visible-tasks', '1')
+    expect(diagnostics).toHaveAttribute('data-displayed-columns', '1')
+    expect(dialog).toHaveTextContent('1 видно · 1 в показанных колонках · 1 загружено')
+    expect(dialog).toHaveTextContent('1 показано · 2 всего')
+    expect(dialog).toHaveTextContent('Активные фильтры 1')
+    expect(dialog).toHaveTextContent('Поиск: A')
+    const rows = within(dialog).getAllByRole('row')
+    expect(rows).toHaveLength(2)
+    expect(rows[1]).toHaveTextContent('To Do')
+    await expectNoViolations(dialog)
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Копировать отчёт' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    const report = String(writeText.mock.calls[0]?.[0])
+    expect(report).toContain('# P1 — диагностика канбана')
+    expect(report).toContain('Свежесть снимка: давний')
+    expect(report).toContain('Задачи: загружено 1; в показанных колонках 1; видно 1')
+    expect(report).toContain('Колонки: всего 2; показано 1; скрыто 1; свёрнуто 0')
+    expect(report).toContain('Фильтры (1): Поиск: A')
+    expect(report).toContain('- To Do: видно 1 из 1; WIP-лимит не задан')
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Отчёт скопирован')
+
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Диагностика доски/ })).not.toBeInTheDocument())
+    await waitFor(() => expect(opener).toHaveFocus())
+  })
+
+  it('строит абсолютную кодированную ссылку и показывает результат копирования карточки', async () => {
+    expect(taskPermalink(
+      { projectId: 'project / один', id: 'task / два' },
+      { origin: 'https://chat.example', pathname: '/app/' }
+    )).toBe('https://chat.example/app/#/projects/project%20%2F%20%D0%BE%D0%B4%D0%B8%D0%BD/task/task%20%2F%20%D0%B4%D0%B2%D0%B0')
+
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Копировать ссылку' }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/#\/projects\/p1\/task\/t1$/)))
+    expect(screen.getByTestId('copy-task-link-status')).toHaveTextContent('Ссылка на «A» скопирована')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Ссылка на задачу «A» скопирована.')
+
+    writeText.mockRejectedValueOnce(new DOMException('Нет прав', 'NotAllowedError'))
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Копировать ссылку' }))
+    await waitFor(() => expect(screen.getByTestId('copy-task-link-status')).toHaveAttribute('data-error', 'true'))
+    expect(screen.getByTestId('copy-task-link-status')).toHaveTextContent('Не удалось скопировать ссылку на «A»')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Не удалось скопировать ссылку на задачу «A».')
+  })
+
+  it('форматирует и копирует текущее представление доски со всеми полезными атрибутами', async () => {
+    const dueDate = Date.UTC(2026, 8, 20)
+    const exportBoard: Board = {
+      columns: [
+        { ...board.columns[0]!, id: 'c1', name: 'План' },
+        { ...board.columns[0]!, id: 'c2', name: 'Готово', position: 2048 }
+      ],
+      tasks: [
+        task({ id: 'first', seq: 7, columnId: 'c1', title: 'Экспортировать доску', type: 'story', priority: 'high', assignee: 'alice', storyPoints: 5, dueDate, labels: ['ux', 'share'], flagged: true }),
+        task({ id: 'second', seq: 8, columnId: 'c2', title: 'Скрыть фильтром', assignee: 'bob' })
+      ]
+    }
+    const formatted = formatVisibleBoardList({
+      projectName: 'Reader',
+      columns: [{ column: exportBoard.columns[0]!, tasks: [exportBoard.tasks[0]!] }, { column: exportBoard.columns[1]!, tasks: [] }],
+      totalTasks: 2,
+      activeFilters: ['Исполнитель: alice']
+    })
+    expect(formatted).toContain('# Reader — канбан\nПоказано: 1 из 2\nФильтры: Исполнитель: alice')
+    expect(formatted).toContain('## План — 1\n- [READ-7] Экспортировать доску · История · Высокий · исполнитель: alice · 5 SP · срок: 2026-09-20 · метки: ux, share · с флагом')
+    expect(formatted).toContain('## Готово — 0\n- Нет задач')
+
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderBoard({ board: exportBoard, members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    await userEvent.click(screen.getByRole('button', { name: 'Фильтр: alice' }))
+    await userEvent.click(screen.getByTestId('copy-board-list'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    const copied = String(writeText.mock.calls[0]?.[0])
+    expect(copied).toContain('Показано: 1 из 2')
+    expect(copied).toContain('Фильтры: Исполнитель: alice')
+    expect(copied).toContain('Экспортировать доску')
+    expect(copied).not.toContain('Скрыть фильтром')
+    expect(screen.getByTestId('copy-board-list')).toHaveTextContent('Скопировано')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Список скопирован: 1 задача.')
+  })
+
+  it('показывает исполнителей с аватарами и полными счётчиками и синхронизирует быстрый выбор', async () => {
+    const assigneeBoard: Board = {
+      ...board,
+      tasks: [
+        task({ id: 'a1', assignee: 'alice', title: 'Alice one' }),
+        task({ id: 'a2', assignee: 'alice', title: 'Alice two' }),
+        task({ id: 'b1', assignee: 'bob', title: 'Bob one' }),
+        task({ id: 'free', assignee: null, title: 'Free' })
+      ]
+    }
+    renderBoard({ board: assigneeBoard, members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    await userEvent.click(screen.getByText('Исполнители'))
+    const search = screen.getByRole('searchbox', { name: 'Поиск в фильтре «Исполнители»' })
+    await waitFor(() => expect(search).toHaveFocus())
+    const menu = search.closest<HTMLElement>('.jfilter-menu')!
+    expect(within(menu).getByRole('checkbox', { name: 'alice 2' })).not.toBeChecked()
+    expect(within(menu).getByRole('checkbox', { name: 'bob 1' })).not.toBeChecked()
+    expect(within(menu).getByRole('checkbox', { name: 'Не назначено 1' })).not.toBeChecked()
+    expect(menu.querySelectorAll('.vc-avatar')).toHaveLength(2)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Фильтр: alice' }))
+    expect(within(menu).getByRole('checkbox', { name: 'alice 2' })).toBeChecked()
+    await userEvent.clear(search)
+    await userEvent.type(search, 'bob')
+    await userEvent.click(within(menu).getByRole('button', { name: 'Выбрать найденные' }))
+    expect(screen.getByRole('button', { name: 'Фильтр: bob' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Исполнители').closest('summary')).toHaveTextContent('2')
+  })
+
+  it('ищет варианты фильтра и массово меняет только найденные значения', async () => {
+    const labelBoard: Board = {
+      ...board,
+      tasks: [
+        task({ id: 'front', title: 'Front', labels: ['frontend'] }),
+        task({ id: 'front-old', title: 'Front old', labels: ['frontend-legacy'] }),
+        task({ id: 'back', title: 'Back', labels: ['backend'] })
+      ]
+    }
+    renderBoard({ board: labelBoard })
+    await userEvent.click(screen.getByText('Метка'))
+    const search = screen.getByRole('searchbox', { name: 'Поиск в фильтре «Метка»' })
+    await waitFor(() => expect(search).toHaveFocus())
+    const menu = search.closest<HTMLElement>('.jfilter-menu')!
+    expect(within(menu).getByText('Показано 3 из 3')).toBeInTheDocument()
+
+    await userEvent.type(search, 'front')
+    expect(within(menu).getByText('Показано 2 из 3')).toBeInTheDocument()
+    await userEvent.click(within(menu).getByRole('button', { name: 'Выбрать найденные' }))
+    expect(within(menu).getByRole('checkbox', { name: 'frontend' })).toBeChecked()
+    expect(within(menu).getByRole('checkbox', { name: 'frontend-legacy' })).toBeChecked()
+    expect(screen.queryByText('Back')).not.toBeInTheDocument()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'back')
+    expect(within(menu).getByRole('checkbox', { name: 'backend' })).not.toBeChecked()
+    expect(screen.getByText('Метка').closest('summary')).toHaveTextContent('2')
+    await userEvent.click(within(menu).getByRole('button', { name: 'Снять найденные' }))
+    expect(screen.getByText('Метка').closest('summary')).toHaveTextContent('2')
+    await userEvent.click(within(menu).getByRole('button', { name: 'Сбросить всё' }))
+    expect(screen.getByText('Back')).toBeInTheDocument()
+  })
+
+  it('показывает пустой поиск вариантов и Escape очищает его на месте', async () => {
+    renderBoard()
+    await userEvent.click(screen.getByText('Приоритет'))
+    const search = screen.getByRole('searchbox', { name: 'Поиск в фильтре «Приоритет»' })
+    await userEvent.type(search, 'несуществующий')
+    const menu = search.closest<HTMLElement>('.jfilter-menu')!
+    expect(within(menu).getByText('Показано 0 из 4')).toBeInTheDocument()
+    expect(within(menu).getByText('Нет подходящих вариантов')).toBeInTheDocument()
+    expect(within(menu).getByRole('button', { name: 'Выбрать найденные' })).toBeDisabled()
+
+    await userEvent.keyboard('{Escape}')
+    expect(search).toHaveValue('')
+    expect(search).toHaveFocus()
+    expect(within(menu).getByText('Показано 4 из 4')).toBeInTheDocument()
+  })
+
+  it('показывает только реально поддержанные сочетания клавиш в доступном диалоге', async () => {
+    renderBoard()
+    const opener = screen.getByRole('button', { name: 'Клавиши' })
+    expect(opener).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(opener).toHaveAttribute('aria-expanded', 'false')
+
+    await userEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'Сочетания клавиш' })
+    expect(opener).toHaveAttribute('aria-expanded', 'true')
+    expect(opener).toHaveAttribute('aria-controls', dialog.id)
+    expect(within(dialog).getByText('Перейти к поиску по доске')).toBeInTheDocument()
+    expect(within(dialog).getByText('Взять карточку для переноса')).toBeInTheDocument()
+    expect(within(dialog).getByText('Открыть меню действий карточки')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('Enter')).toHaveLength(2)
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Закрыть справку по клавиатуре' }))
+  })
+
+  it('закрывает справку Escape и кликом по фону с возвратом фокуса', async () => {
+    renderBoard()
+    const opener = screen.getByRole('button', { name: 'Клавиши' })
+    await userEvent.click(opener)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Сочетания клавиш' })).not.toBeInTheDocument())
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+
+    await userEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'Сочетания клавиш' })
+    fireEvent.pointerDown(dialog.parentElement!, { target: dialog.parentElement })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Сочетания клавиш' })).not.toBeInTheDocument())
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+  })
+
+  it('переключает плотность, раскрывает состояние и сохраняет выбор по пользователю и проекту', async () => {
+    localStorage.clear()
+    renderBoard({ currentUserId: 'density-user' })
+    const boardSurface = screen.getByTestId('kanban-board')
+    const comfortable = screen.getByRole('button', { name: 'Обычная плотность' })
+    const compactButton = screen.getByRole('button', { name: 'Компактная плотность' })
+    expect(screen.getByRole('group', { name: 'Плотность доски' })).toBeInTheDocument()
+    expect(comfortable).toHaveAttribute('aria-pressed', 'true')
+    expect(compactButton).toHaveAttribute('aria-pressed', 'false')
+    expect(boardSurface).toHaveAttribute('data-density', 'comfortable')
+
+    await userEvent.click(compactButton)
+    expect(comfortable).toHaveAttribute('aria-pressed', 'false')
+    expect(compactButton).toHaveAttribute('aria-pressed', 'true')
+    expect(boardSurface).toHaveClass('jboard--density-compact')
+    await waitFor(() => expect(localStorage.getItem('voicechat.kanban.density.v1.density-user.p1')).toBe('compact'))
+
+    cleanup()
+    renderBoard({ currentUserId: 'density-user' })
+    await waitFor(() => expect(screen.getByTestId('kanban-board')).toHaveAttribute('data-density', 'compact'))
+    cleanup()
+    renderBoard({ currentUserId: 'another-user' })
+    expect(screen.getByTestId('kanban-board')).toHaveAttribute('data-density', 'comfortable')
+  })
+
+  it('игнорирует повреждённую сохранённую плотность', async () => {
+    localStorage.clear()
+    localStorage.setItem('voicechat.kanban.density.v1.density-user.p1', 'tiny')
+    renderBoard({ currentUserId: 'density-user' })
+    await waitFor(() => expect(screen.getByTestId('kanban-board')).toHaveAttribute('data-density', 'comfortable'))
+  })
+
+  it('сворачивает колонку в узкую доступную полосу и возвращает фокус на переключатель', async () => {
+    localStorage.clear()
+    const visibleBoard: Board = {
+      columns: board.columns.map((column) => ({ ...column, hidden: false })),
+      tasks: [...board.tasks, task({ id: 't2', columnId: 'c2', title: 'B', position: 1024 })]
+    }
+    renderBoard({ board: visibleBoard, currentUserId: 'collapse-user' })
+
+    const group = screen.getByRole('group', { name: 'Управление свёрнутыми колонками' })
+    expect(within(group).getByText('Свёрнуто 0 из 2')).toBeInTheDocument()
+    expect(within(group).getByRole('button', { name: 'Развернуть все' })).toBeDisabled()
+    const collapse = screen.getByRole('button', { name: 'Свернуть колонку «To Do»' })
+    const contentId = collapse.getAttribute('aria-controls')
+    expect(collapse).toHaveAttribute('aria-expanded', 'true')
+    expect(contentId).toBeTruthy()
+
+    collapse.focus()
+    await userEvent.click(collapse)
+
+    const expand = screen.getByRole('button', { name: 'Развернуть колонку «To Do»' })
+    await waitFor(() => expect(document.activeElement).toBe(expand))
+    expect(expand).toHaveAttribute('aria-expanded', 'false')
+    expect(expand).toHaveAttribute('aria-controls', contentId)
+    expect(document.getElementById(contentId!)).toHaveAttribute('hidden')
+    expect(expand.closest('[data-column-id]')).toHaveClass('jcol--collapsed')
+    expect(within(group).getByText('Свёрнуто 1 из 2')).toBeInTheDocument()
+    expect(screen.getByLabelText('Перейти к колонке')).toHaveDisplayValue('To Do (1)')
+
+    await userEvent.click(expand)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Свернуть колонку «To Do»' })))
+    expect(screen.getByText('A')).toBeInTheDocument()
+  })
+
+  it('сворачивает и разворачивает все колонки одной командой', async () => {
+    localStorage.clear()
+    renderBoard({
+      board: { columns: board.columns.map((column) => ({ ...column, hidden: false })), tasks: board.tasks },
+      currentUserId: 'collapse-all-user'
+    })
+    const group = screen.getByRole('group', { name: 'Управление свёрнутыми колонками' })
+
+    await userEvent.click(within(group).getByRole('button', { name: 'Свернуть все' }))
+    expect(screen.getAllByRole('button', { name: /Развернуть колонку/ })).toHaveLength(2)
+    expect(within(group).getByText('Свёрнуто 2 из 2')).toBeInTheDocument()
+    expect(within(group).getByRole('button', { name: 'Свернуть все' })).toBeDisabled()
+
+    await userEvent.click(within(group).getByRole('button', { name: 'Развернуть все' }))
+    expect(screen.getAllByRole('button', { name: /Свернуть колонку/ })).toHaveLength(2)
+    expect(within(group).getByRole('button', { name: 'Развернуть все' })).toBeDisabled()
+  })
+
+  it('восстанавливает свёрнутые колонки только для того же пользователя и удаляет устаревшие id', async () => {
+    localStorage.clear()
+    const key = 'voicechat.kanban.collapsed-columns.v1.collapse-user.p1'
+    localStorage.setItem(key, JSON.stringify(['c1', 'removed-column']))
+    const first = render(<KanbanBoardHarness currentUserId="collapse-user" />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Развернуть колонку «To Do»' })).toBeInTheDocument())
+    await waitFor(() => expect(localStorage.getItem(key)).toBe(JSON.stringify(['c1'])))
+    first.unmount()
+    render(<KanbanBoardHarness currentUserId="another-user" />)
+    expect(screen.getByRole('button', { name: 'Свернуть колонку «To Do»' })).toBeInTheDocument()
+  })
+
+  it('скрывает ячейки свёрнутой колонки во всех свимлейнах, сохраняя шапку', async () => {
+    localStorage.clear()
+    render(<KanbanBoardHarness currentUserId="collapse-lane-user" defaultSwimlane="assignee" />)
+    await userEvent.click(screen.getByRole('button', { name: 'Свернуть колонку «To Do»' }))
+
+    const expand = screen.getByRole('button', { name: 'Развернуть колонку «To Do»' })
+    const controlledIds = expand.getAttribute('aria-controls')?.split(' ') ?? []
+    expect(controlledIds.length).toBeGreaterThan(0)
+    expect(controlledIds.every((id) => document.getElementById(id)?.classList.contains('jcol--collapsed-cell'))).toBe(true)
+    expect(document.querySelectorAll('.jcol--collapsed-cell[aria-hidden="true"]')).toHaveLength(controlledIds.length)
+  })
+
+  it('показывает полный и отфильтрованный размер дорожки и связывает переключатель с содержимым', async () => {
+    localStorage.clear()
+    const laneBoard: Board = {
+      columns: board.columns.map((column) => ({ ...column, hidden: false })),
+      tasks: [
+        task({ id: 'alice-a', title: 'Alpha', assignee: 'alice' }),
+        task({ id: 'alice-b', title: 'Beta', assignee: 'alice', columnId: 'c2' }),
+        task({ id: 'free', title: 'Free', assignee: null })
+      ]
+    }
+    renderBoard({ board: laneBoard, currentUserId: 'lane-user', defaultSwimlane: 'assignee', members: [{ username: 'alice', role: 'member', addedAt: 1 }] })
+    const lane = screen.getByRole('button', { name: 'Свернуть дорожку «alice», 2 задачи' })
+    expect(lane).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById(lane.getAttribute('aria-controls')!)).not.toHaveAttribute('hidden')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'Alpha')
+    expect(screen.getByRole('button', { name: 'Свернуть дорожку «alice», 1 задача из 2' })).toHaveTextContent('1 из 2')
+  })
+
+  it('массово сворачивает дорожки и возвращает фокус после отдельного переключения', async () => {
+    localStorage.clear()
+    renderBoard({ currentUserId: 'lane-bulk-user', defaultSwimlane: 'assignee', members: [{ username: 'alice', role: 'member', addedAt: 1 }] })
+    const group = screen.getByRole('group', { name: 'Управление дорожками' })
+    expect(within(group).getByText('Свёрнуто дорожек 0 из 2')).toBeInTheDocument()
+    await userEvent.click(within(group).getByRole('button', { name: 'Свернуть дорожки' }))
+    expect(screen.getAllByRole('button', { name: /Развернуть дорожку/ })).toHaveLength(2)
+    expect(within(group).getByText('Свёрнуто дорожек 2 из 2')).toBeInTheDocument()
+
+    await userEvent.click(within(group).getByRole('button', { name: 'Развернуть дорожки' }))
+    const collapse = screen.getByRole('button', { name: /Свернуть дорожку «Не назначено»/ })
+    collapse.focus()
+    await userEvent.click(collapse)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /Развернуть дорожку «Не назначено»/ })))
+  })
+
+  it('сохраняет дорожки отдельно по режиму и удаляет исчезнувшие значения', async () => {
+    localStorage.clear()
+    const key = 'voicechat.kanban.collapsed-lanes.v1.lane-persist-user.p1'
+    localStorage.setItem(key, JSON.stringify({ assignee: ['alice', 'removed'], epic: ['epic-kept'] }))
+    const first = render(<KanbanBoardHarness currentUserId="lane-persist-user" defaultSwimlane="assignee" members={[{ username: 'alice', role: 'member', addedAt: 1 }]} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Развернуть дорожку «alice»/ })).toBeInTheDocument())
+    await waitFor(() => expect(localStorage.getItem(key)).toBe(JSON.stringify({ assignee: ['alice'], epic: ['epic-kept'] })))
+    first.unmount()
+
+    render(<KanbanBoardHarness currentUserId="different-lane-user" defaultSwimlane="assignee" members={[{ username: 'alice', role: 'member', addedAt: 1 }]} />)
+    expect(screen.getByRole('button', { name: /Свернуть дорожку «alice»/ })).toBeInTheDocument()
+  })
+
   it('ошибка показывается баннером role=alert; без board — только баннер', () => {
     renderBoard({ board: null, error: 'Сервер недоступен' })
     expect(screen.getByRole('alert')).toHaveTextContent('Сервер недоступен')
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
+  })
+
+  it('передаёт активный поиск карточке для подсветки найденного текста', async () => {
+    renderBoard({ board: { ...board, tasks: [task({ title: 'Alpha alpha' })] } })
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'ALPHA')
+    expect(screen.getByTestId('task-card').querySelectorAll('mark.jcard-search-hit')).toHaveLength(2)
   })
 
   it('общая поверхность колонок не включает панель фильтров', () => {
@@ -107,6 +493,45 @@ describe('KanbanBoard (изолированный)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(document.activeElement).toBe(opener))
     expect(props.onReorderColumns).not.toHaveBeenCalled()
+  })
+
+  it('WIP-шкалы показывают запас, предел и превышение независимо от фильтров', async () => {
+    const columns = [
+      { ...board.columns[0]!, id: 'available', name: 'Есть место', wipLimit: 3, position: 1024 },
+      { ...board.columns[0]!, id: 'full', name: 'На пределе', wipLimit: 2, position: 2048 },
+      { ...board.columns[0]!, id: 'over', name: 'Переполнена', wipLimit: 2, position: 3072 },
+      { ...board.columns[0]!, id: 'unlimited', name: 'Без лимита', wipLimit: null, position: 4096 }
+    ]
+    renderBoard({
+      board: {
+        columns,
+        tasks: [
+          task({ id: 'a1', columnId: 'available', flagged: true }),
+          task({ id: 'f1', columnId: 'full' }), task({ id: 'f2', columnId: 'full' }),
+          task({ id: 'o1', columnId: 'over' }), task({ id: 'o2', columnId: 'over' }), task({ id: 'o3', columnId: 'over' })
+        ]
+      }
+    })
+
+    const available = screen.getByRole('progressbar', { name: 'Заполнение WIP колонки «Есть место»' })
+    expect(available).toHaveAttribute('aria-valuenow', '1')
+    expect(available).toHaveAttribute('aria-valuemax', '3')
+    expect(available).toHaveAttribute('aria-valuetext', 'WIP: 1 из 3, свободно 2 места')
+    expect(available.firstElementChild).toHaveStyle({ width: '33%' })
+
+    const full = screen.getByRole('progressbar', { name: 'Заполнение WIP колонки «На пределе»' })
+    expect(full).toHaveAttribute('aria-valuetext', 'WIP-лимит заполнен: 2 из 2')
+    expect(full.closest('.jcol-head')).toHaveClass('jcol-head--full')
+
+    const over = screen.getByRole('progressbar', { name: 'Заполнение WIP колонки «Переполнена»' })
+    expect(over).toHaveAttribute('aria-valuenow', '2')
+    expect(over).toHaveAttribute('aria-valuetext', 'WIP-лимит превышен: 3 из 2, превышение на 1 задача')
+    expect(over.firstElementChild).toHaveStyle({ width: '100%' })
+    expect(screen.queryByRole('progressbar', { name: /Без лимита/ })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'С флагом' }))
+    expect(available).toHaveAttribute('aria-valuetext', 'WIP: 1 из 3, свободно 2 места')
+    expect(full).toHaveAttribute('aria-valuetext', 'WIP-лимит заполнен: 2 из 2')
   })
 
   // @testCase TC-REG-1
@@ -176,6 +601,412 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('Скрытая')).toBeInTheDocument()
   })
 
+  it('ищет по содержимому, меткам и исполнителю и показывает количество результатов', async () => {
+    renderBoard({
+      board: {
+        columns: [board.columns[0]!],
+        tasks: [
+          task({ id: 'title', title: 'Уникальный заголовок' }),
+          task({ id: 'description', title: 'Описание', description: 'Содержит webhook' }),
+          task({ id: 'criteria', title: 'Критерий', acceptanceCriteria: 'Должен пройти smoke' }),
+          task({ id: 'meta', title: 'Метаданные', labels: ['payments'], assignee: 'alexey' })
+        ]
+      }
+    })
+    const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
+    const count = screen.getByTestId('board-result-count')
+    expect(count).toHaveTextContent('Показано 4 из 4')
+    expect(count).toHaveAttribute('role', 'status')
+
+    await userEvent.type(search, 'webhook')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByText('Описание')).toBeInTheDocument()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'smoke')
+    expect(screen.getByText('Критерий')).toBeInTheDocument()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'payments')
+    expect(screen.getByText('Метаданные')).toBeInTheDocument()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'alexey')
+    expect(count).toHaveTextContent('Показано 1 из 4')
+    expect(screen.getByText('Метаданные')).toBeInTheDocument()
+  })
+
+  it('сводит метрики видимых задач и пересчитывает их после фильтра и обновления доски', async () => {
+    const columns = [
+      board.columns[0]!,
+      { ...board.columns[0]!, id: 'done', name: 'Готово', semanticType: 'done' as const, position: 2048 }
+    ]
+    const tasks = [
+      task({ id: 'first', title: 'Первая', storyPoints: 3, dueDate: Date.now() - 2 * 86_400_000, flagged: true }),
+      task({ id: 'second', title: 'Вторая', storyPoints: 5, dueDate: Date.now() + 2 * 86_400_000, assignee: 'bob' }),
+      task({ id: 'complete', title: 'Завершённая', columnId: 'done', storyPoints: 2, dueDate: Date.now() - 2 * 86_400_000, assignee: 'bob' })
+    ]
+    const props: KanbanBoardProps = {
+      projectName: 'P1', board: { columns, tasks }, loading: false, members: [],
+      onCreateColumn: vi.fn(), onUpdateColumn: vi.fn(), onSetColumnHidden: vi.fn(),
+      onReorderColumns: vi.fn(), onDeleteColumn: vi.fn(), onCreateTask: vi.fn(),
+      onUpdateTask: vi.fn(), onMoveTask: vi.fn(), onDeleteTask: vi.fn()
+    }
+    const view = render(<KanbanBoard {...props} />)
+    const summary = screen.getByRole('region', { name: 'Сводка доски' })
+
+    expect(within(summary).getByLabelText('Видно: 3 задачи')).toHaveTextContent('3 задачи')
+    expect(within(summary).getByLabelText('Оценка: 10 SP')).toHaveTextContent('10 SP')
+    expect(within(summary).getByLabelText('Просрочено: 1 задача')).toHaveTextContent('1 задача')
+    expect(within(summary).getByLabelText('Без исполнителя: 1 задача')).toHaveTextContent('1 задача')
+    expect(within(summary).getByLabelText('С флагом: 1 задача')).toHaveTextContent('1 задача')
+    expect(within(summary).getByLabelText('Завершено: 1 задача')).toHaveTextContent('1 задача')
+
+    const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
+    await userEvent.type(search, 'Вторая')
+    expect(within(summary).getByLabelText('Видно: 1 задача')).toBeInTheDocument()
+    expect(within(summary).getByLabelText('Оценка: 5 SP')).toBeInTheDocument()
+    expect(within(summary).getByLabelText('Просрочено: 0 задач')).toBeInTheDocument()
+
+    await userEvent.clear(search)
+    view.rerender(<KanbanBoard {...props} board={{ columns, tasks: [...tasks, task({ id: 'live', title: 'Живое обновление', storyPoints: 2 })] }} />)
+    expect(within(summary).getByLabelText('Видно: 4 задачи')).toBeInTheDocument()
+    expect(within(summary).getByLabelText('Оценка: 12 SP')).toBeInTheDocument()
+    expect(within(summary).getByLabelText('Без исполнителя: 2 задачи')).toBeInTheDocument()
+  })
+
+  it('метрики включают синхронные быстрые срезы, chips и общий сброс', async () => {
+    const columns = [
+      board.columns[0]!,
+      { ...board.columns[0]!, id: 'done', name: 'Готово', semanticType: 'done' as const, position: 2048 }
+    ]
+    const onShowCompletedChange = vi.fn()
+    renderBoard({
+      board: {
+        columns,
+        tasks: [
+          task({ id: 'late', title: 'Просроченная', dueDate: Date.now() - 2 * 86_400_000, flagged: true }),
+          task({ id: 'assigned', title: 'Назначенная', assignee: 'bob' }),
+          task({ id: 'complete', title: 'Завершённая', columnId: 'done', assignee: 'bob' })
+        ]
+      },
+      showCompleted: false,
+      onShowCompletedChange
+    })
+    const summary = screen.getByRole('region', { name: 'Сводка доски' })
+
+    const overdue = within(summary).getByRole('button', { name: 'Просрочено: 1 задача' })
+    await userEvent.click(overdue)
+    expect(overdue).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Срок: просрочено' })).toBeInTheDocument()
+    await userEvent.click(overdue)
+
+    const unassigned = within(summary).getByRole('button', { name: 'Без исполнителя: 1 задача' })
+    await userEvent.click(unassigned)
+    expect(unassigned).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Исполнитель: не назначено' })).toBeInTheDocument()
+    await userEvent.click(unassigned)
+
+    const flagged = within(summary).getByRole('button', { name: 'С флагом: 1 задача' })
+    await userEvent.click(flagged)
+    expect(flagged).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'С флагом' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(flagged)
+
+    await userEvent.click(within(summary).getByRole('button', { name: 'Завершено: 1 задача' }))
+    expect(onShowCompletedChange).toHaveBeenCalledWith(true)
+    expect(screen.getAllByTestId('kanban-column')).toHaveLength(1)
+    expect(screen.getByText('Готово')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Завершено' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Сбросить все' }))
+    expect(screen.getAllByTestId('kanban-column')).toHaveLength(2)
+    expect(within(summary).getByRole('button', { name: 'Завершено: 1 задача' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('фильтрует взаимоисключающие интервалы срока и сохраняет их в виде доски', async () => {
+    const start = new Date()
+    const at = (offset: number): number => new Date(start.getFullYear(), start.getMonth(), start.getDate() + offset, 12).getTime()
+    const columns = [
+      board.columns[0]!,
+      { ...board.columns[0]!, id: 'done', name: 'Готово', semanticType: 'done' as const, position: 2048 }
+    ]
+    const onViewChange = vi.fn()
+    renderBoard({
+      currentUserId: 'due-user',
+      view: { ...DEFAULT_BOARD_VIEW },
+      onViewChange,
+      board: {
+        columns,
+        tasks: [
+          task({ id: 'late', title: 'Вчера', dueDate: at(-1) }),
+          task({ id: 'today', title: 'Сегодня срок', dueDate: at(0) }),
+          task({ id: 'soon', title: 'Через шесть', dueDate: at(6) }),
+          task({ id: 'later', title: 'Через семь', dueDate: at(7) }),
+          task({ id: 'none', title: 'Срок не задан', dueDate: null }),
+          task({ id: 'done-late', title: 'Готовая просроченная', columnId: 'done', dueDate: at(-1) })
+        ]
+      }
+    })
+    const select = screen.getByRole('combobox', { name: 'Срок задач' })
+
+    await userEvent.selectOptions(select, 'overdue')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByText('Вчера')).toBeInTheDocument()
+    expect(screen.queryByText('Готовая просроченная')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Срок: просрочено' })).toBeInTheDocument()
+
+    await userEvent.selectOptions(select, 'today')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByText('Сегодня срок')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Срок: сегодня' })).toBeInTheDocument()
+
+    await userEvent.selectOptions(select, 'week')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(2)
+    expect(screen.getByText('Через шесть')).toBeInTheDocument()
+    expect(screen.queryByText('Через семь')).not.toBeInTheDocument()
+
+    await userEvent.selectOptions(select, 'none')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(screen.getByText('Срок не задан')).toBeInTheDocument()
+    expect(screen.getByTestId('board-result-count')).toHaveTextContent('Показано 1 из 6')
+    await waitFor(() => expect(onViewChange).toHaveBeenLastCalledWith(expect.objectContaining({ dueWindow: 'none', overdueOnly: false })))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить фильтр: Срок: не указан' }))
+    expect(select).toHaveValue('all')
+  })
+
+  it('обзор приоритетов показывает устойчивые счётчики и управляет OR-фильтром', async () => {
+    renderBoard({
+      board: {
+        columns: [board.columns[0]!],
+        tasks: [
+          task({ id: 'low', title: 'Низкая', priority: 'low' }),
+          task({ id: 'medium-1', title: 'Средняя первая', priority: 'medium' }),
+          task({ id: 'medium-2', title: 'Средняя вторая', priority: 'medium' }),
+          task({ id: 'high', title: 'Высокая', priority: 'high' })
+        ]
+      }
+    })
+    const overview = screen.getByRole('region', { name: 'Обзор приоритетов' })
+    const low = within(overview).getByRole('button', { name: 'Низкий: 1 задача' })
+    const medium = within(overview).getByRole('button', { name: 'Средний: 2 задачи' })
+    const high = within(overview).getByRole('button', { name: 'Высокий: 1 задача' })
+    const urgent = within(overview).getByRole('button', { name: 'Срочный: 0 задач' })
+    expect(medium).toHaveAttribute('aria-pressed', 'false')
+    expect(urgent).toBeDisabled()
+
+    await userEvent.click(high)
+    expect(high).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(1)
+    expect(within(overview).getByRole('button', { name: 'Средний: 2 задачи' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Удалить фильтр: Приоритет: Высокий' })).toBeInTheDocument()
+
+    await userEvent.click(low)
+    expect(low).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByTestId('task-card')).toHaveLength(2)
+    expect(within(overview).getByRole('button', { name: 'Все приоритеты' })).toBeInTheDocument()
+    await userEvent.click(within(overview).getByRole('button', { name: 'Все приоритеты' }))
+    expect(screen.getAllByTestId('task-card')).toHaveLength(4)
+    expect(low).toHaveAttribute('aria-pressed', 'false')
+    expect(high).toHaveAttribute('aria-pressed', 'false')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'первая')
+    expect(within(overview).getByRole('button', { name: 'Средний: 1 задача' })).toBeEnabled()
+    expect(within(overview).getByRole('button', { name: 'Низкий: 0 задач' })).toBeDisabled()
+  })
+
+  it('фокусирует поиск по /, очищает его по Escape и отдельной кнопкой', async () => {
+    renderBoard()
+    const search = screen.getByRole('searchbox', { name: 'Поиск на доске' })
+    expect(search).toHaveAttribute('aria-keyshortcuts', '/')
+
+    fireEvent.keyDown(document.body, { key: '/' })
+    expect(document.activeElement).toBe(search)
+
+    await userEvent.type(search, 'нет')
+    await userEvent.keyboard('{Escape}')
+    expect(search).toHaveValue('')
+    expect(document.activeElement).toBe(search)
+
+    await userEvent.type(search, 'другой')
+    const clear = screen.getByRole('button', { name: 'Очистить поиск на доске' })
+    expect(clear).toHaveAttribute('title', 'Очистить поиск')
+    await userEvent.click(clear)
+    expect(search).toHaveValue('')
+    expect(document.activeElement).toBe(search)
+  })
+
+  it('объясняет нулевой результат и сбрасывает все фильтры одним действием', async () => {
+    renderBoard()
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'ничего не найдено')
+
+    const empty = screen.getByTestId('kanban-filter-empty')
+    expect(empty).toHaveTextContent('По выбранным фильтрам задач не найдено')
+    expect(screen.getByTestId('board-result-count')).toHaveTextContent('Показано 0 из 1')
+
+    await userEvent.click(within(empty).getByRole('button', { name: 'Сбросить все фильтры' }))
+    expect(screen.queryByTestId('kanban-filter-empty')).not.toBeInTheDocument()
+    expect(screen.getByTestId('board-result-count')).toHaveTextContent('Показано 1 из 1')
+    expect(screen.getByText('A')).toBeInTheDocument()
+  })
+
+  it('показывает все виды активных фильтров и снимает их по одному или вместе', async () => {
+    const filteredView = {
+      ...DEFAULT_BOARD_VIEW,
+      search: 'needle',
+      assignees: ['alexey'],
+      types: ['story' as const],
+      priorities: ['high' as const],
+      labels: ['ui'],
+      epics: ['epic-1'],
+      onlyMine: true,
+      flaggedOnly: true,
+      recentOnly: true,
+      columnAssignees: { c1: { assigneeIds: ['bob'], unassigned: true } }
+    }
+    renderBoard({
+      currentUserId: 'alexey',
+      members: [
+        { username: 'alexey', role: 'member', active: true, addedAt: 1 },
+        { username: 'bob', role: 'member', active: true, addedAt: 1 }
+      ],
+      view: filteredView,
+      board: {
+        columns: [board.columns[0]!],
+        tasks: [
+          task({ id: 'epic-1', type: 'epic', title: 'Платежи' }),
+          task({ id: 'story-1', type: 'story', parentId: 'epic-1', title: 'needle', labels: ['ui'], priority: 'high', assignee: 'alexey', flagged: true, updatedAt: Date.now() })
+        ]
+      }
+    })
+
+    const strip = await screen.findByRole('region', { name: 'Активные фильтры' })
+    const expected = [
+      'Поиск: needle',
+      'Исполнитель: alexey',
+      'Тип: История',
+      'Приоритет: Высокий',
+      'Метка: ui',
+      'Эпик: Платежи',
+      'Только мои задачи',
+      'С флагом',
+      'Обновлены за сутки',
+      'Колонка «To Do»: bob, без исполнителя'
+    ]
+    for (const label of expected) {
+      expect(within(strip).getByRole('button', { name: `Удалить фильтр: ${label}` })).toBeInTheDocument()
+    }
+
+    await userEvent.click(within(strip).getByRole('button', { name: 'Удалить фильтр: Поиск: needle' }))
+    expect(within(strip).queryByRole('button', { name: 'Удалить фильтр: Поиск: needle' })).not.toBeInTheDocument()
+    expect(within(strip).getByRole('button', { name: 'Удалить фильтр: Исполнитель: alexey' })).toBeInTheDocument()
+
+    await userEvent.click(within(strip).getByRole('button', { name: 'Удалить фильтр: Колонка «To Do»: bob, без исполнителя' }))
+    expect(within(strip).queryByText(/Колонка «To Do»/)).not.toBeInTheDocument()
+
+    await userEvent.click(within(strip).getByRole('button', { name: 'Сбросить все' }))
+    expect(screen.queryByTestId('active-filters')).not.toBeInTheDocument()
+  })
+
+  it('прокручивает сфокусированную доску стрелками и переходит к краям по Home и End', () => {
+    renderBoard({
+      board: {
+        columns: [
+          { ...board.columns[0]!, id: 'c1', name: 'Первая', position: 1024 },
+          { ...board.columns[0]!, id: 'c2', name: 'Вторая', position: 2048 },
+          { ...board.columns[0]!, id: 'c3', name: 'Третья', position: 3072 }
+        ],
+        tasks: [task({ id: 't1', columnId: 'c1' })]
+      }
+    })
+    const surface = screen.getByRole('region', { name: /Канбан-доска проекта «P1»/ })
+    const column = screen.getAllByTestId('kanban-column')[0]!
+    vi.spyOn(column, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, width: 300, height: 400, top: 0, right: 300, bottom: 400, left: 0, toJSON: () => ({})
+    })
+    Object.defineProperty(surface, 'scrollWidth', { configurable: true, value: 1400 })
+    surface.focus()
+
+    fireEvent.keyDown(surface, { key: 'ArrowRight' })
+    expect(surface.scrollLeft).toBe(308)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «Вторая», задач нет')
+    expect(screen.getByRole('combobox', { name: 'Перейти к колонке' })).toHaveValue('c2')
+
+    fireEvent.keyDown(surface, { key: 'ArrowLeft' })
+    expect(surface.scrollLeft).toBe(0)
+    fireEvent.keyDown(surface, { key: 'End' })
+    expect(surface.scrollLeft).toBe(1400)
+    expect(screen.getByRole('combobox', { name: 'Перейти к колонке' })).toHaveValue('c3')
+    fireEvent.keyDown(surface, { key: 'Home' })
+    expect(surface.scrollLeft).toBe(0)
+    expect(screen.getByRole('combobox', { name: 'Перейти к колонке' })).toHaveValue('c1')
+    expect(surface).toHaveAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight Home End')
+  })
+
+  it('переходит между видимыми колонками, фокусирует заголовок и обновляет список скрытых', async () => {
+    renderBoard({
+      board: {
+        columns: [
+          { ...board.columns[0]!, id: 'c1', name: 'Первая', position: 1024 },
+          { ...board.columns[0]!, id: 'c2', name: 'Скрытая', hidden: true, position: 2048 },
+          { ...board.columns[0]!, id: 'c3', name: 'Третья', position: 3072 }
+        ],
+        tasks: [task({ id: 't1', columnId: 'c3', title: 'В третьей' })]
+      }
+    })
+    const select = screen.getByRole('combobox', { name: 'Перейти к колонке' })
+    const previous = screen.getByRole('button', { name: 'Перейти к предыдущей колонке' })
+    const next = screen.getByRole('button', { name: 'Перейти к следующей колонке' })
+    expect(within(select).getAllByRole('option')).toHaveLength(2)
+    expect(select).toHaveValue('c1')
+    expect(previous).toBeDisabled()
+    expect(next).toBeEnabled()
+
+    const thirdHeader = document.querySelector<HTMLElement>('[data-column-nav-target="c3"]')!
+    thirdHeader.scrollIntoView = vi.fn()
+    await userEvent.click(next)
+    expect(select).toHaveValue('c3')
+    expect(thirdHeader.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+    expect(document.activeElement).toBe(thirdHeader)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «Третья», 1 задача')
+    expect(next).toBeDisabled()
+
+    await userEvent.click(previous)
+    expect(select).toHaveValue('c1')
+    await userEvent.click(screen.getByRole('checkbox', { name: /скрытые/ }))
+    expect(within(select).getAllByRole('option')).toHaveLength(3)
+    expect(select).toHaveValue('c1')
+
+    const hiddenHeader = document.querySelector<HTMLElement>('[data-column-nav-target="c2"]')!
+    hiddenHeader.scrollIntoView = vi.fn()
+    await userEvent.selectOptions(select, 'c2')
+    expect(document.activeElement).toBe(hiddenHeader)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «Скрытая», задач нет, скрыта')
+  })
+
+  it('использует тот же навигатор в раскладке со свимлейнами', async () => {
+    renderBoard({
+      defaultSwimlane: 'assignee',
+      members: [{ username: 'alexey', role: 'member', active: true, addedAt: 1 }],
+      board: {
+        columns: [
+          { ...board.columns[0]!, id: 'c1', name: 'Первая', position: 1024 },
+          { ...board.columns[0]!, id: 'c2', name: 'Вторая', position: 2048 }
+        ],
+        tasks: [task({ id: 't1', columnId: 'c2', assignee: 'alexey' })]
+      }
+    })
+    const secondHeader = document.querySelector<HTMLElement>('[data-column-nav-target="c2"]')!
+    secondHeader.scrollIntoView = vi.fn()
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Перейти к колонке' }), 'c2')
+
+    expect(document.activeElement).toBe(secondHeader)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «Вторая», 1 задача')
+  })
+
   it('стрелка использует полный порядок, включая скрытую колонку, и позицию в конце цели', async () => {
     const onMoveTask = vi.fn(async () => {})
     const orderedBoard: Board = {
@@ -239,13 +1070,53 @@ describe('KanbanBoard (изолированный)', () => {
     expect(menu).toBeInTheDocument()
   })
 
-  it('Escape закрывает меню колонки', async () => {
+  it('Escape закрывает меню колонки и возвращает фокус на связанный триггер', async () => {
     renderBoard()
-    await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «To Do»' }))
+    const trigger = screen.getByRole('button', { name: 'Меню колонки «To Do»' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(trigger)
+    const menu = screen.getByRole('menu', { name: 'Действия колонки «To Do»' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(trigger).toHaveAttribute('aria-controls', menu.id)
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus())
 
     await userEvent.keyboard('{Escape}')
 
     expect(screen.queryByTestId('column-menu')).not.toBeInTheDocument()
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('ходит по пунктам меню стрелками, Home и End и закрывает меню по Tab', async () => {
+    renderBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «To Do»' }))
+    const menu = screen.getByRole('menu', { name: 'Действия колонки «To Do»' })
+    const items = within(menu).getAllByRole('menuitem')
+    await waitFor(() => expect(items[0]).toHaveFocus())
+    await userEvent.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await userEvent.keyboard('{End}')
+    expect(items.at(-1)).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(items[0]).toHaveFocus()
+    await userEvent.keyboard('{ArrowUp}')
+    expect(items.at(-1)).toHaveFocus()
+    await userEvent.keyboard('{Home}')
+    expect(items[0]).toHaveFocus()
+    await userEvent.keyboard('{Tab}')
+    expect(screen.queryByRole('menu', { name: 'Действия колонки «To Do»' })).not.toBeInTheDocument()
+  })
+
+  it('открытие меню другой колонки заменяет первое и фокусирует его действие', async () => {
+    renderBoard({ board: { ...board, columns: board.columns.map((column) => ({ ...column, hidden: false })) } })
+    const first = screen.getByRole('button', { name: 'Меню колонки «To Do»' })
+    const second = screen.getByRole('button', { name: 'Меню колонки «Скрытая»' })
+    await userEvent.click(first)
+    await userEvent.click(second)
+    expect(screen.queryByRole('menu', { name: 'Действия колонки «To Do»' })).not.toBeInTheDocument()
+    const menu = screen.getByRole('menu', { name: 'Действия колонки «Скрытая»' })
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus())
+    expect(second).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('повторное нажатие на триггер закрывает меню колонки', async () => {
@@ -354,7 +1225,7 @@ describe('KanbanBoard (изолированный)', () => {
     const filters = screen.getByTestId('board-filters')
     await userEvent.click(within(filters).getByRole('checkbox', { name: /скрытые/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «Скрытая»' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Удалить' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Удалить' }))
 
     const dialog = await screen.findByTestId('confirm-dialog')
     expect(within(dialog).getByRole('heading', { name: 'Удалить колонку «Скрытая» со всеми задачами?' })).toBeInTheDocument()
@@ -543,8 +1414,28 @@ describe('KanbanBoard — состояния загрузки, пустоты и
   it('повторная загрузка уже показанной доски её не подменяет скелетоном', () => {
     renderBoard({ loading: true })
     expect(screen.queryByTestId('kanban-skeleton')).not.toBeInTheDocument()
-    expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
+    const visibleBoard = screen.getByTestId('kanban-board')
+    expect(visibleBoard).toBeInTheDocument()
+    expect(visibleBoard.closest('.jboard-wrap')).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByText('Обновляем доску…')).toBeInTheDocument()
+    expect(screen.getByTestId('board-snapshot-time')).toHaveTextContent('Обновляется…')
+    expect(screen.getByTestId('board-snapshot-time')).toHaveAttribute('data-refreshing', 'true')
+  })
+
+  it('показывает время самого свежего изменения снимка и не меняет его при поиске', async () => {
+    const now = Date.now()
+    renderBoard({ board: { ...board, tasks: [
+      task({ id: 'older', title: 'Старая', updatedAt: now - 30 * 60_000 }),
+      task({ id: 'latest', title: 'Свежая', updatedAt: now - 5 * 60_000 })
+    ] } })
+    const snapshot = screen.getByTestId('board-snapshot-time')
+    expect(snapshot).toHaveAttribute('dateTime', new Date(now - 5 * 60_000).toISOString())
+    expect(snapshot).toHaveAccessibleName(/^Снимок доски\. Обновлено:/)
+    expect(snapshot).toHaveTextContent('Данные: 5 мин')
+    expect(snapshot).toHaveClass('jboard-snapshot--fresh')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'Старая')
+    expect(snapshot).toHaveAttribute('dateTime', new Date(now - 5 * 60_000).toISOString())
   })
 
   it('ошибка без доски предлагает «Повторить»', async () => {
@@ -554,15 +1445,40 @@ describe('KanbanBoard — состояния загрузки, пустоты и
     expect(onRetry).toHaveBeenCalledTimes(1)
   })
 
+  it('ошибка поверх снимка объясняет stale-состояние, связывает его с доской и повторяет загрузку', async () => {
+    const onRetry = vi.fn()
+    renderBoard({ error: 'TIMEOUT', onRetry })
+    const warning = screen.getByTestId('board-stale-warning')
+    const wrap = screen.getByTestId('kanban-board').closest('.jboard-wrap')!
+    expect(warning).toHaveAttribute('role', 'alert')
+    expect(warning).toHaveTextContent('Показаны сохранённые данные')
+    expect(warning).toHaveTextContent('Не удалось обновить доску: TIMEOUT')
+    expect(warning).toHaveTextContent('Последний снимок:')
+    expect(wrap).toHaveAttribute('data-stale', 'true')
+    expect(wrap).toHaveAttribute('aria-describedby', warning.id)
+    expect(screen.getByTestId('task-card')).toBeInTheDocument()
+    await userEvent.click(within(warning).getByRole('button', { name: 'Повторить загрузку' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
   it('доска без колонок объясняет, что такое колонка', () => {
     renderBoard({ board: { columns: [], tasks: [] } })
     expect(screen.getByText('Колонок пока нет — создайте первую')).toBeInTheDocument()
   })
 
-  it('пустая колонка подсказывает, чем её наполнить', () => {
+  it('пустая колонка называет этап, показывает drop-подсказку и открывает сфокусированный композер', async () => {
     renderBoard({ board: { columns: [board.columns[0]!], tasks: [] } })
     const column = screen.getByTestId('kanban-column')
-    expect(within(column).getByTestId('empty-state')).toHaveTextContent('Здесь пока пусто')
+    const empty = within(column).getByTestId('column-empty-state')
+    expect(empty).toHaveAttribute('data-empty-kind', 'empty')
+    expect(empty).toHaveAttribute('data-hidden-count', '0')
+    expect(empty).toHaveAttribute('role', 'status')
+    expect(empty).toHaveTextContent('«To Do» пока пуста')
+    expect(empty).toHaveTextContent('Готова к работе')
+    expect(empty).toHaveTextContent('перетащите сюда карточку')
+    expect(column).toHaveAttribute('aria-describedby', empty.id)
+    await userEvent.click(within(empty).getByRole('button', { name: 'Создать задачу' }))
+    expect(screen.getByRole('textbox', { name: 'Новая задача в «To Do»' })).toHaveFocus()
   })
 })
 
@@ -638,14 +1554,21 @@ describe('KanbanBoard — перенос указателем', () => {
     move(60, 140)
     expect(screen.getByTestId('drop-placeholder')).toBeInTheDocument()
     expect(document.querySelector('.vc-drag-ghost')).not.toBeNull()
+    expect(surface).toHaveAttribute('data-dragging', 'pointer')
+    expect(surface).toHaveAttribute('data-drag-task-id', 't1')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Задача «A» взята указателем. Исходная колонка «To Do».')
+    expect(document.querySelector('[data-drop-active="true"]')).not.toBeNull()
     // Копия — картинка, а не второй экземпляр карточки.
     expect(screen.getAllByTestId('task-card')).toHaveLength(3)
 
     move(360, 175)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Цель переноса задачи «A»: Колонка «In Progress», позиция 2 из 2.')
     up(360, 175)
     expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', 't3', null)
     expect(document.querySelector('.vc-draglayer')).toBeNull()
     expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+    expect(surface).not.toHaveAttribute('data-dragging')
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Задача «A» перенесена. Колонка «In Progress», позиция 2 из 2.')
     expect(surface.scrollLeft).toBe(120)
     expect(surface.scrollTop).toBe(75)
     expect(bodies[0]!.scrollTop).toBe(0)
@@ -714,8 +1637,10 @@ describe('KanbanBoard — перенос указателем', () => {
     move(40, 145)
     up(40, 145)
     expect(props.onMoveTask).not.toHaveBeenCalled()
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Задача «A» осталась на месте.')
   })
 
+  // @testCase TC3
   it('палец: перенос начинается удержанием, короткий скролл его не запускает', () => {
     vi.useFakeTimers()
     try {
@@ -765,6 +1690,7 @@ describe('KanbanBoard — перенос указателем', () => {
     expect(props.onMoveTask).not.toHaveBeenCalled()
     expect(document.querySelector('.vc-draglayer')).toBeNull()
     expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Перенос задачи «A» отменён.')
     // Отпускание уже отменённого жеста ничего не двигает.
     up(360, 175)
     expect(props.onMoveTask).not.toHaveBeenCalled()
@@ -785,6 +1711,25 @@ describe('KanbanBoard — перенос указателем', () => {
     move(40, 20)
     up(40, 20)
     expect(props.onReorderColumns).toHaveBeenCalledWith(['c2', 'c1'])
+  })
+
+  it('клавиатура: Alt+стрелки переставляют колонку, объявляют позицию и сохраняют фокус', async () => {
+    const props = renderBoard({ board: dndBoard })
+    const first = screen.getByRole('button', { name: 'Переместить колонку «To Do»' })
+    const second = screen.getByRole('button', { name: 'Переместить колонку «In Progress»' })
+    expect(second).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowLeft Alt+ArrowRight')
+    second.focus()
+    fireEvent.keyDown(second, { key: 'ArrowLeft', altKey: true })
+    expect(props.onReorderColumns).toHaveBeenCalledWith(['c2', 'c1'])
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «In Progress» перемещена на позицию 1 из 2.')
+    await waitFor(() => expect(second).toHaveFocus())
+
+    vi.mocked(props.onReorderColumns).mockClear()
+    fireEvent.keyDown(first, { key: 'ArrowLeft', altKey: true })
+    expect(props.onReorderColumns).not.toHaveBeenCalled()
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Колонка «To Do» уже первая.')
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    expect(props.onReorderColumns).not.toHaveBeenCalled()
   })
 
   it('перенос колонки автоскроллит только горизонтальную ось доски', () => {
@@ -815,6 +1760,7 @@ describe('KanbanBoard — перенос указателем', () => {
 describe('KanbanBoard — перенос с клавиатуры', () => {
   const live = (): HTMLElement => screen.getByTestId('kanban-live')
 
+  // @testCase TC3
   it('Space берёт задачу, стрелки выбирают место, Enter кладёт', () => {
     const props = renderBoard({ board: dndBoard })
     const card = screen.getAllByTestId('task-card')[0]!
@@ -826,10 +1772,10 @@ describe('KanbanBoard — перенос с клавиатуры', () => {
     expect(screen.getByTestId('drop-placeholder')).toBeInTheDocument()
 
     fireEvent.keyDown(card, { key: 'ArrowDown' })
-    expect(live()).toHaveTextContent('Задача «A», колонка «To Do», позиция 2 из 2.')
+    expect(live()).toHaveTextContent('Задача A: колонка To Do, позиция 2 из 2.')
 
     fireEvent.keyDown(card, { key: 'ArrowRight' })
-    expect(live()).toHaveTextContent('Задача «A», колонка «In Progress», позиция 2 из 2.')
+    expect(live()).toHaveTextContent('Задача A: колонка In Progress, позиция 2 из 2.')
 
     fireEvent.keyDown(card, { key: 'Enter' })
     expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', 't3', null)
@@ -935,16 +1881,48 @@ describe('KanbanBoard — фильтры исполнителей', () => {
   // рендерилась: `EmptyState` принимает `actionLabel`/`onAction`, а сюда
   // передавали несуществующий `action` — проверка лишних свойств у спреда не
   // работает, и tsc молчал.
-  it('под фильтром пустая колонка даёт кнопку сброса, и она работает', async () => {
+  it('под глобальным фильтром показывает число скрытых задач и сбрасывает правильную область', async () => {
     renderBoard({ board: filteredBoard, currentUserId: 'alice', currentUser: 'Отображаемое имя', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
     await userEvent.click(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' }))
 
     // Пусто из-за фильтра доски, а не колонки — значит и сброс предлагается
     // тот, который действительно вернёт задачи.
-    const empty = screen.getByText('Нет задач под фильтром').closest('.vc-state')!
+    const empty = within(screen.getAllByTestId('kanban-column')[1]!).getByTestId('column-empty-state')
+    expect(empty).toHaveAttribute('data-empty-kind', 'filtered')
+    expect(empty).toHaveAttribute('data-hidden-count', '1')
+    expect(empty).toHaveTextContent('В «Doing» нет подходящих задач')
+    expect(empty).toHaveTextContent('Скрыто 1 задача')
     const reset = within(empty as HTMLElement).getByRole('button', { name: 'Сбросить фильтры доски' })
     await userEvent.click(reset)
-    expect(screen.getByText('Без исполнителя')).toBeInTheDocument()
+    expect(screen.getAllByTestId('task-card').some((card) => card.textContent?.includes('Без исполнителя'))).toBe(true)
+  })
+
+  it('совместные фильтры дают независимые действия и глобальный сброс сохраняет локальный', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'alice', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    const firstColumn = screen.getAllByTestId('kanban-column')[0]!
+    await userEvent.click(within(firstColumn).getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Фильтр исполнителей колонки «To Do»' })).getByRole('checkbox', { name: 'bob' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'Моя')
+
+    const empty = within(firstColumn).getByTestId('column-empty-state')
+    expect(empty).toHaveTextContent('Фильтры доски и исполнителей колонки')
+    expect(within(empty).getByRole('button', { name: 'Сбросить исполнителей' })).toBeInTheDocument()
+    await userEvent.click(within(empty).getByRole('button', { name: 'Сбросить фильтры доски' }))
+    expect(within(firstColumn).getByText('Чужая')).toBeInTheDocument()
+    expect(within(firstColumn).queryByText('Моя')).not.toBeInTheDocument()
+    expect(within(firstColumn).getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ })).toHaveTextContent('1')
+  })
+
+  it('локальный фильтр пустой колонки сбрасывается без изменения доски', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'alice', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    const secondColumn = screen.getAllByTestId('kanban-column')[1]!
+    await userEvent.click(within(secondColumn).getByRole('button', { name: /Фильтр исполнителей колонки «Doing»/ }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Фильтр исполнителей колонки «Doing»' })).getByRole('checkbox', { name: 'alice' }))
+    const empty = within(secondColumn).getByTestId('column-empty-state')
+    expect(empty).toHaveTextContent('Фильтр исполнителей этой колонки')
+    expect(within(empty).queryByRole('button', { name: 'Сбросить фильтры доски' })).not.toBeInTheDocument()
+    await userEvent.click(within(empty).getByRole('button', { name: 'Сбросить исполнителей' }))
+    expect(within(secondColumn).getByText('Без исполнителя')).toBeInTheDocument()
   })
 
   it('выбирает нескольких исполнителей по ИЛИ и показывает badge', async () => {
@@ -1139,6 +2117,101 @@ function setMobileViewport(mobile: boolean): void {
 }
 
 describe('KanbanBoard — фильтры на телефоне', () => {
+  // @testCase TC1
+  // @testCase TC2
+  it.each([['MobileScroll', MobileScroll], ['MobileFilters', MobileFilters]] as const)('%s passes mobile axe with shared story data', async (name, story) => {
+    setMobileViewport(true)
+    renderBoard(story.args)
+    expect(screen.getAllByTestId('kanban-column')).toHaveLength(6)
+    expect(screen.getAllByTestId('task-card')).toHaveLength(30)
+    if (name === 'MobileFilters') {
+      await userEvent.click(screen.getByRole('button', { name: 'Фильтры (0 активных)' }))
+      await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'missing')
+    }
+    await expectNoViolations()
+  })
+
+  // @testCase TC1
+  it('selects a mobile column, restores it, and creates in that column with one FAB', async () => {
+    setMobileViewport(true)
+    const mobileBoard = { ...board, columns: board.columns.map((column) => ({ ...column, hidden: false })) }
+    const props = renderBoard({ board: mobileBoard, scrollScopeId: 'mobile-test' })
+    expect(screen.getAllByTestId('board-mobile-create')).toHaveLength(1)
+    expect(screen.queryByTestId('column-create')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Предыдущая колонка' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Следующая колонка' }))
+    expect(screen.getByText('Колонка 2 из 2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Следующая колонка' })).toBeDisabled()
+    await userEvent.click(screen.getByTestId('board-mobile-create'))
+    await userEvent.type(screen.getByTestId('column-create-title'), 'New mobile task{Enter}')
+    expect(props.onCreateTask).toHaveBeenCalledWith('c2', expect.objectContaining({ title: 'New mobile task' }))
+    cleanup()
+    renderBoard({ board: mobileBoard, scrollScopeId: 'mobile-test' })
+    expect(screen.getByText('Колонка 2 из 2')).toBeInTheDocument()
+    await expectNoViolations()
+  })
+
+  // @testCase TC2
+  it('resets mobile filters, returns focus, and exposes every label through card details', async () => {
+    setMobileViewport(true)
+    renderBoard({ board: { ...board, tasks: [task({ id: 't1', title: 'A', labels: ['one', 'two', 'three'], storyPoints: 8 })] } })
+    const opener = screen.getByRole('button', { name: 'Фильтры (0 активных)' })
+    await userEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'Фильтры и меню доски' })
+    expect(dialog).toHaveClass('vc-dialog--full')
+    await userEvent.type(within(dialog).getByRole('searchbox', { name: 'Поиск на доске' }), 'missing')
+    await expectNoViolations()
+    within(dialog).getByRole('button', { name: 'Сбросить все' }).focus()
+    await userEvent.keyboard('{Escape}')
+    expect(opener).toHaveFocus()
+    expect(screen.getByText('Под фильтр ничего не попало — сбросить')).toBeInTheDocument()
+    await userEvent.click(within(screen.getByTestId('kanban-column')).getByRole('button', { name: 'Сбросить все' }))
+    expect(screen.getByTestId('task-card')).toHaveClass('jcard--mobile')
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Все данные карточки' }))
+    const details = screen.getByRole('dialog', { name: /Все данные:/ })
+    expect(details).toHaveTextContent('one, two, three')
+    expect(details).toHaveTextContent('8 SP')
+    await expectNoViolations(details)
+  })
+
+  // @testCase TC4
+  it('keeps mobile navigation usable when storage throws', async () => {
+    setMobileViewport(true)
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage disabled') })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage disabled') })
+    try {
+      renderBoard({ board: { ...board, columns: board.columns.map((column) => ({ ...column, hidden: false })) }, scrollScopeId: 'no-storage' })
+      await userEvent.click(screen.getByRole('button', { name: 'Следующая колонка' }))
+      expect(screen.getByText('Колонка 2 из 2')).toBeInTheDocument()
+      expect(screen.getByTestId('board-mobile-create')).toBeEnabled()
+    } finally {
+      get.mockRestore()
+      set.mockRestore()
+    }
+  })
+
+  // @testCase TC4
+  it('isolates session columns, tolerates removed columns, and persists density from the mobile menu', async () => {
+    setMobileViewport(true)
+    sessionStorage.setItem('voicechat.kanban.column.v1.other-board', 'c2')
+    sessionStorage.setItem('voicechat.kanban.column.v1.current-board', 'removed')
+    renderBoard({ scrollScopeId: 'current-board', currentUserId: 'mobile-density' })
+    expect(screen.getByText('Колонка 1 из 1')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Фильтры (0 активных)' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Компактная плотность' }))
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByTestId('kanban-board')).toHaveClass('jboard--density-compact')
+    cleanup()
+    renderBoard({ scrollScopeId: 'current-board', currentUserId: 'mobile-density' })
+    expect(screen.getByTestId('kanban-board')).toHaveClass('jboard--density-compact')
+    expect(sessionStorage.getItem('voicechat.kanban.column.v1.other-board')).toBe('c2')
+    cleanup()
+    renderBoard({ board: { columns: [], tasks: [] }, scrollScopeId: 'empty' })
+    expect(screen.queryByText('Колонка 1 из 0')).not.toBeInTheDocument()
+    expect(screen.getByTestId('board-mobile-create')).toBeDisabled()
+  })
+
   afterEach(() => setMobileViewport(false))
 
   it('на широком экране фильтры развёрнуты, на телефоне свёрнуты в один пункт', async () => {
@@ -1152,19 +2225,36 @@ describe('KanbanBoard — фильтры на телефоне', () => {
     const shell = screen.getByTestId('board-filters-shell')
     // Развёрнутыми фильтры занимали пол-экрана до первой карточки.
     expect(shell).not.toHaveAttribute('open')
-    expect(within(shell).getByText('Фильтры')).toBeInTheDocument()
+    expect(within(shell).getByRole('button', { name: 'Фильтры (0 активных)' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(shell).getByLabelText(/1 задача\. Данные:/)).toHaveTextContent(/1 задача/)
   })
 
   it('число активных фильтров видно в свёрнутом виде', async () => {
     setMobileViewport(true)
     renderBoard()
-    const shell = screen.getByTestId('board-filters-shell') as HTMLDetailsElement
-    // jsdom не раскрывает details по клику на summary — открываем напрямую.
-    shell.open = true
-    const [firstFilter] = within(shell).getAllByRole('checkbox')
-    await userEvent.click(firstFilter)
-    // Иначе непонятно, почему на доске мало карточек.
-    expect(within(shell.querySelector('summary')!).getByText('1')).toBeInTheDocument()
+    const shell = screen.getByTestId('board-filters-shell')
+    await userEvent.click(within(shell).getByRole('button', { name: 'Фильтры (0 активных)' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'A')
+    expect(within(shell).getByRole('button', { name: 'Фильтры (1 активных)' })).toBeInTheDocument()
+  })
+
+  it('мобильная сводка сообщает фоновое обновление при закрытых фильтрах', () => {
+    setMobileViewport(true)
+    renderBoard({ loading: true })
+    const shell = screen.getByTestId('board-filters-shell')
+    expect(shell).not.toHaveAttribute('open')
+    expect(within(shell).getByLabelText('1 задача. Доска обновляется')).toHaveTextContent('обновляется…')
+  })
+
+  it('сохраняет активные фильтры при закрытой мобильной панели', async () => {
+    setMobileViewport(true)
+    renderBoard({ currentUserId: 'mobile-user', view: { ...DEFAULT_BOARD_VIEW, search: 'A' } })
+    const shell = screen.getByTestId('board-filters-shell')
+    const strip = await screen.findByTestId('active-filters')
+
+    expect(shell).not.toHaveAttribute('open')
+    expect(shell).not.toContainElement(strip)
+    expect(within(strip).getByRole('button', { name: 'Удалить фильтр: Поиск: A' })).toBeInTheDocument()
   })
 })
 

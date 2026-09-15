@@ -8,22 +8,24 @@
 // «⠿» (единственное место с touch-action: none — палец там не скроллит) или
 // удержанием самой карточки; с клавиатуры карточка фокусируется (tabIndex).
 
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { canStartCiRun, canStartParallelCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
 import type { TaskModalTab } from './TaskModal'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
-import { Button } from '@voicechat/ui-kit'
+import { Avatar, PRIORITY_LABEL, PriorityIcon, TYPE_LABEL, TypeIcon, duePresentation, epicColor, issueKey } from './kanbanMeta'
+import { Button, Dialog } from '@voicechat/ui-kit'
+import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { ChatIcon, DotsIcon, FlagIcon, GripIcon } from '../icons'
-import { formatDate } from '../../lib/dateFormat'
 
 export interface TaskCardProps {
+  /** Reuse the complete card inside its mobile details dialog. */
+  detailsView?: boolean
   task: Task
   projectName: string
   /** Все задачи доски — для чипа эпика и прогресса подзадач. */
@@ -34,6 +36,7 @@ export interface TaskCardProps {
   onOpen: (taskId: string, tab?: TaskModalTab, initialChatDraft?: string) => void
   onUpdate: (taskId: string, fields: { flagged?: boolean; autoPilot?: boolean }) => void
   onDelete: (taskId: string) => void
+  onHide?: (taskId: string) => void
   onMoveTop: (taskId: string) => void
   onMoveBottom: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке). */
@@ -55,8 +58,12 @@ export interface TaskCardProps {
   /** Фактические соседние колонки в полном проектном порядке. */
   previousColumn?: { id: string; name: string } | null
   nextColumn?: { id: string; name: string } | null
+  /** Ordered destinations for direct stage selection in the card action menu. */
+  moveColumns?: Array<{ id: string; name: string; hidden?: boolean }>
   /** Переместить карточку существующим сценарием доски. */
   onMoveToColumn?: (taskId: string, fromColumnId: string, targetColumnId: string) => void | Promise<void>
+  /** Copy a stable route to this task and report the result at board level. */
+  onCopyLink?: (taskId: string) => void | Promise<void>
 
   /** Захват указателем: доска решает, перенос это или клик/скролл.
       `immediate` — захват с ручки, удержание пальца не нужно. */
@@ -69,6 +76,56 @@ export interface TaskCardProps {
   dragging: boolean
   /** Карточка «взята» с клавиатуры: остаётся на месте и подсвечена. */
   grabbed?: boolean
+  /** Current board search, used to explain why this card matched. */
+  searchQuery?: string
+}
+
+function HighlightedText({ text, query }: { text: string; query?: string }): JSX.Element {
+  const needle = query?.trim().toLocaleLowerCase() ?? ''
+  if (!needle) return <>{text}</>
+  const lower = text.toLocaleLowerCase()
+  const parts: Array<{ text: string; hit: boolean }> = []
+  let cursor = 0
+  while (cursor < text.length) {
+    const at = lower.indexOf(needle, cursor)
+    if (at < 0) {
+      parts.push({ text: text.slice(cursor), hit: false })
+      break
+    }
+    if (at > cursor) parts.push({ text: text.slice(cursor, at), hit: false })
+    parts.push({ text: text.slice(at, at + needle.length), hit: true })
+    cursor = at + needle.length
+  }
+  return <>{parts.map((part, index) => part.hit
+    ? <mark className="jcard-search-hit" key={index}>{part.text}</mark>
+    : <span key={index}>{part.text}</span>)}</>
+}
+
+function matchingSnippet(text: string, query?: string): string | null {
+  const needle = query?.trim().toLocaleLowerCase() ?? ''
+  const at = needle ? text.toLocaleLowerCase().indexOf(needle) : -1
+  if (at < 0) return null
+  const start = Math.max(0, at - 28)
+  const end = Math.min(text.length, at + needle.length + 44)
+  return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`
+}
+
+export function updatedPresentation(timestamp: number, now = Date.now()): { short: string; label: string; state: 'fresh' | 'recent' | 'stale' } {
+  const date = new Date(timestamp)
+  const elapsed = Math.max(0, now - timestamp)
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const current = new Date(now)
+  const currentStart = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime()
+  const calendarDays = Math.max(0, Math.round((currentStart - start) / 86_400_000))
+  const exact = date.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+  const label = `Обновлено: ${exact}`
+  if (elapsed < 60_000) return { short: 'сейчас', label, state: 'fresh' }
+  if (elapsed < 3_600_000) return { short: `${Math.floor(elapsed / 60_000)} мин`, label, state: 'fresh' }
+  if (calendarDays === 0 && elapsed < 6 * 3_600_000) return { short: `${Math.floor(elapsed / 3_600_000)} ч`, label, state: 'fresh' }
+  if (calendarDays === 0) return { short: 'сегодня', label, state: 'fresh' }
+  if (calendarDays === 1) return { short: 'вчера', label, state: 'recent' }
+  if (calendarDays < 7) return { short: `${calendarDays} дн`, label, state: 'recent' }
+  return { short: date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }), label, state: 'stale' }
 }
 
 /** Эпик-предок задачи (родитель истории или родитель родителя задачи). */
@@ -82,6 +139,8 @@ export function epicOf(task: Task, all: Task[]): Task | null {
 }
 
 export function TaskCard(props: TaskCardProps): JSX.Element {
+  const mobile = useMediaQuery(MOBILE_QUERY) && !props.detailsView
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [launching, setLaunching] = useState<'queue' | 'parallel' | null>(null)
   const [movingStage, setMovingStage] = useState(false)
   const movingStageRef = useRef(false)
@@ -112,9 +171,43 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const confirm = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const menuPanelRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const menuId = useId()
 
   useDismissibleMenu(menuOpen, menuRef, () => setMenuOpen(false))
+
+  const openMenu = (): void => {
+    setMenuOpen(true)
+    requestAnimationFrame(() => menuPanelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
+  }
+
+  const closeMenuAndRestoreFocus = (): void => {
+    setMenuOpen(false)
+    requestAnimationFrame(() => cardRef.current?.focus())
+  }
+
+  const navigateMenu = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const items = Array.from(menuPanelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeMenuAndRestoreFocus()
+      return
+    }
+    if (event.key === 'Tab') {
+      setMenuOpen(false)
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || items.length === 0) return
+    event.preventDefault()
+    const current = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? items.length - 1
+        : event.key === 'ArrowDown' ? (current + 1 + items.length) % items.length
+          : (current - 1 + items.length) % items.length
+    items[next]?.focus()
+  }
 
   const done = props.doneColumnIds.has(task.columnId)
   // Сервер выбирает состояние; helper сохраняет совместимость со stale payload.
@@ -140,26 +233,71 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
   const doneChildren = children.filter((t) => props.doneColumnIds.has(t.columnId))
+  const remainingChildren = children.length - doneChildren.length
+  const childProgressPercent = children.length === 0 ? 0 : Math.round((doneChildren.length / children.length) * 100)
+  const childProgressLabel = `Выполнено ${doneChildren.length} из ${children.length}, осталось ${remainingChildren}, ${childProgressPercent}%`
   const key = issueKey(props.projectName, task)
+  const due = task.dueDate == null ? null : duePresentation(task.dueDate)
+  const updated = updatedPresentation(task.updatedAt)
+  const visibleLabels = task.labels.slice(0, 3)
+  const hiddenLabelCount = Math.max(0, task.labels.length - visibleLabels.length)
+  const query = props.searchQuery?.trim()
+  const searchContexts = query ? [
+    task.assignee && matchingSnippet(task.assignee, query) ? { label: 'Исполнитель', text: task.assignee } : null,
+    ...task.labels.slice(visibleLabels.length).filter((label) => matchingSnippet(label, query)).map((label) => ({ label: 'Метка', text: label })),
+    matchingSnippet(task.description, query) ? { label: 'Описание', text: matchingSnippet(task.description, query)! } : null,
+    matchingSnippet(task.acceptanceCriteria, query) ? { label: 'Критерии', text: matchingSnippet(task.acceptanceCriteria, query)! } : null
+  ].filter((item): item is { label: string; text: string } => item != null).slice(0, 2) : []
+  const cardLabel = [
+    key,
+    TYPE_LABEL[task.type],
+    task.title,
+    `Приоритет: ${PRIORITY_LABEL[task.priority]}`,
+    task.assignee ? `Исполнитель: ${task.assignee}` : 'Исполнитель не назначен',
+    due?.label
+  ].filter(Boolean).join('. ')
 
   return (
     <div
       ref={cardRef}
-      className={`jcard jcard--stage-${props.columnSemanticType ?? 'custom'}${done ? ' jcard--compact' : ''}${task.flagged ? ' jcard--flagged' : ''}${developmentStage && task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed && !done ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
+      className={`jcard${mobile ? ' jcard--mobile' : ''} jcard--stage-${props.columnSemanticType ?? 'custom'}${done ? ' jcard--compact' : ''}${task.flagged ? ' jcard--flagged' : ''}${developmentStage && task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed && !done ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
       data-task-id={task.id}
+      role="article"
+      aria-label={cardLabel}
+      aria-describedby={`${menuId}-shortcuts`}
+      aria-keyshortcuts="Enter Space Shift+F10"
       tabIndex={0}
-      onClick={() => props.onOpen(task.id)}
+      onClick={(event) => { if (!(event.target as HTMLElement).closest('.vc-dialog-overlay')) props.onOpen(task.id) }}
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return
+        event.preventDefault()
+        if (!props.grabbed) openMenu()
+      }}
       onPointerDown={(e) => {
         // С кнопок, полей и меню внутри карточки перенос не начинаем.
         if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
         if (cardRef.current) props.onGrab?.(e, cardRef.current, false)
       }}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        if (!props.grabbed && e.key === 'Enter') {
+          e.preventDefault()
+          props.onOpen(task.id)
+          return
+        }
+        if (!props.grabbed && ((e.key === 'F10' && e.shiftKey) || e.key === 'ContextMenu')) {
+          e.preventDefault()
+          openMenu()
+          return
+        }
         if (cardRef.current) props.onCardKeys?.(e, cardRef.current)
       }}
-      onBlur={() => props.onCardBlur?.()}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) props.onCardBlur?.()
+      }}
     >
+      <span id={`${menuId}-shortcuts`} className="vc-sr-only">Enter — открыть; Пробел — перенести; Shift+F10 — открыть действия.</span>
       <div className="jcard-top">
         <span
           className="jcard-grip"
@@ -171,34 +309,72 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         >
           <GripIcon />
         </span>
-        <span className="jcard-key jcard-key--head">{key}</span>
-        <span className="jcard-title" title={task.title}>{task.title}</span>
+        <span className="jcard-key jcard-key--head"><HighlightedText text={key} query={query} /></span>
+        <span className="jcard-title" title={task.title}><HighlightedText text={task.title} query={query} /></span>
         <span className="jcard-menuwrap" ref={menuRef}>
           <IconButton
             className="jcard-reveal"
             size="sm"
             aria-label={`Действия с «${task.title}»`}
             title="Действия"
+            aria-haspopup="menu"
             aria-expanded={menuOpen}
+            aria-controls={menuOpen ? menuId : undefined}
             onClick={(e) => {
               e.stopPropagation()
-              setMenuOpen((v) => !v)
+              if (menuOpen) setMenuOpen(false)
+              else openMenu()
             }}
           >
             <DotsIcon />
           </IconButton>
           {menuOpen && (
-            <div className="jcard-menu" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
-              <button onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { flagged: !task.flagged }) }}>
+            <div
+              id={menuId}
+              ref={menuPanelRef}
+              className="jcard-menu"
+              role="menu"
+              aria-label={`Действия с «${task.title}»`}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={navigateMenu}
+            >
+              {mobile && <button role="menuitem" onClick={() => { setMenuOpen(false); setDetailsOpen(true) }}>Все данные карточки</button>}
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
+              {props.onHide && <button role="menuitem" onClick={() => { setMenuOpen(false); props.onHide?.(task.id) }}>Скрыть карточку</button>}
+              {props.onCopyLink && (
+                <button role="menuitem" onClick={() => { setMenuOpen(false); void props.onCopyLink?.(task.id) }}>
+                  Копировать ссылку
+                </button>
+              )}
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { flagged: !task.flagged }) }}>
                 {task.flagged ? 'Снять флаг' : 'Добавить флаг'}
               </button>
-              <button onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { autoPilot: !task.autoPilot }) }}>
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { autoPilot: !task.autoPilot }) }}>
                 {task.autoPilot ? 'Выключить автопроход' : 'Включить автопроход'}
               </button>
-              <button onClick={() => { setMenuOpen(false); props.onMoveTop(task.id) }}>В начало колонки</button>
-              <button onClick={() => { setMenuOpen(false); props.onMoveBottom(task.id) }}>В конец колонки</button>
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onMoveTop(task.id) }}>В начало колонки</button>
+              <button role="menuitem" onClick={() => { setMenuOpen(false); props.onMoveBottom(task.id) }}>В конец колонки</button>
+              {props.onMoveToColumn && props.moveColumns?.some((column) => column.id !== task.columnId) && (
+                <>
+                  <span className="jcard-menu-label" role="presentation">Переместить в колонку</span>
+                  {props.moveColumns.filter((column) => column.id !== task.columnId).map((column) => (
+                    <button
+                      key={column.id}
+                      role="menuitem"
+                      disabled={movingStage}
+                      title={column.hidden ? `Скрытая колонка «${column.name}»` : undefined}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        void moveToColumn(column.id)
+                      }}
+                    >
+                      В колонку «{column.name}»{column.hidden ? ' · скрытая' : ''}
+                    </button>
+                  ))}
+                </>
+              )}
               <button
+                role="menuitem"
                 className="jcard-menu-danger"
                 onClick={() => {
                   setMenuOpen(false)
@@ -230,7 +406,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </button>
       )}
 
-      {!done && !stoppedStage && (task.flagged || task.autoPilot || epic || (props.columnSemanticType === 'backlog' && task.labels.length > 0) || (readyStage && task.skills.length > 0)) && (
+      {!done && !stoppedStage && (task.flagged || task.autoPilot || epic || task.labels.length > 0 || (readyStage && task.skills.length > 0)) && (
         <div className="jcard-chips">
           {task.flagged && <span className="jcard-flag" title="Помечена флагом"><FlagIcon filled /> Флаг</span>}
           {task.autoPilot && <span className="jcard-label" title="Автоматический проход конвейера">Автопроход</span>}
@@ -243,22 +419,57 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               {epic.title}
             </span>
           )}
-          {props.columnSemanticType === 'backlog' && task.labels.map((l) => (
-            <span key={l} className="jcard-label">{l}</span>
-          ))}
+          {task.labels.length > 0 && (
+            <span className="jcard-labels" role="list" aria-label={`Метки задачи: ${task.labels.join(', ')}`}>
+              {visibleLabels.map((label) => <span key={label} className="jcard-label" role="listitem"><HighlightedText text={label} query={query} /></span>)}
+              {hiddenLabelCount > 0 && (
+                <span
+                  className="jcard-label jcard-label--more"
+                  role="listitem"
+                  aria-label={`Ещё ${hiddenLabelCount} метки: ${task.labels.slice(visibleLabels.length).join(', ')}`}
+                  title={`Все метки: ${task.labels.join(', ')}`}
+                >
+                  +{hiddenLabelCount}
+                </span>
+              )}
+            </span>
+          )}
           {readyStage && task.skills.map((s) => (
             <span key={`skill-${s}`} className="jcard-skill" title={`Навык: ${s}`}>{s}</span>
           ))}
         </div>
       )}
 
+      {searchContexts.length > 0 && (
+        <div className="jcard-search-context" aria-label="Совпадения поиска">
+          {searchContexts.map((context) => (
+            <span key={`${context.label}:${context.text}`} className="jcard-search-context-row">
+              <strong>{context.label}:</strong> <HighlightedText text={context.text} query={query} />
+            </span>
+          ))}
+        </div>
+      )}
 
-      {props.columnSemanticType === 'backlog' && children.length > 0 && (
-        <div className="jcard-progress" title={`Подзадачи: ${doneChildren.length} из ${children.length}`}>
-          <span className="jcard-progress-bar">
-            <span className="jcard-progress-fill" style={{ width: `${Math.round((doneChildren.length / children.length) * 100)}%` }} />
+
+      {children.length > 0 && (
+        <div
+          className={`jcard-progress${childProgressPercent === 100 ? ' jcard-progress--complete' : childProgressPercent === 0 ? ' jcard-progress--empty' : ''}`}
+          role="progressbar"
+          aria-label="Прогресс подзадач"
+          aria-valuemin={0}
+          aria-valuemax={children.length}
+          aria-valuenow={doneChildren.length}
+          aria-valuetext={childProgressLabel}
+          title={`Подзадачи: ${childProgressLabel}`}
+        >
+          <span className="jcard-progress-bar" aria-hidden="true">
+            <span className="jcard-progress-fill" style={{ width: `${childProgressPercent}%` }} />
           </span>
-          <span className="jcard-progress-text">{doneChildren.length}/{children.length}</span>
+          <span className="jcard-progress-text">
+            <strong>{childProgressPercent}%</strong>
+            <span>{doneChildren.length}/{children.length}</span>
+            <span>{remainingChildren === 0 ? 'готово' : `осталось ${remainingChildren}`}</span>
+          </span>
         </div>
       )}
 
@@ -422,6 +633,27 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       {/* Клавиатурный перенос иначе не найти: подсказка видна только скринридеру. */}
       <span className="vc-sr-only">Пробел — взять задачу для переноса</span>
 
+      {mobile && <span className="jcard-mobile-status">{visibleCiSummary ? ciStatusLabel(visibleCiSummary.status)
+        : task.taskPreparationStatus === 'running' ? 'Подготовка выполняется'
+          : task.latestRunResult ? (task.latestRunResult.outcome === 'success' ? 'Пройдено' : task.latestRunResult.outcome === 'active' ? 'Выполняется' : 'Не пройдено')
+            : props.moveColumns?.find((column) => column.id === task.columnId)?.name ?? props.columnSemanticType ?? 'Задача'}</span>}
+      {detailsOpen && <Dialog title={`Все данные: ${key}`} size="full" padded onClose={() => {
+        setDetailsOpen(false)
+        cardRef.current?.querySelector<HTMLButtonElement>('.jcard-reveal')?.focus()
+      }}>
+        <div onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+          <TaskCard {...props} detailsView onGrab={undefined} onCardKeys={undefined} onCardBlur={undefined} grabbed={false} dragging={false} />
+          <dl>
+            <dt>Метки</dt><dd>{task.labels.join(', ') || 'Нет меток'}</dd>
+            <dt>Тип</dt><dd>{TYPE_LABEL[task.type]}</dd>
+            <dt>Приоритет</dt><dd>{PRIORITY_LABEL[task.priority]}</dd>
+            <dt>Навыки</dt><dd>{task.skills.join(', ') || 'Нет навыков'}</dd>
+            <dt>Эпик</dt><dd>{epic?.title ?? 'Нет эпика'}</dd>
+            <dt>Флаг</dt><dd>{task.flagged ? 'Да' : 'Нет'}</dd>
+            <dt>Автопроход</dt><dd>{task.autoPilot ? 'Да' : 'Нет'}</dd>
+          </dl>
+        </div>
+      </Dialog>}
       <div className="jcard-foot">
         <span className="jcard-foot-left">
           <TypeIcon type={task.type} />
@@ -444,18 +676,36 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </span>
 
         <span className="jcard-foot-right">
-          {/* В подписи только «29 авг.» — год виден лишь в подсказке. */}
-          {task.dueDate != null && (
-            <span className={`jcard-due jcard-due--${dueState(task.dueDate)}`} title={`Срок: ${formatDate(task.dueDate)}`}>
-              {fmtDue(task.dueDate)}
+          <time
+            className={`jcard-updated jcard-updated--${updated.state}`}
+            dateTime={new Date(task.updatedAt).toISOString()}
+            aria-label={updated.label}
+            title={updated.label}
+          >
+            {updated.short}
+          </time>
+          {task.dueDate != null && due && (
+            <time
+              className={`jcard-due jcard-due--${due.state}`}
+              dateTime={new Date(task.dueDate).toISOString()}
+              aria-label={due.label}
+              title={due.label}
+            >
+              {due.short}
+            </time>
+          )}
+          {task.storyPoints != null && (
+            <span className="jcard-pts" aria-label={`Оценка: ${task.storyPoints} story points`} title={`Оценка: ${task.storyPoints} story points`}>
+              {task.storyPoints} SP
             </span>
           )}
-          {task.storyPoints != null && <span className="jcard-pts" title="Стори-поинты">{task.storyPoints}</span>}
           <PriorityIcon priority={task.priority} />
           {task.assignee ? (
-            <Avatar username={task.assignee} />
+            <span className="jcard-assignee" role="img" aria-label={`Исполнитель: ${task.assignee}`}>
+              <Avatar username={task.assignee} />
+            </span>
           ) : (
-            <span className="javatar javatar--none" title="Не назначено">?</span>
+            <span className="javatar javatar--none" role="img" aria-label="Исполнитель не назначен" title="Не назначено">?</span>
           )}
         </span>
       </div>

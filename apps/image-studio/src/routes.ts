@@ -2,12 +2,16 @@
 // переименование, удаление и два действия модели — «нарисовать по промпту» и
 // «поправить выбранную по промпту». Доступ — владелец разговора; чужой и
 // несуществующий неотличимы (404), как везде в Make/чатах.
-import { createHash } from 'node:crypto'
+import sharp from 'sharp'
+import { Readable } from 'node:stream'
+import { createHash, randomUUID } from 'node:crypto'
+import type { ImageStudioPublicationSettings, ImageStudioFile, ImageStudioTask, ImageStudioTaskInput } from '@voicechat/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
+import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation, type ImageStudioSelection } from '@voicechat/shared'
 import type { ImageStudioCore, ImageStudioGenerator } from './core.js'
 import { SlidingWindowLimiter } from '@voicechat/shared'
 import { ImageStudioError, type ImageStudioStore } from './studio.js'
+import { extractImageStudioSelection, ImageStudioSelectionError, placeImageStudioObject, retouchImageStudioSelection } from './selection.js'
 
 export interface ImageStudioRoutesDeps {
   core: Pick<ImageStudioCore, 'conversation' | 'renameConversation'>
@@ -19,11 +23,60 @@ export interface ImageStudioRoutesDeps {
 }
 
 function sendStudioError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof ImageStudioSelectionError) return reply.code(400).send({ error: error.message })
   if (error instanceof ImageStudioError) {
     const code = error.code === 'not_found' ? 404 : error.code === 'quota' || error.code === 'too_big' ? 413 : 400
     return reply.code(code).send({ error: error.message })
   }
   return reply.code(502).send({ error: error instanceof Error ? error.message : String(error) })
+}
+
+async function* studioZip(files: Array<{ path: string; data: () => Promise<Buffer | null> }>): AsyncGenerator<Buffer> {
+  const directory: Buffer[] = []
+  let offset = 0
+  for (const file of files) {
+    const data = await file.data()
+    if (!data) throw new Error(`File disappeared: ${file.path}`)
+    const name = Buffer.from(file.path)
+    let crc = 0xffffffff
+    for (const byte of data) {
+      crc ^= byte
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0)
+    }
+    crc = (crc ^ 0xffffffff) >>> 0
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(0x800, 6)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(name.length, 26)
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50)
+    central.writeUInt16LE(20, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt16LE(0x800, 8)
+    central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(data.length, 20)
+    central.writeUInt32LE(data.length, 24)
+    central.writeUInt16LE(name.length, 28)
+    central.writeUInt32LE(offset, 42)
+    directory.push(central, name)
+    offset += local.length + name.length + data.length
+    yield local
+    yield name
+    yield data
+  }
+  const centralOffset = offset
+  for (const part of directory) { yield part; offset += part.length }
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50)
+  end.writeUInt16LE(files.length, 8)
+  end.writeUInt16LE(files.length, 10)
+  end.writeUInt32LE(offset - centralOffset, 12)
+  end.writeUInt32LE(centralOffset, 16)
+  yield end
 }
 
 export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudioRoutesDeps): void {
@@ -32,9 +85,42 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   // Один ран на разговор: параллельные генерации дерутся за имена и квоту, а
   // пользователю всё равно нужен один результат. Здесь же живёт ручка отмены.
   const activeRuns = new Map<string, { cancel: () => void; cancelled: boolean }>()
+  const tasks = new Map<string, { task: ImageStudioTask; work: (run: { cancelled: boolean; onCancel: (fn: () => void) => void }, saving: () => void) => Promise<ImageStudioFile> }>()
+  const pump = (conversationId: string): void => {
+    if (closing || activeRuns.has(conversationId)) return
+    const entry = [...tasks.values()].find(({ task }) => task.conversationId === conversationId && task.state === 'queued')
+    if (!entry) return
+    const { task, work } = entry
+    let stop: (() => void) | undefined
+    const run = {
+      cancelled: false,
+      cancel() { if (!run.cancelled) { run.cancelled = true; stop?.() } },
+      onCancel(fn: () => void) { stop = fn; if (run.cancelled) fn() }
+    }
+    activeRuns.set(conversationId, run)
+    task.state = 'running'
+    task.updatedAt = Date.now()
+    void (async () => {
+      try {
+        task.file = await work(run, () => {
+          if (run.cancelled) throw new Error('Генерация отменена')
+          task.state = 'saving'
+          task.updatedAt = Date.now()
+        })
+        task.state = 'completed'
+      } catch (error) {
+        task.state = run.cancelled ? 'cancelled' : 'failed'
+        if (!run.cancelled) task.error = error instanceof Error ? error.message : String(error)
+      } finally {
+        task.updatedAt = Date.now()
+        activeRuns.delete(conversationId)
+        pump(conversationId)
+      }
+    })()
+  }
   let closing = false
 
-  app.addHook('preClose', async () => { closing = true; for (const run of activeRuns.values()) run.cancel() })
+  app.addHook('preClose', async () => { closing = true; for (const { task } of tasks.values()) if (task.state === 'queued') task.state = 'cancelled'; for (const run of activeRuns.values()) run.cancel() })
 
   const withRun = async (conversationId: string, reply: FastifyReply, body: (run: { cancel: () => void; cancelled: boolean; onCancel: (fn: () => void) => void }) => Promise<FastifyReply | object>): Promise<FastifyReply | object> => {
     // Проверка владельца по HTTP могла закончиться уже после начала остановки.
@@ -49,6 +135,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       return sendStudioError(reply, error)
     } finally {
       activeRuns.delete(conversationId)
+      pump(conversationId)
     }
   }
 
@@ -60,6 +147,117 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       return false
     }
     return true
+  }
+
+  const executeGeneration = async (
+    userId: string,
+    id: string,
+    input: ImageStudioTaskInput,
+    run: { cancelled: boolean; onCancel: (fn: () => void) => void },
+    saving: () => void = () => undefined
+  ): Promise<ImageStudioFile> => {
+    const startedAt = Date.now()
+    const prompt = input.prompt.trim()
+    const parameters = input.parameters
+    const fullPrompt = [prompt, parameters?.style ? `Стиль: ${parameters.style}.` : '', parameters?.size ? `Размер изображения: ${parameters.size.replace('×', 'x')}` : '', parameters?.negative ? `Не должно быть на изображении: ${parameters.negative}.` : '', parameters?.noText ? 'Не добавляй на изображение никакой текст, надписи и водяные знаки.' : ''].filter(Boolean).join('\n')
+    const source = input.path ? await store.readBuffer(id, input.path) : undefined
+    if (input.path && !source) throw new ImageStudioError('not_found', 'Исходник больше не существует')
+    const references: Array<{ name: string; data: Buffer }> = []
+    for (const name of (input.references ?? []).slice(0, 4)) {
+      const data = await store.readBuffer(id, name)
+      if (!data) throw new ImageStudioError('not_found', `Референс «${name}» не найден`)
+      references.push({ name, data })
+    }
+    const data = await (await deps.generator!(userId))({ prompt: fullPrompt, ...(source ? { source, sourceName: input.path } : {}), ...(references.length ? { references } : {}), onCancel: run.onCancel })
+    if (run.cancelled) throw new Error('Генерация отменена')
+    saving()
+    const name = await store.freeName(id, input.name?.trim() || input.path || 'изображение.png')
+    const file = await store.writeBuffer(id, name, data)
+    const meta = { prompt, parameters, ...(input.path ? { source: input.path } : {}), operation: input.path ? 'edit' as const : 'generate' as const, tookMs: Date.now() - startedAt }
+    await store.setMeta(id, name, meta)
+    const conversation = await core.conversation(userId, id)
+    if (conversation && /^Картинки \d+$/.test(conversation.title)) await core.renameConversation(userId, id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
+    return { ...file, ...meta }
+  }
+
+  app.get<{ Params: { id: string } }>('/api/image-studio/:id/tasks', async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    return [...tasks.values()].filter(({ task }) => task.conversationId === req.params.id).map(({ task }) => task)
+  })
+
+  app.delete<{ Params: { id: string; taskId: string } }>('/api/image-studio/:id/tasks/:taskId', async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    const task = tasks.get(req.params.taskId)?.task
+    if (!task || task.conversationId !== req.params.id || !['queued', 'running'].includes(task.state)) return { cancelled: false }
+    if (task.state === 'queued') { task.state = 'cancelled'; task.updatedAt = Date.now() }
+    else activeRuns.get(req.params.id)?.cancel()
+    return { cancelled: true }
+  })
+
+  app.post<{ Params: { id: string }; Body: ImageStudioTaskInput }>('/api/image-studio/:id/tasks', async (req, reply) => {
+    const userId = uid(req)
+    const id = req.params.id
+    if (!await own(userId, id, reply)) return reply
+    if (closing || !deps.generator) return reply.code(503).send({ error: 'Генерация недоступна' })
+    const input = req.body
+    if (!input || typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: 'Недопустимый промпт' })
+    if (input.parameters !== undefined && (!input.parameters || typeof input.parameters !== 'object' || Array.isArray(input.parameters) || Object.keys(input.parameters).some(key => !['style', 'negative', 'size', 'noText'].includes(key)))) return reply.code(400).send({ error: 'Неподдерживаемые параметры' })
+    try {
+      if (input.path && !await store.readBuffer(id, input.path)) return reply.code(404).send({ error: 'файл не найден' })
+      const prompt = input.prompt.trim()
+      const parameters = input.parameters
+      if (parameters && ((['style', 'negative', 'size'] as const).some(key => parameters[key] !== undefined && typeof parameters[key] !== 'string') || (parameters.noText !== undefined && typeof parameters.noText !== 'boolean'))) return reply.code(400).send({ error: 'Недопустимые параметры' })
+      const fullPrompt = [prompt, parameters?.style ? `Стиль: ${parameters.style}.` : '', parameters?.size ? `Размер изображения: ${parameters.size.replace('×', 'x')}` : '', parameters?.negative ? `Не должно быть на изображении: ${parameters.negative}.` : '', parameters?.noText ? 'Не добавляй на изображение никакой текст, надписи и водяные знаки.' : ''].filter(Boolean).join('\n')
+      if (fullPrompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: 'Промпт с параметрами слишком длинный' })
+      // Recheck after source I/O: concurrent requests must reserve queue capacity
+      // without yielding between this snapshot and insertion.
+      if (closing) return reply.code(503).send({ error: 'Генерация недоступна' })
+      const list = [...tasks.values()].filter(({ task }) => task.conversationId === id)
+      if (list.filter(({ task }) => ['queued', 'running', 'saving'].includes(task.state)).length >= 50) return reply.code(429).send({ error: 'Очередь заполнена' })
+      const now = Date.now()
+      const task: ImageStudioTask = { id: randomUUID(), conversationId: id, prompt, state: 'queued', createdAt: now, updatedAt: now }
+      for (const { task: old } of list.filter(({ task: old }) => !['queued', 'running', 'saving'].includes(old.state)).slice(0, -49)) tasks.delete(old.id)
+      tasks.set(task.id, { task, work: (run, saving) => executeGeneration(userId, id, input, run, saving) })
+      pump(id)
+      return reply.code(202).send(task)
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { path: string; tags: string[] } }>('/api/image-studio/:id/tags', async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    if (!Array.isArray(req.body?.tags) || req.body.tags.length > 30 || req.body.tags.some(tag => typeof tag !== 'string' || tag.length > 80)) return reply.code(400).send({ error: 'Не больше 30 тегов по 80 символов' })
+    try {
+      if (!await store.readBuffer(req.params.id, req.body.path)) return reply.code(404).send({ error: 'файл не найден' })
+      await store.setMeta(req.params.id, req.body.path, { ...await store.meta(req.params.id, req.body.path), tags: [...new Set(req.body.tags.map(tag => tag.trim()).filter(Boolean))] })
+      return store.list(req.params.id)
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
+  const archives = new Map<string, { userId: string; conversationId: string; paths: string[]; expires: number }>()
+  app.post<{ Params: { id: string }; Body: { paths: string[] } }>('/api/image-studio/:id/archive', async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    const paths = req.body?.paths
+    if (!Array.isArray(paths) || !paths.length || paths.length > 1000 || paths.some(path => typeof path !== 'string')) return reply.code(400).send({ error: 'Выберите от 1 до 1000 файлов' })
+    const existing = new Set((await store.list(req.params.id)).map(file => file.path))
+    if (paths.some(path => !existing.has(path))) return reply.code(404).send({ error: 'Выбранный файл не найден' })
+    for (const [key, entry] of archives) if (entry.expires < Date.now()) archives.delete(key)
+    const ticket = randomUUID()
+    archives.set(ticket, { userId: uid(req), conversationId: req.params.id, paths: [...new Set(paths)], expires: Date.now() + 60_000 })
+    return { url: `/g/archive/${ticket}` }
+  })
+  app.get<{ Params: { ticket: string } }>('/g/archive/:ticket', async (req, reply) => {
+    const archive = archives.get(req.params.ticket)
+    archives.delete(req.params.ticket)
+    if (!archive || archive.expires < Date.now() || !await own(archive.userId, archive.conversationId, reply)) return reply.code(404).send({ error: 'Архив недоступен' })
+    const stream = Readable.from(studioZip(archive.paths.map(path => ({ path, data: () => store.readBuffer(archive.conversationId, path) }))))
+    reply.raw.once('close', () => stream.destroy())
+    return reply.type('application/zip').header('content-disposition', 'attachment; filename="gallery.zip"').header('cache-control', 'no-store').send(stream)
+  })
+
+  const derivedName = async (conversationId: string, source: string, suffix: string): Promise<string> => {
+    const dot = source.lastIndexOf('.')
+    const stem = dot > 0 ? source.slice(0, dot) : source
+    return store.freeName(conversationId, `${stem}-${suffix}.png`)
   }
 
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/files', async (req, reply) => {
@@ -82,7 +280,9 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       await store.writeBuffer(req.params.id, req.body?.path ?? '', Buffer.from(req.body?.dataBase64 ?? '', 'base64'))
       // Клиентские обработки (кроп, разметка, поворот…) сообщают исходник —
       // без этого цепочка версий рвётся на первом же локальном действии.
-      if (req.body?.source) await store.setMeta(req.params.id, req.body.path ?? '', { source: req.body.source })
+      await store.setMeta(req.params.id, req.body.path ?? '', req.body?.source
+        ? { source: req.body.source, operation: 'transform' }
+        : { operation: 'upload' })
       return await store.list(req.params.id)
     } catch (error) { return sendStudioError(reply, error) }
   })
@@ -110,26 +310,9 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     if (!prompt) return reply.code(400).send({ error: 'Опишите, что нарисовать' })
     if (prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: `Промпт длиннее ${IMAGE_STUDIO_LIMITS.maxPromptChars} символов — сократите` })
     if (!deps.generator) return reply.code(503).send({ error: 'Генерация изображений недоступна в этой конфигурации' })
-    const referenceNames = (req.body?.references ?? []).slice(0, 4)
     return withRun(req.params.id, reply, async (run) => {
-      const references: Array<{ name: string; data: Buffer }> = []
-      for (const name of referenceNames) {
-        const data = await store.readBuffer(req.params.id, name)
-        if (!data) return reply.code(404).send({ error: `Референс «${name}» не найден` })
-        references.push({ name, data })
-      }
-      const startedAt = Date.now()
-      const data = await (await deps.generator!(userId))({ prompt, ...(references.length ? { references } : {}), onCancel: run.onCancel })
-      if (run.cancelled) throw new Error('Генерация отменена')
-      const name = await store.freeName(req.params.id, (req.body?.name ?? '').trim() || 'изображение.png')
-      const file = await store.writeBuffer(req.params.id, name, data)
-      await store.setMeta(req.params.id, name, { prompt, tookMs: Date.now() - startedAt })
-      // Первый успешный промпт даёт чату говорящее имя вместо «Картинки N».
-      const conversation = await core.conversation(userId, req.params.id)
-      if (conversation && /^Картинки \d+$/.test(conversation.title)) {
-        await core.renameConversation(userId, req.params.id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
-      }
-      return { file: { ...file, prompt }, files: await store.list(req.params.id) }
+      const file = await executeGeneration(userId, req.params.id, { prompt, name: req.body?.name, references: req.body?.references }, run)
+      return { file, files: await store.list(req.params.id) }
     })
   })
 
@@ -141,19 +324,98 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     if (prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: `Промпт длиннее ${IMAGE_STUDIO_LIMITS.maxPromptChars} символов — сократите` })
     if (!deps.generator) return reply.code(503).send({ error: 'Правка изображений недоступна в этой конфигурации' })
     const sourcePath = req.body?.path ?? ''
+    if (!sourcePath) return reply.code(400).send({ error: 'Выберите исходник' })
+    return withRun(req.params.id, reply, async (run) => {
+      const file = await executeGeneration(userId, req.params.id, { prompt, path: sourcePath }, run)
+      return { file, files: await store.list(req.params.id) }
+    })
+  })
+
+  app.post<{ Params: { id: string }; Body: { path?: string; prompt?: string; selection?: ImageStudioSelection; references?: string[] } }>('/api/image-studio/:id/retouch', { bodyLimit: 6 * 1024 * 1024 }, async (req, reply) => {
+    const userId = uid(req)
+    if (!await own(userId, req.params.id, reply)) return reply
+    const sourcePath = req.body?.path ?? ''
+    const prompt = (req.body?.prompt ?? '').trim()
+    if (!prompt) return reply.code(400).send({ error: 'Опишите, что изменить в выделении' })
+    if (!req.body?.selection) return reply.code(400).send({ error: 'Сначала выделите область' })
+    if (!deps.generator) return reply.code(503).send({ error: 'Ретушь недоступна в этой конфигурации' })
     return withRun(req.params.id, reply, async (run) => {
       const source = await store.readBuffer(req.params.id, sourcePath)
       if (!source) return reply.code(404).send({ error: 'файл не найден' })
+      const references: Buffer[] = []
+      for (const name of (req.body?.references ?? []).slice(0, 4)) {
+        const reference = await store.readBuffer(req.params.id, name)
+        if (!reference) return reply.code(404).send({ error: `Референс «${name}» не найден` })
+        references.push(reference)
+      }
       const startedAt = Date.now()
-      const data = await (await deps.generator!(userId))({ prompt, source, sourceName: sourcePath || 'source.png', onCancel: run.onCancel })
-      // Правка не затирает оригинал: результат — новый файл рядом. Откат — это
-      // просто удаление новой версии, истории снимков студии не нужно.
+      const result = await retouchImageStudioSelection({
+        original: source,
+        selection: req.body!.selection!,
+        prompt,
+        references,
+        generate: async ({ crop, mask, width, height, references: refs }) => (await deps.generator!(userId))({
+          prompt, source: crop, sourceName: 'selection.png', mask, targetSize: { width, height },
+          references: refs.map((data, index) => ({ name: `reference-${index + 1}.png`, data })),
+          onCancel: run.onCancel
+        })
+      })
       if (run.cancelled) throw new Error('Генерация отменена')
-      const name = await store.freeName(req.params.id, sourcePath || 'правка.png')
-      const file = await store.writeBuffer(req.params.id, name, data)
-      await store.setMeta(req.params.id, name, { prompt, source: sourcePath, tookMs: Date.now() - startedAt })
-      return { file: { ...file, prompt, source: sourcePath }, files: await store.list(req.params.id) }
+      const name = await derivedName(req.params.id, sourcePath, 'ретушь')
+      const file = await store.writeBuffer(req.params.id, name, result.image)
+      await store.setMeta(req.params.id, name, { prompt, source: sourcePath, tookMs: Date.now() - startedAt, operation: 'retouch', selection: result.bounds })
+      return { file: { ...file, prompt, source: sourcePath, operation: 'retouch', selection: result.bounds }, files: await store.list(req.params.id) }
     })
+  })
+
+  app.post<{ Params: { id: string }; Body: { path?: string; selection?: ImageStudioSelection } }>('/api/image-studio/:id/extract', { bodyLimit: 6 * 1024 * 1024 }, async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    if (!req.body?.selection) return reply.code(400).send({ error: 'Сначала выделите объект' })
+    const sourcePath = req.body.path ?? ''
+    try {
+      const source = await store.readBuffer(req.params.id, sourcePath)
+      if (!source) return reply.code(404).send({ error: 'файл не найден' })
+      const result = await extractImageStudioSelection(source, req.body.selection)
+      const name = await derivedName(req.params.id, sourcePath, 'объект')
+      const file = await store.writeBuffer(req.params.id, name, result.image)
+      await store.setMeta(req.params.id, name, { source: sourcePath, operation: 'extract', selection: result.bounds })
+      return { file: { ...file, source: sourcePath, operation: 'extract', selection: result.bounds }, files: await store.list(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { basePath?: string; objectPath?: string; x?: number; y?: number; width?: number; height?: number } }>('/api/image-studio/:id/place', async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    const objectPath = req.body?.objectPath ?? ''
+    try {
+      const origin = await store.extractionOrigin(req.params.id, objectPath)
+      const basePath = req.body?.basePath || origin?.path || ''
+      const base = await store.readBuffer(req.params.id, basePath)
+      const object = await store.readBuffer(req.params.id, objectPath)
+      if (!base || !object) return reply.code(404).send({ error: 'Исходник или объект не найден' })
+      const x = req.body?.x ?? origin?.bounds.x ?? 0
+      const y = req.body?.y ?? origin?.bounds.y ?? 0
+      const image = await placeImageStudioObject({ base, object, x, y, width: req.body?.width ?? origin?.bounds.width, height: req.body?.height ?? origin?.bounds.height })
+      const name = await derivedName(req.params.id, basePath, 'с-объектом')
+      const file = await store.writeBuffer(req.params.id, name, image)
+      const selection = { kind: 'rectangle' as const, x, y, width: req.body?.width ?? origin?.bounds.width ?? 1, height: req.body?.height ?? origin?.bounds.height ?? 1 }
+      await store.setMeta(req.params.id, name, { source: basePath, operation: 'place', selection })
+      return { file: { ...file, source: basePath, operation: 'place', selection }, files: await store.list(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { currentPath?: string; targetPath?: string } }>('/api/image-studio/:id/restore-version', async (req, reply) => {
+    if (!await own(uid(req), req.params.id, reply)) return reply
+    const currentPath = req.body?.currentPath ?? ''
+    const targetPath = req.body?.targetPath ?? ''
+    try {
+      if (!await store.readBuffer(req.params.id, currentPath)) return reply.code(404).send({ error: 'Текущая версия не найдена' })
+      const target = await store.readBuffer(req.params.id, targetPath)
+      if (!target) return reply.code(404).send({ error: 'Версия для восстановления не найдена' })
+      const name = await derivedName(req.params.id, currentPath, 'восстановлено')
+      const file = await store.writeBuffer(req.params.id, name, target)
+      await store.setMeta(req.params.id, name, { source: currentPath, operation: 'restore', restoredFrom: targetPath })
+      return { file: { ...file, source: currentPath, operation: 'restore', restoredFrom: targetPath }, files: await store.list(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/trash', async (req, reply) => {
@@ -191,12 +453,43 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     } catch (error) { return sendStudioError(reply, error) }
   })
 
-  app.post<{ Params: { id: string }; Body: { password?: string | null } | undefined }>('/api/image-studio/:id/publish', async (req, reply) => {
+  const previews = new Map<string, { conversationId: string; userId: string; expires: number; publication: { title: string; settings: ImageStudioPublicationSettings } }>()
+  const publicTarget = async (token: string): Promise<string | null> => {
+    const preview = previews.get(token)
+    if (!preview) return store.publishedTarget(token)
+    if (preview.expires < Date.now()) { previews.delete(token); return null }
+    const conversation = await core.conversation(preview.userId, preview.conversationId)
+    return conversation && isImageStudioConversation(conversation) ? preview.conversationId : null
+  }
+  const validatePublication = async (id: string, settings: ImageStudioPublicationSettings): Promise<void> => {
+    const files = new Set((await store.list(id)).map(file => file.path))
+    if (!Array.isArray(settings.items) || !settings.items.length || settings.items.length > 1000 || settings.items.some(item => !item || !files.has(item.path) || typeof item.caption !== 'string' || item.caption.length > 1000) || new Set(settings.items.map(item => item.path)).size !== settings.items.length) throw new ImageStudioError('bad_path', 'Проверьте состав публикации и подписи')
+    if (settings.watermark && (typeof settings.watermark.text !== 'string' || settings.watermark.text.length > 120 || !['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(settings.watermark.position))) throw new ImageStudioError('bad_path', 'Проверьте водяной знак (до 120 символов)')
+  }
+  app.post<{ Params: { id: string }; Body: { settings: ImageStudioPublicationSettings } }>('/api/image-studio/:id/preview', async (req, reply) => {
     const userId = uid(req)
     if (!await own(userId, req.params.id, reply)) return reply
     try {
+      if (!req.body?.settings) return reply.code(400).send({ error: 'Задайте состав публикации' })
+      await validatePublication(req.params.id, req.body.settings)
+      for (const [token, entry] of previews) if (entry.expires < Date.now()) previews.delete(token)
+      const owned = [...previews.entries()].filter(([, entry]) => entry.userId === userId)
+      for (const [token] of owned.slice(0, -19)) previews.delete(token)
+      const token = randomUUID().replace(/-/g, '')
+      const title = (await core.conversation(userId, req.params.id))?.title ?? 'Галерея'
+      previews.set(token, { conversationId: req.params.id, userId, expires: Date.now() + 5 * 60_000, publication: { title, settings: req.body.settings } })
+      return { url: `/g/${token}/` }
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { password?: string | null; settings?: import('@voicechat/shared').ImageStudioPublicationSettings } | undefined }>('/api/image-studio/:id/publish', async (req, reply) => {
+    const userId = uid(req)
+    if (!await own(userId, req.params.id, reply)) return reply
+    try {
+      const settings = req.body?.settings
+      if (settings) await validatePublication(req.params.id, settings)
       const title = (await core.conversation(userId, req.params.id))?.title ?? null
-      const raw = await store.publish(req.params.id, { title, ...(req.body?.password !== undefined ? { password: req.body.password } : {}) })
+      const raw = await store.publish(req.params.id, { title, ...(settings ? { settings } : {}), ...(req.body?.password !== undefined ? { password: req.body.password } : {}) })
       return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, passwordProtected: Boolean(raw.passwordHash) }
     } catch (error) { return sendStudioError(reply, error) }
   })
@@ -208,7 +501,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     // Сводка недели — по дням из sidecar; сами дни наружу не нужны.
     const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10)
     const views7 = Object.entries(raw.days ?? {}).filter(([day]) => day >= weekAgo).reduce((sum, [, count]) => sum + count, 0)
-    return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, views7, passwordProtected: Boolean(raw.passwordHash) }
+    return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, views7, settings: raw.settings, passwordProtected: Boolean(raw.passwordHash) }
   })
 
   app.delete<{ Params: { id: string } }>('/api/image-studio/:id/publish', async (req, reply) => {
@@ -241,7 +534,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   }
 
   app.post<{ Params: { token: string }; Body: { password?: string } }>('/g/:token/__auth__', async (req, reply) => {
-    const conversationId = await store.publishedTarget(req.params.token)
+    const conversationId = await publicTarget(req.params.token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
     const verdict = passwordLimiter.hit(`${req.ip}:${req.params.token}`)
     if (!verdict.ok) {
@@ -252,25 +545,26 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     if (!(await store.verifyPublicPassword(conversationId, req.body?.password ?? ''))) return reply.redirect(`/g/${req.params.token}/?wrong=1`)
     // Вошли — окно попыток по этому токену начинается заново.
     passwordLimiter.forget(`${req.ip}:${req.params.token}`)
-    const gate = await store.publicGate(conversationId)
+    const gate = previews.has(req.params.token) ? null : await store.publicGate(conversationId)
     return reply
       .header('set-cookie', `${gateCookieName(req.params.token)}=${gate ?? ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`)
       .redirect(`/g/${req.params.token}/`)
   })
 
   app.get<{ Params: { token: string }; Querystring: { wrong?: string } }>('/g/:token/', async (req, reply) => {
-    const conversationId = await store.publishedTarget(req.params.token)
+    const conversationId = await publicTarget(req.params.token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
-    const gate = await store.publicGate(conversationId)
+    const gate = previews.has(req.params.token) ? null : await store.publicGate(conversationId)
     if (gate && cookieValue(req, gateCookieName(req.params.token)) !== gate) {
       return reply.code(401).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
         .send(passwordPage(`/g/${req.params.token}/__auth__`, req.query.wrong === '1'))
     }
-    void store.countView(conversationId)
-    const publication = await store.publication(conversationId)
-    const files = await store.list(conversationId)
+    if (!previews.has(req.params.token)) void store.countView(conversationId)
+    const publication = previews.get(req.params.token)?.publication ?? await store.publication(conversationId)
+    const allFiles = await store.list(conversationId)
+    const files = publication?.settings ? publication.settings.items.flatMap(item => { const file = allFiles.find(file => file.path === item.path); return file ? [{ ...file, caption: item.caption }] : [] }) : allFiles.map(file => ({ ...file, caption: undefined }))
     const esc = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    const cards = files.map((file) => `<figure data-name="${esc(file.path.toLowerCase())}"><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
+    const cards = files.map((file) => `<figure data-name="${esc(file.path.toLowerCase())}"><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.caption !== undefined ? `<small>${esc(file.caption)}</small>` : file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
     const title = publication?.title?.trim() || 'Галерея'
     // Вес рядом с числом файлов: зритель решает, качать ли это на телефоне.
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
@@ -310,13 +604,26 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   })
 
   app.get<{ Params: { token: string }; Querystring: { path?: string } }>('/g/:token/file', async (req, reply) => {
-    const conversationId = await store.publishedTarget(req.params.token)
+    const conversationId = await publicTarget(req.params.token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
-    const gate = await store.publicGate(conversationId)
+    const gate = previews.has(req.params.token) ? null : await store.publicGate(conversationId)
     if (gate && cookieValue(req, gateCookieName(req.params.token)) !== gate) return reply.code(401).type('text/plain; charset=utf-8').send('Галерея защищена паролем')
     try {
-      const data = await store.readBuffer(conversationId, req.query.path ?? '')
+      const publication = previews.get(req.params.token)?.publication ?? await store.publication(conversationId)
+      if (publication?.settings && !publication.settings.items.some(item => item.path === req.query.path)) return reply.code(404).send({ error: 'файл не найден' })
+      let data = await store.readBuffer(conversationId, req.query.path ?? '')
       if (!data) return reply.code(404).send({ error: 'файл не найден' })
+      const watermark = publication?.settings?.watermark
+      if (watermark?.text) {
+        const raster = sharp(data, { limitInputPixels: 64_000_000 }).rotate()
+        const { data: pixels, info } = await raster.png().toBuffer({ resolveWithObject: true })
+        const font = Math.max(8, Math.round(Math.min(info.width, info.height) / 25))
+        const text = watermark.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        const right = watermark.position.endsWith('right')
+        const bottom = watermark.position.startsWith('bottom')
+        const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${info.width}" height="${info.height}"><text x="${right ? info.width - font : font}" y="${bottom ? info.height - font : font * 2}" text-anchor="${right ? 'end' : 'start'}" font-family="sans-serif" font-size="${font}" fill="white" stroke="black" stroke-width="1" paint-order="stroke">${text}</text></svg>`)
+        data = await sharp(pixels).composite([{ input: svg }]).png().toBuffer()
+      }
       /**
        * `no-store` заставлял зрителя качать всю галерею заново при каждом
        * заходе и на каждой прокрутке — на девяноста кадрах это заметно даже
@@ -330,7 +637,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       // ушёл в поиск по картинкам мимо всей приватности токена.
       reply.header('etag', etag).header('cache-control', 'private, no-cache').header('x-robots-tag', 'noindex, noimageindex')
       if (req.headers['if-none-match'] === etag) return reply.code(304).send()
-      return reply.header('content-type', imageStudioMime(req.query.path ?? '')).send(data)
+      return reply.header('content-type', watermark?.text ? 'image/png' : imageStudioMime(req.query.path ?? '')).send(data)
     } catch (error) { return sendStudioError(reply, error) }
   })
 

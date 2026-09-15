@@ -19,6 +19,23 @@ beforeEach(() => { ({ app, db, agentRegistry } = harness) })
 
 
 describe('REST: хранилище машины', () => {
+  // @testCase T5
+  // @testCase T6
+  it('authorizes and forwards preview without a full read, and validates the path', async () => {
+    const machine = await db.machines.createAgent(U, 'Preview')
+    const read = vi.spyOn(agentRegistry, 'fsRead').mockResolvedValue({ root: '/', cwd: '/', dataBase64: 'YQ==', bytesRead: 1, fileSize: 40000000, truncated: true })
+    const response = await inj({ method: 'GET', url: `/api/agents/${machine.id}/fs/preview?path=/large.txt` })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ bytesRead: 1, fileSize: 40000000, truncated: true })
+    expect(read).toHaveBeenCalledWith(machine.id, '/large.txt', 'prefix')
+    expect(read).toHaveBeenCalledTimes(1)
+    expect((await inj({ method: 'GET', url: `/api/agents/${machine.id}/fs/preview` })).statusCode).toBe(400)
+    await db.identity.createUser('preview-other', '', 'developer')
+    const other = await db.machines.createAgent('preview-other', 'Other')
+    expect((await inj({ method: 'GET', url: `/api/agents/${other.id}/fs/preview?path=/large.txt` })).statusCode).toBe(404)
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
   async function connectFs(machineId: string, failMkdir = false, failWrite = false) {
     const directories = new Set<string>()
     let writeBlocked = failWrite

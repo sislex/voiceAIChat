@@ -29,6 +29,7 @@ import type { FsResult, FsCopyResult } from '@shared/agentProtocol'
 import type { SessionUser, SessionInfo } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
+import { createVpnBridge } from './vpnBridge'
 import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
@@ -179,6 +180,8 @@ export function makeRealtimeBridge(ws: WsClient): RendererRealtimeBridge {
   return {
     onConnected: (cb) => ws.onConnected(cb),
     connected: () => ws.isConnected(),
+    onDisconnected: (cb) => ws.onDisconnected(cb),
+    retry: () => ws.retry(),
     onTaskPreparationNotificationsInvalidated: (cb) =>
       ws.on('task-preparation.notifications.invalidate', (m) => cb({ projectId: m.projectId })),
     onInvitationsInvalidated: (cb) => ws.on('invitations.invalidate', () => cb()),
@@ -198,6 +201,7 @@ export function makeBoardBridge(ws: WsClient): RendererBoardBridge {
     onTaskRepositoriesUpdated: (cb) => ws.on('task.repositories.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId })),
     onQaStageUpdated: (cb) => ws.on('qa.stage.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId, stage: m.stage })),
     onImprovementsUpdated: (cb) => ws.on('project.improvements.updated', (m) => cb({ projectId: m.projectId })),
+    onReleaseUpdated: (cb) => ws.on('release.updated', (m) => cb({ projectId: m.projectId, releaseId: m.releaseId, status: m.status })),
     onReconnect: (cb) => ws.onConnected((reconnected) => { if (reconnected) cb() })
   }
 }
@@ -547,6 +551,8 @@ export function makeFsBridge(httpBase: string): RendererFsBridge {
     `${httpBase}${REST.agentFs(agentId)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`
   return {
     list: (id, path, projectId) => credentialedFetch(q(id, path, projectId), { headers: authHeaders() }).then(asResult),
+    readPrefix: (id, path, projectId) =>
+      credentialedFetch(`${httpBase}${REST.agentFsPreview(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, { headers: authHeaders() }).then(asResult),
     read: (id, path, projectId) =>
       credentialedFetch(`${httpBase}${REST.agentFsFile(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, {
         headers: authHeaders()
@@ -662,7 +668,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   window.tts = makeTtsBridge(ws)
   window.cc = makeCcBridge(ws)
   window.codex = makeCodexBridge(ws)
-  window.agents = makeAgentsBridge(ws)
+  window.agents = { ...makeAgentsBridge(ws), vpn: createVpnBridge(httpBase) }
   window.realtime = makeRealtimeBridge(ws)
   window.board = makeBoardBridge(ws)
   window.ci = makeCiBridge(httpBase, ws)

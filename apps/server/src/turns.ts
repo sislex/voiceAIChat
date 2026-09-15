@@ -11,7 +11,9 @@ import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
 import {
   type ChatStorageBinding,
+  type CodexThreadUsage,
   appendChatInstructionHints,
+  codexTurnUsage,
   effectiveChatInstructions,
   instructionsForAssistantKind,
   stripDisabledInstructionBlocks,
@@ -98,6 +100,8 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** Base URL for Image Studio tools; the current user and conversation are appended per turn. */
+  imageStudioMcpBaseUrl?: string
   /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
   kanbanMcpBaseUrl?: string
   /** Снимок «что открыто» для инструментов канбана: пишется на старте хода. */
@@ -837,6 +841,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
 
     }
+    let imageStudioMcpUrl: string | undefined
+    if (conv?.assistantKind === 'images' && deps.imageStudioMcpBaseUrl) {
+      imageStudioMcpUrl = `${deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
+    }
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
     let kanbanMcpUrl: string | undefined
@@ -961,6 +969,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeSources = linkedTask && conv?.projectId
       ? deps.make?.taskSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id }) ?? []
       : []
+    // Codex reports the cumulative totals of the whole thread in
+    // `turn.completed`, so the turn's own spend is the difference from the
+    // previous priced reply of this thread. The baseline is read before the
+    // turn starts: the live counter and the saved meta then share it.
+    const previousThreadUsage = provider === 'codex' ? await deps.db.chat.lastCodexThreadUsage(conversationId) : null
+    let codexThreadId: string | null = sessionId
+    const asTurnSpend = <T extends TurnUsage & { codexThreadUsage?: CodexThreadUsage }>(usage: T): T => {
+      if (!usage.codexThreadUsage) return usage
+      const thread = { ...usage.codexThreadUsage, ...(codexThreadId ? { sessionId: codexThreadId } : {}) }
+      return { ...usage, ...codexTurnUsage(thread, previousThreadUsage), codexThreadUsage: thread }
+    }
     turn.handle = client.send(
       {
         userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
@@ -972,13 +991,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
         ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {}),
         ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {}),
+        ...(imageStudioMcpUrl ? { imageStudioMcpUrl: permissionMode === 'plan' ? `${imageStudioMcpUrl}&ro=1` : imageStudioMcpUrl } : {}),
         ...(makeSources.length ? { makeSources } : {}),
         // Канбан read-only (&ro=1) только при явном «Плане» этого разговора; принудительный
         // plan хода без машины инструментов доски не касается — см. kanbanExplicitPlan.
         ...(kanbanMcpUrl ? { kanbanMcpUrl: kanbanExplicitPlan ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
       },
       {
-        onSession: async (sid) => await deps.db.chat.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
+        onSession: async (sid) => {
+          codexThreadId = sid
+          await deps.db.chat.setClaudeSession(userId, conversationId, `${provider}:${sid}`)
+        },
         onInit: (info) => {
           initInfo = info
         },
@@ -989,14 +1012,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         },
         // Живой счётчик токенов: рассылается всем клиентам всегда (в отличие от
         // claude.log, который зависит от verbose) и попадает в снапшот active().
-        onUsage: (usage) => {
+        onUsage: (rawUsage) => {
           if (turn.done) return
+          const usage = asTurnSpend(rawUsage)
           turn.usage = usage
           broadcast({ t: 'claude.usage', conversationId, usage }, userId)
         },
-        onDone: async (text, meta) => {
+        onDone: async (text, rawMeta) => {
           if (turn.done) return
           finish()
+          const meta = rawMeta ? asTurnSpend(rawMeta) : rawMeta
           // Итоговая модель: из потока CLI → из настроек → у Codex с пустой
           // настройкой модель берётся из его config.toml и наружу не видна.
           const resolvedModel =

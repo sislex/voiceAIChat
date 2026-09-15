@@ -28,7 +28,10 @@ import {
   CLAUDE_MODELS,
   CODEX_MODELS,
   DEFAULT_OWNED_PROJECT_LIMIT,
-  filterSecurityGroup
+  filterSecurityGroup,
+  ACTIVE_WINDOW_MS,
+  monthStart,
+  spendUsd
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { MachinesService } from '../machines/service.js'
@@ -152,8 +155,10 @@ function validateModelPrice(body: Partial<ModelPriceInput> | undefined): { ok: t
   if (!provider || !model) return { ok: false, error: 'provider and model required' }
   if (!sourceUrl || !isAbsoluteHttpUrl(sourceUrl)) return { ok: false, error: 'bad sourceUrl' }
   if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) return { ok: false, error: 'bad price values' }
+  const cents = (value: number): boolean => Math.abs(value * 100 - Math.round(value * 100)) < 1e-8
+  if (![body!.inputPerMillion!, body!.cachedInputPerMillion!, body!.cacheWritePerMillion!, body!.outputPerMillion!].every(cents)) return { ok: false, error: 'Цены: не более двух знаков после запятой' }
   const tiers = body?.tiers ?? []
-  const validTierValue = (value: number | null): boolean => value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+  const validTierValue = (value: number | null): boolean => value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0 && cents(value))
   if (!Array.isArray(tiers) || tiers.some((tier) =>
     !['standard', 'batch', 'flex', 'fast'].includes(tier.mode) ||
     !['short', 'long'].includes(tier.context) ||
@@ -249,11 +254,22 @@ export function registerAdminRoutes(
     // Хеш секрета устройства — серверная деталь: админу он не нужен, а в ответе
     // стал бы способом выдать себя за доверенное устройство пользователя.
     return {
-      sessions: (await db.identity.listSessions(req.params.name)).map(({ deviceSecret: _hidden, ...rest }) => rest),
+      sessions: (await db.identity.listSessions(req.params.name)).map(({ deviceSecret: _hidden, ...rest }) => ({ ...rest, current: rest.sid === req.sessionSid })),
       // Сводка отвечает на вопрос админа «сколько у него всего и сколько
       // доверенных» без пересчёта списка на клиенте.
       stats: await db.identity.sessionStats(req.params.name)
     }
+  })
+  app.delete<{ Params: { name: string }; Body: { exceptCurrent?: boolean } | undefined }>(REST.adminSessions(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
+    const name = req.params.name
+    if (!await db.identity.getUser(name)) return reply.code(404).send({ error: 'not found' })
+    if (req.body?.exceptCurrent && name === uid(req) && !req.sessionSid) return reply.code(409).send({ error: 'Не удалось определить текущую сессию; обновите вход' })
+    const exceptSid = req.body?.exceptCurrent ? req.sessionSid ?? null : null
+    const sessions = await db.identity.listSessions(name)
+    await db.identity.revokeUserSessions(name, exceptSid, undefined, 'admin')
+    await db.identity.logSecurityEvent({ user: name, type: 'session_revoked', ip: req.ip, details: `администратор ${uid(req)}: ${exceptSid ? 'все, кроме текущей' : 'все сессии'}` })
+    for (const session of sessions) if (session.sid !== exceptSid) sessionHub?.emit(name, session.sid)
+    return { ok: true }
   })
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     // Владельца берём до отзыва: после него getSession уже ничего не отдаст.
@@ -308,6 +324,15 @@ export function registerAdminRoutes(
     await db.identity.logSecurityEvent({ user: req.params.name, type: 'reset_code_issued', ip: req.ip, details: `администратор ${uid(req)}` })
     return { code, expiresAt: Date.now() + ttl }
   })
+  app.get<{ Params: { name: string } }>(REST.adminUserResetCode(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
+    if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    return db.identity.resetCodeStatus(req.params.name)
+  })
+  app.delete<{ Params: { name: string } }>(REST.adminUserResetCode(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
+    if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    await db.identity.revokeResetCode(req.params.name)
+    return { code: '', expiresAt: 0 }
+  })
   // Инвайты на саморегистрацию (auth-roadmap п.8): создать (роль, срок, лимит), список, отозвать.
   app.get(REST.adminInvites, guard, async () => ({ invites: await db.identity.listInvites() }))
   app.post<{ Body: { role?: string; ttlHours?: number; maxUses?: number; note?: string; email?: string } | undefined }>(REST.adminInvites, guard, async (req, reply) => {
@@ -335,7 +360,7 @@ export function registerAdminRoutes(
   // Журнал безопасности (auth-roadmap п.7).
   app.get<{ Querystring: { user?: string; limit?: string; group?: string } }>(REST.adminSecurity, guard, async (req) => ({
     events: filterSecurityGroup(
-      await db.identity.listSecurityEvents({ user: req.query.user || undefined, limit: req.query.limit ? Number(req.query.limit) : undefined }),
+      await db.identity.listSecurityEvents({ user: req.query.user || undefined, limit: req.query.limit ? Number(req.query.limit) : undefined, loginsOnly: req.query.group === 'login', pricesOnly: req.query.group === 'prices' }),
       req.query.group
     )
   }))
@@ -395,9 +420,27 @@ export function registerAdminRoutes(
     }
   }
 
-  app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> => {
+  app.get<{ Querystring: { limit?: string; offset?: string; q?: string; role?: string; state?: string; sort?: string; asc?: string } }>(REST.adminUsers, guard, async (req, reply) => {
+    const { limit, offset, q, role, state, sort, asc } = req.query
+    const validPage = (value: string | undefined, min: number, max: number): boolean => value === undefined || (/^\d+$/.test(value) && Number(value) >= min && Number(value) <= max)
+    if (!validPage(limit, 1, 200) || !validPage(offset, 0, Number.MAX_SAFE_INTEGER)) return reply.code(400).send({ error: 'limit must be 1–200; offset must be a non-negative integer' })
     const bulk = await usersBulk()
-    return Promise.all((await db.identity.listUsers()).map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u, bulk, false)))
+    let users = await Promise.all((await db.identity.listUsers()).map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u, bulk, false)))
+    const now = Date.now()
+    const query = (q ?? '').trim().toLowerCase()
+    users = users.filter((u) => (!query || `${u.name} ${u.email ?? ''} ${u.role}`.toLowerCase().includes(query)) && (!role || role === 'all' || u.role === role) &&
+      (state !== 'blocked' || u.blocked) && (state !== 'online' || (u.lastSeenAt != null && now - u.lastSeenAt <= ACTIVE_WINDOW_MS)) &&
+      (state !== 'inactive' || (u.lastLogin ?? u.createdAt) <= now - 30 * 86_400_000))
+    // Exact-login lookups used by deep links must fit in the first result page.
+    if (query && !sort) users.sort((a, b) => Number(b.name.toLowerCase() === query) - Number(a.name.toLowerCase() === query))
+    if (sort) {
+      const spend = sort === 'spend' ? new Map((await db.chat.usageSummary(monthStart(now), now)).map((u) => [u.name, spendUsd(u.totals)])) : new Map<string, number>()
+      users.sort((a, b) => {
+        const order = sort === 'name' ? a.name.localeCompare(b.name, 'ru') : sort === 'login' ? (b.lastLogin ?? 0) - (a.lastLogin ?? 0) : sort === 'spend' ? (spend.get(b.name) ?? 0) - (spend.get(a.name) ?? 0) : (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0)
+        return (order || a.name.localeCompare(b.name)) * (asc === '1' ? -1 : 1)
+      })
+    }
+    return users.slice(Number(offset ?? 0), limit === undefined ? undefined : Number(offset ?? 0) + Number(limit))
   })
 
   /** Машины одного человека: их грузит карточка, когда её открыли. */
@@ -521,8 +564,13 @@ export function registerAdminRoutes(
       }
       const role = req.body?.role
       if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
-      const user = await db.identity.setUserRole(req.params.name, role)
-      return user ? toInfo(user.name, user.role, user.blocked, user.createdAt, user) : reply.code(404).send({ error: 'not found' })
+      try {
+        const user = await db.identity.setUserRole(req.params.name, role)
+        return user ? toInfo(user.name, user.role, user.blocked, user.createdAt, user) : reply.code(404).send({ error: 'not found' })
+      } catch (error) {
+        if (error instanceof Error && 'statusCode' in error && error.statusCode === 409) return reply.code(409).send({ error: error.message })
+        throw error
+      }
     }
   )
 
@@ -597,12 +645,15 @@ export function registerAdminRoutes(
   app.put<{ Body: Partial<ModelPriceInput> }>(REST.adminModelPrices, guard, async (req, reply) => {
     const parsed = validateModelPrice(req.body)
     if (!parsed.ok) return reply.code(400).send({ error: parsed.error })
-    return await db.llm.upsertModelPrice(parsed.value)
+    const price = await db.llm.upsertModelPrice(parsed.value)
+    await db.identity.logSecurityEvent({ user: uid(req), type: 'model_price_changed', ip: req.ip, details: `${price.provider}/${price.model}: input=${price.inputPerMillion}, cached=${price.cachedInputPerMillion}, writes=${price.cacheWritePerMillion}, output=${price.outputPerMillion}` })
+    return price
   })
 
   app.delete<{ Params: { provider: string; model: string } }>(
     '/api/admin/model-prices/:provider/:model', guard, async (req, reply) => {
       if (!await db.llm.deleteModelPrice(req.params.provider, req.params.model)) return reply.code(404).send({ error: 'not found' })
+      await db.identity.logSecurityEvent({ user: uid(req), type: 'model_price_changed', ip: req.ip, details: `${req.params.provider}/${req.params.model}: удалён` })
       return { ok: true }
     }
   )

@@ -5,8 +5,9 @@ import type { ImageStudioCore } from './core.js'
 import type { ImageStudioService } from './service.js'
 import { ImageStudioStore } from './studio.js'
 import { registerImageStudioRoutes } from './routes.js'
+import { registerImageStudioMcp } from './mcp.js'
 
-export function createImageStudioModule(opts: { dataDir: string; core: ImageStudioCore }) {
+export function createImageStudioModule(opts: { dataDir: string; core: ImageStudioCore; mcpSecret: string }) {
   const { core } = opts
   // Каталог тот же, что до выделения: существующие галереи не требуют миграции.
   const store = new ImageStudioStore(join(opts.dataDir, 'image-studio'))
@@ -32,6 +33,7 @@ export function createImageStudioModule(opts: { dataDir: string; core: ImageStud
           const readable = /^exec-[0-9a-f-]{20,}\./i.test(original) ? `из-чата${original.slice(original.lastIndexOf('.'))}` : original
           const name = await store.freeName(conversationId, readable)
           await store.writeBuffer(conversationId, name, Buffer.from(file.dataBase64, 'base64'))
+          await store.setMeta(conversationId, name, { operation: 'generate' })
         } catch {
           // Не-картинка, квота или недоступный файл не должны ломать ход чата.
         }
@@ -41,6 +43,7 @@ export function createImageStudioModule(opts: { dataDir: string; core: ImageStud
   return {
     store, service,
     register(app: FastifyInstance) {
+      registerImageStudioMcp(app, { store, core, generator: async (userId) => (input) => core.generate(userId, input) }, opts.mcpSecret)
       registerImageStudioRoutes(app, { core, store, generator: async (userId) => (input) => core.generate(userId, input) })
     }
   }

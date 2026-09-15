@@ -166,6 +166,14 @@ CREATE TABLE IF NOT EXISTS agents (
   pin_ip INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS machine_vpn_networks (
+  user_id TEXT PRIMARY KEY,
+  tailnet TEXT NOT NULL UNIQUE,
+  encrypted_secret TEXT NOT NULL,
+  generation INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS login_enrollments (
   status_id  TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL UNIQUE,
@@ -685,6 +693,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_date    INTEGER,
   flagged     INTEGER NOT NULL DEFAULT 0,
   auto_pilot  INTEGER NOT NULL DEFAULT 0,
+  auto_pilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0,
   auto_pilot_fix_cycles INTEGER NOT NULL DEFAULT 0,
   -- Момент попадания в колонку с семантикой done (NULL — задача не завершена).
   done_at     INTEGER,

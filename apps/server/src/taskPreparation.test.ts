@@ -16,7 +16,70 @@ import { signToken } from './users/accounts.js'
 import { DEFAULT_CODEX_MODEL, DEFAULT_SETTINGS, type Board, type LlmClient, type LlmHandle, type LlmRequest, type ProjectDetail, type Task, type TaskPreparationRun } from '@voicechat/shared'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
 
+import { preparationJsonObject } from './kanban/preparation.js'
+
 const SECRET = 'test-secret'
+
+// @testCase TC-BRIEF-SCHEMA
+// @testCase TC-BRIEF-NORMALIZATION
+it.each([
+  '{"scope":["Keep DNS protection"],"scope":["Remove DNS protection"]}',
+  '{"sources":[{"status":"unavailable","status":"available"}]}',
+  '{"decisions":[{"questionId":"Q1","questionId":null}]}',
+  '{"scope":["Keep requirement"],"\\u0073cope":["Discard requirement"]}'
+])('rejects duplicate keys before requirements or provenance can be overwritten: %s', input => {
+  expect(() => preparationJsonObject(input)).toThrow('повторяющееся имя поля')
+})
+
+// @testCase TC-BRIEF-NORMALIZATION
+it('preserves repeated names in independent objects and punctuation inside strings', () => {
+  const input = {
+    scope: ['Keep {"scope": "nested text"} and escaped backslash \\'],
+    sources: [{ id: 'S1', status: 'available' }, { id: 'S2', status: 'unavailable' }],
+    decisions: [{ id: 'D1', text: '"id": is quoted content', rationale: 'Preserve it' }]
+  }
+  expect(preparationJsonObject(JSON.stringify(input))).toEqual(input)
+})
+
+// @testCase TC-BRIEF-02
+// @testCase T12
+// @testCase T9
+it('normalizes only absent decision references and preserves compatible nulls and requirements', () => {
+  const original = JSON.parse(READINESS)
+  original.decisions = [{ id: 'D1', text: 'Preserve {braces} and "quotes"', rationale: 'No scope changes', questionId: null }]
+  original.openQuestions = [{ questionId: 'Q1', text: 'Resolved later', material: false, answer: null }]
+  original.affectedComponents = [{ id: 'C1', name: 'Card', reusable: true, storybookStoryId: null, exclusionReason: 'DOM coverage', alternativeVerification: 'DOM test', coverage: { required: ['TC1'] } }]
+  const expected = structuredClone(original)
+  delete expected.decisions[0].questionId
+  const normalized = preparationJsonObject(JSON.stringify(original))
+  expect(normalized).toEqual(expected)
+  expect(preparationJsonObject(JSON.stringify(normalized))).toEqual(normalized)
+  expect(original.decisions[0].questionId).toBeNull()
+})
+
+// @testCase T12
+// @testCase T13
+// @testCase TC-BRIEF-02
+it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broken', '{"a":1} [2]', 'Подготовка завершена. {"a":1} Also remove access checks.', 'Change requirements. {"a":1}'])('rejects ambiguous or damaged input: %s', input => {
+  expect(() => preparationJsonObject(input)).toThrow()
+})
+
+// @testCase TC-BRIEF-REGRESSION
+// @testCase TC-BRIEF-03
+// @testCase T13
+// @testCase TC-11
+it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects a prefixed brief without saving partial requirements: %s', async prefix => {
+  const { project, task } = await taskInBacklog()
+  const original = JSON.parse(compatibleReadiness())
+  original.decisions = [{ id: 'D1', text: 'Keep requirements', rationale: 'Confirmed scope', questionId: null }]
+  claudeAnswer = () => ({ text: prefix + '\n' + JSON.stringify(original) })
+  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+  expect(run.status).toBe('blocked')
+  expect(claudeCalls).toHaveLength(3)
+  expect(run.readiness).toBeNull()
+  expect(claudeCalls[0].prompt).toContain('ровно один JSON-объект')
+})
+
 
 function compatibleReadiness(): string {
   return JSON.stringify({
@@ -29,6 +92,30 @@ function compatibleReadiness(): string {
     openQuestions: [], decisions: [], assumptions: [], sources: [{ id: 'kb', kind: 'knowledge', status: 'available', summary: 'Раздел БЗ прочитан', refs: ['features/task-preparation'], critical: true }, { id: 'code', kind: 'code', status: 'available', summary: 'Контракт прочитан', refs: ['packages/shared/src/qa.ts'], critical: true }]
   })
 }
+
+// @testCase TC13
+it('normalizes all four diagnostic decisions without changing any other data', () => {
+  const original = JSON.parse(compatibleReadiness())
+  original.decisions = ['D1', 'D2', 'D3', 'D4'].map(id => ({ id, text: `Preserve requirement ${id}`, rationale: 'Confirmed scope', questionId: null }))
+  const expected = structuredClone(original)
+  for (const decision of expected.decisions) delete decision.questionId
+  const normalized = preparationJsonObject(JSON.stringify(original))
+  expect(normalized).toEqual(expected)
+  expect(preparationJsonObject(JSON.stringify(normalized))).toEqual(normalized)
+  expect(original.decisions.every((decision: { questionId: unknown }) => decision.questionId === null)).toBe(true)
+})
+
+// @testCase TC12
+it.each([4, true, [], {}])('rejects incompatible decision references without coercion: %j', async questionId => {
+  const input = JSON.parse(compatibleReadiness())
+  input.decisions = [{ id: 'D1', text: 'Keep scope', rationale: 'Confirmed', questionId }]
+  expect(preparationJsonObject(JSON.stringify(input))).toEqual(input)
+  const { project, task } = await taskInBacklog()
+  claudeAnswer = () => ({ text: JSON.stringify(input) })
+  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+  expect(run.status).toBe('blocked')
+  expect(run.readiness).toBeNull()
+})
 
 const READINESS = JSON.stringify({
   schemaVersion: 2,
@@ -591,12 +678,15 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('missing_acceptance_criteria')
   })
 
+  // @testCase T9
+  // @testCase T11
   // @testCase TC-SCHEMA-SINGLE-JSON
-  it('отклоняет служебный текст и несколько JSON-объектов вместо чистого Development Brief', async () => {
+  // @testCase TC-BRIEF-01
+  it('rejects multiple JSON objects on every preparation and recovery attempt', async () => {
     const { project, task } = await taskInBacklog()
     const prefixed = `Подготовка завершена.\\n${compatibleReadiness()}`
     const multiple = `${compatibleReadiness()}\\n${compatibleReadiness()}`
-    claudeAnswer = (attempt) => ({ text: attempt === 2 ? multiple : prefixed })
+    claudeAnswer = () => ({ text: prefixed + multiple })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
@@ -609,6 +699,63 @@ describe('подготовка к разработке: диагностика �
     expect(run.error).toContain('ровно один JSON-объект')
   })
 
+  // @testCase TC-12
+  // @testCase T10
+  // @testCase TC12
+  it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    input.decisions = [{ id: 'D1', text: 'Decision', rationale: 'Reason', questionId }]
+    claudeAnswer = () => ({ text: JSON.stringify(input) })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(run.readiness?.decisions).toEqual([{ id: 'D1', text: 'Decision', rationale: 'Reason', ...(questionId ? { questionId } : {}) }])
+    expect(run.readiness?.functionalRequirements).toBe(input.functionalRequirements)
+    const again = await taskInBacklog()
+    claudeAnswer = () => ({ text: JSON.stringify(run.readiness) })
+    const repeated = await settled(adminTok, (await launch(adminTok, again.project.id, again.task.id)).id)
+    expect(repeated.status).toBe('success')
+    expect(repeated.readiness?.decisions).toEqual(run.readiness?.decisions)
+  })
+
+  // @testCase T9
+  // @testCase T11
+  // @testCase TC-11
+  // @testCase TC-13
+  // @testCase TC-BRIEF-SCHEMA
+  // @testCase TC11
+  it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
+    const { project, task } = await taskInBacklog()
+    const valid = compatibleReadiness()
+    const input = JSON.parse(valid)
+    const invalid = variant === 'prefix' ? 'Готово. ' + valid
+      : variant === 'fence' ? '```json\n' + valid + '\n```'
+      : variant === 'suffix' ? valid + ' Готово.'
+      : variant === 'multiple' ? valid + '\n' + valid
+      : variant === 'link' ? JSON.stringify({ ...input, decisions: [{ id: 'd', text: 'x', rationale: 'x', questionId: 4 }] })
+      : JSON.stringify({ ...input, functionalRequirements: [] })
+    claudeAnswer = () => ({ text: invalid })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+  })
+
+  // @testCase T11
+  // @testCase TC-13
+  it('rejects unknown test-type enumerations without repairing requirements', async () => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    input.testCases[0].testType = 'invented'
+    claudeAnswer = () => ({ text: JSON.stringify(input) })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+    expect(claudeCalls[1].prompt).toContain('testCases[0].testType')
+  })
+
+  // @testCase T11
+  // @testCase T9
+  // @testCase TC6
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })
@@ -617,10 +764,13 @@ describe('подготовка к разработке: диагностика �
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
     expect(run.status).toBe('success')
+    expect(claudeCalls[0].prompt).toContain('ровно один JSON-объект')
+    expect(claudeCalls[0].prompt).toContain('DevelopmentReadiness schemaVersion=2')
     expect(claudeCalls[1].prompt).toContain('schemaVersion должен быть равен 2')
     expect(run.readiness?.schemaVersion).toBe(2)
   })
 
+  // @testCase TC-BRIEF-01
   it('repair-ход получает точные пути полей, если модель заменила строки массивами и объекты произвольной формой', async () => {
     const { project, task } = await taskInBacklog()
     const structurallyWrong = JSON.stringify({
@@ -654,8 +804,8 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[0].prompt).toContain('Не заменяй строки массивами или объектами')
   })
 
-  // @testCase TC-REG-03
-  it('принимает совместимые { id, text } в строковых списках и сохраняет канонические строки', async () => {
+  // @testCase TC-8
+  it('отклоняет объектные элементы строковых списков, не меняя смысл требований', async () => {
     const { project, task } = await taskInBacklog()
     const compatible = JSON.stringify({
       ...JSON.parse(READINESS),
@@ -676,15 +826,14 @@ describe('подготовка к разработке: диагностика �
       assumptions: [],
       sources: [{ id: 'kb', kind: 'knowledge', status: 'available', summary: 'Раздел БЗ прочитан', refs: ['features/task-preparation'], critical: true }, { id: 'code', kind: 'code', status: 'available', summary: 'Контракт прочитан', refs: ['packages/shared/src/qa.ts'], critical: true }]
     })
-    claudeAnswer = () => ({ text: compatible })
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? compatible : compatibleReadiness() })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
     expect(run.status).toBe('success')
-    expect(claudeCalls).toHaveLength(1)
-    expect(claudeCalls[0].prompt).toContain('Строковые списки scope, outOfScope, businessRules')
-    expect(claudeCalls[0].prompt).not.toContain('Не возвращай элементы этих списков простыми строками')
-    expect(run.readiness).toMatchObject({ businessRules: ['Правило'], errorsAndEdgeCases: ['Ошибка'] })
+    expect(claudeCalls).toHaveLength(2)
+    expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
+    expect(run.readiness).toMatchObject({ businessRules: ['Правило'], errorsAndEdgeCases: [] })
   })
 
   it('отклоняет объект строкового списка без непустого text и передаёт путь в repair-ход', async () => {
@@ -707,7 +856,26 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
   })
 
+  // @testCase TC-BRIEF-SCHEMA
+  // @testCase T10
+  it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    input.uiImpact = 'multi_component_flow'
+    input.affectedComponents = [{ id: 'pane', name: 'MakePane', reusable: true, storybookStoryId: null, exclusionReason: 'Verified DOM coverage', alternativeVerification: 'DOM and browser checks', coverage: { required: ['TC-UI'] } }]
+    if (variant === 'required-ui') input.testCases = input.testCases.filter((test: { testType: string }) => test.testType !== 'ui')
+    if (variant === 'coverage') input.affectedComponents[0].coverage = {}
+    if (variant === 'exclusion') input.affectedComponents[0].exclusionReason = ''
+    if (variant === 'alternative') input.affectedComponents[0].alternativeVerification = ''
+    if (variant === 'required-field') delete input.goal
+    claudeAnswer = () => ({ text: JSON.stringify(input) })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+  })
+
   // @testCase TC-SCHEMA-NORMALIZATION
+  // @testCase TC-12
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -726,7 +894,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(1)
   })
 
-  it('нормализует совместимые kind и одиночный refs до общего контракта', async () => {
+  it('отклоняет несовместимые kind источников, но сохраняет однозначный refs', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
     normalized.sources = [
@@ -735,22 +903,20 @@ describe('подготовка к разработке: диагностика �
       { id: 'kb-3', kind: 'knowledge-base-gap', status: 'absent', summary: 'Пробел', refs: 'gap', critical: false },
       { id: 'code', kind: 'code-search', status: 'available', summary: 'Код', refs: 'apps/server/src/server.ts', critical: true }
     ]
-    claudeAnswer = () => ({ text: JSON.stringify(normalized) })
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify(normalized) : compatibleReadiness() })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
     expect(run.status).toBe('success')
-    expect(run.readiness?.sources?.map((source) => source.kind)).toEqual(['knowledge', 'knowledge', 'knowledge', 'code'])
-    expect(run.readiness?.sources?.map((source) => source.refs)).toEqual([
-      ['docs/kb/features/task-preparation.md'], ['kb'], ['gap'], ['apps/server/src/server.ts']
-    ])
-    expect(claudeCalls).toHaveLength(1)
+    expect(claudeCalls).toHaveLength(2)
+    expect(claudeCalls[1].prompt).toContain('sources[0].kind имеет недопустимое значение: knowledge_base')
   })
 
+  // @testCase TC-12
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
-    normalized.schemaVersion = '2'
+    normalized.schemaVersion = 2
     normalized.acceptanceCriteriaConflict = 'false'
     normalized.sources.push({ id: 'S-10', kind: 'code', status: ' UNAVAILABLE ', summary: 'index.html нужен на этапе реализации', refs: 'index.html', critical: 'false' })
     claudeAnswer = () => ({ text: JSON.stringify(normalized) })
@@ -762,6 +928,19 @@ describe('подготовка к разработке: диагностика �
     expect(run.readiness?.sources?.find((source) => source.id === 'S-10')).toMatchObject({ status: 'unavailable', critical: false, refs: ['index.html'] })
   })
 
+  // @testCase TC6
+  it('rejects an unknown test type with a precise schema diagnostic', async () => {
+    const { project, task } = await taskInBacklog()
+    const invalid = JSON.parse(compatibleReadiness())
+    invalid.testCases[0].testType = 'guess'
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify(invalid) : compatibleReadiness() })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(claudeCalls[1].prompt).toContain('testCases[0].testType имеет недопустимое значение')
+  })
+
+  // @testCase TC7
+  // @testCase TC-12
   it('не подменяет неоднозначный статус источника на available', async () => {
     const { project, task } = await taskInBacklog()
     const malformed = JSON.parse(compatibleReadiness())
@@ -833,7 +1012,11 @@ describe('подготовка к разработке: диагностика �
   })
 
 
-  it('отклоняет JSON в Markdown-ограде и любой окружающий служебный текст', async () => {
+  // @testCase TC-7
+  // @testCase TC6
+  // @testCase TC-BRIEF-02
+  // @testCase TC-11
+  it('rejects an escaped Markdown fence before field normalization', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ text: `\`\`\`json\\n${compatibleReadiness()}\\n\`\`\`` })
 
@@ -841,9 +1024,82 @@ describe('подготовка к разработке: диагностика �
 
     expect(run.status).toBe('blocked')
     expect(run.readiness).toBeNull()
-    expect(run.error).toContain('ровно один JSON-объект без окружающего текста')
+    expect(claudeCalls).toHaveLength(3)
   })
 
+  // @testCase TC-BRIEF-NORMALIZATION
+  it('preserves the whole brief through every compatible conversion and a second preparation', async () => {
+    const input = JSON.parse(compatibleReadiness())
+    input.scope = 'Keep direct DNS blocked'
+    input.businessRules = 'Never infer a successful test'
+    input.acceptanceCriteriaConflict = 'false'
+    input.testCases[0].required = 'true'
+    input.testCases[0].automatable = 'true'
+    input.sources.push({ id: 'S-unverified', kind: 'tests', status: ' UNAVAILABLE ', summary: 'Not executed', refs: 'network.integration.test.ts', critical: 'false' })
+    input.decisions = [{ id: 'D1', text: 'Retain all source evidence', rationale: 'Confirmed scope', questionId: null }]
+    input.affectedComponents = [{ id: 'service', name: 'Service', reusable: true, storybookStoryId: null, exclusionReason: 'No visual component', alternativeVerification: 'Integration tests', coverage: ['Existing unit tests', 'Required real network tests'] }]
+    const expected = structuredClone(input)
+    expected.scope = [input.scope]
+    expected.businessRules = [input.businessRules]
+    expected.acceptanceCriteriaConflict = false
+    expected.testCases[0].required = true
+    expected.testCases[0].automatable = true
+    expected.sources[2].status = 'unavailable'
+    expected.sources[2].refs = [input.sources[2].refs]
+    expected.sources[2].critical = false
+    delete expected.decisions[0].questionId
+    expected.affectedComponents[0].coverage = { required: input.affectedComponents[0].coverage }
+    for (const value of [input, expected]) {
+      const { project, task } = await taskInBacklog()
+      claudeAnswer = () => ({ text: JSON.stringify(value) })
+      const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+      expect(run.status).toBe('success')
+      expect(run.readiness?.confirmation).toMatchObject({ confirmed: true, attemptId: run.id })
+      const { confirmation: _confirmation, ...brief } = run.readiness!
+      expect(brief).toEqual(expected)
+    }
+  })
+
+  // @testCase TC-BRIEF-NORMALIZATION
+  // @testCase TC7
+  it('normalizes an absent decision link without changing requirements and is idempotent', async () => {
+    const { project, task } = await taskInBacklog()
+    const original = JSON.parse(compatibleReadiness())
+    original.decisions = [{ id: 'D1', text: 'Hide every mobile label', rationale: 'Explicit requirement', questionId: null }]
+    original.scope = 'Preserve every requirement'
+    claudeAnswer = () => ({ text: JSON.stringify(original) })
+    const first = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(first.status).toBe('success')
+    expect(first.readiness?.decisions).toEqual([{ id: 'D1', text: 'Hide every mobile label', rationale: 'Explicit requirement' }])
+    expect(first.readiness?.scope).toEqual(['Preserve every requirement'])
+    expect(first.readiness?.functionalRequirements).toBe(original.functionalRequirements)
+    expect(first.readiness?.testCases).toEqual(original.testCases)
+    const other = await taskInBacklog()
+    claudeAnswer = () => ({ text: JSON.stringify(first.readiness) })
+    const second = await settled(adminTok, (await launch(adminTok, other.project.id, other.task.id)).id)
+    expect(second.status).toBe('success')
+    expect(second.readiness?.decisions).toEqual(first.readiness?.decisions)
+    expect(second.readiness?.scope).toEqual(first.readiness?.scope)
+    expect(second.readiness?.testCases).toEqual(first.readiness?.testCases)
+  })
+
+  // @testCase TC8
+  it('rejects both prefaced responses before accepting a standalone recovery object', async () => {
+    const { project, task } = await taskInBacklog()
+    const corrected = compatibleReadiness()
+    const responses = ['Development Brief готов.\n' + corrected, 'Структура исправлена.\n' + corrected, corrected]
+    claudeAnswer = (attempt) => ({ text: responses[attempt - 1] })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(3)
+    expect(claudeCalls[1].prompt).toContain('ровно один JSON-объект без окружающего текста')
+    expect(claudeCalls[2].prompt).toContain(responses[0])
+    expect(claudeCalls[2].prompt).toContain(responses[1])
+    expect(run.readiness?.functionalRequirements).toBe(JSON.parse(corrected).functionalRequirements)
+    expect(run.readiness?.scope).toEqual(JSON.parse(corrected).scope)
+  })
+
+  // @testCase TC6
   it('отклоняет неоднозначный ответ из нескольких JSON-объектов', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ text: `${compatibleReadiness()}\\n${compatibleReadiness()}` })

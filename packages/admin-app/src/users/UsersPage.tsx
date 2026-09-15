@@ -23,6 +23,7 @@ import {
 } from '@voicechat/profile-app'
 import type { AdminUserInfo, SecurityEvent, UsageReport, UserUsageSummary } from '@shared/admin'
 import { monthStart, spendUsd } from '@shared/admin'
+import { ROLE_DESCRIPTIONS } from '@shared/auth'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { UserRole } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -100,6 +101,8 @@ export function toProfileEvents(events: readonly SecurityEvent[] | null | undefi
 }
 
 export interface UsersPageProps {
+  onLoadUsersPage?: (input: { limit?: number; offset?: number; q?: string; role?: string; state?: string; sort?: string; asc?: string }) => Promise<AdminUserInfo[]>
+  onBulkUsers?: (names: string[], action: 'block' | 'unblock' | 'revoke') => Promise<void>
   users: AdminUserInfo[]
   usageSummary: readonly UserUsageSummary[]
   selected: string | null
@@ -109,8 +112,8 @@ export interface UsersPageProps {
   period?: ProfilePeriod
   onSelectPeriod?: (period: ProfilePeriod) => void
   /** Группа событий журнала: фильтрует сервер. */
-  securityGroup?: 'all' | 'auth' | 'account' | 'machines'
-  onChangeSecurityGroup?: (group: 'all' | 'auth' | 'account' | 'machines') => void
+  securityGroup?: 'all' | 'auth' | 'account' | 'machines' | 'login'
+  onChangeSecurityGroup?: (group: 'all' | 'auth' | 'account' | 'machines' | 'login') => void
   usage: UsageReport | null
   /** Машины выбранного человека грузятся отдельно от списка. */
   userMachines?: import('@shared/admin').AdminAgentInfo[] | null
@@ -148,6 +151,8 @@ export interface UsersPageProps {
 }
 
 export function UsersPage({
+  onLoadUsersPage,
+  onBulkUsers,
   users,
   usageSummary,
   selected,
@@ -251,10 +256,13 @@ export function UsersPage({
         {isAdmin && <Button size="sm" variant="primary" onClick={() => setCreating('')}>＋ Добавить</Button>}
       </>} />
 
-      <UserMetrics metrics={metrics} periodLabel="месяц" />
+      {!onLoadUsersPage && <UserMetrics metrics={metrics} periodLabel="месяц" />}
 
       <div className="ua-grid">
         <UsersList
+          {...(onLoadUsersPage ? { onLoadUsersPage } : {})}
+          {...(isAdmin && onBulkUsers ? { onBulkUsers } : {})}
+          currentUserName={currentUserName}
           users={users}
           usageSummary={usageSummary}
           selected={selected}
@@ -273,6 +281,7 @@ export function UsersPage({
             : (
               <ProfilePanel
                 key={current.name}
+                roleHelp={ROLE_DESCRIPTIONS}
                 user={toProfileUser(current, userMachines)}
                 capabilities={capabilities}
                 providers={PROVIDERS}

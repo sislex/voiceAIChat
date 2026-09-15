@@ -59,6 +59,7 @@ export interface CiProjectLlmConfig {
 }
 
 export interface CiTaskConfig {
+  commandContext?: import('./ci').CiCommandContext | null
   config: CiSlotConfig
   overridden: boolean
   projectDefault: CiSlotConfig
@@ -166,6 +167,7 @@ export interface RendererCiRest {
   ): Promise<CiRun>
   getRun(runId: string): Promise<CiRunDetail>
   getRunLog(runId: string): Promise<CiLogLine[]>
+  getBrowserShot?(runId: string, name: string): Promise<string>
   /** Обращения модели к БЗ внутри рана (блок в ленте рана). */
   getRunKbUsage(runId: string): Promise<KbRunUsageReport>
   /** Агрегат по всем ранам задачи (блок в модалке задачи). */
@@ -204,6 +206,7 @@ export interface RendererCiRest {
       provider: 'claude' | 'codex'
       model: string
       llmEngineId?: string | null
+      stepId?: string
     }
   ): Promise<CiRun>
   discardChangesAndRetry(runId: string): Promise<CiRun>

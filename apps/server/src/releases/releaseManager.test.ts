@@ -179,6 +179,10 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).toContain("+refs/heads/release/1.2.3:refs/voicechat/releases/attempt-7")
     expect(command).toContain("git rev-parse 'refs/voicechat/releases/attempt-7'")
     expect(command).toContain("git update-ref -d 'refs/voicechat/releases/attempt-7'")
+    // Preconditions explain themselves instead of failing silently.
+    expect(command).toContain('Production checkout содержит незакоммиченные изменения')
+    expect(command).toContain('смотрит на другой remote.origin.url')
+    expect(command).toContain('SHA ветки release/1.2.3 в origin изменился после подготовки: ожидался fixed-sha')
     expect(command).not.toContain('FETCH_HEAD')
   })
 
@@ -214,7 +218,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const release=await settled(attempt.id)
     expect(commands.some(command=>command.includes('npm run deploy:prod'))).toBe(false)
     expect(release?.status).toBe('failed')
-    expect(release?.steps.find(step=>step.kind==='building')?.log).toMatch(/свободно 2\.9 ГБ, нужно не меньше 5\.0 ГБ/)
+    expect(release?.steps.find(step=>step.kind==='building')?.log).toMatch(/свободно 2\.9 ГБ, нужно не меньше 10\.0 ГБ/)
   })
 
   it('refreshes the installed production launcher from the verified release checkout',async()=>{
@@ -245,6 +249,58 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     // Проверка здоровья истекает по лимиту 1 с; на асинхронной базе финал дописывается позже — ждём статус, а не паузу.
     const stored=await vi.waitFor(async()=>{const r=await db.releases.getProjectRelease('owner',projectId,attempt.id);expect(r?.status).toBe('failed');return r},{timeout:5_000})
     expect(stored?.steps.find(step=>step.kind==='health_check')?.log).toContain('version=0.1.0')
+  })
+
+  it('пишет живой лог health-check с последним ответом production, пока ждёт нужную версию',async()=>{
+    const limits={checkoutMs:1_000,knowledgeBaseMs:1_000,regressionMs:1_000,switchingMs:1_000,buildingMs:1_000,healthCheckMs:1_500}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.36\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.0","commit":"old-sha"}'}:{exitCode:0,output:'ok'}}
+    await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.36',version:'0.1.36',sha:'fixed-sha',status:'ready'})
+    const attempt=await new ReleaseManager(db,runtime,{healthLogIntervalMs:0}).start('owner',ci(),{...prod(),limits},'release/0.1.36')
+    // Ещё до вердикта шаг показывает, что именно отвечает production и сколько прошло.
+    await vi.waitFor(async()=>{
+      const r=await db.releases.getProjectRelease('owner',projectId,attempt.id)
+      const step=r?.steps.find(step=>step.kind==='health_check')
+      expect(step?.status).toBe('running')
+      expect(step?.log).toContain('Production отвечает SHA old-sha')
+      expect(step?.log).toMatch(/Прошло \d+ с из \d+ с/)
+    },{timeout:3_000})
+    const stored=await vi.waitFor(async()=>{const r=await db.releases.getProjectRelease('owner',projectId,attempt.id);expect(r?.status).toBe('failed');return r},{timeout:5_000})
+    // Финальная ошибка подсказывает, где искать причину сборки контейнеров.
+    expect(stored?.steps.find(step=>step.kind==='health_check')?.log).toContain('/var/log/voicechat-deploy.log')
+    // Сводка списка несёт причину и номер попытки без запроса деталей.
+    const summary=(await db.releases.listProjectReleaseSummaries('owner',projectId)).find(item=>item.id===attempt.id)
+    expect(summary?.attempt).toBe(2)
+    expect(summary?.failure).toMatch(/^Health-check: фактическая длительность/)
+    const preparation=(await db.releases.listProjectReleaseSummaries('owner',projectId)).find(item=>item.previousReleaseId===null)
+    expect(preparation?.failure).toBeNull()
+  })
+
+  it('сообщает подписчику о каждой смене статуса и шага релиза — Release Center живёт без опроса',async()=>{
+    const updates:Array<{projectId:string;releaseId:string;status:string}>=[]
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.37\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.37","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}
+    await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.37',version:'0.1.37',sha:'fixed-sha',status:'ready'})
+    const attempt=await new ReleaseManager(db,runtime,{onChange:(update)=>updates.push(update)}).start('owner',ci(),prod(),'release/0.1.37')
+    await settled(attempt.id)
+    await vi.waitFor(()=>expect(updates.some(update=>update.status==='released')).toBe(true))
+    expect(updates.every(update=>update.projectId===projectId&&update.releaseId===attempt.id)).toBe(true)
+    // Каждый статус пути деплоя виден подписчику в порядке прохождения.
+    const statuses=updates.map(update=>update.status).filter((value,index,all)=>all.indexOf(value)===index)
+    expect(statuses).toEqual(expect.arrayContaining(['switching','building','health_check','released']))
+  })
+
+  it('кэширует список release-веток и забывает кэш после записи в origin',async()=>{
+    let calls=0
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{if(command.includes('ls-remote'))calls+=1;return {exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.10\n'}}}
+    const manager=new ReleaseManager(db,runtime,{branchListTtlMs:60_000})
+    await manager.listBranches(ci());await manager.listBranches(ci())
+    expect(calls).toBe(1)
+    expect(await manager.listBranches(ci(),{fresh:true})).toHaveLength(1)
+    expect(calls).toBe(2)
+    // Удаление ветки пишет в origin — следующий список читается заново.
+    const release=await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.10',version:'0.1.10',sha:'fixed-sha',status:'failed'})
+    await manager.deleteBranch('owner',ci(),release.id,'release/0.1.10')
+    await manager.listBranches(ci())
+    expect(calls).toBe(3)
   })
 
   it('resumes an active health check after server restart and verifies the expected commit and version',async()=>{
