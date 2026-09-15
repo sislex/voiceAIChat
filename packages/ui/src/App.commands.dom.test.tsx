@@ -1,7 +1,8 @@
 import './test/applicationPanels'
 // Палитра и шпаргалка в собранном приложении: клавиши доходят до окна, реестр
 // наполнен данными стора, а команда действительно переключает экран.
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { SEARCH_SOURCES, searchHref, type SearchHit } from '@shared/universalSearch'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
@@ -13,7 +14,14 @@ const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_0
 async function renderApp(): Promise<FakeApi> {
   const api = createFakeApi([])
   await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
-  await api['conversations:create']({ title: 'Идеи для подарка' })
+  const gift = await api['conversations:create']({ title: 'Идеи для подарка' })
+  const target = { source: 'chats' as const, conversationId: gift.id, route: 'chat' }
+  const hit: SearchHit = { id: 'chats:' + 'a'.repeat(64), source: 'chats', title: gift.title, snippet: '', target, href: searchHref(target) }
+  api['search:universal'] = vi.fn(async request => ({
+    groups: SEARCH_SOURCES.map(source => ({ source, status: 'ok' as const,
+      hits: source === 'chats' && (request.query.includes('подарка') || request.recent?.includes(hit.id)) ? [hit] : [] })),
+    nextCursor: null
+  }))
   await api['conversations:create']({ title: 'Поездка в Лиссабон' })
   render(<App api={api} delays={SLOW} />)
   await screen.findByText('Поездка в Лиссабон', {}, { timeout: 10_000 })
@@ -64,8 +72,9 @@ describe('App — командная палитра', () => {
     expect(await screen.findByTestId('command-palette')).toBeInTheDocument()
   })
 
-  it('реестр наполнен беседами стора, и команда переключает беседу', async () => {
-    await renderApp()
+  // @testCase TC-NAV
+  it('opens the authorized chat returned by search and revalidates before navigation', async () => {
+    const api = await renderApp()
     pressPalette()
     await screen.findByTestId('command-palette')
     const input = screen.getByRole('combobox', { name: /Поиск команды/ })
@@ -73,8 +82,9 @@ describe('App — командная палитра', () => {
     const option = (await screen.findAllByRole('option')).find((node) =>
       node.textContent?.includes('Идеи для подарка')
     )
-    expect(option, 'беседы стора нет в реестре').toBeDefined()
+    expect(option, 'authorized search result is missing').toBeDefined()
     fireEvent.click(option!)
+    await waitFor(() => expect(api['search:universal']).toHaveBeenCalledWith({ query: '', recent: ['chats:' + 'a'.repeat(64)] }))
     await waitFor(() => expect(window.location.hash).toContain('/chat/'))
     await waitFor(() => expect(screen.queryByTestId('command-palette')).toBeNull())
   })

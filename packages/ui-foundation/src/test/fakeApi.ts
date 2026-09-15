@@ -652,6 +652,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
      * Поиск по сообщениям: подстрокой вместо FTS5, но с той же формой ответа —
      * сниппет с `<mark>`, курсор постранично, порядок «свежее выше».
      */
+    'search:universal': async () => ({ groups: [], nextCursor: null }),
+    'search:cancel': async () => {},
     'messages:search': async ({ query, projectId, conversationId, limit, cursor }) => {
       const q = query.trim().toLowerCase()
       if (!q) return { hits: [], nextCursor: null, match: '' }

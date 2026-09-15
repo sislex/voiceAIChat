@@ -615,6 +615,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     }
   }, [api, conversationId, toast, loadTests])
 
+  // Links contain paths only. Reading still goes through the authorized Make API.
+  useEffect(() => {
+    const openLinkedFile = (): void => {
+      const [route, query = ''] = window.location.hash.split('?')
+      if (route !== '#/make/' + encodeURIComponent(conversationId)) return
+      const path = new URLSearchParams(query).get('file')
+      if (!path || path.startsWith('/') || path.startsWith('snapshot:') || path.split('/').includes('..')) return
+      setSelectedPath(null); setContent(''); setSavedContent('')
+      setMode('code')
+      void openFile(path)
+    }
+    openLinkedFile()
+    window.addEventListener('hashchange', openLinkedFile)
+    return () => window.removeEventListener('hashchange', openLinkedFile)
+  }, [conversationId, openFile])
+
   // Run the preview cookie gate once per panel mount.
   useEffect(() => {
     if (!ensurePreview) return
@@ -630,6 +646,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     void refresh().then((next) => {
       if (cancelled || !next || initializedProject.current === conversationId) return
       initializedProject.current = conversationId
+      const linked = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('file')
+      if (linked && next.files.some(file => file.path === linked)) { setMode('code'); void openFile(linked); return }
       const restored = sessionTabs(conversationId).find((path) => path.startsWith('snapshot:') || next.files.some((file) => file.path === path))
       if (restored) { void openFile(restored); return }
       const entry = next.files.find((f) => f.path === 'index.html') ?? next.files.find((f) => isMakeTextPath(f.path))

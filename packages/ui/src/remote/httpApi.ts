@@ -43,6 +43,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
    * стор про fetch не знает, а сервер не тратит время на никому не нужный ответ.
    */
   let searchAbort: AbortController | null = null
+  let universalAbort: AbortController | null = null
 
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
@@ -288,6 +289,15 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (projectId) q.set('projectId', projectId)
       if (includeCompleted) q.set('includeCompleted', '1')
       return req(`${REST.conversationsSearch}?${q.toString()}`)
+    },
+    'search:cancel': async () => { universalAbort?.abort(); universalAbort = null },
+    'search:universal': (request) => {
+      universalAbort?.abort()
+      const controller = new AbortController()
+      universalAbort = controller
+      return req<import('@shared/universalSearch').UniversalSearchResult>(REST.universalSearch, {
+        method: 'POST', body: JSON.stringify(request), signal: controller.signal
+      }).finally(() => { if (universalAbort === controller) universalAbort = null })
     },
     'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
       searchAbort?.abort()
