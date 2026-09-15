@@ -329,6 +329,61 @@ const nearFilter=(candidates,near)=>{
   const best=Math.min(...scored.map(item=>item.size));
   return scored.filter(item=>item.size===best).map(item=>item.el)
 };
+// below/above/leftOf/rightOf — как человек показывает место: «под ценой», «справа от подписи»; ближайшее с той стороны — первым.
+const SIDES=['below','above','leftOf','rightOf'];
+const spatialSide=(action)=>SIDES.find(side=>typeof action[side]==='string'&&action[side].trim());
+const spatialFilter=(candidates,action)=>{
+  const side=spatialSide(action);
+  if(!side)return candidates;
+  const anchor=byText(action[side],true).filter(readingVisible)[0];
+  if(!anchor)throw new Error('Ориентир не найден: '+action[side]);
+  const a=anchor.getBoundingClientRect(),ax=a.left+a.width/2,ay=a.top+a.height/2;
+  return candidates.filter(el=>el!==anchor&&!anchor.contains(el)&&!el.contains(anchor)).map(el=>{
+    const r=el.getBoundingClientRect();
+    const ok=side==='below'?r.top>=a.bottom-2:side==='above'?r.bottom<=a.top+2:side==='leftOf'?r.right<=a.left+2:r.left>=a.right-2;
+    if(!ok)return null;
+    // Пересечение по другой оси — «прямо под», а не «где-то ниже»: такие ближе для человека.
+    const overlap=side==='below'||side==='above'?Math.min(r.right,a.right)-Math.max(r.left,a.left):Math.min(r.bottom,a.bottom)-Math.max(r.top,a.top);
+    return {el,dist:Math.hypot(r.left+r.width/2-ax,r.top+r.height/2-ay)+(overlap>0?0:400)}
+  }).filter(Boolean).sort((x,y)=>x.dist-y.dist).map(item=>item.el)
+};
+// Подробности элемента по запросу: атрибуты, размер и путь по ориентирам — когда описания мало.
+const detailsOf=(el)=>{
+  const r=el.getBoundingClientRect(),attributes={};
+  for(const attr of el.attributes){if(Object.keys(attributes).length>=12)break;if(/^(type|name|href|src|alt|title|placeholder|value|for|action|method|target|rel|aria-[\\w-]+|data-[\\w-]+)$/.test(attr.name)&&!/^data-voicechat/.test(attr.name))attributes[attr.name]=String(attr.value).slice(0,120)}
+  const crumbs=[];let node=el.parentElement;
+  while(node&&node!==document.body&&crumbs.length<4){
+    const role=(node.getAttribute('role')||'').toLowerCase();
+    if(/^(main|navigation|banner|contentinfo|complementary|form|dialog|region|table|list|article|section|tabpanel)$/.test(role)||/^(main|nav|header|footer|aside|form|dialog|table|ul|ol|article|section|fieldset)$/.test(node.localName)){
+      const heading=node.querySelector('legend,caption,h1,h2,h3');
+      const name=(node.getAttribute('aria-label')||(heading?textOf(heading):'')).slice(0,40);
+      crumbs.unshift((role||node.localName)+(name?' «'+name+'»':''))
+    }
+    node=node.parentElement
+  }
+  return {...(el.id?{id:el.id}:{}),classes:[...el.classList].slice(0,5),attributes,box:{x:Math.round(r.left),y:Math.round(r.top),width:Math.round(r.width),height:Math.round(r.height)},path:crumbs.join(' › ')}
+};
+// Что лежит поверх страницы — баннер cookie, окно, липкая панель: человек убирает это первым делом.
+const OVERLAY_SEL='dialog[open],[role=dialog],[role=alertdialog],[aria-modal="true"]';
+const overlayKind=(el)=>/cookie|куки|файлы cookie|согласие на обработку|персональных данных/i.test(textOf(el).slice(0,600))?'cookies':el.matches(OVERLAY_SEL)?'dialog':'sticky';
+const findOverlays=(what)=>{
+  const list=[];let count=0;const area=(innerWidth||1)*(innerHeight||1);
+  for(const el of document.querySelectorAll('body *')){
+    if(count++>4000||list.length>=5)break;
+    if(el.closest('[data-voicechat-inspector]')||!readingVisible(el))continue;
+    const isDialog=el.matches(OVERLAY_SEL);
+    if(!isDialog){const pos=getComputedStyle(el).position;if(pos!=='fixed'&&pos!=='sticky')continue}
+    if(list.some(o=>o.contains(el)))continue;
+    const kind=overlayKind(el);
+    if(what==='cookies'&&kind!=='cookies'||what==='dialog'&&kind!=='dialog'||what==='any'&&kind==='sticky')continue;
+    if(kind==='sticky'){const r=el.getBoundingClientRect();if(r.width*r.height/area<0.06)continue}
+    list.push(el)
+  }
+  return list
+};
+const REJECT_WORDS=/(?<![\\p{L}])(отклонить|отказаться|только необходимые|только обязательные|не принимать|запретить|reject|decline|necessary only|only necessary|essential only|refuse)(?![\\p{L}])/iu;
+const CLOSE_WORDS=/^(закрыть|понятно|ок|ok|хорошо|got it|close|dismiss|later|позже|не сейчас|×|✕|✖|x)$/iu;
+const ACCEPT_WORDS=/(?<![\\p{L}])(принять|принимаю|согласен|согласиться|accept|agree|allow all|разрешить все)(?![\\p{L}])/iu;
 const suggestTexts=(query)=>{
   const words=normText(query).split(' ').filter(w=>w.length>=3);
   if(!words.length)return [];
@@ -345,7 +400,7 @@ const suggestTexts=(query)=>{
 };
 const findTargets=(action)=>{
   const base=action.role?byRole(action):action.selector?bySelector(action.selector):byText(action.text||'',false,action.exact===true);
-  const scoped=action.near?nearFilter(base,action.near):base;
+  const scoped=spatialFilter(action.near?nearFilter(base,action.near):base,action);
   const visible=scoped.filter(action.kind==='find'?readingVisible:actionVisible);
   // nth — «второй такой»: человек считает одинаковые элементы сверху вниз.
   if(typeof action.nth==='number'&&action.nth>=1){const picked=(action.kind==='find'?visible:[...new Set(visible.map(clickTarget))])[action.nth-1];if(!picked)throw new Error('Совпадение №'+action.nth+' не найдено: всего '+visible.length);return [picked]}
@@ -499,7 +554,32 @@ const run=(action)=>{
     // Ничего не нашлось — подсказать похожие тексты, как человек оглядывается вокруг искомого слова.
     const suggestions=!found.length&&action.text?suggestTexts(action.text):[];
     if(action.reveal&&found[0]){found[0].scrollIntoView&&found[0].scrollIntoView({block:'center',inline:'nearest'});showLabel(found[0],'Найдено')}
-    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{}),...(suggestions.length?{suggestions}:{})}
+    return {page:pageInfo(),elements:found.slice(0,limit).map(el=>action.details?Object.assign(describe(el),{details:detailsOf(el)}):describe(el)),total:found.length,...(found.length>limit?{truncated:true}:{}),...(suggestions.length?{suggestions}:{})}
+  }
+  if(action.kind==='click'&&action.peek){
+    // «Куда ведёт?» — человек читает адрес в строке состояния, не нажимая.
+    const el=chooseTarget(action,true),link=el.closest('a[href]')||el,raw=link.getAttribute?link.getAttribute('href'):null;
+    if(!raw)return {page:pageInfo(),clicked:describe(el),peeked:true};
+    const href=unproxy(raw);let external=false;try{external=new URL(href).host!==new URL(pageInfo().url).host}catch{}
+    return {page:pageInfo(),clicked:describe(el),peeked:true,href,external,newTab:link.getAttribute('target')==='_blank'}
+  }
+  if(action.kind==='dismiss'){
+    const what=action.what||'any',targets=findOverlays(what);
+    if(!targets.length)return {page:pageInfo(),dismissed:false,remaining:0};
+    const el=targets[0],kind=overlayKind(el);
+    const buttons=[...el.querySelectorAll(CLICKABLE)].filter(b=>actionVisible(b)&&!b.matches('input:not([type=button]):not([type=submit]),select,textarea,label'));
+    const label=(b)=>normText(accessibleName(b)||textOf(b));
+    let button=null,how=null;
+    // Порядок как у осторожного человека: отклонить cookie, иначе закрыть, и только потом принять.
+    if(kind==='cookies'){button=buttons.find(b=>REJECT_WORDS.test(label(b)));if(button)how='rejected'}
+    if(!button){button=buttons.find(b=>CLOSE_WORDS.test(label(b))||/close|закрыть|dismiss/i.test(b.getAttribute('aria-label')||'')||/\\bclose\\b|dismiss/i.test(String(b.className||'')));if(button)how='closed'}
+    if(!button&&kind==='cookies'){button=buttons.find(b=>ACCEPT_WORDS.test(label(b)));if(button)how='accepted'}
+    if(button)runClick({kind:'click',confirm:true},button);
+    else{el.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keyup',{key:'Escape',bubbles:true}));if(el.localName==='dialog'&&typeof el.close==='function')el.close();how='escape'}
+    return new Promise(ok=>setTimeout(()=>{
+      const stillThere=el.isConnected&&readingVisible(el),remaining=findOverlays(what).length;
+      ok({page:pageInfo(),dismissed:!stillThere||remaining<targets.length,how,...(button?{target:describe(button)}:{}),remaining})
+    },120))
   }
   if(action.kind==='click'){
     // Клик по точке: там, где у цели нет ни текста, ни селектора (карта, canvas), человек просто тыкает пальцем.
@@ -674,7 +754,7 @@ const run=(action)=>{
     if(typeof action.dx==='number')el.scrollLeft=el.scrollLeft+action.dx;
     el.dispatchEvent(new Event('scroll',{bubbles:true}));
     const maxTop=Math.max(0,el.scrollHeight-el.clientHeight);
-    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop,maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)},atTop:el.scrollTop<=0,atBottom:el.scrollTop>=maxTop-1,...(action.to==='element'&&shownEl?{element:describe(shownEl)}:{})}
+    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop,maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)},atTop:el.scrollTop<=0,atBottom:el.scrollTop>=maxTop-1,percent:maxTop>0?Math.round(Math.min(1,el.scrollTop/maxTop)*100):100,...(action.to==='element'&&shownEl?{element:describe(shownEl)}:{})}
   }
   if(action.kind==='errors'){
     const kinds=Array.isArray(action.kinds)&&action.kinds.length?new Set(action.kinds):null;
@@ -890,6 +970,10 @@ const run=(action)=>{
     const forms=pick('form').slice(0,10).map(form=>{const fields=[...form.querySelectorAll('input:not([type=hidden]),textarea,select')].filter(readingVisible).slice(0,20).map(el=>accessibleName(el)||el.getAttribute('placeholder')||el.name||el.localName);const submitter=[...form.querySelectorAll('button,input[type=submit],input[type=image]')].find(el=>readingVisible(el)&&(el.localName==='input'||!el.type||el.type==='submit'));return {selector:uniqueSelector(form),fields,...(submitter?{submit:accessibleName(submitter)}:{})}});
     // Таблицы построчно: заголовки и первые строки — так их читает человек.
     const frames=[...document.querySelectorAll('iframe')].filter(readingVisible).slice(0,8).map(f=>({selector:uniqueSelector(f),src:unproxy(f.getAttribute('src')||'').slice(0,300),title:(f.getAttribute('title')||f.getAttribute('name')||'').slice(0,EL_TEXT)}));
+    // Картинки видит человек, но не модель: по запросу все видимые, иначе — только подписанные, до пяти.
+    const wantImages=parts&&parts.has('images');
+    const images=(wantImages||!parts)?pick('img,[role=img]').filter(img=>{const r=img.getBoundingClientRect();return (r.width||img.width||img.naturalWidth||0)>=24&&(wantImages||(img.getAttribute('alt')||img.getAttribute('aria-label')||'').trim())}).slice(0,wantImages?20:5).map(img=>{const r=img.getBoundingClientRect();return {selector:uniqueSelector(img),alt:(img.getAttribute('alt')||img.getAttribute('aria-label')||img.getAttribute('title')||'').slice(0,EL_TEXT),src:unproxy(img.currentSrc||img.getAttribute('src')||'').slice(0,300),width:Math.round(r.width||img.width||0),height:Math.round(r.height||img.height||0)}}):[];
+    const overlays=(!parts||parts.has('landmarks'))?findOverlays('all').map(el=>({selector:uniqueSelector(el),text:textOf(el).slice(0,120),kind:overlayKind(el)})):[];
     const tables=(!parts||parts.has('tables'))?pick('table').slice(0,5).map(table=>{const rowsAll=[...table.querySelectorAll('tr')].filter(readingVisible);const headers=[...table.querySelectorAll('th')].filter(readingVisible).slice(0,12).map(th=>readableText(th,EL_TEXT));const body=rowsAll.filter(tr=>!tr.querySelector('th')||headers.length===0);const rows=body.slice(0,10).map(tr=>[...tr.querySelectorAll('td,th')].slice(0,12).map(td=>readableText(td,EL_TEXT)));const cap=table.querySelector('caption');return {selector:uniqueSelector(table),...(cap?{caption:readableText(cap,EL_TEXT)}:{}),headers,rows,totalRows:body.length}}):[];
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     // markdown: заголовки и пункты списков размечены — так текст читается структурно, а не потоком.
@@ -908,7 +992,7 @@ const run=(action)=>{
     if(!action.selector&&!section)textSnapshot=visibleTexts();
     const scroller=document.scrollingElement||document.documentElement,maxScroll=Math.max(0,scroller.scrollHeight-innerHeight),scroll={top:Math.round(scroller.scrollTop),max:Math.round(maxScroll),percent:maxScroll>0?Math.round(scroller.scrollTop/maxScroll*100):100};
     const briefBase=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; '):'';
-    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(frames.length?{frames}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(frames.length?{frames}:{}),...(images.length?{images}:{}),...(overlays.length?{overlays}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };
@@ -1118,6 +1202,7 @@ const message=(e)=>{
   if(e.data.type===EDIT&&typeof e.data.enabled==='boolean'){if(e.data.enabled){disableCapture();enableEdit()}else disableEdit();return}
   if(e.data.type===CAPTURE&&typeof e.data.enabled==='boolean'){e.data.enabled?enableCapture():disableCapture();return}
   if(e.data.type===RECORD&&typeof e.data.enabled==='boolean'){setRecording(e.data.enabled);return}
+  if(e.data.type===READER&&typeof e.data.enabled==='boolean'){setReader(e.data.enabled);return}
   if(e.data.type===ACTION&&typeof e.data.requestId==='string'&&e.data.action&&typeof e.data.action.kind==='string'){
     diagnosticRunning=e.data.action.diagnostic===true;
     const requestId=e.data.requestId;
@@ -1137,6 +1222,24 @@ const ready=()=>parent.postMessage({type:READY,...pageInfo(),outline:outline(),v
 // Выделение пользователя уходит оболочке: она предложит спросить о нём ассистента.
 const SELECTION='voicechat.preview.selection.v1';let selectionTimer=null,lastSelection='';
 document.addEventListener('selectionchange',()=>{if(selectionTimer)clearTimeout(selectionTimer);selectionTimer=setTimeout(()=>{let text='';try{text=String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{}if(text===lastSelection)return;lastSelection=text;parent.postMessage({type:SELECTION,text},location.origin)},250)});
+// Адрес ссылки под курсором или в фокусе уходит оболочке — строка состояния браузера; долгое нажатие — меню ссылки на телефоне.
+const LINK='voicechat.preview.link.v1';let lastLink='';
+const linkOf=(node)=>{const a=node&&node.closest?node.closest('a[href]'):null;return a&&!a.closest('[data-voicechat-inspector]')?a:null};
+const postLink=(a,longPress)=>{const href=a?unproxy(a.getAttribute('href')||''):'';if(!longPress&&href===lastLink)return;lastLink=href;parent.postMessage({type:LINK,href,text:a?(accessibleName(a)||textOf(a)).slice(0,120):'',newTab:Boolean(a&&a.getAttribute('target')==='_blank'),longPress:Boolean(longPress)},location.origin)};
+document.addEventListener('mouseover',e=>postLink(linkOf(e.target),false),true);
+document.addEventListener('mouseout',e=>{if(linkOf(e.target)&&!linkOf(e.relatedTarget))postLink(null,false)},true);
+document.addEventListener('focusin',e=>{const a=linkOf(e.target);if(a)postLink(a,false)},true);
+document.addEventListener('focusout',e=>{if(linkOf(e.target))postLink(null,false)},true);
+// Свайп от края — назад/вперёд, как в мобильных браузерах; долгое нажатие на ссылку — её меню.
+const GESTURE='voicechat.preview.gesture.v1';let pressTimer=null,pressStart=null;
+document.addEventListener('touchstart',e=>{const t=e.touches[0];if(!t)return;pressStart={x:t.clientX,y:t.clientY,at:Date.now()};if(pressTimer)clearTimeout(pressTimer);const a=linkOf(e.target);pressTimer=a?setTimeout(()=>{pressTimer=null;postLink(a,true)},500):null},{passive:true,capture:true});
+document.addEventListener('touchmove',e=>{const t=e.touches[0];if(pressTimer&&pressStart&&t&&Math.hypot(t.clientX-pressStart.x,t.clientY-pressStart.y)>10){clearTimeout(pressTimer);pressTimer=null}},{passive:true,capture:true});
+document.addEventListener('touchend',e=>{if(pressTimer){clearTimeout(pressTimer);pressTimer=null}const t=e.changedTouches[0];if(!t||!pressStart)return;const dx=t.clientX-pressStart.x,dy=t.clientY-pressStart.y;
+  if(Math.abs(dx)>80&&Math.abs(dy)<60&&Date.now()-pressStart.at<800){if(pressStart.x<=24&&dx>0)parent.postMessage({type:GESTURE,gesture:'back'},location.origin);else if(pressStart.x>=innerWidth-24&&dx<0)parent.postMessage({type:GESTURE,gesture:'forward'},location.origin)}
+  pressStart=null},{passive:true,capture:true});
+// Режим чтения: спрятать навигацию и колонки, оставить текст удобной ширины — как «Reader» в браузере.
+const READER='voicechat.preview.reader.v1',READER_ID='voicechat-reader-style';
+const setReader=(enabled)=>{const existing=document.getElementById(READER_ID);if(!enabled){if(existing)existing.remove();return}if(existing)return;const style=document.createElement('style');style.id=READER_ID;style.textContent='nav,header,footer,aside,[role=navigation],[role=banner],[role=contentinfo],[role=complementary],iframe,[class*="sidebar"],[id*="sidebar"]{display:none !important}body{max-width:44em !important;margin:0 auto !important;padding:0 1em !important;font-size:1.06em !important;line-height:1.6 !important}img,video{max-width:100% !important;height:auto !important}';document.head.appendChild(style)};
 addEventListener('message',message);
 for(const event of ['hashchange','popstate','voicechat.preview.navigation'])addEventListener(event,ready);
 // BFCache сохраняет документ после pagehide: восстанавливаем его обработчик.
@@ -1495,6 +1598,8 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           reply.header(name, value)
         }
         reply.header('content-type', previewContentType(responseType))
+        // The rewritten document carries the injected panel script: a cached copy would keep an old script after a release.
+        if (/text\/html|application\/xhtml\+xml/i.test(responseType)) reply.header('cache-control', 'private, no-store')
         reply.header('content-length', String(rewritten.length))
         return reply.send(rewritten)
       } catch (err) {

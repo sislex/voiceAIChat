@@ -62,8 +62,14 @@ export const PREVIEW_ACTION_LIMITS = {
 export const PREVIEW_CLICK_MODIFIERS = ['shift', 'ctrl', 'alt', 'meta'] as const
 export type PreviewClickModifier = (typeof PREVIEW_CLICK_MODIFIERS)[number]
 
-export type PreviewReadPart = 'headings' | 'links' | 'buttons' | 'inputs' | 'forms' | 'landmarks' | 'tables' | 'text'
-export const PREVIEW_READ_PARTS: readonly PreviewReadPart[] = ['headings', 'links', 'buttons', 'inputs', 'forms', 'landmarks', 'tables', 'text']
+export type PreviewReadPart = 'headings' | 'links' | 'buttons' | 'inputs' | 'forms' | 'landmarks' | 'tables' | 'images' | 'text'
+export const PREVIEW_READ_PARTS: readonly PreviewReadPart[] = ['headings', 'links', 'buttons', 'inputs', 'forms', 'landmarks', 'tables', 'images', 'text']
+
+/** Стороны, которыми человек описывает место: «кнопка под ценой», «поле справа от подписи». */
+export const PREVIEW_SPATIAL_SIDES = ['below', 'above', 'leftOf', 'rightOf'] as const
+export type PreviewSpatialSide = (typeof PREVIEW_SPATIAL_SIDES)[number]
+/** Пространственные уточнения цели: текст-ориентир с нужной стороны. */
+export type PreviewSpatialHints = Partial<Record<PreviewSpatialSide, string>>
 /** Шаг последовательности — любое действие панели, кроме open и вложенных последовательностей. */
 export type PreviewSequenceStep = Exclude<PreviewAction, { kind: 'open' } | { kind: 'sequence' }>
 
@@ -132,13 +138,16 @@ export type PreviewAction = BrowserFrameTarget & (
   /** enabled/checked — состояние контрола, как его видит человек: «активная кнопка», «отмеченный флажок». */
   /** reveal — прокрутить к первому найденному и подсветить: «найди и покажи». */
   /** level — уровень заголовка для role: heading. */
-  | { kind: 'find'; text?: string; selector?: string; role?: string; level?: number; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean }
+  /** below/above/leftOf/rightOf — ориентир по сторонам: «кнопка под ценой»; ближайшее с той стороны идёт первым. */
+  /** details — подробности элемента (атрибуты, размеры, путь по странице), когда описания мало. */
+  | ({ kind: 'find'; text?: string; selector?: string; role?: string; level?: number; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; details?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean } & PreviewSpatialHints)
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
   /** x/y — клик по точке вьюпорта (карты, canvas), когда у цели нет текста и селектора. */
   /** waitFor — текст, которого дождаться после действия (click/type/press/choose/fill), одним ходом. */
   /** confirm — пользователь явно разрешил опасное действие (оплата, удаление, скачивание). */
-  | { kind: 'click'; selector?: string; text?: string; role?: string; near?: string; exact?: boolean; nth?: number; x?: number; y?: number; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; waitFor?: string; confirm?: boolean; diagnostic?: boolean }
+  /** peek — не нажимать, а посмотреть, куда ведёт ссылка (href, другой сайт, новая вкладка), как человек читает адрес в строке состояния. */
+  | ({ kind: 'click'; selector?: string; text?: string; role?: string; near?: string; exact?: boolean; nth?: number; x?: number; y?: number; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; waitFor?: string; confirm?: boolean; peek?: boolean; diagnostic?: boolean } & PreviewSpatialHints)
   /** field — подпись, placeholder или name поля вместо CSS-селектора; append дописывает к текущему значению. */
   /** perKey — посимвольный ввод с событиями клавиатуры: для полей, слушающих keydown (маски, автодополнение). */
   /** secret — значение не возвращать и не записывать в сценарий, даже если поле не помечено как пароль. */
@@ -205,6 +214,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Показать пользователю элемент: прокрутить к нему и подсветить с подписью на несколько секунд. */
   /** all — подсветить все совпадения (до 10), не только первое. */
   | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; all?: boolean; diagnostic?: boolean }
+  /** Убрать то, что мешает читать: баннер cookie (предпочтительно «отклонить»/«только необходимые») или всплывающее окно — как человек закрывает их первым делом. */
+  | { kind: 'dismiss'; what?: 'cookies' | 'dialog' | 'any'; diagnostic?: boolean }
   /** Проверка ожидания как у тестировщика: pass/fail с фактическим значением, без исключений. */
   /** url/title — проверка адреса и заголовка страницы (мост панели), без text/selector. */
   | { kind: 'check'; text?: string; selector?: string; near?: string; state?: 'visible' | 'hidden' | 'present' | 'absent'; value?: string; contains?: string; count?: number; enabled?: boolean; checked?: boolean; url?: string; title?: string; diagnostic?: boolean }
@@ -239,6 +250,19 @@ export interface PreviewActionElement {
   value?: string
   /** Где элемент стоит на странице: текст ближайшей строки/секции/формы — так человек различает одинаковые кнопки. */
   context?: string
+  /** Подробности по запросу find {details: true}: атрибуты, размеры и путь по ориентирам страницы. */
+  details?: PreviewElementDetails
+}
+
+export interface PreviewElementDetails {
+  id?: string
+  classes: string[]
+  /** Значимые атрибуты (type, name, href, aria-*, data-*), обрезанные по длине. */
+  attributes: Record<string, string>
+  /** Положение и размер в координатах вьюпорта (CSS px). */
+  box: { x: number; y: number; width: number; height: number }
+  /** Путь по ориентирам: «main › form «Вход» › строка 3» — где элемент лежит для человека. */
+  path: string
 }
 
 /** Короткая сводка страницы после загрузки: модель ориентируется без отдельного read. */
@@ -319,6 +343,11 @@ export interface PreviewClickResult {
   waited?: { text: string; found: boolean; error?: string }
   /** Цель появилась не сразу: сколько ждали, как ждёт человек, пока кнопка прорисуется. */
   waitedMs?: number
+  /** peek: клика не было — только адрес ссылки, другой ли это сайт и откроется ли она в новой вкладке. */
+  peeked?: true
+  href?: string
+  external?: boolean
+  newTab?: boolean
 }
 
 export interface PreviewTypeResult {
@@ -371,6 +400,10 @@ export interface PreviewReadResult {
   tables?: { selector: string; caption?: string; headers: string[]; rows: string[][]; totalRows: number }[]
   /** Встроенные iframe: часть содержимого живёт в них и недоступна прокси-панели. */
   frames?: { selector: string; src: string; title: string }[]
+  /** Видимые картинки: подпись alt, реальный адрес и размер — человек видит их, модель без этого нет. */
+  images?: { selector: string; alt: string; src: string; width: number; height: number }[]
+  /** Что лежит поверх страницы: баннер cookie, модальное окно, липкая панель — то, что человек убирает первым. */
+  overlays?: { selector: string; text: string; kind: 'cookies' | 'dialog' | 'sticky' }[]
   /** Элемент с фокусом — где сейчас «курсор» пользователя. */
   focus?: string
   /** Текст, выделенный пользователем на странице (до 2000 символов). */
@@ -433,6 +466,8 @@ export interface PreviewScrollResult {
   /** Достигнут край: дальше ленивая лента либо подгрузится, либо это конец. */
   atTop?: boolean
   atBottom?: boolean
+  /** Насколько долистано, 0–100: «на середине страницы». */
+  percent?: number
   /** Элемент, к которому листали (to: element). */
   element?: PreviewActionElement
 }
@@ -452,6 +487,16 @@ export interface PreviewScreenshotResult {
   dataUrl: string
   /** Пронумерованные на снимке элементы (marks: true). */
   marks?: { n: number; selector: string; text: string; role?: string }[]
+}
+
+export interface PreviewDismissResult {
+  page: PreviewPageInfo
+  dismissed: boolean
+  /** Как убрали: отклонили cookie, закрыли крестиком, приняли (когда иного выбора нет) или нажали Escape. */
+  how?: 'rejected' | 'closed' | 'accepted' | 'escape'
+  target?: PreviewActionElement
+  /** Сколько окон/баннеров ещё видно после действия. */
+  remaining: number
 }
 
 export interface PreviewShowResult {
@@ -636,6 +681,7 @@ export type PreviewActionResult =
   | PreviewChooseResult
   | PreviewCheckResult
   | PreviewShowResult
+  | PreviewDismissResult
   | PreviewSequenceResult
   | PreviewChangesResult
   | PreviewReportResult
@@ -689,7 +735,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
-        (value.onScreen === undefined || typeof value.onScreen === 'boolean') &&
+        (value.onScreen === undefined || typeof value.onScreen === 'boolean') && (value.details === undefined || typeof value.details === 'boolean') &&
+        (PREVIEW_SPATIAL_SIDES as readonly string[]).every((side) => optBounded(value[side], L.text)) &&
         (value.text !== undefined || value.selector !== undefined || value.role !== undefined || value.href !== undefined)
       )
     case 'click':
@@ -700,6 +747,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.x === undefined && value.y === undefined || typeof value.x === 'number' && Number.isFinite(value.x) && typeof value.y === 'number' && Number.isFinite(value.y) && value.x >= 0 && value.y >= 0 && value.x <= 100_000 && value.y <= 100_000) &&
         (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
         (value.text !== undefined || value.selector !== undefined || value.x !== undefined || value.role !== undefined) && optBounded(value.waitFor, L.text) && (value.confirm === undefined || typeof value.confirm === 'boolean') &&
+        (value.peek === undefined || typeof value.peek === 'boolean') && (PREVIEW_SPATIAL_SIDES as readonly string[]).every((side) => optBounded(value[side], L.text)) &&
         (value.button === undefined || value.button === 'left' || value.button === 'right') &&
         (value.dblclick === undefined || typeof value.dblclick === 'boolean') &&
         (value.modifiers === undefined || (Array.isArray(value.modifiers) && value.modifiers.length <= 4 && value.modifiers.every((item) => (PREVIEW_CLICK_MODIFIERS as readonly string[]).includes(item as string))))
@@ -714,7 +762,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'read':
       return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) && optBounded(value.around, L.text) && (value.markdown === undefined || typeof value.markdown === 'boolean') &&
         (value.visible === undefined || typeof value.visible === 'boolean') && (value.brief === undefined || typeof value.brief === 'boolean') &&
-        (value.parts === undefined || (Array.isArray(value.parts) && value.parts.length >= 1 && value.parts.length <= 8 && value.parts.every((part) => (PREVIEW_READ_PARTS as readonly string[]).includes(part as string)))) &&
+        (value.parts === undefined || (Array.isArray(value.parts) && value.parts.length >= 1 && value.parts.length <= 9 && value.parts.every((part) => (PREVIEW_READ_PARTS as readonly string[]).includes(part as string)))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
         (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0))
     case 'styles':
@@ -790,6 +838,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return bounded(value.text, L.text) && value.text.trim().length > 0 && optBounded(value.in, L.text) && optBounded(value.near, L.text) && optBounded(value.waitFor, L.text) && (value.confirm === undefined || typeof value.confirm === 'boolean')
     case 'changes':
       return optBounded(value.selector, L.selector)
+    case 'dismiss':
+      return value.what === undefined || value.what === 'cookies' || value.what === 'dialog' || value.what === 'any'
     case 'report':
       return true
     case 'network':
@@ -982,6 +1032,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'type {secret: true} не возвращает значение и не пишет его в сценарий; show {all: true} подсвечивает все совпадения; hover.cursor — «рука» над кликабельным; read.frames — встроенные iframe, недоступные панели; open.crossSite — перешли на другой сайт. ' +
     'read {around: фраза} — текст вокруг фразы; read {markdown: true} — текст с заголовками # и списками -; headings в read несут selector для scroll/read section; find {role: heading, level: 2}; ' +
     'scroll {percent: 50} — к доле документа; type {blur: true} снимает фокус после ввода (проверка поля по blur); fill fields[].secret; status.outline — сводка текущей страницы. ' +
+    'find/click {below|above|leftOf|rightOf: текст-ориентир} — «кнопка под ценой», «поле справа от подписи»: ближайшее с той стороны идёт первым; find {details: true} — атрибуты, размер и путь элемента по ориентирам; ' +
+    'read {parts: [images]} — видимые картинки с alt и адресом; read.overlays — что лежит поверх страницы (баннер cookie, окно, липкая панель); dismiss {what?: cookies|dialog|any} — убрать баннер cookie (предпочитая «отклонить»/«только необходимые») или закрыть всплывающее окно, как человек делает первым делом; ' +
+    'click {peek: true} — не нажимать, а узнать, куда ведёт ссылка (href, external, newTab); scroll.percent — насколько долистано. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

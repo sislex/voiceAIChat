@@ -804,3 +804,121 @@ describe('текущее приложение в Reader', () => {
     expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).src).toContain(encodeURIComponent('https://app.internal/#/machines'))
   })
 })
+
+describe('Recorder: поведение мобильного браузера (круг 16)', () => {
+  const ready = (url = 'https://shop.example/', title = 'Магазин') => fromPage({ type: PREVIEW_PAGE_READY_TYPE, url, title })
+  const start = () => { render(<Recorder />); fromHost(init); ready() }
+  it('ссылка под курсором показывается строкой состояния с пометками «другой сайт» и «новая вкладка»', () => {
+    start()
+    fromPage({ type: 'voicechat.preview.link.v1', href: 'https://other.example/docs', text: 'Документация', newTab: true, longPress: false })
+    const bar = screen.getByRole('status', { name: '' , hidden: true })
+    expect(bar.textContent).toContain('https://other.example/docs'); expect(bar.textContent).toContain('другой сайт'); expect(bar.textContent).toContain('новая вкладка')
+    fromPage({ type: 'voicechat.preview.link.v1', href: '', text: '', newTab: false, longPress: false })
+    expect(screen.queryByText(/other\.example\/docs/)).toBeNull()
+  })
+  it('долгое нажатие на ссылку открывает её меню: открыть, скопировать, спросить ассистента', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const post = vi.spyOn(window, 'postMessage')
+    start()
+    fromPage({ type: 'voicechat.preview.link.v1', href: 'https://shop.example/sale', text: 'Распродажа', newTab: false, longPress: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Копировать ссылку' }))
+    expect(writeText).toHaveBeenCalledWith('https://shop.example/sale')
+    fromPage({ type: 'voicechat.preview.link.v1', href: 'https://shop.example/sale', text: 'Распродажа', newTab: false, longPress: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Спросить о ссылке' }))
+    expect(sent(post).at(-1)).toMatchObject({ kind: 'ask', text: expect.stringContaining('https://shop.example/sale') })
+    fromPage({ type: 'voicechat.preview.link.v1', href: 'https://shop.example/sale', text: 'Распродажа', newTab: false, longPress: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть ссылку' }))
+    expect(sent(post).filter(message => message.kind === 'save-url').at(-1)).toMatchObject({ url: 'https://shop.example/sale' })
+    expect(screen.queryByRole('button', { name: 'Открыть ссылку' })).toBeNull()
+  })
+  it('свайп от края внутри страницы ведёт назад только когда есть куда', () => {
+    start()
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const back = vi.spyOn(frame.contentWindow!.history, 'back').mockImplementation(() => undefined)
+    fromPage({ type: 'voicechat.preview.gesture.v1', gesture: 'back' })
+    expect(back).not.toHaveBeenCalled()
+    ready('https://shop.example/catalog', 'Каталог')
+    fromPage({ type: 'voicechat.preview.gesture.v1', gesture: 'back' })
+    expect(back).toHaveBeenCalledTimes(1)
+  })
+  it('режим чтения уходит странице сообщением и переживает загрузку следующей страницы', () => {
+    start()
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    const toggle = screen.getByRole('button', { name: 'Режим чтения', hidden: true })
+    fireEvent.click(toggle)
+    expect(inner.mock.calls.map(([message]) => message as Record<string, unknown>).filter(message => message.type === 'voicechat.preview.reader.v1').at(-1)).toMatchObject({ enabled: true })
+    expect(screen.getByRole('button', { name: 'Обычный вид', hidden: true }).getAttribute('aria-pressed')).toBe('true')
+    inner.mockClear()
+    ready('https://shop.example/catalog', 'Каталог')
+    expect(inner.mock.calls.map(([message]) => message as Record<string, unknown>).filter(message => message.type === 'voicechat.preview.reader.v1').at(-1)).toMatchObject({ enabled: true })
+  })
+  it('«Клавиши» показывает шпаргалку сочетаний панели', () => {
+    start()
+    fireEvent.click(screen.getByRole('button', { name: 'Клавиши', hidden: true }))
+    const sheet = screen.getByLabelText('Клавиши панели')
+    expect(sheet.textContent).toContain('Ctrl/Cmd+L'); expect(sheet.textContent).toContain('Alt+Shift+M')
+    fireEvent.click(screen.getByRole('button', { name: 'Скрыть клавиши' }))
+    expect(screen.queryByLabelText('Клавиши панели')).toBeNull()
+  })
+  it('правый клик по «Назад» показывает историю вкладки, выбор открывает страницу', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    start()
+    ready('https://shop.example/catalog', 'Каталог')
+    fireEvent.contextMenu(screen.getByRole('group', { name: 'История' }))
+    const list = screen.getByRole('listbox', { name: 'История этой вкладки' })
+    expect(list.textContent).toContain('Каталог'); expect(list.textContent).toContain('Магазин')
+    fireEvent.click(screen.getByRole('button', { name: /Магазин/ }))
+    expect(sent(post).filter(message => message.kind === 'save-url').at(-1)).toMatchObject({ url: 'https://shop.example/' })
+    expect(screen.queryByRole('listbox', { name: 'История этой вкладки' })).toBeNull()
+  })
+  it('масштаб текста запоминается по сайту и возвращается с его страницей', () => {
+    localStorage.setItem('voicechat.reader.zoom.v1', JSON.stringify({ 'shop.example': 120 }))
+    start()
+    expect(screen.getByText('120%')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Увеличить текст', hidden: true }))
+    expect(JSON.parse(localStorage.getItem('voicechat.reader.zoom.v1')!)).toEqual({ 'shop.example': 130 })
+    ready('https://docs.example/', 'Документы')
+    expect(screen.getByText('100%')).toBeTruthy()
+  })
+  it('на телефоне панель прячется при чтении вниз и возвращается при прокрутке вверх; после полутора экранов есть «К началу»', () => {
+    const original = window.matchMedia
+    Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: (query: string) => ({ matches: query.includes('560'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }) })
+    try {
+      start()
+      const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+      const win = frame.contentWindow!
+      let top = 0
+      // jsdom's iframe document has no layout: hand the Reader a scrolling element with the geometry of a long page.
+      Object.defineProperty(win.document, 'scrollingElement', { configurable: true, value: { get scrollTop() { return top }, scrollHeight: 4000 } })
+      Object.defineProperty(win, 'innerHeight', { configurable: true, value: 600 })
+      const scrollTo = (next: number): void => { top = next; act(() => { win.dispatchEvent(new Event('scroll')) }) }
+      scrollTo(300)
+      expect(screen.getByRole('button', { name: 'Показать панель' })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'К началу страницы' })).toBeNull()
+      scrollTo(1200)
+      expect(screen.getByRole('button', { name: 'К началу страницы' })).toBeTruthy()
+      scrollTo(1100)
+      expect(screen.queryByRole('button', { name: 'Показать панель' })).toBeNull()
+      scrollTo(1300)
+      fireEvent.click(screen.getByRole('button', { name: 'Показать панель' }))
+      expect(screen.queryByRole('button', { name: 'Показать панель' })).toBeNull()
+    } finally {
+      if (original) Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: original }); else delete (window as { matchMedia?: unknown }).matchMedia
+    }
+  })
+  it('на телефоне адресная строка показывает только сайт, а в фокусе — полный адрес', () => {
+    const original = window.matchMedia
+    Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: (query: string) => ({ matches: query.includes('560'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }) })
+    try {
+      start()
+      const address = screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement
+      expect(address.value).toBe('shop.example')
+      fireEvent.focus(address)
+      expect(address.value).toBe('https://shop.example/')
+    } finally {
+      if (original) Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: original }); else delete (window as { matchMedia?: unknown }).matchMedia
+    }
+  })
+})
