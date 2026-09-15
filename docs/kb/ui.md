@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: abc8c97e
+checked: 911e2eb0
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -3026,6 +3026,12 @@ browser assertions match the action wording without assuming it starts at the
 first text character. Semantic `read` heading objects may include `selector`
 (`PreviewReadResult`); the selected-root regression verifies its heading level,
 text and `#x` selector while allowing additional contract fields.
+
+### Маршрутные чтения и общий кэш
+
+`packages/ui/src/lib/readCache.ts` содержит сессионный кэш чтений для семейств profile, access, usage, security, machines, settings, catalogs, projects и board. Ключ строится канонически из семейства и параметров, TTL задаётся по семейству, а одинаковые параллельные запросы разделяют один flight. Отписка принадлежит потребителю: она прекращает доставку этому экрану, но не отменяет общий запрос, который может быть нужен другому подписчику.
+
+Инвалидация удаляет подходящую запись и уведомляет слушателей с именем семейства; `clear` используется на смене сессии. Identity записи ограждает кэш от позднего ответа старого запроса после invalidate/logout или authoritative realtime seed: такой ответ завершается внутренней `AbortError` и не перезаписывает свежие данные. Диагностика публикует только разрешённое имя семейства и `hit|miss`, без параметров и данных. Неактивные записи ограничены 256 элементами. `AccountPage` реагирует только на относящиеся к ней семейства, поэтому инвалидация несвязанного маршрута не сдвигает её границы отчётного периода.
 
 ### Действия hover, scroll, press и скриншот области
 

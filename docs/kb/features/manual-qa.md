@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
 updated: 2026-09-15
-checked: 181c142e
+checked: 911e2eb0
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -306,14 +306,9 @@ QA-specific удаления вложений; безопасность и жи�
 
 ## Интерфейс
 
-The cycle-based `NewTaskManualQaPanel` saves results explicitly. Its
-`ManualResult` renders pristine status/comment directly from the server snapshot
-and creates a local draft only on input. Reconnect and failed-save refreshes
-retain that draft; successful saving clears it so the refreshed revision becomes
-visible. No effect copies server fields into editable state. Regression tests in
-`NewTaskManualQaPanel.dom.test.tsx` cover immediate selection/save, immutable
-historical criteria, and passed/failed/blocked drafts across refresh, failure and
-retry. This panel is separate from the debounced `ManualQaPanel` below.
+Цикловая панель `NewTaskManualQaPanel` сохраняет результат только явной кнопкой. Вложенный `ManualResult` без локальных правок показывает status/comment прямо из серверного snapshot, а локальный draft создаёт при первом вводе. Reconnect и обязательный refresh после неудачного save не заменяют этот draft; успешный save очищает его, после чего становится видна обновлённая серверная revision. Эффекта, копирующего серверные поля в редактируемое состояние, нет. Пока есть draft, панель блокирует переключение QA-сессии, отправку на доработку и переход дальше.
+
+Регрессии в `NewTaskManualQaPanel.dom.test.tsx` покрывают немедленный выбор и сохранение, неизменяемые исторические критерии, а также draft для `passed`, `failed` и `blocked` через refresh, ошибку и повтор. Это отдельное поведение от debounce-автосохранения старой `ManualQaPanel`, описанного ниже.
 
 Каждая карточка результата автосохраняется с debounce 700 мс. Для `failed` и
 `blocked` по-прежнему обязателен комментарий; ошибка сохранения прекращает
