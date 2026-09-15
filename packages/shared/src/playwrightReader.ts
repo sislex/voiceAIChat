@@ -32,6 +32,7 @@ export type BrowserControlCommand =
   | ({ type: 'device' } & BrowserDeviceOptions)
   | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
   | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number }
+  | { type: 'report'; title?: string; limit?: number }
   | ({ type: 'touch' } & BrowserTouchAction)
 
 export type BrowserModelScreenshotOptions = Pick<BrowserScreenshotOptions, 'selector' | 'rect' | 'fullPage' | 'animations' | 'timeoutMs' | 'frame'>
@@ -41,6 +42,9 @@ export interface BrowserImageResult extends Partial<BrowserScreenshotMetadata> {
 /** Эмуляция среды и cookies: ответ показывает, что теперь в силе. */
 export interface BrowserEnvironmentResult { environment: BrowserEnvironmentState }
 export interface BrowserCookiesResult { cookies: BrowserCookieInfo[]; total: number }
+/** Отчёт о проверке: то, что остаётся после работы в браузере. */
+export interface BrowserReportResult { report: { markdown: string; passed: boolean; actions: number; failures: number; truncated?: boolean } }
+
 /** Снимки состояния сессии и итог сравнения с текущей страницей. */
 export interface BrowserSnapshotResult { snapshots: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison }
 
@@ -58,7 +62,7 @@ export interface BrowserHistoryResult { history: { total: number; entries: Brows
 
 export interface BrowserActionOutcome {
   ok: boolean
-  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult
+  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult | BrowserReportResult
   error?: string
 }
 

@@ -579,3 +579,36 @@ describe('снимки состояния (круг 12)', () => {
     await screen.findByText(/Сделайте «до», измените страницу/)
   })
 })
+
+describe('отчёт о проверке (круг 13)', () => {
+  it('панель показывает тот же отчёт, который модель вставит в задачу', async () => {
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string } }) => (
+        req.command.type === 'report'
+          ? { report: { markdown: '## Проверка в браузере\n\n**Итог:** есть замечания', passed: false, actions: 12, failures: 2 } }
+          : meta()
+      )) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Отчёт' }))
+    await screen.findByText(/замечаний 2 · действий 12/)
+    await screen.findByText(/## Проверка в браузере/)
+  })
+
+  it('отчёт копируется целиком, а не пересказывается', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const markdown = '## Проверка\n\n- шаг'
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string } }) => (
+        req.command.type === 'report' ? { report: { markdown, passed: true, actions: 1, failures: 0 } } : meta()
+      )) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Отчёт' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Скопировать' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(markdown))
+  })
+})

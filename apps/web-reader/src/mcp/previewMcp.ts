@@ -936,6 +936,26 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'report',
+        {
+          description:
+            'Собрать отчёт о проверке: что проверялось (твои note), что не получилось, на что жаловалась ' +
+            'страница, снимки состояния и последние шаги — готовым markdown для комментария в задаче. ' +
+            'Итог «всё работает» человеку в канбане не говорит ни что проверялось, ни где проверка споткнулась; ' +
+            'всё нужное уже лежит в сессии, отчёт просто собирает это в один текст.',
+          inputSchema: {
+            title: z.string().max(200).optional().describe('Заголовок отчёта: что за задача или сценарий'),
+            limit: z.number().int().min(500).max(32_000).optional().describe('Потолок длины (по умолчанию 8000)')
+          }
+        },
+        async ({ title, limit }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'report', ...(title ? { title } : {}), ...(limit !== undefined ? { limit } : {}) })
+          return toolResult(result ?? { ok: false, error: 'Отчёт доступен только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
         'snapshot',
         {
           description:

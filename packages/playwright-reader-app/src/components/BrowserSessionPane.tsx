@@ -194,6 +194,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
    * Панель показывает их тем же списком, что видит модель.
    */
   const [snapshots, setSnapshots] = useState<{ open: boolean; name: string; items: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; busy?: boolean; error?: string }>({ open: false, name: '', items: [] })
+  /** Отчёт о проверке: тот же текст, который модель вставит в задачу. */
+  const [report, setReport] = useState<{ markdown: string; passed: boolean; actions: number; failures: number } | null>(null)
   /** Правила сети: человеку они нужны там же, где модели, — и чтобы их снять. */
   const [networkRules, setNetworkRules] = useState<{ rules: Array<{ url: string; action: string; status?: number; delayMs?: number }>; total: number } | null>(null)
   /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
@@ -589,6 +591,12 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       ...current, busy: false, items: result.snapshots ?? current.items,
       ...(operation === 'compare' ? { comparison: result.comparison } : {})
     }))
+  }, [run])
+
+  /** Отчёт собирается раннером — тем же, что отдаёт модель в комментарий задачи. */
+  const loadReport = useCallback(async (): Promise<void> => {
+    const result = await run({ type: 'report' } as never) as { report?: { markdown: string; passed: boolean; actions: number; failures: number } } | undefined
+    if (result?.report) setReport(result.report)
   }, [run])
 
   /** Метрики страницы: обновляются по требованию, не поллингом — это команда. */
@@ -1045,6 +1053,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           что заполнено, что обязательно и почему браузер не пустит дальше. */}
       <Button size="sm" variant={formInfo ? 'primary' : 'ghost'} aria-expanded={Boolean(formInfo)} disabled={phase !== 'ready'} onClick={() => (formInfo ? setFormInfo(null) : void loadFormInfo())}>Поля формы</Button>
       <Button size="sm" variant={environmentOpen ? 'primary' : 'ghost'} aria-expanded={environmentOpen} disabled={phase !== 'ready'} onClick={() => setEnvironmentOpen((value) => !value)}>Среда</Button>
+      <Button size="sm" variant={report ? 'primary' : 'ghost'} aria-expanded={Boolean(report)} disabled={phase !== 'ready'}
+        onClick={() => (report ? setReport(null) : void loadReport())}>Отчёт</Button>
       <Button size="sm" variant={snapshots.open ? 'primary' : 'ghost'} aria-expanded={snapshots.open} disabled={phase !== 'ready'}
         onClick={() => { setSnapshots((current) => ({ ...current, open: !current.open })); if (!snapshots.open) void runSnapshot('list') }}>Снимки</Button>
       <Button size="sm" variant={feedOpen ? 'primary' : 'ghost'} aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>
@@ -1313,6 +1323,24 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             </li>
           ))}
         </ol>
+      </div>
+    )}
+    {report && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Отчёт о проверке">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Отчёт: {report.passed ? 'замечаний нет' : `замечаний ${report.failures}`} · действий {report.actions}</strong>
+          <Button size="sm" variant="ghost" onClick={() => void (async () => {
+            try {
+              if (!navigator.clipboard) throw new Error('Буфер обмена недоступен в этом контексте')
+              await navigator.clipboard.writeText(report.markdown)
+              setMessage('Отчёт скопирован')
+            } catch (err) { setMessage(err instanceof Error ? err.message : 'Скопировать не удалось') }
+          })()}>Скопировать</Button>
+          <IconButton size="sm" aria-label="Обновить отчёт" title="Обновить отчёт" onClick={() => void loadReport()}>⟳</IconButton>
+          <IconButton size="sm" aria-label="Скрыть отчёт" title="Скрыть отчёт" onClick={() => setReport(null)}>✕</IconButton>
+        </div>
+        {/* Готовый markdown, а не пересказ: человек вставляет его в задачу как есть. */}
+        <pre>{report.markdown}</pre>
       </div>
     )}
     {snapshots.open && (
