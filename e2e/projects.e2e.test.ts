@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
+import { WebSocket } from 'ws'
 
 const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'apps/web/dist')
@@ -23,6 +24,7 @@ const PASSWORD = 'e2e-pass'
 
 let server: ChildProcess | null = null
 let smtp: Server | null = null
+let agent: WebSocket | null = null
 let dataDir = ''
 let browser: Browser
 let page: Page
@@ -115,6 +117,18 @@ describe.skipIf(!existsSync(WEB_DIST))('Проекты E2E', () => {
 
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    // Project creation requires an online device, including the realtime snapshot.
+    const createdAgent = await (await api('/api/agents', { method: 'POST', body: JSON.stringify({ name: 'Projects E2E' }) })).json() as { token: string }
+    agent = new WebSocket(`${BASE.replace('http:', 'ws:')}/agent`)
+    await new Promise<void>((resolve, reject) => {
+      agent!.once('error', reject)
+      agent!.once('open', () => agent!.send(JSON.stringify({ t: 'agent.register', token: createdAgent.token })))
+      agent!.once('message', data => {
+        const message = JSON.parse(data.toString()) as { t: string }
+        if (message.t === 'agent.registered') resolve()
+        else reject(new Error(`Device registration failed: ${message.t}`))
+      })
+    })
     // Returning-user fixture; first entry is covered by TC9.
     await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     await page.goto(`${BASE}/`)
@@ -124,6 +138,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Проекты E2E', () => {
   })
 
   afterAll(async () => {
+    agent?.close()
     await browser?.close()
     server?.kill('SIGTERM')
     smtp?.close()
@@ -139,7 +154,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Проекты E2E', () => {
     await expect.poll(() => page.getByTestId('new-project-type-summary').textContent()).toContain('только доска и задачи')
     await dialog.getByRole('button', { name: 'Создать' }).click()
 
-    await expect.poll(() => page.locator('.jcol-head').count(), { timeout: 30_000 }).toBe(5)
+    await expect.poll(() => page.locator('[data-column-id]').count(), { timeout: 30_000 }).toBe(5)
     // Тип выключил релизы — вкладки нет вовсе.
     expect(await page.getByRole('tab', { name: 'Релизы' }).count()).toBe(0)
   })

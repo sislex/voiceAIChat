@@ -507,7 +507,32 @@ function ActiveFilterChip({ label, onRemove }: { label: string; onRemove: () => 
 export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const staleMessageId = useId()
   // Телефонная раскладка: тот же порог, что у карточки задачи (720px).
-  const compact = useMediaQuery(MOBILE_QUERY)
+  const viewportCompact = useMediaQuery(MOBILE_QUERY)
+  const [availableWidth, setAvailableWidth] = useState<number | null>(null)
+  const compact = availableWidth === null ? viewportCompact : availableWidth <= 720
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
+  useLayoutEffect(() => {
+    const root = wrapRef.current
+    if (!root || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setAvailableWidth(entry.contentRect.width)
+    })
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [props.board != null, props.loading])
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+    const update = (): void => setKeyboardOpen(window.innerHeight - viewport.height - viewport.offsetTop > 120)
+    update()
+    viewport.addEventListener('resize', update)
+    viewport.addEventListener('scroll', update)
+    return () => {
+      viewport.removeEventListener('resize', update)
+      viewport.removeEventListener('scroll', update)
+    }
+  }, [])
   const { loading, members } = props
   const confirm = useConfirm()
   // Очередь «Улучшения»: по одной карточке на предложение. Открытие доски за ней
@@ -957,49 +982,62 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [mobileColumnId, setMobileColumnId] = useState<string | null>(null)
   const mobileColumnIndex = Math.max(0, columns.findIndex((column) => column.id === mobileColumnId))
   const mobileColumn = columns[mobileColumnIndex] ?? null
-  const columnSessionKey = scrollScopeId ? kanbanColumnKey(scrollScopeId) : null
+  // Legacy board-only keys cannot safely be attributed to a signed-in user.
+  const columnSessionKey = scrollScopeId
+    ? kanbanColumnKey(JSON.stringify([currentUserId ?? null, board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? null, scrollScopeId]))
+    : null
+  const columnScopeRef = useRef<string | null>(null)
+  const latestColumnScopeRef = useRef(columnSessionKey)
+  latestColumnScopeRef.current = columnSessionKey
   const selectMobileColumn = (id: string): void => {
+    if (!columns.some((column) => column.id === id)) return
     setMobileColumnId(id)
+    setActiveColumnId(id)
     if (columnSessionKey) {
       try { sessionStorage.setItem(columnSessionKey, id) } catch { /* Storage must not block navigation. */ }
     }
-    const root = boardRef.current
-    const target = Array.from(root?.querySelectorAll<HTMLElement>('[data-testid="kanban-column"]') ?? [])
-      .find((element) => element.dataset.columnId === id)
-    if (root && target) root.scrollLeft += target.getBoundingClientRect().left - root.getBoundingClientRect().left - 12
   }
   useLayoutEffect(() => {
-    if (!compact || !boardRef.current) return
-    let saved: string | null = null
-    try { saved = columnSessionKey ? sessionStorage.getItem(columnSessionKey) : null } catch { /* Use the first available column. */ }
+    if (!compact) return
+    let saved = columnScopeRef.current === columnSessionKey ? mobileColumnId : null
+    if (columnScopeRef.current !== columnSessionKey || saved === null) {
+      try { saved = columnSessionKey ? sessionStorage.getItem(columnSessionKey) : null } catch { /* Use the first available column. */ }
+    }
+    columnScopeRef.current = columnSessionKey
     const selected = columns.find((column) => column.id === saved) ?? columns[0]
     if (selected) selectMobileColumn(selected.id)
     else setMobileColumnId(null)
-    const root = boardRef.current
-    const remember = (): void => {
-      const left = root.getBoundingClientRect().left + 12
-      const candidates = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="kanban-column"]'))
-      const target = candidates.reduce<HTMLElement | null>((best, element) =>
-        !best || Math.abs(element.getBoundingClientRect().left - left) < Math.abs(best.getBoundingClientRect().left - left) ? element : best, null)
-      const id = target?.dataset.columnId
-      if (!id) return
-      setMobileColumnId(id)
-      if (columnSessionKey) {
-        try { sessionStorage.setItem(columnSessionKey, id) } catch { /* Storage is optional. */ }
-      }
+  }, [compact, columnSessionKey, columnIdsKey])
+  const displayedColumns = compact ? columns.filter((column) => column.id === mobileColumn?.id) : columns
+  const swipeRef = useRef<{ x: number; y: number; time: number } | null>(null)
+  const touchNavigation = {
+    onTouchStart: (event: React.TouchEvent<HTMLDivElement>): void => {
+      swipeRef.current = null
+      if (!compact || event.touches.length !== 1 || document.querySelector('[role="dialog"], [role="menu"]')) return
+      const target = event.target as HTMLElement
+      if (target.closest('.jcard, button, input, select, textarea, a, [role="button"], [contenteditable], [data-column-nav-target]')) return
+      const touch = event.touches[0]
+      if (touch.clientX < 24 || touch.clientX > window.innerWidth - 24) return
+      swipeRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
+    },
+    onTouchMove: (event: React.TouchEvent<HTMLDivElement>): void => {
+      const start = swipeRef.current
+      if (!start) return
+      if (event.touches.length !== 1 || Math.abs(event.touches[0].clientY - start.y) > 24) swipeRef.current = null
+    },
+    onTouchCancel: (): void => { swipeRef.current = null },
+    onTouchEnd: (event: React.TouchEvent<HTMLDivElement>): void => {
+      const start = swipeRef.current
+      swipeRef.current = null
+      if (!start || event.changedTouches.length !== 1 || event.touches.length || Date.now() - start.time > 700) return
+      const touch = event.changedTouches[0]
+      const dx = touch.clientX - start.x
+      const dy = touch.clientY - start.y
+      if (Math.abs(dx) < 64 || Math.abs(dy) > 24 || Math.abs(dx) < Math.abs(dy) * 3) return
+      const next = columns[mobileColumnIndex + (dx < 0 ? 1 : -1)]
+      if (next) selectMobileColumn(next.id)
     }
-    const resize = (): void => {
-      let id: string | null = null
-      try { id = columnSessionKey ? sessionStorage.getItem(columnSessionKey) : null } catch { /* Keep a valid fallback. */ }
-      selectMobileColumn(columns.find((column) => column.id === id)?.id ?? columns[0]?.id ?? '')
-    }
-    root.addEventListener('scroll', remember, { passive: true })
-    window.addEventListener('resize', resize)
-    return () => {
-      root.removeEventListener('scroll', remember)
-      window.removeEventListener('resize', resize)
-    }
-  }, [compact, columnSessionKey, columnIdsKey, board != null, swimlane, collapsedColumns])
+  }
 
   useEffect(() => {
     const allowed = new Set((board?.columns ?? []).map((column) => column.id))
@@ -1177,6 +1215,18 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const navigateBoard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget) return
+    if (compact && grab) {
+      const task = allTasks.find(task => task.id === grab.taskId)
+      if (task) onCardKeys(task)(event, event.currentTarget)
+      return
+    }
+    if (compact && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault()
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? columns.length - 1
+        : mobileColumnIndex + (event.key === 'ArrowRight' ? 1 : -1)
+      if (columns[index]) selectMobileColumn(columns[index].id)
+      return
+    }
     const surface = event.currentTarget
     const firstColumn = surface.querySelector<HTMLElement>('[data-column-id]')
     const step = (firstColumn?.getBoundingClientRect().width || 272) + 8
@@ -1525,14 +1575,20 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setDropAt(dropOfGrab(next))
     const total = neighbours(next.taskId, next.columnId, next.laneId).length + 1
     setAnnounce(`Задача ${next.title}: колонка ${columnName(next.columnId)}, позиция ${next.index + 1} из ${total}.`)
-    if (compact) selectMobileColumn(next.columnId)
+    if (compact) {
+      selectMobileColumn(next.columnId)
+      requestAnimationFrame(() => boardRef.current?.focus({ preventScroll: true }))
+    }
   }
 
   const cancelGrab = (): void => {
     const g = grabRef.current
     setGrab(null)
     setDropAt(null)
-    if (g) setAnnounce(`Перенос задачи «${g.title}» отменён.`)
+    if (g) {
+      setAnnounce(`Перенос задачи «${g.title}» отменён.`)
+      if (compact) selectMobileColumn(g.from.columnId)
+    }
   }
   cancelGrabRef.current = cancelGrab
 
@@ -1631,7 +1687,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   // «Создать задачу» есть в палитре, а как только ушла — исчезает. Держать этот
   // пункт в App нельзя: он знал бы про колонки доски.
   useCommandSource(() => {
-    const target = columns[0]
+    const target = compact ? mobileColumn : columns[0]
     if (!target) return []
     return [
       {
@@ -1652,6 +1708,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const nextColumn = columnIndex >= 0 ? fullColumns[columnIndex + 1] ?? null : null
     return (
     <TaskCard
+      narrow={compact}
       task={t}
       projectName={props.projectName}
       allTasks={allTasks}
@@ -1684,9 +1741,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         const targetTasks = allTasks
           .filter((task) => task.columnId === targetColumnId && task.id !== taskId)
           .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
-        const moved = await props.onMoveTask(taskId, targetColumnId, targetTasks[targetTasks.length - 1]?.id ?? null, null)
-        if (moved === false) return
-        setAnnounce(`Задача «${current.title}» перенесена в колонку «${columnName(targetColumnId)}».`)
+        try {
+          const moved = await props.onMoveTask(taskId, targetColumnId, targetTasks[targetTasks.length - 1]?.id ?? null, null)
+          if (latestColumnScopeRef.current !== columnSessionKey) return
+          if (moved === false) {
+            setAnnounce(`Не удалось перенести задачу «${current.title}».`)
+            return
+          }
+          if (compact) selectMobileColumn(targetColumnId)
+          setAnnounce(`Задача «${current.title}» перенесена в колонку «${columnName(targetColumnId)}».`)
+          requestAnimationFrame(() => {
+            const root = boardRef.current
+            const card = Array.from(root?.querySelectorAll<HTMLElement>('[data-task-id]') ?? []).find(element => element.dataset.taskId === taskId)
+            ;(card ?? root)?.focus({ preventScroll: true })
+          })
+        } catch {
+          if (latestColumnScopeRef.current !== columnSessionKey) return
+          setAnnounce(`Не удалось перенести задачу «${current.title}». Повторите перенос.`)
+        }
       }}
       onCopyLink={async (taskId) => {
         const current = allTasks.find((task) => task.id === taskId)
@@ -1700,7 +1772,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onGrab={(e, card, immediate) => grabTask(e, card, t.id, immediate)}
       onCardKeys={onCardKeys(t)}
       onCardBlur={() => {
-        if (grab?.taskId === t.id) cancelGrab()
+        if (grab?.taskId === t.id && !compact) cancelGrab()
       }}
       dragging={dragTask === t.id}
       grabbed={grab?.taskId === t.id}
@@ -2415,6 +2487,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       {view.state === 'data' && board && (
         <div
           className="jboard-wrap"
+          ref={wrapRef}
+          data-narrow={compact || undefined}
           aria-busy={view.refreshing}
           aria-describedby={view.staleError ? staleMessageId : undefined}
           data-stale={view.staleError || undefined}
@@ -2444,6 +2518,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             snapshot={snapshotUpdated.short}
             refreshing={view.refreshing}
           >
+            {compact && <details>
+              <summary>Колонки и улучшения</summary>
+              {addColumnBox}
+              <Button onClick={openImprovements}>Улучшения ({improvements.length})</Button>
+            </details>}
             <span className="jsearch-wrap">
               <input
                 ref={searchRef}
@@ -2833,11 +2912,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           {compact && <nav className="jboard-mobile-navigation" aria-label="Навигация по колонкам">
             <IconButton title="Предыдущая колонка" aria-label="Предыдущая колонка" disabled={!mobileColumn || mobileColumnIndex === 0}
               onClick={() => selectMobileColumn(columns[mobileColumnIndex - 1].id)}>‹</IconButton>
-            <span role="status">{mobileColumn ? `Колонка ${mobileColumnIndex + 1} из ${columns.length}` : 'Нет колонок'}</span>
+            <div className="jboard-mobile-selection">
+              <span role="status">{mobileColumn ? `Колонка ${mobileColumnIndex + 1} из ${columns.length}` : 'Нет колонок'}</span>
+              <select aria-label="Активная колонка" value={mobileColumn?.id ?? ''} disabled={!mobileColumn}
+                onChange={(event) => selectMobileColumn(event.target.value)}>
+                {columns.map((column) => <option key={column.id} value={column.id}>{column.name} ({tasksOf(column.id).length})</option>)}
+              </select>
+            </div>
             <IconButton title="Следующая колонка" aria-label="Следующая колонка" disabled={!mobileColumn || mobileColumnIndex === columns.length - 1}
               onClick={() => selectMobileColumn(columns[mobileColumnIndex + 1].id)}>›</IconButton>
           </nav>}
-          {compact && <Button variant="primary" className="jboard-mobile-create" data-testid="board-mobile-create"
+          {compact && <Button hidden={keyboardOpen} variant="primary" className="jboard-mobile-create" data-testid="board-mobile-create"
             disabled={!mobileColumn} onClick={() => { if (mobileColumn) openComposer(mobileColumn.id) }}>+ Создать</Button>}
           {compact && composerCol && columns.some((column) => column.id === composerCol) && <Dialog
             title={`Создать задачу: ${columnName(composerCol)}`} onClose={() => setComposerCol(null)} padded
@@ -2857,8 +2942,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               data-drag-task-id={dragTask ?? grab?.taskId}
               tabIndex={0}
               onKeyDown={navigateBoard}
+              {...touchNavigation}
             >
-              {columns.map((col) => (
+              {displayedColumns.map((col) => (
                 <section
                   key={col.id}
                   className={`jcol${collapsedColumns.has(col.id) ? ' jcol--collapsed' : ''}${col.hidden ? ' jcol--hidden' : ''}${
@@ -2932,6 +3018,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               data-drag-task-id={dragTask ?? grab?.taskId}
               tabIndex={0}
               onKeyDown={navigateBoard}
+              {...touchNavigation}
             >
               {lanes.length > 1 && (
                 <div className="jlane-collapse-actions" role="group" aria-label="Управление дорожками">
@@ -2957,7 +3044,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 </div>
               )}
               <div className="jlane-heads">
-                {columns.map((col) => (
+                {displayedColumns.map((col) => (
                   <section
                     key={col.id}
                     className={`jcol jcol--headonly${collapsedColumns.has(col.id) ? ' jcol--collapsed' : ''}${col.hidden ? ' jcol--hidden' : ''}${
@@ -2992,7 +3079,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   <div id={`kanban-lane-content-${lane.id || 'none'}`} className="jlane-cols" hidden={collapsedLanes.has(lane.id)}>
                     {!collapsedLanes.has(lane.id) && (
                       <>
-                      {columns.map((col) => (
+                      {displayedColumns.map((col) => (
                         <div
                           key={col.id}
                           id={`kanban-column-cell-${col.id}-${lane.id || 'none'}`}
@@ -3014,6 +3101,12 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           )}
         </div>
       )}
+      {compact && improvementsOpen && <Dialog title="Улучшения" onClose={() => setImprovementsOpen(false)} padded>
+        {improvementsStatus === 'loading' && <Skeleton variant="list" count={3} />}
+        {improvementsStatus === 'error' && <ErrorState message="Не удалось загрузить улучшения" onRetry={reloadImprovements} />}
+        {improvementsStatus === 'ready' && improvements.length === 0 && <EmptyState title="Улучшений пока нет" />}
+        {improvements.map(item => <Button key={item.id} onClick={() => setOpenImprovementId(item.id)}>{item.title}</Button>)}
+      </Dialog>}
       {automationInfoColumn && automationInfoFor(automationInfoColumn) && (() => {
         const info = automationInfoFor(automationInfoColumn)!
         const close = (): void => {
