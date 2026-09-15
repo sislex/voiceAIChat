@@ -672,3 +672,45 @@ UI (desktop and phone):
 | 10 | Phone: 44 px answer field and buttons | `panel.css` |
 
 Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-19.md`.
+
+## Cycle 20 — handing the result back: notes, a readable report, a feed by page
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `note {text}` — leave the person a note in the panel without interrupting the work | `hostBridge.ts` | bridge test |
+| 02 | Notes remember the page they were made on and reach `report.notes` | `hostBridge.ts` | bridge test |
+| 03 | `report {readable: true}` — a ready-to-read text of the session | `hostBridge.ts` | bridge test |
+| 04 | The readable report carries pages, failed checks, questions with answers, notes and bookmarks | `hostBridge.ts` | bridge test |
+| 05 | `report.durationMs` — how long the session lasted | `hostBridge.ts` | bridge test |
+| 06 | `status.actions` and `status.since` — the session's size and start | `hostBridge.ts` | bridge test |
+| 07 | MCP tool `note` | `previewMcp.ts` | MCP test |
+| 08 | MCP `report {readable}` | `previewMcp.ts` | MCP test |
+| 09 | Labels «Оставил заметку: …» and «Собрал отчёт о сеансе» | `actionLabel.ts` | label test |
+| 10 | Feed phrases: notes counted, report narrated with its duration | relay | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Notes row in the panel with the host each note was made on | `WebReaderFrame` |
+| 02 | «Скопировать заметки» copies them as plain lines | `WebReaderFrame` |
+| 03 | «Скопировать отчёт» puts the readable report in the clipboard | `WebReaderFrame` |
+| 04 | The report text is shown in the panel and hidden with «Скрыть отчёт» | `WebReaderFrame` |
+| 05 | «Отчёт в чат» sends the same readable text the person sees | `WebReaderFrame` |
+| 06 | The action feed is split by page with a header per page | `ReaderActionHistory` |
+| 07 | A step no longer repeats the page title under its own line | `ReaderActionHistory` |
+| 08 | Notes and the report clear when the conversation changes | `WebReaderFrame` |
+| 09 | Phone: 44 px note actions, the report text scrolls | `panel.css` |
+| 10 | The report keeps its line breaks as a preformatted block | `panel.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-20.md`.
+
+## Результат серии
+
+Двадцать кругов закрыты. Модель ходит по сайту словами человека (роль, текст рядом, сторона, номер, раздел),
+читает как человек (разделы, оглавление, таблицы постранично, основное содержимое, картинки, уведомления),
+проверяет как тестировщик, останавливается перед опасным, спрашивает, когда выбор за человеком, и оставляет
+после себя отчёт. Панель показывает то же самое человеку: живую строку действия, ленту шагов по страницам,
+подтверждения, закладки, заметки, ориентиры страницы и привычки браузера телефона.
