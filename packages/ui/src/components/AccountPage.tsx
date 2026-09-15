@@ -117,7 +117,11 @@ export function AccountPage({ api: sourceApi, tab, onChangeTab, onClose, onOpenS
     const timer = setInterval(() => setClockTick(value => value + 1), 30_000)
     return () => clearInterval(timer)
   }, [])
-  useEffect(() => reads.cache.onInvalidated(() => setClockTick(value => value + 1)), [reads])
+  useEffect(() => reads.cache.onInvalidated((family) => {
+    if (!family || family === 'profile' || family === 'access' || family === 'usage' || family === 'security' || family === 'machines') {
+      setClockTick(value => value + 1)
+    }
+  }), [reads])
   // Move report boundaries only on a freshness tick, never on ordinary renders.
   const referenceNow = useMemo(() => reads.periodNow(now), [reads, clockTick])
   const [profile, setProfile] = useState<ProfileUser | null>(() => {
