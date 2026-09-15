@@ -4,7 +4,7 @@ import { findElements, readPage, readBounds, type ReadContent } from './pageRead
 import { readElementTargets } from './elementTargets.js'
 import { focusOrderScript, focusStateScript, pasteScript, selectElementScript, selectionScript } from './focusActions.js'
 import { dropFilesScript, formStateScript, optionsScript, submitScript, validityScript } from './formActions.js'
-import { highlightScript, listScript, measureScript, pageMetricsScript, scrollStepScript, tableScript } from './contentActions.js'
+import { csvScript, highlightScript, listScript, measureScript, pageMetricsScript, scrollStepScript, sourceScript, storageScript, tableScript } from './contentActions.js'
 import { mediaScript } from './environmentActions.js'
 import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js'
 
@@ -341,6 +341,23 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const ms = Math.min(Math.max(action.ms ?? 1500, 100), 10_000)
       const shown = await page.evaluate(highlightScript(action.selector, ms))
       return shown ? { ok: true } : { ok: false, error: 'Элемент не найден' }
+    }
+    if (action.kind === 'storage') {
+      const limit = Math.min(Math.max(action.limit ?? 50, 1), 200)
+      const storage = await page.evaluate(storageScript(action.area ?? 'both', action.do ?? 'read', action.key ?? null, action.value ?? null, limit)) as BrowserSelectorResult['storage']
+      return { ok: true, ...(storage ? { storage } : {}) }
+    }
+    if (action.kind === 'source') {
+      const offset = Math.max(action.offset ?? 0, 0)
+      const limit = Math.min(Math.max(action.limit ?? 4_000, 100), 20_000)
+      const source = await page.evaluate(sourceScript(action.selector ?? null, offset, limit)) as BrowserSelectorResult['source'] | null
+      return source ? { ok: true, source } : { ok: false, error: 'Элемент не найден' }
+    }
+    if (action.kind === 'csv') {
+      const offset = Math.max(action.offset ?? 0, 0)
+      const limit = Math.min(Math.max(action.limit ?? 100, 1), 500)
+      const csv = await page.evaluate(csvScript(action.selector, offset, limit)) as BrowserSelectorResult['csv'] | null
+      return csv ? { ok: true, csv } : { ok: false, error: 'Таблица не найдена или в ней нет строк' }
     }
     if (action.kind === 'expect') {
       // Человек, глядя на страницу, говорит «итого 500, ошибки нет, три строки»

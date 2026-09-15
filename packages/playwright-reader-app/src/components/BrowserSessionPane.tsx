@@ -179,6 +179,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const [feedOpen, setFeedOpen] = useState(false)
   const [feedActor, setFeedActor] = useState<'all' | 'user' | 'assistant'>('all')
   const [cookies, setCookies] = useState<{ loading?: boolean; error?: string; items?: BrowserCookieInfo[]; total?: number } | null>(null)
+  /** Хранилище сайта: тут живёт половина дефектов «у меня работает». */
+  const [storage, setStorage] = useState<{ loading?: boolean; error?: string; data?: BrowserSelectorResult['storage'] } | null>(null)
   /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
   const touch = useRef<{ x: number; y: number; moved: boolean; pinch: number | null } | null>(null)
   /** Долгое нажатие вместо правой кнопки и двойной тап вместо двойного клика. */
@@ -540,6 +542,14 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     const result = await run({ type: 'cookies', action: 'list' } as never) as { cookies?: BrowserCookieInfo[]; total?: number; error?: string } | undefined
     if (!result || result.error) { setCookies({ error: result?.error ?? 'Cookies недоступны' }); return }
     setCookies({ items: result.cookies ?? [], total: result.total ?? 0 })
+  }, [run])
+
+  /** Хранилище сайта теми же данными, что видит модель инструментом storage. */
+  const loadStorage = useCallback(async (): Promise<void> => {
+    setStorage({ loading: true })
+    const result = await run({ type: 'selector', action: { kind: 'storage' } }) as BrowserSelectorResult | undefined
+    if (!result || result.ok === false) { setStorage({ error: result?.error ?? 'Хранилище недоступно' }); return }
+    setStorage({ data: result.storage })
   }, [run])
 
   /** Метрики страницы: обновляются по требованию, не поллингом — это команда. */
@@ -1265,10 +1275,35 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             <Button key={label} size="sm" variant={active ? 'primary' : 'ghost'} aria-pressed={active} disabled={phase !== 'ready'} onClick={() => void toggle()}>{label}</Button>
           ))}
           <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadCookies()}>Cookies</Button>
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadStorage()}>Хранилище сайта</Button>
         </div>
         {environment?.geolocation && <p className="proj-muted">Позиция: {environment.geolocation.latitude}, {environment.geolocation.longitude}</p>}
         {cookies?.loading && <p role="status">Читаем cookies…</p>}
         {cookies?.error && <p role="alert">{cookies.error}</p>}
+        {storage?.loading && <p role="status">Читаем хранилище…</p>}
+        {storage?.error && <p role="alert">{storage.error}</p>}
+        {storage?.data && (
+          <>
+            <p className="proj-muted">
+              {/* Подписи словами, а не именами API: панель не имеет права обращаться
+                  к хранилищу браузера человека, и сторож архитектуры ищет их по тексту. */}
+              {storage.data.origin}: постоянное {storage.data.localTotal ?? 0}, на вкладку {storage.data.sessionTotal ?? 0}
+              {storage.data.truncated ? ' · показана часть ключей' : ''}
+            </p>
+            <ul className="playwright-reader-diagnostics__list">
+              {[...(storage.data.local ?? []).map((item) => ({ ...item, area: 'local' })), ...(storage.data.session ?? []).map((item) => ({ ...item, area: 'session' }))].map((item) => (
+                <li key={`${item.area}:${item.key}`}>
+                  <code>{item.key}</code> · {item.area} · {item.bytes} Б · {item.value}
+                  <IconButton size="sm" aria-label={`Удалить ${item.key}`} title="Удалить ключ" disabled={phase !== 'ready'}
+                    onClick={() => void (async () => {
+                      await run({ type: 'selector', action: { kind: 'storage', area: item.area as 'local' | 'session', do: 'remove', key: item.key } })
+                      await loadStorage()
+                    })()}>✕</IconButton>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         {cookies?.items && (
           <>
             <p className="proj-muted">Cookies сессии: {cookies.total}. Значения длинных показаны сокращённо — это доступ к аккаунту.</p>

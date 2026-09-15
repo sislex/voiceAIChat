@@ -155,6 +155,12 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'highlight'; selector: string; ms?: number; diagnostic?: boolean }
   /** Видео и аудио страницы: состояние и управление, как у человека. */
   | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number; diagnostic?: boolean }
+  /** Хранилище сайта: что страница держит между перезагрузками. */
+  | { kind: 'storage'; area?: 'local' | 'session' | 'both'; do?: 'read' | 'set' | 'remove' | 'clear'; key?: string; value?: string; limit?: number; diagnostic?: boolean }
+  /** Исходник страницы порциями — та самая разметка, что смотрит человек. */
+  | { kind: 'source'; selector?: string; offset?: number; limit?: number; diagnostic?: boolean }
+  /** Таблица как CSV: форма, которую человек вставляет в таблицу. */
+  | { kind: 'csv'; selector: string; offset?: number; limit?: number; diagnostic?: boolean }
   /** Несколько проверок разом с общим вердиктом — как человек описывает экран. */
   | { kind: 'expect'; checks: PreviewExpectation[]; diagnostic?: boolean }
   /** Что происходило в сессии: обе стороны, в порядке событий. */
@@ -580,6 +586,25 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return true
     case 'measure':
       return bounded(value.selector, L.selector)
+    case 'storage':
+      return (
+        (value.area === undefined || ['local', 'session', 'both'].includes(value.area as string)) &&
+        (value.do === undefined || ['read', 'set', 'remove', 'clear'].includes(value.do as string)) &&
+        optBounded(value.key, 400) && optBounded(value.value, 100_000) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        // Запись без ключа поменяла бы неизвестно что, а `set` без значения —
+        // это `remove`, и лучше сказать об этом, чем угадывать.
+        (value.do !== 'set' || (typeof value.key === 'string' && typeof value.value === 'string')) &&
+        (value.do !== 'remove' || typeof value.key === 'string')
+      )
+    case 'source':
+      return optBounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000))
+    case 'csv':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 500))
     case 'expect':
       return Array.isArray(value.checks) && value.checks.length > 0 && value.checks.length <= 20 && value.checks.every((check) => isExpectation(check))
     case 'history':

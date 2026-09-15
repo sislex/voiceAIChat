@@ -154,3 +154,73 @@ export function scrollStepScript(container: string | null, step: number): string
     }))));
   })()`
 }
+
+/**
+ * Web storage of the site. Half of the "works only for me" bugs live here: a
+ * stale flag, a leftover draft, a feature toggle. The model could reach it only
+ * through `evaluate`, which the project policy gates as dangerous code — so in
+ * a gated project it could not look at all.
+ */
+export function storageScript(area: string, action: string, key: string | null, value: string | null, limit: number): string {
+  return `(() => {
+    const read = store => {
+      const items = [];
+      for (let index = 0; index < store.length; index++) {
+        const name = store.key(index);
+        const raw = store.getItem(name) ?? '';
+        // Значение режется, а не выбрасывается: в localStorage лежат и токены,
+        // и черновики на сотни килобайт — и то и другое целиком не нужно.
+        items.push({ key: name, value: raw.length > 500 ? raw.slice(0, 500) + '…' : raw, bytes: raw.length });
+      }
+      return items;
+    };
+    const areas = ${JSON.stringify(area)} === 'both' ? ['local', 'session'] : [${JSON.stringify(area)}];
+    const storeOf = name => (name === 'local' ? localStorage : sessionStorage);
+    const act = ${JSON.stringify(action)};
+    if (act === 'set') for (const name of areas) storeOf(name).setItem(${JSON.stringify(key)}, ${JSON.stringify(value ?? '')});
+    if (act === 'remove') for (const name of areas) storeOf(name).removeItem(${JSON.stringify(key)});
+    if (act === 'clear') for (const name of areas) storeOf(name).clear();
+    const result = { origin: location.origin };
+    let truncated = false;
+    for (const name of areas) {
+      const all = read(storeOf(name)).filter(item => ${key === null ? 'true' : `item.key === ${JSON.stringify(key)}`});
+      result[name + 'Total'] = all.length;
+      result[name] = all.slice(0, ${limit});
+      if (all.length > ${limit}) truncated = true;
+    }
+    if (truncated) result.truncated = true;
+    return result;
+  })()`
+}
+
+/** Page markup as a person would view it: sliced, because pages are long. */
+export function sourceScript(selector: string | null, offset: number, limit: number): string {
+  return `(() => {
+    const node = ${selector ? `document.querySelector(${JSON.stringify(selector)})` : 'document.documentElement'};
+    if (!node) return null;
+    const html = node.outerHTML || '';
+    return { html: html.slice(${offset}, ${offset} + ${limit}), total: html.length, offset: ${offset},
+      ...(${offset} + ${limit} < html.length ? { nextOffset: ${offset} + ${limit} } : {}) };
+  })()`
+}
+
+/**
+ * Table as CSV. `table` answers "what is in row three"; CSV answers "give me the
+ * whole thing" — for a comment in a task, a spreadsheet, or a diff between runs.
+ */
+export function csvScript(selector: string, offset: number, limit: number): string {
+  return `(() => {
+    const table = document.querySelector(${JSON.stringify(selector)});
+    if (!table) return null;
+    const rows = [...table.querySelectorAll('tr')];
+    if (!rows.length) return null;
+    const cell = node => (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
+    // Кавычки удваиваются, перевод строки и запятая заставляют брать поле в
+    // кавычки — иначе таблица с адресами ломает разбор у получателя.
+    const escape = value => (/[",\n]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value);
+    const slice = rows.slice(${offset}, ${offset} + ${limit});
+    const text = slice.map(row => [...row.children].map(node => escape(cell(node))).join(',')).join('\n');
+    return { text, rows: slice.length, total: rows.length, offset: ${offset},
+      ...(${offset} + slice.length < rows.length ? { nextOffset: ${offset} + slice.length } : {}) };
+  })()`
+}

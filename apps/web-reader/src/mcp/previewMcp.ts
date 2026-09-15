@@ -889,6 +889,61 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'storage',
+        {
+          description:
+            'Хранилище сайта (localStorage и sessionStorage): что страница держит между перезагрузками. ' +
+            'Здесь живёт половина дефектов «у меня работает» — устаревший флаг, недописанный черновик, ' +
+            'включённая фича. do: read (по умолчанию), set, remove, clear. Значения длиннее 500 символов ' +
+            'возвращаются обрезанными, но с полным размером в bytes. ' +
+            'В отличие от evaluate, этот инструмент не считается выполнением произвольного кода.',
+          inputSchema: { frame: frameSchema,
+            area: z.enum(['local', 'session', 'both']).optional().describe('Какое хранилище (по умолчанию оба)'),
+            do: z.enum(['read', 'set', 'remove', 'clear']).optional().describe('Что сделать'),
+            key: z.string().max(400).optional().describe('Ключ (обязателен для set и remove; для read фильтрует)'),
+            value: z.string().max(100_000).optional().describe('Значение для set'),
+            limit: z.number().int().min(1).max(200).optional().describe('Сколько ключей вернуть (по умолчанию 50)')
+          }
+        },
+        async ({ frame, area, do: operation, key, value, limit }) => {
+          if (operation === 'set' && (key === undefined || value === undefined)) return { content: [{ type: 'text', text: 'Для set нужны key и value.' }], isError: true }
+          if (operation === 'remove' && key === undefined) return { content: [{ type: 'text', text: 'Для remove нужен key.' }], isError: true }
+          return run({ kind: 'storage', ...(frame !== undefined ? { frame } : {}), ...(area ? { area } : {}), ...(operation ? { do: operation } : {}), ...(key !== undefined ? { key } : {}), ...(value !== undefined ? { value } : {}), ...(limit !== undefined ? { limit } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'source',
+        {
+          description:
+            'Исходная разметка страницы или элемента порциями (offset/limit, nextOffset). ' +
+            'Нужна там, где текст не отвечает на вопрос: атрибуты, скрытые поля, data-* и порядок узлов. ' +
+            'read даёт содержимое глазами человека, source — то, что на самом деле в документе.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента (без него — весь документ)'),
+            offset: z.number().int().min(0).optional().describe('Смещение в символах'),
+            limit: z.number().int().min(100).max(20_000).optional().describe('Размер порции (по умолчанию 4000)')
+          }
+        },
+        async ({ frame, selector, offset, limit }) => run({ kind: 'source', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'csv',
+        {
+          description:
+            'Таблица целиком в CSV: форма, которую человек вставляет в таблицу или в комментарий задачи. ' +
+            'Кавычки и переводы строк экранируются. table отвечает «что в третьей строке», csv — «дай всё».',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).describe('CSS-селектор таблицы'),
+            offset: z.number().int().min(0).optional().describe('С какой строки'),
+            limit: z.number().int().min(1).max(500).optional().describe('Сколько строк (по умолчанию 100)')
+          }
+        },
+        async ({ frame, selector, offset, limit }) => run({ kind: 'csv', ...(frame !== undefined ? { frame } : {}), selector, ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}) })
+      )
+
+      server.registerTool(
         'expect',
         {
           description:
