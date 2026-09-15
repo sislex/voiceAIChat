@@ -1156,58 +1156,6 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'focusOrder':
       return optBounded(value.selector, L.selector) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200))
-    case 'screenshot': {
-      if (!optBounded(value.selector, L.selector)) return false
-      if (value.rect === undefined) return true
-      if (!record(value.rect)) return false
-      const rect = value.rect
-      return (['x', 'y', 'width', 'height'] as const).every((key) => typeof rect[key] === 'number' && Number.isFinite(rect[key] as number) && Math.abs(rect[key] as number) <= 100_000) &&
-        (rect.width as number) > 0 && (rect.height as number) > 0
-    }
-    case 'audit':
-      return value.frame === undefined && isPreviewAuditOptions(value)
-    case 'accessibility':
-      return isPreviewAccessibilityOptions(value)
-    case 'probe':
-      return value.frame === undefined && isPreviewProbeOptions(value)
-    case 'errors':
-      return value.clear === undefined || typeof value.clear === 'boolean'
-    case 'wait':
-      return isBrowserWaitOptions(value)
-    case 'back':
-    case 'forward':
-    case 'edits':
-      return true
-    case 'network':
-      return (
-        validDiagnosticOptions(value) &&
-        (value.state === undefined || ['pending', 'response', 'completed', 'failed'].includes(value.state as string)) &&
-        optBounded(value.resourceType, 100) &&
-        (value.failedOnly === undefined || typeof value.failedOnly === 'boolean') &&
-        optBounded(value.filter, 300) &&
-        (value.clear === undefined || typeof value.clear === 'boolean') &&
-        logLimit(value.limit)
-      )
-    case 'console':
-      return (
-        validDiagnosticOptions(value) &&
-        optBounded(value.pattern, 300) &&
-        (value.level === undefined || value.level === 'log' || value.level === 'info' || value.level === 'warn' || value.level === 'error') &&
-        (value.clear === undefined || typeof value.clear === 'boolean') &&
-        logLimit(value.limit)
-      )
-    case 'evaluate':
-      try { normalizeBrowserEvaluateOptions(value as unknown as BrowserEvaluateOptions); return true } catch { return false }
-    case 'drag':
-      return isDragPoint(value.from) && isDragPoint(value.to)
-    case 'set':
-      return (
-        bounded(value.selector, L.selector) &&
-        optBounded(value.value, L.text) &&
-        (value.values === undefined || (Array.isArray(value.values) && value.values.length > 0 && value.values.length <= 64 && value.values.every((item) => bounded(item, L.text)))) &&
-        (value.checked === undefined || typeof value.checked === 'boolean') &&
-        (value.value !== undefined || value.values !== undefined || value.checked !== undefined)
-      )
     case 'fillForm':
       return (
         optBounded(value.selector, L.selector) &&
@@ -1226,18 +1174,6 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 500))
     case 'dropFile':
       return bounded(value.selector, L.selector) && isUploadFiles(value.files)
-    case 'upload':
-      // Несколько файлов передаются массивом; одиночная форма остаётся ради
-      // совместимости с уже написанными ходами модели.
-      if (value.files !== undefined) return bounded(value.selector, L.selector) && isUploadFiles(value.files)
-      return (
-        bounded(value.selector, L.selector) &&
-        bounded(value.name, 255) && value.name.length > 0 &&
-        optBounded(value.mimeType, 100) &&
-        bounded(value.base64, L.uploadBase64)
-      )
-    case 'viewport':
-      return typeof value.width === 'number' && Number.isFinite(value.width) && value.width >= 0 && value.width <= 10_000
     case 'hotkey':
       return (
         typeof value.key === 'string' && value.key.length >= 1 && value.key.length <= 32 &&
