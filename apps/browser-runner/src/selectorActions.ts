@@ -1,4 +1,4 @@
-import { BROWSER_UPLOAD_LIMIT_BYTES, isBrowserWaitOptions, type BrowserElementDescription, type BrowserSelectorAction, type BrowserSelectorResult } from '@voicechat/shared'
+import { browserUrlMatches, BROWSER_UPLOAD_LIMIT_BYTES, isBrowserWaitOptions, type BrowserElementDescription, type BrowserExpectation, type BrowserSelectorAction, type BrowserSelectorResult } from '@voicechat/shared'
 import { describeElementScript } from './describeElement.js'
 import { findElements, readPage, readBounds, type ReadContent } from './pageReading.js'
 import { readElementTargets } from './elementTargets.js'
@@ -109,7 +109,14 @@ export async function uniqueTarget(target: SelectorLocator, timeout: number, hid
   throw new Error(hiddenAllowed ? 'Элемент не найден' : 'Доступный элемент не найден')
 }
 
-export async function runSelectorAction(page: SelectorPage, action: BrowserSelectorAction, publicUrl: (raw: string) => string = raw => raw): Promise<BrowserSelectorResult> {
+/** Формулировка проверки для отказа, когда до самой проверки дело не дошло. */
+function describeExpectation(check: BrowserExpectation): string {
+  if (check.is === 'text') return `${check.absent ? 'нет текста' : 'есть текст'} «${check.value}»`
+  if (check.is === 'url') return `адрес ${check.value}`
+  return `${check.selector}: ${check.is}`
+}
+
+export async function runSelectorAction(page: SelectorPage, action: BrowserSelectorAction, publicUrl: (raw: string) => string = raw => raw, currentUrl?: string): Promise<BrowserSelectorResult> {
   const timeout = 'timeoutMs' in action && typeof action.timeoutMs === 'number' ? Math.min(Math.max(action.timeoutMs, 100), 30_000) : 5_000
   const locate = (selector?: string, text?: string): SelectorLocator | null =>
     selector ? (text ? page.locator(selector).filter({ hasText: text }) : page.locator(selector)) : text ? page.getByText(text, { exact: false }) : null
@@ -334,6 +341,42 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const ms = Math.min(Math.max(action.ms ?? 1500, 100), 10_000)
       const shown = await page.evaluate(highlightScript(action.selector, ms))
       return shown ? { ok: true } : { ok: false, error: 'Элемент не найден' }
+    }
+    if (action.kind === 'expect') {
+      // Человек, глядя на страницу, говорит «итого 500, ошибки нет, три строки»
+      // одним предложением. Раньше модель читала каждое условие отдельно и
+      // рассуждала о сыром тексте — здесь она получает готовый вердикт.
+      const checks: NonNullable<BrowserSelectorResult['expected']>['checks'] = []
+      for (const check of action.checks) {
+        try {
+          if (check.is === 'text') {
+            const scope = check.selector ? await uniqueTarget(page.locator(check.selector), timeout) : page.locator('body')
+            const text = await scope.innerText({ timeout })
+            const found = text.toLowerCase().includes(check.value.toLowerCase())
+            checks.push({
+              ok: check.absent ? !found : found,
+              describe: `${check.absent ? 'нет текста' : 'есть текст'} «${check.value}»${check.selector ? ` в ${check.selector}` : ''}`,
+              ...(found === Boolean(check.absent) ? { actual: text.trim().slice(0, 200) } : {})
+            })
+          } else if (check.is === 'visible') {
+            const count = await page.locator(check.selector).filter({ visible: true }).count()
+            checks.push({ ok: check.absent ? count === 0 : count > 0, describe: `${check.selector} ${check.absent ? 'не виден' : 'виден'}`, actual: `видимых: ${count}` })
+          } else if (check.is === 'count') {
+            const count = await page.locator(check.selector).filter({ visible: true }).count()
+            checks.push({ ok: count === check.value, describe: `${check.selector}: ${check.value} шт.`, actual: `${count} шт.` })
+          } else if (check.is === 'value') {
+            const value = await (await uniqueTarget(page.locator(check.selector), timeout)).inputValue({ timeout })
+            checks.push({ ok: value === check.value, describe: `${check.selector} = «${check.value}»`, actual: value.slice(0, 200) })
+          } else {
+            const url = publicUrl(currentUrl ?? '')
+            checks.push({ ok: browserUrlMatches(url, check.value), describe: `адрес ${check.value}`, actual: url })
+          }
+        } catch (error) {
+          checks.push({ ok: false, describe: describeExpectation(check), actual: error instanceof Error ? error.message.split('\n')[0] : 'ошибка проверки' })
+        }
+      }
+      const passed = checks.every((check) => check.ok)
+      return { ok: true, expected: { passed, checks } }
     }
     if (action.kind === 'media') {
       const media = await page.evaluate(mediaScript(action.selector ?? null, action.do ?? null, action.seconds ?? null)) as NonNullable<BrowserSelectorResult['media']> | { error: string } | null

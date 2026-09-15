@@ -121,6 +121,14 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
       return { kind: 'command', command: { type: 'selector', action: { kind: 'metrics' } } }
     case 'measure':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'measure', selector: action.selector } } }
+    case 'expect':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'expect', checks: action.checks } } }
+    case 'history': {
+      const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
+      return { kind: 'command', command: { type: 'history', ...options } }
+    }
+    case 'note':
+      return { kind: 'command', command: { type: 'note', text: action.text } }
     case 'media':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'media', ...(action.selector ? { selector: action.selector } : {}), ...(action.do ? { do: action.do } : {}), ...(action.seconds !== undefined ? { seconds: action.seconds } : {}) } } }
     case 'environment': {

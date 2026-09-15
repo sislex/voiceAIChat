@@ -8,6 +8,7 @@ import { BrowserDialogs } from './dialogs.js'
 import { boundedBrowserDialogs, type BrowserDialogListResult } from '@voicechat/shared'
 import { runBrowserInput } from './inputActions.js'
 import { applyEnvironment, applyEnvironmentToPage, runCookieCommand } from './environmentActions.js'
+import { describeCommand, SessionHistory } from './sessionHistory.js'
 import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
 import { clearSiteData, httpOrigin } from './siteData.js'
 import { readReaderProfile, writeReaderProfile } from './profileState.js'
@@ -18,7 +19,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserCommandRequest, BrowserCookiesResult, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserCommandRequest, BrowserCookiesResult, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -54,6 +55,8 @@ interface Session {
   lastActor?: 'user' | 'assistant'
   /** Эмулированная среда: тема системы, анимация, контраст, сеть, место. */
   environment?: BrowserEnvironmentState
+  /** Что происходило в сессии: единственное место, где видны обе стороны. */
+  history: SessionHistory
 }
 
 // Внешняя аналитика и изображения могут грузиться бесконечно; работать с DOM
@@ -160,6 +163,7 @@ export class BrowserSessionManager {
       const diagnostics = new BrowserDiagnostics(url => this.publicUrl(url))
       const session: Session = {
         queue: new BrowserCommandQueue(),
+        history: new SessionHistory(),
         diagnostics,
         dialogs: new BrowserDialogs(),
         downloads: new BrowserDownloads(url => this.publicUrl(url)),
@@ -309,7 +313,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
@@ -325,6 +329,42 @@ export class BrowserSessionManager {
     }
     const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe', 'accessibility'].includes(command.action.kind))
     if (!observing && request.actor === 'assistant' && session.queue.owner === 'user') throw new Error('human_control: Управление у пользователя. Дождитесь возврата управления модели.')
+    if (command.type === 'history') {
+      if (command.clear) { session.history.clear(); return { history: { total: 0, entries: [] } } }
+      return { history: session.history.list(command) }
+    }
+    if (command.type === 'note') {
+      // Заметка модели — единственный способ объяснить человеку, что сейчас
+      // происходит: по ленте команд намерение не восстанавливается.
+      const text = command.text.trim().slice(0, 500)
+      if (!text) throw new Error('Заметка не может быть пустой')
+      session.history.record({ at: Date.now(), actor: request.actor, title: text, kind: 'note', ok: true, note: text })
+      return this.metadata(session)
+    }
+    // Журнал ведётся вокруг исполнения: неудачная команда в ленте важнее
+    // удачной — именно на ней человек понимает, где модель застряла.
+    const described = describeCommand(command)
+    if (described) {
+      try {
+        const outcome = await this.dispatch(sessionId, request, session)
+        const failed = outcome && typeof outcome === 'object' && 'ok' in outcome && outcome.ok === false
+        session.history.record({
+          at: Date.now(), actor: request.actor, ...described, ok: !failed,
+          ...(failed && 'error' in outcome && typeof outcome.error === 'string' ? { error: outcome.error.slice(0, 200) } : {})
+        })
+        return outcome
+      } catch (error) {
+        session.history.record({ at: Date.now(), actor: request.actor, ...described, ok: false, error: error instanceof Error ? error.message.split('\n')[0].slice(0, 200) : 'ошибка' })
+        throw error
+      }
+    }
+    return await this.dispatch(sessionId, request, session)
+  }
+
+  /** Разбор команды без журнала: вынесен, чтобы запись велась в одном месте. */
+  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult> {
+    const command = request.command
+    const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe', 'accessibility'].includes(command.action.kind))
     if (command.type === 'inspect' && command.action.kind === 'evaluate') {
       const target = session.pages.get(request.tabId ?? session.activeTabId)
       if (target && isEvaluating(target)) return { ok: false, error: 'Во вкладке уже выполняется evaluate' }
@@ -443,7 +483,7 @@ export class BrowserSessionManager {
     } else if (command.type === 'input') {
       await runBrowserInput(page, command.action)
     } else if (command.type === 'selector') {
-      const result = command.action.kind === 'describe' ? await describeFramePoint(page, command.action.x, command.action.y) : await runSelectorAction(page, command.action, raw => this.publicUrl(raw))
+      const result = command.action.kind === 'describe' ? await describeFramePoint(page, command.action.x, command.action.y) : await runSelectorAction(page, command.action, raw => this.publicUrl(raw), page.url())
       if (result.links) result.links = result.links.map(link => ({ ...link, href: this.publicUrl(link.href) }))
       if (result.frames) result.frames = result.frames.map(frame => ({ ...frame, src: frame.src ? this.publicUrl(frame.src) : '' }))
       return { ...result, page: { url: this.publicUrl(page.url()), title: await session.dialogs.title(page) } }
@@ -527,6 +567,9 @@ export class BrowserSessionManager {
       incarnation: session.incarnation,
       state: 'ready',
       control: session.queue.owner, queuedCommands: session.queue.size,
+      // Хвост журнала едет вместе с метаданными: панель показывает ленту без
+      // отдельного опроса, а он стоил бы ещё одного запроса на каждый кадр.
+      history: session.history.list({ limit: 20 }).entries,
       activeTabId: session.activeTabId,
       tabs,
       viewport: session.viewport,

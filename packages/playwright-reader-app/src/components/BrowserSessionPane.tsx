@@ -172,6 +172,12 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
    */
   const [environment, setEnvironment] = useState<BrowserEnvironmentState | null>(null)
   const [environmentOpen, setEnvironmentOpen] = useState(false)
+  /**
+   * Лента событий сессии. Человек смотрит на кадр и не понимает, что делает
+   * модель: кадр показывает результат, а не намерение и не порядок шагов.
+   */
+  const [feedOpen, setFeedOpen] = useState(false)
+  const [feedActor, setFeedActor] = useState<'all' | 'user' | 'assistant'>('all')
   const [cookies, setCookies] = useState<{ loading?: boolean; error?: string; items?: BrowserCookieInfo[]; total?: number } | null>(null)
   /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
   const touch = useRef<{ x: number; y: number; moved: boolean; pinch: number | null } | null>(null)
@@ -957,6 +963,9 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           что заполнено, что обязательно и почему браузер не пустит дальше. */}
       <Button size="sm" variant={formInfo ? 'primary' : 'ghost'} aria-expanded={Boolean(formInfo)} disabled={phase !== 'ready'} onClick={() => (formInfo ? setFormInfo(null) : void loadFormInfo())}>Поля формы</Button>
       <Button size="sm" variant={environmentOpen ? 'primary' : 'ghost'} aria-expanded={environmentOpen} disabled={phase !== 'ready'} onClick={() => setEnvironmentOpen((value) => !value)}>Среда</Button>
+      <Button size="sm" variant={feedOpen ? 'primary' : 'ghost'} aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>
+        Что происходит{meta?.history?.length ? ` (${meta.history.length})` : ''}
+      </Button>
       {/* Эмуляция незаметна на кадре: тёмная тема выглядит как решение сайта,
           а отсутствие сети — как зависшая страница. Поэтому она подписана. */}
       {environment && (environment.colorScheme === 'dark' || environment.offline || environment.reducedMotion === 'reduce' || environment.forcedColors === 'active') && (
@@ -1200,6 +1209,43 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             </li>
           ))}
         </ol>
+      </div>
+    )}
+    {feedOpen && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Что происходит в браузере">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Что происходит</strong>
+          <span className="playwright-reader-keys" role="group" aria-label="Чьи действия показывать">
+            {([['all', 'Все'], ['assistant', 'Модель'], ['user', 'Я']] as const).map(([value, label]) => (
+              <Button key={value} size="sm" variant={feedActor === value ? 'primary' : 'ghost'} aria-pressed={feedActor === value} onClick={() => setFeedActor(value)}>{label}</Button>
+            ))}
+          </span>
+          <IconButton size="sm" aria-label="Очистить ленту" title="Очистить ленту" disabled={phase !== 'ready'}
+            onClick={() => void run({ type: 'history', clear: true } as never)}>🗑</IconButton>
+          <IconButton size="sm" aria-label="Скрыть ленту" title="Скрыть ленту" onClick={() => setFeedOpen(false)}>✕</IconButton>
+        </div>
+        {!meta?.history?.length && <p className="proj-muted">Пока ничего не происходило.</p>}
+        {Boolean(meta?.history?.length) && (
+          <ul className="playwright-reader-diagnostics__list">
+            {(meta?.history ?? [])
+              .filter((entry) => feedActor === 'all' || entry.actor === feedActor)
+              .slice()
+              .reverse()
+              .map((entry, index) => (
+                <li key={`${entry.at}-${index}`} data-kind={entry.ok ? undefined : 'console'}>
+                  <span className="playwright-reader-actor" data-actor={entry.actor}>{entry.actor === 'assistant' ? 'модель' : 'вы'}</span>
+                  {' · '}
+                  {entry.kind === 'note' ? <strong>{entry.title}</strong> : entry.title}
+                  {entry.error && <small> · {entry.error}</small>}
+                  {entry.selector && (
+                    <IconButton size="sm" aria-label={`Показать ${entry.selector}`} title="Показать элемент на странице" disabled={phase !== 'ready'}
+                      onClick={() => void showMatch(entry.selector!)}>◎</IconButton>
+                  )}
+                  <small className="playwright-reader-size"> {new Date(entry.at).toLocaleTimeString()}</small>
+                </li>
+              ))}
+          </ul>
+        )}
       </div>
     )}
     {environmentOpen && (

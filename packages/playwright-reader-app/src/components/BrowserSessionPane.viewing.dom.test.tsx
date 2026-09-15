@@ -298,3 +298,55 @@ describe('среда браузера в панели (круг 4)', () => {
     })))
   })
 })
+
+describe('лента событий сессии (круг 5)', () => {
+  const withHistory = () => fakeBrowser({
+    start: vi.fn(async () => meta({
+      history: [
+        { at: 1_700_000_000_000, actor: 'assistant', title: 'проверяю форму входа', kind: 'note', ok: true, note: 'проверяю форму входа' },
+        { at: 1_700_000_001_000, actor: 'assistant', title: 'клик: #login', kind: 'click', selector: '#login', ok: true },
+        { at: 1_700_000_002_000, actor: 'user', title: 'переход на https://a.b/', kind: 'navigate', ok: false, error: 'таймаут' }
+      ]
+    })) as unknown as RendererBrowserBridge['start']
+  })
+
+  it('показывает действия обеих сторон, заметку модели и причину отказа', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={withHistory()} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: /Что происходит/ }))
+    await screen.findByText(/проверяю форму входа/)
+    await screen.findByText(/клик: #login/)
+    await screen.findByText(/таймаут/)
+  })
+
+  it('фильтр оставляет только свои действия', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={withHistory()} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: /Что происходит/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Я' }))
+    await waitFor(() => expect(screen.queryByText(/клик: #login/)).toBeNull())
+    expect(screen.getByText(/переход на/)).toBeTruthy()
+  })
+
+  it('элемент записи показывается на странице по кнопке', async () => {
+    const browser = withHistory()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: /Что происходит/ }))
+    fireEvent.click(await screen.findByLabelText('Показать #login'))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ action: expect.objectContaining({ kind: 'highlight', selector: '#login' }) })
+    })))
+  })
+
+  it('очистка ленты уходит командой, а не прячет её в интерфейсе', async () => {
+    const browser = withHistory()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: /Что происходит/ }))
+    fireEvent.click(await screen.findByLabelText('Очистить ленту'))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'history', clear: true })
+    })))
+  })
+})

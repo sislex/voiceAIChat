@@ -7,7 +7,10 @@ vi.mock('./screenshots.js', async importOriginal => ({
   ...await importOriginal<typeof import('./screenshots.js')>(),
   capturePage: async (page: { screenshot(): Promise<Buffer> }) => ({ buffer: await page.screenshot(), mimeType: 'image/png' })
 }))
-const sessionParts = () => ({ dialogs: new BrowserDialogs(), downloads: new BrowserDownloads(url => url), openerIds: new Map(), profileMode: 'ephemeral' as const })
+import { SessionHistory } from './sessionHistory.js'
+// Лента сессии появилась в круге 5 и читается в метаданных: фейковая сессия без
+// неё падала бы на статусе, хотя проверяется совсем другое.
+const sessionParts = () => ({ dialogs: new BrowserDialogs(), downloads: new BrowserDownloads(url => url), openerIds: new Map(), history: new SessionHistory(), profileMode: 'ephemeral' as const })
 
 describe('поллинг метаданных не присваивает действие модели пользователю', () => {
   it('метаданные текущего проекта показывают логический URL, включая новый fragment', async () => {

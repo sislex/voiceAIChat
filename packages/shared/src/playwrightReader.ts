@@ -4,7 +4,7 @@ import type { BrowserSiteDataResetOptions, BrowserSiteDataResetResult } from './
 import { READER_PROJECT_ORIGIN } from './previewProject'
 // Граница приложения Playwright Reader: пользовательский REST остаётся /api/browser,
 // а ядро и отдельный процесс обмениваются только этими RPC и результатами действий.
-import type { BrowserCookieInfo, BrowserCookieRequest, BrowserEnvironmentOptions, BrowserEnvironmentState, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserScreenshotMetadata, BrowserScreenshotOptions } from './types'
+import type { BrowserCookieInfo, BrowserCookieRequest, BrowserEnvironmentOptions, BrowserEnvironmentState, BrowserHistoryEntry, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserScreenshotMetadata, BrowserScreenshotOptions } from './types'
 import type { BrowserFramesResult } from './browserFrames'
 import type { PreviewActionResult } from './previewActions'
 import { BROWSER_COMMAND_BODY_LIMIT } from './browserLimits'
@@ -26,6 +26,8 @@ export type BrowserControlCommand =
   | { type: 'selectTab' | 'closeTab'; tabId: string }
   | ({ type: 'environment' } & BrowserEnvironmentOptions)
   | ({ type: 'cookies' } & BrowserCookieRequest)
+  | { type: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean }
+  | { type: 'note'; text: string }
 
 export type BrowserModelScreenshotOptions = Pick<BrowserScreenshotOptions, 'selector' | 'rect' | 'fullPage' | 'animations' | 'timeoutMs' | 'frame'>
 /** Старый раннер может вернуть только изображение: неизвестные размеры не выдумываем. */
@@ -34,10 +36,12 @@ export interface BrowserImageResult extends Partial<BrowserScreenshotMetadata> {
 /** Эмуляция среды и cookies: ответ показывает, что теперь в силе. */
 export interface BrowserEnvironmentResult { environment: BrowserEnvironmentState }
 export interface BrowserCookiesResult { cookies: BrowserCookieInfo[]; total: number }
+/** Журнал сессии: что делали человек и модель, в порядке событий. */
+export interface BrowserHistoryResult { history: { total: number; entries: BrowserHistoryEntry[] } }
 
 export interface BrowserActionOutcome {
   ok: boolean
-  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult
+  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult
   error?: string
 }
 
