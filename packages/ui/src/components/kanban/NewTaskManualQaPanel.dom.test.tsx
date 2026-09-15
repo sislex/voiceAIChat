@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { QaSession, QaTaskState } from '@shared/qa'
+import type { QaCriterionResult, QaSession, QaTaskState } from '@shared/qa'
 import { NewTaskManualQaPanel } from './NewTaskManualQaPanel'
 import type { TaskReworkCycleViewModel } from './TaskCardViewModel'
 
@@ -9,6 +9,17 @@ function session(over: Partial<QaSession>): QaSession {
     id: 's1', taskId: 't1', projectId: 'p1', branch: 'CHAT-445', commitSha: 'a'.repeat(40), testRunId: 'run-1', previewId: null, previewSha: null,
     appUrl: 'https://preview.test/CHAT-445', storybookUrl: null, testDataScenario: '', criteriaSnapshot: [], status: 'passed', testerId: null,
     initiatedBy: 'alex', startedAt: 100, finishedAt: 200, staleReason: null, summary: '', results: [], ...over
+  }
+}
+function criterionResult(): QaCriterionResult {
+  return {
+    id: 'result-2', sessionId: 's2', criterionId: 'criterion', criterionVersion: 2,
+    revision: 4, status: 'not_tested', comment: '', draft: false, attachments: [],
+    testerId: null, assigneeId: null, startedAt: null, finishedAt: null,
+    branch: 'CHAT-445', commitSha: 'a'.repeat(40), previewId: null, previewSha: null,
+    appUrl: null, storybookUrl: null, testDataScenario: '', executedSteps: '',
+    expectedResult: '', actualResult: '', environment: '', blockerReason: '',
+    blockerType: null, blockerOwner: null, notApplicableReason: '', issue: null, updatedAt: 2000
   }
 }
 const cycle: TaskReworkCycleViewModel = {
@@ -34,9 +45,10 @@ describe('NewTaskManualQaPanel', () => {
     expect(first.querySelector('[data-testid="new-manual-qa-session"]')).toBeNull()
   })
 
+  // @testCase TC-REG-1
   // @testCase TC-INT-02
   it('saves a manual result with its revision and keeps historical criteria immutable', async () => {
-    const result = { id: 'result-2', sessionId: 's2', criterionId: 'criterion', criterionVersion: 2, revision: 4, status: 'not_tested', comment: '', draft: false, attachments: [] } as never
+    const result = criterionResult()
     const active = session({ id: 's2', status: 'active', startedAt: 2000, finishedAt: null, results: [result], criteriaSnapshot: [{ criterionId: 'criterion', version: 2, required: true }] })
     const older = session({ id: 's1', criteriaSnapshot: [{ criterionId: 'criterion', version: 1, required: true }] })
     const state = { criteria: [], versions: [
@@ -55,6 +67,60 @@ describe('NewTaskManualQaPanel', () => {
     expect(screen.queryByText('Current requirement · v2')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Сохранить результат' })).toBeNull()
     expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  // @testCase TC-REG-1
+  it.each(['passed', 'failed', 'blocked'] as const)('preserves a %s draft through refresh and failed save, then adopts the saved revision', async status => {
+    const previousBoard = window.board
+    let reconnect: (() => void) | undefined
+    window.board = { ...previousBoard, onReconnect: (listener: () => void) => { reconnect = listener; return () => {} } } as typeof window.board
+    let result = criterionResult()
+    const snapshot = (): QaTaskState => {
+      const active = session({
+        id: 's2', status: 'active', startedAt: 2000, finishedAt: null, results: [result],
+        criteriaSnapshot: [{ criterionId: 'criterion', version: 2, required: true }]
+      })
+      return { criteria: [], versions: [], sessions: [active], activeSession: active, preparation: null }
+    }
+    const get = vi.fn(async () => snapshot())
+    const save = vi.fn().mockRejectedValueOnce(new Error('Save unavailable')).mockImplementationOnce(async () => {
+      result = { ...result, revision: 7, status, comment: 'Saved comment' }
+      return result
+    })
+    window.qa = { get, saveResult: save } as unknown as typeof window.qa
+    try {
+      render(<NewTaskManualQaPanel projectId="p1" taskId="t1" cycles={[cycle]} workflow={[]} runActive={false} />)
+      const select = await screen.findByLabelText('Результат проверки')
+      const comment = screen.getByLabelText('Комментарий')
+      // A pristine form follows a new revision without scheduling field-copy effects.
+      result = { ...result, revision: 5, status: 'blocked', comment: 'Remote comment' }
+      await act(async () => { reconnect!() })
+      expect(select).toHaveValue('blocked')
+      expect(comment).toHaveValue('Remote comment')
+
+      fireEvent.change(select, { target: { value: status } })
+      fireEvent.change(comment, { target: { value: 'Local comment' } })
+      result = { ...result, revision: 6, status: 'not_tested', comment: 'New remote comment' }
+      await act(async () => { reconnect!() })
+      expect(select).toHaveValue(status)
+      expect(comment).toHaveValue('Local comment')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
+      await screen.findByText('Результат не сохранён')
+      expect(save).toHaveBeenLastCalledWith('p1', 't1', 'result-2', 6, expect.objectContaining({ status, comment: 'Local comment', draft: false }))
+      expect(select).toHaveValue(status)
+      expect(comment).toHaveValue('Local comment')
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled())
+      expect(save).toHaveBeenCalledTimes(2)
+      expect(select).toHaveValue(status)
+      expect(comment).toHaveValue('Saved comment')
+      expect(screen.queryByText('Результат не сохранён')).toBeNull()
+    } finally {
+      window.board = previousBoard
+    }
   })
 
   it('без сессий объясняет, когда появится preview', async () => {
