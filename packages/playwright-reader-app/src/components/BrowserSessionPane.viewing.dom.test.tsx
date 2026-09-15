@@ -612,3 +612,22 @@ describe('отчёт о проверке (круг 13)', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(markdown))
   })
 })
+
+describe('вкладки в панели (круг 14)', () => {
+  it('«Закрыть лишние» появляется со второй вкладки и уходит командой', async () => {
+    const tabs = [{ id: 't1', url: 'https://a.b/', title: 'Главная', active: true }, { id: 't2', url: 'https://a.b/cart', title: 'Корзина', active: false }]
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ tabs })) as unknown as RendererBrowserBridge['start'] })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(await screen.findByRole('button', { name: 'Закрыть лишние' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: { type: 'tabs-do', do: 'close-others' }
+    })))
+  })
+
+  it('с одной вкладкой кнопки нет: закрывать нечего', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ start: vi.fn(async () => meta({ tabs: [{ id: 't1', url: 'https://a.b/', title: 'Главная', active: true }] })) as unknown as RendererBrowserBridge['start'] })} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.queryByRole('button', { name: 'Закрыть лишние' })).toBeNull()
+  })
+})

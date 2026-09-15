@@ -795,6 +795,11 @@ export type BrowserCommand = BrowserFrameTarget & (
   | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number }
   /** A report of what was checked in the browser — for a task comment. */
   | { type: 'report'; title?: string; limit?: number }
+  /**
+   * Вкладки так, как их называет человек: «та, где корзина», а не идентификатор.
+   * Ждать новую вкладку после клика тоже приходилось опросом в цикле.
+   */
+  | { type: 'tabs-do'; do: 'find' | 'wait-new' | 'close-others'; match?: string; timeoutMs?: number }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)
