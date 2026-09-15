@@ -536,6 +536,36 @@ export interface BrowserAskRequest {
 }
 
 /**
+ * Именованный снимок состояния страницы. «Не сломалась ли вёрстка» человек
+ * проверяет глазами — смотрит до и после; у модели сравнивать было не с чем.
+ */
+export interface BrowserSnapshotInfo {
+  name: string
+  at: number
+  url: string
+  title: string
+  bytes: number
+  textLength: number
+}
+
+/** Итог сравнения снимка с текущим состоянием страницы. */
+export interface BrowserSnapshotComparison {
+  name: string
+  /** Доля различающихся пикселей: 0 — совпало, 1 — не совпало нигде. */
+  ratio: number
+  changed: number
+  total: number
+  width: number
+  height: number
+  /** Прямоугольник, в который уместились различия: «всё в шапке» — это диагноз. */
+  area?: { x: number; y: number; width: number; height: number }
+  sizeChanged: boolean
+  /** Что появилось и исчезло в тексте страницы. */
+  text?: { added: string[]; removed: string[]; addedTotal: number; removedTotal: number }
+  urlChanged?: boolean
+}
+
+/**
  * Правило сети: подменить ответ, заблокировать запрос или задержать его.
  * Человек делает это в devtools за минуту; модель умела только смотреть журнал
  * постфактум, а воспроизвести условие — нет.
@@ -761,6 +791,8 @@ export type BrowserCommand = BrowserFrameTarget & (
   | ({ type: 'touch' } & BrowserTouchAction)
   /** Network rules: mock a response, block a request, slow it down. */
   | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
+  /** Named state snapshots and their comparison with the page as it is now. */
+  | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)

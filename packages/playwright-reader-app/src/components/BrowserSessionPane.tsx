@@ -6,7 +6,7 @@ import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/bro
 import { fitScale, frameWidth, nextFrameZoom, panelShortcut, pinchDistance, touchScrollDelta, TOUCH_TAP_SLOP, type FrameZoom } from '../lib/frameView'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserCookieInfo, type BrowserDeviceState, type BrowserElementDescription, type BrowserEnvironmentState, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
+import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserCookieInfo, type BrowserDeviceState, type BrowserElementDescription, type BrowserEnvironmentState, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserSnapshotComparison, type BrowserSnapshotInfo, type BrowserViewport } from '@shared/types'
 import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, moveStep, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toggleStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
@@ -189,6 +189,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const [cookies, setCookies] = useState<{ loading?: boolean; error?: string; items?: BrowserCookieInfo[]; total?: number } | null>(null)
   /** Хранилище сайта: тут живёт половина дефектов «у меня работает». */
   const [storage, setStorage] = useState<{ loading?: boolean; error?: string; data?: BrowserSelectorResult['storage'] } | null>(null)
+  /**
+   * Снимки состояния: «до» и «после» — то, чем человек проверяет вёрстку глазами.
+   * Панель показывает их тем же списком, что видит модель.
+   */
+  const [snapshots, setSnapshots] = useState<{ open: boolean; name: string; items: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; busy?: boolean; error?: string }>({ open: false, name: '', items: [] })
   /** Правила сети: человеку они нужны там же, где модели, — и чтобы их снять. */
   const [networkRules, setNetworkRules] = useState<{ rules: Array<{ url: string; action: string; status?: number; delayMs?: number }>; total: number } | null>(null)
   /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
@@ -573,6 +578,17 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const loadNetworkRules = useCallback(async (operation: 'list' | 'remove' = 'list', url?: string): Promise<void> => {
     const result = await run({ type: 'network-rules', do: operation, ...(url ? { url } : {}) } as never) as { network?: { rules: Array<{ url: string; action: string }>; total: number } } | undefined
     if (result?.network) setNetworkRules(result.network)
+  }, [run])
+
+  /** Снимок, сравнение и удаление — одной командой, как это делает модель. */
+  const runSnapshot = useCallback(async (operation: 'save' | 'list' | 'compare' | 'remove', name?: string): Promise<void> => {
+    setSnapshots((current) => ({ ...current, busy: true, error: undefined }))
+    const result = await run({ type: 'snapshot', do: operation, ...(name ? { name } : {}) } as never) as { snapshots?: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; error?: string } | undefined
+    if (!result || result.error) { setSnapshots((current) => ({ ...current, busy: false, error: result?.error ?? 'Снимки недоступны' })); return }
+    setSnapshots((current) => ({
+      ...current, busy: false, items: result.snapshots ?? current.items,
+      ...(operation === 'compare' ? { comparison: result.comparison } : {})
+    }))
   }, [run])
 
   /** Метрики страницы: обновляются по требованию, не поллингом — это команда. */
@@ -1029,6 +1045,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           что заполнено, что обязательно и почему браузер не пустит дальше. */}
       <Button size="sm" variant={formInfo ? 'primary' : 'ghost'} aria-expanded={Boolean(formInfo)} disabled={phase !== 'ready'} onClick={() => (formInfo ? setFormInfo(null) : void loadFormInfo())}>Поля формы</Button>
       <Button size="sm" variant={environmentOpen ? 'primary' : 'ghost'} aria-expanded={environmentOpen} disabled={phase !== 'ready'} onClick={() => setEnvironmentOpen((value) => !value)}>Среда</Button>
+      <Button size="sm" variant={snapshots.open ? 'primary' : 'ghost'} aria-expanded={snapshots.open} disabled={phase !== 'ready'}
+        onClick={() => { setSnapshots((current) => ({ ...current, open: !current.open })); if (!snapshots.open) void runSnapshot('list') }}>Снимки</Button>
       <Button size="sm" variant={feedOpen ? 'primary' : 'ghost'} aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>
         Что происходит{meta?.history?.length ? ` (${meta.history.length})` : ''}
       </Button>
@@ -1295,6 +1313,48 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             </li>
           ))}
         </ol>
+      </div>
+    )}
+    {snapshots.open && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Снимки состояния">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Снимки состояния</strong>
+          <label className="playwright-reader-record__name">Имя снимка
+            <input className="login-input" value={snapshots.name} placeholder="до правки"
+              onChange={(event) => setSnapshots((current) => ({ ...current, name: event.target.value }))} />
+          </label>
+          <Button size="sm" variant="secondary" disabled={phase !== 'ready' || !snapshots.name.trim() || snapshots.busy}
+            onClick={() => void runSnapshot('save', snapshots.name.trim())}>Снять</Button>
+          <Button size="sm" disabled={phase !== 'ready' || !snapshots.name.trim() || snapshots.busy}
+            onClick={() => void runSnapshot('compare', snapshots.name.trim())}>Сравнить</Button>
+          <IconButton size="sm" aria-label="Скрыть снимки" title="Скрыть снимки" onClick={() => setSnapshots((current) => ({ ...current, open: false }))}>✕</IconButton>
+        </div>
+        {snapshots.error && <p role="alert">{snapshots.error}</p>}
+        {snapshots.comparison && (
+          <p role="status">
+            {/* Доля сама по себе ничего не значит: «12% и всё в шапке» — диагноз,
+                «12%» — нет. Поэтому область различий идёт рядом с числом. */}
+            Различий: {Math.round(snapshots.comparison.ratio * 1000) / 10}%
+            {snapshots.comparison.area ? ` · область ${snapshots.comparison.area.width}×${snapshots.comparison.area.height} в точке ${snapshots.comparison.area.x},${snapshots.comparison.area.y}` : ' · совпало'}
+            {snapshots.comparison.sizeChanged ? ' · размер страницы изменился' : ''}
+            {snapshots.comparison.urlChanged ? ' · адрес другой' : ''}
+            {snapshots.comparison.text && (snapshots.comparison.text.addedTotal || snapshots.comparison.text.removedTotal)
+              ? ` · текст: +${snapshots.comparison.text.addedTotal} −${snapshots.comparison.text.removedTotal}`
+              : ''}
+          </p>
+        )}
+        {snapshots.items.length === 0 && <p className="proj-muted">Снимков пока нет. Сделайте «до», измените страницу, нажмите «Сравнить».</p>}
+        {snapshots.items.length > 0 && (
+          <ul className="playwright-reader-diagnostics__list">
+            {snapshots.items.map((item) => (
+              <li key={item.name}>
+                <code>{item.name}</code> · {new Date(item.at).toLocaleTimeString()} · {Math.round(item.bytes / 1024)} КБ · {item.url}
+                <IconButton size="sm" aria-label={`Удалить снимок ${item.name}`} title="Удалить снимок" disabled={phase !== 'ready'}
+                  onClick={() => void runSnapshot('remove', item.name)}>✕</IconButton>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     )}
     {feedOpen && (

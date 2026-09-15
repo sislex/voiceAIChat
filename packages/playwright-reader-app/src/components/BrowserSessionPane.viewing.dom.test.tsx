@@ -528,3 +528,54 @@ describe('правила сети в панели (круг 11)', () => {
     await screen.findByText(/настоящей сетью/)
   })
 })
+
+describe('снимки состояния (круг 12)', () => {
+  const withSnapshots = () => fakeBrowser({
+    command: vi.fn(async (_id: string, req: { command: { type: string; do?: string; name?: string } }) => {
+      if (req.command.type === 'snapshot') {
+        const items = req.command.do === 'remove' ? [] : [{ name: 'до правки', at: 1_700_000_000_000, url: 'https://a.b/', title: 'Страница', bytes: 20_480, textLength: 120 }]
+        return {
+          snapshots: items,
+          ...(req.command.do === 'compare'
+            ? { comparison: { name: 'до правки', ratio: 0.1234, changed: 100, total: 810, width: 30, height: 27, area: { x: 0, y: 0, width: 300, height: 64 }, sizeChanged: false, text: { added: ['Итого 200'], removed: ['Итого 100'], addedTotal: 1, removedTotal: 1 } } }
+            : {})
+        }
+      }
+      return meta()
+    }) as unknown as RendererBrowserBridge['command']
+  })
+
+  it('снимок делается по имени и попадает в список', async () => {
+    const browser = withSnapshots()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Снимки' }))
+    fireEvent.change(await screen.findByLabelText('Имя снимка'), { target: { value: 'до правки' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Снять' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'snapshot', do: 'save', name: 'до правки' })
+    })))
+    await screen.findByText('до правки')
+  })
+
+  it('сравнение показывает долю различий вместе с областью: одна доля ничего не значит', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={withSnapshots()} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Снимки' }))
+    fireEvent.change(await screen.findByLabelText('Имя снимка'), { target: { value: 'до правки' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сравнить' }))
+    await screen.findByText(/Различий: 12\.3%/)
+    await screen.findByText(/область 300×64/)
+    await screen.findByText(/текст: \+1 −1/)
+  })
+
+  it('без снимков панель объясняет порядок работы, а не показывает пустоту', async () => {
+    const browser = fakeBrowser({
+      command: vi.fn(async (_id: string, req: { command: { type: string } }) => (req.command.type === 'snapshot' ? { snapshots: [] } : meta())) as unknown as RendererBrowserBridge['command']
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Снимки' }))
+    await screen.findByText(/Сделайте «до», измените страницу/)
+  })
+})

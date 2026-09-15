@@ -10,10 +10,10 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 35 коммит(ов) в areas после сверки: b1f9f1d4 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 36 коммит(ов) в areas после сверки: b7722860 feat(playwright-reader): put the network under control (cycle 11) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 45 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 13 коммит(ов) в areas после сверки: b1f9f1d4 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 14 коммит(ов) в areas после сверки: b7722860 feat(playwright-reader): put the network under control (cycle 11) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 4 коммит(ов) в areas после сверки: 70e9afe3 feat(admin): improve user and session access management (CHAT-453) … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
@@ -23,25 +23,25 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 123 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1465 коммит(ов) в areas после сверки: b1f9f1d4 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1466 коммит(ов) в areas после сверки: b7722860 feat(playwright-reader): put the network under control (cycle 11) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 5 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 27 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 40 коммит(ов) в areas после сверки: 4632bced Merge main into CHAT-466 (task 2c900bc5-86d3-4216-857c-529cc8951e5f) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-14 | ⚠ 1 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 347 коммит(ов) в areas после сверки: b1f9f1d4 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 348 коммит(ов) в areas после сверки: b7722860 feat(playwright-reader): put the network under control (cycle 11) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 24 коммит(ов) в areas после сверки: e8c00896 fix(llm): price Codex turns as the difference of thread totals, not the totals … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 1 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-14 | ⚠ 1 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 237 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 22 коммит(ов) в areas после сверки: b1f9f1d4 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-15 | ⚠ 6 коммит(ов) в areas после сверки: b1f9f1d4 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-13 | ⚠ 23 коммит(ов) в areas после сверки: b7722860 feat(playwright-reader): put the network under control (cycle 11) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-15 | ⚠ 7 коммит(ов) в areas после сверки: b7722860 feat(playwright-reader): put the network under control (cycle 11) … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ⚠ 1 коммит(ов) в areas после сверки: fc4b9234 perf(account): load profile sections progressively |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 35 коммит(ов) в areas после сверки: b1f9f1d4 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 36 коммит(ов) в areas после сверки: b7722860 feat(playwright-reader): put the network under control (cycle 11) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 201 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 153 коммит(ов) в areas после сверки: 181c142e feat(qa): improve stage panels and snapshot retries … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ⚠ 93 коммит(ов) в areas после сверки: b1f9f1d4 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ⚠ 94 коммит(ов) в areas после сверки: b7722860 feat(playwright-reader): put the network under control (cycle 11) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-15, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 

@@ -11,6 +11,7 @@ import { applyEnvironment, applyEnvironmentToPage, runCookieCommand } from './en
 import { describeCommand, SessionHistory } from './sessionHistory.js'
 import { applyDevice, runTouchAction } from './deviceActions.js'
 import { NetworkRules, planRoute } from './networkRules.js'
+import { compareImagesScript, diffText, SessionSnapshots } from './snapshots.js'
 import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
 import { clearSiteData, httpOrigin } from './siteData.js'
 import { readReaderProfile, writeReaderProfile } from './profileState.js'
@@ -21,7 +22,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserAskRequest, BrowserAskResult, BrowserCommandRequest, BrowserNetworkRulesResult, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserAskRequest, BrowserAskResult, BrowserCommandRequest, BrowserNetworkRulesResult, BrowserSnapshotComparison, BrowserSnapshotResult, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -63,6 +64,8 @@ interface Session {
   ask?: BrowserAskRequest
   /** Подмена, блокировка и задержка запросов — то, что человек делает в devtools. */
   networkRules: NetworkRules
+  /** Именованные снимки состояния: «до» для сравнения с «после». */
+  snapshots: SessionSnapshots
   /** Что происходило в сессии: единственное место, где видны обе стороны. */
   history: SessionHistory
 }
@@ -191,6 +194,7 @@ export class BrowserSessionManager {
         profileDir: path, profileMode,
         origins: new Set(saved?.origins ?? []), bootstrapCookies: [],
         networkRules: new NetworkRules(),
+        snapshots: new SessionSnapshots(),
         lastUsedAt: Date.now()
       }
       await session.downloads.attachLimits(context, downloadsPath)
@@ -331,7 +335,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
@@ -412,7 +416,7 @@ export class BrowserSessionManager {
   }
 
   /** Разбор команды без журнала: вынесен, чтобы запись велась в одном месте. */
-  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult> {
+  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult> {
     const command = request.command
     const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe', 'accessibility'].includes(command.action.kind))
     if (command.type === 'inspect' && command.action.kind === 'evaluate') {
@@ -453,7 +457,7 @@ export class BrowserSessionManager {
     }, observing)
   }
 
-  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult> {
+  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -495,6 +499,34 @@ export class BrowserSessionManager {
       return { environment }
     }
     if (command.type === 'cookies') return await runCookieCommand(session.context, command)
+    if (command.type === 'snapshot') {
+      const page = session.pages.get(request.tabId ?? session.activeTabId)
+      if (!page) throw new Error('stale_tab')
+      if (command.do === 'list') return { snapshots: session.snapshots.list() }
+      if (command.do === 'remove') { session.snapshots.remove(command.name); return { snapshots: session.snapshots.list() } }
+      const shot = await capturePage(page, { format: 'png', scale: 'css' }, (raw) => this.publicUrl(raw))
+      const dataUrl = `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`
+      const text = String(await page.evaluate('document.body ? document.body.innerText : ""').catch(() => '')).slice(0, 100_000)
+      if (command.do === 'save') {
+        if (!command.name) throw new Error('Снимку нужно имя')
+        session.snapshots.save({ name: command.name, at: Date.now(), url: this.publicUrl(page.url()), title: await page.title().catch(() => ''), dataUrl, text })
+        return { snapshots: session.snapshots.list() }
+      }
+      if (!command.name) throw new Error('Для сравнения нужно имя снимка')
+      const before = session.snapshots.get(command.name)
+      if (!before) throw new Error(`Снимка «${command.name}» нет: сделай его до изменения`)
+      // Сравнение считается в самой странице: Chromium уже умеет рисовать
+      // картинку и читать пиксели, тащить ради этого разбор PNG в Node незачем.
+      const threshold = Math.min(Math.max(command.threshold ?? 8, 0), 64)
+      const pixels = await page.evaluate(compareImagesScript(before.dataUrl, dataUrl, threshold)) as { error?: string } & Omit<BrowserSnapshotComparison, 'name' | 'text' | 'urlChanged'>
+      if (pixels.error) throw new Error(pixels.error)
+      const comparison: BrowserSnapshotComparison = {
+        name: command.name, ...pixels,
+        text: diffText(before.text, text),
+        ...(before.url !== this.publicUrl(page.url()) ? { urlChanged: true } : {})
+      }
+      return { snapshots: session.snapshots.list(), comparison }
+    }
     if (command.type === 'network-rules') {
       if (command.do === 'add') {
         if (!command.rule) throw new Error('Для add нужно правило')
