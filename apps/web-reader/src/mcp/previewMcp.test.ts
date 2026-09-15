@@ -203,7 +203,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'ask-user', 'audit', 'back', 'bookmark', 'cancel-download', 'changes', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'dismiss', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'focus', 'forward', 'frames', 'hand-over', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'report', 'reset-session', 'screenshot', 'scroll', 'search', 'select', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'ask', 'ask-user', 'audit', 'back', 'bookmark', 'cancel-download', 'changes', 'check', 'check-report', 'choose', 'clear', 'click', 'close-other-tabs', 'close-tab', 'console', 'cookies', 'copy', 'count', 'csv', 'delete-download', 'device', 'dialogs', 'dismiss', 'downloads', 'drag', 'drop-file', 'edits', 'emulate', 'environment', 'errors', 'evaluate', 'expect', 'fill', 'fill-form', 'find', 'find-tab', 'focus', 'focus-order', 'focused', 'form-state', 'forward', 'frames', 'hand-over', 'handle-dialog', 'highlight', 'history', 'hotkey', 'hover', 'list', 'measure', 'media', 'metrics', 'network', 'network-rules', 'new-tab', 'note', 'open', 'options', 'paste', 'press', 'probe', 'read', 'read-download', 'record', 'record-check', 'reload', 'replay', 'report', 'reset-session', 'screenshot', 'scroll', 'scroll-until', 'search', 'select', 'select-tab', 'select-text', 'sequence', 'session-info', 'set', 'show', 'snapshot', 'source', 'status', 'stop-loading', 'storage', 'styles', 'submit', 'table', 'tabs', 'test-users', 'touch', 'type', 'upload', 'validity', 'viewport', 'wait', 'wait-new-tab'])
   })
 
   it.each([
@@ -610,6 +610,23 @@ describe('previewMcp — инструменты browser', () => {
     expect(result.text).toContain('загружается')
   })
 
+  it('note и report {text} доходят до клиента как действия панели (круг 20)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: null, notes: [{ text: 'Цена без доставки', url: null, at: 1 }] } })
+    }
+    const noted = await call('note', { text: 'Цена без доставки' })
+    expect(noted.isError).toBeFalsy()
+    await call('report', { readable: true })
+    await call('report', {})
+    expect(seen).toEqual([
+      { kind: 'note', text: 'Цена без доставки' },
+      { kind: 'report', readable: true },
+      { kind: 'report' }
+    ])
+  })
   it('ask-user и hand-over доходят до клиента как действия панели (круг 19)', async () => {
     await makeApp()
     const seen: unknown[] = []
