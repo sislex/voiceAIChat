@@ -1449,6 +1449,10 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadNetworkRules()}>Правила сети</Button>
         </div>
         {environment?.geolocation && <p className="proj-muted">Позиция: {environment.geolocation.latitude}, {environment.geolocation.longitude}</p>}
+        {/* Настройка проверки переживает перезапуск сессии — об этом стоит
+            сказать: иначе человек не понимает, почему после перезапуска
+            страница снова «телефонная». */}
+        {(device || environment) && <p className="proj-muted">Эти настройки восстановятся после перезапуска сессии.</p>}
         {cookies?.loading && <p role="status">Читаем cookies…</p>}
         {cookies?.error && <p role="alert">{cookies.error}</p>}
         {storage?.loading && <p role="status">Читаем хранилище…</p>}

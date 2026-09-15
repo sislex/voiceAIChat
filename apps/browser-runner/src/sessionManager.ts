@@ -23,7 +23,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserAskRequest, BrowserAskResult, BrowserCommandRequest, BrowserNetworkRulesResult, BrowserReportResult, BrowserSnapshotComparison, BrowserSnapshotResult, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserAskRequest, BrowserAskResult, BrowserCommandRequest, BrowserNetworkRulesResult, BrowserReportResult, BrowserSessionInfoResult, BrowserSnapshotComparison, BrowserSnapshotResult, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -265,6 +265,11 @@ export class BrowserSessionManager {
       context.on('close', () => { if (this.sessions.get(request.sessionId) === entry) this.sessions.delete(request.sessionId); void rm(downloadsPath, { recursive: true, force: true }).catch(() => undefined) })
       if (saved?.cookies.length) await context.addCookies(saved.cookies).catch(() => undefined)
       await this.applyCookies(session, request.cookies)
+      // Настройка проверки восстанавливается до открытия страницы: иначе
+      // страница успевает отрисоваться в десктопной теме и «мигает» при смене.
+      if (saved?.environment) await applyEnvironment(session, saved.environment).catch(() => undefined)
+      if (saved?.device) await applyDevice(initial, saved.device).catch(() => undefined)
+      if (saved?.device) session.device = saved.device
       if (saved?.url && saved.url !== 'about:blank') {
         const savedUrl = saved.url
         try { await session.dialogs.run(initial, () => initial.goto(applyHostAlias(validatePublicUrl(savedUrl, this.allowedTargets), this.hostAliases).toString(), { ...NAVIGATION_OPTIONS, timeout: 10000 })) }
@@ -309,7 +314,7 @@ export class BrowserSessionManager {
       session.queue.cancel()
       let saveError: unknown
       if (session.profileMode === 'persistent') {
-        try { await writeReaderProfile(session.profileDir, { cookies: await session.context.cookies(), origins: [...session.origins], viewport: session.viewport, url: this.publicUrl(session.pages.get(session.activeTabId)?.url() ?? 'about:blank') }) }
+        try { await writeReaderProfile(session.profileDir, { cookies: await session.context.cookies(), origins: [...session.origins], viewport: session.viewport, url: this.publicUrl(session.pages.get(session.activeTabId)?.url() ?? 'about:blank'), ...(session.device ? { device: session.device } : {}), ...(session.environment ? { environment: session.environment } : {}) }) }
         catch (error) { saveError = error }
       }
       await session.context.close()
@@ -339,7 +344,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult | BrowserReportResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult | BrowserReportResult | BrowserSessionInfoResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
@@ -420,7 +425,7 @@ export class BrowserSessionManager {
   }
 
   /** Разбор команды без журнала: вынесен, чтобы запись велась в одном месте. */
-  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult | BrowserReportResult> {
+  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult | BrowserReportResult | BrowserSessionInfoResult> {
     const command = request.command
     const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe', 'accessibility'].includes(command.action.kind))
     if (command.type === 'inspect' && command.action.kind === 'evaluate') {
@@ -461,7 +466,7 @@ export class BrowserSessionManager {
     }, observing)
   }
 
-  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult | BrowserReportResult> {
+  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult | BrowserSnapshotResult | BrowserReportResult | BrowserSessionInfoResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -503,6 +508,23 @@ export class BrowserSessionManager {
       return { environment }
     }
     if (command.type === 'cookies') return await runCookieCommand(session.context, command)
+    if (command.type === 'session-info') {
+      // Сессия живёт долго и незаметно накапливает состояние: эмуляцию, правила
+      // сети, снимки. Модель, вернувшаяся к разговору через час, не знала о них
+      // ничего и объясняла странности страницы дефектом сайта.
+      return {
+        session: {
+          ageMinutes: Math.max(0, Math.round((Date.now() - session.startedAt) / 60_000)),
+          tabs: session.pages.size,
+          actions: session.history.list({ limit: 200 }).total,
+          snapshots: session.snapshots.list().length,
+          networkRules: session.networkRules.size,
+          ...(session.device ? { device: session.device } : {}),
+          ...(session.environment ? { environment: session.environment } : {}),
+          recordingProfile: session.profileMode
+        }
+      }
+    }
     if (command.type === 'tabs-do') {
       if (command.do === 'close-others') {
         // «Закрыть лишние» — то, что человек делает одним пунктом меню; модель
