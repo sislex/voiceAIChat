@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "runId": "20260915194403439-f5ca7d38-50fb-4b82-b45e-c9a99bcf98e6",
+  "pid": 84258,
+  "startedAt": "2026-09-15T19:44:03.442Z",
+  "command": [
+    "npm",
+    "run",
+    "-w",
+    "@voicechat/ui",
+    "test",
+    "--",
+    "src/components/SettingsModal.dom.test.tsx"
+  ],
+  "state": "finished",
+  "finishedAt": "2026-09-15T19:44:08.578Z",
+  "exitCode": 0,
+  "signal": null
+}
