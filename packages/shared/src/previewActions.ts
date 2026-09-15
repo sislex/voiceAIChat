@@ -106,6 +106,8 @@ export interface PreviewFillField {
   field?: string
   near?: string
   value: string
+  /** Значение не возвращать и не записывать (пароли, коды). */
+  secret?: boolean
 }
 
 /** Точка или элемент — источник/цель перетаскивания. */
@@ -129,7 +131,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** href — подстрока адреса ссылки («ссылка на /pricing»). */
   /** enabled/checked — состояние контрола, как его видит человек: «активная кнопка», «отмеченный флажок». */
   /** reveal — прокрутить к первому найденному и подсветить: «найди и покажи». */
-  | { kind: 'find'; text?: string; selector?: string; role?: string; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean }
+  /** level — уровень заголовка для role: heading. */
+  | { kind: 'find'; text?: string; selector?: string; role?: string; level?: number; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
   /** x/y — клик по точке вьюпорта (карты, canvas), когда у цели нет текста и селектора. */
@@ -139,12 +142,14 @@ export type PreviewAction = BrowserFrameTarget & (
   /** field — подпись, placeholder или name поля вместо CSS-селектора; append дописывает к текущему значению. */
   /** perKey — посимвольный ввод с событиями клавиатуры: для полей, слушающих keydown (маски, автодополнение). */
   /** secret — значение не возвращать и не записывать в сценарий, даже если поле не помечено как пароль. */
-  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; secret?: boolean; diagnostic?: boolean }
+  /** blur — убрать фокус после ввода: формы часто проверяют поле именно по blur. */
+  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; secret?: boolean; blur?: boolean; diagnostic?: boolean }
   /** visible — только то, что сейчас в видимой области окна: экран пользователя, а не весь документ. */
   /** section — прочитать раздел под заголовком с этим текстом, как человек листает до нужного места. */
   /** brief — короткое человеческое описание страницы вместо полной структуры. */
   /** parts — какие части отдать (headings, links, buttons, inputs, forms, landmarks, text): меньше ответ — меньше контекста. */
-  | { kind: 'read'; selector?: string; section?: string; limit?: number; offset?: number; visible?: boolean; brief?: boolean; parts?: PreviewReadPart[]; diagnostic?: boolean }
+  /** around — текст вокруг фразы (±600 символов); markdown — текст с заголовками и списками в лёгкой разметке. */
+  | { kind: 'read'; selector?: string; section?: string; around?: string; markdown?: boolean; limit?: number; offset?: number; visible?: boolean; brief?: boolean; parts?: PreviewReadPart[]; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   /** waitMs — подождать после наведения, пока меню анимируется, и только потом собрать revealed. */
@@ -152,7 +157,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Прокрутка окна или контейнера: к краю (`to`) либо на `dy` пикселей. */
   /** to: 'element' прокручивает страницу так, чтобы selector оказался в видимой области. */
   /** to: nextPage/prevPage — на экран вниз/вверх, как PageDown/PageUp. */
-  | { kind: 'scroll'; selector?: string; text?: string; to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; dx?: number; dy?: number; diagnostic?: boolean }
+  /** percent — к доле высоты документа (0–100). */
+  | { kind: 'scroll'; selector?: string; text?: string; to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; percent?: number; dx?: number; dy?: number; diagnostic?: boolean }
   /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
   /** repeat повторяет нажатие (ArrowDown ×3) одним действием. */
   | { kind: 'press'; key: string; selector?: string; repeat?: number; waitFor?: string; diagnostic?: boolean }
@@ -241,6 +247,8 @@ export interface PreviewPageOutline {
   links: number
   buttons: number
   inputs: number
+  /** Слов видимого текста — оценка времени чтения. */
+  words?: number
 }
 
 /** Состояние панели пользователя (`status`): что открыто и готова ли страница. */
@@ -259,6 +267,8 @@ export interface PreviewStatusResult {
   lastAction?: { kind: string; ok: boolean; at: number; error?: string }
   /** Итоги проверок за сеанс. */
   checks?: { passed: number; failed: number }
+  /** Сводка текущей страницы, как у open. */
+  outline?: PreviewPageOutline
   /** Размер видимой области страницы: понять, мобильная ли раскладка у пользователя. */
   viewport?: { width: number; height: number }
 }
@@ -348,7 +358,8 @@ export interface PreviewChooseResult {
 /** Структурированное содержимое страницы (или поддерева по selector). */
 export interface PreviewReadResult {
   page: PreviewPageInfo
-  headings: { level: number; text: string }[]
+  /** selector — чтобы прокрутить к заголовку или прочитать раздел под ним. */
+  headings: { level: number; text: string; selector?: string }[]
   links: { text: string; href: string }[]
   buttons: string[]
   inputs: { selector: string; type: string; name: string; placeholder: string; value: string; label?: string; expanded?: boolean; selected?: boolean; disabled?: boolean; readOnly?: boolean; checked?: boolean | 'mixed'; required?: boolean; invalid?: boolean; /** Варианты select — из чего человек выбирает. */ options?: string[] }[]
@@ -674,6 +685,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.selector, L.selector) &&
         optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') && validNth(value.nth) && optBounded(value.href, L.url) &&
         (value.enabled === undefined || typeof value.enabled === 'boolean') && (value.checked === undefined || typeof value.checked === 'boolean') && (value.reveal === undefined || typeof value.reveal === 'boolean') &&
+        (value.level === undefined || (typeof value.level === 'number' && Number.isInteger(value.level) && value.level >= 1 && value.level <= 6)) &&
         (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
@@ -698,9 +710,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         bounded(value.text, L.text) &&
         (value.submit === undefined || typeof value.submit === 'boolean') &&
         (value.append === undefined || typeof value.append === 'boolean') &&
-        (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean')
+        (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean') && (value.blur === undefined || typeof value.blur === 'boolean')
     case 'read':
-      return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) &&
+      return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) && optBounded(value.around, L.text) && (value.markdown === undefined || typeof value.markdown === 'boolean') &&
         (value.visible === undefined || typeof value.visible === 'boolean') && (value.brief === undefined || typeof value.brief === 'boolean') &&
         (value.parts === undefined || (Array.isArray(value.parts) && value.parts.length >= 1 && value.parts.length <= 8 && value.parts.every((part) => (PREVIEW_READ_PARTS as readonly string[]).includes(part as string)))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
@@ -721,9 +733,10 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (
         optBounded(value.selector, L.selector) && optBounded(value.text, L.text) &&
         (value.to === undefined || value.to === 'top' || value.to === 'bottom' || value.to === 'nextPage' || value.to === 'prevPage' || value.to === 'element' && (bounded(value.selector, L.selector) || bounded(value.text, L.text))) &&
+        (value.percent === undefined || (typeof value.percent === 'number' && Number.isFinite(value.percent) && value.percent >= 0 && value.percent <= 100)) &&
         (value.dy === undefined || (typeof value.dy === 'number' && Number.isFinite(value.dy) && Math.abs(value.dy) <= 100_000)) &&
         (value.dx === undefined || (typeof value.dx === 'number' && Number.isFinite(value.dx) && Math.abs(value.dx) <= 100_000)) &&
-        (value.to !== undefined || value.dy !== undefined || value.dx !== undefined)
+        (value.to !== undefined || value.dy !== undefined || value.dx !== undefined || value.percent !== undefined)
       )
     case 'press':
       return (
@@ -770,7 +783,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         value.steps.every((step) => record(step) && step.kind !== 'open' && step.kind !== 'sequence' && isPreviewAction(step))
     case 'fill':
       return Array.isArray(value.fields) && value.fields.length >= 1 && value.fields.length <= 30 &&
-        value.fields.every((item) => record(item) && bounded(item.value, L.text) && optBounded(item.selector, L.selector) && optBounded(item.field, L.text) && optBounded(item.near, L.text) &&
+        value.fields.every((item) => record(item) && bounded(item.value, L.text) && optBounded(item.selector, L.selector) && optBounded(item.field, L.text) && optBounded(item.near, L.text) && (item.secret === undefined || typeof item.secret === 'boolean') &&
           (bounded(item.selector, L.selector) && item.selector.length > 0 || bounded(item.field, L.text) && item.field.trim().length > 0)) &&
         (value.submit === undefined || typeof value.submit === 'boolean') && (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.confirm === undefined || typeof value.confirm === 'boolean')
     case 'choose':
@@ -967,6 +980,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'click и type сами ждут цель до 1,5 с, если её ещё нет (waitedMs в ответе); changes {selector} сравнивает только область. ' +
     'Опасные действия — оплата, удаление, отправка денег, скачивание файла — панель останавливает и отвечает needsConfirmation: спроси пользователя словами и повтори с confirm: true только после его согласия. ' +
     'type {secret: true} не возвращает значение и не пишет его в сценарий; show {all: true} подсвечивает все совпадения; hover.cursor — «рука» над кликабельным; read.frames — встроенные iframe, недоступные панели; open.crossSite — перешли на другой сайт. ' +
+    'read {around: фраза} — текст вокруг фразы; read {markdown: true} — текст с заголовками # и списками -; headings в read несут selector для scroll/read section; find {role: heading, level: 2}; ' +
+    'scroll {percent: 50} — к доле документа; type {blur: true} снимает фокус после ввода (проверка поля по blur); fill fields[].secret; status.outline — сводка текущей страницы. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

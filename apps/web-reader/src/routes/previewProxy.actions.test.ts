@@ -127,7 +127,7 @@ describe('скрипт превью: DOM-действия', () => {
       text: string
     }
     expect(page.page.title).toBe('Магазин')
-    expect(page.headings).toContainEqual({ level: 2, text: 'Электроника' })
+    expect(page.headings).toContainEqual(expect.objectContaining({ level: 2, text: 'Электроника' }))
     expect(page.links).toContainEqual({ text: 'Электроника', href: 'https://shop.example/electronics' })
     expect(page.buttons).toContain('Найти')
     expect(page.inputs.find((i) => i.name === 'q')?.type).toBe('text')
@@ -708,7 +708,7 @@ describe('скрипт превью: показать пользователю �
     const res = await act({ kind: 'read', brief: true })
     const result = res.result as { dialog?: string; brief?: string; headings: { text: string }[] }
     expect(result.dialog).toBe('#modal')
-    expect(result.headings).toEqual([{ level: 2, text: 'Подтвердите' }])
+    expect(result.headings).toEqual([expect.objectContaining({ level: 2, text: 'Подтвердите' })])
     expect(result.brief).toContain('открыто окно')
     expect(result.brief).toContain('Магазин')
     const pressed = await act({ kind: 'press', key: 'Escape' })
@@ -944,6 +944,41 @@ describe('скрипт превью: осторожность как у чело
     const read = await act({ kind: 'read', parts: ['headings'] })
     expect((read.result as { frames?: { src: string; title: string }[] }).frames).toEqual([{ selector: '#embed', src: 'https://video.example/embed/1', title: 'Видео' }])
     expect((read.result as { page: { icon?: string } }).page.icon).toContain('/favicon.ico')
+  })
+})
+
+describe('скрипт превью: чтение длинных страниц (круг 15)', () => {
+  it('read around даёт текст вокруг фразы, markdown размечает заголовки и списки, headings несут selector', async () => {
+    document.body.insertAdjacentHTML('beforeend', `<h2>Условия</h2><p>Доставка бесплатна от 3000 рублей по всей стране.</p><ul><li>Возврат 14 дней</li><li>Гарантия год</li></ul>`)
+    const around = await act({ kind: 'read', around: 'от 3000 рублей' })
+    expect(around.ok).toBe(true)
+    expect((around.result as { text: string }).text).toContain('Доставка бесплатна')
+    const missing = await act({ kind: 'read', around: 'такого нет' })
+    expect(missing.ok).toBe(false)
+    const markdown = await act({ kind: 'read', markdown: true })
+    const text = (markdown.result as { text: string; headings: { selector?: string }[] }).text
+    expect(text).toContain('## Условия')
+    expect(text).toContain('- Возврат 14 дней')
+    expect((markdown.result as { headings: { selector?: string }[] }).headings[0]?.selector).toBeTruthy()
+    const level2 = await act({ kind: 'find', role: 'heading', level: 2 })
+    expect((level2.result as { total: number }).total).toBe(3)
+  })
+
+  it('type blur снимает фокус, scroll percent листает к доле, fill secret скрывает значение поля', async () => {
+    const input = document.getElementById('q') as HTMLInputElement
+    let blurred = false
+    input.addEventListener('blur', () => { blurred = true })
+    await act({ kind: 'type', selector: '#q', text: 'x', blur: true })
+    expect(blurred).toBe(true)
+    const main = document.querySelector('main') as HTMLElement
+    Object.defineProperty(main, 'scrollHeight', { configurable: true, value: 1500 })
+    Object.defineProperty(main, 'clientHeight', { configurable: true, value: 500 })
+    const half = await act({ kind: 'scroll', selector: 'main', percent: 50 })
+    expect((half.result as { scrolled: { top: number } }).scrolled.top).toBe(500)
+    document.body.insertAdjacentHTML('beforeend', `<input id="code">`)
+    const filled = await act({ kind: 'fill', fields: [{ selector: '#code', value: '9876', secret: true }] })
+    expect((filled.result as { filled: { value: string }[] }).filled[0].value).toBe('')
+    expect((document.getElementById('code') as HTMLInputElement).value).toBe('9876')
   })
 })
 

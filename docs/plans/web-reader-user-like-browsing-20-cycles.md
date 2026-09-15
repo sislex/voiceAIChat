@@ -501,4 +501,38 @@ UI (desktop and phone):
 | 09 | Site favicon appears for sites without `<link rel=icon>` | script |
 | 10 | Confirmation prompt clears on conversation change | App |
 
-Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-14.md`.
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-14.md`. Commit `db7be8e4`.
+
+## Cycle 15 — reading long pages the way a person does
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `read {around: phrase}` — text around a phrase instead of the whole page | script | script test |
+| 02 | `read {markdown: true}` — headings as `#`, list items as `-` | script | script test |
+| 03 | headings carry `selector` for `scroll` and `read {section}` | script | script test |
+| 04 | `find {role: heading, level}` | script `byRole` | script test |
+| 05 | `type {blur: true}` triggers blur validation | script | script test |
+| 06 | `scroll {percent}` | script | script test |
+| 07 | `fill` fields accept `secret` | script, MCP | script test |
+| 08 | `outline.words` — page length; `status.outline` — summary of the current page | script, bridge | — |
+| 09 | `choose` failure lists the visible options | script | — |
+| 10 | hint documents around/markdown/level/percent/blur/secret/status.outline | `previewToolHint` | shared test |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Reading progress strip under the title as the person scrolls the page | Recorder |
+| 02 | «~N мин» reading time next to the title | Recorder |
+| 03 | A−/A+ text zoom in the tools menu (same-origin body zoom) | Recorder |
+| 04 | Shift+click on reload resets the site session before reloading | Recorder |
+| 05 | Arrow keys and Enter pick recent-address suggestions | Recorder |
+| 06 | Confirmation prompt focuses «Разрешить» | `WebReaderFrame` |
+| 07 | Feed step tooltip shows the full date and time | `ReaderActionHistory` |
+| 08 | «Открыть страницу» on steps made on another page | `ReaderActionHistory` |
+| 09 | Zoom survives navigation within the session | Recorder |
+| 10 | Reading strip announced as a progressbar | Recorder |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-15.md`.

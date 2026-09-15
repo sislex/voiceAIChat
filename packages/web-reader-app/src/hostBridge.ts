@@ -223,7 +223,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         ...(viewport ? { viewport } : {}),
         ...(pending.size ? { pending: pending.size } : {}),
         ...(lastAction ? { lastAction } : {}),
-        ...(checks.length ? { checks: { passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length } } : {})
+        ...(checks.length ? { checks: { passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length } } : {}),
+        ...(pageOutline && pageStatus === 'ready' ? { outline: pageOutline } : {})
       } })
     }
     // waitFor у действия: после успеха дождаться текста тем же ходом, как у open.
