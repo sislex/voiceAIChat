@@ -44,6 +44,8 @@ Realtime передаёт только адресное событие `task-pre
 
 ## DevelopmentReadiness и readiness-гейт
 
+CHAT-472 adds the `Development Brief готов:` prefix regression (`TC-BRIEF-01`) and verifies preservation of columnId, onMoveTask ordering and autonomous workflow requirements during nullable-reference normalization (`TC-BRIEF-02`). `TC-BRIEF-03` checks this existing article against executable parser examples in `apps/server/src/taskPreparation.test.ts`. Complete-response parsing, duplicate-key rejection and the runtime schema remain the existing implementation; no broader coercions were added.
+
 CHAT-468 reuses the strict complete-response parser and existing schema v2
 validation. Its TC6 marker covers both supplied prefixed responses
 (`Подготовка завершена.` and `Исправленный Development Brief:`); TC7 covers
