@@ -18,6 +18,10 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     evaluateAll: async () => null,
     click: vi.fn(async () => {}),
     press: vi.fn(async () => {}),
+    pressSequentially: vi.fn(async () => {}),
+    focus: vi.fn(async () => {}),
+    clear: vi.fn(async () => {}),
+    selectText: vi.fn(async () => {}),
     fill: vi.fn(async () => {}),
     innerText: async () => 'Текст узла',
     isVisible: async () => true,
@@ -134,7 +138,10 @@ describe('действия, которых у раннера не было (кр
 
   it('ошибка Playwright возвращается значением, а не исключением', async () => {
     const target = locator({ hover: vi.fn(async () => { throw new Error('Timeout 5000ms exceeded\nCall log:\n  - waiting') }) })
-    expect(await runSelectorAction(page(target), { kind: 'hover', selector: '.menu' })).toEqual({ ok: false, error: 'Timeout 5000ms exceeded' })
+    // Круг 7 добавил к отказу разбор причины: сама ошибка по-прежнему значение,
+    // первая строка Playwright, но рядом лежит совет, что делать дальше.
+    expect(await runSelectorAction(page(target, { evaluate: vi.fn(async () => []) }), { kind: 'hover', selector: '.menu' }))
+      .toMatchObject({ ok: false, error: 'Timeout 5000ms exceeded', failure: { kind: 'timeout' } })
   })
 })
 
@@ -193,7 +200,7 @@ describe('описание элемента и прокрутка (круг 12)'
   it('scrollTo сообщает, что элемента нет, а не молчит', async () => {
     expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => true) }), { kind: 'scrollTo', selector: '#a' })).toEqual({ ok: true })
     expect(await runSelectorAction(page(locator({ evaluate: async () => { throw new Error('Элемент #нет не найден') } })), { kind: 'scrollTo', selector: '#нет' }))
-      .toEqual({ ok: false, error: 'Элемент #нет не найден' })
+      .toMatchObject({ ok: false, error: 'Элемент #нет не найден', failure: { kind: 'not-found' } })
   })
 })
 
@@ -216,5 +223,360 @@ describe('однозначные цели', () => {
     const action = { kind: 'upload' as const, selector: 'input', name: 'a', base64: 'YQ==' }
     expect(await runSelectorAction(page(a), action)).toEqual({ ok: true })
     expect((await runSelectorAction(page(locator({ all: async () => [a, b] })), action)).error).toContain('несколько')
+  })
+})
+
+// Клавиатура и буфер обмена: круг 1 «модель работает как пользователь». Клик по
+// элементу и переход на него фокусом — разные события, и ошибки клавиатурной
+// доступности живут ровно в этой разнице.
+describe('фокус, выделение и вставка', () => {
+  it('focus с селектором ставит фокус и возвращает состояние активного элемента', async () => {
+    const target = locator()
+    const p = page(target, { evaluate: vi.fn(async () => ({ selector: '#login', tag: 'input', visibleRing: true, withinDialog: false })) })
+    const result = await runSelectorAction(p, { kind: 'focus', selector: '#login' })
+    expect(target.focus).toHaveBeenCalled()
+    expect(result).toMatchObject({ ok: true, focus: { selector: '#login', visibleRing: true } })
+  })
+
+  it('focus без селектора только читает фокус и не двигает его', async () => {
+    const target = locator()
+    const p = page(target, { evaluate: vi.fn(async () => ({ none: true })) })
+    const result = await runSelectorAction(p, { kind: 'focus' })
+    expect(target.focus).not.toHaveBeenCalled()
+    expect(result).toEqual({ ok: true, focus: { none: true } })
+  })
+
+  it('clear очищает поле через clear(), а не записью пустого значения', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'clear', selector: '#q' })
+    expect(target.clear).toHaveBeenCalled()
+    expect(target.fill).not.toHaveBeenCalled()
+  })
+
+  it('selectText берёт выделение элемента, а при отказе Playwright — через select() самой страницы', async () => {
+    const target = locator({ selectText: vi.fn(async () => { throw new Error('not text node') }) })
+    const p = page(target, { evaluate: vi.fn(async () => 'Выделенный текст') })
+    const result = await runSelectorAction(p, { kind: 'selectText', selector: '#title' })
+    expect(target.evaluate).toBeDefined()
+    expect(result).toEqual({ ok: true, selection: { text: 'Выделенный текст' } })
+  })
+
+  it('copy возвращает выделение и честно помечает обрезку длинного текста', async () => {
+    const long = 'я'.repeat(4_100)
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => long) }), { kind: 'copy' })
+    expect(result.selection?.truncated).toBe(true)
+    expect(result.selection?.text.length).toBe(4_000)
+  })
+
+  it('paste отказывается словами, когда элемент не принимает вставку', async () => {
+    // Первый evaluate — проверка живости узла внутри uniqueTarget, второй — сама вставка.
+    let call = 0
+    const target = locator({ evaluate: vi.fn(async () => (call++ === 0 ? true : false)) })
+    const result = await runSelectorAction(page(target), { kind: 'paste', selector: '#note', text: 'привет' })
+    expect(result).toEqual({ ok: false, error: 'Элемент не принимает вставку текста' })
+  })
+
+  it('paste без селектора целится в элемент в фокусе', async () => {
+    const target = locator({ evaluate: vi.fn(async () => true) })
+    const p = page(target)
+    await runSelectorAction(p, { kind: 'paste', text: 'привет' })
+    expect(target.evaluate).toHaveBeenCalled()
+    expect(p.locator).toHaveBeenCalledWith(':focus')
+  })
+
+  it('press собирает сочетание из модификаторов и повторяет нажатие repeat раз', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'press', selector: '#list', key: 'ArrowDown', modifiers: ['Shift'], repeat: 3 })
+    expect(target.press).toHaveBeenCalledTimes(3)
+    expect(target.press).toHaveBeenCalledWith('Shift+ArrowDown', expect.anything())
+  })
+
+  it('ввод с delay идёт посимвольно после очистки: иначе автодополнение не просыпается', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'type', selector: '#q', text: 'дом', delay: 30 })
+    expect(target.clear).toHaveBeenCalled()
+    expect(target.pressSequentially).toHaveBeenCalledWith('дом', expect.objectContaining({ delay: 30 }))
+    expect(target.fill).not.toHaveBeenCalled()
+  })
+
+  it('focus-order отдаёт обход по Tab и помечает, что список длиннее лимита', async () => {
+    const walk = { total: 7, items: [{ selector: '#a', tag: 'a', name: 'Домой', tabIndex: 0, visible: true }] }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => walk) }), { kind: 'focusOrder', limit: 1 })
+    expect(result).toMatchObject({ ok: true, total: 7, truncated: true })
+    expect(result.focusOrder).toHaveLength(1)
+  })
+
+  it('focus-order на несуществующем поддереве отвечает отказом, а не пустым списком', async () => {
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'focusOrder', selector: '#missing' })
+    expect(result).toEqual({ ok: false, error: 'Элемент не найден' })
+  })
+})
+
+// Круг 2: формы. Человек заполняет форму одним действием и видит, почему она не
+// отправляется; модель до этого круга заполняла поле за вызов и узнавала причину
+// отказа только по тому, что страница решила нарисовать.
+describe('формы целиком', () => {
+  it('fill-form заполняет поля по очереди и отчитывается по каждому', async () => {
+    const target = locator()
+    const result = await runSelectorAction(page(target), {
+      kind: 'fillForm',
+      fields: [{ selector: '#login', value: 'admin' }, { selector: '#remember', checked: true }]
+    })
+    expect(result.ok).toBe(true)
+    expect(result.filled).toEqual([{ selector: '#login', ok: true }, { selector: '#remember', ok: true }])
+    expect(target.check).toHaveBeenCalled()
+  })
+
+  it('частично заполненная форма не выдаётся за успех', async () => {
+    const target = locator({ fill: vi.fn(async () => { throw new Error('поле только для чтения') }), selectOption: vi.fn(async () => { throw new Error('не select') }) })
+    const result = await runSelectorAction(page(target), { kind: 'fillForm', fields: [{ selector: '#login', value: 'admin' }] })
+    expect(result.ok).toBe(false)
+    expect(result.filled?.[0]).toMatchObject({ selector: '#login', ok: false })
+    expect(result.error).toContain('Не заполнено полей')
+  })
+
+  it('поле без значения объясняет, чего не хватает, и не роняет остальные', async () => {
+    const result = await runSelectorAction(page(locator()), {
+      kind: 'fillForm',
+      fields: [{ selector: '#a' } as never, { selector: '#b', value: 'x' }]
+    })
+    expect(result.filled?.[0]).toMatchObject({ ok: false, error: 'Нужен value, values или checked' })
+    expect(result.filled?.[1]).toMatchObject({ ok: true })
+  })
+
+  it('form-state возвращает поля страницы, а отсутствие формы — отказом', async () => {
+    const form = { selector: 'form', total: 2, fields: [{ selector: '#login', tag: 'input' }] }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => form) }), { kind: 'formState' }))
+      .toMatchObject({ ok: true, form: { total: 2 } })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'formState' }))
+      .toEqual({ ok: false, error: 'Форма не найдена' })
+  })
+
+  it('validity отдаёт блокирующие поля с причинами браузера', async () => {
+    const validity = { valid: false, checked: 3, blocking: [{ selector: '#email', message: 'Введите адрес', reasons: ['typeMismatch'] }] }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => validity) }), { kind: 'validity' })
+    expect(result).toMatchObject({ ok: true, validity: { valid: false, blocking: [{ reasons: ['typeMismatch'] }] } })
+  })
+
+  it('submit отказывает словами, когда браузер не пропустил проверку', async () => {
+    let call = 0
+    const target = locator({ evaluate: vi.fn(async () => (call++ === 0 ? true : { ok: false, error: 'Форма не прошла проверку браузера' })) })
+    expect(await runSelectorAction(page(target), { kind: 'submit' })).toEqual({ ok: false, error: 'Форма не прошла проверку браузера' })
+  })
+
+  it('options объясняет отказ на элементе без вариантов выбора', async () => {
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'options', selector: '#name' })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('нет вариантов выбора')
+  })
+
+  it('set с несколькими значениями уходит одним selectOption: по одному они затирают друг друга', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'set', selector: '#tags', values: ['a', 'b'] })
+    expect(target.selectOption).toHaveBeenCalledWith(['a', 'b'], expect.anything())
+  })
+
+  it('upload проверяет общий размер файлов, а не каждый по отдельности', async () => {
+    const big = 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 - 4)
+    const result = await runSelectorAction(page(locator()), {
+      kind: 'upload', selector: '#file', name: 'a.bin', base64: big,
+      files: [{ name: 'a.bin', base64: big }, { name: 'b.bin', base64: big }]
+    })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('вместе больше')
+  })
+
+  it('drop-file отвергает испорченный base64 до обращения к странице', async () => {
+    const target = locator()
+    const result = await runSelectorAction(page(target), { kind: 'dropFile', selector: '#zone', files: [{ name: 'a.txt', base64: 'не base64!' }] })
+    expect(result).toEqual({ ok: false, error: 'Некорректное содержимое base64' })
+    expect(target.evaluate).toBeDefined()
+  })
+})
+
+// Круг 3: добраться до содержимого. Раньше модель имела плоское чтение и слепую
+// прокрутку — на ленивой ленте это либо первый экран, либо бесконечный цикл.
+describe('содержимое и прокрутка', () => {
+  it('count отдаёт и видимые, и все совпадения, а по умолчанию считает видимые', async () => {
+    const target = locator({ count: async () => 7, filter: () => locator({ count: async () => 3 }) })
+    const result = await runSelectorAction(page(target), { kind: 'count', selector: '.row' })
+    expect(result).toMatchObject({ ok: true, total: 3, counted: { visible: 3, all: 7 } })
+  })
+
+  it('count по запросу считает и скрытые', async () => {
+    const target = locator({ count: async () => 7, filter: () => locator({ count: async () => 3 }) })
+    const result = await runSelectorAction(page(target), { kind: 'count', selector: '.row', visibleOnly: false })
+    expect(result.total).toBe(7)
+  })
+
+  it('scroll-until останавливается, как только цель стала видимой', async () => {
+    const visible = locator({ count: async () => 1 })
+    const target = locator({ filter: () => visible })
+    const scrolled = vi.fn(async () => ({ moved: 800, top: 800, atBottom: false }))
+    const result = await runSelectorAction(page(target, { evaluate: scrolled }), { kind: 'scrollUntil', text: 'Итого' })
+    expect(result).toMatchObject({ ok: true, scrolledUntil: { found: true, scrolls: 0 } })
+    expect(scrolled).not.toHaveBeenCalled()
+  })
+
+  it('scroll-until честно говорит, что лента кончилась, а цель не появилась', async () => {
+    const hidden = locator({ count: async () => 0 })
+    const target = locator({ filter: () => hidden })
+    const result = await runSelectorAction(
+      page(target, { evaluate: vi.fn(async () => ({ moved: 0, top: 1200, atBottom: true })) }),
+      { kind: 'scrollUntil', selector: '#last', maxScrolls: 5 }
+    )
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('конца ленты')
+    expect(result.scrolledUntil).toMatchObject({ found: false, atBottom: true })
+  })
+
+  it('scroll-until не крутит бесконечно и сообщает число прокруток', async () => {
+    const hidden = locator({ count: async () => 0 })
+    const target = locator({ filter: () => hidden })
+    const scrolled = vi.fn(async () => ({ moved: 800, top: 800, atBottom: false }))
+    const result = await runSelectorAction(page(target, { evaluate: scrolled }), { kind: 'scrollUntil', selector: '#x', maxScrolls: 2 })
+    expect(result.ok).toBe(false)
+    expect(scrolled).toHaveBeenCalledTimes(3)
+    expect(result.scrolledUntil?.scrolls).toBe(3)
+  })
+
+  it('table возвращает строки записями, а пустую таблицу — отказом', async () => {
+    const table = { selector: 'table', headings: ['Имя'], total: 3, offset: 0, rows: [{ Имя: 'Алиса' }], nextOffset: 1 }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => table) }), { kind: 'table', selector: 'table' }))
+      .toMatchObject({ ok: true, table: { nextOffset: 1 } })
+    expect((await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'table', selector: 'table' })).ok).toBe(false)
+  })
+
+  it('list отдаёт блоки со своими кнопками', async () => {
+    const list = { selector: '.card', total: 2, offset: 0, items: [{ selector: '.card:nth-child(1)', text: 'Карточка', actions: [{ selector: 'button', text: 'Открыть' }] }] }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => list) }), { kind: 'list', selector: '.card' })
+    expect(result.list?.items[0].actions?.[0].text).toBe('Открыть')
+  })
+
+  it('metrics и measure отдают геометрию, а отсутствующий элемент — отказ', async () => {
+    const metrics = { scroll: { top: 0, left: 0 }, page: { width: 1280, height: 4000 }, viewport: { width: 1280, height: 800 }, screensBelow: 4, atBottom: false }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => metrics) }), { kind: 'metrics' })).toMatchObject({ ok: true, metrics: { screensBelow: 4 } })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'measure', selector: '#gone' })).toEqual({ ok: false, error: 'Элемент не найден' })
+  })
+
+  it('highlight отказывается словами, когда подсвечивать нечего', async () => {
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'highlight', selector: '#gone' }))
+      .toEqual({ ok: false, error: 'Элемент не найден' })
+  })
+})
+
+// Круг 4: видео и аудио страницы — то, чем человек управляет кнопками плеера.
+describe('медиа страницы', () => {
+  it('отдаёт состояние элементов и понимает пустую страницу', async () => {
+    const media = [{ selector: 'video:nth-of-type(1)', kind: 'video', paused: true, muted: false, currentTime: 0, duration: 12.5, volume: 1, readyState: 4 }]
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => media) }), { kind: 'media' }))
+      .toMatchObject({ ok: true, media: [{ duration: 12.5 }] })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'media' }))
+      .toEqual({ ok: false, error: 'На странице нет видео или аудио' })
+  })
+
+  it('отказ автовоспроизведения возвращается причиной, а не молчанием', async () => {
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => ({ error: 'play() failed because the user didn\'t interact' })) }), { kind: 'media', do: 'play' })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('отклонено страницей')
+  })
+})
+
+// Круг 5: набор проверок одним вердиктом — как человек описывает экран вслух.
+describe('проверки страницы', () => {
+  it('сводит несколько условий в один вердикт', async () => {
+    const target = locator({ innerText: async () => 'Итого 500', count: async () => 3, filter: () => locator({ count: async () => 3 }) })
+    const result = await runSelectorAction(page(target), {
+      kind: 'expect',
+      checks: [{ is: 'text', value: 'Итого 500' }, { is: 'count', selector: '.row', value: 3 }]
+    })
+    expect(result.expected?.passed).toBe(true)
+    expect(result.expected?.checks).toHaveLength(2)
+  })
+
+  it('несошедшаяся проверка показывает, что на странице вместо ожидаемого', async () => {
+    const target = locator({ innerText: async () => 'Итого 320' })
+    const result = await runSelectorAction(page(target), { kind: 'expect', checks: [{ is: 'text', value: 'Итого 500' }] })
+    expect(result.expected?.passed).toBe(false)
+    expect(result.expected?.checks[0].actual).toContain('320')
+  })
+
+  it('проверка отсутствия текста сходится, когда текста нет', async () => {
+    const target = locator({ innerText: async () => 'Готово' })
+    const result = await runSelectorAction(page(target), { kind: 'expect', checks: [{ is: 'text', value: 'Ошибка', absent: true }] })
+    expect(result.expected?.passed).toBe(true)
+  })
+
+  it('число элементов сравнивается с видимыми, а не со всеми', async () => {
+    const visible = locator({ count: async () => 2 })
+    const target = locator({ count: async () => 5, filter: () => visible })
+    const result = await runSelectorAction(page(target), { kind: 'expect', checks: [{ is: 'count', selector: '.row', value: 2 }] })
+    expect(result.expected?.passed).toBe(true)
+    expect(result.expected?.checks[0].actual).toBe('2 шт.')
+  })
+
+  it('адрес сверяется с публичным, а не внутренним', async () => {
+    const result = await runSelectorAction(page(locator()), { kind: 'expect', checks: [{ is: 'url', value: 'https://a.b/*' }] },
+      () => 'https://a.b/page', 'http://internal:8787/page')
+    expect(result.expected?.passed).toBe(true)
+  })
+
+  it('упавшая проверка не отменяет остальные', async () => {
+    const target = locator({ innerText: async () => { throw new Error('элемент исчез') } })
+    const result = await runSelectorAction(page(target), {
+      kind: 'expect',
+      checks: [{ is: 'text', selector: '#gone', value: 'x' }, { is: 'visible', selector: '#a' }]
+    })
+    expect(result.expected?.checks).toHaveLength(2)
+    expect(result.expected?.passed).toBe(false)
+  })
+})
+
+// Круг 6: данные страницы — хранилище, исходник и выгрузка таблицы.
+describe('данные страницы', () => {
+  it('хранилище возвращается по областям вместе с origin', async () => {
+    const storage = { origin: 'https://a.b', local: [{ key: 'theme', value: 'dark', bytes: 4 }], localTotal: 1, session: [], sessionTotal: 0 }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => storage) }), { kind: 'storage' })
+    expect(result).toMatchObject({ ok: true, storage: { origin: 'https://a.b', localTotal: 1 } })
+  })
+
+  it('исходник отдаётся порциями и сообщает продолжение', async () => {
+    const source = { html: '<div>', total: 1000, offset: 0, nextOffset: 400 }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => source) }), { kind: 'source' }))
+      .toMatchObject({ ok: true, source: { nextOffset: 400 } })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'source', selector: '#gone' }))
+      .toEqual({ ok: false, error: 'Элемент не найден' })
+  })
+
+  it('csv отдаёт текст и число строк, а пустую таблицу — отказом', async () => {
+    const csv = { text: 'Имя,Роль\nАлиса,админ', rows: 2, total: 2, offset: 0 }
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => csv) }), { kind: 'csv', selector: 'table' }))
+      .toMatchObject({ ok: true, csv: { rows: 2 } })
+    expect((await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'csv', selector: 'table' })).ok).toBe(false)
+  })
+})
+
+// Круг 7: отказ объясняется и предлагает похожие элементы страницы.
+describe('объяснение отказа', () => {
+  it('к отказу прикладывается причина и совет', async () => {
+    const target = locator({ count: async () => 0, filter: () => locator({ count: async () => 0 }) })
+    const result = await runSelectorAction(page(target, { evaluate: vi.fn(async () => []) }), { kind: 'click', selector: '#save' })
+    expect(result.ok).toBe(false)
+    expect(result.failure?.kind).toBe('not-found')
+    expect(result.failure?.advice).toContain('find')
+  })
+
+  it('похожие элементы страницы попадают в отказ: «нет элемента» — половина ответа', async () => {
+    const candidates = [{ text: 'Сохранить как', tag: 'button', visible: true }]
+    const target = locator({ count: async () => 0, filter: () => locator({ count: async () => 0 }) })
+    const result = await runSelectorAction(page(target, { evaluate: vi.fn(async () => candidates) }), { kind: 'click', text: 'Сохранить' })
+    expect(result.failure?.candidates).toEqual(candidates)
+  })
+
+  it('недоступная страница не мешает вернуть причину', async () => {
+    const target = locator({ count: async () => 0, filter: () => locator({ count: async () => 0 }) })
+    const result = await runSelectorAction(page(target, { evaluate: vi.fn(async () => { throw new Error('Target closed') }) }), { kind: 'click', selector: '#save' })
+    expect(result.ok).toBe(false)
+    expect(result.failure?.kind).toBe('not-found')
   })
 })

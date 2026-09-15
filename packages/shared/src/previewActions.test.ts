@@ -477,3 +477,161 @@ describe('isPreviewAction: drag, set, upload, viewport, a11y, forward', () => {
     expect(isPreviewAction({ kind: 'click', selector: '#a', modifiers: ['hyper'] })).toBe(false)
   })
 })
+
+// Валидация новых клавиатурных действий: конверт проверяется и на сервере, и в
+// клиенте, поэтому правила должны быть одни.
+describe('действия клавиатуры, фокуса и буфера', () => {
+  it('сочетание требует хотя бы один известный модификатор', () => {
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a', modifiers: ['ctrl'] })).toBe(true)
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a', modifiers: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a', modifiers: ['primary'] })).toBe(true)
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a', modifiers: ['super'] })).toBe(false)
+    expect(isPreviewAction({ kind: 'hotkey', key: 'a' })).toBe(false)
+  })
+
+  it('повтор нажатия ограничен разумным потолком', () => {
+    expect(isPreviewAction({ kind: 'press', key: 'Tab', repeat: 50 })).toBe(true)
+    expect(isPreviewAction({ kind: 'press', key: 'Tab', repeat: 51 })).toBe(false)
+    expect(isPreviewAction({ kind: 'press', key: 'Tab', repeat: 0 })).toBe(false)
+    expect(isPreviewAction({ kind: 'press', key: 'Tab', repeat: 1.5 })).toBe(false)
+  })
+
+  it('фокус и выделение допускают отсутствие селектора, очистка — нет', () => {
+    // `focus` ставит фокус и требует цель (так в main); «где сейчас курсор» —
+    // это отдельный вид `focusState`, который сознательно ничего не двигает.
+    expect(isPreviewAction({ kind: 'focusState' })).toBe(true)
+    expect(isPreviewAction({ kind: 'focus' })).toBe(false)
+    expect(isPreviewAction({ kind: 'selectText' })).toBe(true)
+    expect(isPreviewAction({ kind: 'copy' })).toBe(true)
+    expect(isPreviewAction({ kind: 'clear' })).toBe(false)
+    expect(isPreviewAction({ kind: 'clear', selector: '#q' })).toBe(true)
+  })
+
+  it('вставке нужен текст, а обходу по Tab — целый лимит в границах', () => {
+    expect(isPreviewAction({ kind: 'paste', text: 'привет' })).toBe(true)
+    expect(isPreviewAction({ kind: 'paste' })).toBe(false)
+    expect(isPreviewAction({ kind: 'focusOrder', limit: 200 })).toBe(true)
+    expect(isPreviewAction({ kind: 'focusOrder', limit: 201 })).toBe(false)
+  })
+
+  it('задержка посимвольного ввода не превращается в бесконечную паузу', () => {
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'a', delay: 200 })).toBe(true)
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'a', delay: 201 })).toBe(false)
+    expect(isPreviewAction({ kind: 'type', selector: '#q', text: 'a', delay: -1 })).toBe(false)
+  })
+})
+
+// Круг 2: формы. Конверт проверяется и сервером, и клиентом — правила одни.
+describe('действия форм', () => {
+  it('заполнение формы требует хотя бы одно осмысленное поле', () => {
+    expect(isPreviewAction({ kind: 'fillForm', fields: [{ selector: '#a', value: 'x' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'fillForm', fields: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'fillForm', fields: [{ selector: '#a' }] })).toBe(false)
+    expect(isPreviewAction({ kind: 'fillForm', fields: [{ value: 'x' }] })).toBe(false)
+  })
+
+  it('несколько значений допускаются только непустым списком', () => {
+    expect(isPreviewAction({ kind: 'set', selector: '#tags', values: ['a'] })).toBe(true)
+    expect(isPreviewAction({ kind: 'set', selector: '#tags', values: [] })).toBe(false)
+  })
+
+  it('перетаскивание файлов ограничено и числом файлов, и общим объёмом', () => {
+    expect(isPreviewAction({ kind: 'dropFile', selector: '#zone', files: [{ name: 'a.txt', base64: '' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'dropFile', selector: '#zone', files: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'dropFile', selector: '#zone', files: [{ name: '', base64: '' }] })).toBe(false)
+    const half = 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 - 4)
+    expect(isPreviewAction({ kind: 'dropFile', selector: '#zone', files: [{ name: 'a', base64: half }, { name: 'b', base64: half }] })).toBe(false)
+  })
+
+  it('чтение формы, проверки и отправка работают и без селектора', () => {
+    expect(isPreviewAction({ kind: 'formState' })).toBe(true)
+    expect(isPreviewAction({ kind: 'validity' })).toBe(true)
+    expect(isPreviewAction({ kind: 'submit' })).toBe(true)
+    expect(isPreviewAction({ kind: 'options' })).toBe(false)
+    expect(isPreviewAction({ kind: 'options', selector: '#city' })).toBe(true)
+  })
+
+  it('загрузка нескольких файлов не требует одиночных полей', () => {
+    expect(isPreviewAction({ kind: 'upload', selector: '#f', files: [{ name: 'a.txt', base64: '' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'upload', selector: '#f', files: [] })).toBe(false)
+  })
+})
+
+// Круг 3: добраться до содержимого.
+describe('действия чтения содержимого', () => {
+  it('прокрутка до цели требует саму цель и ограничена числом шагов', () => {
+    expect(isPreviewAction({ kind: 'scrollUntil', text: 'Итого' })).toBe(true)
+    expect(isPreviewAction({ kind: 'scrollUntil' })).toBe(false)
+    expect(isPreviewAction({ kind: 'scrollUntil', selector: '#x', maxScrolls: 51 })).toBe(false)
+    expect(isPreviewAction({ kind: 'scrollUntil', selector: '#x', step: 0 })).toBe(false)
+  })
+
+  it('счёт, таблица, список, метрики и рамка проверяют свои границы', () => {
+    expect(isPreviewAction({ kind: 'count', selector: '.row' })).toBe(true)
+    expect(isPreviewAction({ kind: 'count' })).toBe(false)
+    expect(isPreviewAction({ kind: 'table', selector: 'table', limit: 200 })).toBe(true)
+    expect(isPreviewAction({ kind: 'table', selector: 'table', limit: 201 })).toBe(false)
+    expect(isPreviewAction({ kind: 'list', selector: '.card', offset: 0 })).toBe(true)
+    expect(isPreviewAction({ kind: 'metrics' })).toBe(true)
+    expect(isPreviewAction({ kind: 'measure', selector: '#a' })).toBe(true)
+    expect(isPreviewAction({ kind: 'highlight', selector: '#a', ms: 99 })).toBe(false)
+    expect(isPreviewAction({ kind: 'highlight', selector: '#a', ms: 2000 })).toBe(true)
+  })
+})
+
+// Круг 4: среда браузера и медиа.
+describe('среда браузера и медиа', () => {
+  it('эмуляция требует хотя бы одну настройку и проверяет координаты', () => {
+    expect(isPreviewAction({ kind: 'environment', colorScheme: 'dark' })).toBe(true)
+    expect(isPreviewAction({ kind: 'environment' })).toBe(false)
+    expect(isPreviewAction({ kind: 'environment', colorScheme: 'sepia' })).toBe(false)
+    expect(isPreviewAction({ kind: 'environment', geolocation: { latitude: 55, longitude: 37 } })).toBe(true)
+    expect(isPreviewAction({ kind: 'environment', geolocation: { latitude: 91, longitude: 37 } })).toBe(false)
+    expect(isPreviewAction({ kind: 'environment', geolocation: null })).toBe(true)
+  })
+
+  it('медиа принимает известные действия и разумную перемотку', () => {
+    expect(isPreviewAction({ kind: 'media' })).toBe(true)
+    expect(isPreviewAction({ kind: 'media', do: 'play' })).toBe(true)
+    expect(isPreviewAction({ kind: 'media', do: 'rewind' })).toBe(false)
+    expect(isPreviewAction({ kind: 'media', seconds: -1 })).toBe(false)
+  })
+})
+
+// Круг 5: проверки, лента сессии и заметки модели.
+describe('проверки, лента и заметки', () => {
+  it('набор проверок ограничен и проверяет каждую по своему виду', () => {
+    expect(isPreviewAction({ kind: 'expect', checks: [{ is: 'text', value: 'Итого' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'expect', checks: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'expect', checks: [{ is: 'visible' }] })).toBe(false)
+    expect(isPreviewAction({ kind: 'expect', checks: [{ is: 'count', selector: '.row', value: 1.5 }] })).toBe(false)
+    expect(isPreviewAction({ kind: 'expect', checks: [{ is: 'nothing', value: 'x' }] })).toBe(false)
+  })
+
+  it('заметка не может быть пустой, а лента ограничена по глубине', () => {
+    expect(isPreviewAction({ kind: 'note', text: 'проверяю форму входа' })).toBe(true)
+    expect(isPreviewAction({ kind: 'note', text: '   ' })).toBe(false)
+    expect(isPreviewAction({ kind: 'history', limit: 200 })).toBe(true)
+    expect(isPreviewAction({ kind: 'history', limit: 201 })).toBe(false)
+    expect(isPreviewAction({ kind: 'history', actor: 'robot' })).toBe(false)
+  })
+})
+
+// Круг 6: хранилище, исходник и CSV.
+describe('данные страницы', () => {
+  it('запись в хранилище требует ключ и значение, удаление — ключ', () => {
+    expect(isPreviewAction({ kind: 'storage' })).toBe(true)
+    expect(isPreviewAction({ kind: 'storage', do: 'set', key: 'a', value: 'b' })).toBe(true)
+    expect(isPreviewAction({ kind: 'storage', do: 'set', key: 'a' })).toBe(false)
+    expect(isPreviewAction({ kind: 'storage', do: 'remove' })).toBe(false)
+    expect(isPreviewAction({ kind: 'storage', area: 'disk' })).toBe(false)
+  })
+
+  it('исходник и CSV ограничены разумными порциями', () => {
+    expect(isPreviewAction({ kind: 'source', limit: 20_000 })).toBe(true)
+    expect(isPreviewAction({ kind: 'source', limit: 20_001 })).toBe(false)
+    expect(isPreviewAction({ kind: 'csv', selector: 'table', limit: 500 })).toBe(true)
+    expect(isPreviewAction({ kind: 'csv', selector: 'table', limit: 501 })).toBe(false)
+    expect(isPreviewAction({ kind: 'csv' })).toBe(false)
+  })
+})

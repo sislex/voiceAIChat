@@ -126,6 +126,29 @@ export interface PreviewFillField {
   secret?: boolean
 }
 
+export const PREVIEW_HOTKEY_MODIFIERS = ['shift', 'ctrl', 'alt', 'meta', 'primary'] as const
+export type PreviewHotkeyModifier = (typeof PREVIEW_HOTKEY_MODIFIERS)[number]
+
+export type PreviewExpectation =
+  | { is: 'text'; selector?: string; value: string; absent?: boolean }
+  | { is: 'visible'; selector: string; absent?: boolean }
+  | { is: 'count'; selector: string; value: number }
+  | { is: 'value'; selector: string; value: string }
+  | { is: 'url'; value: string }
+
+export interface PreviewFormField {
+  selector: string
+  value?: string
+  values?: string[]
+  checked?: boolean
+}
+
+export interface PreviewUploadFile {
+  name: string
+  mimeType?: string
+  base64: string
+}
+
 /** Точка или элемент — источник/цель перетаскивания. */
 export interface PreviewDragPoint {
   selector?: string
@@ -163,7 +186,7 @@ export type PreviewAction = BrowserFrameTarget & (
   /** perKey — посимвольный ввод с событиями клавиатуры: для полей, слушающих keydown (маски, автодополнение). */
   /** secret — значение не возвращать и не записывать в сценарий, даже если поле не помечено как пароль. */
   /** blur — убрать фокус после ввода: формы часто проверяют поле именно по blur. */
-  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; secret?: boolean; blur?: boolean; diagnostic?: boolean }
+  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; secret?: boolean; blur?: boolean; delay?: number; diagnostic?: boolean }
   /** visible — только то, что сейчас в видимой области окна: экран пользователя, а не весь документ. */
   /** section — прочитать раздел под заголовком с этим текстом, как человек листает до нужного места. */
   /** brief — короткое человеческое описание страницы вместо полной структуры. */
@@ -211,11 +234,72 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Перетаскивание pointer-событиями (или HTML5 DnD у draggable) от from к to. */
   | { kind: 'drag'; from: PreviewDragPoint; to: PreviewDragPoint; diagnostic?: boolean }
   /** Установить значение сложного контрола: select (по value или подписи option), checkbox/radio (checked), date/range (value). */
-  | { kind: 'set'; selector: string; value?: string; checked?: boolean; diagnostic?: boolean }
+  | { kind: 'set'; selector: string; value?: string; values?: string[]; checked?: boolean; diagnostic?: boolean }
   /** Загрузить файл в input type=file: содержимое приходит base64 от модели. */
-  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string; diagnostic?: boolean }
+  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string; files?: PreviewUploadFile[]; diagnostic?: boolean }
   /** Ширина вьюпорта превью в пикселях (исполняет Reader, не страница); 0 — адаптив. */
   | { kind: 'viewport'; width: number; diagnostic?: boolean }
+  /**
+   * Keyboard shortcut with modifiers held, the way a person presses it
+   * (Control+A, Meta+C, Shift+Tab). Separate from `press` because the model
+   * kept spelling shortcuts as three keyDown/keyUp calls and lost a modifier
+   * in the middle, leaving the page typing in uppercase forever.
+   */
+  | { kind: 'hotkey'; key: string; modifiers: PreviewHotkeyModifier[]; repeat?: number; selector?: string; diagnostic?: boolean }
+  /** Empty an input the way Ctrl+A Delete does, firing input/change. */
+  | { kind: 'clear'; selector: string; diagnostic?: boolean }
+  /** Select the text of an element (or the whole page) as a drag would. */
+  | { kind: 'selectText'; selector?: string; diagnostic?: boolean }
+  /** Read the current selection — what Ctrl+C would copy. */
+  | { kind: 'copy'; diagnostic?: boolean }
+  /** Paste text into the focused field (or `selector`), firing a paste event. */
+  | { kind: 'paste'; selector?: string; text: string; diagnostic?: boolean }
+  /** Tab order of the page: the path a keyboard-only person walks, in order. */
+  | { kind: 'focusOrder'; selector?: string; limit?: number; diagnostic?: boolean }
+  /** Прокручивать ленту, пока не появится цель или не кончится содержимое. */
+  | { kind: 'scrollUntil'; selector?: string; text?: string; container?: string; maxScrolls?: number; step?: number; diagnostic?: boolean }
+  /** Сколько узлов подходит под условие — проверка без чтения их текста. */
+  | { kind: 'count'; selector?: string; text?: string; visibleOnly?: boolean; diagnostic?: boolean }
+  /** Таблица строками под заголовками, с порциями. */
+  | { kind: 'table'; selector: string; offset?: number; limit?: number; columns?: string[]; diagnostic?: boolean }
+  /** Повторяющиеся блоки (карточки, лента) записями со своими действиями. */
+  | { kind: 'list'; selector: string; offset?: number; limit?: number; diagnostic?: boolean }
+  /** Куда прокручена страница и сколько её осталось ниже. */
+  | { kind: 'metrics'; diagnostic?: boolean }
+  /** Геометрия элемента: виден ли, перекрыт ли, сколько прокрутки до него. */
+  | { kind: 'measure'; selector: string; diagnostic?: boolean }
+  /** Обвести элемент в кадре, чтобы человек увидел, о чём речь. */
+  | { kind: 'highlight'; selector: string; ms?: number; diagnostic?: boolean }
+  /** Видео и аудио страницы: состояние и управление, как у человека. */
+  | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number; diagnostic?: boolean }
+  /** Хранилище сайта: что страница держит между перезагрузками. */
+  | { kind: 'storage'; area?: 'local' | 'session' | 'both'; do?: 'read' | 'set' | 'remove' | 'clear'; key?: string; value?: string; limit?: number; diagnostic?: boolean }
+  /** Исходник страницы порциями — та самая разметка, что смотрит человек. */
+  | { kind: 'source'; selector?: string; offset?: number; limit?: number; diagnostic?: boolean }
+  /** Таблица как CSV: форма, которую человек вставляет в таблицу. */
+  | { kind: 'csv'; selector: string; offset?: number; limit?: number; diagnostic?: boolean }
+  /** Несколько проверок разом с общим вердиктом — как человек описывает экран. */
+  | { kind: 'expect'; checks: PreviewExpectation[]; diagnostic?: boolean }
+  /** Что происходило в сессии: обе стороны, в порядке событий. */
+  | { kind: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean; diagnostic?: boolean }
+  /** Строка от модели в панель человека: чем она сейчас занята. */
+  | { kind: 'note'; text: string; diagnostic?: boolean }
+  /** Среда браузера: тема системы, уменьшенная анимация, контраст, сеть, место. */
+  | { kind: 'environment'; colorScheme?: 'light' | 'dark' | 'no-preference'; reducedMotion?: 'reduce' | 'no-preference'; forcedColors?: 'active' | 'none'; offline?: boolean; geolocation?: { latitude: number; longitude: number; accuracy?: number } | null; permissions?: string[]; diagnostic?: boolean }
+  /** Заполнить форму целиком: человек заполняет её одним действием, а не полем за вызов. */
+  | { kind: 'fillForm'; selector?: string; fields: PreviewFormField[]; delay?: number; diagnostic?: boolean }
+  /** Что сейчас в форме: поля, значения, обязательность — проверка результата заполнения. */
+  | { kind: 'formState'; selector?: string; limit?: number; diagnostic?: boolean }
+  /** Валидация браузера: какие поля не дают отправить форму и почему. */
+  | { kind: 'validity'; selector?: string; diagnostic?: boolean }
+  /** Отправить форму так же, как Enter: с валидацией и обработчиком submit. */
+  | { kind: 'submit'; selector?: string; diagnostic?: boolean }
+  /** Варианты контрола: select, datalist, группа radio. */
+  | { kind: 'options'; selector: string; limit?: number; diagnostic?: boolean }
+  /** Перетащить файлы в зону загрузки — путь без input[type=file]. */
+  | { kind: 'dropFile'; selector: string; files: PreviewUploadFile[]; diagnostic?: boolean }
+  /** Где сейчас фокус: чтение, которое ничего не двигает. */
+  | { kind: 'focusState'; diagnostic?: boolean }
   /** Дерево доступности страницы: роли и имена как их видит скринридер. */
   | { kind: 'a11y'; selector?: string; limit?: number; diagnostic?: boolean }
   /** Состояние панели без обращения к странице: подключена ли, что открыто, загружена ли страница. */
@@ -881,7 +965,10 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         bounded(value.text, L.text) &&
         (value.submit === undefined || typeof value.submit === 'boolean') &&
         (value.append === undefined || typeof value.append === 'boolean') &&
-        (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean') && (value.blur === undefined || typeof value.blur === 'boolean')
+        (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean') && (value.blur === undefined || typeof value.blur === 'boolean') &&
+        // Посимвольный ввод: пауза больше пятой доли секунды превращает
+        // проверку в ожидание, а не в ввод.
+        (value.delay === undefined || (typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay >= 0 && value.delay <= 200))
     case 'read':
       return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) && optBounded(value.around, L.text) && (value.markdown === undefined || typeof value.markdown === 'boolean') && (value.main === undefined || typeof value.main === 'boolean') &&
         (value.next === undefined || typeof value.next === 'boolean') && (value.toc === undefined || typeof value.toc === 'boolean') && optBounded(value.table, L.text) &&
@@ -973,6 +1060,11 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'focus':
       return optBounded(value.selector, L.selector) && optBounded(value.field, L.text) && optBounded(value.near, L.text) &&
         (bounded(value.selector, L.selector) && value.selector.length > 0 || bounded(value.field, L.text) && value.field.trim().length > 0)
+    /** Чтение фокуса — отдельный вид: `focus` ставит фокус и требует цель, а
+     *  «где сейчас курсор» обязано ничего не двигать, иначе обход формы табом
+     *  превращается в бесконечный цикл «спросил — сам же и сдвинул». */
+    case 'focusState':
+      return true
     case 'select':
       return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) &&
         (value.text !== undefined || value.selector !== undefined)
@@ -1017,9 +1109,15 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         bounded(value.selector, L.selector) &&
         optBounded(value.value, L.text) &&
         (value.checked === undefined || typeof value.checked === 'boolean') &&
-        (value.value !== undefined || value.checked !== undefined)
+        // Несколько значений — это select multiple: по одному они затирают
+        // друг друга, поэтому список считается полноценным «что выбрать».
+        (value.values === undefined || (Array.isArray(value.values) && value.values.length > 0 && value.values.length <= 64 && value.values.every((item) => bounded(item, L.text)))) &&
+        (value.value !== undefined || value.values !== undefined || value.checked !== undefined)
       )
     case 'upload':
+      // Несколько файлов передаются массивом; одиночная форма остаётся ради
+      // совместимости с уже написанными ходами модели.
+      if (value.files !== undefined) return bounded(value.selector, L.selector) && isUploadFiles(value.files)
       return (
         bounded(value.selector, L.selector) &&
         bounded(value.name, 255) && value.name.length > 0 &&
@@ -1028,6 +1126,113 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       )
     case 'viewport':
       return typeof value.width === 'number' && Number.isFinite(value.width) && value.width >= 0 && value.width <= 10_000
+    case 'storage':
+      return (
+        (value.area === undefined || ['local', 'session', 'both'].includes(value.area as string)) &&
+        (value.do === undefined || ['read', 'set', 'remove', 'clear'].includes(value.do as string)) &&
+        optBounded(value.key, 400) && optBounded(value.value, 100_000) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        // Запись без ключа поменяла бы неизвестно что, а `set` без значения —
+        // это `remove`, и лучше сказать об этом, чем угадывать.
+        (value.do !== 'set' || (typeof value.key === 'string' && typeof value.value === 'string')) &&
+        (value.do !== 'remove' || typeof value.key === 'string')
+      )
+    case 'source':
+      return optBounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000))
+    case 'csv':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 500))
+    case 'expect':
+      return Array.isArray(value.checks) && value.checks.length > 0 && value.checks.length <= 20 && value.checks.every((check) => isExpectation(check))
+    case 'history':
+      return (value.actor === undefined || value.actor === 'user' || value.actor === 'assistant') &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        (value.clear === undefined || typeof value.clear === 'boolean')
+    case 'note':
+      return bounded(value.text, 500) && value.text.trim().length > 0
+    case 'media':
+      return optBounded(value.selector, L.selector) &&
+        (value.do === undefined || ['play', 'pause', 'mute', 'unmute'].includes(value.do as string)) &&
+        (value.seconds === undefined || (typeof value.seconds === 'number' && Number.isFinite(value.seconds) && value.seconds >= 0 && value.seconds <= 86_400))
+    case 'environment':
+      return (
+        (value.colorScheme === undefined || ['light', 'dark', 'no-preference'].includes(value.colorScheme as string)) &&
+        (value.reducedMotion === undefined || ['reduce', 'no-preference'].includes(value.reducedMotion as string)) &&
+        (value.forcedColors === undefined || ['active', 'none'].includes(value.forcedColors as string)) &&
+        (value.offline === undefined || typeof value.offline === 'boolean') &&
+        (value.geolocation === undefined || value.geolocation === null || (record(value.geolocation) &&
+          typeof value.geolocation.latitude === 'number' && Math.abs(value.geolocation.latitude) <= 90 &&
+          typeof value.geolocation.longitude === 'number' && Math.abs(value.geolocation.longitude) <= 180 &&
+          (value.geolocation.accuracy === undefined || (typeof value.geolocation.accuracy === 'number' && value.geolocation.accuracy >= 0)))) &&
+        (value.permissions === undefined || (Array.isArray(value.permissions) && value.permissions.length <= 16 && value.permissions.every((item) => bounded(item, 64)))) &&
+        ['colorScheme', 'reducedMotion', 'forcedColors', 'offline', 'geolocation', 'permissions'].some((key) => value[key] !== undefined)
+      )
+    case 'highlight':
+      return bounded(value.selector, L.selector) &&
+        (value.ms === undefined || (typeof value.ms === 'number' && Number.isFinite(value.ms) && value.ms >= 100 && value.ms <= 10_000))
+    case 'focusOrder':
+      return optBounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200))
+    case 'fillForm':
+      return (
+        optBounded(value.selector, L.selector) &&
+        Array.isArray(value.fields) && value.fields.length > 0 && value.fields.length <= 50 &&
+        value.fields.every((field) => isFormField(field)) &&
+        (value.delay === undefined || (typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay >= 0 && value.delay <= 200))
+      )
+    case 'formState':
+      return optBounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200))
+    case 'validity':
+    case 'submit':
+      return optBounded(value.selector, L.selector)
+    case 'options':
+      return bounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 500))
+    case 'dropFile':
+      return bounded(value.selector, L.selector) && isUploadFiles(value.files)
+    case 'hotkey':
+      return (
+        typeof value.key === 'string' && value.key.length >= 1 && value.key.length <= 32 &&
+        Array.isArray(value.modifiers) && value.modifiers.length > 0 && value.modifiers.length <= 4 &&
+        value.modifiers.every((item) => (PREVIEW_HOTKEY_MODIFIERS as readonly string[]).includes(item as string)) &&
+        optBounded(value.selector, L.selector) && keyRepeat(value.repeat)
+      )
+    case 'selectText':
+      return optBounded(value.selector, L.selector)
+    case 'clear':
+      return bounded(value.selector, L.selector)
+    case 'copy':
+      return true
+    case 'paste':
+      return bounded(value.text, L.text) && optBounded(value.selector, L.selector)
+    case 'scrollUntil':
+      return (
+        optBounded(value.selector, L.selector) && optBounded(value.text, L.text) && optBounded(value.container, L.selector) &&
+        (value.selector !== undefined || value.text !== undefined) &&
+        (value.maxScrolls === undefined || (typeof value.maxScrolls === 'number' && Number.isInteger(value.maxScrolls) && value.maxScrolls >= 1 && value.maxScrolls <= 50)) &&
+        (value.step === undefined || (typeof value.step === 'number' && Number.isFinite(value.step) && value.step > 0 && value.step <= 10_000))
+      )
+    case 'count':
+      return optBounded(value.selector, L.selector) && optBounded(value.text, L.text) &&
+        (value.selector !== undefined || value.text !== undefined) &&
+        (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean')
+    case 'table':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        (value.columns === undefined || (Array.isArray(value.columns) && value.columns.length > 0 && value.columns.length <= 32 && value.columns.every((item) => bounded(item, 200))))
+    case 'list':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 100))
+    case 'metrics':
+      return true
+    case 'measure':
+      return bounded(value.selector, L.selector)
     case 'a11y':
       return optBounded(value.selector, L.selector) && (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit)))
     default:
@@ -1037,6 +1242,47 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
 
 function validDiagnosticOptions(value: Record<string, unknown>): boolean {
   try { normalizeBrowserDiagnosticOptions(value); return true } catch { return false }
+}
+
+function isExpectation(value: unknown): boolean {
+  if (!record(value)) return false
+  const L = PREVIEW_ACTION_LIMITS
+  if (value.is === 'text') return bounded(value.value, L.text) && optBounded(value.selector, L.selector) && (value.absent === undefined || typeof value.absent === 'boolean')
+  if (value.is === 'visible') return bounded(value.selector, L.selector) && (value.absent === undefined || typeof value.absent === 'boolean')
+  if (value.is === 'count') return bounded(value.selector, L.selector) && typeof value.value === 'number' && Number.isInteger(value.value) && value.value >= 0 && value.value <= 100_000
+  if (value.is === 'value') return bounded(value.selector, L.selector) && typeof value.value === 'string' && value.value.length <= L.text
+  if (value.is === 'url') return bounded(value.value, L.url)
+  return false
+}
+
+function isFormField(value: unknown): boolean {
+  if (!record(value)) return false
+  const L = PREVIEW_ACTION_LIMITS
+  return bounded(value.selector, L.selector) &&
+    optBounded(value.value, L.text) &&
+    (value.values === undefined || (Array.isArray(value.values) && value.values.length > 0 && value.values.length <= 64 && value.values.every((item) => bounded(item, L.text)))) &&
+    (value.checked === undefined || typeof value.checked === 'boolean') &&
+    (value.value !== undefined || value.values !== undefined || value.checked !== undefined)
+}
+
+/** Общий бюджет на все файлы тот же, что на один: он упирается в память раннера. */
+function isUploadFiles(value: unknown): boolean {
+  const L = PREVIEW_ACTION_LIMITS
+  if (!Array.isArray(value) || value.length === 0 || value.length > 16) return false
+  let total = 0
+  for (const item of value) {
+    if (!record(item)) return false
+    if (!bounded(item.name, 255) || item.name.length === 0) return false
+    if (!optBounded(item.mimeType, 100)) return false
+    if (!bounded(item.base64, L.uploadBase64)) return false
+    total += (item.base64 as string).length
+  }
+  return total <= L.uploadBase64
+}
+
+/** Repeat of a keystroke: a person holds a key, but not a thousand times. */
+function keyRepeat(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 50)
 }
 
 function logLimit(value: unknown): boolean {

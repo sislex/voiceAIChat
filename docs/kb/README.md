@@ -10,10 +10,10 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 20 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 47 коммит(ов) в areas после сверки: 7aef0ced feat(reader): круг 19 — спросить человека вместо догадки … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 67 коммит(ов) в areas после сверки: e712f120 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 48 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 7 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 24 коммит(ов) в areas после сверки: 31632c58 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 23 коммит(ов) в areas после сверки: 64bdfb2a feat(reader): круг 18 — длинные страницы, списки и закладки … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 20 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
@@ -22,26 +22,26 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 7 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 6 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 126 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 54 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1479 коммит(ов) в areas после сверки: 7aef0ced feat(reader): круг 19 — спросить человека вместо догадки … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1500 коммит(ов) в areas после сверки: e712f120 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 15 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 43 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 40 коммит(ов) в areas после сверки: 4632bced Merge main into CHAT-466 (task 2c900bc5-86d3-4216-857c-529cc8951e5f) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-15 | ⚠ 3 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 342 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 359 коммит(ов) в areas после сверки: 31632c58 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 24 коммит(ов) в areas после сверки: e8c00896 fix(llm): price Codex turns as the difference of thread totals, not the totals … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 17 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-14 | ⚠ 17 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 253 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-15 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-15 | ⚠ 4 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-15 | ⚠ 17 коммит(ов) в areas после сверки: 31632c58 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-15 | ⚠ 16 коммит(ов) в areas после сверки: 31632c58 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ⚠ 6 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 46 коммит(ов) в areas после сверки: 7aef0ced feat(reader): круг 19 — спросить человека вместо догадки … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 66 коммит(ов) в areas после сверки: e712f120 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 202 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 154 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ⚠ 2 коммит(ов) в areas после сверки: e712f120 Merge remote-tracking branch 'origin/main' into codex/web-reader-20-cycles … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-15, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
