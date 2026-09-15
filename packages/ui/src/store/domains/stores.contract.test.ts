@@ -444,7 +444,7 @@ describe('operationsStore', () => {
 
   it('ошибка списка машин видна на экране, а не только в консоли', async () => {
     const { store, api } = make()
-    expect(store.getState().agentsStatus).toBe('loading')
+    expect(store.getState().agentsStatus).toBe('idle')
     vi.spyOn(api, 'agents:list').mockRejectedValueOnce(new Error('нет сети'))
     await store.actions.refreshAgents()
     expect(store.getState()).toMatchObject({ agentsStatus: 'error', agentsError: 'нет сети' })

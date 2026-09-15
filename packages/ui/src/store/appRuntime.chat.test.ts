@@ -814,13 +814,16 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().agents.some((a) => a.id === created!.id)).toBe(true)
   })
 
-  it('init грузит список MCP-серверов', async () => {
+  // @testCase TC1
+  it('LLM Settings loads MCP on demand', async () => {
     const api = createFakeApi([])
     vi.spyOn(api, 'mcp:list').mockResolvedValue([
       { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
     ])
     const store = createTestStore({ api, now: () => 1, delays: DELAYS })
     await store.actions.init()
+    expect(api['mcp:list']).not.toHaveBeenCalled()
+    await store.actions.loadCatalogs('llm')
     expect(store.getState().mcpServers).toEqual([
       { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
     ])
@@ -894,13 +897,16 @@ describe('voiceStore — интеграция с аудиозахватом (Ш�
     vi.useRealTimers()
   })
 
-  it('init загружает список микрофонов из listMics', async () => {
+  // @testCase TC1
+  it('STT Settings loads microphones on demand', async () => {
     const api = createFakeApi([])
     const listMics = vi.fn().mockResolvedValue([{ deviceId: 'mic-a', label: 'Микрофон A' }])
     const store = createTestStore({ api, delays: DELAYS, listMics })
 
     await store.actions.init()
 
+    expect(listMics).not.toHaveBeenCalled()
+    await store.actions.loadCatalogs('stt')
     expect(listMics).toHaveBeenCalled()
     expect(store.getState().mics).toEqual([{ deviceId: 'mic-a', label: 'Микрофон A' }])
   })
@@ -1371,11 +1377,14 @@ describe('voiceStore — режим консоли (activity log)', () => {
 })
 
 describe('voiceStore — статус и скачивание модели (Шаг 9)', () => {
-  it('init выставляет modelPresent из getSttStatus', async () => {
+  // @testCase TC1
+  it('STT Settings checks model availability on demand', async () => {
     const api = createFakeApi([])
     const getSttStatus = vi.fn().mockResolvedValue({ present: false, model: 'large-v3-turbo' })
     const store = createTestStore({ api, getSttStatus })
     await store.actions.init()
+    expect(getSttStatus).not.toHaveBeenCalled()
+    await store.actions.loadCatalogs('stt')
     expect(getSttStatus).toHaveBeenCalled()
     expect(store.getState().modelPresent).toBe(false)
   })
@@ -1417,10 +1426,13 @@ describe('voiceStore — статус и скачивание модели (Ша
     expect(store.getState().error).toBe('сеть недоступна')
   })
 
-  it('init грузит каталог голосов', async () => {
+  // @testCase TC1
+  it('TTS Settings loads the download catalog on demand', async () => {
     const api = createFakeApi([])
     const store = createTestStore({ api })
     await store.actions.init()
+    expect(store.getState().voiceCatalog).toEqual([])
+    await store.actions.loadCatalogs('tts')
     expect(store.getState().voicesDownloadable).toBe(true)
     expect(store.getState().voiceCatalog.length).toBeGreaterThan(0)
   })
@@ -1800,9 +1812,12 @@ describe('voiceStore — управление моделями/голосами'
     vi.useRealTimers()
   })
 
-  it('init грузит список моделей Whisper', async () => {
+  // @testCase TC1
+  it('STT Settings loads Whisper models on demand', async () => {
     const { store } = makeStore()
     await store.actions.init()
+    expect(store.getState().whisperModels).toEqual([])
+    await store.actions.loadCatalogs('stt')
     expect(store.getState().whisperModels.length).toBeGreaterThan(0)
     expect(store.getState().whisperModels.some((m) => m.present)).toBe(true)
   })

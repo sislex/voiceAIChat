@@ -1,0 +1,86 @@
+{
+  "fixture": "isolated admin, one chat, one general project",
+  "latencyMs": 40,
+  "measurements": [
+    {
+      "section": "chat",
+      "mode": "cold",
+      "requests": 27,
+      "transferredBytes": 19625,
+      "contentMs": 19821,
+      "dataMs": 20177
+    },
+    {
+      "section": "chat",
+      "mode": "warm",
+      "requests": 0,
+      "transferredBytes": 0,
+      "contentMs": 40,
+      "dataMs": 0
+    },
+    {
+      "section": "Account",
+      "mode": "cold",
+      "requests": 29,
+      "transferredBytes": 20430,
+      "contentMs": 18749,
+      "dataMs": 18436
+    },
+    {
+      "section": "Account",
+      "mode": "warm",
+      "requests": 0,
+      "transferredBytes": 0,
+      "contentMs": 36,
+      "dataMs": 0
+    },
+    {
+      "section": "Machines",
+      "mode": "cold",
+      "requests": 27,
+      "transferredBytes": 19625,
+      "contentMs": 19014,
+      "dataMs": 18491
+    },
+    {
+      "section": "Machines",
+      "mode": "warm",
+      "requests": 0,
+      "transferredBytes": 0,
+      "contentMs": 21,
+      "dataMs": 0
+    },
+    {
+      "section": "Settings",
+      "mode": "cold",
+      "requests": 29,
+      "transferredBytes": 20127,
+      "contentMs": 17926,
+      "dataMs": 18140
+    },
+    {
+      "section": "Settings",
+      "mode": "warm",
+      "requests": 0,
+      "transferredBytes": 0,
+      "contentMs": 53,
+      "dataMs": 0
+    },
+    {
+      "section": "board",
+      "mode": "cold",
+      "requests": 21,
+      "transferredBytes": 19342,
+      "contentMs": 22763,
+      "dataMs": 18108
+    },
+    {
+      "section": "board",
+      "mode": "warm",
+      "requests": 3,
+      "transferredBytes": 1069,
+      "contentMs": 109,
+      "dataMs": 169
+    }
+  ]
+}
