@@ -54,6 +54,19 @@ describe('WebReaderFrame', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('шаг 1 из 2: нажимает Войти'))
     expect(post).toHaveBeenCalled()
   })
+  it('закладки сеанса видны человеку: «Запомнить страницу» кладёт, крестик убирает (круг 18)', async () => {
+    let registration: ReaderHostRegistration | null = null
+    const onSave = vi.fn(async () => undefined)
+    render(<WebReaderFrame platform={platform} conversationId="conv-marks" conversationUrl="https://docs.example/guide" projectUrl={null} onSave={onSave} onPageTitle={() => undefined} onRegisterHost={(r) => { registration = r }} />)
+    emit(readyMessage)
+    await waitFor(() => expect(registration).toBeTruthy())
+    emit({ type, conversationId: 'conv-marks', registrationId: registration!.registrationId, kind: 'page-status', status: 'ready', url: 'https://docs.example/guide', title: 'Руководство' })
+    fireEvent.click(screen.getByRole('button', { name: 'Запомнить страницу' }))
+    const marks = await screen.findByRole('navigation', { name: 'Закладки страницы' })
+    expect(marks.textContent).toContain('Руководство')
+    fireEvent.click(screen.getByRole('button', { name: 'Убрать закладку Руководство' }))
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Закладки страницы' })).toBeNull())
+  })
   it('показывает запрос подтверждения опасного действия с кнопками разрешить и отказать', () => {
     const onSave = vi.fn(async () => undefined), onConfirmAction = vi.fn(), onDenyAction = vi.fn()
     render(<WebReaderFrame platform={platform} conversationId="conv-confirm" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} confirmRequest={{ action: { kind: 'click', text: 'Оплатить' }, reason: 'оплата или перевод', target: 'Оплатить' }} onConfirmAction={onConfirmAction} onDenyAction={onDenyAction} />)
