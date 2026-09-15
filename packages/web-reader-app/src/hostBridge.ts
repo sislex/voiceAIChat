@@ -60,6 +60,8 @@ export interface ReaderHostBridgeOptions {
   onAsk?: (text: string) => void
   /** Пользователь взял управление страницей (true) или вернул его ассистенту (false). */
   onControl?: (manual: boolean) => void
+  /** Закладки сеанса изменились: панель показывает тот же список, что видит модель. */
+  onBookmarks?: (bookmarks: { url: string; label: string; at: number }[]) => void
   /** Ход выполнения последовательности: какой шаг идёт сейчас. */
   onSequenceProgress?: (progress: { done: number; total: number; action: PreviewAction } | null) => void
   onElement?: (element: PreviewElementPayload) => void
@@ -131,6 +133,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   let viewport: { width: number; height: number } | undefined
   // Последнее завершённое действие: модель после паузы спрашивает status и продолжает с того места.
   let lastAction: { kind: string; ok: boolean; at: number; error?: string } | undefined
+  // Закладки сеанса: человек и модель кладут их на страницы, к которым вернутся.
+  const bookmarks: { url: string; label: string; at: number }[] = []
   // Журнал проверок и счётчик действий: report собирает из них отчёт по задаче.
   const checks: { summary: string; pass: boolean; at: number; url: string | null }[] = []
   let actionsCount = 0
@@ -232,7 +236,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         ...(pending.size ? { pending: pending.size } : {}),
         ...(lastAction ? { lastAction } : {}),
         ...(checks.length ? { checks: { passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length } } : {}),
-        ...(pageOutline && pageStatus === 'ready' ? { outline: pageOutline } : {})
+        ...(pageOutline && pageStatus === 'ready' ? { outline: pageOutline } : {}),
+        ...(bookmarks.length ? { bookmarks: [...bookmarks] } : {})
       } })
     }
     // waitFor у действия: после успеха дождаться текста тем же ходом, как у open.
@@ -276,7 +281,27 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     }
     if (action.kind === 'report') {
       const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
-      return Promise.resolve({ ok: true, result: { page, history: [...history], checks: [...checks], passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length, actions: actionsCount, ...(lastAction ? { lastAction } : {}) } })
+      return Promise.resolve({ ok: true, result: { page, history: [...history], checks: [...checks], passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length, actions: actionsCount, ...(lastAction ? { lastAction } : {}), ...(bookmarks.length ? { bookmarks: [...bookmarks] } : {}) } })
+    }
+    // Закладка — дело панели, а не страницы: человек видит тот же список, что и модель.
+    if (action.kind === 'bookmark') {
+      const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
+      const removing = action.remove
+      if (removing) {
+        const index = bookmarks.findIndex(item => item.url === removing || item.label === removing)
+        if (index < 0) return Promise.resolve({ ok: false, error: `Закладки «${removing}» нет. Сейчас: ${bookmarks.map(item => item.label).join(', ') || 'ни одной'}.` })
+        const [removed] = bookmarks.splice(index, 1)
+        options.onBookmarks?.([...bookmarks])
+        return Promise.resolve({ ok: true, result: { page, bookmarks: [...bookmarks], removed } })
+      }
+      if (!page) return Promise.resolve({ ok: false, error: 'Страница не открыта — закладывать нечего.' })
+      const label = (action.label ?? page.title ?? '').trim().slice(0, 120) || page.url
+      const known = bookmarks.find(item => item.url === page.url)
+      if (known) { known.label = label; options.onBookmarks?.([...bookmarks]); return Promise.resolve({ ok: true, result: { page, bookmarks: [...bookmarks], added: known } }) }
+      const added = { url: page.url, label, at: Date.now() }
+      bookmarks.push(added); if (bookmarks.length > 20) bookmarks.shift()
+      options.onBookmarks?.([...bookmarks])
+      return Promise.resolve({ ok: true, result: { page, bookmarks: [...bookmarks], added } })
     }
     // check {url|title} — про адрес и заголовок панели: мост отвечает сам, страница не нужна.
     if (action.kind === 'check' && !action.selector && !action.text && (action.url !== undefined || action.title !== undefined)) {

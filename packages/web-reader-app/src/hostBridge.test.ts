@@ -4,7 +4,7 @@ import { createReaderHostBridge, type ReaderHostRegistration } from './hostBridg
 
 const type = WEB_RECORDER_MESSAGE_TYPE
 
-function harness(overrides: { conversationId?: string } = {}) {
+function harness(overrides: { conversationId?: string; onBookmarks?: (bookmarks: { url: string; label: string; at: number }[]) => void } = {}) {
   let seq = 0
   const sent: WebRecorderHostMessage[] = []
   const saves: Array<string | null> = []
@@ -15,7 +15,8 @@ function harness(overrides: { conversationId?: string } = {}) {
     send: (message) => sent.push(message),
     capabilities: ['mcp-actions'],
     onSaveUrl: url => saves.push(url),
-    onRegistration: (registration) => registrations.push(registration)
+    onRegistration: (registration) => registrations.push(registration),
+    ...(overrides.onBookmarks ? { onBookmarks: overrides.onBookmarks } : {})
   })
   const ready = (ids: { conversationId?: string | null; registrationId?: string | null } = {}) =>
     bridge.receive({ type, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: ids.conversationId ?? null, registrationId: ids.registrationId ?? null, capabilities: ['read'] })
@@ -570,6 +571,24 @@ it('back {to} возвращает на страницу этого сеанса
   h.from(id, { kind: 'page-status', status: 'ready', url: 'https://shop.example/search?q=наушники', title: 'Поиск: наушники' })
   await expect(back).resolves.toMatchObject({ ok: true })
   await expect(h.bridge.run({ kind: 'back', to: 'корзина' })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('не было в этом сеансе') })
+  h.bridge.dispose()
+})
+it('закладки сеанса: модель кладёт, убирает и видит их в status и report (круг 18)', async () => {
+  const seen: { url: string; label: string }[][] = []
+  const h = harness({ onBookmarks: (list: { url: string; label: string; at: number }[]) => seen.push(list.map(item => ({ url: item.url, label: item.label }))) })
+  h.ready(); const id = h.bridge.registrationId()!
+  await expect(h.bridge.run({ kind: 'bookmark' })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('не открыта') })
+  const open = h.bridge.run({ kind: 'open', url: 'https://docs.example/guide' })
+  await Promise.resolve()
+  h.from(id, { kind: 'page-status', status: 'ready', url: 'https://docs.example/guide', title: 'Руководство' })
+  await open
+  await expect(h.bridge.run({ kind: 'bookmark' })).resolves.toMatchObject({ ok: true, result: { added: { url: 'https://docs.example/guide', label: 'Руководство' } } })
+  await expect(h.bridge.run({ kind: 'bookmark', label: 'Сюда вернуться' })).resolves.toMatchObject({ ok: true, result: { added: { label: 'Сюда вернуться' }, bookmarks: [{ label: 'Сюда вернуться' }] } })
+  expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { bookmarks: [{ label: 'Сюда вернуться' }] } })
+  expect(await h.bridge.run({ kind: 'report' })).toMatchObject({ ok: true, result: { bookmarks: [{ label: 'Сюда вернуться' }] } })
+  await expect(h.bridge.run({ kind: 'bookmark', remove: 'корзина' })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('Сюда вернуться') })
+  await expect(h.bridge.run({ kind: 'bookmark', remove: 'Сюда вернуться' })).resolves.toMatchObject({ ok: true, result: { bookmarks: [] } })
+  expect(seen.at(-1)).toEqual([])
   h.bridge.dispose()
 })
 it('промежуточный empty от reset open не отказывает следующему read', async () => {
