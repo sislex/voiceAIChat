@@ -6,7 +6,7 @@ import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/bro
 import { fitScale, frameWidth, nextFrameZoom, panelShortcut, pinchDistance, touchScrollDelta, TOUCH_TAP_SLOP, type FrameZoom } from '../lib/frameView'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserCookieInfo, type BrowserElementDescription, type BrowserEnvironmentState, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
+import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserCookieInfo, type BrowserDeviceState, type BrowserElementDescription, type BrowserEnvironmentState, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
 import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, moveStep, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toggleStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
@@ -177,6 +177,9 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
    */
   const [environment, setEnvironment] = useState<BrowserEnvironmentState | null>(null)
   const [environmentOpen, setEnvironmentOpen] = useState(false)
+  /** Что страница считает об устройстве: тач, плотность пикселей, ориентация. */
+  const [device, setDevice] = useState<BrowserDeviceState | null>(null)
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
   /**
    * Лента событий сессии. Человек смотрит на кадр и не понимает, что делает
    * модель: кадр показывает результат, а не намерение и не порядок шагов.
@@ -642,11 +645,30 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     }
   }
 
+  /**
+   * «Телефон» — это не узкое окно, а тач, плотность пикселей и мобильный агент:
+   * без них страница верстается как мобильная, но считает посетителя мышью, и
+   * ровно там живут дефекты каруселей и меню «по наведению».
+   */
   const changeViewport = (id: 'phone' | 'tablet' | 'desktop'): void => {
     const found = VIEWPORTS.find((v) => v.id === id)
     if (!found) return
     setViewportId(id)
-    void run({ type: 'resize', viewport: found.viewport })
+    void (async () => {
+      const result = await run({ type: 'device', preset: id, ...(orientation === 'landscape' ? { orientation } : {}) } as never) as BrowserSessionMetadata | undefined
+      if (result?.device) setDevice(result.device)
+      // Старый раннер команду device не знает — тогда остаётся прежний ресайз,
+      // и человек хотя бы увидит мобильную вёрстку.
+      else void run({ type: 'resize', viewport: found.viewport })
+    })()
+  }
+
+  const changeOrientation = (next: 'portrait' | 'landscape'): void => {
+    setOrientation(next)
+    void (async () => {
+      const result = await run({ type: 'device', preset: viewportId ?? 'desktop', orientation: next } as never) as BrowserSessionMetadata | undefined
+      if (result?.device) setDevice(result.device)
+    })()
   }
 
   const submitAddress = (): void => {
@@ -912,7 +934,21 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       {metrics && <span className="playwright-reader-size" role="status">{metrics.atBottom ? 'страница долистана' : `ниже ещё ${metrics.screensBelow} экрана(ов)`}</span>}
       {/* Размер окна словами: пресет не говорит, какой ширины страница сейчас,
           а именно ширина объясняет, почему вёрстка выглядит так. */}
-      {meta?.viewport && <span className="playwright-reader-size">{meta.viewport.width}×{meta.viewport.height}</span>}
+      {/* Ориентация — отдельная кнопка: «а если повернуть» это первое, что
+          спрашивают о мобильной вёрстке, и одной шириной это не проверить. */}
+      {viewportId && viewportId !== 'desktop' && (
+        <Button size="sm" variant="ghost" disabled={phase !== 'ready'}
+          onClick={() => changeOrientation(orientation === 'portrait' ? 'landscape' : 'portrait')}>
+          {orientation === 'portrait' ? 'Повернуть' : 'Вернуть портрет'}
+        </Button>
+      )}
+      {meta?.viewport && (
+        <span className="playwright-reader-size">
+          {meta.viewport.width}×{meta.viewport.height}
+          {device?.touch ? ' · тач' : ''}
+          {device && device.deviceScaleFactor > 1 ? ` · ×${device.deviceScaleFactor}` : ''}
+        </span>
+      )}
       {/* Масштаб кадра отделён от размера окна Chromium: «Телефон» меняет вёрстку
           страницы, а зум — только то, как кадр виден человеку. */}
       <span className="playwright-reader-zoom" role="group" aria-label="Масштаб кадра">

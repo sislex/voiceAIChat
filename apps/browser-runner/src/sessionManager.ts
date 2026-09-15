@@ -9,6 +9,7 @@ import { boundedBrowserDialogs, type BrowserDialogListResult } from '@voicechat/
 import { runBrowserInput } from './inputActions.js'
 import { applyEnvironment, applyEnvironmentToPage, runCookieCommand } from './environmentActions.js'
 import { describeCommand, SessionHistory } from './sessionHistory.js'
+import { applyDevice, runTouchAction } from './deviceActions.js'
 import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
 import { clearSiteData, httpOrigin } from './siteData.js'
 import { readReaderProfile, writeReaderProfile } from './profileState.js'
@@ -19,7 +20,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserCommandRequest, BrowserCookiesResult, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserCommandRequest, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -55,6 +56,8 @@ interface Session {
   lastActor?: 'user' | 'assistant'
   /** Эмулированная среда: тема системы, анимация, контраст, сеть, место. */
   environment?: BrowserEnvironmentState
+  /** Эмулированное устройство: размер, тач, плотность пикселей, ориентация. */
+  device?: BrowserDeviceState
   /** Что происходило в сессии: единственное место, где видны обе стороны. */
   history: SessionHistory
 }
@@ -313,7 +316,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
@@ -362,7 +365,7 @@ export class BrowserSessionManager {
   }
 
   /** Разбор команды без журнала: вынесен, чтобы запись велась в одном месте. */
-  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult> {
+  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult> {
     const command = request.command
     const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe', 'accessibility'].includes(command.action.kind))
     if (command.type === 'inspect' && command.action.kind === 'evaluate') {
@@ -403,7 +406,7 @@ export class BrowserSessionManager {
     }, observing)
   }
 
-  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult> {
+  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -445,6 +448,30 @@ export class BrowserSessionManager {
       return { environment }
     }
     if (command.type === 'cookies') return await runCookieCommand(session.context, command)
+    if (command.type === 'device') {
+      const page = session.pages.get(request.tabId ?? session.activeTabId)
+      if (!page) throw new Error('stale_tab')
+      const device = await applyDevice(page, command)
+      // Размер сессии идёт следом: панель и снимки считают координаты по нему,
+      // а перезапуск сессии стартует с сохранённого размера — иначе «проверял на
+      // телефоне» после перезапуска молча превращалось в десктоп.
+      //
+      // Плотность пикселей сюда НЕ переносится: она эмулируется для страницы, а
+      // рендер кадра остаётся 1:1. Иначе профиль сессии сохранял бы ×3, контекст
+      // пересоздавался в тройном разрешении, и кадр телефона весил бы как четыре
+      // десктопных — при том, что человеку он показывается в тех же CSS-пикселях.
+      session.viewport = { ...session.viewport, width: device.width, height: device.height }
+      session.device = device
+      // Ответ — метаданные, а не только устройство: панель обновляет по ним
+      // размер и вкладки одним ответом, без отдельного запроса статуса.
+      return this.metadata(session)
+    }
+    if (command.type === 'touch') {
+      const page = session.pages.get(request.tabId ?? session.activeTabId)
+      if (!page) throw new Error('stale_tab')
+      await runTouchAction(page, command)
+      return this.metadata(session)
+    }
     if (command.type === 'clearSiteData') return clearSiteData(session, session.pages.get(request.tabId ?? session.activeTabId), command, raw => this.publicUrl(raw))
     const tabId = request.tabId ?? session.activeTabId
     const page = session.pages.get(tabId)
@@ -570,6 +597,7 @@ export class BrowserSessionManager {
       // Хвост журнала едет вместе с метаданными: панель показывает ленту без
       // отдельного опроса, а он стоил бы ещё одного запроса на каждый кадр.
       history: session.history.list({ limit: 20 }).entries,
+      ...(session.device ? { device: session.device } : {}),
       activeTabId: session.activeTabId,
       tabs,
       viewport: session.viewport,

@@ -187,6 +187,8 @@ export interface BrowserSessionMetadata {
   queuedCommands?: number
   /** Tail of the session log: the panel shows it as a live feed of both sides. */
   history?: BrowserHistoryEntry[]
+  /** Emulated device, so the panel shows touch and pixel ratio, not just width. */
+  device?: BrowserDeviceState
   /**
    * Внутренний адрес, с которого страница пришла на самом деле, если оператор
    * настроил алиас. Сам `currentUrl` при этом остаётся тем, который назвал
@@ -490,6 +492,43 @@ export interface BrowserHistoryEntry {
   note?: string
 }
 
+/**
+ * Emulated device. "Phone" used to mean only a narrow window: the page laid out
+ * as mobile, but `maxTouchPoints` stayed zero, `pointer: coarse` never matched
+ * and `devicePixelRatio` stayed 1 — which is exactly what carousels, hover menus
+ * and anything that tells a finger from a mouse get wrong.
+ */
+export interface BrowserDeviceOptions {
+  preset?: string
+  width?: number
+  height?: number
+  deviceScaleFactor?: number
+  touch?: boolean
+  orientation?: 'portrait' | 'landscape'
+  userAgent?: string
+}
+
+export interface BrowserDeviceState {
+  preset?: string
+  width: number
+  height: number
+  deviceScaleFactor: number
+  touch: boolean
+  orientation: 'portrait' | 'landscape'
+  userAgent?: string
+}
+
+/** Finger gesture: a tap is not a mouse click, and pages handle them apart. */
+export interface BrowserTouchAction {
+  gesture: 'tap' | 'swipe' | 'long-press'
+  selector?: string
+  x?: number
+  y?: number
+  direction?: 'up' | 'down' | 'left' | 'right'
+  distance?: number
+  ms?: number
+}
+
 /** One field of a form fill: value, checkbox state or a chosen option. */
 export interface BrowserFormField {
   selector: string
@@ -671,6 +710,10 @@ export type BrowserCommand = BrowserFrameTarget & (
   | { type: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean }
   /** A line the model writes into the panel so the person sees its intent. */
   | { type: 'note'; text: string }
+  /** Emulated device: size, pixel ratio, touch, orientation, user agent. */
+  | ({ type: 'device' } & BrowserDeviceOptions)
+  /** A finger gesture on the page — tap, swipe, long press. */
+  | ({ type: 'touch' } & BrowserTouchAction)
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)
