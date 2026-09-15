@@ -8,7 +8,7 @@
 // «⠿» (единственное место с touch-action: none — палец там не скроллит) или
 // удержанием самой карточки; с клавиатуры карточка фокусируется (tabIndex).
 
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
@@ -181,8 +181,11 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
 
   const openMenu = (): void => {
     setMenuOpen(true)
-    requestAnimationFrame(() => menuPanelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
   }
+
+  useEffect(() => {
+    if (menuOpen) menuPanelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+  }, [menuOpen])
 
   const closeMenuAndRestoreFocus = (): void => {
     setMenuOpen(false)
