@@ -82,6 +82,10 @@ export function Recorder(): JSX.Element {
   // Site icon and a redirect notice: the small cues a browser tab gives about where you landed.
   const [pageIcon, setPageIcon] = useState<string | null>(null)
   const [pageLang, setPageLang] = useState('')
+  // Address suggestions from recent visits while typing: our own listbox keeps the input a plain textbox for ARIA.
+  const [addressFocused, setAddressFocused] = useState(false)
+  const [longLoad, setLongLoad] = useState(false)
+  const suggestionsId = useId()
   // Rough history depth of this page session: «Назад» is disabled until there is somewhere to go.
   const [historyDepth, setHistoryDepth] = useState(0)
   const historyGrew = useRef(false)
@@ -434,7 +438,10 @@ export function Recorder(): JSX.Element {
     reply({ kind: 'page-status', status: 'error', url: currentUrl.current, error: message })
   }
   useEffect(() => {
-    if (!url || loadState !== 'loading') return
+    if (!url || loadState !== 'loading') { setLongLoad(false); return }
+    // After eight seconds a slow site deserves a way out, before the twelve-second failure.
+    const slow = setTimeout(() => setLongLoad(true), 8_000)
+    loadTimers.current.add(slow)
     const timer = setTimeout(() => { if (!pageReady.current) failLoad('Страница не стала доступна за время ожидания. Попробуйте обновить её.') }, 12_000)
     loadTimers.current.add(timer)
     return () => { clearTimeout(timer); loadTimers.current.delete(timer) }
@@ -516,6 +523,9 @@ export function Recorder(): JSX.Element {
   }
   if (disposed) return <section className="webpreview" aria-label="Web Reader"><div className="webpreview-empty" role="status">Панель Web Reader отключена host-приложением</div></section>
   const openAddress = (next: string): void => { applyUrl(next); reply({ kind: 'save-url', url: next }) }
+  const needle = draft.trim().toLowerCase()
+  const suggestions = needle && needle !== (url ?? '').toLowerCase() ? recent.filter(item => item !== url && item.toLowerCase().includes(needle)).slice(0, 5) : []
+  const selectionLooksLikeUrl = /^https?:\/\/\S+$/.test(selection) || (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(selection) && !/\s/.test(selection))
   const copyAddress = (): void => {
     const target = currentUrl.current
     if (!target) return
@@ -549,13 +559,14 @@ export function Recorder(): JSX.Element {
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && url) {
       event.preventDefault(); historyGo(event.key === 'ArrowLeft' ? -1 : 1)
     }
+    if (event.altKey && event.key === 'Home' && url) { event.preventDefault(); try { frame.current?.contentWindow?.scrollTo({ top: 0, behavior: 'smooth' }) } catch { /* cross-document */ } }
   }}>
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
       <IconButton variant="secondary" type="button" disabled={!url || historyDepth === 0} aria-label="Назад" aria-keyshortcuts="Alt+ArrowLeft" title="Назад (Alt+←)" onClick={() => historyGo(-1)}>‹</IconButton>
       <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" aria-keyshortcuts="Alt+ArrowRight" title="Вперёд (Alt+→)" onClick={() => historyGo(1)}>›</IconButton>
       <IconButton variant="secondary" aria-label="Обновить страницу" title={loadState === 'loading' ? 'Страница загружается…' : 'Обновить страницу'} disabled={!url || loadState === 'loading'} aria-busy={loadState === 'loading' || undefined} className={loadState === 'loading' ? 'webpreview-reload--busy' : undefined} onClick={reload}>↻</IconButton>
       <span className="webpreview-link" role="img" title={linked ? 'Панель связана с чатом: ассистент может управлять страницей' : 'Панель не связана с чатом: ассистент не видит эту страницу'} aria-label={linked ? 'Связь с чатом есть' : 'Связи с чатом нет'} data-linked={linked || undefined} data-manual={manual || undefined}>{linked ? '●' : '○'}</span>
-      <label className="webpreview-address">{url && <span className="webpreview-scheme" aria-hidden="true" title={url.startsWith('https:') ? 'Защищённое соединение' : 'Незащищённое соединение'}>{url.startsWith('https:') ? '🔒' : '⚠'}</span>}<span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} aria-keyshortcuts="Control+L Meta+L" value={draft} placeholder="https://example.com" onFocus={event => event.currentTarget.select()} onPaste={event => {
+      <label className="webpreview-address">{url && <span className="webpreview-scheme" aria-hidden="true" title={url.startsWith('https:') ? 'Защищённое соединение' : 'Незащищённое соединение'}>{url.startsWith('https:') ? '🔒' : '⚠'}</span>}<span className="vc-sr-only">Адрес превью</span><input ref={addressRef} aria-invalid={Boolean(addressError)} aria-describedby={addressError ? addressErrorId : undefined} type="text" inputMode="url" enterKeyHint="go" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} aria-keyshortcuts="Control+L Meta+L" value={draft} placeholder="https://example.com" onFocus={event => { event.currentTarget.select(); setAddressFocused(true) }} onBlur={() => setTimeout(() => setAddressFocused(false), 120)} aria-autocomplete="list" aria-controls={suggestionsId} aria-expanded={addressFocused && suggestions.length > 0} onPaste={event => {
         // Paste-and-go: a pasted full address opens at once, like mobile browsers do.
         const pasted = event.clipboardData.getData('text').trim()
         if (!draft.trim() && /^https?:\/\/\S+$/.test(pasted)) { event.preventDefault(); openAddress(pasted) }
@@ -563,8 +574,9 @@ export function Recorder(): JSX.Element {
         if (event.key === 'Escape') { event.preventDefault(); setDraft(currentUrl.current ?? ''); setAddressError(null) }
         // Cmd/Ctrl+Enter opens the typed address in a real browser tab, like the address bar of a browser.
         if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); const result = normalizeReaderAddress(draft, currentUrl.current); if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer'); else setAddressError(result.error ?? null) }
-      }} /></label>
-      <Button variant="secondary" type="submit">Открыть</Button>
+      }} />
+      {addressFocused && suggestions.length > 0 && <ul id={suggestionsId} className="webpreview-suggestions" role="listbox" aria-label="Недавние адреса, похожие на ввод">{suggestions.map(item => <li key={item} role="option" aria-selected={false}><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => { openAddress(item); setAddressFocused(false) }}>{recentAddressLabel(item)}</button></li>)}</ul>}</label>
+      <Button variant="secondary" type="submit" disabled={!draft.trim()}>Открыть</Button>
       <IconButton variant="secondary" type="button" aria-label="Очистить страницу" title="Очистить страницу" disabled={!url && !draft} onClick={() => { applyUrl(null); reply({ kind: 'save-url', url: null }); addressRef.current?.focus() }}>×</IconButton>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
       {viewport && <Button variant="secondary" size="sm" type="button" className="webpreview-viewport-chip" aria-label={`Сбросить ширину ${viewport} px`} title="Вернуть адаптивную ширину" onClick={() => setViewport('')}>{viewport} px ×</Button>}
@@ -608,12 +620,12 @@ export function Recorder(): JSX.Element {
       </details>
     </form>
     {loadState === 'loading' && <div className="webpreview-progress" aria-hidden="true" />}
-    {pageTitle && loadState === 'ready' && <button type="button" className="webpreview-title" title="Скопировать ссылку с названием" onClick={copyLink}>{pageIcon && <img className="webpreview-title__icon" src={'/api/preview?url=' + encodeURIComponent(pageIcon)} alt="" onError={() => setPageIcon(null)} />}<span>{pageTitle}</span>{pageLang && <small className="webpreview-title__lang" title={`Язык страницы: ${pageLang}`}>{pageLang}</small>}</button>}
+    {pageTitle && loadState === 'ready' && <button type="button" className="webpreview-title" title="Скопировать ссылку с названием" aria-label={`Скопировать ссылку: ${pageTitle}`} onClick={copyLink}>{pageIcon && <img className="webpreview-title__icon" src={'/api/preview?url=' + encodeURIComponent(pageIcon)} alt="" onError={() => setPageIcon(null)} />}<span>{pageTitle}</span>{pageLang && <small className="webpreview-title__lang" title={`Язык страницы: ${pageLang}`}>{pageLang}</small>}</button>}
     {redirectedFrom && loadState === 'ready' && <div className="webpreview-load-status" role="status">Перенаправлено с {(() => { try { return new URL(redirectedFrom).host } catch { return redirectedFrom } })()}</div>}
-    {selection && loadState === 'ready' && <div className="webpreview-selection" role="status"><span className="webpreview-selection__text" title={selection}>«{selection.length > 80 ? selection.slice(0, 79) + '…' : selection}»</span><Button size="sm" onClick={() => { reply({ kind: 'ask', text: selection }); setSelection('') }}>Спросить ассистента</Button><Button size="sm" variant="secondary" onClick={() => { void navigator.clipboard?.writeText(selection).catch(() => setError('Не удалось скопировать выделение.')); setSelection('') }}>Скопировать</Button><IconButton size="sm" aria-label="Скрыть выделение" title="Скрыть выделение" onClick={() => setSelection('')}>×</IconButton></div>}
+    {selection && loadState === 'ready' && <div className="webpreview-selection" role="status"><span className="webpreview-selection__text" title={selection}>«{selection.length > 80 ? selection.slice(0, 79) + '…' : selection}»</span><Button size="sm" onClick={() => { reply({ kind: 'ask', text: selection }); setSelection('') }}>Спросить ассистента</Button><Button size="sm" variant="secondary" onClick={() => { void navigator.clipboard?.writeText(selection).catch(() => setError('Не удалось скопировать выделение.')); setSelection('') }}>Скопировать</Button>{selectionLooksLikeUrl && <Button size="sm" variant="secondary" onClick={() => { const result = normalizeReaderAddress(selection, currentUrl.current); if (result.url) openAddress(result.url); setSelection('') }}>Открыть как адрес</Button>}<IconButton size="sm" aria-label="Скрыть выделение" title="Скрыть выделение" onClick={() => setSelection('')}>×</IconButton></div>}
     {(transferOpen || steps.length > 0 || recording) && <ScenarioTransfer key={frameKey} pageUrl={scenarioUrl} steps={steps} disabled={scenarioRunning} onImport={next => { setSecretValues({}); setScenarioProgress(null); setSteps(next) }} />}
     {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
-    {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем {(() => { try { return url ? new URL(url).host : 'страницу' } catch { return 'страницу' } })()}…</div>}
+    {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем {(() => { try { return url ? new URL(url).host : 'страницу' } catch { return 'страницу' } })()}…{longLoad && <> Долго. <Button size="sm" variant="secondary" onClick={openExternal}>Открыть во внешней вкладке</Button></>}</div>}
     {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button>{url && <Button size="sm" variant="secondary" onClick={openExternal}>Открыть во внешней вкладке</Button>}<small className="webpreview-load-error__hint">Если сайт не работает в быстром просмотре, переключите «Полный браузер» в шапке.</small></div>}
     {loadState === 'ready' && url && <p className="vc-sr-only" aria-live="polite">{`Открыта страница${pageTitle ? `: ${pageTitle}` : ''}`}</p>}
     {error && <div className="webpreview-error webpreview-load-error" role="alert"><span>{error}</span><Button size="sm" aria-label="Скрыть ошибку Reader" onClick={() => setError(null)}>×</Button></div>}
@@ -663,7 +675,7 @@ export function Recorder(): JSX.Element {
       <p className="webpreview-empty__hint webpreview-empty__keys">Ctrl/Cmd+L — адрес · Alt+←/→ — история · Esc — отмена</p>
       <Button variant="secondary" size="sm" type="button" onClick={() => applyUrl(READER_PROJECT_ORIGIN + '/')}>Открыть текущий проект</Button>
       {recent.length > 0 && <p className="webpreview-empty__hint">Недавние:</p>}
-      {recent.length > 0 && <nav className="webpreview-recent" aria-label="Недавние адреса">{recent.map(item => <Button key={item} variant="secondary" size="sm" type="button" title={item} onClick={() => openAddress(item)}>{recentAddressLabel(item)}</Button>)}</nav>}
+      {recent.length > 0 && <nav className="webpreview-recent" aria-label="Недавние адреса">{recent.map((item, index) => <Button key={item} variant={index === 0 ? 'primary' : 'secondary'} size="sm" type="button" title={item} onClick={() => openAddress(item)}>{index === 0 ? `Продолжить: ${recentAddressLabel(item)}` : recentAddressLabel(item)}</Button>)}</nav>}
     </div></div>}
 
   </section>

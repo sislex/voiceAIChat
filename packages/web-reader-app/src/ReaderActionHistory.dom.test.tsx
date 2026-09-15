@@ -115,3 +115,11 @@ it('shows verdict counts, repeat counters and short open labels', () => {
   expect(screen.getByLabelText('повторено 3 раз')).toBeTruthy()
   expect(screen.getByText(/Открыл shop\.example\/catalog/).textContent!.length).toBeLessThan(80)
 })
+
+it('copies the feed as text lines', () => {
+  const writeText = vi.fn(async () => undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  render(<ReaderActionHistory actions={[{ id: 'ok', action: { kind: 'check', text: 'Войти' }, title: null, address: 'https://shop.example/', ok: true, summary: '«Войти» видно' }]} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Скопировать ленту действий' }))
+  expect(writeText).toHaveBeenCalledWith(expect.stringContaining('✓ Проверил «Войти» — «Войти» видно (shop.example)'))
+})

@@ -277,6 +277,10 @@ const showLabel=(el,label)=>{try{
   document.documentElement.appendChild(tag);
   setTimeout(()=>{tag.remove();if(el.getAttribute(FLASH_ATTR)!=='show')return;el.removeAttribute(FLASH_ATTR);el.style.outline=prev;el.style.outlineOffset=prevOffset},3000)
 }catch{}};
+// Снимок видимых текстов: по нему считается, что появилось и исчезло — так человек замечает изменения.
+let textSnapshot=null;
+const visibleTexts=()=>{const set=new Set();let count=0;for(const el of document.querySelectorAll('body *')){if(count>6000)break;count++;if(el.children.length>0&&!el.matches(CLICKABLE))continue;if(!readingVisible(el))continue;const t=textOf(el).slice(0,120);if(t)set.add(t)}return set};
+const diffTexts=(before,after)=>{const added=[],removed=[];for(const t of after)if(!before.has(t))added.push(t);for(const t of before)if(!after.has(t))removed.push(t);return {added:added.slice(0,8),removed:removed.slice(0,8),addedTotal:added.length,removedTotal:removed.length}};
 const openDialogs=()=>[...document.querySelectorAll('dialog[open],[role=dialog],[role=alertdialog],[aria-modal="true"]')].filter(el=>readingVisible(el)&&!el.closest('[data-voicechat-inspector]')).slice(0,5).map(uniqueSelector);
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el),onScreen:onScreen(el)};
@@ -451,7 +455,7 @@ const run=(action)=>{
     const el=typeof action.x==='number'&&!action.selector&&!action.text?(()=>{const hit=document.elementFromPoint?document.elementFromPoint(action.x,action.y):null;if(!hit)throw new Error('В точке ('+action.x+', '+action.y+') нет элемента: она вне видимой области');return hit})():chooseTarget(action,true);actionable(el);
     if(el.localName==='select')throw new Error('Это выпадающий список: выбери значение через set {selector, value} или choose, клик его не раскроет.');
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
-    const dialogsBefore=new Set(openDialogs()),errorsBefore=pageErrors.length;
+    const dialogsBefore=new Set(openDialogs()),errorsBefore=pageErrors.length,textsBefore=visibleTexts();
     flash(el);
     const info=describe(el),mods=Array.isArray(action.modifiers)?action.modifiers:[];
     const r=el.getBoundingClientRect(),right=action.button==='right';
@@ -471,7 +475,14 @@ const run=(action)=>{
     let obscuredBy=null;try{const hit=document.elementFromPoint?document.elementFromPoint(base.clientX,base.clientY):null;if(hit&&hit!==el&&!el.contains(hit)&&!hit.contains(el)&&!hit.closest('[data-voicechat-inspector]'))obscuredBy=uniqueSelector(hit)}catch{}
     const active=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==el?uniqueSelector(document.activeElement):null;
     const newErrors=pageErrors.slice(errorsBefore).slice(0,3).map((e)=>({kind:e.kind,message:e.message,at:e.at}));
-    return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{}),...(obscuredBy?{obscuredBy}:{})}
+    const textsAfter=visibleTexts();textSnapshot=textsAfter;const changes=diffTexts(textsBefore,textsAfter);
+    return {page:pageInfo(),clicked:info,...(dialogs.length?{dialogs}:{}),...(active?{focus:active}:{}),...(newErrors.length?{newErrors}:{}),...(obscuredBy?{obscuredBy}:{}),...(changes.addedTotal||changes.removedTotal?{changes}:{})}
+  }
+  if(action.kind==='changes'){
+    const now=visibleTexts();
+    if(!textSnapshot){textSnapshot=now;return {page:pageInfo(),changes:{added:[],removed:[],addedTotal:0,removedTotal:0},baseline:true}}
+    const changes=diffTexts(textSnapshot,now);textSnapshot=now;
+    return {page:pageInfo(),changes}
   }
   if(action.kind==='show'){
     // «Вот эта кнопка»: прокрутить и подсветить с подписью на 3 с — модель указывает пользователю пальцем.
@@ -527,6 +538,8 @@ const run=(action)=>{
     let opened;
     if(action.in){
       const trigger=chooseTarget({kind:'click',...( /^[.#\[]|[>:]/.test(action.in)?{selector:action.in}:{text:action.in})},true);
+      // Нативный select не раскрывается кликом: выбираем option напрямую, как set.
+      if(trigger.localName==='select'){actionable(trigger,true);const option=selectOption(trigger,action.text);trigger.value=option.value;trigger.dispatchEvent(new Event('input',{bubbles:true}));trigger.dispatchEvent(new Event('change',{bubbles:true}));flash(trigger);return {page:pageInfo(),chosen:describe(option),opened:describe(trigger)}}
       actionable(trigger);flash(trigger);opened=describe(trigger);
       const r=trigger.getBoundingClientRect(),base={bubbles:true,cancelable:true,composed:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,button:0};
       trigger.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerdown',Object.assign({pointerId:1,isPrimary:true,buttons:1},base)));
@@ -618,6 +631,11 @@ const run=(action)=>{
     const total=fresh.length;
     if(action.clear)pageErrors.length=0;
     return {page:pageInfo(),errors,total}
+  }
+  if(action.kind==='wait'&&action.changed&&!action.selector&&!action.text){
+    // «Что-то должно произойти»: ждём любого изменения видимого текста относительно текущего состояния.
+    const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000),started=performance.now(),before=textSnapshot||visibleTexts();
+    return new Promise((ok,fail)=>{const attempt=()=>{const now=visibleTexts();const changes=diffTexts(before,now);if(changes.addedTotal||changes.removedTotal){textSnapshot=now;ok({page:pageInfo(),waitedMs:Math.round(performance.now()-started),state:'changed',changes});return}if(performance.now()-started>=timeoutMs){fail(new Error('Страница не изменилась за '+timeoutMs+' мс'));return}setTimeout(attempt,150)};attempt()})
   }
   if(action.kind==='wait'&&action.idle&&!action.selector&&!action.text){
     const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000),started=performance.now();
@@ -820,8 +838,10 @@ const run=(action)=>{
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached)),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
     const focus=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement?uniqueSelector(document.activeElement):undefined;
+    if(!action.selector&&!section)textSnapshot=visibleTexts();
+    const scroller=document.scrollingElement||document.documentElement,maxScroll=Math.max(0,scroller.scrollHeight-innerHeight),scroll={top:Math.round(scroller.scrollTop),max:Math.round(maxScroll),percent:maxScroll>0?Math.round(scroller.scrollTop/maxScroll*100):100};
     const brief=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; ').slice(0,600):'';
-    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(brief?{brief}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(brief?{brief}:{}),scroll,text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };

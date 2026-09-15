@@ -121,6 +121,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   const remember = (url: string | null): void => { if (url && history[0] !== url) { history.unshift(url); if (history.length > 5) history.length = 5 } }
   let manual = false
   let viewport: { width: number; height: number } | undefined
+  // Последнее завершённое действие: модель после паузы спрашивает status и продолжает с того места.
+  let lastAction: { kind: string; ok: boolean; at: number; error?: string } | undefined
   let disposed = false
   let navigationGeneration = 0
   let inspectorMode: boolean | undefined
@@ -155,6 +157,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     if (!entry) return
     clearTimeout(entry.timer)
     pending.delete(requestId)
+    if (entry.action.kind !== 'status') lastAction = { kind: entry.action.kind, ok: outcome.ok, at: Date.now(), ...(outcome.error ? { error: outcome.error.slice(0, 200) } : {}) }
     entry.resolve(outcome)
   }
   const rejectAll = (error: string): void => {
@@ -209,8 +212,18 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         ...(history.length ? { history: [...history] } : {}),
         ...(manual ? { manual: true } : {}),
         ...(viewport ? { viewport } : {}),
-        ...(pending.size ? { pending: pending.size } : {})
+        ...(pending.size ? { pending: pending.size } : {}),
+        ...(lastAction ? { lastAction } : {})
       } })
+    }
+    // waitFor у действия: после успеха дождаться текста тем же ходом, как у open.
+    if ('waitFor' in action && typeof action.waitFor === 'string' && action.waitFor && action.kind !== 'open') {
+      const { waitFor, ...rest } = action
+      return run(rest as PreviewAction).then(async (outcome) => {
+        if (!outcome.ok) return outcome
+        const waited = await run({ kind: 'wait', text: waitFor, timeoutMs: 8000 })
+        return { ok: true, result: { ...(outcome.result as object), waited: { text: waitFor, found: waited.ok, ...(waited.ok ? {} : { error: waited.error ?? 'не дождались' }) } } as PreviewActionResult }
+      })
     }
     // Последовательность: шаги идут друг за другом через тот же run, стоп на первой ошибке.
     if (action.kind === 'sequence') {
