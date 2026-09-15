@@ -4,8 +4,10 @@
 // Данные берутся личными роутами (`/api/me/*`, `/api/agents`): весь префикс
 // `/api/admin/` закрыт привилегией `users:manage`, и не-админ туда не попадёт.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, ErrorState, Skeleton } from '@voicechat/ui-kit'
+import { useEffect, useMemo, useState } from 'react'
+import { readResources } from '../clients/readResources'
+import { isObsoleteRead } from '../lib/readCache'
+import { Button, ErrorState, Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import {
   ProfilePanel,
   READ_ONLY,
@@ -107,54 +109,71 @@ export function toProfileEvents(events: SecurityEvent[]): ProfileSecurityEvent[]
   }))
 }
 
-export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, onExportCsv, now = Date.now() }: AccountPageProps): JSX.Element {
-  // A page visit uses one reference instant. Recomputing a default Date.now()
-  // on every render used to retrigger period reports while other tabs loaded.
-  const [referenceNow] = useState(now)
-  const [profile, setProfile] = useState<ProfileUser | null>(null)
+export function AccountPage({ api: sourceApi, tab, onChangeTab, onClose, onOpenSessions, onExportCsv, now = Date.now() }: AccountPageProps): JSX.Element {
+  const reads = useMemo(() => readResources(sourceApi), [sourceApi])
+  const api = reads.api
+  const [clockTick, setClockTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setClockTick(value => value + 1), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+  useEffect(() => reads.cache.onInvalidated(() => setClockTick(value => value + 1)), [reads])
+  // Move report boundaries only on a freshness tick, never on ordinary renders.
+  const referenceNow = useMemo(() => reads.periodNow(now), [reads, clockTick])
+  const [profile, setProfile] = useState<ProfileUser | null>(() => {
+    const cached = reads.peek('me:profile')
+    return cached ? toProfileUser({ ...cached, ...(reads.peek('agents:list') ? { agents: reads.peek('agents:list') } : {}) }) : null
+  })
   const [error, setError] = useState<string | null>(null)
   const [profileReload, setProfileReload] = useState(0)
   const [accessLoading, setAccessLoading] = useState(false)
-  const [accessLoaded, setAccessLoaded] = useState(false)
+  const [accessLoaded, setAccessLoaded] = useState(() => reads.fresh('llm:access'))
   const [accessError, setAccessError] = useState<string | null>(null)
   const [accessReload, setAccessReload] = useState(0)
-  const [usageByPeriod, setUsageByPeriod] = useState<Partial<Record<ProfilePeriod, ProfileUsage>>>({})
+  const [usageByPeriod, setUsageByPeriod] = useState<Partial<Record<ProfilePeriod, ProfileUsage>>>(() => {
+    const report = reads.peek('usage:report', { unit: 'day', ...periodRange('month', referenceNow) })
+    return report ? { month: toProfileUsage(report) } : {}
+  })
   const [usageLoading, setUsageLoading] = useState(false)
   const [usageError, setUsageError] = useState<string | null>(null)
   const [usageReload, setUsageReload] = useState(0)
   const [period, setPeriod] = useState<ProfilePeriod>('month')
-  const [denied, setDenied] = useState<Array<{ provider: string; modelId: string }>>([])
-  const [events, setEvents] = useState<ProfileSecurityEvent[] | null>(null)
+  const [denied, setDenied] = useState<Array<{ provider: string; modelId: string }>>(() => reads.peek('llm:access') ?? [])
+  const [events, setEvents] = useState<ProfileSecurityEvent[] | null>(() => {
+    const cached = reads.peek('me:security', { limit: 200, group: 'all' })
+    return cached ? toProfileEvents(cached) : null
+  })
   const [eventsLoading, setEventsLoading] = useState(false)
-  const [eventsLoaded, setEventsLoaded] = useState(false)
-  const [eventsGroup, setEventsGroup] = useState<SecurityGroup | null>(null)
+  const [eventsLoaded, setEventsLoaded] = useState(() => reads.fresh('me:security', { limit: 200, group: 'all' }))
+  const [eventsGroup, setEventsGroup] = useState<SecurityGroup | null>('all')
   const [securityGroup, setSecurityGroup] = useState<SecurityGroup>('all')
   const [eventsError, setEventsError] = useState<string | null>(null)
   const [eventsReload, setEventsReload] = useState(0)
   const [machinesLoading, setMachinesLoading] = useState(false)
-  const [machinesLoaded, setMachinesLoaded] = useState(false)
+  const [machinesLoaded, setMachinesLoaded] = useState(() => reads.fresh('agents:list'))
   const [machinesError, setMachinesError] = useState<string | null>(null)
   const [machinesReload, setMachinesReload] = useState(0)
   const usage = usageByPeriod[period] ?? null
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false
     setError(null)
-    try {
-      const me = await api['me:profile']()
-      setProfile(toProfileUser(me))
-      if (me.agents !== undefined) setMachinesLoaded(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }, [api])
-
-  useEffect(() => { void load() }, [load, profileReload])
+    void api['me:profile']().then(me => {
+      if (cancelled) return
+      const agents = reads.peek('agents:list') ?? me.agents
+      setProfile(toProfileUser({ ...me, ...(agents ? { agents } : {}) }))
+      if (agents !== undefined) setMachinesLoaded(true)
+    }).catch(err => {
+      if (!cancelled && !isObsoleteRead(err)) setError(err instanceof Error ? err.message : String(err))
+    })
+    return () => { cancelled = true }
+  }, [api, profileReload, clockTick])
 
   // Access contributes one overview metric, but it must not delay the profile
   // identity and navigation that make the page feel ready.
   useEffect(() => {
     if (tab !== 'overview' && tab !== 'access') return
-    if (accessLoaded) return
+    if (accessLoaded && reads.fresh('llm:access')) return
     let cancelled = false
     setAccessLoading(true)
     setAccessError(null)
@@ -166,19 +185,19 @@ export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, on
         setAccessLoaded(true)
       })
       .catch((err) => {
-        if (cancelled) return
+        if (cancelled || isObsoleteRead(err)) return
         setAccessError(err instanceof Error ? err.message : String(err))
         setAccessLoading(false)
       })
     return () => { cancelled = true }
-  }, [api, tab, accessLoaded, accessReload])
+  }, [api, tab, accessLoaded, accessReload, reads, clockTick])
 
   // Usage aggregation is relevant only to Overview and Usage. Other tabs avoid
   // scanning message metadata until the user asks for those figures.
   useEffect(() => {
     if (tab !== 'overview' && tab !== 'usage') return
-    if (usageByPeriod[period]) return
     const range = periodRange(period, referenceNow)
+    if (usageByPeriod[period] && reads.fresh('usage:report', { unit: 'day', ...range })) return
     let cancelled = false
     setUsageLoading(true)
     setUsageError(null)
@@ -189,17 +208,17 @@ export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, on
         setUsageLoading(false)
       })
       .catch((err) => {
-        if (cancelled) return
+        if (cancelled || isObsoleteRead(err)) return
         setUsageError(err instanceof Error ? err.message : String(err))
         setUsageLoading(false)
       })
     return () => { cancelled = true }
-  }, [api, period, referenceNow, tab, usageByPeriod, usageReload])
+  }, [api, period, referenceNow, tab, usageByPeriod, usageReload, reads, clockTick])
 
   useEffect(() => {
     if (tab !== 'history' && tab !== 'overview') return
     const requestedGroup: SecurityGroup = tab === 'overview' ? 'all' : securityGroup
-    if (eventsLoaded && eventsGroup === requestedGroup) return
+    if (eventsLoaded && eventsGroup === requestedGroup && reads.fresh('me:security', { limit: 200, group: requestedGroup })) return
     let cancelled = false
     setEventsLoading(true)
     setEventsError(null)
@@ -212,16 +231,17 @@ export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, on
         setEventsGroup(requestedGroup)
       })
       .catch((err) => {
-        if (cancelled) return
+        if (cancelled || isObsoleteRead(err)) return
         setEventsError(err instanceof Error ? err.message : String(err))
         setEventsLoading(false)
       })
     return () => { cancelled = true }
-  }, [api, tab, eventsGroup, eventsLoaded, eventsReload, securityGroup])
+  }, [api, tab, eventsGroup, eventsLoaded, eventsReload, securityGroup, reads, clockTick])
 
   // Full versions and telemetry are useful only after the Machines tab opens.
   useEffect(() => {
-    if (tab !== 'machines' || !profile || machinesLoaded) return
+    if (tab !== 'machines' || !profile) return
+    if (machinesLoaded && reads.fresh('agents:list')) return
     let cancelled = false
     setMachinesLoading(true)
     setMachinesError(null)
@@ -246,19 +266,19 @@ export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, on
         setMachinesLoaded(true)
       })
       .catch((err) => {
-        if (cancelled) return
+        if (cancelled || isObsoleteRead(err)) return
         setMachinesError(err instanceof Error ? err.message : String(err))
         setMachinesLoading(false)
       })
     return () => { cancelled = true }
-  }, [api, tab, profile, machinesLoaded, machinesReload])
+  }, [api, tab, profile, machinesLoaded, machinesReload, reads, clockTick])
 
   const capabilities = useMemo(() => READ_ONLY, [])
   const requestedSecurityGroup: SecurityGroup = tab === 'overview' ? 'all' : securityGroup
-  const showAccessLoading = accessLoading || ((tab === 'overview' || tab === 'access') && !accessLoaded && !accessError)
-  const showUsageLoading = usageLoading || ((tab === 'overview' || tab === 'usage') && !usageByPeriod[period] && !usageError)
-  const showEventsLoading = eventsLoading || ((tab === 'overview' || tab === 'history') && (!eventsLoaded || eventsGroup !== requestedSecurityGroup) && !eventsError)
-  const showMachinesLoading = machinesLoading || (tab === 'machines' && !machinesLoaded && !machinesError)
+  const showAccessLoading = (accessLoading && !accessLoaded) || ((tab === 'overview' || tab === 'access') && !accessLoaded && !accessError)
+  const showUsageLoading = (usageLoading && !usage) || ((tab === 'overview' || tab === 'usage') && !usageByPeriod[period] && !usageError)
+  const showEventsLoading = (eventsLoading && (!eventsLoaded || eventsGroup !== requestedSecurityGroup)) || ((tab === 'overview' || tab === 'history') && (!eventsLoaded || eventsGroup !== requestedSecurityGroup) && !eventsError)
+  const showMachinesLoading = (machinesLoading && !machinesLoaded) || (tab === 'machines' && !machinesLoaded && !machinesError)
 
   return (
     <section className="admin-page account-page" aria-label="Мой аккаунт" data-testid="account-page">
@@ -274,6 +294,7 @@ export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, on
       </header>
       {error && <ErrorState message="Не удалось загрузить профиль" detail={error} onRetry={() => setProfileReload((value) => value + 1)} />}
       {!profile && !error && <Skeleton variant="list" count={3} height={64} lines={2} testId="account-skeleton" />}
+      {profile && (usageLoading && usage || accessLoading && accessLoaded || eventsLoading && eventsLoaded || machinesLoading && machinesLoaded) && <RefreshIndicator />}
       {profile && (
         <ProfilePanel
           user={profile}
@@ -291,7 +312,13 @@ export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, on
           securityGroup={securityGroup}
           onChangeSecurityGroup={(group) => {
             setSecurityGroup(group)
-            setEventsLoaded(false)
+            const cached = reads.peek('me:security', { limit: 200, group })
+            if (cached && reads.fresh('me:security', { limit: 200, group })) {
+              setEvents(toProfileEvents(cached))
+              setEventsGroup(group)
+              setEventsLoaded(true)
+              setEventsError(null)
+            } else setEventsLoaded(false)
           }}
           latestAgentVersion={AGENT_VERSION}
           activeWindowMs={ACTIVE_WINDOW_MS}
@@ -305,9 +332,9 @@ export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, on
             else if (tab === 'history') setEventsReload((value) => value + 1)
             else if (tab === 'usage') setUsageReload((value) => value + 1)
             else {
-              setAccessReload((value) => value + 1)
-              setEventsReload((value) => value + 1)
-              setUsageReload((value) => value + 1)
+              if (accessError) setAccessReload((value) => value + 1)
+              if (eventsError) setEventsReload((value) => value + 1)
+              if (usageError) setUsageReload((value) => value + 1)
             }
           }}
           onExportCsv={onExportCsv}

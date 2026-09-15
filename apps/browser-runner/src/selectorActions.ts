@@ -16,6 +16,8 @@ import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js
  */
 export interface SelectorLocator extends WaitLocator {
   first(): SelectorLocator
+  or?(other: SelectorLocator): SelectorLocator
+  getByRole?(role: string, options?: { name?: string; exact?: boolean }): SelectorLocator
   all(): Promise<SelectorLocator[]>
   filter(options: { visible?: boolean; hasText?: string }): SelectorLocator
   evaluateAll(script: string | ((nodes: unknown[], arg: unknown) => unknown), arg?: unknown): Promise<unknown>
@@ -42,6 +44,10 @@ export interface SelectorLocator extends WaitLocator {
 export interface SelectorPage extends WaitPage {
   locator(selector: string): SelectorLocator
   getByText(text: string, options?: { exact?: boolean }): SelectorLocator
+  /** Поиск по подписи/placeholder и роли: так поле называет пользователь, а не CSS. */
+  getByLabel?(text: string, options?: { exact?: boolean }): SelectorLocator
+  getByPlaceholder?(text: string, options?: { exact?: boolean }): SelectorLocator
+  getByRole?(role: string, options?: { name?: string; exact?: boolean }): SelectorLocator
   keyboard: { press(key: string): Promise<void>; down?(key: string): Promise<void>; up?(key: string): Promise<void> }
   /** Код строкой: описание элемента и прокрутка исполняются в самой странице. */
   evaluate(script: string): Promise<unknown>
@@ -121,6 +127,13 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
   const timeout = 'timeoutMs' in action && typeof action.timeoutMs === 'number' ? Math.min(Math.max(action.timeoutMs, 100), 30_000) : 5_000
   const locate = (selector?: string, text?: string): SelectorLocator | null =>
     selector ? (text ? page.locator(selector).filter({ hasText: text }) : page.locator(selector)) : text ? page.getByText(text, { exact: false }) : null
+  // Поле по подписи: label, aria-label или placeholder — как его видит человек.
+  const locateField = (field: string): SelectorLocator | null => {
+    const byLabel = page.getByLabel?.(field, { exact: false }) ?? null
+    const byPlaceholder = page.getByPlaceholder?.(field, { exact: false }) ?? null
+    if (byLabel && byPlaceholder) return byLabel.or ? byLabel.or(byPlaceholder) : byLabel
+    return byLabel ?? byPlaceholder
+  }
   try {
     if (action.kind === 'wait') {
       if (!isBrowserWaitOptions(action)) return { ok: false, error: 'Некорректные или несовместимые условия ожидания' }
@@ -139,8 +152,8 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
     }
     if (action.kind === 'press') {
       const target = await uniqueTarget(page.locator(action.selector), timeout)
-      // Playwright spells a shortcut as "Control+a"; the model names the parts
-      // separately, because it also needs them for the keyboard-only input path.
+      // Playwright пишет сочетание одной строкой «Control+a»; модель называет
+      // части отдельно, потому что те же модификаторы нужны и клавиатурному пути.
       const key = [...(action.modifiers ?? []), action.key].join('+')
       for (let time = 0; time < repeatOf(action.repeat); time++) await target.press(key, { timeout })
       return { ok: true }
@@ -192,20 +205,35 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
         const node = (element === scope.document.body || element === scope.document.documentElement ? scope.document.scrollingElement : element) as {
           scrollTop: number; scrollLeft: number; scrollHeight: number; scrollWidth: number; clientWidth: number; clientHeight: number; scrollTo(options: { top: number; left: number; behavior: string }): void
         }
-        const options = value as { to?: 'top' | 'bottom'; dy: number; dx: number }
-        const top = options.to === 'top' ? 0 : options.to === 'bottom' ? node.scrollHeight : node.scrollTop + options.dy
-        node.scrollTo({ top, left: node.scrollLeft + options.dx, behavior: 'instant' })
+        const options = value as { to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; dy: number; dx: number }
+        // nextPage/prevPage: на экран вниз или вверх, как PageDown/PageUp у человека.
+        if (options.to === 'nextPage' || options.to === 'prevPage') { const step = Math.max(1, Math.round(node.clientHeight * 0.9)); node.scrollTo({ top: node.scrollTop + (options.to === 'nextPage' ? step : -step), left: node.scrollLeft, behavior: 'instant' }) }
+        else if (options.to === 'element') {
+          // Сам элемент — цель, прокручивается его ближайший scroll-контейнер и окно.
+          ;(element as { scrollIntoView(options: { block: string; inline: string }): void }).scrollIntoView({ block: 'center', inline: 'nearest' })
+        } else {
+          const top = options.to === 'top' ? 0 : options.to === 'bottom' ? node.scrollHeight : node.scrollTop + options.dy
+          node.scrollTo({ top, left: node.scrollLeft + options.dx, behavior: 'instant' })
+        }
         return new Promise(resolve => scope.requestAnimationFrame(() => scope.requestAnimationFrame(() => resolve({ top: node.scrollTop, left: node.scrollLeft, maxTop: Math.max(0, node.scrollHeight - node.clientHeight), maxLeft: Math.max(0, node.scrollWidth - node.clientWidth) }))))
       }, { to: action.to, dy: action.dy ?? (action.dx === undefined ? 400 : 0), dx: action.dx ?? 0 }, { timeout })
       return { ok: true, scrolled: scrolled as BrowserSelectorResult['scrolled'] }
     }
     if (action.kind === 'type') {
-      const target = await uniqueTarget(page.locator(action.selector), timeout)
-      // fill() sets the value in one go: autocomplete, debounced search and
-      // maxlength-per-keystroke logic never see the keys a person would press.
+      const located = action.selector ? page.locator(action.selector) : action.field ? locateField(action.field) : null
+      if (!located) return { ok: false, error: action.field ? 'Поиск поля по подписи недоступен в этом раннере' : 'Нужен selector или field' }
+      const target = await uniqueTarget(located, timeout)
+      // Посимвольный ввод: fill() ставит значение целиком, и автодополнение,
+      // поиск с задержкой и логика «по одному нажатию» не просыпаются.
       if (typeof action.delay === 'number') {
         await target.clear({ timeout })
         await target.pressSequentially(action.text, { timeout, delay: Math.min(Math.max(action.delay, 0), 200) })
+        if (action.submit) await page.keyboard.press('Enter')
+        return { ok: true }
+      }
+      if (action.append) {
+        const current = await target.evaluate(node => String((node as { value?: unknown }).value ?? ''), undefined, { timeout })
+        await target.fill(String(current) + action.text, { timeout })
       } else await target.fill(action.text, { timeout })
       if (action.submit) await page.keyboard.press('Enter')
       return { ok: true }
@@ -458,8 +486,10 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       return snapshot.length > limit ? { ok: true, text: `${snapshot.slice(0, limit)}…`, truncated: true } : { ok: true, text: snapshot }
     }
     if (action.kind === 'find') {
-      const target = locate(action.selector, action.text)
-      if (!target) return { ok: false, error: 'Нужен selector или text' }
+      const target = action.role
+        ? (page.getByRole ? (action.selector ? page.locator(action.selector).getByRole?.(action.role, action.text ? { name: action.text } : {}) ?? null : page.getByRole(action.role, action.text ? { name: action.text } : {})) : null)
+        : locate(action.selector, action.text)
+      if (!target) return { ok: false, error: action.role ? 'Поиск по роли недоступен в этом раннере' : 'Нужен selector или text' }
       const limit = Math.min(Math.max(action.limit ?? 10, 1), 50)
       const filtered = action.visibleOnly !== false ? target.filter({ visible: true }) : target
       return await readElementTargets(page, async () => ({ ok: true, ...await filtered.evaluateAll(findElements, limit) as ReadContent }))

@@ -20,6 +20,20 @@ import { preparationJsonObject } from './kanban/preparation.js'
 
 const SECRET = 'test-secret'
 
+// @testCase TC9
+it('keeps the existing preparation KB section linked to verified strict-response regressions', () => {
+  const article = readFileSync(new URL('../../../docs/kb/features/task-preparation.md', import.meta.url), 'utf8')
+  expect(article).toContain('## DevelopmentReadiness и readiness-гейт')
+  expect(article).toContain('CHAT-468')
+  expect(article).toContain('apps/server/src/taskPreparation.test.ts')
+  const input = compatibleReadiness()
+  expect(preparationJsonObject(input).schemaVersion).toBe(2)
+  for (const prefix of ['Подготовка завершена.', 'Исправленный Development Brief:']) {
+    expect(article).toContain(prefix)
+    expect(() => preparationJsonObject(prefix + '\n' + input)).toThrow()
+  }
+})
+
 // @testCase TC-BRIEF-SCHEMA
 // @testCase TC-BRIEF-NORMALIZATION
 it.each([
@@ -68,6 +82,7 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
 // @testCase TC-BRIEF-03
 // @testCase T13
 // @testCase TC-11
+// @testCase TC6
 it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects a prefixed brief without saving partial requirements: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
@@ -702,6 +717,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-12
   // @testCase T10
   // @testCase TC12
+  // @testCase TC-BRIEF-NORMALIZATION
   it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -724,6 +740,8 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-13
   // @testCase TC-BRIEF-SCHEMA
   // @testCase TC11
+  // @testCase TC-BRIEF-FORMAT
+  // @testCase TC-BRIEF-CONTRACT
   it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()
@@ -858,6 +876,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-BRIEF-SCHEMA
   // @testCase T10
+  // @testCase TC8
   it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -876,6 +895,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-SCHEMA-NORMALIZATION
   // @testCase TC-12
+  // @testCase TC-BRIEF-NORMALIZATION
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -913,6 +933,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC-12
+  // @testCase TC-BRIEF-NORMALIZATION
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -941,6 +962,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC7
   // @testCase TC-12
+  // @testCase TC-BRIEF-NORMALIZATION
   it('не подменяет неоднозначный статус источника на available', async () => {
     const { project, task } = await taskInBacklog()
     const malformed = JSON.parse(compatibleReadiness())
@@ -1028,6 +1050,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC-BRIEF-NORMALIZATION
+  // @testCase TC7
   it('preserves the whole brief through every compatible conversion and a second preparation', async () => {
     const input = JSON.parse(compatibleReadiness())
     input.scope = 'Keep direct DNS blocked'

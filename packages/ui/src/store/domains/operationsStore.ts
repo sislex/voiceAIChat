@@ -142,7 +142,7 @@ export interface OperationsDeps {
 function initialState(): OperationsState {
   return {
     agents: [],
-    agentsStatus: 'loading',
+    agentsStatus: 'idle',
     agentsError: null,
     machineStorages: {},
     machinesOpen: false,
@@ -189,14 +189,20 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
 
   core.onDispose(stopTails)
 
+  let agentsGeneration = 0
+  core.onDispose(() => { agentsGeneration++ })
   async function refreshAgents(): Promise<void> {
+    const generation = ++agentsGeneration
     if (!client['agents:list']) return
-    setState({ agentsStatus: 'loading', agentsError: null })
+    const cached = client.cachedAgents?.()
+    setState({ ...(cached ? { agents: cached } : {}), agentsStatus: cached ? 'ready' : 'loading', agentsError: null })
     try {
       const agents = await client['agents:list']()
+      if (generation !== agentsGeneration) return
       setState({ agents, agentsStatus: 'ready', agentsError: null })
       await Promise.all(agents.map((agent) => refreshMachineStorages(agent.id)))
     } catch (err) {
+      if (generation !== agentsGeneration || (err instanceof Error && err.name === 'AbortError')) return
       // Промах в console.warn выглядел как «машин нет» — теперь состояние видно.
       console.warn('[agents] не удалось получить список машин', err)
       setState({ agentsStatus: 'error', agentsError: err instanceof Error ? err.message : String(err) })
@@ -229,8 +235,10 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
   }
 
   async function refreshMachineStorages(id: string): Promise<void> {
+    const generation = agentsGeneration
     try {
       const storages = await client['agents:listStorages']({ id })
+      if (generation !== agentsGeneration) return
       setState({ machineStorages: { ...getState().machineStorages, [id]: storages } })
     } catch (err) {
       fail(err, () => void refreshMachineStorages(id))
@@ -251,7 +259,7 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
     dispose: core.dispose,
     actions: {
       refreshAgents,
-      applyAgents: (agents) => setState({ agents }),
+      applyAgents: (agents) => { agentsGeneration++; setState({ agents, agentsStatus: 'ready', agentsError: null }) },
       async createAgent(name) {
         try {
           const created = await client['agents:create']({ name })
@@ -539,6 +547,7 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
         }
       },
       reset() {
+        agentsGeneration++
         stopTails()
         core.resetState(initialState())
       }

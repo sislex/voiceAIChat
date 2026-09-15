@@ -16,7 +16,7 @@ body { font-family: 'Manrope', system-ui, sans-serif; background: var(--bg); col
 .webpreview-scenario li[data-status='failed'] { color: var(--danger); }
 .webpreview-scenario input { min-width: 0; flex: 1; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); font: inherit; padding: 3px 5px; }
 .webpreview-scenario em { white-space: nowrap; color: var(--text-dim); }
-.webpreview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: white; }
+.webpreview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--panel); }
 .webpreview-tools { position: relative; flex: none; }
 .webpreview-tools > summary { list-style: none; cursor: pointer; user-select: none; }
 .webpreview-tools > summary::-webkit-details-marker { display: none; }
@@ -58,3 +58,119 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
 @media (max-width: 560px) {
   .webpreview-scenario { max-height: 45vh; }
 }
+
+/* Thin indeterminate bar: the panel shows work in progress even when the status text is scrolled away. */
+.webpreview-progress { flex: none; position: relative; height: 3px; overflow: hidden; background: var(--border-soft, var(--border)); }
+.webpreview-progress::after { content: ''; position: absolute; inset: 0 auto 0 -40%; width: 40%; background: var(--accent); animation: webpreview-progress 1.1s ease-in-out infinite; }
+@keyframes webpreview-progress { from { transform: translateX(0); } to { transform: translateX(350%); } }
+@media (prefers-reduced-motion: reduce) { .webpreview-progress::after { animation: none; width: 100%; left: 0; opacity: .5; } }
+/* Page title under the address: one line, the URL stays editable. */
+.webpreview-title { flex: none; display: flex; align-items: center; gap: 6px; width: 100%; padding: 3px 10px 5px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; text-align: left; cursor: copy; }
+.webpreview-title:hover, .webpreview-title:focus-visible { color: var(--text); outline: none; }
+.webpreview-title > span { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.webpreview-title__icon { flex: none; width: 14px; height: 14px; border-radius: 3px; }
+.webpreview-viewport-chip { white-space: nowrap; }
+/* Recent addresses: tapping a chip beats typing a URL on a phone keyboard. */
+.webpreview-empty p { margin: 0 0 10px; }
+.webpreview-recent { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 420px; }
+.webpreview-recent .vc-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Touch screens: browser-grade tap targets for the toolbar and step controls. */
+@media (pointer: coarse) {
+  .webpreview-bar .vc-btn, .webpreview-bar select, .webpreview-address input, .webpreview-tools__menu .vc-btn, .webpreview-recent .vc-btn { min-height: 44px; }
+  .webpreview-tools__menu { gap: 6px; }
+}
+/* Narrow panels: viewport presets exceed the panel anyway, so only the reset chip stays. */
+@media (max-width: 560px) {
+  .webpreview-bar label:has(> select[aria-label='Ширина вьюпорта']) { display: none; }
+}
+.webpreview-empty__hint { font-size: 12px; color: var(--text-dim); }
+.webpreview-link { flex: none; align-self: center; font-size: 10px; color: var(--text-dim); }
+.webpreview-link[data-linked] { color: var(--success, #22863a); }
+.webpreview-address { position: relative; }
+.webpreview-scheme { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--text-dim); pointer-events: none; }
+.webpreview-address input:not(:placeholder-shown) { padding-left: 30px; }
+.webpreview-manual { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--warning, var(--text)); }
+.webpreview-link[data-manual] { color: var(--warning, #b7791f); }
+.webpreview-selection { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 10px; border-bottom: 1px solid var(--border); background: var(--surface-selected, var(--surface)); font-size: 12px; }
+.webpreview-selection__text { flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
+.webpreview-load-error__hint { flex-basis: 100%; color: var(--text-dim); }
+.webpreview-tools__group { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; margin-top: 4px; border-top: 1px solid var(--border); }
+.webpreview-tools__group:first-child { padding-top: 0; margin-top: 0; border-top: 0; }
+.webpreview-empty .vc-btn { margin-top: 6px; }
+@media (max-width: 360px) { .webpreview-bar button[type='submit'] { display: none; } }
+/* Phone: the tools menu becomes a bottom sheet — reachable with a thumb, not a tiny dropdown. */
+@media (max-width: 560px) {
+  .webpreview-tools__menu { position: fixed; inset: auto 0 0 0; top: auto; max-width: none; max-height: 70vh; overflow: auto; border-radius: 14px 14px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 32px rgba(31, 35, 48, .2); }
+}
+.webpreview-title__lang { flex: none; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; text-transform: uppercase; color: var(--text-dim); }
+.webpreview-reload--busy { animation: webpreview-spin 1s linear infinite; }
+@keyframes webpreview-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .webpreview-reload--busy { animation: none; opacity: .6; } }
+.webpreview-tools__badge { color: var(--accent); margin-right: 4px; font-size: 9px; }
+.webpreview-empty__keys { font-size: 11px; }
+@media (pointer: coarse) { .webpreview-empty__keys { display: none; } }
+.webpreview-suggestions { position: absolute; z-index: 21; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 8px 24px rgba(31, 35, 48, .14); }
+.webpreview-suggestions li > button { display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.webpreview-suggestions li > button:hover, .webpreview-suggestions li > button:focus-visible { background: var(--surface-selected); outline: none; }
+@media (pointer: coarse) { .webpreview-suggestions li > button { min-height: 44px; } }
+.webpreview-find { flex: none; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.webpreview-find input { flex: 1; min-width: 0; min-height: 32px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; }
+.webpreview--dragging { outline: 2px dashed var(--accent); outline-offset: -4px; }
+@media (pointer: coarse) { .webpreview-find input, .webpreview-find .vc-btn { min-height: 44px; } }
+.webpreview-title__time { flex: none; color: var(--text-dim); font-size: 11px; }
+.webpreview-readbar { flex: none; height: 2px; background: var(--border-soft, var(--border)); }
+.webpreview-readbar > span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+.webpreview-tools__zoom { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.webpreview-tools__zoom span { min-width: 40px; text-align: center; color: var(--text-dim); }
+.webpreview-suggestions__active > button { background: var(--surface-selected); }
+/* Cycle 16: phone-browser behaviours — link status line, link menu, tab history, reading mode, hidden toolbar. */
+.webpreview-viewport { position: relative; }
+.webpreview-linkbar { position: absolute; left: 0; bottom: 0; z-index: 2; max-width: 70%; padding: 3px 8px; border: 1px solid var(--border); border-left: 0; border-bottom: 0; border-radius: 0 6px 0 0; background: var(--surface); color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.webpreview-linkbar small { color: var(--warning, var(--text-dim)); }
+@media (pointer: coarse) { .webpreview-linkbar { display: none; } }
+.webpreview-totop { position: absolute; right: 14px; bottom: 14px; z-index: 2; width: 40px; height: 40px; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--text); font: inherit; font-size: 18px; cursor: pointer; box-shadow: 0 4px 14px rgba(31, 41, 55, .18); }
+.webpreview-totop:hover { background: var(--surface-hover, var(--surface)); }
+@media (pointer: coarse) { .webpreview-totop { width: 44px; height: 44px; bottom: calc(14px + env(safe-area-inset-bottom)); } }
+.webpreview-history { position: relative; display: inline-flex; gap: 4px; }
+.webpreview-history__list { left: 0; right: auto; min-width: 240px; }
+.webpreview-history__list li > button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.webpreview-history__list small { color: var(--text-dim); font-size: 10px; }
+.webpreview-keys { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.webpreview-keys > div { display: flex; align-items: baseline; gap: 6px; }
+.webpreview-keys dt, .webpreview-keys dd { margin: 0; }
+.webpreview-keys kbd { padding: 0 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; font: inherit; font-size: 11px; background: var(--surface); }
+.webpreview-keys dd { color: var(--text-dim); }
+.webpreview-peek { display: none; }
+@media (max-width: 560px) {
+  .webpreview--bar-hidden .webpreview-bar, .webpreview--bar-hidden .webpreview-title, .webpreview--bar-hidden .webpreview-readbar { display: none; }
+  .webpreview--bar-hidden .webpreview-peek { display: block; flex: none; width: 100%; height: 22px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font-size: 14px; line-height: 1; }
+}
+/* Cycle 17: the landmarks a person reads first — site path, pager, publication date, site search. */
+.webpreview-crumbs { flex: none; display: flex; align-items: center; gap: 4px; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
+.webpreview-crumbs span { display: inline-flex; align-items: center; gap: 4px; }
+.webpreview-crumbs i { color: var(--text-dim); font-style: normal; }
+.webpreview-crumbs button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.webpreview-crumbs b { font-weight: 600; }
+.webpreview-pager { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-x: auto; white-space: nowrap; }
+.webpreview-pager__label { color: var(--text-dim); }
+.webpreview-title__published, .webpreview-title__page { flex: none; color: var(--text-dim); }
+.webpreview-selection__by { flex: none; color: var(--accent); }
+.webpreview-tools__site-search { display: flex; align-items: center; gap: 6px; }
+.webpreview-tools__site-search input { flex: 1 1 auto; min-width: 0; }
+@media (pointer: coarse) {
+  .webpreview-crumbs button, .webpreview-pager .vc-btn { min-height: 44px; }
+  .webpreview-tools__site-search input { min-height: 44px; }
+}
+/* Cycle 18: working through a long page — contents, scroll-until, reading time left. */
+.webpreview-longread { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.webpreview-longread__until { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.webpreview-longread__until input { flex: 1 1 auto; min-width: 0; }
+.webpreview-toc { flex: none; max-height: 40vh; overflow: auto; padding: 4px 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.webpreview-toc ol { list-style: none; margin: 0; padding: 0; }
+.webpreview-toc li[data-level='2'] { padding-left: 12px; }
+.webpreview-toc li[data-level='3'] { padding-left: 24px; }
+.webpreview-toc li[data-level='4'] { padding-left: 36px; }
+.webpreview-toc button { display: block; width: 100%; padding: 4px 2px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.webpreview-toc button:hover { background: var(--surface-hover, var(--surface)); }
+@media (pointer: coarse) { .webpreview-toc button, .webpreview-longread .vc-btn, .webpreview-longread__until input { min-height: 44px; } }
+@media (max-width: 560px) { .webpreview-toc { max-height: 55vh; } }

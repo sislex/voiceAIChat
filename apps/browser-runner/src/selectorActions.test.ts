@@ -14,7 +14,6 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     isEditable: async () => true,
     isChecked: async () => false,
     inputValue: async () => '',
-    boundingBox: async () => ({ x: 0, y: 0, width: 10, height: 10 }),
     filter: () => self,
     evaluateAll: async () => null,
     click: vi.fn(async () => {}),

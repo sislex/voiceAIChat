@@ -968,6 +968,14 @@ export class ChatRepo extends BaseRepo {
    * Сообщения чатов отменённых задач исключаются до LIMIT/курсора; прямой поиск
    * внутри такого разговора намеренно не превращает его в стандартную выборку.
    */
+  /** Live minimal projection avoids FTS backfill lag and strips secrets before matching. */
+  async universalSearchRows(userId: string): Promise<Array<{ id: string; conversationId: string; title: string; text: string; scope: string; projectId: string | null }>> {
+    return await this.sql.all(`SELECT m.id, c.id AS "conversationId", c.title, m.text, c.scope, c.project_id AS "projectId"
+      FROM messages m JOIN conversations c ON c.id = m.conversation_id
+      WHERE c.user_id = ? AND m.state = 'published' AND ${NOT_CANCELLED_TASK_CHAT}
+      ORDER BY m.id`, [userId]) as Array<{ id: string; conversationId: string; title: string; text: string; scope: string; projectId: string | null }>
+  }
+
   async searchMessages(userId: string, opts: MessageSearchOptions): Promise<MessageSearchResult> {
     const pg = this.sql.engine === 'postgres'
     const match = pg ? toPgTsQuery(opts.q ?? '') : toFtsMatchQuery(opts.q ?? '')

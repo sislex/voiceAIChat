@@ -216,7 +216,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     }),
   ),
   definition("web", "Веб-оболочка", "apps/web", {
-    e2eFiles: ["e2e/applicationReleases.e2e.test.ts", "e2e/machine-vpn.e2e.test.ts"],
+    e2eFiles: ["e2e/applicationReleases.e2e.test.ts", "e2e/machine-vpn.e2e.test.ts", "e2e/universalSearch.e2e.test.ts"],
     browserPaths: [
       "packages/ui/src/runtime",
       "packages/ui/src/components/releases/ApplicationReleaseCenter.tsx",
@@ -225,6 +225,9 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       "packages/ui/src/components/MachineVpn.stories.tsx",
       "packages/ui/src/test/fixtures/vpn.ts",
       "e2e/machine-vpn.e2e.test.ts",
+      "e2e/universalSearch.e2e.test.ts",
+      "packages/ui/src/components/CommandPalette.tsx",
+      "packages/ui/src/lib/useUniversalSearch.ts",
     ],
     paths: ["apps/web", "packages/ui"],
     workspaces: ["@voicechat/ui", "@voicechat/web"],
