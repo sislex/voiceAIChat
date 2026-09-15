@@ -1,7 +1,7 @@
 ---
 title: Речь: Whisper (STT) и Piper/say (TTS)
 updated: 2026-09-15
-checked: 1de46edc
+checked: 911e2eb0
 areas:
   - apps/stt-runner
   - apps/server/src/stt
@@ -47,14 +47,11 @@ STT-пути принадлежат конфигу `apps/stt-runner/src/config.t
 
 Физический каталог голосов Piper принадлежит TTS Runner. Сервер проксирует список и удаление через `TtsClient`; старые серверные каталог разрешённых загрузок и downloader удалены, поэтому публичный каталог показывает только установленные голоса и не предлагает скачивание.
 
-The resumable first-run wizard uses a versioned `Settings.onboarding` object,
-validated by `sanitizeSettingsPatch`. Its five independent steps are microphone/
-Whisper, TTS, Claude/Codex, machine and a complete voice request. Closing the
-wizard keeps chat reachable; settings offers a reopen action, and reset only
-replaces onboarding progress. Interrupted checks recover as warnings and never
-restart recording or requests automatically. Configuration fingerprints invalidate
-affected results without clearing independent successes. Persistence failures
-remain visible with an explicit retry.
+## Неблокирующий мастер первого запуска
+
+Возобновляемый мастер хранит прогресс в версионированном `Settings.onboarding`; контракт, начальное состояние, переходы и проверка входящего settings patch находятся в `packages/shared/src/types.ts`. Пять независимых шагов проверяют microphone/Whisper, TTS, Claude/Codex, выбранную машину и полный голосовой запрос. У каждого шага один из статусов `idle`, `checking`, `success`, `warning`, `error` или `skipped`, фиксированная безопасная диагностика и явные действия повтора и пропуска. Закрытие мастера не блокирует чат, из настроек его можно открыть снова, а отдельный reset заменяет только onboarding-прогресс.
+
+При восстановлении сохранённый `checking` становится `warning`, поэтому reload или restart не создаёт вечную проверку, ложный успех и автоматический повтор записи либо запроса. Отпечатки относящихся к шагу настроек переводят только затронутый результат в предупреждение; переход любого шага сбрасывает зависимый итоговый voice-тест, но не независимые успехи. Ошибка сохранения остаётся видимой и предлагает явный повтор.
 
 `installRemoteBridges`, shared by web and Electron, exposes a lazy
 `RendererOnboardingBridge`. Each check opens a private WebSocket so STT/TTS
