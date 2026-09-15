@@ -1999,6 +1999,13 @@
   box-shadow: none;
   padding-bottom: env(safe-area-inset-bottom);
 }
+/* Onboarding owns bottom safe-area spacing in its persistent actions. */
+.ob-dialog.vc-dialog--phone {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: 0;
+  padding-left: env(safe-area-inset-left);
+}
 .vc-dialog-overlay--phone {
   align-items: stretch;
   justify-content: stretch;
@@ -8333,11 +8340,32 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jboard-mobile-filter-meta { display: inline-flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; color: var(--text-dim); font-size: 10px; font-weight: 500; }
 .jboard-mobile-filter-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Mobile columns own their vertical viewport; desktop keeps the shared viewport. */
-@media (max-width: 720px) {
-  .jboard { scroll-snap-type: x mandatory; scroll-padding-inline: 12px; overflow-y: hidden; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px) + var(--vc-toast-inset, 0px)); }
-  .jboard[data-dragging="pointer"] { scroll-snap-type: none; }
-  .jboard .jcol[data-column-id] { scroll-snap-align: start; flex-basis: calc(100vw - 48px); width: calc(100vw - 48px); min-height: 0; }
+/* The board measures its available width, including a tablet sidebar. */
+.jboard-wrap[data-narrow] { container-type: inline-size; container-name: kanban; }
+.jboard-mobile-filters { animation: jboard-filter-enter 180ms ease-out; }
+.jboard-mobile-filters .jboard-filters { position: static; display: flex; flex-direction: column; align-items: stretch; }
+.jboard-mobile-selection { display: flex; flex-direction: column; min-width: 0; flex: 1; text-align: center; }
+.jboard-mobile-selection select { width: 100%; min-width: 0; min-height: 44px; color: var(--text); background: var(--panel); }
+.jboard-mobile-create[hidden],
+body:has([role="dialog"]) .jboard-mobile-create,
+body:has([role="menu"]) .jboard-mobile-create { visibility: hidden; pointer-events: none; }
+@container kanban (max-width: 720px) {
+  .jboard { overflow-x: hidden; overflow-y: hidden; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px) + var(--vc-toast-inset, 0px)); }
+  .jboard .jcol[data-column-id] { flex-basis: 100%; width: 100%; min-height: 0; }
+  .jboard .jcol--improvements, .jboard .jcol--add { display: none; }
+  .jboard .jlane-heads, .jboard .jlane-cols { min-width: 0; width: 100%; }
+  .jboard .jcard-title { overflow-wrap: anywhere; }
+  .jboard .jcol-head h2 { overflow-wrap: anywhere; min-width: 0; }
+  .jboard .jcol-head:not(.jcol-head--collapsed) { flex-wrap: wrap; }
+  .jboard .jcol-head:not(.jcol-head--collapsed) .jcol-name { flex: 1 1 calc(100% - 52px); }
+  .jboard .jcol-name-text { overflow-wrap: anywhere; }
+  .jcolumn-collapse-actions { flex-wrap: wrap; }
+  .jcolumn-collapse-actions .vc-btn, .jboard-mobile-navigation .vc-btn { min-height: 44px; min-width: 44px; }
+  .jboard .jcard-top { min-width: 0; }
+  .jboard .jcard { max-width: 100%; }
+  .jboard .jcard-menu { position: fixed; inset: auto 12px 12px; max-height: 60%; min-width: 0; z-index: 60; }
+  .jboard .jcard-menu > button { min-height: 44px; overflow-wrap: anywhere; }
+  .jboard { touch-action: pan-y pinch-zoom; }
   .jboard:not(.jboard--lanes) > .jcol { height: 100%; }
   .jboard .jcol-content:not([hidden]) { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; }
   .jboard .jcol-head { position: sticky; top: 0; z-index: 3; background: var(--panel); }

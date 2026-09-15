@@ -72,7 +72,8 @@ export function ToolFrame({
   }
   // Слой варианта modal держит PopupFrame — второй раз регистрировать нельзя.
   useDialogStack({
-    active: variant === 'page' || (variant === 'embedded' && fullscreen),
+    // A non-dismissible page must not take Escape or focus from an open dialog.
+    active: (variant === 'page' && !!(onClose || onEscape)) || (variant === 'embedded' && fullscreen),
     onEscape: handleEscape,
     lockScroll: false
   })

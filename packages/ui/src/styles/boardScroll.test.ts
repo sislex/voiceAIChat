@@ -23,10 +23,12 @@ import { decl, mediaBody, atRuleBodies } from './cssRules'
 
 describe('app.css — скролл длинной колонки доски', () => {
   // @testCase TC5
-  it('uses mandatory mobile snap and independent card scrolling with a sticky header', () => {
-    const mobile = atRuleBodies('@media (max-width: 720px)').join('\n')
-    expect(mobile).toContain('scroll-snap-type: x mandatory')
-    expect(mobile).toContain('scroll-snap-align: start')
+  // @testCase TC-UI-03
+  it('uses available-width columns and independent scrolling with safe-area space for create', () => {
+    const mobile = atRuleBodies('@container kanban (max-width: 720px)').join('\n')
+    expect(mobile).toContain('overflow-x: hidden')
+    expect(mobile).toContain('flex-basis: 100%; width: 100%')
+    expect(mobile).toContain('touch-action: pan-y pinch-zoom')
     expect(mobile).toMatch(/\.jboard \.jcol-content:not\(\[hidden\]\)[^{]*\{[^}]*overflow-y: auto/)
     expect(mobile).toMatch(/\.jboard \.jcol-head[^}]*position: sticky; top: 0/)
     expect(mobile).toContain('env(safe-area-inset-bottom, 0px)')

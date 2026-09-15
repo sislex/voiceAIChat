@@ -12,7 +12,7 @@ import { createQaRest } from './qaBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { base64ToArrayBuffer } from './decode'
 import { getCsrf, setCsrf, setToken } from './session'
-import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy, makeFsBridge } from './index'
+import { makeOnboardingBridge, makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy, makeFsBridge } from './index'
 
 // @testCase TC-CONSISTENCY
 // @testCase TC-API
@@ -65,6 +65,35 @@ class FakeWebSocket {
     this.onmessage?.({ data: JSON.stringify(obj) })
   }
 }
+
+// @testCase TC-HOST-1
+// @testCase TC-CONTRACT-1
+it.each(['ws://web.example', 'ws://127.0.0.1:8787'])('isolates diagnostic streams for the shared web/Electron transport: %s', async base => {
+  vi.stubGlobal('WebSocket', FakeWebSocket)
+  setToken('test-session')
+  const chat = new WsClient(base + '/ws')
+  const chatSocket = FakeWebSocket.last!
+  chatSocket._open()
+  const audioInChat = vi.fn()
+  chat.on('tts.audio', audioInChat)
+  const factory = makeOnboardingBridge(base)
+  expect(FakeWebSocket.last).toBe(chatSocket)
+  const check = factory.open()
+  const diagnosticSocket = FakeWebSocket.last!
+  diagnosticSocket._open()
+  const received = vi.fn()
+  check.tts.onAudio(received)
+  await Promise.resolve()
+  diagnosticSocket._emit({ t: 'tts.audio', audio: 'AAAA' })
+  expect(received).toHaveBeenCalledTimes(1)
+  expect(audioInChat).not.toHaveBeenCalled()
+  check.close()
+  expect(diagnosticSocket.readyState).toBe(3)
+  expect(chatSocket.readyState).toBe(1)
+  chat.close()
+  setToken(null)
+  vi.unstubAllGlobals()
+})
 
 describe('WsClient', () => {
   const realWs = globalThis.WebSocket

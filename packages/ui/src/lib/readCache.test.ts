@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ReadCache, RESOURCE_TTL, resourceKey } from './readCache'
+import { isObsoleteRead, ReadCache, RESOURCE_TTL, resourceKey } from './readCache'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -8,6 +8,10 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 describe('shared read cache', () => {
+  it('does not confuse a transport AbortError with an obsolete cache read', () => {
+    expect(isObsoleteRead(Object.assign(new Error('offline'), { name: 'AbortError' }))).toBe(false)
+  })
+
   // @testCase TC2
   it.each(Object.entries(RESOURCE_TTL))('deduplicates and expires %s at its explicit TTL', async (family, ttl) => {
     let now = 100

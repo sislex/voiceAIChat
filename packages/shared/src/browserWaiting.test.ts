@@ -38,3 +38,19 @@ describe('контракт ожидания браузера', () => {
     expect(browserUrlMatches('about:blank', '*')).toBe(true)
   })
 })
+
+// Круг 3: сетевая тишина и остановка анимации — то, чего человек ждёт глазами.
+describe('ожидание сети и стабильности', () => {
+  // Круг 3 этой ветки и параллельная работа в main пришли к одному и тому же:
+  // в main условие называется `idle`, и второе имя того же ожидания заводить
+  // незачем — контракт остаётся один.
+  it('сетевая тишина допускается сама по себе, без цели', () => {
+    expect(isBrowserWaitOptions({ idle: true })).toBe(true)
+    expect(isBrowserWaitOptions({ idle: 'busy' })).toBe(false)
+  })
+
+  it('стабильность допускается и как самостоятельное условие: страница целиком тоже «замирает»', () => {
+    expect(isBrowserWaitOptions({ selector: '#menu', stable: true })).toBe(true)
+    expect(isBrowserWaitOptions({ stable: true })).toBe(true)
+  })
+})

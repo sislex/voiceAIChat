@@ -634,6 +634,22 @@ function toWsBase(httpBase: string): string {
   return `${proto}//${window.location.host}`
 }
 
+/** Web and Electron use a separate per-check connection with the same session scope. */
+export function makeOnboardingBridge(wsBase: string): import('@shared/ipc').RendererOnboardingBridge {
+  return {
+    open: () => {
+      const diagnostic = new WsClient(`${wsBase}/ws`, () => getToken() ?? (getCsrf() ? 'cookie' : null))
+      // An interrupted diagnostic must never replay side effects after reconnect.
+      diagnostic.onDisconnected(() => diagnostic.close())
+      return {
+        audio: makeAudioBridge(diagnostic), stt: makeSttBridge(diagnostic),
+        tts: makeTtsBridge(diagnostic), claude: makeClaudeBridge(diagnostic),
+        close: () => diagnostic.close()
+      }
+    }
+  }
+}
+
 let ws: WsClient | null = null
 
 /**
@@ -661,6 +677,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   ws = new WsClient(`${wsBase}/ws`, () => getToken() ?? (getCsrf() ? 'cookie' : null))
   void migrateLegacyToken(httpBase)
   window.api = createHttpApi(httpBase, `${wsBase}/agent`)
+  window.onboarding = makeOnboardingBridge(wsBase)
   window.audio = makeAudioBridge(ws)
   window.auth = makeAuthBridge(ws)
   window.stt = makeSttBridge(ws)
