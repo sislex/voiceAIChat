@@ -67,9 +67,10 @@ it('offers «Показать» only for steps with a selector and hides search 
   unmount()
   render(<ReaderActionHistory actions={[{ id: 'c', action: { kind: 'click', selector: '#buy' }, title: null, address: null }, ...actions]} onReveal={onReveal} />)
   expect(screen.getByRole('searchbox')).toBeTruthy()
-  expect(screen.getAllByRole('button', { name: /Показать на странице/ })).toHaveLength(1)
-  fireEvent.click(screen.getByRole('button', { name: /Показать на странице/ }))
-  expect(onReveal).toHaveBeenCalledWith('#buy')
+  // Клик по селектору и клик по тексту показываются; чтение — нет.
+  expect(screen.getAllByRole('button', { name: /Показать на странице/ })).toHaveLength(2)
+  fireEvent.click(screen.getAllByRole('button', { name: /Показать на странице/ })[0])
+  expect(onReveal).toHaveBeenCalledWith({ selector: '#buy' })
 })
 
 it('shows check verdicts with summaries and disables reveal on another page', () => {
@@ -81,7 +82,9 @@ it('shows check verdicts with summaries and disables reveal on another page', ()
   expect(screen.getByLabelText('Проверка пройдена')).toBeTruthy()
   expect(screen.getByLabelText('Проверка не пройдена')).toBeTruthy()
   expect(screen.getByText('.row: 2 из 3 — не совпало')).toBeTruthy()
-  expect(screen.getByRole('button', { name: /Показать на странице/ })).toBeDisabled()
+  const reveals = screen.getAllByRole('button', { name: /Показать на странице/ }) as HTMLButtonElement[]
+  expect(reveals.filter((button) => button.disabled)).toHaveLength(1)
+  expect(reveals.find((button) => button.disabled)!.title).toBe('Открыта другая страница')
 })
 
 it('filters to failed checks and clears the feed', () => {
@@ -122,4 +125,12 @@ it('copies the feed as text lines', () => {
   render(<ReaderActionHistory actions={[{ id: 'ok', action: { kind: 'check', text: 'Войти' }, title: null, address: 'https://shop.example/', ok: true, summary: '«Войти» видно' }]} />)
   fireEvent.click(screen.getByRole('button', { name: 'Скопировать ленту действий' }))
   expect(writeText).toHaveBeenCalledWith(expect.stringContaining('✓ Проверил «Войти» — «Войти» видно (shop.example)'))
+})
+
+it('reveals steps by text when they have no selector and marks fresh steps as just now', () => {
+  const onReveal = vi.fn()
+  render(<ReaderActionHistory onReveal={onReveal} actions={[{ id: 'c', action: { kind: 'click', text: 'Купить' }, title: null, address: null, at: Date.now() }]} />)
+  fireEvent.click(screen.getByRole('button', { name: /Показать на странице/ }))
+  expect(onReveal).toHaveBeenCalledWith({ text: 'Купить' })
+  expect(screen.getByRole('listitem').textContent).toContain('только что')
 })

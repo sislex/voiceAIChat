@@ -478,6 +478,22 @@ describe('Recorder: результат действия и навигация (�
     fireEvent.click(screen.getByRole('button', { name: 'Открыть как адрес' }))
     expect(sent(post).find((message) => message.kind === 'save-url' && message.url === 'https://example.org/about')).toBeTruthy()
   })
+  it('Ctrl+F открывает поиск по странице, Alt+Shift+M — ручной режим, drop адреса открывает его', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    ready()
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const find = vi.fn(() => true)
+    Object.defineProperty(frame.contentWindow, 'find', { configurable: true, value: find })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Адрес превью' }), { key: 'f', ctrlKey: true })
+    const search = screen.getByRole('searchbox', { name: 'Найти на странице' })
+    fireEvent.change(search, { target: { value: 'Домены' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Следующее совпадение' }))
+    expect(find).toHaveBeenCalledWith('Домены', false, false, true)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Адрес превью' }), { key: 'm', altKey: true, shiftKey: true })
+    expect(sent(post).find((message) => message.kind === 'control')).toMatchObject({ manual: true })
+    fireEvent.drop(screen.getByRole('region', { name: 'Web Reader' }), { dataTransfer: { types: ['text/uri-list'], getData: (type: string) => type === 'text/uri-list' ? 'https://dropped.example/page\n' : '' } })
+    expect(sent(post).find((message) => message.kind === 'save-url' && message.url === 'https://dropped.example/page')).toBeTruthy()
+  })
   it('чтение отвечает сразу, а ошибка клика не ждёт навигацию', () => {
     const post = vi.spyOn(window, 'postMessage')
     ready()

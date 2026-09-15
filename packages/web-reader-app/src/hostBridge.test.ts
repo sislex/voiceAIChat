@@ -87,6 +87,27 @@ describe('wait по адресу, история и вопрос о выделе
   })
 })
 
+describe('sequence как чек-лист', () => {
+  it('continueOnError проходит все шаги и перечисляет провалы', async () => {
+    const h = harness()
+    h.ready()
+    const registrationId = h.bridge.registrationId()!
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    const running = h.bridge.run({ kind: 'sequence', continueOnError: true, steps: [{ kind: 'check', text: 'Войти' }, { kind: 'check', text: 'Корзина' }] })
+    await Promise.resolve()
+    const first = h.sent.filter((m) => m.kind === 'command').at(-1) as { requestId: string }
+    h.from(registrationId, { kind: 'result', requestId: first.requestId, ok: false, error: 'не видно' })
+    await Promise.resolve(); await Promise.resolve()
+    const second = h.sent.filter((m) => m.kind === 'command').at(-1) as { requestId: string }
+    expect(second.requestId).not.toBe(first.requestId)
+    h.from(registrationId, { kind: 'result', requestId: second.requestId, ok: true, result: { page: { url: 'https://shop.example/', title: '' }, pass: true, summary: '«Корзина» видно' } })
+    const outcome = await running
+    expect(outcome.ok).toBe(false)
+    expect(outcome.error).toBe('Шаг 1 из 2 (check): не видно')
+    expect(outcome.result).toMatchObject({ completed: 1, total: 2, steps: [{ kind: 'check', ok: false }, { kind: 'check', ok: true, summary: '«Корзина» видно' }] })
+  })
+})
+
 describe('waitFor у действий и lastAction', () => {
   it('click с waitFor ждёт текст после успеха; status помнит последнее действие', async () => {
     const h = harness()

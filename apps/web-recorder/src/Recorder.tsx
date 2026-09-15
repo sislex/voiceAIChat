@@ -85,6 +85,16 @@ export function Recorder(): JSX.Element {
   // Address suggestions from recent visits while typing: our own listbox keeps the input a plain textbox for ARIA.
   const [addressFocused, setAddressFocused] = useState(false)
   const [longLoad, setLongLoad] = useState(false)
+  // Find-in-page like a browser's Ctrl+F: same-origin window.find highlights matches inside the site.
+  const [findOpen, setFindOpen] = useState(false)
+  const [findText, setFindText] = useState('')
+  const findRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const findInPage = (backwards: boolean): void => {
+    const target = frame.current?.contentWindow as (Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean, wrap?: boolean) => boolean }) | null | undefined
+    if (!target || !findText.trim() || typeof target.find !== 'function') return
+    try { if (!target.find(findText, false, backwards, true)) setError(`«${findText}» на странице не найдено.`) } catch { /* cross-document after a redirect */ }
+  }
   const suggestionsId = useId()
   // Rough history depth of this page session: «Назад» is disabled until there is somewhere to go.
   const [historyDepth, setHistoryDepth] = useState(0)
@@ -550,11 +560,20 @@ export function Recorder(): JSX.Element {
     if (currentUrl.current) window.open(currentUrl.current, '_blank', 'noopener,noreferrer')
     closeTools()
   }
-  return <section className="webpreview" aria-label="Web Reader" onKeyDown={event => {
+  return <section className={`webpreview${dragging ? ' webpreview--dragging' : ''}`} aria-label="Web Reader" onDragOver={event => { if ([...event.dataTransfer.types].some(type => type === 'text/uri-list' || type === 'text/plain')) { event.preventDefault(); setDragging(true) } }} onDragLeave={() => setDragging(false)} onDrop={event => {
+    // Drop a link or address text anywhere on the panel to open it — like dropping a link onto a browser tab.
+    event.preventDefault(); setDragging(false)
+    const dropped = (event.dataTransfer.getData('text/uri-list') || event.dataTransfer.getData('text/plain')).split('\n').map(line => line.trim()).find(line => line && !line.startsWith('#')) ?? ''
+    const result = normalizeReaderAddress(dropped, currentUrl.current)
+    if (result.url) openAddress(result.url); else if (dropped) setAddressError(result.error ?? 'Это не адрес')
+  }} onKeyDown={event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
       event.preventDefault(); addressRef.current?.focus(); addressRef.current?.select()
     }
     if (event.key === 'Escape' && selection) setSelection('')
+    if (event.key === 'Escape' && findOpen) { setFindOpen(false); addressRef.current?.focus() }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && url) { event.preventDefault(); setFindOpen(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select() }, 0) }
+    if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') { event.preventDefault(); setManualMode(!manualRef.current) }
     // Browser-like history keys work anywhere in the panel, not only over the page.
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && url) {
       event.preventDefault(); historyGo(event.key === 'ArrowLeft' ? -1 : 1)
@@ -579,11 +598,11 @@ export function Recorder(): JSX.Element {
       <Button variant="secondary" type="submit" disabled={!draft.trim()}>Открыть</Button>
       <IconButton variant="secondary" type="button" aria-label="Очистить страницу" title="Очистить страницу" disabled={!url && !draft} onClick={() => { applyUrl(null); reply({ kind: 'save-url', url: null }); addressRef.current?.focus() }}>×</IconButton>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
-      {viewport && <Button variant="secondary" size="sm" type="button" className="webpreview-viewport-chip" aria-label={`Сбросить ширину ${viewport} px`} title="Вернуть адаптивную ширину" onClick={() => setViewport('')}>{viewport} px ×</Button>}
+      {viewport && <Button variant="secondary" size="sm" type="button" className="webpreview-viewport-chip" aria-label={`Сбросить ширину ${viewport} px`} title="Вернуть адаптивную ширину" onClick={() => setViewport('')}>{VIEWPORTS.find(([value]) => value === viewport)?.[1] ?? `${viewport} px`} ×</Button>}
       {/* Инструменты страницы собраны в свёрнутое меню, чтобы тулбар не переполнял
           узкую панель превью. Активные режимы подсвечивают саму сводку меню. */}
       <details ref={toolsMenu} className="webpreview-tools">
-        <summary className="vc-btn vc-btn--secondary" aria-label="Инструменты страницы" data-active={(inspecting || editing || capturing || recording) || undefined}>{(inspecting || editing || capturing || recording) && <span className="webpreview-tools__badge" aria-hidden="true">●</span>}Инструменты ▾</summary>
+        <summary className="vc-btn vc-btn--secondary" aria-label="Инструменты страницы" aria-keyshortcuts="Alt+Shift+M" data-active={(inspecting || editing || capturing || recording) || undefined}>{(inspecting || editing || capturing || recording) && <span className="webpreview-tools__badge" aria-hidden="true">●</span>}Инструменты ▾</summary>
         <div className="webpreview-tools__menu" role="group" aria-label="Инструменты страницы" onKeyDown={event => {
           // Arrow keys walk the menu like a native menu; Home/End jump to the ends.
           if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
@@ -597,6 +616,7 @@ export function Recorder(): JSX.Element {
           <Button variant="secondary" type="button" onClick={() => { applyUrl(READER_PROJECT_ORIGIN + '/'); toolsMenu.current?.removeAttribute('open') }}>Текущий проект</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={copyAddress}>Копировать адрес</Button>
           <Button variant="secondary" type="button" disabled={!url} onClick={copyLink}>Копировать ссылку с названием</Button>
+          <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} aria-keyshortcuts="Control+F Meta+F" onClick={() => { setFindOpen(true); closeTools(); setTimeout(() => findRef.current?.focus(), 0) }}>Найти на странице</Button>
           <Button variant="secondary" type="button" disabled={!url || loadState !== 'ready'} onClick={snapshotToChat}>Снимок страницы в чат</Button>
           {typeof navigator.share === 'function' && <Button variant="secondary" type="button" disabled={!url} onClick={() => { const target = currentUrl.current; if (target) void navigator.share({ url: target, ...(pageTitle ? { title: pageTitle } : {}) }).catch(() => {}); closeTools() }}>Поделиться…</Button>}
           <Button variant="secondary" type="button" disabled={!url} onClick={openExternal}>Открыть в новой вкладке</Button>
@@ -622,13 +642,19 @@ export function Recorder(): JSX.Element {
     {loadState === 'loading' && <div className="webpreview-progress" aria-hidden="true" />}
     {pageTitle && loadState === 'ready' && <button type="button" className="webpreview-title" title="Скопировать ссылку с названием" aria-label={`Скопировать ссылку: ${pageTitle}`} onClick={copyLink}>{pageIcon && <img className="webpreview-title__icon" src={'/api/preview?url=' + encodeURIComponent(pageIcon)} alt="" onError={() => setPageIcon(null)} />}<span>{pageTitle}</span>{pageLang && <small className="webpreview-title__lang" title={`Язык страницы: ${pageLang}`}>{pageLang}</small>}</button>}
     {redirectedFrom && loadState === 'ready' && <div className="webpreview-load-status" role="status">Перенаправлено с {(() => { try { return new URL(redirectedFrom).host } catch { return redirectedFrom } })()}</div>}
+    {findOpen && url && <form className="webpreview-find" role="search" aria-label="Поиск на странице" onSubmit={event => { event.preventDefault(); findInPage(event.nativeEvent instanceof SubmitEvent && (event.nativeEvent as SubmitEvent).submitter?.getAttribute('data-dir') === 'back') }}>
+      <input ref={findRef} type="search" aria-label="Найти на странице" placeholder="Найти на странице" value={findText} onChange={event => setFindText(event.target.value)} />
+      <Button size="sm" variant="secondary" type="submit" data-dir="back" aria-label="Предыдущее совпадение">↑</Button>
+      <Button size="sm" variant="secondary" type="submit" aria-label="Следующее совпадение">↓</Button>
+      <IconButton size="sm" type="button" aria-label="Закрыть поиск" title="Закрыть поиск" onClick={() => { setFindOpen(false); addressRef.current?.focus() }}>×</IconButton>
+    </form>}
     {selection && loadState === 'ready' && <div className="webpreview-selection" role="status"><span className="webpreview-selection__text" title={selection}>«{selection.length > 80 ? selection.slice(0, 79) + '…' : selection}»</span><Button size="sm" onClick={() => { reply({ kind: 'ask', text: selection }); setSelection('') }}>Спросить ассистента</Button><Button size="sm" variant="secondary" onClick={() => { void navigator.clipboard?.writeText(selection).catch(() => setError('Не удалось скопировать выделение.')); setSelection('') }}>Скопировать</Button>{selectionLooksLikeUrl && <Button size="sm" variant="secondary" onClick={() => { const result = normalizeReaderAddress(selection, currentUrl.current); if (result.url) openAddress(result.url); setSelection('') }}>Открыть как адрес</Button>}<IconButton size="sm" aria-label="Скрыть выделение" title="Скрыть выделение" onClick={() => setSelection('')}>×</IconButton></div>}
     {(transferOpen || steps.length > 0 || recording) && <ScenarioTransfer key={frameKey} pageUrl={scenarioUrl} steps={steps} disabled={scenarioRunning} onImport={next => { setSecretValues({}); setScenarioProgress(null); setSteps(next) }} />}
     {addressError && <p id={addressErrorId} className="webpreview-error" role="alert">{addressError}</p>}
     {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем {(() => { try { return url ? new URL(url).host : 'страницу' } catch { return 'страницу' } })()}…{longLoad && <> Долго. <Button size="sm" variant="secondary" onClick={openExternal}>Открыть во внешней вкладке</Button></>}</div>}
-    {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button>{url && <Button size="sm" variant="secondary" onClick={openExternal}>Открыть во внешней вкладке</Button>}<small className="webpreview-load-error__hint">Если сайт не работает в быстром просмотре, переключите «Полный браузер» в шапке.</small></div>}
+    {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button>{url && <Button size="sm" variant="secondary" onClick={openExternal}>Открыть во внешней вкладке</Button>}<Button size="sm" variant="secondary" aria-label="Скопировать текст ошибки загрузки" onClick={() => { void navigator.clipboard?.writeText(`${loadError} (${url ?? ''})`).catch(() => {}) }}>Скопировать</Button><small className="webpreview-load-error__hint">Если сайт не работает в быстром просмотре, переключите «Полный браузер» в шапке.</small></div>}
     {loadState === 'ready' && url && <p className="vc-sr-only" aria-live="polite">{`Открыта страница${pageTitle ? `: ${pageTitle}` : ''}`}</p>}
-    {error && <div className="webpreview-error webpreview-load-error" role="alert"><span>{error}</span><Button size="sm" aria-label="Скрыть ошибку Reader" onClick={() => setError(null)}>×</Button></div>}
+    {error && <div className="webpreview-error webpreview-load-error" role="alert"><span>{error}</span><Button size="sm" variant="secondary" aria-label="Скопировать текст ошибки" onClick={() => { void navigator.clipboard?.writeText(error).catch(() => {}) }}>Скопировать</Button><Button size="sm" aria-label="Скрыть ошибку Reader" onClick={() => setError(null)}>×</Button></div>}
     {storageError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{storageError}</span><Button size="sm" onClick={saveScenario}>Повторить сохранение</Button></div>}
     {recording && <div className="webpreview-run-status" role="status" aria-live="polite">Идёт запись сценария: {steps.length} шаг.</div>}
     {manual && <div className="webpreview-run-status webpreview-manual" role="status" aria-live="polite">Управляете только вы: действия ассистента отклоняются. <Button size="sm" onClick={() => setManualMode(false)}>Вернуть ассистенту</Button></div>}

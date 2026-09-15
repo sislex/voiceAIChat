@@ -117,12 +117,13 @@ export type PreviewAction = BrowserFrameTarget & (
   /** onScreen — только то, что пользователь видит сейчас без прокрутки. */
   /** nth — взять N-е совпадение (с 1), когда одинаковых элементов несколько и near не помогает. */
   /** href — подстрока адреса ссылки («ссылка на /pricing»). */
-  | { kind: 'find'; text?: string; selector?: string; role?: string; near?: string; exact?: boolean; nth?: number; href?: string; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean }
+  /** enabled/checked — состояние контрола, как его видит человек: «активная кнопка», «отмеченный флажок». */
+  | { kind: 'find'; text?: string; selector?: string; role?: string; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
   /** x/y — клик по точке вьюпорта (карты, canvas), когда у цели нет текста и селектора. */
   /** waitFor — текст, которого дождаться после действия (click/type/press/choose/fill), одним ходом. */
-  | { kind: 'click'; selector?: string; text?: string; near?: string; exact?: boolean; nth?: number; x?: number; y?: number; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; waitFor?: string; diagnostic?: boolean }
+  | { kind: 'click'; selector?: string; text?: string; role?: string; near?: string; exact?: boolean; nth?: number; x?: number; y?: number; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; waitFor?: string; diagnostic?: boolean }
   /** field — подпись, placeholder или name поля вместо CSS-селектора; append дописывает к текущему значению. */
   /** perKey — посимвольный ввод с событиями клавиатуры: для полей, слушающих keydown (маски, автодополнение). */
   | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; diagnostic?: boolean }
@@ -134,7 +135,7 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   /** waitMs — подождать после наведения, пока меню анимируется, и только потом собрать revealed. */
-  | { kind: 'hover'; selector?: string; text?: string; near?: string; exact?: boolean; nth?: number; waitMs?: number; diagnostic?: boolean }
+  | { kind: 'hover'; selector?: string; text?: string; role?: string; near?: string; exact?: boolean; nth?: number; waitMs?: number; diagnostic?: boolean }
   /** Прокрутка окна или контейнера: к краю (`to`) либо на `dy` пикселей. */
   /** to: 'element' прокручивает страницу так, чтобы selector оказался в видимой области. */
   /** to: nextPage/prevPage — на экран вниз/вверх, как PageDown/PageUp. */
@@ -175,7 +176,7 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Состояние панели без обращения к странице: подключена ли, что открыто, загружена ли страница. */
   | { kind: 'status'; diagnostic?: boolean }
   /** Заполнить несколько полей формы разом, как человек, и при submit отправить её. */
-  | { kind: 'fill'; fields: PreviewFillField[]; submit?: boolean; waitFor?: string; diagnostic?: boolean }
+  | { kind: 'fill'; fields: PreviewFillField[]; submit?: boolean; perKey?: boolean; waitFor?: string; diagnostic?: boolean }
   /** Выбрать пункт из выпадающего меню или списка: открыть триггер (in), дождаться пункта и нажать его. */
   | { kind: 'choose'; text: string; in?: string; near?: string; waitFor?: string; diagnostic?: boolean }
   /** Что изменилось на странице с прошлого снимка (read/changes/действие): появившиеся и исчезнувшие тексты. */
@@ -184,9 +185,10 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; diagnostic?: boolean }
   /** Проверка ожидания как у тестировщика: pass/fail с фактическим значением, без исключений. */
   /** url/title — проверка адреса и заголовка страницы (мост панели), без text/selector. */
-  | { kind: 'check'; text?: string; selector?: string; near?: string; state?: 'visible' | 'hidden' | 'present' | 'absent'; value?: string; contains?: string; count?: number; url?: string; title?: string; diagnostic?: boolean }
+  | { kind: 'check'; text?: string; selector?: string; near?: string; state?: 'visible' | 'hidden' | 'present' | 'absent'; value?: string; contains?: string; count?: number; enabled?: boolean; checked?: boolean; url?: string; title?: string; diagnostic?: boolean }
   /** Несколько шагов одним действием: рутина человека «нажать → ввести → нажать» без лишних ходов; стоп на первой ошибке. */
-  | { kind: 'sequence'; steps: PreviewSequenceStep[]; diagnostic?: boolean }
+  /** continueOnError — пройти все шаги и собрать итоги (чек-лист проверок), а не остановиться на первом сбое. */
+  | { kind: 'sequence'; steps: PreviewSequenceStep[]; continueOnError?: boolean; diagnostic?: boolean }
 )
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
@@ -345,6 +347,10 @@ export interface PreviewReadResult {
   brief?: string
   /** Прокрутка окна: насколько человек уже долистал. */
   scroll?: { top: number; max: number; percent: number }
+  /** Уведомления и баннеры, видимые сейчас (role=alert/status, тосты). */
+  notices?: string[]
+  /** Что ещё загружается: индикаторы прогресса и aria-busy-области. */
+  progress?: { selector: string; value?: number; max?: number; label?: string }[]
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
   total?: number
@@ -625,6 +631,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.text, L.text) &&
         optBounded(value.selector, L.selector) &&
         optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') && validNth(value.nth) && optBounded(value.href, L.url) &&
+        (value.enabled === undefined || typeof value.enabled === 'boolean') && (value.checked === undefined || typeof value.checked === 'boolean') &&
         (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
@@ -637,7 +644,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.selector, L.selector) &&
         optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') && validNth(value.nth) &&
         (value.x === undefined && value.y === undefined || typeof value.x === 'number' && Number.isFinite(value.x) && typeof value.y === 'number' && Number.isFinite(value.y) && value.x >= 0 && value.y >= 0 && value.x <= 100_000 && value.y <= 100_000) &&
-        (value.text !== undefined || value.selector !== undefined || value.x !== undefined) && optBounded(value.waitFor, L.text) &&
+        (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
+        (value.text !== undefined || value.selector !== undefined || value.x !== undefined || value.role !== undefined) && optBounded(value.waitFor, L.text) &&
         (value.button === undefined || value.button === 'left' || value.button === 'right') &&
         (value.dblclick === undefined || typeof value.dblclick === 'boolean') &&
         (value.modifiers === undefined || (Array.isArray(value.modifiers) && value.modifiers.length <= 4 && value.modifiers.every((item) => (PREVIEW_CLICK_MODIFIERS as readonly string[]).includes(item as string))))
@@ -664,7 +672,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.selector, L.selector) &&
         optBounded(value.near, L.text) && (value.exact === undefined || typeof value.exact === 'boolean') && validNth(value.nth) &&
         (value.waitMs === undefined || (typeof value.waitMs === 'number' && Number.isFinite(value.waitMs) && value.waitMs >= 0 && value.waitMs <= 2000)) &&
-        (value.text !== undefined || value.selector !== undefined)
+        (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
+        (value.text !== undefined || value.selector !== undefined || value.role !== undefined)
       )
     case 'scroll':
       return (
@@ -702,6 +711,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.text !== undefined || value.selector !== undefined)
     case 'check':
       return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) && optBounded(value.value, L.text) && optBounded(value.contains, L.text) && optBounded(value.url, L.url) && optBounded(value.title, L.text) &&
+        (value.enabled === undefined || typeof value.enabled === 'boolean') && (value.checked === undefined || typeof value.checked === 'boolean') &&
         (value.text !== undefined || value.selector !== undefined || value.url !== undefined || value.title !== undefined) &&
         (value.state === undefined || ['visible', 'hidden', 'present', 'absent'].includes(value.state as string)) &&
         (value.count === undefined || (typeof value.count === 'number' && Number.isInteger(value.count) && value.count >= 0 && value.count <= 100_000))
@@ -714,13 +724,13 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'status':
       return true
     case 'sequence':
-      return Array.isArray(value.steps) && value.steps.length >= 1 && value.steps.length <= 10 &&
+      return Array.isArray(value.steps) && value.steps.length >= 1 && value.steps.length <= 10 && (value.continueOnError === undefined || typeof value.continueOnError === 'boolean') &&
         value.steps.every((step) => record(step) && step.kind !== 'open' && step.kind !== 'sequence' && isPreviewAction(step))
     case 'fill':
       return Array.isArray(value.fields) && value.fields.length >= 1 && value.fields.length <= 30 &&
         value.fields.every((item) => record(item) && bounded(item.value, L.text) && optBounded(item.selector, L.selector) && optBounded(item.field, L.text) && optBounded(item.near, L.text) &&
           (bounded(item.selector, L.selector) && item.selector.length > 0 || bounded(item.field, L.text) && item.field.trim().length > 0)) &&
-        (value.submit === undefined || typeof value.submit === 'boolean') && optBounded(value.waitFor, L.text)
+        (value.submit === undefined || typeof value.submit === 'boolean') && (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text)
     case 'choose':
       return bounded(value.text, L.text) && value.text.trim().length > 0 && optBounded(value.in, L.text) && optBounded(value.near, L.text) && optBounded(value.waitFor, L.text)
     case 'changes':
@@ -907,6 +917,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'hover {waitMs} подождёт анимацию меню перед сбором revealed; errors {kinds: [...]} фильтрует по виду; клавиши в press можно называть по-русски (Ввод, Пробел, Вниз). ' +
     'changes — что появилось и исчезло на странице с прошлого read/changes/действия; ответ click тоже несёт changes. waitFor у click/type/press/choose/fill — дождаться текста после действия одним ходом. ' +
     'read.scroll — насколько человек долистал страницу; status.lastAction — последнее завершённое действие. open принимает адрес без схемы (example.com → https://). ' +
+    'read.notices — уведомления и баннеры, видимые сейчас; read.progress — индикаторы загрузки; find/check {enabled, checked} — состояние контрола; click/hover {role} — «нажми кнопку Сохранить», а не ссылку; ' +
+    'fill {perKey} печатает посимвольно; sequence {continueOnError: true} проходит все шаги как чек-лист и перечисляет провалы. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

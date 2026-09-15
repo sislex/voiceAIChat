@@ -444,6 +444,8 @@ const run=(action)=>{
     // Что на экране — сначала: человек видит ближайшее, а не первое в DOM.
     const found=base.filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden')).filter(el=>!action.onScreen||onScreen(el))
       .filter(el=>!hrefNeedle||(el.localName==='a'&&unproxy(el.getAttribute('href')||'').toLowerCase().includes(hrefNeedle)))
+      .filter(el=>action.enabled===undefined||(!el.matches(':disabled')&&!el.closest('[aria-disabled="true"],[inert]'))===action.enabled)
+      .filter(el=>action.checked===undefined||(el.checked===true||el.getAttribute('aria-checked')==='true')===action.checked)
       .map((el,i)=>({el,i,on:onScreen(el)?0:1})).sort((a,b)=>a.on-b.on||a.i-b.i).map(item=>item.el);
     const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
     // Ничего не нашлось — подсказать похожие тексты, как человек оглядывается вокруг искомого слова.
@@ -509,12 +511,17 @@ const run=(action)=>{
     else pass=visible.length>0;
     if(pass&&action.value!==undefined)pass=normText(actualValue||'')===normText(action.value);
     if(pass&&action.contains!==undefined)pass=normText(actualValue||'').includes(normText(action.contains));
+    const isEnabled=first&&!first.matches(':disabled')&&!first.closest('[aria-disabled="true"],[inert]'),isChecked=first&&(first.checked===true||first.getAttribute('aria-checked')==='true');
+    if(pass&&action.enabled!==undefined)pass=Boolean(isEnabled)===action.enabled;
+    if(pass&&action.checked!==undefined)pass=Boolean(isChecked)===action.checked;
     const what=action.text?'«'+action.text+'»':action.selector;
     const summary=typeof action.count==='number'?what+': '+scoped.length+' из '+action.count+(pass?' — совпало':' — не совпало')
       :action.value!==undefined?what+(pass?' содержит «'+action.value+'»':' содержит «'+String(actualValue||'').slice(0,60)+'», ожидалось «'+action.value+'»')
       :action.contains!==undefined?what+(pass?' содержит «'+action.contains+'»':' не содержит «'+action.contains+'»: сейчас «'+String(actualValue||'').slice(0,60)+'»')
+      :action.enabled!==undefined?what+(pass?(action.enabled?' доступно':' отключено'):(action.enabled?' отключено, ожидалось доступное':' доступно, ожидалось отключённое'))
+      :action.checked!==undefined?what+(pass?(action.checked?' отмечено':' не отмечено'):(action.checked?' не отмечено, ожидалось отмеченное':' отмечено, ожидалось снятое'))
       :what+(state==='absent'?(pass?' отсутствует':' присутствует, хотя не должно'):state==='hidden'?(pass?' скрыто':' видно, хотя должно быть скрыто'):state==='present'?(pass?' есть на странице':' нет на странице'):(pass?' видно':' не видно'));
-    return {page:pageInfo(),pass,expected:{...(action.text?{text:action.text}:{}),...(action.selector?{selector:action.selector}:{}),state,...(action.value!==undefined?{value:action.value}:{}),...(action.contains!==undefined?{contains:action.contains}:{}),...(typeof action.count==='number'?{count:action.count}:{})},actual:{count:scoped.length,visible:visible.length,...(actualValue!==undefined?{value:String(actualValue).slice(0,EL_TEXT)}:{}),...(first?{element:describe(first)}:{})},summary}
+    return {page:pageInfo(),pass,expected:{...(action.text?{text:action.text}:{}),...(action.selector?{selector:action.selector}:{}),state,...(action.value!==undefined?{value:action.value}:{}),...(action.contains!==undefined?{contains:action.contains}:{}),...(action.enabled!==undefined?{enabled:action.enabled}:{}),...(action.checked!==undefined?{checked:action.checked}:{}),...(typeof action.count==='number'?{count:action.count}:{})},actual:{count:scoped.length,visible:visible.length,...(actualValue!==undefined?{value:String(actualValue).slice(0,EL_TEXT)}:{}),...(first?{element:describe(first)}:{})},summary}
   }
   if(action.kind==='fill'){
     // Форма целиком, как её заполняет человек: поле за полем, затем отправка первой формы.
@@ -523,7 +530,7 @@ const run=(action)=>{
       // Не нашлось одно поле — остальные всё равно заполняем и перечисляем пропуски, как сделал бы человек.
       let el;try{el=item.selector?chooseTarget({kind:'type',selector:item.selector,near:item.near}):fieldTarget(item.field||'',item.near);actionable(el,true)}catch(err){missing.push({field:item.field||item.selector||'',error:String(err&&err.message||err).slice(0,200)});continue}
       flash(el);
-      const outcome=typeInto(el,item.value,false,false);
+      const outcome=action.perKey?typePerKey(el,item.value,false,false):typeInto(el,item.value,false,false);
       filled.push({field:item.field||accessibleName(el)||item.selector||'',selector:outcome.typed.selector,value:outcome.value});
       if(!form)form=el.form||el.closest('form')
     }
@@ -838,10 +845,13 @@ const run=(action)=>{
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     const text=action.visible?visibleText(scope):readableText(scope,Number.MAX_SAFE_INTEGER,Boolean(section&&section.detached)),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
     const focus=document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement?uniqueSelector(document.activeElement):undefined;
+    // Уведомления и индикаторы загрузки — то, на что человек смотрит прежде всего.
+    const notices=[...document.querySelectorAll('[role=alert],[role=status],[aria-live="assertive"],[aria-live="polite"],.toast,.notification,.alert,.snackbar')].filter(readingVisible).map(el=>readableText(el,EL_TEXT)).filter(Boolean).filter((t,i,all)=>all.indexOf(t)===i).slice(0,8);
+    const progress=[...document.querySelectorAll('progress,[role=progressbar],[aria-busy="true"]')].filter(readingVisible).slice(0,8).map(el=>({selector:uniqueSelector(el),...(el.localName==='progress'&&Number.isFinite(el.value)?{value:el.value,max:el.max}:{}),...(el.getAttribute('aria-valuenow')?{value:Number(el.getAttribute('aria-valuenow')),...(el.getAttribute('aria-valuemax')?{max:Number(el.getAttribute('aria-valuemax'))}:{})}:{}),...(accessibleName(el)?{label:accessibleName(el)}:{})}));
     if(!action.selector&&!section)textSnapshot=visibleTexts();
     const scroller=document.scrollingElement||document.documentElement,maxScroll=Math.max(0,scroller.scrollHeight-innerHeight),scroll={top:Math.round(scroller.scrollTop),max:Math.round(maxScroll),percent:maxScroll>0?Math.round(scroller.scrollTop/maxScroll*100):100};
-    const brief=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; ').slice(0,600):'';
-    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(brief?{brief}:{}),scroll,text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    const briefBase=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; '):'';
+    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };

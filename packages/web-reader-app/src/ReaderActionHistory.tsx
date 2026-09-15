@@ -5,8 +5,11 @@ import type { PreviewAction } from '@shared/previewActions'
 
 type Props = { actions: NonNullable<WebReaderFrameProps['actions']>; onRepeat?: WebReaderFrameProps['onRepeatAction']; onReveal?: WebReaderFrameProps['onRevealAction']; onClear?: WebReaderFrameProps['onClearActions']; currentUrl?: string | null; manual?: boolean }
 /** Steps that touched a concrete element can be shown again on the page. */
-function revealSelector(action: PreviewAction): string | null {
-  return 'selector' in action && typeof action.selector === 'string' && action.selector && action.kind !== 'read' && action.kind !== 'scroll' ? action.selector : null
+function revealSelector(action: PreviewAction): { selector?: string; text?: string } | null {
+  if (action.kind === 'read' || action.kind === 'scroll' || action.kind === 'open' || action.kind === 'sequence' || action.kind === 'fill') return null
+  if ('selector' in action && typeof action.selector === 'string' && action.selector) return { selector: action.selector }
+  if ('text' in action && typeof action.text === 'string' && action.text) return { text: action.text }
+  return null
 }
 /** На телефоне лента раскрытой по умолчанию отнимает у страницы половину экрана. */
 function defaultExpanded(): boolean {
@@ -14,6 +17,8 @@ function defaultExpanded(): boolean {
 }
 function timeLabel(at: number | undefined): string {
   if (!at) return ''
+  // The freshest steps read as "just now"; older ones keep the clock time.
+  if (Date.now() - at < 60_000) return 'только что'
   try { return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } catch { return '' }
 }
 function siteName(address: string | null): string {
