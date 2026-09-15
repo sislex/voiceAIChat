@@ -4560,3 +4560,21 @@ Bootstrap проверяется в
 открытие подтверждения, а также содержит состояния загрузки и ошибки загрузки.
 Обязательный повторный Component QA после восстановления доступности машины
 завершён успешно.
+
+## Progressive account page loading
+
+The `#/account` route renders its heading and structural placeholder while the
+lazy account chunk loads. `AccountPage` then gates the visible profile only on
+`me:profile`; access rules, usage reports, security history, and full machine
+telemetry have separate loading, error, and retry states. Usage results are
+cached by period, and returning to a loaded tab does not repeat its request.
+The sidebar preloads the account chunk on pointer, keyboard, or touch intent.
+
+The profile package owns the responsive tab content. At widths up to 720 px,
+tabs form a horizontally scrollable 48 px touch row, usage tables become
+labeled cards, controls fill available width, and overview cards use one
+column. Profile header, quick metrics, and tabs must remain non-shrinking flex
+items: otherwise a tall mobile profile collapses the tab row to its 1 px
+border. Routed tabs use `Tabs` horizontal `scrollTo`, which keeps the active tab
+visible without moving the page vertically. The account page was checked at
+1440, 768, 390, and 320 px with no document or panel overflow.

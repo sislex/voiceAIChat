@@ -352,7 +352,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'settings:get': () => req(REST.settings),
     'llm:access': () => req(REST.meLlmAccess),
     'me:profile': () => req(REST.meProfile),
-    'me:security': ({ limit }) => req(limit ? `${REST.meSecurity}?limit=${limit}` : REST.meSecurity),
+    'me:security': ({ limit, group }) => {
+      const query = new URLSearchParams()
+      if (limit) query.set('limit', String(limit))
+      if (group && group !== 'all') query.set('group', group)
+      return req(query.size ? `${REST.meSecurity}?${query}` : REST.meSecurity)
+    },
     'llm:engines': () => req(REST.llmEngines),
     // Тело — патч; ответ сервера (вся запись) возвращается вызывающему.
     'settings:save': (patch) => req(REST.settings, { method: 'PUT', body: JSON.stringify(patch) }),

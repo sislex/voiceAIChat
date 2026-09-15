@@ -78,10 +78,10 @@ export function UsageTab({ usage, period, onSelectPeriod }: UsageTabProps): JSX.
               <tbody>
                 {usage.byModel.map((item) => (
                   <tr key={item.model}>
-                    <td>{item.model}</td>
-                    <td>{formatTokens(item.inputTokens)}</td>
-                    <td>{formatTokens(item.outputTokens)}</td>
-                    <td>{formatUsd(item.spendUsd, item.incomplete)}</td>
+                    <td data-label="Модель">{item.model}</td>
+                    <td data-label="Вход">{formatTokens(item.inputTokens)}</td>
+                    <td data-label="Выход">{formatTokens(item.outputTokens)}</td>
+                    <td data-label="Расход">{formatUsd(item.spendUsd, item.incomplete)}</td>
                   </tr>
                 ))}
               </tbody>

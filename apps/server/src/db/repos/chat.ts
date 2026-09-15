@@ -1178,6 +1178,15 @@ export class ChatRepo extends BaseRepo {
     return new Map(rows.map((row) => [row.user, row.total]))
   }
 
+  /** Count one user's visible conversations without aggregating every account. */
+  async conversationCount(userId: string): Promise<number> {
+    const row = (await this.sql.get(`SELECT COUNT(*) AS total FROM conversations c
+      WHERE c.user_id = ?
+        AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader', 'make'))
+        AND ${NOT_CANCELLED_TASK_CHAT}`, [userId])) as { total: number } | undefined
+    return row?.total ?? 0
+  }
+
   /**
    * Отчёт по использованию токенов пользователя: суммы по временным бакетам и по
    * моделям + итог. Считается из meta ai-сообщений (JSON1 json_extract). Бакеты
