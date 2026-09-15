@@ -145,3 +145,19 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
   .webpreview--bar-hidden .webpreview-bar, .webpreview--bar-hidden .webpreview-title, .webpreview--bar-hidden .webpreview-readbar { display: none; }
   .webpreview--bar-hidden .webpreview-peek { display: block; flex: none; width: 100%; height: 22px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font-size: 14px; line-height: 1; }
 }
+/* Cycle 17: the landmarks a person reads first — site path, pager, publication date, site search. */
+.webpreview-crumbs { flex: none; display: flex; align-items: center; gap: 4px; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
+.webpreview-crumbs span { display: inline-flex; align-items: center; gap: 4px; }
+.webpreview-crumbs i { color: var(--text-dim); font-style: normal; }
+.webpreview-crumbs button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.webpreview-crumbs b { font-weight: 600; }
+.webpreview-pager { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-x: auto; white-space: nowrap; }
+.webpreview-pager__label { color: var(--text-dim); }
+.webpreview-title__published, .webpreview-title__page { flex: none; color: var(--text-dim); }
+.webpreview-selection__by { flex: none; color: var(--accent); }
+.webpreview-tools__site-search { display: flex; align-items: center; gap: 6px; }
+.webpreview-tools__site-search input { flex: 1 1 auto; min-width: 0; }
+@media (pointer: coarse) {
+  .webpreview-crumbs button, .webpreview-pager .vc-btn { min-height: 44px; }
+  .webpreview-tools__site-search input { min-height: 44px; }
+}

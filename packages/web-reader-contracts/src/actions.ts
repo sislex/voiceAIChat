@@ -44,6 +44,9 @@ function narrate(kind: string, result: Record<string, unknown> | undefined, addr
   if (result.needsConfirmation === true) return `ждёт подтверждения: ${typeof result.reason === 'string' ? result.reason : 'опасное действие'}`
   if (kind === 'click' && typeof result.obscuredBy === 'string') return 'цель перекрыта другим элементом'
   if (kind === 'click' && result.peeked === true) return typeof result.href === 'string' ? `ссылка ведёт на ${(() => { try { return new URL(result.href as string).host } catch { return result.href as string } })()}${result.external === true ? ' (другой сайт)' : ''}` : 'у элемента нет адреса'
+  if (kind === 'search' && typeof result.query === 'string') return `искал на сайте «${result.query}»`
+  if (kind === 'select' && typeof result.selected === 'string' && result.selected) return `выделил «${result.selected.slice(0, 40)}${result.selected.length > 40 ? '…' : ''}»`
+  if (kind === 'focus') return 'поставил курсор в поле'
   if (kind === 'dismiss') return result.dismissed === true ? (result.how === 'rejected' ? 'отклонил cookie' : result.how === 'accepted' ? 'принял cookie — иного выбора не было' : 'закрыл окно') : 'закрывать было нечего'
   const changes = result.changes as { addedTotal?: number; removedTotal?: number } | undefined
   if (kind === 'click' && changes && ((changes.addedTotal ?? 0) || (changes.removedTotal ?? 0))) return `на странице появилось ${changes.addedTotal ?? 0}, исчезло ${changes.removedTotal ?? 0}`
