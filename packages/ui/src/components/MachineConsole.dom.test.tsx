@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { machineHistory } from '../lib/machineHistory'
 import { rememberListing } from '../lib/machineListing'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MachineConsole } from './MachineConsole'
 import type { ConsoleHistoryStore } from '@voicechat/ui-foundation/components/machine'
@@ -17,6 +17,23 @@ const agent: AgentInfo = {
 }
 
 describe('MachineConsole', () => {
+  it('keeps the latest console page small and reveals earlier output on demand', async () => {
+    const exec = vi.fn().mockResolvedValue({ exitCode: 0, output: 'ok', timedOut: false })
+    render(<MachineConsole agents={[agent]} initialAgentId="m1" exec={exec} variant="embedded" />)
+    const input = screen.getByLabelText('Команда')
+    const run = screen.getByRole('button', { name: 'Выполнить команду' })
+    for (let i = 0; i < 201; i++) {
+      fireEvent.change(input, { target: { value: 'audit-' + i } })
+      await act(async () => { fireEvent.click(run) })
+    }
+    expect(screen.getAllByRole('button', { name: /^\$ audit-/ })).toHaveLength(100)
+    expect(screen.queryByRole('button', { name: '$ audit-0' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '$ audit-200' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Показать предыдущие команды/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Показать предыдущие команды/ }))
+    expect(screen.getByRole('button', { name: '$ audit-0' })).toBeInTheDocument()
+  })
+
   // @testCase T1
   it('persists 200 commands per agent, searches, clears one machine, and completes without executing', async () => {
     const id = 'history-acceptance'

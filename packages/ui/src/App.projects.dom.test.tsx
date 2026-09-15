@@ -135,7 +135,7 @@ describe('App — страница проекта по URL', () => {
   it('на мобильной ширине открывает drawer, закрывает по Esc и backdrop и возвращает фокус', async () => {
     const original = window.matchMedia
     window.matchMedia = ((query: string) => ({
-      matches: query === '(max-width: 768px)',
+      matches: query === '(max-width: 720px)',
       media: query,
       onchange: null,
       addEventListener: () => {},
@@ -178,6 +178,7 @@ describe('App — страница проекта по URL', () => {
     await waitFor(() => expect(window.location.hash).toBe(`#/projects/${projectId}/settings`))
     expect(await screen.findByTestId('project-settings')).toBeInTheDocument()
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
+    expect(document.title).toBe('Настройки проекта — Мой проект — ChatAI')
     // Шапка та же: страница не перерисовалась заново, имя и вкладки на месте.
     expect(screen.getByTestId('project-page')).toBe(page)
     expect(within(page).getByRole('heading', { name: 'Мой проект' })).toBeInTheDocument()
@@ -187,6 +188,7 @@ describe('App — страница проекта по URL', () => {
     await waitFor(() => expect(window.location.hash).toBe(`#/projects/${projectId}`))
     expect(await screen.findByTestId('kanban-board')).toBeInTheDocument()
     expect(screen.queryByTestId('project-settings')).not.toBeInTheDocument()
+    expect(document.title).toBe('Канбан — Мой проект — ChatAI')
   })
 
   it('#/projects/:id/settings открывается по прямой ссылке — с той же шапкой', async () => {

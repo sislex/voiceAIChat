@@ -75,18 +75,14 @@ function ratioOf(pair: ContrastPair, name: TestedThemeName): number {
 const themes: TestedThemeName[] = ['light', 'dark', 'green']
 
 describe('контраст токенов', () => {
-  // Гейтим текстовые пары (WCAG 1.4.3). Пары kind: 'ui' (рамки) и 'decor'
-  // (разделители) остаются в витрине справочно: наши хайрлайны --border/
-  // --border-soft дают ~1.2:1 и подтянуть их до 3:1 — это смена всего
-  // визуального языка, отдельная задача. Границы **элементов управления** мы
-  // обозначаем заливкой и подписью, а не толщиной линии, поэтому 1.4.11 на
-  // хайрлайнах не завязан.
-  const textPairs = CONTRAST_PAIRS.filter((pair) => (pair.kind ?? 'text') === 'text')
+  // Text needs 4.5:1, control boundaries and focus need 3:1. Decorative
+  // separators keep the existing palette and remain informational.
+  const textPairs = CONTRAST_PAIRS.filter((pair) => pair.kind !== 'decor')
 
-  it.each(themes)('в %s теме все текстовые пары проходят AA', (theme) => {
+  it.each(themes)('%s theme meets text and control contrast thresholds', (theme) => {
     const failing = textPairs
       .map((pair) => ({ pair, ratio: ratioOf(pair, theme) }))
-      .filter(({ ratio }) => ratio < AA_THRESHOLD.text)
+      .filter(({ pair, ratio }) => ratio < AA_THRESHOLD[pair.kind ?? 'text'])
       .map(({ pair, ratio }) => `${pair.fg} на ${pair.bg} — ${fmtRatio(ratio)} (${pair.usage})`)
     expect(failing).toEqual([])
   })

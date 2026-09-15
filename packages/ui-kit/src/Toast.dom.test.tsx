@@ -25,6 +25,16 @@ function Harness({ onRetry }: { onRetry?: () => void } = {}): JSX.Element {
   )
 }
 
+it('announces each toast through its own role without a live parent', () => {
+  setup()
+  fireEvent.click(screen.getByText('успех'))
+  fireEvent.click(screen.getByText('ошибка'))
+  expect(screen.getByTestId('toasts')).not.toHaveAttribute('aria-live')
+  expect(screen.getByTestId('toast-success')).toHaveAttribute('role', 'status')
+  expect(screen.getByTestId('toast-error')).toHaveAttribute('role', 'alert')
+  expect(screen.getByTestId('toast-error')).not.toHaveAttribute('aria-live')
+})
+
 const setup = (props: { onRetry?: () => void } = {}): void => {
   render(
     <ToastProvider>
@@ -121,12 +131,12 @@ describe('Toast', () => {
   it('доступен скринридеру: живая область, ошибка — assertive, крестик подписан', () => {
     setup()
     const region = screen.getByTestId('toasts')
-    expect(region).toHaveAttribute('aria-live', 'polite')
+    expect(region).not.toHaveAttribute('aria-live')
 
     fireEvent.click(screen.getByText('ошибка'))
     const error = screen.getByTestId('toast-error')
     expect(error).toHaveAttribute('role', 'alert')
-    expect(error).toHaveAttribute('aria-live', 'assertive')
+    expect(error).not.toHaveAttribute('aria-live')
 
     fireEvent.click(screen.getByText('факт'))
     expect(screen.getByTestId('toast-info')).toHaveAttribute('role', 'status')

@@ -60,7 +60,7 @@
 .ua-detail { min-width: 0; overflow: auto; }
 .ua-invites { display: grid; gap: 8px; }
 
-@media (max-width: 1050px) {
+@media (max-width: 720px) {
   .ua-grid { grid-template-columns: 260px minmax(0, 1fr); }
 }
 
@@ -90,7 +90,7 @@
   .ua-bulk .vc-btn { min-height: 40px; }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 720px) {
   .ua-list__filters { grid-template-columns: 1fr; }
 }
 

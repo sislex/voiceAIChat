@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePolling } from '@voicechat/ui-kit'
 import {
   applicationCompatibility,
   applicationReleaseIdentity,
@@ -128,13 +129,7 @@ export function ApplicationReleaseCenter({
     }
   }, [refresh])
   const live = Boolean(overview.activeDeploymentId) || overview.releases.some((record) => record.status === 'preparing')
-  useEffect(() => {
-    if (!live) return
-    const timer = window.setInterval(() => {
-      void refresh()
-    }, 3000)
-    return () => window.clearInterval(timer)
-  }, [live, refresh])
+  usePolling(() => { void refresh() }, { enabled: live, intervalMs: 3000 })
   const candidates = useMemo(
     () =>
       selection.flatMap((id) => {

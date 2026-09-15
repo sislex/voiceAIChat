@@ -444,11 +444,17 @@ export function Sidebar({
   const workingSet = new Set(workingIds)
   const weekStart = localWeekStart(now)
   const visibleConversations = conversations.filter(c => (showArchived ? archived.includes(c.id) : !archived.includes(c.id)) && c.title.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase()))
-  const pinnedConversations = visibleConversations.filter(c => pinned.includes(c.id))
-  const currentWeekConversations = visibleConversations.filter(c => !pinned.includes(c.id) && c.updatedAt >= weekStart)
-  const olderConversations = visibleConversations.filter(c => !pinned.includes(c.id) && c.updatedAt < weekStart)
+  const [conversationLimit, setConversationLimit] = useState(100)
+  useEffect(() => setConversationLimit(100), [searchQuery, showArchived, userId])
+  // Keep the current conversation reachable even when it is outside the first page.
+  const pageConversations = visibleConversations.slice(0, conversationLimit)
+  const selectedConversation = visibleConversations.find(conversation => conversation.id === activeId)
+  if (selectedConversation && !pageConversations.includes(selectedConversation)) pageConversations.push(selectedConversation)
+  const pinnedConversations = pageConversations.filter(c => pinned.includes(c.id))
+  const currentWeekConversations = pageConversations.filter(c => !pinned.includes(c.id) && c.updatedAt >= weekStart)
+  const olderConversations = pageConversations.filter(c => !pinned.includes(c.id) && c.updatedAt < weekStart)
   const grouped = new Map<string, Conversation[]>()
-  for (const c of visibleConversations.filter(c => !pinned.includes(c.id))) {
+  for (const c of pageConversations.filter(c => !pinned.includes(c.id))) {
     const key = c.projectId ?? ''
     grouped.set(key, [...(grouped.get(key) ?? []), c])
   }
@@ -484,7 +490,7 @@ export function Sidebar({
    * до того, как человек упрётся в низ.
    */
   const onListScroll = (event: ReactUIEvent<HTMLElement>): void => {
-    if (!onLoadMore || !hasMoreConversations || moreStatus === 'loading' || moreStatus === 'error') return
+    if (visibleConversations.length > conversationLimit || !onLoadMore || !hasMoreConversations || moreStatus === 'loading' || moreStatus === 'error') return
     const list = event.currentTarget
     if (list.scrollHeight - list.scrollTop - list.clientHeight <= list.clientHeight) onLoadMore()
   }
@@ -859,6 +865,7 @@ export function Sidebar({
           {/* Хвост списка: сюда доскроллили — значит пора за следующей страницей.
               Раньше на этом месте стояла свёрнутая секция с кнопкой, но список
               бесед листают, а не раскрывают. */}
+          {visibleConversations.length > conversationLimit && <Button size="sm" onClick={() => setConversationLimit(limit => limit + 100)}>Показать ещё беседы ({visibleConversations.length - conversationLimit})</Button>}
           {moreStatus === 'loading' && <div className="convolist-more" aria-busy="true"><RefreshIndicator label="Загружаем ещё…" /></div>}
           {moreStatus === 'error' && (
             <ErrorState compact className="convolist-more" message="Не удалось загрузить ещё беседы" onRetry={() => onLoadMore?.()} />

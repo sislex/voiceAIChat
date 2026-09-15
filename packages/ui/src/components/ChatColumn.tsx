@@ -568,8 +568,9 @@ export function ChatColumn({
   const [replyAnnounce, setReplyAnnounce] = useState('')
   useEffect(() => {
     if (hasStream) setReplyAnnounce(`${aiLabel} отвечает…`)
-    else setReplyAnnounce((prev) => (prev === '' ? '' : 'Ответ получен'))
-  }, [hasStream, aiLabel])
+    else if (showPreparingReply) setReplyAnnounce('Готовим ответ…')
+    else setReplyAnnounce(prev => prev === '' ? '' : prev === 'Готовим ответ…' ? 'Подготовка ответа завершена' : 'Ответ получен')
+  }, [hasStream, showPreparingReply, aiLabel])
   useEffect(() => {
     if (!hasStream) { streamStartRef.current = null; return }
     if (streamStartRef.current === null) streamStartRef.current = Date.now()
@@ -585,7 +586,7 @@ export function ChatColumn({
 
   return (
     <ChatSearchContext.Provider value={searchOpen ? query : ''}>
-    <main ref={rootRef} className={`${messages.length === 0 ? 'main main--empty' : 'main main--conversation'}${compact ? ' main--compact' : ''}`} data-chat-layout={composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')}>
+    <section aria-label="Чат" ref={rootRef} className={`${messages.length === 0 ? 'main main--empty' : 'main main--conversation'}${compact ? ' main--compact' : ''}`} data-chat-layout={composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')}>
       <header className="mhead">
         {onToggleSidebar && (
           <SidebarToggle className="burger" expanded={sidebarExpanded} onToggle={onToggleSidebar} />
@@ -1079,7 +1080,7 @@ export function ChatColumn({
                     <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(prepStart)}`}>{clockTime(prepStart)}</span>
                   </span>
                 </div>
-                <div className="bub" role="status" aria-live="polite">
+                <div className="bub">
                   <span className="reply-preparing" data-testid="reply-preparing-inner">
                     <Dots />
                     <span>Готовим ответ…</span>
@@ -1191,7 +1192,7 @@ export function ChatColumn({
       <div className={(composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')) === 'centered' ? 'chat-composer chat-composer--centered' : 'chat-composer chat-composer--docked'}>
         {voiceBar}
       </div>
-    </main>
+    </section>
     </ChatSearchContext.Provider>
   )
 }

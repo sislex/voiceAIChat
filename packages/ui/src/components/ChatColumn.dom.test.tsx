@@ -27,6 +27,15 @@ it('marks chat readiness only after required data and records rendered token com
 
 // Лента — общая фикстура (её же показывают сториз Chat/ChatColumn): вопрос
 // пользователя и ответ модели с markdown-разметкой.
+it('announces reply events while streaming text stays outside live regions', () => {
+  const props = { title: 'Audit', state: 'thinking' as const, messages: [], liveSegments: [], diarization: false, voiceBar: null }
+  const view = render(<ChatColumn {...props} streamingReply="First token" />)
+  expect(screen.getByText('First token').closest('[aria-live="polite"], [role="status"], [role="log"]')).toBeNull()
+  const before = screen.getByTestId('reply-announce').textContent
+  view.rerender(<ChatColumn {...props} streamingReply="First token and more" />)
+  expect(screen.getByTestId('reply-announce').textContent).toBe(before)
+})
+
 const messages: Message[] = makeChatPair()
 
 function renderCol(props: Partial<Parameters<typeof ChatColumn>[0]> = {}): void {
@@ -82,10 +91,10 @@ it('compact preference survives remount and search remains accessible', async ()
   localStorage.removeItem('vc.chat.compact')
   renderCol()
   fireEvent.click(screen.getByText('Компактная лента'))
-  expect(screen.getByRole('main')).toHaveClass('main--compact')
+  expect(screen.getByRole('region', { name: 'Чат' })).toHaveClass('main--compact')
   cleanup()
   renderCol()
-  expect(screen.getByRole('main')).toHaveClass('main--compact')
+  expect(screen.getByRole('region', { name: 'Чат' })).toHaveClass('main--compact')
   fireEvent.click(screen.getByText('Поиск'))
   await expectNoViolations()
   localStorage.removeItem('vc.chat.compact')
@@ -929,9 +938,10 @@ describe('ChatColumn — подготовка ответа', () => {
     const { rerender } = render(<ChatColumn title="Тест" state="thinking" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} />)
     const preparing = screen.getByTestId('reply-preparing')
     expect(preparing).toHaveTextContent('Готовим ответ…')
-    // Карточка ответа с шапкой видна сразу, «Готовим ответ…» — внутри пузыря (live-область).
+    // The stable reply announcer owns this event; the visible bubble is silent.
     expect(preparing.querySelector('.msg-head')).toBeTruthy()
-    expect(preparing.querySelector('[role="status"]')).toBeTruthy()
+    expect(preparing.querySelector('[role="status"], [aria-live]')).toBeNull()
+    expect(screen.getByTestId('reply-announce')).toHaveTextContent('Готовим ответ')
 
     rerender(<ChatColumn title="Тест" state="thinking" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} streamingReply="Первый фрагмент" />)
     expect(screen.queryByTestId('reply-preparing')).not.toBeInTheDocument()
