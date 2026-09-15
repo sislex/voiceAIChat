@@ -4,8 +4,9 @@ import type { ImageStudioPaneProps } from '@voicechat/image-studio-app/panelCont
 import type { MakePaneProps } from '@voicechat/make-app/panelContract'
 import { createApplicationPanel } from './runtime/applicationHost'
 import { WebReaderEngineSelect } from './components/WebReaderEngineSelect'
-import { runReaderModelRequest, readReaderErrors } from './webReaderModelRequest'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { runReaderModelRequest, readReaderErrorSummary } from './webReaderModelRequest'
+import { PREVIEW_WIDTH_DEFAULT, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN, clampPreviewWidth, pendingActionLabel, previewWidthAfterKey, siteTabLabel, splitAttentionReducer, type SplitView } from './readerSplitControls'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
 import { buildProjectsRoute, isTaskRouteTab, parseProjectsRoute } from '@voicechat/projects-app'
@@ -118,6 +119,7 @@ import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioPlacement'
 import { createMachineRequiredGuard } from './lib/machineRequiredGuard'
+import { readResources } from './clients/readResources'
 
 /** Подпись устройства для тоста о новом входе: ядро без текстов окна сессий. */
 function deviceLabel(userAgent: string): string {
@@ -127,6 +129,7 @@ function deviceLabel(userAgent: string): string {
 }
 
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
+const READER_CHAT_COLLAPSED_KEY = 'voicechat:web-reader-chat-collapsed:v1'
 // Мастерская — общая обёртка «чат + рабочая панель»: консоль с ассистентом и
 // студия картинок делят одну геометрию, один разделитель и одни вкладки на
 // телефоне. Разъезжались они молча: у студии разделитель был декоративным.
@@ -348,8 +351,12 @@ function initialChatIdFromPath(path: string, segments: string[]): string | null 
  * хранилищами и координирует их) и отдаёт его дереву. Универсального хука со
  * всеми доменами сразу нет — экраны подписываются на свой домен.
  */
-function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
-  const { path, segments } = useHashRoute()
+function AppRuntimeHost({ api: sourceApi = window.api, now, delays }: AppProps = {}): JSX.Element {
+  const api = useMemo(() => readResources(sourceApi).api, [sourceApi])
+  const { path, segments, search } = useHashRoute()
+  const query = new URLSearchParams(search)
+  const initialChatContext = query.get('scope') === 'kanban' && query.get('project')
+    ? { scope: 'kanban' as const, projectId: query.get('project')! } : undefined
   const initialChatId = useRef(initialChatIdFromPath(path, segments))
   // Стартуем на доске проекта — индекс чатов не нужен: сайдбар показывает
   // проекты, а список чатов сам попросит индекс, когда его откроют.
@@ -359,6 +366,7 @@ function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.E
     ...(now ? { now } : {}),
     ...(delays ? { delays } : {}),
     initialChatId: initialChatId.current,
+    ...(initialChatContext ? { initialChatContext } : {}),
     skipConversations: skipConversations.current
   })
   return (
@@ -370,7 +378,7 @@ function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.E
 
 function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Hash-роутинг: URL — источник навигации (см. useHashRoute).
-  const { path, segments, navigate } = useHashRoute()
+  const { path, segments, search: routeSearch, navigate } = useHashRoute()
   const projectsRoute = parseProjectsRoute(path)
   const inProjects = projectsRoute !== null
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
@@ -559,7 +567,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
    */
   const [gitWorkspaces, setGitWorkspaces] = useState<{ items: GitWorkspaceRef[]; status: LoadStatus; error: string | null }>({ items: [], status: 'idle', error: null })
   const [release, setRelease] = useState<HealthResponse | null>(null)
-  const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
+  // Вкладка телефона запоминается на сессию: после перезагрузки человек возвращается туда же, где был.
+  const [chatView, setChatViewState] = useState<'chat' | 'preview'>(() => { try { return sessionStorage.getItem('voicechat:split-view:v1') === 'preview' ? 'preview' : 'chat' } catch { return 'chat' } })
+  const setChatView = useCallback((view: SplitView): void => {
+    chatViewRef.current = view
+    setChatViewState(view)
+    try { sessionStorage.setItem('voicechat:split-view:v1', view) } catch { /* приватный режим */ }
+    setSplitAttention((state) => splitAttentionReducer(state, { type: 'switch', view }))
+    if (view === 'preview') setSplitAttentionFailed(false)
+  }, [])
   const [workshopChatWidth, setWorkshopChatWidth] = useState(WORKSHOP_DEFAULT_CHAT_WIDTH)
   const [workshopResizing, setWorkshopResizing] = useState(false)
   const workshopSplitRef = useRef<HTMLDivElement | null>(null)
@@ -617,17 +633,69 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [rememberWidgetAction])
   const [previewWidth, setPreviewWidth] = useState(() => {
     const saved = Number(safeStorageGet(PREVIEW_WIDTH_KEY))
-    return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
+    return Number.isFinite(saved) && saved >= PREVIEW_WIDTH_MIN && saved <= PREVIEW_WIDTH_MAX ? saved : PREVIEW_WIDTH_DEFAULT
   })
-  useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null) }, [chat.activeId])
+  useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null); setReaderPendingAction(null); setSplitAttention(null); setReaderPageTitle(null); setReaderActionError(null); setReaderManual(false); setReaderPageErrorCount(0); setReaderConfirm(null) }, [chat.activeId])
   // Действия модели в превью (mcp__browser__*): регистрацию iframe создаёт
   // мост WebReaderFrame (registrationId ротируется на каждый boot Reader).
   // Хранение её вместе с conversationId не даёт переключившемуся чату обратиться
   // к host, который ещё размонтируется, и держит Reader-маршруты источником истины.
   const previewRunnerRef = useRef<ReaderHostRegistration | null>(null)
   const readerErrorSequence = useRef(0)
-  const [readerActions, setReaderActions] = useState<Array<{ id: string; action: PreviewAction; address: string | null; title: string | null }>>([])
+  const [readerActions, setReaderActions] = useState<Array<{ id: string; action: PreviewAction; address: string | null; title: string | null; at: number; summary?: string; ok?: boolean; count?: number }>>([])
   const [readerPageError, setReaderPageError] = useState<string | null>(null)
+  const [readerPageErrorCount, setReaderPageErrorCount] = useState(0)
+  // Действие модели, идущее прямо сейчас: панель показывает его человеку живым статусом.
+  const [readerPendingAction, setReaderPendingAction] = useState<PreviewAction | null>(null)
+  const readerPendingSequence = useRef(0)
+  // Неудача действия модели: панель показывает причину и даёт повторить; через 15 с строка уходит сама.
+  const [readerActionError, setReaderActionError] = useState<{ action: PreviewAction; error: string } | null>(null)
+  // Опасное действие модели остановлено панелью: человек разрешает его здесь, а не только словами в чате.
+  const [readerConfirm, setReaderConfirm] = useState<{ action: PreviewAction; reason: string; target: string } | null>(null)
+  useEffect(() => {
+    if (!readerActionError) return
+    const timer = setTimeout(() => setReaderActionError(null), 15_000)
+    return () => clearTimeout(timer)
+  }, [readerActionError])
+  // Метка на скрытой мобильной вкладке: модель действовала на сайте, пока открыт чат.
+  const [splitAttention, setSplitAttention] = useState<SplitView | null>(null)
+  const chatViewRef = useRef<SplitView>('chat')
+  // Заголовок открытой в Reader страницы — подпись мобильной вкладки «Сайт».
+  const [readerPageTitle, setReaderPageTitle] = useState<string | null>(null)
+  // Человек взял управление панелью: отметка в мобильных вкладках, чтобы было ясно, почему ассистент ждёт.
+  const [readerManual, setReaderManual] = useState(false)
+  // Заголовок вкладки браузера: где мы в Reader — как у обычной вкладки с сайтом.
+  useEffect(() => {
+    if (!inReader) return
+    const previous = document.title
+    document.title = readerPageTitle ? `${readerPageTitle} — Web Reader` : 'Web Reader'
+    return () => { document.title = previous }
+  }, [inReader, readerPageTitle])
+
+  const [dividerActive, setDividerActive] = useState(false)
+  // Свёрнутый чат в Reader: сайт на всю ширину, как во вкладке браузера; выбор запоминается.
+  const [readerChatCollapsed, setReaderChatCollapsed] = useState(() => safeStorageGet(READER_CHAT_COLLAPSED_KEY) === '1')
+  const toggleReaderChat = useCallback(() => setReaderChatCollapsed((value) => { safeStorageSet(READER_CHAT_COLLAPSED_KEY, value ? '0' : '1'); return !value }), [])
+  // Cmd/Ctrl+\ сворачивает и разворачивает чат в Reader — как боковую панель в редакторах.
+  useEffect(() => {
+    if (!inReader) return
+    const onKey = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === '\\') { event.preventDefault(); toggleReaderChat() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [inReader, toggleReaderChat])
+  // Красная точка на вкладке «Сайт»: проверка модели не прошла, пока открыт чат.
+  const [splitAttentionFailed, setSplitAttentionFailed] = useState(false)
+  // Ответ ассистента, пришедший при открытой вкладке «Сайт», отмечает вкладку «Чат».
+  const seenMessageCount = useRef(0)
+  useEffect(() => {
+    const count = chat.messages.length
+    if (count > seenMessageCount.current && chat.messages.at(-1)?.role === 'ai' && voice.voice === 'idle') {
+      setSplitAttention((state) => splitAttentionReducer(state, { type: 'assistant-reply', view: chatViewRef.current }))
+    }
+    if (voice.voice === 'idle') seenMessageCount.current = count
+  }, [chat.messages, voice.voice])
   // Платформенная привязка WebReaderFrame: пакет Reader не трогает window сам.
   const readerPlatform = useMemo(() => ({
     origin: window.location.origin,
@@ -661,13 +729,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!bridge?.onChanged) return
     return bridge.onChanged((message) => {
       if (message.conversationId !== chat.activeId) return
-      const item = { id: browserId(), action: message.action, address: message.address, title: message.title }
-      setReaderActions((items) => [...items, item].slice(-20))
+      const item = { id: browserId(), action: message.action, address: message.address, title: message.title, at: Date.now(), ...(message.summary !== undefined ? { summary: message.summary } : {}), ...(message.ok !== undefined ? { ok: message.ok } : {}) }
+      // Одинаковые подряд чтения одной страницы схлопываются в «×N»: лента остаётся рассказом, а не логом.
+      const repeatable = message.action.kind === 'read' || message.action.kind === 'find' || message.action.kind === 'errors' || message.action.kind === 'status'
+      setReaderActions((items) => {
+        const last = items.at(-1)
+        if (repeatable && last && last.action.kind === message.action.kind && last.address === message.address && JSON.stringify(last.action) === JSON.stringify(message.action)) return [...items.slice(0, -1), { ...last, at: item.at, count: (last.count ?? 1) + 1 }]
+        return [...items, item].slice(-20)
+      })
+      if (message.action.kind !== 'errors') setSplitAttention((state) => splitAttentionReducer(state, { type: 'reader-changed', view: chatViewRef.current }))
+      if (message.ok === false && chatViewRef.current === 'chat') setSplitAttentionFailed(true)
       if (message.action.kind !== 'errors') {
         const registration = previewRunnerRef.current
         const sequence = ++readerErrorSequence.current
-        void readReaderErrors(registration, () => previewRunnerRef.current === registration && sequence === readerErrorSequence.current).then(error => {
-          if (error !== undefined) setReaderPageError(error)
+        void readReaderErrorSummary(registration, () => previewRunnerRef.current === registration && sequence === readerErrorSequence.current).then(summary => {
+          if (summary !== undefined) { setReaderPageError(summary?.message ?? null); setReaderPageErrorCount(summary?.total ?? 0) }
         })
       }
     })
@@ -678,12 +754,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!bridge) return
     return bridge.onAction(({ conversationId, requestId, action }) => {
       if (action.kind === 'open') setPreviewElement(null)
+      const sequence = ++readerPendingSequence.current
+      if (conversationId === chat.activeId && action.kind !== 'errors') setReaderPendingAction(action)
       void runReaderModelRequest({
         conversationId, activeConversationId: chat.activeId,
         registration: previewRunnerRef.current,
         activeRegistrationId: safeStorageGet(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null,
         readerRoute: inReader || inPlaywrightReader, action
-      }).then(outcome => bridge.result({ conversationId, requestId, ...outcome }))
+      }).then(outcome => {
+        // Более позднее действие уже показано — не гасим его статус завершением старого.
+        if (sequence === readerPendingSequence.current) setReaderPendingAction(null)
+        if (conversationId === chat.activeId) setReaderActionError(outcome.ok || action.kind === 'errors' || action.kind === 'status' ? null : { action, error: outcome.error ?? 'действие не выполнено' })
+        const stopped = outcome.ok && outcome.result && typeof outcome.result === 'object' && (outcome.result as { needsConfirmation?: unknown }).needsConfirmation === true ? outcome.result as { reason?: string; target?: { text?: string; selector?: string } } : null
+        if (stopped && conversationId === chat.activeId) setReaderConfirm({ action, reason: stopped.reason ?? 'опасное действие', target: stopped.target?.text ?? stopped.target?.selector ?? 'элемент' })
+        bridge.result({ conversationId, requestId, ...outcome })
+      })
     })
   }, [chat.activeId, chatActions, inReader, inPlaywrightReader])
   useEffect(() => {
@@ -697,14 +782,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     event.currentTarget.setPointerCapture(event.pointerId)
     const container = event.currentTarget.parentElement
     if (!container) return
+    setDividerActive(true)
     const move = (pointer: PointerEvent): void => {
       const rect = container.getBoundingClientRect()
-      const next = Math.min(75, Math.max(25, ((rect.right - pointer.clientX) / rect.width) * 100))
+      const next = clampPreviewWidth(((rect.right - pointer.clientX) / rect.width) * 100)
       setPreviewWidth(next)
       safeStorageSet(PREVIEW_WIDTH_KEY, String(next))
     }
-    const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    const stop = (): void => { setDividerActive(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
+  }
+  // Разделитель доступен и с клавиатуры: стрелки двигают границу, Enter возвращает пропорцию по умолчанию.
+  const applyPreviewWidth = (next: number): void => { setPreviewWidth(next); safeStorageSet(PREVIEW_WIDTH_KEY, String(next)) }
+  const resizePreviewByKey = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    const next = previewWidthAfterKey(previewWidth, event.key, event.shiftKey)
+    if (next === null) return
+    event.preventDefault()
+    applyPreviewWidth(next)
   }
   const clampWorkshopChatWidth = useCallback((percent: number): number => {
     const width = workshopSplitRef.current?.getBoundingClientRect().width ?? 0
@@ -1057,9 +1151,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const requireMachine = useCallback((action: () => void): void => {
     setMachineConnectStatus('Откройте приложение подключения или добавьте новое устройство по ссылке.')
     setMachineDownloadBusy(false)
-    machineActionGuard.current.require(operations.agents.some((agent) => agent.online), action)
-  }, [operations.agents])
+    // Machine-dependent actions own this read; cold chat does not need it.
+    void api['agents:list']().then((agents) => {
+      operationsActions.applyAgents(agents)
+      machineActionGuard.current.require(agents.some((agent) => agent.online), action)
+    }).catch((error) => runtime.shell.actions.fail(error, () => requireMachine(action)))
+  }, [api, operationsActions, runtime])
   const finishPendingMachineAction = useCallback(async (generation: number, agentId?: string): Promise<boolean> => {
+    readResources(api).invalidate('agents:list')
     const agents = await api['agents:list']()
     if (generation !== machineConnectGeneration.current || !machineActionGuard.current.pending()) return false
     operationsActions.applyAgents(agents)
@@ -1387,6 +1486,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // адрес (клик по чату, «Назад», ссылка извне) — грузим чат из адреса;
   // изменился активный чат в сторе (создание, удаление, resume, автосоздание
   // первой репликой) — переписываем адрес без новой записи в истории.
+  useEffect(() => {
+    if (!authed) return
+    const messageId = new URLSearchParams(routeSearch).get('message')
+    if (messageId) chatActions.focusMessage(messageId)
+  }, [authed, routeSearch, path, chatActions])
+
   const syncedChatId = useRef<string | null>(routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId ?? routeConsoleReaderChatId ?? routeMakeChatId)
   useEffect(() => {
     if (!authed || !inChat || projectInviteToken) return
@@ -1394,7 +1499,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       syncedChatId.current = routeChatId
       if (routeChatId === chat.activeId) return // стор уже открыл этот чат
       const fallback = chat.activeId
-      void chatActions.selectConversation(routeChatId).then((ok) => {
+      const query = new URLSearchParams(routeSearch)
+      const projectId = query.get('project')
+      void chatActions.selectConversation(routeChatId, query.get('scope') === 'kanban' && projectId ? { scope: 'kanban', projectId } : undefined).then((ok) => {
         if (ok || syncedChatId.current !== routeChatId) return
         // Чата нет (удалён или чужой) — возвращаемся к прежнему.
         syncedChatId.current = fallback
@@ -1412,7 +1519,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       navigate(`/chat/${chat.activeId}`, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inChat, routeChatId, chat.activeId, projectInviteToken])
+  }, [authed, inChat, routeChatId, routeSearch, chat.activeId, projectInviteToken])
 
   // Отдельный экран Web Reader держит только типизированные чаты; старые
   // разговоры с сохранённым URL совместимы с ним и остаются доступны после переноса.
@@ -1593,6 +1700,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     else if (projects.activeProjectId) projectsActions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId, routeNeedsBoard])
+  useEffect(() => {
+    if (!authed || !routeNeedsBoard || !routeProjectId) return
+    const timer = setInterval(() => void projectsActions.ensureBoard(routeProjectId), 10_000)
+    return () => clearInterval(timer)
+  }, [authed, routeNeedsBoard, routeProjectId, projectsActions])
   // Прямая ссылка на завершённую задачу: сервер прячет с доски давно готовые
   // карточки, и открывать было бы нечего. Если задачи из URL в снапшоте нет —
   // один раз включаем «Показать завершённые» и доска приходит целиком.
@@ -1624,9 +1736,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [globalSettingsSection, invalidGlobalSettingsRoute, navigate, shell.settingsOpen, shellActions])
   // Каталог типов нужен разделу «Типы проектов» в пользовательских настройках.
   useEffect(() => {
-    if (authed && globalSettingsSection && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
+    if (authed && globalSettingsSection === 'projectTypes') void projectsActions.loadProjectTypes()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, globalSettingsSection])
+  useEffect(() => {
+    if (!authed || !globalSettingsSection) return
+    void settingsActions.loadCatalogs(globalSettingsSection)
+    const timer = setInterval(() => void settingsActions.loadCatalogs(globalSettingsSection), 300_000)
+    return () => clearInterval(timer)
+  }, [authed, globalSettingsSection, settingsActions])
   const loadGitWorkspaces = useCallback(async (projectId: string): Promise<void> => {
     setGitWorkspaces((prev) => ({ ...prev, status: 'loading' }))
     try {
@@ -1667,11 +1785,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg])
   useEffect(() => {
-    if (!session.authRequired) return
+    if (!authed) return
     if (utilitySeg === 'machines') { if (!operations.machinesOpen) operationsActions.openMachines() }
     else if (operations.machinesOpen) operationsActions.closeMachines()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [utilitySeg])
+  }, [utilitySeg, authed])
+  useEffect(() => {
+    if (!authed || utilitySeg !== 'machines') return
+    const timer = setInterval(() => void operationsActions.refreshAgents(), 30_000)
+    return () => clearInterval(timer)
+  }, [authed, utilitySeg, operationsActions])
   useEffect(() => {
     if (!session.authRequired) return
     if (utilitySeg === 'ci') { if (!projects.ciOpen) void projectsActions.openCi() }
@@ -2674,7 +2797,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && !(inChat && !inSplit && chat.activeId === null && chat.conversationsStatus === 'ready' && chat.conversations.length === 0) && (
       <div
         ref={inWorkshop ? workshopSplitRef : undefined}
-        className={inSplit ? `chat-split chat-split--${chatView}${inWorkshop ? ' workshop-split' : ''}${inWorkshop && workshopChatCollapsed ? ' workshop-split--collapsed' : ''}` : 'chat-page'}
+        className={inSplit ? `chat-split chat-split--${chatView}${inWorkshop ? ' workshop-split' : ''}${inWorkshop && workshopChatCollapsed ? ' workshop-split--collapsed' : ''}${inReader && readerChatCollapsed ? ' chat-split--site-only' : ''}` : 'chat-page'}
         data-workshop={workshopSurface ?? undefined}
         data-resizing={inWorkshop && workshopResizing ? 'true' : undefined}
         style={inSplit ? (inWorkshop
@@ -2685,7 +2808,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           относится ко всей поверхности и обязан пережить сворачивание чата. */}
       {inConsoleReader && <header className="web-recorder-selector workshop-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
       {inImageStudio && <header className="web-recorder-selector workshop-selector"><strong>Студия</strong><label><span className="vc-sr-only">Чат студии картинок</span><select aria-label="Чат студии картинок" value={imageStudioActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/images/${event.target.value}`) }}>{!imageStudioActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.imageStudioConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createImageStudioChat()}>+ Новый</button></header>}
-      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inWorkshop ? 'Панели мастерской' : undefined}><button id={inWorkshop ? 'workshop-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inWorkshop ? 'workshop-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат</button><button id={inWorkshop ? 'workshop-side-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inWorkshop ? 'workshop-side-pane' : undefined} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
+      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inWorkshop ? 'Панели мастерской' : undefined}><button id={inWorkshop ? 'workshop-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inWorkshop ? 'workshop-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат{splitAttention === 'chat' && <span className="chat-split-tab-dot" role="img" aria-label="Есть новый ответ" />}</button><button id={inWorkshop ? 'workshop-side-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inWorkshop ? 'workshop-side-pane' : undefined} title={readerPageTitle ?? undefined} onClick={() => setChatView('preview')}><span className="chat-split-tab-label">{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : siteTabLabel('Сайт', readerPageTitle)}</span>{splitAttention === 'preview' && <span className={`chat-split-tab-dot${splitAttentionFailed ? ' chat-split-tab-dot--failed' : ''}`} role="img" aria-label={splitAttentionFailed ? 'Проверка ассистента не прошла' : 'Ассистент изменил страницу'} />}</button></div>{inReader && readerPendingAction && <button type="button" className="chat-split-live" aria-live="polite" title="Показать сайт" onClick={() => setChatView('preview')}><span className="chat-split-live__dot" aria-hidden="true" />Ассистент {pendingActionLabel(readerPendingAction)}…</button>}{inReader && readerManual && !readerPendingAction && <span className="chat-split-live chat-split-live--manual">✋ Страницей управляете вы — ассистент ждёт</span>}{inReader && readerActionError && !readerPendingAction && !readerManual && <button type="button" className="chat-split-live chat-split-live--error" title="Показать сайт" onClick={() => setChatView('preview')}>Ассистент не смог: {pendingActionLabel(readerActionError.action)}</button>}</nav>}
       <div id={inWorkshop ? 'workshop-chat-pane' : undefined} role={inWorkshop ? 'tabpanel' : undefined} aria-labelledby={inWorkshop ? 'workshop-chat-tab' : undefined} className="chat-split-chat">
       {inReader && <header className="web-recorder-selector">{activeConversation?.assistantKind === 'web-recorder' && <WebReaderEngineSelect key={activeConversation.id} value={activeConversation.previewEngine ?? 'proxy'} onChange={engine => chatActions.setConversationPreviewUrl(activeConversation.id, activeConversation.previewUrl ?? null, engine)} />}<label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
@@ -2890,7 +3013,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onPointerDown={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
         onClick={toggleWorkshopChat}
-      >{workshopChatCollapsed ? '›' : '‹'}</button></div> : <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>)}
+      >{workshopChatCollapsed ? '›' : '‹'}</button></div> : <div className={`chat-split-divider${dividerActive ? ' chat-split-divider--active' : ''}`} role="region" aria-label="Изменение ширины панелей" onPointerDown={(event) => { if (!readerChatCollapsed) resizePreview(event) }} onDoubleClick={() => { if (!readerChatCollapsed) applyPreviewWidth(PREVIEW_WIDTH_DEFAULT) }} title="Перетащите; двойной щелчок вернёт ширину по умолчанию"><div role="separator" tabIndex={0} aria-label="Изменить ширину панелей" aria-orientation="vertical" aria-valuemin={PREVIEW_WIDTH_MIN} aria-valuemax={PREVIEW_WIDTH_MAX} aria-valuenow={Math.round(previewWidth)} aria-valuetext={`Сайт занимает ${Math.round(previewWidth)}%`} onKeyDown={resizePreviewByKey} />{inReader && <button type="button" className="chat-split-collapse" aria-pressed={readerChatCollapsed} aria-label={readerChatCollapsed ? 'Показать чат' : 'Свернуть чат'} title={readerChatCollapsed ? 'Показать чат' : 'Свернуть чат'} onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onClick={toggleReaderChat}>{readerChatCollapsed ? '›' : '‹'}</button>}</div>)}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка панели сессии…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
         // Записанный сценарий добавляется в набор или заменяет одноимённый:
@@ -2908,7 +3031,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane localAgentId={window.featurePreview?.localAgentId} key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} projectId={activeConversation?.projectId ?? null} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
       {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <div id="workshop-side-pane" role="tabpanel" aria-labelledby="workshop-side-tab" className="workshop-side-host"><Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense></div>}
       {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine === 'chromium' && <Suspense fallback={<div role="status">Запуск полного браузера…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} initialUrl={activeConversation.previewUrl ?? null} onPageChange={url => chatActions.setConversationPreviewUrl(chat.activeId!, url)} /></Suspense>}
-      {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine !== 'chromium' && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
+      {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine !== 'chromium' && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId} actions={readerActions} pendingAction={readerPendingAction} onPageTitle={setReaderPageTitle} onControl={setReaderManual} manual={readerManual} confirmRequest={readerConfirm} onConfirmAction={(action) => { setReaderConfirm(null); void previewRunnerRef.current?.run(action) }} onDenyAction={() => setReaderConfirm(null)} actionError={readerActionError} onRetryAction={(action) => { setReaderActionError(null); void previewRunnerRef.current?.run(action) }} onAsk={(text) => { chatActions.setDraft(`«${text}» — что это значит на открытой странице?`); if (window.matchMedia('(max-width: 768px)').matches) setChatView('chat') }} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} onRevealAction={(target) => { void previewRunnerRef.current?.run({ kind: 'show', ...target, label: 'Здесь действовал ассистент' }) }} pageError={readerPageError} pageErrorCount={readerPageErrorCount} onClearActions={() => setReaderActions([])} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}
 
@@ -3610,11 +3733,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
 
-      <CommandPalette userId={shellUserId} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette userId={shellUserId} api={api} onNavigate={navigate} open={paletteOpen && authed} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
       {globalSettingsSection && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
+          catalogErrors={settingsState.catalogErrors}
+          catalogLoading={settingsState.catalogLoading.filter(name => !settingsState.catalogLoaded[name])}
+          catalogRefreshing={settingsState.catalogLoading.some(name => settingsState.catalogLoaded[name])}
+          onRetryCatalog={(name) => void settingsActions.loadCatalogs(globalSettingsSection, name)}
           section={globalSettingsSection}
           onSectionChange={(section) => navigate(`/settings/${section}`)}
           projectTypes={projects.projectTypes}

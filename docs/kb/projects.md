@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-13
-checked: 06c94c52
+updated: 2026-09-15
+checked: a6abbb37
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -857,6 +857,15 @@ debounce-таймер, pending-сигнал и подписку. Фоновая 
 подключения. В desktop живой синхронизации нет.
 
 ## Фронтенд
+
+`projectsStore.openProject(id, { board: false })` loads only project details.
+`ensureBoard(id)` loads the board once when the board tab becomes active; a
+repeated call for an already loaded or loading board does not request it again.
+The regression is in `packages/ui/src/store/appRuntime.projects.test.ts`.
+CHAT-468 shares allowlisted board/detail reads through the session read cache.
+Board bridge change/reconnect events invalidate that project's reads before
+scheduling synchronization. Local project, task and column mutations invalidate
+at both start and settlement, fencing responses that raced a successful write.
 
 Проектный фронтенд разделён между двумя пакетами, и **граница пока проведена только
 наполовину**. Экраны — `ProjectPage`, `ProjectBoard`, `ProjectSettings`, `KanbanBoard`,
@@ -2293,3 +2302,21 @@ CRUD `…/comments[/:commentId]` и `…/worklog[/:entryId]`; ошибка пр�
 `task_comment_delete` (необратимо — подтверждение даже при полной автономии),
 `task_worklog_add`. Записи модели помечены `via='model'` и бейджем «модель»
 в ленте.
+
+## Ленивая загрузка доски
+
+`openProject(id, { board: false })` в
+`packages/ui/src/store/domains/projectsStore.ts` открывает релизы, настройки
+или код, загружая только `projects:get`: запросы снимка, личного вида и
+статусов доски и подписка `board.changed` до перехода на канбан не нужны.
+`ensureBoard(id)` догружает доску по требованию. Если снимок того же проекта
+уже есть и его cache-key ещё свеж, функция ничего не запрашивает; после TTL она
+обновляет снимок, не скрывая текущую доску и выбранный фильтр завершённых задач.
+
+Общий read-cache разделяет board-ключи по project id и нормализованному
+`includeCompleted`. Проектные мутации и `board.changed` инвалидируют
+относящиеся к проекту чтения; потеря доступа удаляет проект и его кэшированные
+данные. Generation-проверки и идентичность cache-entry не дают позднему ответу
+для прежнего проекта, фильтра или уже инвалидированной записи изменить
+действующий state. Ошибка остаётся в блоке доски, а retry повторяет именно её
+загрузку.

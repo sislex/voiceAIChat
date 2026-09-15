@@ -1,0 +1,14 @@
+
+> @voicechat/ui@0.1.0 test
+> vitest run --silent src/test/routeResources.browser.test.ts -t records comparable
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui
+
+ ✓ src/test/routeResources.browser.test.ts (5 tests | 4 skipped) 110777ms
+   ✓ records comparable cold/warm request counts, transferred bytes and content/data times for five routes 106835ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 4 skipped (5)
+   Start at  10:17:37
+   Duration  112.15s (transform 138ms, setup 268ms, collect 669ms, tests 110.78s, environment 0ms, prepare 104ms)

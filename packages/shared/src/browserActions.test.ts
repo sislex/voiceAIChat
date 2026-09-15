@@ -180,8 +180,8 @@ describe('клавиатура и буфер обмена', () => {
     })
   })
 
-  it('фокус без селектора остаётся чтением активного элемента', () => {
-    expect(planModelAction({ kind: 'focus' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'focus' } } })
+  it('чтение фокуса — отдельный вид: раннер различает его по отсутствию селектора', () => {
+    expect(planModelAction({ kind: 'focusState' })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'focus' } } })
   })
 
   it('очистка, выделение, копирование и вставка ложатся на селекторные команды', () => {

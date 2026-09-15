@@ -14,6 +14,29 @@ import { base64ToArrayBuffer } from './decode'
 import { getCsrf, setCsrf, setToken } from './session'
 import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy, makeFsBridge } from './index'
 
+// @testCase TC-CONSISTENCY
+// @testCase TC-API
+it('aborts universal-search transport independently of message search', async () => {
+  const signals: AbortSignal[] = []
+  const requests: RequestInit[] = []
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+    signals.push(init.signal as AbortSignal)
+    requests.push(init)
+    return new Response(JSON.stringify({ groups: [], nextCursor: null }), { status: 200 })
+  }))
+  try {
+    const api = createHttpApi('', '')
+    const first = api['search:universal']({ query: 'old' })
+    const second = api['search:universal']({ query: 'new' })
+    expect(signals[0].aborted).toBe(true)
+    expect(signals[1].aborted).toBe(false)
+    expect(JSON.parse(String(requests[1].body))).toEqual({ query: 'new' })
+    await api['search:cancel']()
+    expect(signals[1].aborted).toBe(true)
+    await Promise.all([first, second])
+  } finally { vi.unstubAllGlobals() }
+})
+
 class FakeWebSocket {
   static OPEN = 1
   static last: FakeWebSocket | null = null

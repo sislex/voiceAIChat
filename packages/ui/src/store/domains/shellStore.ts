@@ -124,6 +124,7 @@ export function createShellStore(deps: ShellDeps = {}): ShellStore {
       setErrorFix: (fix) => setState({ errorFix: fix }),
       notify,
       fail(err, retry) {
+        if (err instanceof Error && err.name === 'AbortError') return
         notify({ kind: 'error', text: err instanceof Error ? err.message : String(err), ...(retry ? { retry } : {}) })
       },
       dismissNotice(id) {

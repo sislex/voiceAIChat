@@ -78,7 +78,8 @@ describe('AppRuntime — bootstrap', () => {
     runtime.dispose()
   })
 
-  it('после login грузит настройки, чаты, машины и открывает свежий чат', async () => {
+  // @testCase TC1
+  it('loads chat after login and defers the closed Machines route', async () => {
     const session = makeSession(null)
     const { runtime } = makeRuntime({ session })
     await runtime.start()
@@ -88,7 +89,7 @@ describe('AppRuntime — bootstrap', () => {
     expect(runtime.session.getState().currentUser).toEqual(USER)
     expect(runtime.chat.getState().conversations).toHaveLength(1)
     expect(runtime.chat.getState().activeId).toBe(runtime.chat.getState().conversations[0].id)
-    expect(runtime.operations.getState().agentsStatus).toBe('ready')
+    expect(runtime.operations.getState().agentsStatus).toBe('idle')
     runtime.dispose()
   })
 
@@ -147,6 +148,8 @@ describe('AppRuntime — bootstrap', () => {
 
     expect(runtime.chat.getState().conversations).toHaveLength(1)
     expect(runtime.chat.getState().conversationsStatus).toBe('ready')
+    expect(runtime.operations.getState().agentsStatus).toBe('idle')
+    await runtime.operations.actions.refreshAgents()
     expect(runtime.operations.getState().agentsStatus).toBe('error')
     expect(runtime.session.getState().currentUser).not.toBeNull()
     runtime.dispose()

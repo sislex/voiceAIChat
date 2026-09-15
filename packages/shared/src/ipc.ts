@@ -279,6 +279,8 @@ export interface IpcInvokeMap {
    * пустой результат. `projectId`: undefined — по всем беседам, null — только
    * беседы без проекта. Постранично через `cursor` из прошлого ответа.
    */
+  'search:universal': { arg: import('./universalSearch').UniversalSearchRequest; result: import('./universalSearch').UniversalSearchResult }
+  'search:cancel': { arg: void; result: void }
   'messages:search': {
     arg: {
       query: string
@@ -1056,7 +1058,7 @@ export interface RendererPreviewBridge {
   /** Подписка на действия сервера (preview.action). */
   onAction(cb: (m: { conversationId: string; requestId: string; action: PreviewAction }) => void): () => void
   /** Успешное действие Reader: живое состояние и запись ленты. */
-  onChanged?(cb: (m: { conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction }) => void): () => void
+  onChanged?(cb: (m: { conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction; summary?: string; ok?: boolean }) => void): () => void
   /** Ответ на действие (preview.result). */
   result(m: { conversationId?: string; registrationId?: string; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }): void
 }

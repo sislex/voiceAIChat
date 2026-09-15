@@ -1,4 +1,5 @@
-import { isPreviewAction, type PreviewAction, type PreviewActionResult } from '@shared/previewActions'
+import { isPreviewAction, resolvePreviewUrl, type PreviewAction, type PreviewActionResult, type PreviewPageOutline } from '@shared/previewActions'
+import { browserUrlMatches } from '@shared/browserWaiting'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import {
   WEB_RECORDER_MESSAGE_TYPE,
@@ -53,6 +54,18 @@ export interface ReaderHostBridgeOptions {
   /** Новая регистрация после handshake либо null после dispose/ротации. */
   onRegistration?: (registration: ReaderHostRegistration | null) => void
   onSaveUrl?: (url: string | null) => void
+  /** Заголовок готовой страницы (null — страницы нет): host показывает его на мобильной вкладке. */
+  onPageTitle?: (title: string | null) => void
+  /** Пользователь выделил текст на странице и просит спросить о нём ассистента. */
+  onAsk?: (text: string) => void
+  /** Пользователь взял управление страницей (true) или вернул его ассистенту (false). */
+  onControl?: (manual: boolean) => void
+  /** Модель ждёт человека: вопрос с вариантами ответа или переданный ему шаг (null — ожидание кончилось). */
+  onWaitingForPerson?: (waiting: { kind: 'question' | 'handover'; text: string; options?: string[]; since: number } | null) => void
+  /** Закладки сеанса изменились: панель показывает тот же список, что видит модель. */
+  onBookmarks?: (bookmarks: { url: string; label: string; at: number }[]) => void
+  /** Ход выполнения последовательности: какой шаг идёт сейчас. */
+  onSequenceProgress?: (progress: { done: number; total: number; action: PreviewAction } | null) => void
   onElement?: (element: PreviewElementPayload) => void
   onRecordingStep?: (step: WebRecorderScenarioStep) => void
   /** Снимок области, выделенной пользователем в Reader. */
@@ -71,6 +84,10 @@ export interface ReaderHostBridge {
   setRecording(enabled: boolean): void
   beginDiagnostics(): void
   endDiagnostics(): void
+  /** Ответ человека на вопрос модели; отказ (null) означает «не сейчас». */
+  answerQuestion(answer: string | null): void
+  /** Человек вернул управление после handover. */
+  finishHandover(): void
   /** Сообщение от iframe, чей event.source/origin уже проверен адаптером. */
   receive(message: unknown): void
   dispose(): void
@@ -104,6 +121,32 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   let pageStatus: WebRecorderPageStatus = 'empty'
   let pageError: string | undefined
   let approvedUrl: string | null = null
+  // Заголовок готовой страницы: open отвечает им сразу, без отдельного read ради названия.
+  let pageTitle: string | undefined
+  let pageOutline: PreviewPageOutline | undefined
+  // Куда ходила панель в этом разговоре: status отвечает историей, как вкладка браузера помнит путь.
+  const history: string[] = []
+  // Заголовки посещённых страниц: back {to} ищет по ним так же, как человек ищет вкладку по названию.
+  const visited: { url: string; title: string }[] = []
+  const remember = (url: string | null, title?: string): void => {
+    if (!url) return
+    if (history[0] !== url) { history.unshift(url); if (history.length > 5) history.length = 5 }
+    const known = visited.find(item => item.url === url)
+    if (known) { if (title) known.title = title; return }
+    visited.unshift({ url, title: title ?? '' }); if (visited.length > 20) visited.length = 20
+  }
+  let manual = false
+  let viewport: { width: number; height: number } | undefined
+  // Последнее завершённое действие: модель после паузы спрашивает status и продолжает с того места.
+  let lastAction: { kind: string; ok: boolean; at: number; error?: string } | undefined
+  // Вопрос человеку или переданный ему шаг: панель ждёт, модель стоит.
+  let waiting: { kind: 'question' | 'handover'; text: string; since: number; settle: (answer: string | null) => void } | null = null
+  const questions: { question: string; answer?: string; answered: boolean; at: number }[] = []
+  // Закладки сеанса: человек и модель кладут их на страницы, к которым вернутся.
+  const bookmarks: { url: string; label: string; at: number }[] = []
+  // Журнал проверок и счётчик действий: report собирает из них отчёт по задаче.
+  const checks: { summary: string; pass: boolean; at: number; url: string | null }[] = []
+  let actionsCount = 0
   let disposed = false
   let navigationGeneration = 0
   let inspectorMode: boolean | undefined
@@ -138,6 +181,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     if (!entry) return
     clearTimeout(entry.timer)
     pending.delete(requestId)
+    if (entry.action.kind !== 'status') { lastAction = { kind: entry.action.kind, ok: outcome.ok, at: Date.now(), ...(outcome.error ? { error: outcome.error.slice(0, 200) } : {}) }; actionsCount++ }
+    const checked = entry.action.kind === 'check' && outcome.ok ? outcome.result as { summary?: unknown; pass?: unknown } | undefined : undefined
+    if (checked && typeof checked.summary === 'string') { checks.push({ summary: checked.summary.slice(0, 200), pass: checked.pass === true, at: Date.now(), url: approvedUrl }); if (checks.length > 50) checks.shift() }
     entry.resolve(outcome)
   }
   const rejectAll = (error: string): void => {
@@ -149,7 +195,23 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       if (entry.sent || entry.action.kind !== 'viewport' && pageStatus !== 'ready') continue
       // open резолвится готовностью целевой страницы, в iframe не пересылается.
       if (entry.action.kind === 'open') {
-        settle(requestId, { ok: true, result: { url: approvedUrl ?? entry.action.url } })
+        // Итоговый адрес не совпал с запрошенным — сайт перенаправил; модели важно это знать.
+        const finalUrl = approvedUrl ?? entry.action.url
+        // Смена сайта заметна человеку по адресной строке — отмечаем её и для модели.
+        const hostOf = (value: string | null): string => { try { return value ? new URL(value).host : '' } catch { return '' } }
+        const previousHost = hostOf(history[1] ?? null)
+        const crossSite = Boolean(previousHost) && hostOf(finalUrl) !== previousHost
+        const opened = { url: finalUrl, ...(pageTitle ? { title: pageTitle } : {}), ...(pageOutline ? { outline: pageOutline } : {}), ...(finalUrl !== entry.action.url ? { redirected: true } : {}), ...(crossSite ? { crossSite: true } : {}) }
+        const waitFor = entry.action.waitFor
+        if (waitFor) {
+          // open + wait одним действием: страница готова, теперь дождаться нужного текста.
+          const pendingEntry = entry
+          pending.delete(requestId)
+          clearTimeout(pendingEntry.timer)
+          void run({ kind: 'wait', text: waitFor, timeoutMs: 8000 }).then((waited) => pendingEntry.resolve({ ok: true, result: { ...opened, waited: { text: waitFor, found: waited.ok, ...(waited.ok ? {} : { error: waited.error ?? 'не дождались' }) } } }))
+          continue
+        }
+        settle(requestId, { ok: true, result: opened })
         continue
       }
       entry.sent = true
@@ -170,9 +232,151 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     let action: PreviewAction
     try { action = structuredClone(input) }
     catch { return Promise.resolve({ ok: false, error: 'Не удалось скопировать действие Web Reader.' }) }
+    // status отвечает мост сам: вопрос «что с панелью» не должен зависеть от готовности страницы.
+    if (action.kind === 'status') {
+      const connected = !disposed && registration !== null
+      return Promise.resolve({ ok: true, result: {
+        connected, pageStatus: connected ? pageStatus : 'empty',
+        page: connected && approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null,
+        ...(pageStatus === 'error' && pageError ? { error: pageError } : {}),
+        ...(history.length ? { history: [...history] } : {}),
+        ...(manual ? { manual: true } : {}),
+        ...(viewport ? { viewport } : {}),
+        ...(pending.size ? { pending: pending.size } : {}),
+        ...(lastAction ? { lastAction } : {}),
+        ...(checks.length ? { checks: { passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length } } : {}),
+        ...(pageOutline && pageStatus === 'ready' ? { outline: pageOutline } : {}),
+        ...(bookmarks.length ? { bookmarks: [...bookmarks] } : {}),
+        ...(waiting ? { waitingFor: { kind: waiting.kind, text: waiting.text, since: waiting.since } } : {})
+      } })
+    }
+    // waitFor у действия: после успеха дождаться текста тем же ходом, как у open.
+    if ('waitFor' in action && typeof action.waitFor === 'string' && action.waitFor && action.kind !== 'open') {
+      const { waitFor, ...rest } = action
+      return run(rest as PreviewAction).then(async (outcome) => {
+        if (!outcome.ok) return outcome
+        const waited = await run({ kind: 'wait', text: waitFor, timeoutMs: 8000 })
+        return { ok: true, result: { ...(outcome.result as object), waited: { text: waitFor, found: waited.ok, ...(waited.ok ? {} : { error: waited.error ?? 'не дождались' }) } } as PreviewActionResult }
+      })
+    }
+    // Последовательность: шаги идут друг за другом через тот же run, стоп на первой ошибке.
+    if (action.kind === 'sequence') {
+      const steps = action.steps
+      return (async (): Promise<PreviewActionOutcome> => {
+        const results: { kind: string; ok: boolean; error?: string; summary?: string }[] = []
+        let lastPage: { url: string; title: string } | null = null
+        for (let index = 0; index < steps.length; index++) {
+          const step = steps[index]!
+          options.onSequenceProgress?.({ done: index, total: steps.length, action: step })
+          const outcome = await run(step)
+          const result = outcome.result as { page?: { url: string; title: string }; summary?: unknown } | undefined
+          if (result?.page) lastPage = result.page
+          results.push({ kind: step.kind, ok: outcome.ok, ...(outcome.error ? { error: outcome.error } : {}), ...(typeof result?.summary === 'string' ? { summary: result.summary } : {}) })
+          // Чек-лист проверок проходит до конца; обычная рутина останавливается на первом сбое.
+          if (!outcome.ok && !action.continueOnError) break
+        }
+        options.onSequenceProgress?.(null)
+        const completed = results.filter((item) => item.ok).length
+        const failed = results.map((item, index) => ({ item, index })).filter(({ item }) => !item.ok)
+        const error = failed.length ? failed.map(({ item, index }) => `Шаг ${index + 1} из ${steps.length} (${item.kind}): ${item.error ?? 'не выполнен'}`).join('; ') : undefined
+        return { ok: completed === steps.length, result: { page: lastPage, steps: results, completed, total: steps.length }, ...(error ? { error } : {}) }
+      })()
+    }
+    // back {to} — «вернись на страницу поиска»: мост знает адреса и заголовки этого сеанса и открывает найденный.
+    if (action.kind === 'back' && action.to) {
+      const needle = action.to.trim().toLowerCase()
+      const match = visited.find(item => item.url !== approvedUrl && (item.url.toLowerCase().includes(needle) || item.title.toLowerCase().includes(needle)))
+      if (!match) return Promise.resolve({ ok: false, error: `Страницы «${action.to}» не было в этом сеансе. Открытые адреса: ${visited.map(item => item.title || item.url).slice(0, 5).join(', ') || 'нет'}.` })
+      return run({ kind: 'open', url: match.url })
+    }
+    if (action.kind === 'report') {
+      const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
+      return Promise.resolve({ ok: true, result: { page, history: [...history], checks: [...checks], passed: checks.filter((item) => item.pass).length, failed: checks.filter((item) => !item.pass).length, actions: actionsCount, ...(lastAction ? { lastAction } : {}), ...(bookmarks.length ? { bookmarks: [...bookmarks] } : {}), ...(questions.length ? { questions: [...questions] } : {}) } })
+    }
+    // Пока панель ждёт человека, действовать за его спиной нельзя: так не делает и человек, задавший вопрос.
+    // status и report отвечены выше по потоку, поэтому здесь остаются только действия над страницей.
+    if (waiting && action.kind !== 'question' && action.kind !== 'handover') {
+      return Promise.resolve({ ok: false, error: `Панель ждёт человека: «${waiting.text}». Дождись ответа и продолжай.` })
+    }
+    // Вопрос человеку и передача шага — дело панели: страница о них не знает, а модель ждёт живого ответа.
+    if (action.kind === 'question' || action.kind === 'handover') {
+      if (waiting) return Promise.resolve({ ok: false, error: `Панель уже ждёт человека: «${waiting.text}». Дождись ответа.` })
+      const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
+      const text = action.kind === 'question' ? action.question : action.reason
+      const timeout = Math.min(action.timeoutMs ?? 120_000, 600_000)
+      const started = Date.now()
+      return new Promise((resolve) => {
+        const finish = (answer: string | null): void => {
+          if (waiting?.settle !== finish) return
+          clearTimeout(timer)
+          waiting = null
+          options.onWaitingForPerson?.(null)
+          const waitedMs = Date.now() - started
+          if (action.kind === 'question') {
+            questions.push({ question: text, ...(answer === null ? {} : { answer }), answered: answer !== null, at: Date.now() })
+            if (questions.length > 50) questions.shift()
+            resolve({ ok: true, result: { page, question: text, answered: answer !== null, ...(answer === null ? {} : { answer }), waitedMs } })
+            return
+          }
+          resolve({ ok: true, result: { page, reason: text, returned: answer !== null, waitedMs } })
+        }
+        const timer = setTimeout(() => finish(null), timeout)
+        waiting = { kind: action.kind === 'question' ? 'question' : 'handover', text, since: started, settle: finish }
+        options.onWaitingForPerson?.({ kind: waiting.kind, text, ...(action.kind === 'question' && action.options ? { options: [...action.options] } : {}), since: started })
+      })
+    }
+    // Закладка — дело панели, а не страницы: человек видит тот же список, что и модель.
+    if (action.kind === 'bookmark') {
+      const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
+      const removing = action.remove
+      if (removing) {
+        const index = bookmarks.findIndex(item => item.url === removing || item.label === removing)
+        if (index < 0) return Promise.resolve({ ok: false, error: `Закладки «${removing}» нет. Сейчас: ${bookmarks.map(item => item.label).join(', ') || 'ни одной'}.` })
+        const [removed] = bookmarks.splice(index, 1)
+        options.onBookmarks?.([...bookmarks])
+        return Promise.resolve({ ok: true, result: { page, bookmarks: [...bookmarks], removed } })
+      }
+      if (!page) return Promise.resolve({ ok: false, error: 'Страница не открыта — закладывать нечего.' })
+      const label = (action.label ?? page.title ?? '').trim().slice(0, 120) || page.url
+      const known = bookmarks.find(item => item.url === page.url)
+      if (known) { known.label = label; options.onBookmarks?.([...bookmarks]); return Promise.resolve({ ok: true, result: { page, bookmarks: [...bookmarks], added: known } }) }
+      const added = { url: page.url, label, at: Date.now() }
+      bookmarks.push(added); if (bookmarks.length > 20) bookmarks.shift()
+      options.onBookmarks?.([...bookmarks])
+      return Promise.resolve({ ok: true, result: { page, bookmarks: [...bookmarks], added } })
+    }
+    // check {url|title} — про адрес и заголовок панели: мост отвечает сам, страница не нужна.
+    if (action.kind === 'check' && !action.selector && !action.text && (action.url !== undefined || action.title !== undefined)) {
+      const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
+      const urlOk = action.url === undefined || Boolean(page && browserUrlMatches(page.url, action.url))
+      const titleOk = action.title === undefined || Boolean(page && page.title.toLowerCase().includes(action.title.toLowerCase()))
+      const pass = Boolean(page) && urlOk && titleOk
+      const summary = !page ? 'Страница не открыта' : !urlOk ? `Адрес ${page.url} не совпал с ${action.url}` : !titleOk ? `Заголовок «${page.title}» не содержит «${action.title}»` : action.url !== undefined ? `Адрес ${page.url} совпал` : `Заголовок содержит «${action.title}»`
+      checks.push({ summary, pass, at: Date.now(), url: approvedUrl }); if (checks.length > 50) checks.shift()
+      return Promise.resolve({ ok: true, result: { page: page ?? { url: '', title: '' }, pass, expected: { state: 'present' as const, ...(action.url !== undefined ? { url: action.url } : {}), ...(action.title !== undefined ? { title: action.title } : {}) }, actual: { count: page ? 1 : 0, visible: page ? 1 : 0, ...(page ? { value: page.title } : {}) }, summary } as never })
+    }
+    // wait {url} — про адрес панели, а не про DOM: мост знает подтверждённый адрес и ждёт его сам.
+    if (action.kind === 'wait' && action.url && !action.selector && !action.text) {
+      const pattern = action.url, timeout = Math.min(action.timeoutMs ?? 5000, 30_000), started = Date.now()
+      return new Promise((resolve) => {
+        const check = (): void => {
+          if (disposed) { resolve({ ok: false, error: 'Панель Web Reader закрыта.' }); return }
+          if (approvedUrl && pageStatus === 'ready' && browserUrlMatches(approvedUrl, pattern)) { resolve({ ok: true, result: { page: { url: approvedUrl, title: pageTitle ?? '' }, waitedMs: Date.now() - started } }); return }
+          if (Date.now() - started >= timeout) { resolve({ ok: false, error: `Адрес не стал ${pattern} за ${timeout} мс: сейчас ${approvedUrl ?? 'страницы нет'}.` }); return }
+          setTimeout(check, 150)
+        }
+        check()
+      })
+    }
     if (disposed) return Promise.resolve({ ok: false, error: 'Панель Web Reader закрыта.' })
     if (registration === null) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
-    if (action.kind === 'open') rejectAll('Открывается другая страница — повтори действие.')
+    if (action.kind === 'open') {
+      // Относительный путь — от страницы, которая открыта сейчас: так пользователь переходит по сайту.
+      const resolved = resolvePreviewUrl(action.url, approvedUrl)
+      if (!resolved) return Promise.resolve({ ok: false, error: 'Относительный адрес требует открытой страницы: сначала open с полным http(s) адресом.' })
+      action = { ...action, url: resolved }
+      rejectAll('Открывается другая страница — повтори действие.')
+    }
     if (pageStatus === 'empty' && action.kind !== 'open' && action.kind !== 'viewport') {
       return Promise.resolve({ ok: false, error: 'Панель открыта, но в ней нет страницы — сначала вызови open.' })
     }
@@ -234,6 +438,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       post({ kind: 'set-url', url })
     },
     run,
+    answerQuestion: (answer) => { waiting?.settle(answer) },
+    finishHandover: () => { if (waiting?.kind === 'handover') waiting.settle('готово') },
     setInspector: (enabled) => { inspectorMode = enabled; post({ kind: 'inspector-state', enabled }) },
     setRecording: (enabled) => { recordingMode = enabled; post({ kind: 'recording-state', enabled }) },
     beginDiagnostics: () => { diagnosticsMode = true; post({ kind: 'diagnostics-start', active: true }) },
@@ -252,6 +458,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         if (registration !== null) rejectAll('Web Reader перезагружен — повтори действие.')
         navigationGeneration++
         registration = options.newId()
+        manual = false
         pageStatus = approvedUrl ? 'loading' : 'empty'
         pageError = undefined
         if (!sendInit()) return
@@ -270,10 +477,15 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           if (message.status === 'empty' && approvedUrl !== null && [...pending.values()].some(entry => entry.action.kind === 'open')) return
           pageStatus = message.status
           pageError = message.error
+          pageTitle = message.status === 'ready' && typeof message.title === 'string' && message.title ? message.title : undefined
+          pageOutline = message.status === 'ready' ? message.outline : undefined
+          if (message.status === 'ready' && message.viewport) viewport = message.viewport
+          if (message.status === 'ready' || message.status === 'empty') options.onPageTitle?.(pageTitle ?? null)
           syncPageStatus()
           if (message.status === 'ready') {
             const changed = message.url !== approvedUrl
             approvedUrl = message.url
+            remember(message.url, pageTitle)
             if (changed) options.onSaveUrl?.(message.url)
             flush()
           }
@@ -285,6 +497,13 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           settle(message.requestId, message.ok
             ? { ok: true, ...(message.result !== undefined ? { result: message.result } : {}) }
             : { ok: false, error: message.error ?? 'Действие в превью не выполнено.' })
+          return
+        case 'ask':
+          options.onAsk?.(message.text)
+          return
+        case 'control':
+          manual = message.manual
+          options.onControl?.(message.manual)
           return
         case 'save-url':
           if (message.url !== approvedUrl) { navigationGeneration++; rejectAll('Адрес страницы изменён пользователем — повтори действие.') }
@@ -318,6 +537,8 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     },
     dispose() {
       if (disposed) return
+      // Незаконченный вопрос отпускаем: иначе ход модели висит до таймаута уже закрытой панели.
+      waiting?.settle(null)
       rejectAll('Панель Web Reader закрыта.')
       post({ kind: 'dispose' })
       disposed = true

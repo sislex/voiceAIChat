@@ -40,6 +40,14 @@ async function fixture() {
     if (req.url?.startsWith('/blocked?')) {
       res.writeHead(302, { location: new URL(req.url, 'http://fixture').searchParams.get('to')! }); res.end(); return
     }
+    if (req.url === '/cached.html') {
+      res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'public, max-age=600' })
+      res.end('<html><body><h1>Кэшируемая страница</h1></body></html>'); return
+    }
+    if (req.url === '/cached.css') {
+      res.writeHead(200, { 'content-type': 'text/css', 'cache-control': 'public, max-age=600' })
+      res.end('body { color: #000 }'); return
+    }
     if (req.url === '/assets/main.js') {
       res.setHeader('content-type', 'application/javascript')
       res.end('import { app } from "./chunk.js"; const lazy = () => import("./lazy.js");'); return
@@ -115,6 +123,20 @@ describe('разрешённый транспорт собственного с�
       }
       expect(f.calls).toHaveLength(3)
       expect(f.calls.every((path) => path.startsWith('/blocked?'))).toBe(true)
+    } finally { await f.close() }
+  })
+})
+
+describe('кэш переписанного документа (круг 16)', () => {
+  it('HTML с чужим cache-control отдаётся как no-store, прочие ресурсы сохраняют свой', async () => {
+    const f = await fixture()
+    try {
+      // Документ несёт инъецированный скрипт панели: кэш браузера удержал бы его прошлую версию после релиза.
+      const page = await f.load('http://89.125.68.35:8787/cached.html')
+      expect(page.statusCode).toBe(200)
+      expect(page.headers['cache-control']).toBe('private, no-store')
+      const style = await f.load('http://89.125.68.35:8787/cached.css')
+      expect(style.headers['cache-control']).toBe('public, max-age=600')
     } finally { await f.close() }
   })
 })

@@ -17,7 +17,14 @@ describe('контракт ожидания браузера', () => {
   it('отличает прежний iframe wait от расширенного Chromium-ожидания', () => {
     expect(browserWaitRequiresChromium({ selector: '#x', timeoutMs: 5000 })).toBe(false)
     expect(browserWaitRequiresChromium({ text: 'Готово' })).toBe(false)
-    for (const options of [{ selector: '#x', text: 'Готово' }, { selector: '#x', checked: false }, { selector: '#x', value: '' }, { selector: '.row', count: 0 }, { selector: '#x', timeoutMs: 10000 }, { url: '**/ready' }]) {
+    // Исчезновение спиннера панель ждёт сама — как пользователь, глядя на страницу.
+    expect(browserWaitRequiresChromium({ selector: '.spinner', state: 'hidden' })).toBe(false)
+    expect(browserWaitRequiresChromium({ text: 'Загрузка', state: 'detached' })).toBe(false)
+    expect(browserWaitRequiresChromium({ selector: '#x', enabled: true })).toBe(false)
+    expect(browserWaitRequiresChromium({ selector: '#x', checked: false })).toBe(false)
+    expect(browserWaitRequiresChromium({ selector: '#x', value: '' })).toBe(false)
+    expect(browserWaitRequiresChromium({ url: '**/ready' })).toBe(false)
+    for (const options of [{ selector: '#x', text: 'Готово' }, { selector: '#x', editable: true }, { selector: '.row', count: 0 }, { selector: '#x', timeoutMs: 10000 }, { loadState: 'load' as const }]) {
       expect(browserWaitRequiresChromium(options)).toBe(true)
     }
   })
@@ -34,18 +41,16 @@ describe('контракт ожидания браузера', () => {
 
 // Круг 3: сетевая тишина и остановка анимации — то, чего человек ждёт глазами.
 describe('ожидание сети и стабильности', () => {
+  // Круг 3 этой ветки и параллельная работа в main пришли к одному и тому же:
+  // в main условие называется `idle`, и второе имя того же ожидания заводить
+  // незачем — контракт остаётся один.
   it('сетевая тишина допускается сама по себе, без цели', () => {
-    expect(isBrowserWaitOptions({ network: 'idle' })).toBe(true)
-    expect(isBrowserWaitOptions({ network: 'busy' })).toBe(false)
+    expect(isBrowserWaitOptions({ idle: true })).toBe(true)
+    expect(isBrowserWaitOptions({ idle: 'busy' })).toBe(false)
   })
 
-  it('стабильность требует цели: двигаться может только конкретный элемент', () => {
+  it('стабильность допускается и как самостоятельное условие: страница целиком тоже «замирает»', () => {
     expect(isBrowserWaitOptions({ selector: '#menu', stable: true })).toBe(true)
-    expect(isBrowserWaitOptions({ stable: true })).toBe(false)
-  })
-
-  it('оба условия исполняются только Chromium, а не iframe-прокси', () => {
-    expect(browserWaitRequiresChromium({ network: 'idle' })).toBe(true)
-    expect(browserWaitRequiresChromium({ selector: '#a', stable: true })).toBe(true)
+    expect(isBrowserWaitOptions({ stable: true })).toBe(true)
   })
 })

@@ -7,6 +7,7 @@ export * from './browserDownloads'
 // @voicechat/shared — общие типы, контракт протокола и чистая логика,
 // переиспользуемые desktop/server/web.
 
+export * from './universalSearch'
 export * from './types'
 export * from './browserLimits'
 export * from './browserWaiting'

@@ -28,3 +28,37 @@
 .webpreview-history-description { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .webpreview-history-description small { display: block; color: var(--text-dim); }
 .webpreview-history li > button { flex: none; }
+/* Live status of the assistant's current action: the person sees the panel being driven, not just the result. */
+.webpreview-live { display: flex; align-items: center; gap: 8px; margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface-selected, var(--surface)); color: var(--text); font-size: 12px; }
+.webpreview-live__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: webpreview-live 1s ease-in-out infinite alternate; }
+@keyframes webpreview-live { from { opacity: .35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .webpreview-live__dot { animation: none; } }
+.webpreview-page-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (pointer: coarse) { .webpreview-history li > button, .webpreview-page-error .vc-btn, .webpreview-live { min-height: 44px; } }
+.webpreview-live__time { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.webpreview-action-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.webpreview-history-description[data-ok='true'] .webpreview-history-verdict { color: var(--success, #22863a); }
+.webpreview-history-description[data-ok='false'] .webpreview-history-verdict { color: var(--danger); }
+.webpreview-history-summary { display: block; color: var(--text); }
+.webpreview-history-details { flex-basis: 100%; margin: 4px 0 0; padding: 6px 8px; max-height: 140px; overflow: auto; border-radius: 6px; background: var(--panel); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.webpreview-history li { flex-wrap: wrap; }
+.webpreview-history-verdicts { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.webpreview-history-count { color: var(--text-dim); }
+.webpreview-history-icon { color: var(--text-dim); }
+.webpreview-history-kind select { font: inherit; font-size: 12px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }
+.webpreview-report { margin: 0; padding: 2px 10px 4px; border-bottom: 1px solid var(--border); }
+.webpreview-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--warning, var(--border)); background: var(--surface-selected, var(--surface)); font-size: 12px; }
+@media (pointer: coarse) { .webpreview-confirm .vc-btn { min-height: 44px; } }
+/* Cycle 18: session bookmarks — one list for the person and the model. */
+.webpreview-bookmarks { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-x: auto; white-space: nowrap; }
+.webpreview-bookmarks__item { display: inline-flex; align-items: center; gap: 0; }
+.webpreview-bookmarks__item > button:first-child { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.webpreview-bookmark-add { flex: none; margin: 0; padding: 2px 10px 4px; }
+@media (pointer: coarse) { .webpreview-bookmarks .vc-btn, .webpreview-bookmark-add .vc-btn { min-height: 44px; } }
+/* Cycle 19: the assistant asks the person right in the panel and waits for a live answer. */
+.webpreview-question { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface-selected, var(--surface)); font-size: 13px; }
+.webpreview-question p { flex-basis: 100%; margin: 0; }
+.webpreview-question input { flex: 1 1 160px; min-width: 0; }
+.webpreview-question__options { display: flex; flex-wrap: wrap; gap: 6px; }
+.webpreview-handover { background: var(--surface); }
+@media (pointer: coarse) { .webpreview-question .vc-btn, .webpreview-question input { min-height: 44px; } }

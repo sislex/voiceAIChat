@@ -1,7 +1,7 @@
 import { PREVIEW_MCP_PATH, type PreviewActionRelay, type PreviewActionOutcome, type PreviewTurnContext } from '@voicechat/web-reader-contracts'
 export { PREVIEW_MCP_PATH, PreviewActionRelay, PREVIEW_ACTION_TIMEOUT_MS } from '@voicechat/web-reader-contracts'
 export type { PreviewActionOutcome, PreviewTurnContext, PreviewEnvironmentInfo } from '@voicechat/web-reader-contracts'
-import { BROWSER_EVALUATE_MIN_TIMEOUT, BROWSER_EVALUATE_MAX_TIMEOUT, isPreviewAction, normalizeBrowserEvaluateOptions } from '@voicechat/shared'
+import { BROWSER_EVALUATE_MIN_TIMEOUT, BROWSER_EVALUATE_MAX_TIMEOUT, normalizeBrowserEvaluateOptions } from '@voicechat/shared'
 import { browserDiagnosticsRequireChromium, normalizeBrowserDiagnosticOptions } from '@voicechat/shared'
 import { BROWSER_DOWNLOAD_MODEL_CHUNK, BROWSER_DOWNLOAD_TEXT_CHUNK, isBrowserDownloadInfo, isBrowserDownloadListResult, isBrowserDownloadReadResult } from '@voicechat/shared'
 import { BROWSER_DIALOG_ANSWER_LIMIT, normalizeBrowserDialogAnswer, isBrowserDialogListResult, isBrowserSessionMetadata } from '@voicechat/shared'
@@ -29,9 +29,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
   PREVIEW_ACTION_LIMITS,
+  PREVIEW_READ_PARTS,
+  isPreviewAction,
   isBrowserWaitOptions,
   browserWaitRequiresChromium,
   isHttpUrl,
+  isRelativePreviewPath,
+  isBareHostUrl,
+  resolvePreviewUrl,
   previewResultJson,
   type PreviewAction,
 } from '@voicechat/shared'
@@ -142,6 +147,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         catch { infrastructureError = true; result = toolResult({ ok: false, error: 'Browser infrastructure unavailable; retry the action after restoring the dev server or Reader.' }) }
         let value: unknown
         try { value = JSON.parse(result.content[0]?.text ?? '{}') } catch { /* No structured result. */ }
+        // Панель остановила опасное действие: модели нужен явный отказ с инструкцией, а не «успешный» JSON.
+        if (!result.isError && value && typeof value === 'object' && (value as { needsConfirmation?: unknown }).needsConfirmation === true) {
+          const stop = value as { reason?: string; target?: { text?: string; selector?: string } }
+          result = { content: [{ type: 'text', text: `Действие остановлено до подтверждения (${stop.reason ?? 'опасное действие'}): ${stop.target?.text ? `«${stop.target.text}»` : stop.target?.selector ?? 'элемент'}. Спроси пользователя словами, можно ли, и повтори с confirm: true только после его согласия.` }], isError: true }
+        }
         await observe(action, !result.isError, value, infrastructureError)
         return result
       }
@@ -212,7 +222,20 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       const frameSchema = z.union([z.string().trim().min(1).max(L.selector), z.array(z.string().trim().min(1).max(L.selector)).min(1).max(8)]).optional().describe('Селектор iframe или цепочка вложенных iframe из frames. Только Chromium; без параметра — верхняя страница.')
       // Одинаковое разрешение машины для open и new-tab: доступ берётся из хода.
       const resolveUrl = async (url: string): Promise<{ url: string } | { error: string }> => {
-        if (!isHttpUrl(url)) return { error: 'Разрешены только HTTP и HTTPS адреса с протоколом.' }
+        // «example.com» без схемы — как вводит человек в адресную строку.
+        if (!isHttpUrl(url) && isBareHostUrl(url)) url = 'https://' + url
+        if (!isHttpUrl(url) && isRelativePreviewPath(url)) {
+          // Относительный адрес — от страницы, открытой сейчас: в Chromium её знает статус сессии,
+          // в панели пользователя — сам мост, поэтому туда путь уходит как есть.
+          const status = entry ? await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'status' }) : null
+          const current = status?.ok && status.result && 'currentUrl' in status.result && typeof status.result.currentUrl === 'string' ? status.result.currentUrl : null
+          if (status) {
+            const resolved = current ? resolvePreviewUrl(url, current) : null
+            if (!resolved) return { error: 'Относительный адрес требует открытой страницы: сначала open с полным http(s) адресом.' }
+            url = resolved
+          } else return { url }
+        }
+        if (!isHttpUrl(url)) return { error: 'Разрешены только HTTP и HTTPS адреса с протоколом либо относительный путь от открытой страницы (/about, #/route).' }
         const parsed = new URL(url)
         if (parsed.hostname === MACHINE_PREVIEW_ALIAS_HOST) {
           const agentId = await (entry && opts.context ? opts.context.machineOf(entry) : null)
@@ -305,15 +328,192 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         return 'error' in target ? toolResult({ ok: false, error: target.error }) : control({ type: 'newTab', url: target.url })
       })
 
+      const fillField = z.object({
+        selector: z.string().max(L.selector).optional().describe('CSS-селектор поля'),
+        field: z.string().max(L.text).optional().describe('Подпись, placeholder или name поля'),
+        near: z.string().max(L.text).optional().describe('Текст рядом с полем'),
+        value: z.string().max(L.text).describe('Значение'),
+        secret: z.boolean().optional().describe('Секрет: не возвращать и не записывать')
+      })
+      server.registerTool('fill', {
+        description: 'Заполнить несколько полей формы одним действием — как человек заполняет форму целиком — и при submit отправить её. ' +
+          'Каждое поле задаётся selector или field (подпись/placeholder/name). Ответ перечисляет заполненные поля, submitted, validation (сообщения ошибок полей) и navigated.',
+        inputSchema: { frame: frameSchema, fields: z.array(fillField).min(1).max(30), submit: z.boolean().optional().describe('Отправить форму после заполнения'), perKey: z.boolean().optional().describe('Печатать посимвольно (маски ввода)'), waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после отправки') }
+      }, async ({ frame, fields, submit, perKey, waitFor }) => {
+        const bad = fields.find((item) => !item.selector && !item.field?.trim())
+        if (bad) return { content: [{ type: 'text', text: 'У каждого поля укажи selector или field.' }], isError: true }
+        return run({ kind: 'fill', ...(frame !== undefined ? { frame } : {}), fields: fields.map((item) => ({ ...(item.selector ? { selector: item.selector } : {}), ...(item.field?.trim() ? { field: item.field.trim() } : {}), ...(item.near ? { near: item.near } : {}), value: item.value, ...(item.secret ? { secret: true } : {}) })), ...(submit !== undefined ? { submit } : {}), ...(perKey !== undefined ? { perKey } : {}), ...(waitFor ? { waitFor } : {}) })
+      })
+      server.registerTool('choose', {
+        description: 'Выбрать пункт выпадающего меню, списка или автодополнения: при in сначала нажимается триггер (текст или селектор), затем ждётся и нажимается пункт с текстом text. ' +
+          'Для нативного <select> используй set.',
+        inputSchema: { frame: frameSchema, text: z.string().min(1).max(L.text).describe('Видимый текст пункта'), in: z.string().max(L.text).optional().describe('Текст или селектор триггера, открывающего список'), near: z.string().max(L.text).optional().describe('Текст рядом с пунктом'), waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после выбора') }
+      }, async ({ frame, text, in: trigger, near, waitFor }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}), ...(waitFor ? { waitFor } : {}) }))
+
+      server.registerTool('report', {
+        description: 'Отчёт о сеансе панели: где были (history), какие проверки check прошли и упали (с итогами и адресами), сколько действий выполнено, последнее действие. Используй в конце проверки задачи для отчёта человеку.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: {}
+      }, async () => run({ kind: 'report' }))
+
+      server.registerTool('changes', {
+        description: 'Что изменилось на странице с прошлого read, changes или действия: появившиеся и исчезнувшие видимые тексты. Первый вызов запоминает состояние (baseline). Так человек замечает, что произошло после клика.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+        inputSchema: { selector: z.string().max(L.selector).optional().describe('Сравнивать только внутри этого контейнера') }
+      }, async ({ selector }) => run({ kind: 'changes', ...(selector ? { selector } : {}) }))
+
+      server.registerTool('sequence', {
+        description: 'Несколько действий панели одним вызовом (до 10): рутина вроде «нажать → ввести → нажать → проверить» без лишних ходов. ' +
+          'Шаги — те же объекты, что параметры инструментов, с полем kind (click, type, fill, press, wait, check, scroll, read…); open и вложенные sequence запрещены. Остановка на первой ошибке; ответ перечисляет итог каждого шага.',
+        inputSchema: { steps: z.array(z.record(z.string(), z.unknown())).min(1).max(10).describe('Шаги с полем kind'), continueOnError: z.boolean().optional().describe('Пройти все шаги, даже если один провалился (чек-лист проверок)') }
+      }, async ({ steps, continueOnError }) => {
+        const action = { kind: 'sequence' as const, steps: steps as never, ...(continueOnError ? { continueOnError: true } : {}) }
+        if (!isPreviewAction(action)) return { content: [{ type: 'text', text: 'Каждый шаг — корректное действие панели с полем kind; open и sequence внутри недопустимы.' }], isError: true }
+        return run(action)
+      })
+
+      server.registerTool('show', {
+        description: 'Показать пользователю элемент на открытой странице: панель прокрутит к нему и подсветит его с подписью на несколько секунд («вот эта кнопка»). Ничего не нажимает.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema,
+          text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
+          selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
+          near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
+          label: z.string().max(120).optional().describe('Подпись рядом с элементом (по умолчанию «Ассистент показывает»)'),
+          all: z.boolean().optional().describe('Подсветить все совпадения (до 10) с номерами')
+        }
+      }, async ({ frame, text, selector, near, label, all }) => {
+        if (!text && !selector) return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
+        return run({ kind: 'show', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(label ? { label } : {}), ...(all ? { all: true } : {}) })
+      })
+
+      server.registerTool('dismiss', {
+        description: 'Убрать то, что мешает читать страницу: баннер cookie или всплывающее окно — как человек закрывает их первым делом. ' +
+          'Для cookie предпочитает «отклонить»/«только необходимые», иначе закрывает крестиком и лишь потом принимает; окна закрывает кнопкой «Закрыть» или Escape. Ответ: dismissed, how, remaining.',
+        annotations: { destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema, what: z.enum(['cookies', 'dialog', 'any']).optional().describe('Что убрать: баннер cookie, окно или любое из них (по умолчанию any)') }
+      }, async ({ frame, what }) => run({ kind: 'dismiss', ...(frame !== undefined ? { frame } : {}), ...(what ? { what } : {}) }))
+
+      server.registerTool('ask-user', {
+        description: 'Спросить пользователя прямо в панели и дождаться его ответа: выбор за человеком (размер, адрес, какой из похожих пунктов). ' +
+          'Панель покажет вопрос, быстрые ответы options и поле для свободного ответа. Ответ придёт в answer; answered: false — человек отложил вопрос или не ответил за timeoutMs (по умолчанию 2 минуты). Не угадывай за него.',
+        inputSchema: {
+          question: z.string().min(1).max(500).describe('Вопрос человеку словами'),
+          options: z.array(z.string().min(1).max(80)).min(1).max(6).optional().describe('Быстрые ответы кнопками'),
+          timeoutMs: z.number().int().min(5_000).max(600_000).optional().describe('Сколько ждать ответа, мс (по умолчанию 120000)')
+        }
+      }, async ({ question, options: answers, timeoutMs }) => run({ kind: 'question', question, ...(answers?.length ? { options: answers } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) }))
+
+      server.registerTool('hand-over', {
+        description: 'Передать шаг человеку и подождать: «войди сам», «подтверди код из письма», «выбери способ оплаты». ' +
+          'Панель покажет причину и кнопку «Готово, продолжай»; ответ придёт, когда человек вернёт управление или истечёт timeoutMs.',
+        inputSchema: {
+          reason: z.string().min(1).max(300).describe('Что должен сделать человек'),
+          timeoutMs: z.number().int().min(5_000).max(600_000).optional().describe('Сколько ждать, мс (по умолчанию 120000)')
+        }
+      }, async ({ reason, timeoutMs }) => run({ kind: 'handover', reason, ...(timeoutMs !== undefined ? { timeoutMs } : {}) }))
+
+      server.registerTool('bookmark', {
+        description: 'Положить закладку на открытую страницу панели, как человек сохраняет вкладку: список закладок видит и пользователь в панели, и ты в status.bookmarks и report. ' +
+          'Без label подписью станет заголовок страницы; remove убирает закладку по адресу или подписи.',
+        annotations: { destructiveHint: false, idempotentHint: true },
+        inputSchema: {
+          label: z.string().max(120).optional().describe('Подпись закладки (по умолчанию заголовок страницы)'),
+          remove: z.string().max(L.url).optional().describe('Убрать закладку по адресу или подписи')
+        }
+      }, async ({ label, remove }) => {
+        if (label && remove) return { content: [{ type: 'text', text: 'Либо label (добавить), либо remove (убрать).' }], isError: true }
+        return run({ kind: 'bookmark', ...(label ? { label } : {}), ...(remove ? { remove } : {}) })
+      })
+
+      server.registerTool('search', {
+        description: 'Искать на самом сайте: панель найдёт его поле поиска (form[role=search], input[type=search], «Поиск»…), введёт запрос и отправит форму — так человек начинает на большом сайте. ' +
+          'Ответ содержит поле, факт отправки и подсказки, которые сайт показал. Если поля нет — ошибка подскажет искать ссылку «Поиск».',
+        inputSchema: { frame: frameSchema,
+          text: z.string().min(1).max(L.text).describe('Что искать'),
+          in: z.string().max(L.selector).optional().describe('CSS-селектор области, где искать поле поиска'),
+          waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после поиска')
+        }
+      }, async ({ frame, text, in: scope, waitFor }) => run({ kind: 'search', ...(frame !== undefined ? { frame } : {}), text, ...(scope ? { in: scope } : {}), ...(waitFor ? { waitFor } : {}) }))
+
+      server.registerTool('focus', {
+        description: 'Поставить курсор в поле, ничего не вводя: проверить, куда попадёт ввод, или подготовить поле перед press. Нужен selector или field (подпись поля).',
+        annotations: { destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema,
+          selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
+          field: z.string().max(L.text).optional().describe('Подпись, placeholder или name поля'),
+          near: z.string().max(L.text).optional().describe('Текст рядом с полем')
+        }
+      }, async ({ frame, selector, field, near }) => {
+        if (!selector && !field) return { content: [{ type: 'text', text: 'Укажи selector или field.' }], isError: true }
+        return run({ kind: 'focus', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field ? { field } : {}), ...(near ? { near } : {}) })
+      })
+
+      server.registerTool('select', {
+        description: 'Выделить текст на открытой странице, как выделяет мышью человек: пользователь видит выделенное место и понимает, о чём идёт речь. Ничего не нажимает.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema,
+          text: z.string().max(L.text).optional().describe('Видимый текст места, которое выделить'),
+          selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
+          near: z.string().max(L.text).optional().describe('Текст рядом с целью')
+        }
+      }, async ({ frame, text, selector, near }) => {
+        if (!text && !selector) return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
+        return run({ kind: 'select', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}) })
+      })
+
+      server.registerTool('check', {
+        description: 'Проверка ожидания как у тестировщика: есть ли на странице элемент с текстом или по селектору, виден ли он, скрыт, отсутствует, совпадает ли value или число совпадений. ' +
+          'Отвечает pass, actual и summary и не бросает ошибку — цитируй summary в отчёте о проверке фичи.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: { frame: frameSchema,
+          text: z.string().max(L.text).optional().describe('Видимый текст'),
+          selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
+          near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
+          state: z.enum(['visible', 'hidden', 'present', 'absent']).optional().describe('Ожидаемое состояние (по умолчанию visible; при count — present)'),
+          value: z.string().max(L.text).optional().describe('Ожидаемое значение поля или текст элемента (точно)'),
+          contains: z.string().max(L.text).optional().describe('Ожидаемая подстрока значения или текста'),
+          count: z.number().int().min(0).max(100000).optional().describe('Ожидаемое число совпадений'),
+          enabled: z.boolean().optional().describe('Ожидаемая доступность контрола'),
+          checked: z.boolean().optional().describe('Ожидаемое состояние флажка'),
+          url: z.string().max(L.url).optional().describe('Ожидаемый адрес страницы, шаблон с * (без text/selector)'),
+          title: z.string().max(L.text).optional().describe('Подстрока ожидаемого заголовка страницы (без text/selector)')
+        }
+      }, async ({ frame, text, selector, near, state, value, contains, count, enabled, checked, url, title }) => {
+        if (!text && !selector && url === undefined && title === undefined) return { content: [{ type: 'text', text: 'Укажи text, selector, url или title.' }], isError: true }
+        return run({ kind: 'check', ...(frame !== undefined ? { frame } : {}), ...(text ? { text } : {}), ...(selector ? { selector } : {}), ...(near ? { near } : {}), ...(state ? { state } : {}), ...(value !== undefined ? { value } : {}), ...(contains !== undefined ? { contains } : {}), ...(count !== undefined ? { count } : {}), ...(enabled !== undefined ? { enabled } : {}), ...(checked !== undefined ? { checked } : {}), ...(url !== undefined ? { url } : {}), ...(title !== undefined ? { title } : {}) })
+      })
+
+      server.registerTool('status', {
+        description: 'Состояние браузера без обращения к странице: подключена ли панель пользователя (или жива ли Chromium-сессия), какая страница открыта (url, title) и загружена ли она. Вызывай первым, если не уверен, что панель открыта, и перед длинной серией действий.',
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        inputSchema: {}
+      }, async () => {
+        if (!entry) return noContext
+        const chromium = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'status' })
+        if (chromium) return toolResult(chromium)
+        const outcome = await opts.relay.request(entry.userId, entry.conversationId, { kind: 'status' }, opts.timeoutMs)
+        // Проверка задачи: модели важно знать, на целевой ли странице она стоит.
+        if (outcome.ok && entry.ciCheck && outcome.result && typeof outcome.result === 'object') {
+          const page = (outcome.result as { page?: { url?: string } | null }).page
+          let matches = false
+          try { matches = typeof page?.url === 'string' && new URL(page.url).href === new URL(entry.ciCheck.url).href } catch { matches = false }
+          return toolResult({ ok: true, result: { ...(outcome.result as object), target: { url: entry.ciCheck.url, matches } } as never })
+        }
+        // Неподключённая панель — тоже ответ на вопрос «что с браузером», а не сбой инструмента.
+        if (!outcome.ok) return { content: [{ type: 'text', text: JSON.stringify({ connected: false, pageStatus: 'empty', page: null, error: outcome.error }) }] }
+        return toolResult(outcome)
+      })
+
       server.registerTool(
         'open',
         {
           description:
-            'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата. ' +
-            'Только HTTP/HTTPS. Тестовое окружение на машине этого разговора открывается адресом ' +
+            'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата; ответ содержит url и title загруженной страницы. ' +
+            'HTTP/HTTPS либо относительный путь от открытой страницы (/about, ?page=2, #/route). Тестовое окружение на машине этого разговора открывается адресом ' +
             'https://app.internal/ — текущее приложение с любым путём или #/маршрутом; ' +
             'http://machine.internal:<порт>/ — запрос уйдёт на 127.0.0.1:<порт> машины.',
-          inputSchema: { frame: frameSchema, url: z.string().max(L.url).describe('Полный адрес с протоколом http:// или https://') }
+          inputSchema: { frame: frameSchema, url: z.string().max(L.url).describe('Полный адрес с протоколом http(s) или относительный путь от открытой страницы') }
         },
         async ({ frame, url }) => {
           const target = await resolveUrl(url)
@@ -329,14 +529,17 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'меню и hover-состояния. Нужен selector или text.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
-            text: z.string().max(L.text).optional().describe('Видимый текст элемента')
+            text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
+            near: z.string().max(L.text).optional().describe('Текст рядом с целью'),
+            exact: z.boolean().optional().describe('Только точное совпадение текста'),
+            waitMs: z.number().int().min(0).max(2000).optional().describe('Подождать анимацию меню перед сбором revealed')
           }
         },
-        async ({ frame, selector, text }) => {
+        async ({ frame, selector, text, near, exact, waitMs }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
           }
-          return run({ kind: 'hover', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}) })
+          return run({ kind: 'hover', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(waitMs !== undefined ? { waitMs } : {}) })
         }
       )
 
@@ -344,20 +547,26 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'scroll',
         {
           description:
-            'Прокрутить открытую в превью страницу или контейнер: to — к краю, dx/dy — по горизонтали/вертикали в пикселях. ' +
+            'Прокрутить открытую в превью страницу или контейнер: to — к краю, dx/dy — по горизонтали/вертикали в пикселях, ' +
+            'to: element вместе с selector — показать элемент в видимой области (так пользователь увидит, о чём речь). ' +
             'Полезно для лент с ленивой подгрузкой. Возвращает позицию прокрутки.',
           inputSchema: { frame: frameSchema,
-            selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера (без него — окно)'),
-            to: z.enum(['top', 'bottom']).optional().describe('Прокрутить к началу или концу'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера или, при to: element, самого элемента'),
+            text: z.string().max(L.text).optional().describe('При to: element — видимый текст элемента, к которому листать'),
+            to: z.enum(['top', 'bottom', 'element', 'nextPage', 'prevPage']).optional().describe('К началу, концу, к элементу selector/text либо на экран вниз/вверх'),
+            percent: z.number().min(0).max(100).optional().describe('К доле высоты документа, 0–100'),
+            until: z.string().max(L.text).optional().describe('Листать ленту, пока не покажется этот текст (ленивая подгрузка)'),
+            maxScreens: z.number().int().min(1).max(50).optional().describe('Сколько экранов пролистать при until (по умолчанию 10)'),
             dx: z.number().min(-100000).max(100000).optional().describe('Горизонтальный сдвиг в пикселях, отрицательное — влево'),
             dy: z.number().min(-100000).max(100000).optional().describe('Вертикальный сдвиг в пикселях, отрицательное — вверх')
           }
         },
-        async ({ frame, selector, to, dx, dy }) => {
-          if (to === undefined && typeof dy !== 'number' && typeof dx !== 'number') {
-            return { content: [{ type: 'text', text: 'Укажи to (top|bottom), dx или dy (пиксели).' }], isError: true }
+        async ({ frame, selector, text, to, percent, dx, dy, until, maxScreens }) => {
+          if (to === undefined && typeof dy !== 'number' && typeof dx !== 'number' && percent === undefined && !until) {
+            return { content: [{ type: 'text', text: 'Укажи to (top|bottom|element), until (текст), dx или dy (пиксели).' }], isError: true }
           }
-          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}), ...(typeof dx === 'number' ? { dx } : {}) })
+          if (to === 'element' && !selector && !text) return { content: [{ type: 'text', text: 'to: element требует selector или text элемента.' }], isError: true }
+          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(to ? { to } : {}), ...(percent !== undefined ? { percent } : {}), ...(typeof dy === 'number' ? { dy } : {}), ...(typeof dx === 'number' ? { dx } : {}), ...(until ? { until } : {}), ...(maxScreens !== undefined ? { maxScreens } : {}) })
         }
       )
 
@@ -366,15 +575,16 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Нажать клавишу на открытой в превью странице (keydown+keyup): Escape, Enter, Tab, ArrowDown и т. п. ' +
-            'selector фокусирует элемент перед нажатием; без него — активный элемент страницы. ' +
-            'repeat повторяет нажатие (ArrowDown до нужной строки списка) — это дешевле, чем звать press по разу.',
+            'selector фокусирует элемент перед нажатием; без него — активный элемент страницы. repeat повторяет нажатие (ArrowDown ×3). ' +
+            'Ответ содержит navigated, если нажатие привело к переходу.',
           inputSchema: { frame: frameSchema,
             key: z.string().min(1).max(32).describe('Имя клавиши как в KeyboardEvent.key (Escape, Enter, ArrowDown, a…)'),
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя'),
-            repeat: z.number().int().min(1).max(50).optional().describe('Сколько раз нажать подряд (по умолчанию 1)')
+            repeat: z.number().int().min(1).max(50).optional().describe('Сколько раз нажать (по умолчанию 1)'),
+            waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после нажатия')
           }
         },
-        async ({ frame, key, selector, repeat }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}), ...(repeat !== undefined ? { repeat } : {}) })
+        async ({ frame, key, selector, repeat, waitFor }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}), ...(repeat !== undefined && repeat > 1 ? { repeat } : {}), ...(waitFor ? { waitFor } : {}) })
       )
 
       server.registerTool(
@@ -417,7 +627,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'чтобы понять, куда попал, и заметить ловушку фокуса в модальном окне.',
           inputSchema: { frame: frameSchema }
         },
-        async ({ frame }) => run({ kind: 'focus', ...(frame !== undefined ? { frame } : {}) })
+        async ({ frame }) => run({ kind: 'focusState', ...(frame !== undefined ? { frame } : {}) })
       )
 
       server.registerTool(
@@ -495,10 +705,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             rect: z.object({ x: z.number().finite().nonnegative(), y: z.number().finite().nonnegative(), width: z.number().finite().positive(), height: z.number().finite().positive() }).optional().describe('Область в координатах документа страницы'),
             fullPage: z.boolean().optional().describe('Вся страница Chromium, включая область ниже окна'),
             animations: z.enum(['allow', 'disabled']).optional().describe('Отключить анимации только на время снимка Chromium'),
-            timeoutMs: z.number().int().min(100).max(30000).optional().describe('Ожидание снимка Chromium, включая шрифты; по умолчанию 10000 мс')
+            timeoutMs: z.number().int().min(100).max(30000).optional().describe('Ожидание снимка Chromium, включая шрифты; по умолчанию 10000 мс'),
+            marks: z.boolean().optional().describe('Панель: пронумеровать кликабельные элементы на снимке и вернуть их список marks')
           }
         },
-        async ({ frame, selector, rect, fullPage, animations, timeoutMs }) => {
+        async ({ frame, selector, rect, fullPage, animations, timeoutMs, marks }) => {
           if (!entry) return noContext
           if ([Boolean(selector), Boolean(rect), fullPage === true].filter(Boolean).length > 1) return toolResult({ ok: false, error: 'Выбери один режим снимка: selector, rect или fullPage' })
           // Единственный инструмент со своим транспортом: он отдаёт картинку, а
@@ -515,7 +726,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           const outcome = direct ?? await opts.relay.request(entry.userId, entry.conversationId, {
             kind: 'screenshot',
             ...(selector ? { selector } : {}),
-            ...(rect ? { rect } : {})
+            ...(rect ? { rect } : {}),
+            ...(marks ? { marks: true } : {})
           }, opts.timeoutMs)
           if (!outcome.ok) { await observe({ kind: 'screenshot', frame }, false); return toolResult(outcome) }
           const result = outcome.result as BrowserImageResult | undefined
@@ -525,10 +737,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             return { content: [{ type: 'text' as const, text: 'Снимок не получен: страница не вернула картинку.' }], isError: true }
           }
           const where = result?.rect ? `x=${result.rect.x}, y=${result.rect.y}, ${result.rect.width}×${result.rect.height} CSS px` : ''
+          const marked = Array.isArray((result as { marks?: unknown } | undefined)?.marks) ? (result as unknown as { marks: { n: number; selector: string; text: string; role?: string }[] }).marks : null
           return {
             content: [
               { type: 'image' as const, data: match[2], mimeType: match[1] },
-              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${result?.page ? `\nСтраница: ${JSON.stringify(result.page)}` : ''}${result?.frame ? `\nДокумент iframe: ${JSON.stringify(result.frame)}` : ''}${result?.clipped ? '\nЭлемент выходит за границы iframe; показана только видимая часть.' : ''}` }
+              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${result?.page ? `\nСтраница: ${JSON.stringify(result.page)}` : ''}${result?.frame ? `\nДокумент iframe: ${JSON.stringify(result.frame)}` : ''}${result?.clipped ? '\nЭлемент выходит за границы iframe; показана только видимая часть.' : ''}${marked ? `\nНомера на снимке: ${JSON.stringify(marked)}` : ''}` }
             ]
           }
         }
@@ -540,17 +753,17 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Накопленные ошибки открытой в превью страницы: JS-исключения, unhandledrejection, console.error и ' +
             'упавшие fetch/XHR (статус и реальный URL). Проверяй после действий при тестировании фич. clear очищает буфер.',
-          inputSchema: { clear: z.boolean().optional().describe('Очистить буфер после чтения') }
+          inputSchema: { clear: z.boolean().optional().describe('Очистить буфер после чтения'), since: z.number().nonnegative().optional().describe('Только ошибки после этой отметки at из прошлого ответа'), kinds: z.array(z.enum(['error', 'unhandledrejection', 'console.error', 'network'])).min(1).max(4).optional().describe('Только эти виды ошибок') }
         },
-        async ({ clear }) => run({ kind: 'errors', ...(clear !== undefined ? { clear } : {}) })
+        async ({ clear, since, kinds }) => run({ kind: 'errors', ...(clear !== undefined ? { clear } : {}), ...(since !== undefined ? { since } : {}), ...(kinds ? { kinds } : {}) })
       )
 
       server.registerTool(
         'wait',
         {
           description:
-            'Дождаться готовности страницы. selector вместе с text ждёт текст внутри элемента. ' +
-            'В Chromium доступны state, enabled, editable, checked, value, count, URL, loadState, network, stable и predicate. ' +
+            'Дождаться готовности страницы. selector вместе с text ждёт текст внутри элемента. state: hidden или detached ждёт, когда элемент исчезнет (спиннер, модалка); enabled, checked и value ждут состояния контрола — и в панели, и в Chromium. ' +
+            'Только в Chromium доступны editable, count, URL, loadState и predicate. ' +
             'Условия делят один таймаут до 30000 мс (по умолчанию 5000). Ответ сообщает время ожидания. ' +
             'load не ждёт будущие запросы SPA: для них используй содержимое или predicate.',
           inputSchema: { frame: frameSchema,
@@ -567,11 +780,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             network: z.literal('idle').optional().describe('Сетевая тишина: данные догрузились, а не только разметка — то, чего человек ждёт, глядя на спиннер'),
             stable: z.boolean().optional().describe('Элемент перестал двигаться: у меню и модальных окон анимация идёт после появления в DOM, и клик по едущему элементу промахивается'),
             predicate: z.string().max(L.evaluateCode).optional().describe('Синхронное JS-выражение или функция без аргументов, дающая truthy'),
+            idle: z.boolean().optional().describe('Дождаться затишья сети страницы (нет fetch/XHR ~500 мс)'),
+            changed: z.boolean().optional().describe('Дождаться любого изменения видимого текста страницы'),
             timeoutMs: z.number().positive().max(30000).optional().describe('Общий таймаут ожидания, мс')
           }
         },
         async (options) => {
-          if (!isBrowserWaitOptions(options)) return { content: [{ type: 'text', text: 'Укажи selector/text или url/loadState/predicate и совместимые условия ожидания.' }], isError: true }
+          if (!isBrowserWaitOptions(options)) return { content: [{ type: 'text', text: 'Укажи selector/text, url/loadState/predicate или idle и совместимые условия ожидания.' }], isError: true }
           const action = { kind: 'wait' as const, ...options }
           if (options.frame !== undefined || browserWaitRequiresChromium(options)) {
             if (!entry) return noContext
@@ -593,19 +808,20 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       server.registerTool(
         'back',
         {
-          description: 'Назад по истории открытой в превью страницы. После перехода перечитай страницу read.',
-          inputSchema: {}
+          description: 'Назад по истории открытой в превью страницы (steps — на сколько записей). ' +
+            'to — вернуться к странице этого сеанса по части адреса или заголовка («вернись на страницу поиска»), как человек ищет её в истории вкладки. После перехода перечитай страницу read.',
+          inputSchema: { steps: z.number().int().min(1).max(20).optional(), to: z.string().max(L.text).optional().describe('Часть адреса или заголовка страницы, к которой вернуться') }
         },
-        async () => run({ kind: 'back' })
+        async ({ steps, to }) => run({ kind: 'back', ...(steps !== undefined && steps > 1 ? { steps } : {}), ...(to ? { to } : {}) })
       )
 
       server.registerTool(
         'forward',
         {
-          description: 'Вперёд по истории открытой в превью страницы (после back). После перехода перечитай страницу read.',
-          inputSchema: {}
+          description: 'Вперёд по истории открытой в превью страницы (после back); steps — на сколько записей. После перехода перечитай страницу read.',
+          inputSchema: { steps: z.number().int().min(1).max(20).optional() }
         },
-        async () => run({ kind: 'forward' })
+        async ({ steps }) => run({ kind: 'forward', ...(steps !== undefined && steps > 1 ? { steps } : {}) })
       )
 
       const logSchema = {
@@ -1567,37 +1783,67 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Структурированное содержимое открытой в превью страницы: заголовки, ссылки, кнопки, поля ввода ' +
             'и текстовая выжимка. Chromium также описывает таблицы и iframe. selector ограничивает чтение поддеревом. ' +
+            'visible: true — только то, что сейчас в видимой области у пользователя (панель). ' +
             'Для длинного текста повторяй read с offset из nextOffset; structureTruncated означает, что структуру лучше читать по selector.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
+            visible: z.boolean().optional().describe('Только элементы и текст в видимой области окна'),
+            brief: z.boolean().optional().describe('Короткое описание страницы словами (панель)'),
+            parts: z.array(z.enum(PREVIEW_READ_PARTS as unknown as [string, ...string[]])).min(1).max(9).optional().describe('Какие части вернуть: headings, links, buttons, inputs, forms, landmarks, tables, images, text'),
+            around: z.string().max(L.text).optional().describe('Текст вокруг этой фразы (±600 символов)'),
+            markdown: z.boolean().optional().describe('Текст с заголовками # и списками - (панель)'),
+            main: z.boolean().optional().describe('Только основное содержимое: article/main или самый текстовый блок, без меню и подвала'),
+            next: z.boolean().optional().describe('Продолжить чтение с места, где остановился прошлый read этой страницы'),
+            toc: z.boolean().optional().describe('Оглавление: заголовки с уровнями и селекторами для scroll и read {section}'),
+            table: z.string().max(L.text).optional().describe('Прочитать одну таблицу по подписи, заголовку колонки или селектору'),
+            rowOffset: z.number().int().min(0).max(100_000).optional().describe('С какой строки читать таблицу (по 20 строк)'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
             offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
           }
         },
-        async ({ frame, selector, limit, offset }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}) })
+        async ({ frame, selector, limit, offset, visible, brief, parts, around, markdown, main, next, toc, table, rowOffset }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}), ...(visible !== undefined ? { visible } : {}), ...(brief !== undefined ? { brief } : {}), ...(parts ? { parts: parts as never } : {}), ...(around ? { around } : {}), ...(markdown !== undefined ? { markdown } : {}), ...(main ? { main: true } : {}), ...(next ? { next: true } : {}), ...(toc ? { toc: true } : {}), ...(table ? { table } : {}), ...(rowOffset !== undefined ? { rowOffset } : {}) })
       )
 
       server.registerTool(
         'find',
         {
           description:
-            'Найти элементы на открытой в превью странице по видимому тексту или CSS-селектору. ' +
-            'Возвращает селекторы для click/type. Нужен text или selector.',
+            'Найти элементы на открытой в превью странице по видимому тексту, роли или CSS-селектору — так, как их ищет пользователь. ' +
+            'Возвращает селекторы для click/type и onScreen (виден без прокрутки). Нужен text, role или selector.',
           inputSchema: { frame: frameSchema,
             text: z.string().max(L.text).optional().describe('Видимый текст элемента (регистр не важен)'),
             selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
+            role: z.string().regex(/^[a-z]+$/i).max(40).optional().describe('Роль элемента: button, link, textbox, checkbox, heading, tab…'),
+            near: z.string().max(L.text).optional().describe('Текст рядом с целью — строка таблицы, заголовок карточки'),
+            exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
+            nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1)'),
+            href: z.string().max(L.url).optional().describe('Подстрока адреса ссылки — найти ссылку по тому, куда она ведёт'),
+            enabled: z.boolean().optional().describe('Только доступные (true) или только отключённые (false) контролы'),
+            checked: z.boolean().optional().describe('Только отмеченные (true) или снятые (false) флажки и переключатели'),
+            reveal: z.boolean().optional().describe('Прокрутить к первому совпадению и подсветить его пользователю'),
+            level: z.number().int().min(1).max(6).optional().describe('Уровень заголовка при role: heading'),
+            below: z.string().max(L.text).optional().describe('Текст-ориентир: цель ниже него («кнопка под ценой»)'),
+            above: z.string().max(L.text).optional().describe('Текст-ориентир: цель выше него'),
+            leftOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель левее него'),
+            rightOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель правее него («поле справа от подписи»)'),
+            details: z.boolean().optional().describe('Добавить подробности элемента: атрибуты, размер и путь по ориентирам страницы'),
+            in: z.string().max(L.text).optional().describe('Искать только в разделе под этим заголовком'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ frame, text, selector, limit, visibleOnly }) => {
-          if (!text && !selector) {
-            return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
+        async ({ frame, text, selector, role, near, exact, nth, href, enabled, checked, reveal, level, below, above, leftOf, rightOf, details, in: inSection, limit, visibleOnly }) => {
+          if (!text && !selector && !role && !href) {
+            return { content: [{ type: 'text', text: 'Укажи text, role, selector или href.' }], isError: true }
           }
           return run({
             kind: 'find', ...(frame !== undefined ? { frame } : {}),
             ...(text ? { text } : {}),
             ...(selector ? { selector } : {}),
+            ...(role ? { role: role.toLowerCase() } : {}),
+            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}), ...(href ? { href } : {}),
+            ...(enabled !== undefined ? { enabled } : {}), ...(checked !== undefined ? { checked } : {}), ...(reveal ? { reveal: true } : {}), ...(level !== undefined ? { level } : {}),
+            ...(below ? { below } : {}), ...(above ? { above } : {}), ...(leftOf ? { leftOf } : {}), ...(rightOf ? { rightOf } : {}), ...(details ? { details: true } : {}), ...(inSection ? { in: inSection } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
             ...(visibleOnly !== undefined ? { visibleOnly } : {})
           })
@@ -1609,27 +1855,43 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Клик по элементу открытой в превью страницы: по CSS-селектору или по видимому тексту ' +
-            '(кликается ближайший кликабельный элемент). Нужен selector или text. ' +
+            '(кликается ближайший кликабельный элемент). Нужен selector или text. Ответ содержит navigated: true и новую page, если клик начал переход. ' +
             'dblclick — двойной, button: right — контекстное меню, modifiers — клик с зажатыми клавишами.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
             text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
+            role: z.string().regex(/^[a-zа-яё]+$/i).max(40).optional().describe('Роль цели: button, link, checkbox… («нажми кнопку Сохранить», не ссылку)'),
+            near: z.string().max(L.text).optional().describe('Текст рядом с целью, различающий одинаковые кнопки («Удалить» near «Заказ №5»)'),
+            exact: z.boolean().optional().describe('Только точное совпадение видимого текста'),
+            nth: z.number().int().min(1).max(1000).optional().describe('Взять N-е совпадение (с 1), если одинаковых несколько'),
+            x: z.number().min(0).max(100000).optional().describe('Клик по точке вьюпорта (CSS px), вместе с y'),
+            y: z.number().min(0).max(100000).optional().describe('Клик по точке вьюпорта (CSS px), вместе с x'),
+            waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после клика (до 8 с)'),
+            confirm: z.boolean().optional().describe('Пользователь явно разрешил опасное действие (оплата, удаление, скачивание)'),
             button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
             dblclick: z.boolean().optional().describe('Двойной клик'),
-            modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
+            modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы'),
+            below: z.string().max(L.text).optional().describe('Текст-ориентир: цель ниже него («кнопка под ценой»)'),
+            above: z.string().max(L.text).optional().describe('Текст-ориентир: цель выше него'),
+            leftOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель левее него'),
+            rightOf: z.string().max(L.text).optional().describe('Текст-ориентир: цель правее него («поле справа от подписи»)'),
+            peek: z.boolean().optional().describe('Не нажимать: узнать, куда ведёт ссылка (href, external, newTab)')
           }
         },
-        async ({ frame, selector, text, button, dblclick, modifiers }) => {
-          if (!text && !selector) {
-            return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+        async ({ frame, selector, text, role, near, exact, nth, x, y, waitFor, confirm, button, dblclick, modifiers, below, above, leftOf, rightOf, peek }) => {
+          if (!text && !selector && !role && (x === undefined || y === undefined)) {
+            return { content: [{ type: 'text', text: 'Укажи selector, text, role или точку x и y.' }], isError: true }
           }
           return run({
             kind: 'click', ...(frame !== undefined ? { frame } : {}),
             ...(selector ? { selector } : {}),
-            ...(text ? { text } : {}),
+            ...(text ? { text } : {}), ...(role ? { role: role.toLowerCase() } : {}),
+            ...(near ? { near } : {}), ...(exact !== undefined ? { exact } : {}), ...(nth !== undefined ? { nth } : {}),
+            ...(x !== undefined && y !== undefined ? { x, y } : {}), ...(waitFor ? { waitFor } : {}), ...(confirm ? { confirm: true } : {}),
             ...(button ? { button } : {}),
             ...(dblclick !== undefined ? { dblclick } : {}),
-            ...(modifiers?.length ? { modifiers } : {})
+            ...(modifiers?.length ? { modifiers } : {}),
+            ...(below ? { below } : {}), ...(above ? { above } : {}), ...(leftOf ? { leftOf } : {}), ...(rightOf ? { rightOf } : {}), ...(peek ? { peek: true } : {})
           })
         }
       )
@@ -1638,16 +1900,26 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'type',
         {
           description:
-            'Ввести текст в поле открытой в превью страницы (CSS-селектор поля). submit: true — отправить форму после ввода. ' +
-            'delay — посимвольный ввод с паузой: без него значение ставится целиком, и автодополнение страницы не просыпается.',
+            'Ввести текст в поле открытой в превью страницы. Поле задаётся CSS-селектором или field — подписью, placeholder или name, как его видит человек. ' +
+            'По умолчанию значение заменяется; append: true дописывает. submit: true — отправить форму после ввода. Ответ содержит итоговое value и navigated, если начался переход.',
           inputSchema: { frame: frameSchema,
-            selector: z.string().max(L.selector).describe('CSS-селектор поля ввода'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор поля ввода'),
+            field: z.string().max(L.text).optional().describe('Подпись, placeholder или name поля (регистр не важен), если селектора нет'),
+            near: z.string().max(L.text).optional().describe('Текст рядом с полем — строка или карточка, где оно стоит'),
             text: z.string().max(L.text).describe('Текст для ввода'),
             submit: z.boolean().optional().describe('Отправить форму после ввода'),
-            delay: z.number().min(0).max(200).optional().describe('Пауза между символами в мс: поле получит каждое нажатие — так срабатывают автодополнение и поиск с задержкой')
+            append: z.boolean().optional().describe('Дописать к текущему значению, а не заменить его'),
+            perKey: z.boolean().optional().describe('Печатать посимвольно с событиями клавиатуры'),
+            waitFor: z.string().max(L.text).optional().describe('Текст, которого дождаться после ввода'),
+            secret: z.boolean().optional().describe('Секрет: значение не возвращается и не пишется в сценарий'),
+            blur: z.boolean().optional().describe('Снять фокус после ввода — формы проверяют поле по blur'),
+            delay: z.number().min(0).max(200).optional().describe('Пауза между символами в мс: поле получит каждое нажатие — так просыпаются автодополнение и поиск с задержкой')
           }
         },
-        async ({ frame, selector, text, submit, delay }) => run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), selector, text, ...(submit !== undefined ? { submit } : {}), ...(delay !== undefined ? { delay } : {}) })
+        async ({ frame, selector, field, near, text, submit, append, perKey, waitFor, secret, blur, delay }) => {
+          if (!selector && !field?.trim()) return { content: [{ type: 'text', text: 'Укажи selector или field (подпись поля).' }], isError: true }
+          return run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(field?.trim() ? { field: field.trim() } : {}), ...(near ? { near } : {}), text, ...(submit !== undefined ? { submit } : {}), ...(append !== undefined ? { append } : {}), ...(perKey !== undefined ? { perKey } : {}), ...(waitFor ? { waitFor } : {}), ...(secret ? { secret: true } : {}), ...(blur ? { blur: true } : {}), ...(delay !== undefined ? { delay } : {}) })
+        }
       )
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

@@ -229,6 +229,7 @@ export const REST = {
   conversationDraft: '/api/conversations/draft',
   conversationsSearch: '/api/conversations/search',
   /** Полнотекстовый поиск по сообщениям пользователя (FTS5). */
+  universalSearch: '/api/universal-search',
   messagesSearch: '/api/search',
   conversation: (id: string) => `/api/conversations/${id}`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
@@ -880,7 +881,7 @@ export type ServerMessage =
   /** Прогресс плана работ канбан-ассистента: шаги, статусы, ошибка. */
   | { t: 'assistant.orchestration'; plan: import('./orchestration').Orchestration }
   /** Reader: действие изменило/прочитало живую страницу — панель синхронизирует кадр и ленту. */
-  | { t: 'reader.changed'; conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction }
+  | { t: 'reader.changed'; conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction; /** Короткий итог действия для ленты (проверка: пройдена или нет). */ summary?: string; ok?: boolean }
   /** Make: файлы проекта изменились (ассистентом или пользователем) — превью и дерево обновляются. */
   | { t: 'make.changed'; conversationId: string; rev: number; paths: string[] }
   /** Presence вкладок проекта Make (roadmap-2 п.14): кто открыл проект и какой файл правит. */

@@ -175,9 +175,6 @@ export function ProfilePanel({
             {...(onRetry ? { onRetry } : {})}
           />
         )}
-        {usageLoading && active === 'usage' && (
-          <Skeleton variant="list" count={2} height={96} lines={3} testId="profile-usage-skeleton" />
-        )}
         {active === 'overview' && (
           <OverviewTab
             user={user}
@@ -213,15 +210,13 @@ export function ProfilePanel({
             />
           </>
         )}
-        {!usageLoading && active === 'usage' && (
-          <UsageTab usage={usage} period={period} {...(onSelectPeriod ? { onSelectPeriod } : {})} />
+        {active === 'usage' && (
+          <UsageTab usage={usage} loading={usageLoading} period={period} {...(onSelectPeriod ? { onSelectPeriod } : {})} />
         )}
-        {active === 'history' && (eventsLoading
-          ? <Skeleton variant="list" count={4} height={72} lines={2} testId="profile-history-skeleton" />
-          : (
+        {active === 'history' && (
           <>
             <HistoryTab
-              events={events}
+              events={eventsLoading ? null : events}
               userName={user.name}
               group={securityGroup}
               {...(onChangeSecurityGroup ? { onChangeGroup: onChangeSecurityGroup } : {})}
@@ -229,7 +224,7 @@ export function ProfilePanel({
             />
             {historySlot}
           </>
-          ))}
+          )}
       </div>
 
       <StickyActionBar

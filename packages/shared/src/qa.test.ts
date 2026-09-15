@@ -71,6 +71,7 @@ describe('development readiness gate', () => {
   // Расхождение гейтов: подготовка выпускала бриф без UI-сценария, а Component
   // QA без него не запускался вовсе — задача застревала после разработки.
   // @testCase TC-13
+  // @testCase TC-BRIEF-CONTRACT
   it('requires a required UI scenario when the task touches UI', () => {
     const input = ready()
     input.uiImpact = 'existing_components'
@@ -106,6 +107,7 @@ describe('development readiness gate', () => {
     expect(canConfirmDevelopmentReadiness(input).allowed).toBe(false)
   })
   // @testCase TC-13
+  // @testCase TC-BRIEF-CONTRACT
   it('requires non-empty coverage for explicit Storybook exclusions in schema v2', () => {
     const input = ready()
     input.schemaVersion = 2
