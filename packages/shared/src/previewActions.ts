@@ -98,6 +98,8 @@ export interface PreviewReportResult {
   lastAction?: { kind: string; ok: boolean; at: number; error?: string }
   /** Закладки сеанса — что человек и модель отметили как важное. */
   bookmarks?: PreviewBookmarkEntry[]
+  /** Вопросы человеку и его ответы за сеанс — часть отчёта о работе. */
+  questions?: { question: string; answer?: string; answered: boolean; at: number }[]
 }
 
 export interface PreviewSequenceResult {
@@ -222,6 +224,10 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'report'; diagnostic?: boolean }
   /** Запомнить открытую страницу в панели, как человек кладёт закладку: список видит и пользователь, и модель. */
   | { kind: 'bookmark'; label?: string; remove?: string; diagnostic?: boolean }
+  /** Спросить человека прямо в панели и дождаться ответа: «какой размер брать?», «этот пункт?». options — быстрые ответы кнопками. */
+  | { kind: 'question'; question: string; options?: string[]; timeoutMs?: number; diagnostic?: boolean }
+  /** Передать шаг человеку («войди сам, я подожду») и ждать, пока он вернёт управление. */
+  | { kind: 'handover'; reason: string; timeoutMs?: number; diagnostic?: boolean }
   /** Показать пользователю элемент: прокрутить к нему и подсветить с подписью на несколько секунд. */
   /** all — подсветить все совпадения (до 10), не только первое. */
   | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; all?: boolean; diagnostic?: boolean }
@@ -312,6 +318,8 @@ export interface PreviewStatusResult {
   outline?: PreviewPageOutline
   /** Закладки этого сеанса панели: их видит и пользователь. */
   bookmarks?: PreviewBookmarkEntry[]
+  /** Панель ждёт человека: заданный вопрос или переданный ему шаг. */
+  waitingFor?: { kind: 'question' | 'handover'; text: string; since: number }
   /** Размер видимой области страницы: понять, мобильная ли раскладка у пользователя. */
   viewport?: { width: number; height: number }
 }
@@ -525,6 +533,23 @@ export interface PreviewScreenshotResult {
   dataUrl: string
   /** Пронумерованные на снимке элементы (marks: true). */
   marks?: { n: number; selector: string; text: string; role?: string }[]
+}
+
+export interface PreviewQuestionResult {
+  page: PreviewPageInfo | null
+  question: string
+  /** Ответ человека; answered: false — он не ответил за отведённое время или отложил вопрос. */
+  answered: boolean
+  answer?: string
+  waitedMs: number
+}
+
+export interface PreviewHandoverResult {
+  page: PreviewPageInfo | null
+  reason: string
+  /** Человек вернул управление (true) или время вышло. */
+  returned: boolean
+  waitedMs: number
 }
 
 export interface PreviewBookmarkEntry {
@@ -760,6 +785,8 @@ export type PreviewActionResult =
   | PreviewFocusResult
   | PreviewSelectResult
   | PreviewBookmarkResult
+  | PreviewQuestionResult
+  | PreviewHandoverResult
   | PreviewSequenceResult
   | PreviewChangesResult
   | PreviewReportResult
@@ -935,6 +962,13 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return true
     case 'bookmark':
       return optBounded(value.label, 120) && optBounded(value.remove, L.url) && !(value.label !== undefined && value.remove !== undefined)
+    case 'question':
+      return bounded(value.question, 500) && value.question.trim().length > 0 &&
+        (value.options === undefined || (Array.isArray(value.options) && value.options.length >= 1 && value.options.length <= 6 && value.options.every((option) => bounded(option, 80) && option.trim().length > 0))) &&
+        (value.timeoutMs === undefined || (typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs) && value.timeoutMs >= 5_000 && value.timeoutMs <= 600_000))
+    case 'handover':
+      return bounded(value.reason, 300) && value.reason.trim().length > 0 &&
+        (value.timeoutMs === undefined || (typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs) && value.timeoutMs >= 5_000 && value.timeoutMs <= 600_000))
     case 'network':
       return (
         validDiagnosticOptions(value) &&
@@ -1134,6 +1168,8 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'Длинные страницы и списки: scroll {until: текст} листает ленту с ленивой подгрузкой, пока текст не покажется (maxScreens ограничивает); read {next: true} продолжает чтение с того места, где остановился прошлый read; ' +
     'read {toc: true} — оглавление с селекторами для scroll и read {section}; read {table: подпись, rowOffset} читает одну таблицу постранично; read.lists — однотипные карточки списка с их числом; find {in: заголовок раздела} ищет только в нём. ' +
     'bookmark {label?} кладёт закладку на открытую страницу (bookmark {remove: адрес} убирает): список видят и пользователь в панели, и ты в status.bookmarks и report. ' +
+    'Не угадывай за человека: question {question, options?} задаёт ему вопрос прямо в панели и ждёт ответа (до 10 минут, ответ приходит в answer); handover {reason} передаёт шаг ему («войди сам, я подожду») ' +
+    'и ждёт, пока он вернёт управление. Пока панель ждёт, это видно в status.waitingFor, а вопросы с ответами попадают в report.questions. Спрашивай, когда выбор за человеком: размер, адрес доставки, какой из похожих пунктов нужен. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +
