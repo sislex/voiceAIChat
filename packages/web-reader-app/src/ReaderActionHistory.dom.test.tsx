@@ -161,3 +161,13 @@ it('подпись шага лежит отдельным элементом: з
   // Иконка декоративная и aria-hidden, но текстом она мешала бы и поиску по ленте, и E2E.
   expect(screen.getByText('Открыл shop.example').className).toContain('webpreview-history-label')
 })
+
+it('лента длинного сеанса разделена по страницам (круг 20)', () => {
+  render(<ReaderActionHistory actions={[
+    { id: '1', action: { kind: 'open', url: 'https://shop.example/' }, address: 'https://shop.example/', title: 'Магазин' },
+    { id: '2', action: { kind: 'read' }, address: 'https://shop.example/', title: 'Магазин' },
+    { id: '3', action: { kind: 'open', url: 'https://docs.example/' }, address: 'https://docs.example/', title: 'Документы' }
+  ]} />)
+  const headers = [...document.querySelectorAll('.webpreview-history-page')].map(node => node.textContent)
+  expect(headers).toEqual(['Магазин', 'Документы'])
+})
