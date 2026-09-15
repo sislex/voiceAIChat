@@ -1558,22 +1558,6 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
-        'note',
-        {
-          description:
-            'Оставить человеку строку о том, чем ты сейчас занят в браузере: она появится в ленте панели ' +
-            'рядом с действиями. По списку команд намерение не восстанавливается, а человек смотрит на кадр ' +
-            'и не понимает, что происходит. Пиши коротко и по делу, перед долгим участком работы.',
-          inputSchema: { text: z.string().min(1).max(500).describe('Что ты делаешь и зачем') }
-        },
-        async ({ text }) => {
-          if (!entry) return noContext
-          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'note', text })
-          return toolResult(result ?? { ok: false, error: 'Заметки доступны только в Playwright Reader или Chromium-проверке.' })
-        }
-      )
-
-      server.registerTool(
         'history',
         {
           description:
