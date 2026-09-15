@@ -1,6 +1,6 @@
 ---
 title: Структурированное ручное QA
-updated: 2026-09-13
+updated: 2026-09-15
 checked: 181c142e
 areas:
   - packages/shared/src/qa.ts
@@ -305,6 +305,15 @@ QA-specific удаления вложений; безопасность и жи�
 наследуются от существующего `UploadStore`.
 
 ## Интерфейс
+
+The cycle-based `NewTaskManualQaPanel` saves results explicitly. Its
+`ManualResult` renders pristine status/comment directly from the server snapshot
+and creates a local draft only on input. Reconnect and failed-save refreshes
+retain that draft; successful saving clears it so the refreshed revision becomes
+visible. No effect copies server fields into editable state. Regression tests in
+`NewTaskManualQaPanel.dom.test.tsx` cover immediate selection/save, immutable
+historical criteria, and passed/failed/blocked drafts across refresh, failure and
+retry. This panel is separate from the debounced `ManualQaPanel` below.
 
 Каждая карточка результата автосохраняется с debounce 700 мс. Для `failed` и
 `blocked` по-прежнему обязателен комментарий; ошибка сохранения прекращает
