@@ -922,3 +922,88 @@ describe('Recorder: поведение мобильного браузера (к
     }
   })
 })
+
+describe('Recorder: ориентиры страницы и поиск по сайту (круг 17)', () => {
+  const nav = {
+    breadcrumbs: [{ text: 'Главная', href: 'https://shop.example/' }, { text: 'Наушники' }],
+    pagination: { next: 'https://shop.example/list?page=3', prev: 'https://shop.example/list?page=1', label: '2' },
+    published: { date: '2026-09-01', author: 'Редакция' },
+    search: '#site-q'
+  }
+  const ready = (extra: object = {}) => fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/list?page=2', title: 'Наушники', nav, ...extra })
+  const start = () => { render(<Recorder />); fromHost(init); ready() }
+  const pageMessages = () => {
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    return vi.spyOn(frame.contentWindow as Window, 'postMessage')
+  }
+  it('показывает путь по сайту, и клик по крошке открывает раздел', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    start()
+    const crumbs = screen.getByRole('navigation', { name: 'Путь по сайту' })
+    expect(crumbs.textContent).toContain('Главная'); expect(crumbs.textContent).toContain('Наушники')
+    fireEvent.click(screen.getByRole('button', { name: 'Главная' }))
+    expect(sent(post).filter(message => message.kind === 'save-url').at(-1)).toMatchObject({ url: 'https://shop.example/' })
+  })
+  it('листалка открывает соседние страницы кнопками и Alt+Shift+стрелками', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    start()
+    const pager = screen.getByRole('group', { name: 'Страницы' })
+    expect(pager.textContent).toContain('2')
+    fireEvent.click(screen.getByRole('button', { name: 'Дальше →' }))
+    expect(sent(post).filter(message => message.kind === 'save-url').at(-1)).toMatchObject({ url: 'https://shop.example/list?page=3' })
+    ready()
+    fireEvent.keyDown(screen.getByRole('region', { name: 'Web Reader' }) ?? document.body, { key: 'ArrowLeft', altKey: true, shiftKey: true })
+    expect(sent(post).filter(message => message.kind === 'save-url').at(-1)).toMatchObject({ url: 'https://shop.example/list?page=1' })
+  })
+  it('дата, автор и номер страницы стоят рядом с названием', () => {
+    start()
+    const title = screen.getByRole('button', { name: /Скопировать ссылку/ })
+    expect(title.textContent).toContain('2026-09-01'); expect(title.textContent).toContain('Редакция'); expect(title.textContent).toContain('стр. 2')
+  })
+  it('«Искать на сайте» отправляет запрос в поле поиска самой страницы', () => {
+    start()
+    const inner = pageMessages()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Искать на сайте' }), { target: { value: 'наушники' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Искать' }))
+    expect(inner.mock.calls.map(([message]) => message as { action?: { kind?: string; text?: string } }).find(message => message.action?.kind === 'search')?.action).toMatchObject({ kind: 'search', text: 'наушники' })
+  })
+  it('клавиша «/» ставит курсор в поле поиска сайта, но не мешает печатать в панели', () => {
+    start()
+    const inner = pageMessages()
+    fireEvent.keyDown(screen.getByRole('region', { name: 'Web Reader' }), { key: '/' })
+    expect(inner.mock.calls.map(([message]) => message as { action?: { kind?: string; selector?: string } }).find(message => message.action?.kind === 'focus')?.action).toMatchObject({ kind: 'focus', selector: '#site-q' })
+    inner.mockClear()
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Адрес превью' }), { key: '/' })
+    expect(inner.mock.calls.some(([message]) => (message as { action?: { kind?: string } }).action?.kind === 'focus')).toBe(false)
+  })
+  it('выделение ассистента подписано, выделение человека — нет', () => {
+    start()
+    fromPage({ type: 'voicechat.preview.selection.v1', text: 'Важное условие', by: 'assistant' })
+    expect(screen.getByText('Ассистент выделил')).toBeTruthy()
+    fromPage({ type: 'voicechat.preview.selection.v1', text: 'Другое место', by: 'user' })
+    expect(screen.queryByText('Ассистент выделил')).toBeNull()
+  })
+  it('возврат на страницу этого сеанса восстанавливает место чтения', () => {
+    start()
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const win = frame.contentWindow!
+    let top = 0
+    const scrollTo = vi.fn((options: { top?: number } | number) => { top = typeof options === 'number' ? options : options.top ?? 0 })
+    Object.defineProperty(win, 'scrollTo', { configurable: true, value: scrollTo })
+    Object.defineProperty(win.document, 'scrollingElement', { configurable: true, value: { get scrollTop() { return top }, scrollHeight: 4000 } })
+    Object.defineProperty(win, 'innerHeight', { configurable: true, value: 600 })
+    top = 900
+    act(() => { win.dispatchEvent(new Event('scroll')) })
+    fromHost({ type, ...ids, kind: 'set-url', url: 'https://shop.example/other' })
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/other', title: 'Другая' })
+    scrollTo.mockClear()
+    // Каждый переход пересоздаёт iframe, поэтому место чтения проверяем на окне новой страницы.
+    fromHost({ type, ...ids, kind: 'set-url', url: 'https://shop.example/list?page=2' })
+    const returned = (screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).contentWindow!
+    const restore = vi.fn()
+    Object.defineProperty(returned, 'scrollTo', { configurable: true, value: restore })
+    Object.defineProperty(returned.document, 'scrollingElement', { configurable: true, value: { scrollTop: 0, scrollHeight: 4000 } })
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/list?page=2', title: 'Наушники', nav })
+    expect(restore).toHaveBeenCalledWith({ top: 900 })
+  })
+})

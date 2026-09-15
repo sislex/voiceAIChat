@@ -384,6 +384,75 @@ const findOverlays=(what)=>{
 const REJECT_WORDS=/(?<![\\p{L}])(отклонить|отказаться|только необходимые|только обязательные|не принимать|запретить|reject|decline|necessary only|only necessary|essential only|refuse)(?![\\p{L}])/iu;
 const CLOSE_WORDS=/^(закрыть|понятно|ок|ok|хорошо|got it|close|dismiss|later|позже|не сейчас|×|✕|✖|x)$/iu;
 const ACCEPT_WORDS=/(?<![\\p{L}])(принять|принимаю|согласен|согласиться|accept|agree|allow all|разрешить все)(?![\\p{L}])/iu;
+
+// Поле поиска самого сайта: человек первым делом ищет лупу и строку «Поиск».
+const SEARCH_FIELD='input[type=search],input[name*=search i],input[name=q],input[id*=search i],input[placeholder*=поиск i],input[placeholder*=search i],input[aria-label*=поиск i],input[aria-label*=search i],[role=searchbox]';
+const searchField=(scope)=>{
+  const root=scope||document;
+  const forms=[...root.querySelectorAll('form[role=search],[role=search] form,form[action*=search i],form[id*=search i],form[class*=search i]')].filter(readingVisible);
+  for(const form of forms){const field=[...form.querySelectorAll('input:not([type=hidden]),textarea')].find(el=>actionVisible(el)&&el.type!=='checkbox'&&el.type!=='radio');if(field)return field}
+  return [...root.querySelectorAll(SEARCH_FIELD)].filter(actionVisible)[0]||null
+};
+// Хлебные крошки: где страница лежит в сайте — человек читает их первой строкой.
+const breadcrumbsOf=()=>{
+  const nav=[...document.querySelectorAll('nav[aria-label*=хлеб i],nav[aria-label*=bread i],[class*=breadcrumb i],[id*=breadcrumb i],ol[itemtype*=BreadcrumbList]')].filter(readingVisible)[0];
+  if(!nav)return [];
+  const items=[...nav.querySelectorAll('li,a,span')].filter(el=>readingVisible(el)&&!el.querySelector('li,a'));
+  const out=[];
+  for(const el of items){
+    const text=textOf(el).replace(/^[\\s>\\/·|—-]+|[\\s>\\/·|—-]+$/g,'').slice(0,EL_TEXT);
+    if(!text||out.some(item=>item.text===text))continue;
+    const link=el.localName==='a'?el:el.querySelector('a');
+    out.push({text,...(link&&link.getAttribute('href')?{href:unproxy(link.getAttribute('href'))}:{})});
+    if(out.length>=10)break
+  }
+  return out
+};
+// Листалка: rel=next/prev и подписи, которыми её называет человек.
+const NEXT_WORDS=/^(дальше|далее|следующая|следующие|вперёд|вперед|next|older|more|ещё|еще)(?![\\p{L}])/iu;
+const PREV_WORDS=/^(назад|предыдущая|предыдущие|раньше|previous|prev|newer|back)(?![\\p{L}])/iu;
+const paginationOf=()=>{
+  const out={};
+  const rel=(value)=>[...document.querySelectorAll('a[rel~="'+value+'"]')].filter(readingVisible)[0];
+  let next=rel('next'),prev=rel('prev');
+  if(!next||!prev)for(const a of document.querySelectorAll('a[href],button')){
+    if(!readingVisible(a))continue;
+    const label=normText(accessibleName(a)||textOf(a));
+    if(!label||label.length>30)continue;
+    if(!next&&NEXT_WORDS.test(label))next=a;
+    if(!prev&&PREV_WORDS.test(label))prev=a
+  }
+  if(next)out.next=next.localName==='a'&&next.getAttribute('href')?unproxy(next.getAttribute('href')):uniqueSelector(next);
+  if(prev)out.prev=prev.localName==='a'&&prev.getAttribute('href')?unproxy(prev.getAttribute('href')):uniqueSelector(prev);
+  const current=[...document.querySelectorAll('[aria-current=page],[class*=pagination i] [class*=active i],[class*=pager i] [aria-current]')].filter(readingVisible)[0];
+  if(current){const label=textOf(current).slice(0,40);if(label)out.label=label}
+  return out.next||out.prev||out.label?out:null
+};
+// Дата и автор материала: то, по чему человек понимает, свежая ли страница.
+const publishedOf=()=>{
+  const meta=(name)=>{const el=document.querySelector('meta[property="'+name+'"],meta[name="'+name+'"]');return el?String(el.getAttribute('content')||'').slice(0,80):''};
+  const timeEl=[...document.querySelectorAll('time[datetime],time')].filter(readingVisible)[0];
+  const date=meta('article:published_time')||meta('datePublished')||(timeEl?(timeEl.getAttribute('datetime')||textOf(timeEl)).slice(0,80):'');
+  const authorEl=[...document.querySelectorAll('[rel=author],[itemprop=author],[class*=author i]')].filter(readingVisible)[0];
+  const author=meta('article:author')||meta('author')||(authorEl?textOf(authorEl).slice(0,80):'');
+  return date||author?{...(date?{date}:{}),...(author?{author}:{})}:null
+};
+// Основное содержимое: article/main, иначе самый «текстовый» блок — как режим чтения у браузера.
+const mainScope=()=>{
+  const explicit=[...document.querySelectorAll('main,[role=main],article')].filter(readingVisible)[0];
+  if(explicit)return explicit;
+  let best=null,bestScore=0,count=0;
+  for(const el of document.querySelectorAll('div,section')){
+    if(count++>2000)break;
+    if(!readingVisible(el)||el.closest('nav,header,footer,aside'))continue;
+    const text=textOf(el);
+    if(text.length<200)continue;
+    const links=el.querySelectorAll('a').length;
+    const score=text.length/(1+links*40);
+    if(score>bestScore){bestScore=score;best=el}
+  }
+  return best||document.body||document.documentElement
+};
 const suggestTexts=(query)=>{
   const words=normText(query).split(' ').filter(w=>w.length>=3);
   if(!words.length)return [];
@@ -555,6 +624,35 @@ const run=(action)=>{
     const suggestions=!found.length&&action.text?suggestTexts(action.text):[];
     if(action.reveal&&found[0]){found[0].scrollIntoView&&found[0].scrollIntoView({block:'center',inline:'nearest'});showLabel(found[0],'Найдено')}
     return {page:pageInfo(),elements:found.slice(0,limit).map(el=>action.details?Object.assign(describe(el),{details:detailsOf(el)}):describe(el)),total:found.length,...(found.length>limit?{truncated:true}:{}),...(suggestions.length?{suggestions}:{})}
+  }
+  if(action.kind==='search'){
+    // Поиск по самому сайту: найти его поле, ввести запрос и отправить — как человек.
+    const scope=action.in?bySelector(action.in)[0]:null;
+    if(action.in&&!scope)throw new Error('Область поиска не найдена: '+action.in);
+    const field=searchField(scope);
+    if(!field)throw new Error('На странице нет поля поиска: попробуй найти ссылку «Поиск» и нажать её');
+    actionable(field,true);
+    const result=typeInto(field,action.text,false,true);
+    const suggestions=suggestionsFor(field);
+    return {page:pageInfo(),field:describe(field),query:action.text,submitted:result.submitted,...(suggestions.length?{suggestions}:{})}
+  }
+  if(action.kind==='focus'){
+    const el=action.selector?chooseTarget({kind:'focus',selector:action.selector,near:action.near}):fieldTarget(action.field||'',action.near);
+    actionable(el);
+    el.scrollIntoView&&el.scrollIntoView({block:'center'});
+    el.focus&&el.focus();
+    if(document.activeElement!==el)throw new Error('Элемент не принимает фокус: '+uniqueSelector(el));
+    return {page:pageInfo(),focused:describe(el)}
+  }
+  if(action.kind==='select'){
+    // Выделение — «вот это место»: человек видит его глазами, без подсветки-подписи.
+    const el=chooseTarget({kind:'select',...(action.selector?{selector:action.selector}:{}),...(action.text?{text:action.text}:{}),...(action.near?{near:action.near}:{})});
+    el.scrollIntoView&&el.scrollIntoView({block:'center'});
+    const range=document.createRange();range.selectNodeContents(el);
+    // Помечаем выделение как сделанное ассистентом: панель подпишет его иначе, чем выделение человека.
+    selectionByAssistant=true;
+    const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
+    return {page:pageInfo(),selected:String(selection||'').replace(/\\s+/g,' ').trim().slice(0,2000),target:describe(el)}
   }
   if(action.kind==='click'&&action.peek){
     // «Куда ведёт?» — человек читает адрес в строке состояния, не нажимая.
@@ -772,6 +870,22 @@ const run=(action)=>{
     const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000),started=performance.now(),before=textSnapshot||visibleTexts();
     return new Promise((ok,fail)=>{const attempt=()=>{const now=visibleTexts();const changes=diffTexts(before,now);if(changes.addedTotal||changes.removedTotal){textSnapshot=now;ok({page:pageInfo(),waitedMs:Math.round(performance.now()-started),state:'changed',changes});return}if(performance.now()-started>=timeoutMs){fail(new Error('Страница не изменилась за '+timeoutMs+' мс'));return}setTimeout(attempt,150)};attempt()})
   }
+  if(action.kind==='wait'&&action.stable&&!action.selector&&!action.text){
+    // «Пусть всё дорисуется»: полсекунды без правок DOM — так человек ждёт, пока страница успокоится.
+    const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000),started=performance.now();
+    return new Promise((ok,fail)=>{
+      let last=performance.now(),mutations=0;
+      const observer=new MutationObserver(records=>{mutations+=records.length;last=performance.now()});
+      observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true});
+      const attempt=()=>{
+        const now=performance.now();
+        if(now-last>=500){observer.disconnect();ok({page:pageInfo(),waitedMs:Math.round(now-started),state:'stable'});return}
+        if(now-started>=timeoutMs){observer.disconnect();fail(new Error('Страница продолжала меняться '+timeoutMs+' мс ('+mutations+' правок)'));return}
+        setTimeout(attempt,120)
+      };
+      setTimeout(attempt,120)
+    })
+  }
   if(action.kind==='wait'&&action.idle&&!action.selector&&!action.text){
     const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000),started=performance.now();
     return new Promise((ok,fail)=>{const attempt=()=>{const quiet=inFlight===0&&performance.now()-lastNetworkAt>=500;if(quiet){ok({page:pageInfo(),waitedMs:Math.round(performance.now()-started),state:'idle'});return}if(performance.now()-started>=timeoutMs){fail(new Error('Сеть страницы не затихла за '+timeoutMs+' мс: в полёте '+inFlight));return}setTimeout(attempt,120)};attempt()})
@@ -955,7 +1069,8 @@ const run=(action)=>{
     // Открытое модальное окно держит внимание человека — без selector читаем именно его.
     const dialogSelectors=!action.selector&&!section?openDialogs():[];
     const dialogEl=dialogSelectors.length?bySelector(dialogSelectors[dialogSelectors.length-1])[0]:null;
-    const scope=section?section.scope:dialogEl||readingScope(action);
+    const mainEl=action.main&&!action.selector&&!section?mainScope():null;
+    const scope=section?section.scope:mainEl||dialogEl||readingScope(action);
     const selectedText=(()=>{try{return String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{return ''}})();
     // visible — экран пользователя: элементы вне видимой области отфильтровываются, текст берётся из видимых узлов.
     const parts=Array.isArray(action.parts)&&action.parts.length?new Set(action.parts):null;
@@ -974,6 +1089,11 @@ const run=(action)=>{
     const wantImages=parts&&parts.has('images');
     const images=(wantImages||!parts)?pick('img,[role=img]').filter(img=>{const r=img.getBoundingClientRect();return (r.width||img.width||img.naturalWidth||0)>=24&&(wantImages||(img.getAttribute('alt')||img.getAttribute('aria-label')||'').trim())}).slice(0,wantImages?20:5).map(img=>{const r=img.getBoundingClientRect();return {selector:uniqueSelector(img),alt:(img.getAttribute('alt')||img.getAttribute('aria-label')||img.getAttribute('title')||'').slice(0,EL_TEXT),src:unproxy(img.currentSrc||img.getAttribute('src')||'').slice(0,300),width:Math.round(r.width||img.width||0),height:Math.round(r.height||img.height||0)}}):[];
     const overlays=(!parts||parts.has('landmarks'))?findOverlays('all').map(el=>({selector:uniqueSelector(el),text:textOf(el).slice(0,120),kind:overlayKind(el)})):[];
+    // Ориентиры страницы, которые человек замечает сразу: путь по сайту, листалка, дата и поле поиска.
+    const breadcrumbs=(!parts||parts.has('landmarks'))?breadcrumbsOf():[];
+    const pagination=(!parts||parts.has('links'))?paginationOf():null;
+    const published=(!parts||parts.has('text'))?publishedOf():null;
+    const searchEl=(!parts||parts.has('inputs'))?searchField():null;
     const tables=(!parts||parts.has('tables'))?pick('table').slice(0,5).map(table=>{const rowsAll=[...table.querySelectorAll('tr')].filter(readingVisible);const headers=[...table.querySelectorAll('th')].filter(readingVisible).slice(0,12).map(th=>readableText(th,EL_TEXT));const body=rowsAll.filter(tr=>!tr.querySelector('th')||headers.length===0);const rows=body.slice(0,10).map(tr=>[...tr.querySelectorAll('td,th')].slice(0,12).map(td=>readableText(td,EL_TEXT)));const cap=table.querySelector('caption');return {selector:uniqueSelector(table),...(cap?{caption:readableText(cap,EL_TEXT)}:{}),headers,rows,totalRows:body.length}}):[];
     const landmarks=pick('nav,main,header,footer,aside,[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary],[role=search],[role=region][aria-label],[role=region][aria-labelledby]').slice(0,12).map(el=>({role:accessibleRole(el)||el.getAttribute('role')||el.localName,name:(el.getAttribute('aria-label')||accessibleName(el)||'').slice(0,80),selector:uniqueSelector(el)}));
     // markdown: заголовки и пункты списков размечены — так текст читается структурно, а не потоком.
@@ -992,7 +1112,7 @@ const run=(action)=>{
     if(!action.selector&&!section)textSnapshot=visibleTexts();
     const scroller=document.scrollingElement||document.documentElement,maxScroll=Math.max(0,scroller.scrollHeight-innerHeight),scroll={top:Math.round(scroller.scrollTop),max:Math.round(maxScroll),percent:maxScroll>0?Math.round(scroller.scrollTop/maxScroll*100):100};
     const briefBase=action.brief?[pageInfo().title?'Страница «'+pageInfo().title+'»':'Страница без заголовка',headings[0]?'главный заголовок — «'+headings[0].text+'»':'',dialogEl?'открыто окно':'',links.length+' ссылок, '+buttons.length+' кнопок, '+inputs.length+' полей'+(forms.length?', '+forms.length+' форм':''),text.slice(0,240)?'начало текста: '+text.slice(0,240).trim()+(text.length>240?'…':''):''].filter(Boolean).join('; '):'';
-    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(frames.length?{frames}:{}),...(images.length?{images}:{}),...(overlays.length?{overlays}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
+    return {page:pageInfo(),headings:keep('headings',headings)??[],links:keep('links',links)??[],buttons:keep('buttons',buttons)??[],inputs:keep('inputs',inputs)??[],...(forms.length&&keep('forms',true)?{forms}:{}),...(landmarks.length&&keep('landmarks',true)?{landmarks}:{}),...(tables.length?{tables}:{}),...(frames.length?{frames}:{}),...(images.length?{images}:{}),...(overlays.length?{overlays}:{}),...(breadcrumbs.length?{breadcrumbs}:{}),...(pagination?{pagination}:{}),...(published?{published}:{}),...(searchEl?{search:uniqueSelector(searchEl)}:{}),...(mainEl?{main:uniqueSelector(mainEl)}:{}),...(focus?{focus}:{}),...(selectedText?{selection:selectedText}:{}),...(section?{section:section.title}:{}),...(dialogEl?{dialog:uniqueSelector(dialogEl)}:{}),...(briefBase?{brief:(briefBase+(notices.length?'; уведомления: '+notices.slice(0,3).join(' | '):'')).slice(0,600)}:{}),scroll,...(notices.length?{notices}:{}),...(progress.length?{progress}:{}),text:keep('text',true)?text.slice(offset,end):'',total:text.length,offset,...(action.visible?{visible:true,viewport:{width:innerWidth,height:innerHeight,scrollTop:(document.scrollingElement||document.documentElement).scrollTop}}:{}),...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };
@@ -1218,10 +1338,12 @@ const message=(e)=>{
 };
 // Сводка страницы вместе с готовностью: модель ориентируется по open без отдельного read.
 const outline=()=>{try{const scope=document.body||document.documentElement;const words=readableText(scope,200000).split(/\\s+/).filter(Boolean).length;return {headings:[...scope.querySelectorAll('h1,h2,h3')].filter(readingVisible).slice(0,5).map(h=>readableText(h,120)).filter(Boolean),links:scope.querySelectorAll('a[href]').length,buttons:scope.querySelectorAll('button,[role=button],input[type=submit]').length,inputs:scope.querySelectorAll('input:not([type=hidden]),textarea,select').length,words}}catch{return {headings:[],links:0,buttons:0,inputs:0}}};
-const ready=()=>parent.postMessage({type:READY,...pageInfo(),outline:outline(),viewport:{width:innerWidth,height:innerHeight}},location.origin);
+// Ориентиры для самой панели: путь по сайту, листалка, дата и поле поиска — их рисует оболочка, не модель.
+const navInfo=()=>{try{const search=searchField();return {breadcrumbs:breadcrumbsOf(),...(paginationOf()?{pagination:paginationOf()}:{}),...(publishedOf()?{published:publishedOf()}:{}),...(search?{search:uniqueSelector(search)}:{})}}catch{return {breadcrumbs:[]}}};
+const ready=()=>parent.postMessage({type:READY,...pageInfo(),outline:outline(),nav:navInfo(),viewport:{width:innerWidth,height:innerHeight}},location.origin);
 // Выделение пользователя уходит оболочке: она предложит спросить о нём ассистента.
-const SELECTION='voicechat.preview.selection.v1';let selectionTimer=null,lastSelection='';
-document.addEventListener('selectionchange',()=>{if(selectionTimer)clearTimeout(selectionTimer);selectionTimer=setTimeout(()=>{let text='';try{text=String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{}if(text===lastSelection)return;lastSelection=text;parent.postMessage({type:SELECTION,text},location.origin)},250)});
+const SELECTION='voicechat.preview.selection.v1';let selectionTimer=null,lastSelection='',selectionByAssistant=false;
+document.addEventListener('selectionchange',()=>{if(selectionTimer)clearTimeout(selectionTimer);selectionTimer=setTimeout(()=>{let text='';try{text=String(getSelection()||'').replace(/\\s+/g,' ').trim().slice(0,2000)}catch{}if(text===lastSelection)return;lastSelection=text;const by=selectionByAssistant?'assistant':'user';selectionByAssistant=false;parent.postMessage({type:SELECTION,text,by},location.origin)},250)});
 // Адрес ссылки под курсором или в фокусе уходит оболочке — строка состояния браузера; долгое нажатие — меню ссылки на телефоне.
 const LINK='voicechat.preview.link.v1';let lastLink='';
 const linkOf=(node)=>{const a=node&&node.closest?node.closest('a[href]'):null;return a&&!a.closest('[data-voicechat-inspector]')?a:null};

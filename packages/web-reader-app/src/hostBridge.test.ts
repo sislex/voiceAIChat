@@ -553,6 +553,25 @@ describe('команды при смене страницы и регистра�
   })
 })
 
+it('back {to} возвращает на страницу этого сеанса по заголовку, а незнакомую называет честно (круг 17)', async () => {
+  const h = harness(); h.ready(); const id = h.bridge.registrationId()!
+  const first = h.bridge.run({ kind: 'open', url: 'https://shop.example/search?q=наушники' })
+  await Promise.resolve()
+  h.from(id, { kind: 'page-status', status: 'ready', url: 'https://shop.example/search?q=наушники', title: 'Поиск: наушники' })
+  await first
+  const second = h.bridge.run({ kind: 'open', url: 'https://shop.example/item/7' })
+  await Promise.resolve()
+  h.from(id, { kind: 'page-status', status: 'ready', url: 'https://shop.example/item/7', title: 'Наушники Pro' })
+  await second
+  h.sent.length = 0
+  const back = h.bridge.run({ kind: 'back', to: 'Поиск' })
+  await Promise.resolve()
+  expect(h.sent.some(message => message.kind === 'set-url' && message.url === 'https://shop.example/search?q=наушники')).toBe(true)
+  h.from(id, { kind: 'page-status', status: 'ready', url: 'https://shop.example/search?q=наушники', title: 'Поиск: наушники' })
+  await expect(back).resolves.toMatchObject({ ok: true })
+  await expect(h.bridge.run({ kind: 'back', to: 'корзина' })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('не было в этом сеансе') })
+  h.bridge.dispose()
+})
 it('промежуточный empty от reset open не отказывает следующему read', async () => {
   const h = harness(); h.ready(); const id = h.bridge.registrationId()!
   const open = h.bridge.run({ kind: 'open', url: 'https://example.test/' })
