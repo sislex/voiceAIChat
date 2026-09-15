@@ -10,6 +10,7 @@ import { runBrowserInput } from './inputActions.js'
 import { applyEnvironment, applyEnvironmentToPage, runCookieCommand } from './environmentActions.js'
 import { describeCommand, SessionHistory } from './sessionHistory.js'
 import { applyDevice, runTouchAction } from './deviceActions.js'
+import { NetworkRules, planRoute } from './networkRules.js'
 import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
 import { clearSiteData, httpOrigin } from './siteData.js'
 import { readReaderProfile, writeReaderProfile } from './profileState.js'
@@ -20,7 +21,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserAskRequest, BrowserAskResult, BrowserCommandRequest, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserAskRequest, BrowserAskResult, BrowserCommandRequest, BrowserNetworkRulesResult, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -60,6 +61,8 @@ interface Session {
   device?: BrowserDeviceState
   /** Открытая просьба модели к человеку и его ответ на неё. */
   ask?: BrowserAskRequest
+  /** Подмена, блокировка и задержка запросов — то, что человек делает в devtools. */
+  networkRules: NetworkRules
   /** Что происходило в сессии: единственное место, где видны обе стороны. */
   history: SessionHistory
 }
@@ -187,11 +190,21 @@ export class BrowserSessionManager {
         viewport,
         profileDir: path, profileMode,
         origins: new Set(saved?.origins ?? []), bootstrapCookies: [],
+        networkRules: new NetworkRules(),
         lastUsedAt: Date.now()
       }
       await session.downloads.attachLimits(context, downloadsPath)
       await context.route('**/*', async (route) => {
         try {
+          // Правила модели применяются до проверки адреса: подменённый ответ
+          // вообще не уходит в сеть, а заблокированный запрос не должен спорить
+          // с политикой доступа — его просто нет.
+          const plan = planRoute(session.networkRules.match(route.request().url()))
+          if (plan.action !== 'continue' || plan.delayMs) {
+            if (plan.delayMs) await new Promise((resolve) => setTimeout(resolve, plan.delayMs))
+            if (plan.action === 'abort') return route.abort('blockedbyclient')
+            if (plan.action === 'fulfill') return route.fulfill({ status: plan.status ?? 200, contentType: plan.contentType, body: plan.body ?? '' })
+          }
           const requested = validatePublicUrl(route.request().url(), this.allowedTargets)
           // Алиас применяется после проверки: во внутреннюю сеть пускает оператор
           // списком пар, а не пользователь адресом.
@@ -318,7 +331,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
@@ -399,7 +412,7 @@ export class BrowserSessionManager {
   }
 
   /** Разбор команды без журнала: вынесен, чтобы запись велась в одном месте. */
-  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult> {
+  private async dispatch(sessionId: string, request: BrowserCommandRequest, session: Session): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult> {
     const command = request.command
     const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network', 'audit', 'probe', 'accessibility'].includes(command.action.kind))
     if (command.type === 'inspect' && command.action.kind === 'evaluate') {
@@ -440,7 +453,7 @@ export class BrowserSessionManager {
     }, observing)
   }
 
-  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult | BrowserAskResult> {
+  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -482,6 +495,14 @@ export class BrowserSessionManager {
       return { environment }
     }
     if (command.type === 'cookies') return await runCookieCommand(session.context, command)
+    if (command.type === 'network-rules') {
+      if (command.do === 'add') {
+        if (!command.rule) throw new Error('Для add нужно правило')
+        return { network: session.networkRules.add(command.rule) }
+      }
+      if (command.do === 'remove') return { network: session.networkRules.remove(command.url) }
+      return { network: session.networkRules.list() }
+    }
     if (command.type === 'device') {
       const page = session.pages.get(request.tabId ?? session.activeTabId)
       if (!page) throw new Error('stale_tab')

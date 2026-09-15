@@ -535,6 +535,26 @@ export interface BrowserAskRequest {
   answered?: { done: boolean; text?: string; at: number }
 }
 
+/**
+ * Правило сети: подменить ответ, заблокировать запрос или задержать его.
+ * Человек делает это в devtools за минуту; модель умела только смотреть журнал
+ * постфактум, а воспроизвести условие — нет.
+ */
+export interface BrowserNetworkRule {
+  /** Шаблон адреса с `*`: тот же синтаксис, что у `wait` по URL. */
+  url: string
+  action: 'mock' | 'block' | 'delay'
+  status?: number
+  body?: string
+  contentType?: string
+  delayMs?: number
+}
+
+export interface BrowserNetworkRuleList {
+  rules: BrowserNetworkRule[]
+  total: number
+}
+
 /** Finger gesture: a tap is not a mouse click, and pages handle them apart. */
 export interface BrowserTouchAction {
   gesture: 'tap' | 'swipe' | 'long-press'
@@ -739,6 +759,8 @@ export type BrowserCommand = BrowserFrameTarget & (
   | ({ type: 'device' } & BrowserDeviceOptions)
   /** A finger gesture on the page — tap, swipe, long press. */
   | ({ type: 'touch' } & BrowserTouchAction)
+  /** Network rules: mock a response, block a request, slow it down. */
+  | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)

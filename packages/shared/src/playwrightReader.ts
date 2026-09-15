@@ -4,7 +4,7 @@ import type { BrowserSiteDataResetOptions, BrowserSiteDataResetResult } from './
 import { READER_PROJECT_ORIGIN } from './previewProject'
 // Граница приложения Playwright Reader: пользовательский REST остаётся /api/browser,
 // а ядро и отдельный процесс обмениваются только этими RPC и результатами действий.
-import type { BrowserCookieInfo, BrowserCookieRequest, BrowserDeviceOptions, BrowserDeviceState, BrowserEnvironmentOptions, BrowserEnvironmentState, BrowserHistoryEntry, BrowserTouchAction, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserScreenshotMetadata, BrowserScreenshotOptions } from './types'
+import type { BrowserNetworkRule, BrowserNetworkRuleList, BrowserCookieInfo, BrowserCookieRequest, BrowserDeviceOptions, BrowserDeviceState, BrowserEnvironmentOptions, BrowserEnvironmentState, BrowserHistoryEntry, BrowserTouchAction, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserScreenshotMetadata, BrowserScreenshotOptions } from './types'
 import type { BrowserFramesResult } from './browserFrames'
 import type { PreviewActionResult } from './previewActions'
 import { BROWSER_COMMAND_BODY_LIMIT } from './browserLimits'
@@ -30,6 +30,7 @@ export type BrowserControlCommand =
   | { type: 'note'; text: string }
   | { type: 'ask'; text: string; timeoutMs?: number }
   | ({ type: 'device' } & BrowserDeviceOptions)
+  | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
   | ({ type: 'touch' } & BrowserTouchAction)
 
 export type BrowserModelScreenshotOptions = Pick<BrowserScreenshotOptions, 'selector' | 'rect' | 'fullPage' | 'animations' | 'timeoutMs' | 'frame'>
@@ -39,6 +40,9 @@ export interface BrowserImageResult extends Partial<BrowserScreenshotMetadata> {
 /** Эмуляция среды и cookies: ответ показывает, что теперь в силе. */
 export interface BrowserEnvironmentResult { environment: BrowserEnvironmentState }
 export interface BrowserCookiesResult { cookies: BrowserCookieInfo[]; total: number }
+/** Правила сети сессии: что сейчас подменяется, блокируется и задерживается. */
+export interface BrowserNetworkRulesResult { network: BrowserNetworkRuleList }
+
 /** Итог просьбы к человеку: сделал, отказался или не ответил вовремя. */
 export interface BrowserAskResult { ask: { id: string; done: boolean; text?: string; timedOut?: boolean; waitedMs: number } }
 
@@ -50,7 +54,7 @@ export interface BrowserHistoryResult { history: { total: number; entries: Brows
 
 export interface BrowserActionOutcome {
   ok: boolean
-  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult
+  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult | BrowserNetworkRulesResult
   error?: string
 }
 
