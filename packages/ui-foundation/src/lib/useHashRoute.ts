@@ -51,6 +51,7 @@ export interface NavigateOptions {
 export interface HashRoute {
   /** Текущий путь, напр. «/projects/p1/settings». */
   path: string
+  search: string
   /** Сегменты пути без пустых, напр. ['projects','p1','settings']. */
   segments: string[]
   /** Перейти по пути (принимает «/x», «x» или «#/x»). */
@@ -58,7 +59,10 @@ export interface HashRoute {
 }
 
 export function useHashRoute(): HashRoute {
-  const path = useSyncExternalStore(subscribe, currentPath, () => '/')
+  const location = useSyncExternalStore(subscribe, currentPath, () => '/')
+  const queryAt = location.indexOf('?')
+  const path = queryAt < 0 ? location : location.slice(0, queryAt)
+  const search = queryAt < 0 ? '' : location.slice(queryAt + 1)
   const navigate = useCallback((to: string, opts?: NavigateOptions) => {
     const clean = to.replace(/^#/, '')
     const target = `#${clean.startsWith('/') ? clean : `/${clean}`}`
@@ -78,5 +82,5 @@ export function useHashRoute(): HashRoute {
     }
     if (allowNavigation(target, proceed)) proceed()
   }, [])
-  return { path, segments: path.split('/').filter(Boolean), navigate }
+  return { path, search, segments: path.split('/').filter(Boolean), navigate }
 }

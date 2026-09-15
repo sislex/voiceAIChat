@@ -119,6 +119,7 @@ import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioPlacement'
 import { createMachineRequiredGuard } from './lib/machineRequiredGuard'
+import { readResources } from './clients/readResources'
 
 /** Подпись устройства для тоста о новом входе: ядро без текстов окна сессий. */
 function deviceLabel(userAgent: string): string {
@@ -350,8 +351,12 @@ function initialChatIdFromPath(path: string, segments: string[]): string | null 
  * хранилищами и координирует их) и отдаёт его дереву. Универсального хука со
  * всеми доменами сразу нет — экраны подписываются на свой домен.
  */
-function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
-  const { path, segments } = useHashRoute()
+function AppRuntimeHost({ api: sourceApi = window.api, now, delays }: AppProps = {}): JSX.Element {
+  const api = useMemo(() => readResources(sourceApi).api, [sourceApi])
+  const { path, segments, search } = useHashRoute()
+  const query = new URLSearchParams(search)
+  const initialChatContext = query.get('scope') === 'kanban' && query.get('project')
+    ? { scope: 'kanban' as const, projectId: query.get('project')! } : undefined
   const initialChatId = useRef(initialChatIdFromPath(path, segments))
   // Стартуем на доске проекта — индекс чатов не нужен: сайдбар показывает
   // проекты, а список чатов сам попросит индекс, когда его откроют.
@@ -361,6 +366,7 @@ function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.E
     ...(now ? { now } : {}),
     ...(delays ? { delays } : {}),
     initialChatId: initialChatId.current,
+    ...(initialChatContext ? { initialChatContext } : {}),
     skipConversations: skipConversations.current
   })
   return (
@@ -372,7 +378,7 @@ function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.E
 
 function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Hash-роутинг: URL — источник навигации (см. useHashRoute).
-  const { path, segments, navigate } = useHashRoute()
+  const { path, segments, search: routeSearch, navigate } = useHashRoute()
   const projectsRoute = parseProjectsRoute(path)
   const inProjects = projectsRoute !== null
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
@@ -1145,9 +1151,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const requireMachine = useCallback((action: () => void): void => {
     setMachineConnectStatus('Откройте приложение подключения или добавьте новое устройство по ссылке.')
     setMachineDownloadBusy(false)
-    machineActionGuard.current.require(operations.agents.some((agent) => agent.online), action)
-  }, [operations.agents])
+    // Machine-dependent actions own this read; cold chat does not need it.
+    void api['agents:list']().then((agents) => {
+      operationsActions.applyAgents(agents)
+      machineActionGuard.current.require(agents.some((agent) => agent.online), action)
+    }).catch((error) => runtime.shell.actions.fail(error, () => requireMachine(action)))
+  }, [api, operationsActions, runtime])
   const finishPendingMachineAction = useCallback(async (generation: number, agentId?: string): Promise<boolean> => {
+    readResources(api).invalidate('agents:list')
     const agents = await api['agents:list']()
     if (generation !== machineConnectGeneration.current || !machineActionGuard.current.pending()) return false
     operationsActions.applyAgents(agents)
@@ -1475,6 +1486,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // адрес (клик по чату, «Назад», ссылка извне) — грузим чат из адреса;
   // изменился активный чат в сторе (создание, удаление, resume, автосоздание
   // первой репликой) — переписываем адрес без новой записи в истории.
+  useEffect(() => {
+    if (!authed) return
+    const messageId = new URLSearchParams(routeSearch).get('message')
+    if (messageId) chatActions.focusMessage(messageId)
+  }, [authed, routeSearch, path, chatActions])
+
   const syncedChatId = useRef<string | null>(routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId ?? routeConsoleReaderChatId ?? routeMakeChatId)
   useEffect(() => {
     if (!authed || !inChat || projectInviteToken) return
@@ -1482,7 +1499,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       syncedChatId.current = routeChatId
       if (routeChatId === chat.activeId) return // стор уже открыл этот чат
       const fallback = chat.activeId
-      void chatActions.selectConversation(routeChatId).then((ok) => {
+      const query = new URLSearchParams(routeSearch)
+      const projectId = query.get('project')
+      void chatActions.selectConversation(routeChatId, query.get('scope') === 'kanban' && projectId ? { scope: 'kanban', projectId } : undefined).then((ok) => {
         if (ok || syncedChatId.current !== routeChatId) return
         // Чата нет (удалён или чужой) — возвращаемся к прежнему.
         syncedChatId.current = fallback
@@ -1500,7 +1519,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       navigate(`/chat/${chat.activeId}`, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inChat, routeChatId, chat.activeId, projectInviteToken])
+  }, [authed, inChat, routeChatId, routeSearch, chat.activeId, projectInviteToken])
 
   // Отдельный экран Web Reader держит только типизированные чаты; старые
   // разговоры с сохранённым URL совместимы с ним и остаются доступны после переноса.
@@ -1681,6 +1700,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     else if (projects.activeProjectId) projectsActions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId, routeNeedsBoard])
+  useEffect(() => {
+    if (!authed || !routeNeedsBoard || !routeProjectId) return
+    const timer = setInterval(() => void projectsActions.ensureBoard(routeProjectId), 10_000)
+    return () => clearInterval(timer)
+  }, [authed, routeNeedsBoard, routeProjectId, projectsActions])
   // Прямая ссылка на завершённую задачу: сервер прячет с доски давно готовые
   // карточки, и открывать было бы нечего. Если задачи из URL в снапшоте нет —
   // один раз включаем «Показать завершённые» и доска приходит целиком.
@@ -1712,9 +1736,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [globalSettingsSection, invalidGlobalSettingsRoute, navigate, shell.settingsOpen, shellActions])
   // Каталог типов нужен разделу «Типы проектов» в пользовательских настройках.
   useEffect(() => {
-    if (authed && globalSettingsSection && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
+    if (authed && globalSettingsSection === 'projectTypes') void projectsActions.loadProjectTypes()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, globalSettingsSection])
+  useEffect(() => {
+    if (!authed || !globalSettingsSection) return
+    void settingsActions.loadCatalogs(globalSettingsSection)
+    const timer = setInterval(() => void settingsActions.loadCatalogs(globalSettingsSection), 300_000)
+    return () => clearInterval(timer)
+  }, [authed, globalSettingsSection, settingsActions])
   const loadGitWorkspaces = useCallback(async (projectId: string): Promise<void> => {
     setGitWorkspaces((prev) => ({ ...prev, status: 'loading' }))
     try {
@@ -1755,11 +1785,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg])
   useEffect(() => {
-    if (!session.authRequired) return
+    if (!authed) return
     if (utilitySeg === 'machines') { if (!operations.machinesOpen) operationsActions.openMachines() }
     else if (operations.machinesOpen) operationsActions.closeMachines()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [utilitySeg])
+  }, [utilitySeg, authed])
+  useEffect(() => {
+    if (!authed || utilitySeg !== 'machines') return
+    const timer = setInterval(() => void operationsActions.refreshAgents(), 30_000)
+    return () => clearInterval(timer)
+  }, [authed, utilitySeg, operationsActions])
   useEffect(() => {
     if (!session.authRequired) return
     if (utilitySeg === 'ci') { if (!projects.ciOpen) void projectsActions.openCi() }
@@ -3698,11 +3733,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
 
-      <CommandPalette userId={shellUserId} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette userId={shellUserId} api={api} onNavigate={navigate} open={paletteOpen && authed} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
       {globalSettingsSection && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
+          catalogErrors={settingsState.catalogErrors}
+          catalogLoading={settingsState.catalogLoading.filter(name => !settingsState.catalogLoaded[name])}
+          catalogRefreshing={settingsState.catalogLoading.some(name => settingsState.catalogLoaded[name])}
+          onRetryCatalog={(name) => void settingsActions.loadCatalogs(globalSettingsSection, name)}
           section={globalSettingsSection}
           onSectionChange={(section) => navigate(`/settings/${section}`)}
           projectTypes={projects.projectTypes}

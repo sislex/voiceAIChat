@@ -270,7 +270,7 @@ export interface ChatActions {
   newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images'): Promise<string | null>
   /** Создаёт сохранённый чат из явной формы создания и сразу открывает его. */
   createConversation(input: { title: string; projectId?: string | null }): Promise<string>
-  selectConversation(id: string): Promise<boolean>
+  selectConversation(id: string, context?: { scope: 'kanban'; projectId: string }): Promise<boolean>
   deleteConversation(id: string): Promise<void>
   renameConversation(id: string, title: string): Promise<void>
   setConversationExecTarget(
@@ -1218,7 +1218,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     return conversation.id
   }
 
-  async function selectConversation(id: string): Promise<boolean> {
+  async function selectConversation(id: string, context?: { scope: 'kanban'; projectId: string }): Promise<boolean> {
     const token = ++selectToken
     core.clearTimers()
     voice.resetForChatSwitch() // ход прежнего разговора доиграет на сервере
@@ -1227,7 +1227,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     try {
       const state = getState()
       const known = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.imageStudioConversations, ...state.conversations].find((item) => item.id === id)
-      const res = await client['conversations:get']({ id, scope: known?.scope ?? 'chat', ...(known?.scope === 'kanban' && known.projectId ? { projectId: known.projectId } : {}) })
+      const res = await client['conversations:get']({ id, scope: known?.scope ?? 'chat', ...(known?.scope === 'kanban' && known.projectId ? { projectId: known.projectId } : {}), ...context })
       // Пока ответ летел, выбрали другой чат — этот ответ отбрасываем молча.
       if (token !== selectToken || core.disposed()) return false
       if (res) {

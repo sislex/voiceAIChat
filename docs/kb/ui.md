@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: 834a490d
+checked: a6abbb37
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -298,6 +298,53 @@ build-time флагом `VITE_REDUX_DEVTOOLS=true`. Перед `init` и `send` 
 Воспроизводимый Component QA — DOM-сценарий `TC-UI-1` в `packages/admin-app/src/UsersAdmin.dom.test.tsx`: он подаёт синхронизированные OpenAI-строки, проверяет восемь колонок (включая «Режим / контекст»), базовый режим `Standard / short context`, четыре ценовых значения, ссылку на официальный источник и действия, включая передачу точной пары provider/model при удалении. Длинный идентификатор последней модели включён специально как регрессия табличной раскладки; это проверка DOM без запуска реального сервера или базы.
 
 ## Состояние приложения
+
+Route read ownership (CHAT-468): bootstrap reads settings, model engines/access,
+the visible chat index and project navigation. It does not request the machine
+list, Account profile/usage/security, or Settings-only catalogs. Machines calls
+`openMachines` on authenticated route entry. Settings calls `loadCatalogs(section)`;
+LLM needs capabilities/MCP, STT needs microphones/status/models/capabilities,
+TTS needs voices/catalog/capabilities, and voice dialog needs microphones/voices/
+capabilities. Project types load on the projectTypes section. Active chat loads
+installed TTS voices only when playback is enabled, and local model status only
+when STT is enabled. Voice metadata loads independently and cannot delay chat
+startup; the browser fixture supplies the remote runner's voice list locally.
+Creating a chat/project requests machines before the existing
+machine-required guard. Confirmed enrollment invalidates the machine list before
+polling, so a cached offline snapshot cannot hide the newly connected machine.
+Machines checks freshness every 30 seconds while open; board refreshes every
+10 seconds while visible and preserves its current snapshot and completed-task
+filter. Server access denials clear that project's cached navigation and details.
+Saving a board view invalidates only that project's view, not its snapshot.
+Realtime machine snapshots seed the machine cache and fence older HTTP responses;
+profile summaries invalidate when machine ids/online states change. STT model status
+shares the catalog TTL and invalidates with model-download completion.
+
+`clients/readResources.ts` wraps an allowlist of RendererApi reads without changing
+REST, WS or IPC shapes. The same API instance shares one in-memory `ReadCache`
+across stores and Account. Keys contain the channel and recursively sorted object
+parameters; board flags and security defaults normalize before key construction.
+Projects are separated by id. Runtime logout, expiry, user change and dispose
+clear entries and fence outstanding generations. No responses persist to storage.
+TTL milliseconds: profile/access/settings 60000, usage/security/machines/projects
+30000, catalogs 300000, board 10000. Concurrent callers share one promise;
+subscription cleanup suppresses delivery only to that subscriber. Invalidation
+uses entry identity, so late completions cannot populate a replacement entry.
+Diagnostics contain only the resource family and hit/miss.
+
+Account keeps a stable range instant between freshness ticks, reuses it across
+visits within the usage TTL, checks freshness on tab entry and every 30 seconds, and
+retains previous data during refresh. Profile completion is guarded by effect
+cleanup. History and Usage keep their filter controls mounted while their data
+skeleton loads, allowing A → B → A changes before the slow response completes.
+Repeated settings invalidations during an existing refresh queue a current follow-up
+read; reset/dispose fence that queue. An obsolete settings snapshot does not discard
+independent model-access and engine-catalog responses. Overview retry reloads only failed blocks. Settings catalog failures
+are recorded individually and have an individual retry action. Cache behavior,
+cold bootstrap and isolated retries are covered by `readCache.test.ts`,
+`readResources.test.ts` and `AccountPage.dom.test.tsx`. Browser measurement and
+responsive scenarios live in `packages/ui/src/test/routeResources.browser.test.ts`; measurements are
+written to `.generated_images/chat468/before.json` and `after.json`.
 
 ### Адаптивный композер VoiceBar
 
@@ -2180,6 +2227,15 @@ viewport. На десктопе тест может сразу обращать�
 
 ## Горячие клавиши, командная палитра и шпаргалка
 
+CHAT-471 connects the production `packages/ui/src/components/CommandPalette.tsx` through the typed `search:universal` / `search:cancel` host bridge to `POST /api/universal-search`. The six source groups are chats, messages, projects, tasks, Make file paths and KB documents; local registry actions remain available. The opener is in the sidebar header, outside collapsible filters, in both chat and project modes. The existing configurable shortcut and recording suppression remain in `buildHotkeyBindings`.
+
+The server reads live projections, checks ownership/project membership before returning hits, strips credential-bearing lines and executable markup before matching, and returns plain text titles/snippets. Make search projects names and paths only, excludes sensitive filenames, and does not read or modify file contents. Published messages from cancelled task chats remain excluded. Stored KB rows are read directly because the existing timestamp/count index version can collide between writes in the same millisecond. Source exceptions return only an unavailable status; no exception content or raw counts leave the server.
+
+IDs hash the source key; navigation targets are typed. Random cursors are user/query-bound, expire after five minutes, and retain only already returned IDs. Each continuation rereads current data, sorts deterministically and excludes seen IDs. Recent history stores at most five IDs under `vc:search:recent:<encoded user>`; both display and selection resolve them again against current permissions. A 200 ms debounce, transport cancellation, generation checks and page deduplication prevent stale responses. A rejected cursor restarts search safely.
+
+Hash routes separate their query string from path segments. Message links use `?message=<encoded id>` and focus the loaded message; kanban conversation links also carry `scope=kanban&project=<id>` so the existing authorized read receives its explicit context after reload; Make links use `?file=<encoded path>` and open it through the existing authorized read API. Palette height follows `visualViewport.height/offsetTop` on mobile, with safe-area padding and a scrolling result list. DOM checks cover keyboard, focus, stale replies and simulated keyboard viewport events; `e2e/universalSearch.e2e.test.ts` uses the real App and checks the five requested sizes in light/dark, touch and six-source navigation/reload. Browser automation does not establish behavior of a physical mobile software keyboard.
+
+
 The shell's user-local preferences live in `packages/ui/src/lib/shellPreferences.ts`, under `vc:shell:<encoded user>:<feature>`. Corrupt or unavailable storage falls back to memory. The bell opens `NotificationCenter`: it retains 50 display-only records independently of toast lifetime, deduplicates event IDs, and persists read state. Toast IDs include a session namespace so a reload cannot collide with saved history. App connects toast publication, completed CI runs, release updates and addressed project invitations; callbacks and invitation tokens are not serialized.
 
 `ShortcutSettings` reassigns palette, new conversation and message sending. The command registry, Sidebar hint and VoiceBar send hint use the same assigned values. Conflict detection accounts for the existing matcher's modifier overlap; voice keys and the cheat sheet remain reserved. IME input is ignored, and voice key release retains its existing lifecycle.
@@ -2205,7 +2261,7 @@ The shell has a compact toolbar and bottom navigation at widths up to 720px, wit
 
 The command registry lives in `packages/ui-foundation/src/lib/commands.ts`; React integration lives in the same package's `lib/useCommands.ts`. Both are exported through `@voicechat/ui-foundation/runtime`, so separately loaded panels share the host registry. Источник — **функция**, а не готовый массив: команды замыкают пропсы и состояние стора, и массив устарел бы в момент регистрации. Экраны регистрируют свои команды сами через `useCommandSource` (канбан — «Создать задачу» в первой видимой колонке, лента CI-рана — «Повторить последний ран»), и регистрация живёт столько, сколько смонтирован экран: в палитре нет команд, которые сейчас некуда применить. Дубли по `id` склеиваются, побеждает зарегистрированный позже, — одна и та же лента рана бывает на странице дважды (модалка и шапка связанного чата). Базовый набор плюс пункты по данным (беседы, проекты, задачи открытой доски, машины) собирает `buildAppCommands` в `lib/appCommands.ts`, а `App` только передаёт ему состояние и колбэки.
 
-`CommandPalette` (`⌘K` / `Ctrl+K`, кнопка «⌘K» рядом с поиском в сайдбаре) — поверх общего `Dialog`, поэтому портал, ловушка фокуса, Esc и возврат фокуса на открывашку достаются бесплатно. Разделы — «Действия», «Беседы», «Проекты», «Задачи», «Машины». Поиск нечёткий (`lib/fuzzy.ts`): подпоследовательность с весом за начало слова и за совпадение подряд, индексы совпавших букв идут в подсветку `mark.cmdk-hit`. Считается динамическим программированием, а не жадным проходом: жадный выбирает первое совпадение, и «кп» в «Командная палитра» подсветилось бы как «Ко…мандная». Сначала сверяется название (его и подсвечиваем), потом `keywords` и `hint` — так задача находится и по «#42», и по словам названия; ключ вида `GC-42` входит в само название, поэтому «42» тоже подсвечивается. Задачи берутся из открытой доски (других в памяти нет). Выдача **ограничена** `limitPerSection` (по умолчанию 8), под группой написано, сколько скрыто: виртуализация здесь лишняя — сотню строк без запроса показывать всё равно бессмысленно, а с запросом список сужается. «Недавние» (последние 5 `id` в `localStorage`, ключ `vc:commands:recent:<encoded user name>`; the legacy unowned key is not migrated into a user's history) идут отдельной группой сверху при пустом запросе и не дублируются в своём разделе. Навигация ↑/↓ по кругу, `Home`/`End`, `Enter` — выполнить, мышь работает наравне (`onMouseMove` переносит выбор, чтобы `Enter` выполнил то, на что смотрит курсор).
+The registry-only `CommandPalette` mode (used by existing isolated stories without an API prop) retains the behavior described below. The connected App uses the six server groups described above. `CommandPalette` (`⌘K` / `Ctrl+K`, sidebar-header button) is built on the shared `Dialog`, поэтому портал, ловушка фокуса, Esc и возврат фокуса на открывашку достаются бесплатно. Разделы — «Действия», «Беседы», «Проекты», «Задачи», «Машины». Поиск нечёткий (`lib/fuzzy.ts`): подпоследовательность с весом за начало слова и за совпадение подряд, индексы совпавших букв идут в подсветку `mark.cmdk-hit`. Считается динамическим программированием, а не жадным проходом: жадный выбирает первое совпадение, и «кп» в «Командная палитра» подсветилось бы как «Ко…мандная». Сначала сверяется название (его и подсвечиваем), потом `keywords` и `hint` — так задача находится и по «#42», и по словам названия; ключ вида `GC-42` входит в само название, поэтому «42» тоже подсвечивается. Задачи берутся из открытой доски (других в памяти нет). Выдача **ограничена** `limitPerSection` (по умолчанию 8), под группой написано, сколько скрыто: виртуализация здесь лишняя — сотню строк без запроса показывать всё равно бессмысленно, а с запросом список сужается. «Недавние» (последние 5 `id` в `localStorage`, ключ `vc:commands:recent:<encoded user name>`; the legacy unowned key is not migrated into a user's history) идут отдельной группой сверху при пустом запросе и не дублируются в своём разделе. Навигация ↑/↓ по кругу, `Home`/`End`, `Enter` — выполнить, мышь работает наравне (`onMouseMove` переносит выбор, чтобы `Enter` выполнил то, на что смотрит курсор).
 
 `HotkeysCheatSheet` (`?` вне полей ввода) генерируется **из того же реестра**: команда объявляет `hotkey` — и сама появляется в шпаргалке. Второго списка «для документации» нет: он бы разъехался с настоящими биндингами. Выключенные команды тут показываются — шпаргалка это документация, а не список применимого сейчас (иначе «удерживайте пробел» пропадал бы ровно во время записи).
 
@@ -4578,3 +4634,33 @@ items: otherwise a tall mobile profile collapses the tab row to its 1 px
 border. Routed tabs use `Tabs` horizontal `scrollTo`, which keeps the active tab
 visible without moving the page vertically. The account page was checked at
 1440, 768, 390, and 320 px with no document or panel overflow.
+
+## Маршрутные чтения и сессионный кэш
+
+Защищённые данные больше не входят в единый bootstrap: активный маршрут или
+вкладка запрашивает только нужные ему семейства. Поэтому холодный чат не читает
+машины, каталоги закрытых Settings и данные вкладок Account. Account всегда
+начинает с профиля; доступ и usage нужны Overview и своим вкладкам, машины —
+Overview/Machines, журнал — только Security. Каждый блок хранит собственные
+loading/error/retry, а уже показанные сводки Overview не исчезают во время
+обновления. Маршрутная оркестрация находится в
+`packages/ui/src/App.tsx`, Account — в
+`packages/ui/src/components/AccountPage.tsx` и `packages/profile-app/src`.
+
+Обёртка `packages/ui/src/clients/readResources.ts` пропускает через
+`ReadCache` только явный allowlist безопасных чтений; команды и поиски не
+кэшируются. Ключ включает семейство, канал и рекурсивно нормализованные
+аргументы (поля объектов сортируются, `undefined` отбрасывается), поэтому
+эквивалентные параметры делят запись, а project id разделяет проектные данные.
+Экземпляр привязан к `RendererApi`, то есть к пользовательской сессии; logout
+очищает его. TTL заданы по семействам в
+`packages/ui/src/lib/readCache.ts`: profile/access/settings — 60 с,
+usage/security/machines/projects — 30 с, board — 10 с, catalogs — 5 минут.
+
+Свежая запись даёт hit, конкурентные читатели одного ключа получают один
+in-flight Promise. Отписка компонента запрещает только его callback и не
+отменяет общий запрос. Инвалидация удаляет сам объект записи: завершение старого
+запроса становится `AbortError` и не может заменить новую запись или state.
+Мутации инвалидируют адресные семейства до вызова и в `finally`; realtime
+машин может сразу seed-ить список. Диагностика пишет только семейство и
+`hit|miss`, без ответа и параметров.

@@ -218,9 +218,13 @@ describe('ProfilePanel — журнал', () => {
     expect(csv.split('\n')).toHaveLength(events.length + 1)
   })
 
+  // @testCase TC4
   it('пока журнал грузится, пустоты не показываем', () => {
     setup({ tab: 'history', events: null })
-    expect(screen.queryByTestId('history-tab')).toBeNull()
+    expect(screen.getByTestId('history-tab')).toBeInTheDocument()
+    expect(screen.getByLabelText('Тип событий')).toBeEnabled()
+    expect(screen.getAllByTestId('profile-history-skeleton').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Событий пока нет')).toBeNull()
     expect(screen.getByText('Загружаем журнал…')).toBeInTheDocument()
   })
 })

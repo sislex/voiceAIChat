@@ -279,6 +279,8 @@ export interface IpcInvokeMap {
    * пустой результат. `projectId`: undefined — по всем беседам, null — только
    * беседы без проекта. Постранично через `cursor` из прошлого ответа.
    */
+  'search:universal': { arg: import('./universalSearch').UniversalSearchRequest; result: import('./universalSearch').UniversalSearchResult }
+  'search:cancel': { arg: void; result: void }
   'messages:search': {
     arg: {
       query: string
