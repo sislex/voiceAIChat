@@ -610,6 +610,23 @@ describe('previewMcp — инструменты browser', () => {
     expect(result.text).toContain('загружается')
   })
 
+  it('note и report {text} доходят до клиента как действия панели (круг 20)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: null, notes: [{ text: 'Цена без доставки', url: null, at: 1 }] } })
+    }
+    const noted = await call('note', { text: 'Цена без доставки' })
+    expect(noted.isError).toBeFalsy()
+    await call('report', { readable: true })
+    await call('report', {})
+    expect(seen).toEqual([
+      { kind: 'note', text: 'Цена без доставки' },
+      { kind: 'report', readable: true },
+      { kind: 'report' }
+    ])
+  })
   it('ask-user и hand-over доходят до клиента как действия панели (круг 19)', async () => {
     await makeApp()
     const seen: unknown[] = []

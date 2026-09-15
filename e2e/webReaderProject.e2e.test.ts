@@ -85,9 +85,8 @@ describe.each(['embedded', 'remote'] as const)('Reader %s: вход на соб�
     const recorder = page.frameLocator('iframe[title="Web Reader"]')
     await recorder.getByRole('textbox', { name: 'Адрес превью' }).waitFor()
     const site = recorder.frameLocator('iframe[title="Предпросмотр сайта"]')
-    // Страница едет через прокси превью во вложенный iframe: на занятой машине
-    // (параллельные прогоны гейта, соседний Chromium) десяти секунд по умолчанию
-    // не хватает, и падение выглядит как регрессия, хотя дело в нагрузке.
+    // Внутри превью поднимается всё наше приложение, а не простая страница: первый экран приходит
+    // заметно позже обычного таймаута локатора, и под нагрузкой тест падал именно на этом ожидании.
     await site.getByRole('textbox', { name: 'Пользователь', exact: true }).waitFor({ timeout: 30_000 })
     await site.getByRole('textbox', { name: 'Пользователь', exact: true }).fill('admin')
     await site.getByLabel('Пароль', { exact: true }).fill(PASSWORD)
