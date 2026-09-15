@@ -23,6 +23,9 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   // Модель спросила человека или передала ему шаг: панель ждёт живого ответа.
   const [waiting, setWaiting] = useState<{ kind: 'question' | 'handover'; text: string; options?: string[]; since: number } | null>(null)
   const [answerDraft, setAnswerDraft] = useState('')
+  // Заметки ассистента человеку и последний собранный отчёт.
+  const [notes, setNotes] = useState<{ text: string; url: string | null; at: number }[]>([])
+  const [reportText, setReportText] = useState<string | null>(null)
   const answerRef = useRef<HTMLInputElement>(null)
   // Long-running model actions show elapsed seconds so the person knows the panel is busy, not stuck.
   const [pendingSeconds, setPendingSeconds] = useState(0)
@@ -33,15 +36,21 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const reportToChat = async (): Promise<void> => {
     const registration = registrationRef.current
     if (!registration) return
-    const outcome = await registration.run({ kind: 'report' })
-    const report = outcome.ok ? outcome.result as { history?: string[]; checks?: { summary: string; pass: boolean }[]; passed?: number; failed?: number; actions?: number } : null
-    if (!report) return
-    const lines = [
-      `Отчёт Web Reader: действий ${report.actions ?? 0}, проверок пройдено ${report.passed ?? 0}, не пройдено ${report.failed ?? 0}.`,
-      ...(report.history?.length ? [`Страницы: ${report.history.join(', ')}`] : []),
-      ...(report.checks ?? []).map((item) => `${item.pass ? '✓' : '✗'} ${item.summary}`)
-    ]
-    callbacks.current.onAsk?.(lines.join('\n'))
+    // Текст отчёта собирает мост: один и тот же и для чата, и для буфера, и для модели.
+    const outcome = await registration.run({ kind: 'report', readable: true })
+    const report = outcome.ok ? outcome.result as { text?: string } : null
+    if (!report?.text) return
+    setReportText(report.text)
+    callbacks.current.onAsk?.(report.text)
+  }
+  const copyReport = async (): Promise<void> => {
+    const registration = registrationRef.current
+    if (!registration) return
+    const outcome = await registration.run({ kind: 'report', readable: true })
+    const text = outcome.ok ? (outcome.result as { text?: string }).text : undefined
+    if (!text) return
+    setReportText(text)
+    try { await navigator.clipboard?.writeText(text) } catch { /* буфер недоступен: текст всё равно показан */ }
   }
   useEffect(() => {
     if (!pendingAction) { setPendingSeconds(0); return }
@@ -62,7 +71,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   // мост из useMemo оставался бы мёртвым после повторного mount.
   const bridgeRef = useRef<ReaderHostBridge | null>(null)
   const [bridgeGeneration, setBridgeGeneration] = useState(0)
-  useEffect(() => { setBookmarks([]); setWaiting(null) }, [conversationId])
+  useEffect(() => { setBookmarks([]); setWaiting(null); setNotes([]); setReportText(null) }, [conversationId])
   // Вопрос ассистента должен попасть под курсор сразу: человек отвечает, не ища поле мышью.
   useEffect(() => { if (waiting?.kind === 'question') answerRef.current?.focus() }, [waiting])
   // Сколько ассистент уже ждёт: человек видит, что ход стоит именно на нём.
@@ -155,6 +164,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       onAsk: (text) => callbacks.current.onAsk?.(text),
       onBookmarks: (list) => setBookmarks(list),
       onWaitingForPerson: (next) => { setWaiting(next); setAnswerDraft('') },
+      onNotes: (list) => setNotes(list),
       onControl: (manual) => callbacks.current.onControl?.(manual),
       onSequenceProgress: (progress) => { if (alive) setSequenceProgress(progress) },
       onElement: (element) => callbacks.current.onSelectElement?.(element),
@@ -242,7 +252,12 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     </nav>}
     {onPageTitle && <p className="webpreview-bookmark-add"><button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" disabled={manual} onClick={() => { void bridgeRef.current?.run({ kind: 'bookmark' }) }}>Запомнить страницу</button></p>}
     <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} onReveal={onRevealAction} onClear={onClearActions} currentUrl={conversationUrl} manual={manual} />
-    {actions.length > 0 && onAsk && <p className="webpreview-report"><button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" disabled={manual} title={manual ? 'Управляете вы: отчёт соберётся после возврата управления' : undefined} onClick={() => { void reportToChat() }}>Отчёт в чат</button></p>}
+    {notes.length > 0 && <section className="webpreview-notes" aria-label="Заметки ассистента">
+      <ul>{notes.map((note, index) => <li key={`${note.at}-${index}`}><span>{note.text}</span>{note.url && <small title={note.url}>{(() => { try { return new URL(note.url).host } catch { return note.url } })()}</small>}</li>)}</ul>
+      <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" onClick={() => { void navigator.clipboard?.writeText(notes.map(note => note.text).join('\n')).catch(() => undefined) }}>Скопировать заметки</button>
+    </section>}
+    {reportText && <pre className="webpreview-report-text" aria-label="Текст отчёта">{reportText}</pre>}
+    {actions.length > 0 && onAsk && <p className="webpreview-report"><button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" disabled={manual} title={manual ? 'Управляете вы: отчёт соберётся после возврата управления' : undefined} onClick={() => { void reportToChat() }}>Отчёт в чат</button><button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" onClick={() => { void copyReport() }}>Скопировать отчёт</button>{reportText && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" onClick={() => setReportText(null)}>Скрыть отчёт</button>}</p>}
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
     {previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retryOpen.current ? retryOpen.current() : setRetryKey((value) => value + 1)}>Повторить</button></div>}
     <iframe key={conversationId} ref={frameRef} className="webpreview-frame" src={src} title="Web Reader" aria-hidden={previewSession !== 'ready'} tabIndex={previewSession === 'ready' ? 0 : -1} {...{ inert: previewSession !== 'ready' ? '' : undefined }} />

@@ -345,10 +345,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       }, async ({ frame, text, in: trigger, near, waitFor }) => run({ kind: 'choose', ...(frame !== undefined ? { frame } : {}), text, ...(trigger ? { in: trigger } : {}), ...(near ? { near } : {}), ...(waitFor ? { waitFor } : {}) }))
 
       server.registerTool('report', {
-        description: 'Отчёт о сеансе панели: где были (history), какие проверки check прошли и упали (с итогами и адресами), сколько действий выполнено, последнее действие. Используй в конце проверки задачи для отчёта человеку.',
+        description: 'Отчёт о сеансе панели: где были (history), какие проверки check прошли и упали (с итогами и адресами), сколько действий выполнено, последнее действие, закладки, вопросы человеку и заметки. ' +
+          'readable: true отдаёт готовый человеческий текст отчёта с длительностью сеанса — его можно показать пользователю как есть. Используй в конце проверки задачи.',
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-        inputSchema: {}
-      }, async () => run({ kind: 'report' }))
+        inputSchema: { readable: z.boolean().optional().describe('Вернуть готовый текст отчёта в поле text') }
+      }, async ({ readable }) => run({ kind: 'report', ...(readable ? { readable: true } : {}) }))
 
       server.registerTool('changes', {
         description: 'Что изменилось на странице с прошлого read, changes или действия: появившиеся и исчезнувшие видимые тексты. Первый вызов запоминает состояние (baseline). Так человек замечает, что произошло после клика.',
@@ -387,6 +388,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         annotations: { destructiveHint: false, idempotentHint: true },
         inputSchema: { frame: frameSchema, what: z.enum(['cookies', 'dialog', 'any']).optional().describe('Что убрать: баннер cookie, окно или любое из них (по умолчанию any)') }
       }, async ({ frame, what }) => run({ kind: 'dismiss', ...(frame !== undefined ? { frame } : {}), ...(what ? { what } : {}) }))
+
+      server.registerTool('note', {
+        description: 'Оставить пользователю заметку в панели: «нашёл дешевле на другой странице», «форма падает без индекса». ' +
+          'Заметку он видит сразу рядом со страницей, и она попадает в report.notes — это способ сказать что-то, не прерывая работу.',
+        annotations: { destructiveHint: false },
+        inputSchema: { text: z.string().min(1).max(500).describe('Текст заметки для человека') }
+      }, async ({ text }) => run({ kind: 'note', text }))
 
       server.registerTool('ask-user', {
         description: 'Спросить пользователя прямо в панели и дождаться его ответа: выбор за человеком (размер, адрес, какой из похожих пунктов). ' +

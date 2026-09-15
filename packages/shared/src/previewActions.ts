@@ -100,6 +100,12 @@ export interface PreviewReportResult {
   bookmarks?: PreviewBookmarkEntry[]
   /** Вопросы человеку и его ответы за сеанс — часть отчёта о работе. */
   questions?: { question: string; answer?: string; answered: boolean; at: number }[]
+  /** Заметки ассистента для человека. */
+  notes?: { text: string; url: string | null; at: number }[]
+  /** Сколько длится сеанс панели. */
+  durationMs?: number
+  /** Готовый человеческий текст отчёта (report {readable: true}). */
+  text?: string
 }
 
 export interface PreviewSequenceResult {
@@ -221,7 +227,10 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Что изменилось на странице с прошлого снимка (read/changes/действие): появившиеся и исчезнувшие тексты. */
   | { kind: 'changes'; selector?: string; diagnostic?: boolean }
   /** Отчёт о сеансе панели: где были, что проверили, что упало — для отчёта по задаче. */
-  | { kind: 'report'; diagnostic?: boolean }
+  /** readable — готовый человеческий текст отчёта, который можно показать пользователю или вложить в ответ. */
+  | { kind: 'report'; readable?: boolean; diagnostic?: boolean }
+  /** Оставить пользователю заметку в панели: «нашёл дешевле на другой вкладке», «форма падает без индекса». */
+  | { kind: 'note'; text: string; diagnostic?: boolean }
   /** Запомнить открытую страницу в панели, как человек кладёт закладку: список видит и пользователь, и модель. */
   | { kind: 'bookmark'; label?: string; remove?: string; diagnostic?: boolean }
   /** Спросить человека прямо в панели и дождаться ответа: «какой размер брать?», «этот пункт?». options — быстрые ответы кнопками. */
@@ -320,6 +329,9 @@ export interface PreviewStatusResult {
   bookmarks?: PreviewBookmarkEntry[]
   /** Панель ждёт человека: заданный вопрос или переданный ему шаг. */
   waitingFor?: { kind: 'question' | 'handover'; text: string; since: number }
+  /** Сколько действий панель выполнила за сеанс и когда он начался. */
+  actions?: number
+  since?: number
   /** Размер видимой области страницы: понять, мобильная ли раскладка у пользователя. */
   viewport?: { width: number; height: number }
 }
@@ -533,6 +545,11 @@ export interface PreviewScreenshotResult {
   dataUrl: string
   /** Пронумерованные на снимке элементы (marks: true). */
   marks?: { n: number; selector: string; text: string; role?: string }[]
+}
+
+export interface PreviewNoteResult {
+  page: PreviewPageInfo | null
+  notes: { text: string; url: string | null; at: number }[]
 }
 
 export interface PreviewQuestionResult {
@@ -787,6 +804,7 @@ export type PreviewActionResult =
   | PreviewBookmarkResult
   | PreviewQuestionResult
   | PreviewHandoverResult
+  | PreviewNoteResult
   | PreviewSequenceResult
   | PreviewChangesResult
   | PreviewReportResult
@@ -959,7 +977,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) &&
         (value.text !== undefined || value.selector !== undefined)
     case 'report':
-      return true
+      return value.readable === undefined || typeof value.readable === 'boolean'
+    case 'note':
+      return bounded(value.text, 500) && value.text.trim().length > 0
     case 'bookmark':
       return optBounded(value.label, 120) && optBounded(value.remove, L.url) && !(value.label !== undefined && value.remove !== undefined)
     case 'question':
@@ -1168,6 +1188,7 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'Длинные страницы и списки: scroll {until: текст} листает ленту с ленивой подгрузкой, пока текст не покажется (maxScreens ограничивает); read {next: true} продолжает чтение с того места, где остановился прошлый read; ' +
     'read {toc: true} — оглавление с селекторами для scroll и read {section}; read {table: подпись, rowOffset} читает одну таблицу постранично; read.lists — однотипные карточки списка с их числом; find {in: заголовок раздела} ищет только в нём. ' +
     'bookmark {label?} кладёт закладку на открытую страницу (bookmark {remove: адрес} убирает): список видят и пользователь в панели, и ты в status.bookmarks и report. ' +
+    'note {text} оставляет пользователю заметку в панели («нашёл дешевле», «форма падает без индекса») — она видна ему сразу и попадает в report.notes; report {readable: true} отдаёт готовый человеческий текст отчёта с длительностью сеанса. ' +
     'Не угадывай за человека: question {question, options?} задаёт ему вопрос прямо в панели и ждёт ответа (до 10 минут, ответ приходит в answer); handover {reason} передаёт шаг ему («войди сам, я подожду») ' +
     'и ждёт, пока он вернёт управление. Пока панель ждёт, это видно в status.waitingFor, а вопросы с ответами попадают в report.questions. Спрашивай, когда выбор за человеком: размер, адрес доставки, какой из похожих пунктов нужен. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +

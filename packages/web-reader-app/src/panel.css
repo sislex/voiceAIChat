@@ -62,3 +62,13 @@
 .webpreview-question__options { display: flex; flex-wrap: wrap; gap: 6px; }
 .webpreview-handover { background: var(--surface); }
 @media (pointer: coarse) { .webpreview-question .vc-btn, .webpreview-question input { min-height: 44px; } }
+/* Cycle 20: the assistant's notes for the person and the readable session report. */
+.webpreview-notes { flex: none; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.webpreview-notes ul { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.webpreview-notes li { display: flex; gap: 6px; align-items: baseline; }
+.webpreview-notes li::before { content: '✎'; color: var(--accent); }
+.webpreview-notes small { color: var(--text-dim); }
+.webpreview-report-text { flex: none; max-height: 30vh; overflow: auto; margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12px; white-space: pre-wrap; }
+@media (pointer: coarse) { .webpreview-notes .vc-btn { min-height: 44px; } }
+.webpreview-history-page { display: block; margin: 6px 0 2px; color: var(--text-dim); font-size: 11px; font-weight: 600; }
+.webpreview-history li:first-child .webpreview-history-page { margin-top: 0; }
