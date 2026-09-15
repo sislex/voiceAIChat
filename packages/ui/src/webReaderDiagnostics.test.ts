@@ -33,16 +33,18 @@ describe('Web Reader diagnostics', () => {
       if (action.kind === 'upload') return { ok: true, result: { page: { url: '', title: '' }, uploaded: { selector: '#diag-file', name: action.name, size: 2 } } }
       if (action.kind === 'drag') return { ok: true, result: { page: { url: '', title: '' }, dragged: { selector: '#drag-source', tag: 'div', text: 'drag me' }, to: { x: 200, y: 240 }, via: 'pointer' } }
       if (action.kind === 'viewport') return { ok: true, result: { width: action.width } }
-      // Круги 1–3 добавили действия без селектора; в диагностике они не
-      // участвуют, а в объединении мешают сузить тип остальных.
-      if (action.kind === 'back' || action.kind === 'forward' || action.kind === 'edits' || action.kind === 'copy' || action.kind === 'metrics') throw new Error('не участвуют в диагностике')
-      const text = action.selector === '#event-status' ? 'input:1 change:1'
-        : action.selector === '#submit-status' ? 'submitted:diagnostic-input'
-          : action.selector === '#hover-status' ? 'hover:1'
-            : action.selector === '#key-status' ? 'key:Escape'
-              : action.selector === '#file-status' ? 'file:diag.txt:2'
-                : action.selector === '#dbl-status' ? 'dbl:1'
-                  : action.selector === '#drag-status' ? 'drag:done:8'
+      if (action.kind === 'back' || action.kind === 'forward' || action.kind === 'edits') throw new Error('не участвуют в диагностике')
+      // Селектор берётся проверкой поля, а не перечислением видов: словарь
+      // действий растёт каждый круг, и список исключений устаревал бы вместе
+      // с ним, ломая проверку диагностики на ровном месте.
+      const selector = 'selector' in action ? action.selector : undefined
+      const text = selector === '#event-status' ? 'input:1 change:1'
+        : selector === '#submit-status' ? 'submitted:diagnostic-input'
+          : selector === '#hover-status' ? 'hover:1'
+            : selector === '#key-status' ? 'key:Escape'
+              : selector === '#file-status' ? 'file:diag.txt:2'
+                : selector === '#dbl-status' ? 'dbl:1'
+                  : selector === '#drag-status' ? 'drag:done:8'
                     : actions.includes('click') ? 'Diagnostics destination' : 'VoiceChat Web Reader Diagnostics'
       return { ok: true, result: { page: { url: '', title: '' }, headings: [], links: [], buttons: [], inputs: [], text } }
     })

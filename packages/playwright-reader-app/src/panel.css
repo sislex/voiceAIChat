@@ -126,3 +126,8 @@
   .playwright-reader-find input { min-height: 40px; }
   .playwright-reader-find .vc-btn { min-height: 40px; }
 }
+
+/* Круг 4: среда браузера. Переключатели стоят вместе, потому что человек
+   меняет их парами: «тёмная тема + высокий контраст», «без сети + перезагрузка». */
+.playwright-reader-env { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
+@media (max-width: 720px) { .playwright-reader-env .vc-btn { min-height: 40px; } }

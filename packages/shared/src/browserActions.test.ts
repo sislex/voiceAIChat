@@ -244,3 +244,18 @@ describe('содержимое страницы', () => {
     expect(planModelAction({ kind: 'highlight', selector: '#a', ms: 2000 })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'highlight', selector: '#a', ms: 2000 } } })
   })
 })
+
+// Круг 4: среда уходит командой уровня сессии, медиа — селекторной.
+describe('среда и медиа', () => {
+  it('эмуляция среды переводится в команду environment без служебных полей', () => {
+    expect(planModelAction({ kind: 'environment', colorScheme: 'dark', offline: true, diagnostic: true })).toEqual({
+      kind: 'command', command: { type: 'environment', colorScheme: 'dark', offline: true }
+    })
+  })
+
+  it('медиа управляется селекторной командой', () => {
+    expect(planModelAction({ kind: 'media', do: 'pause', seconds: 12 })).toEqual({
+      kind: 'command', command: { type: 'selector', action: { kind: 'media', do: 'pause', seconds: 12 } }
+    })
+  })
+})

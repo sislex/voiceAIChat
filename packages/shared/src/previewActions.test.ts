@@ -367,3 +367,22 @@ describe('действия чтения содержимого', () => {
     expect(isPreviewAction({ kind: 'highlight', selector: '#a', ms: 2000 })).toBe(true)
   })
 })
+
+// Круг 4: среда браузера и медиа.
+describe('среда браузера и медиа', () => {
+  it('эмуляция требует хотя бы одну настройку и проверяет координаты', () => {
+    expect(isPreviewAction({ kind: 'environment', colorScheme: 'dark' })).toBe(true)
+    expect(isPreviewAction({ kind: 'environment' })).toBe(false)
+    expect(isPreviewAction({ kind: 'environment', colorScheme: 'sepia' })).toBe(false)
+    expect(isPreviewAction({ kind: 'environment', geolocation: { latitude: 55, longitude: 37 } })).toBe(true)
+    expect(isPreviewAction({ kind: 'environment', geolocation: { latitude: 91, longitude: 37 } })).toBe(false)
+    expect(isPreviewAction({ kind: 'environment', geolocation: null })).toBe(true)
+  })
+
+  it('медиа принимает известные действия и разумную перемотку', () => {
+    expect(isPreviewAction({ kind: 'media' })).toBe(true)
+    expect(isPreviewAction({ kind: 'media', do: 'play' })).toBe(true)
+    expect(isPreviewAction({ kind: 'media', do: 'rewind' })).toBe(false)
+    expect(isPreviewAction({ kind: 'media', seconds: -1 })).toBe(false)
+  })
+})

@@ -7,6 +7,7 @@ import { browserDownloadList, type BrowserDownloadResult } from '@voicechat/shar
 import { BrowserDialogs } from './dialogs.js'
 import { boundedBrowserDialogs, type BrowserDialogListResult } from '@voicechat/shared'
 import { runBrowserInput } from './inputActions.js'
+import { applyEnvironment, applyEnvironmentToPage, runCookieCommand } from './environmentActions.js'
 import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
 import { clearSiteData, httpOrigin } from './siteData.js'
 import { readReaderProfile, writeReaderProfile } from './profileState.js'
@@ -17,7 +18,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserCommandRequest, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserCommandRequest, BrowserCookiesResult, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -51,6 +52,8 @@ interface Session {
   lastUsedAt: number
   /** Кто выполнял последнюю команду: человек из панели или модель. */
   lastActor?: 'user' | 'assistant'
+  /** Эмулированная среда: тема системы, анимация, контраст, сеть, место. */
+  environment?: BrowserEnvironmentState
 }
 
 // Внешняя аналитика и изображения могут грузиться бесконечно; работать с DOM
@@ -222,7 +225,12 @@ export class BrowserSessionManager {
       for (const page of context.pages()) register(page)
       const initial = context.pages()[0] ?? await context.newPage()
       session.activeTabId = register(initial)
-      context.on('page', (page) => register(page))
+      context.on('page', (page) => {
+        register(page)
+        // Вкладка, открытая позже, должна жить в той же среде: иначе тёмная
+        // тема действует на одну страницу сессии и выглядит случайной.
+        void applyEnvironmentToPage(session, page)
+      })
       const entry = this.sessions.get(request.sessionId)
       context.on('close', () => { if (this.sessions.get(request.sessionId) === entry) this.sessions.delete(request.sessionId); void rm(downloadsPath, { recursive: true, force: true }).catch(() => undefined) })
       if (saved?.cookies.length) await context.addCookies(saved.cookies).catch(() => undefined)
@@ -301,7 +309,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
@@ -355,7 +363,7 @@ export class BrowserSessionManager {
     }, observing)
   }
 
-  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult> {
+  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserEnvironmentResult | BrowserCookiesResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -390,6 +398,13 @@ export class BrowserSessionManager {
       else await target.close({ runBeforeUnload: !session.dialogs.forPage(target) })
       return this.metadata(session)
     }
+    if (command.type === 'environment') {
+      // Настройки уровня контекста: они переживают переход и действуют на все
+      // вкладки — ровно так же, как система человека действует на его браузер.
+      const environment = await applyEnvironment(session, command)
+      return { environment }
+    }
+    if (command.type === 'cookies') return await runCookieCommand(session.context, command)
     if (command.type === 'clearSiteData') return clearSiteData(session, session.pages.get(request.tabId ?? session.activeTabId), command, raw => this.publicUrl(raw))
     const tabId = request.tabId ?? session.activeTabId
     const page = session.pages.get(tabId)
