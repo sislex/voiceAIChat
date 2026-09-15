@@ -254,3 +254,47 @@ describe('поиск по странице и положение на ней (к
     await screen.findByText(/ниже ещё 4/)
   })
 })
+
+describe('среда браузера в панели (круг 4)', () => {
+  const withEnvironment = () => fakeBrowser({
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: string } }) => {
+      if (req.command.type === 'environment') return { environment: { colorScheme: 'dark', reducedMotion: 'no-preference', forcedColors: 'none', offline: false, geolocation: null, permissions: [] } }
+      if (req.command.type === 'cookies') return { cookies: [{ name: 'session', value: 'abcd…(64 симв.)', domain: 'a.b', path: '/' }], total: 1 }
+      return meta()
+    }) as unknown as RendererBrowserBridge['command']
+  })
+
+  it('тёмная тема включается и подписывается в панели инструментов', async () => {
+    const browser = withEnvironment()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Среда' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Тёмная тема' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'environment', colorScheme: 'dark' })
+    })))
+    // Эмуляция незаметна на кадре: без подписи тёмная тема выглядит как решение сайта.
+    await screen.findByText('тёмная тема')
+  })
+
+  it('cookies показываются сокращёнными значениями', async () => {
+    const browser = withEnvironment()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Среда' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cookies' }))
+    await screen.findByText(/Cookies сессии: 1/)
+    await screen.findByText(/abcd…\(64 симв\.\)/)
+  })
+
+  it('сброс возвращает всё разом, а не по одной настройке', async () => {
+    const browser = withEnvironment()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Среда' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Сбросить' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: expect.objectContaining({ type: 'environment', colorScheme: 'light', offline: false, geolocation: null })
+    })))
+  })
+})

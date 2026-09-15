@@ -462,3 +462,20 @@ describe('содержимое и прокрутка', () => {
       .toEqual({ ok: false, error: 'Элемент не найден' })
   })
 })
+
+// Круг 4: видео и аудио страницы — то, чем человек управляет кнопками плеера.
+describe('медиа страницы', () => {
+  it('отдаёт состояние элементов и понимает пустую страницу', async () => {
+    const media = [{ selector: 'video:nth-of-type(1)', kind: 'video', paused: true, muted: false, currentTime: 0, duration: 12.5, volume: 1, readyState: 4 }]
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => media) }), { kind: 'media' }))
+      .toMatchObject({ ok: true, media: [{ duration: 12.5 }] })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'media' }))
+      .toEqual({ ok: false, error: 'На странице нет видео или аудио' })
+  })
+
+  it('отказ автовоспроизведения возвращается причиной, а не молчанием', async () => {
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => ({ error: 'play() failed because the user didn\'t interact' })) }), { kind: 'media', do: 'play' })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('отклонено страницей')
+  })
+})

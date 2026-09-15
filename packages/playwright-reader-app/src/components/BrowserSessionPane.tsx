@@ -6,7 +6,7 @@ import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/bro
 import { fitScale, frameWidth, nextFrameZoom, panelShortcut, pinchDistance, touchScrollDelta, TOUCH_TAP_SLOP, type FrameZoom } from '../lib/frameView'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
+import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserCookieInfo, type BrowserElementDescription, type BrowserEnvironmentState, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
 import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
@@ -165,6 +165,14 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const searchRef = useRef<HTMLInputElement>(null)
   /** Куда прокручена страница: «экранов ниже» отвечает на «это всё или начало». */
   const [metrics, setMetrics] = useState<BrowserSelectorResult['metrics'] | null>(null)
+  /**
+   * Среда, в которой якобы сидит человек: тёмная тема системы, отсутствие сети,
+   * уменьшенная анимация, высокий контраст. Под каждой из них страница ведёт
+   * себя иначе, а проверить это раньше было можно только на своей машине.
+   */
+  const [environment, setEnvironment] = useState<BrowserEnvironmentState | null>(null)
+  const [environmentOpen, setEnvironmentOpen] = useState(false)
+  const [cookies, setCookies] = useState<{ loading?: boolean; error?: string; items?: BrowserCookieInfo[]; total?: number } | null>(null)
   /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
   const touch = useRef<{ x: number; y: number; moved: boolean; pinch: number | null } | null>(null)
   /** Долгое нажатие вместо правой кнопки и двойной тап вместо двойного клика. */
@@ -513,6 +521,20 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     await new Promise((resolve) => setTimeout(resolve, 0))
     if (target) await showMatch(target)
   }, [showMatch])
+
+  /** Переключить настройку среды и показать, что теперь в силе. */
+  const changeEnvironment = useCallback(async (options: Record<string, unknown>): Promise<void> => {
+    const result = await run({ type: 'environment', ...options } as never) as { environment?: BrowserEnvironmentState } | undefined
+    if (result?.environment) setEnvironment(result.environment)
+  }, [run])
+
+  /** Cookies сессии: человеку они нужны там же, где модели, — для входа и выхода. */
+  const loadCookies = useCallback(async (): Promise<void> => {
+    setCookies({ loading: true })
+    const result = await run({ type: 'cookies', action: 'list' } as never) as { cookies?: BrowserCookieInfo[]; total?: number; error?: string } | undefined
+    if (!result || result.error) { setCookies({ error: result?.error ?? 'Cookies недоступны' }); return }
+    setCookies({ items: result.cookies ?? [], total: result.total ?? 0 })
+  }, [run])
 
   /** Метрики страницы: обновляются по требованию, не поллингом — это команда. */
   const refreshMetrics = useCallback(async (): Promise<void> => {
@@ -934,6 +956,16 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       {/* Человек видит форму глазами страницы — теми же данными, что и модель:
           что заполнено, что обязательно и почему браузер не пустит дальше. */}
       <Button size="sm" variant={formInfo ? 'primary' : 'ghost'} aria-expanded={Boolean(formInfo)} disabled={phase !== 'ready'} onClick={() => (formInfo ? setFormInfo(null) : void loadFormInfo())}>Поля формы</Button>
+      <Button size="sm" variant={environmentOpen ? 'primary' : 'ghost'} aria-expanded={environmentOpen} disabled={phase !== 'ready'} onClick={() => setEnvironmentOpen((value) => !value)}>Среда</Button>
+      {/* Эмуляция незаметна на кадре: тёмная тема выглядит как решение сайта,
+          а отсутствие сети — как зависшая страница. Поэтому она подписана. */}
+      {environment && (environment.colorScheme === 'dark' || environment.offline || environment.reducedMotion === 'reduce' || environment.forcedColors === 'active') && (
+        <span className="playwright-reader-size" role="status">
+          {[environment.colorScheme === 'dark' ? 'тёмная тема' : null, environment.offline ? 'без сети' : null,
+            environment.reducedMotion === 'reduce' ? 'без анимации' : null, environment.forcedColors === 'active' ? 'контраст' : null]
+            .filter(Boolean).join(' · ')}
+        </span>
+      )}
       {/* Страницу иногда нужно доработать в своём браузере: скачать файл,
           открыть devtools, войти паролем из менеджера. */}
       <Button size="sm" variant="ghost" disabled={!meta?.currentUrl} onClick={() => { if (meta?.currentUrl) globalThis.open?.(meta.currentUrl, '_blank', 'noopener') }}>Открыть у себя</Button>
@@ -1168,6 +1200,39 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             </li>
           ))}
         </ol>
+      </div>
+    )}
+    {environmentOpen && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Среда браузера">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Среда браузера</strong>
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void changeEnvironment({ colorScheme: 'light', reducedMotion: 'no-preference', forcedColors: 'none', offline: false, geolocation: null, permissions: [] })}>Сбросить</Button>
+          <IconButton size="sm" aria-label="Скрыть среду" title="Скрыть среду" onClick={() => setEnvironmentOpen(false)}>✕</IconButton>
+        </div>
+        <div className="playwright-reader-env">
+          {([
+            ['Тёмная тема', environment?.colorScheme === 'dark', () => changeEnvironment({ colorScheme: environment?.colorScheme === 'dark' ? 'light' : 'dark' })],
+            ['Без сети', environment?.offline === true, () => changeEnvironment({ offline: !(environment?.offline === true) })],
+            ['Без анимации', environment?.reducedMotion === 'reduce', () => changeEnvironment({ reducedMotion: environment?.reducedMotion === 'reduce' ? 'no-preference' : 'reduce' })],
+            ['Высокий контраст', environment?.forcedColors === 'active', () => changeEnvironment({ forcedColors: environment?.forcedColors === 'active' ? 'none' : 'active' })]
+          ] as const).map(([label, active, toggle]) => (
+            <Button key={label} size="sm" variant={active ? 'primary' : 'ghost'} aria-pressed={active} disabled={phase !== 'ready'} onClick={() => void toggle()}>{label}</Button>
+          ))}
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadCookies()}>Cookies</Button>
+        </div>
+        {environment?.geolocation && <p className="proj-muted">Позиция: {environment.geolocation.latitude}, {environment.geolocation.longitude}</p>}
+        {cookies?.loading && <p role="status">Читаем cookies…</p>}
+        {cookies?.error && <p role="alert">{cookies.error}</p>}
+        {cookies?.items && (
+          <>
+            <p className="proj-muted">Cookies сессии: {cookies.total}. Значения длинных показаны сокращённо — это доступ к аккаунту.</p>
+            <ul className="playwright-reader-diagnostics__list">
+              {cookies.items.map((cookie) => (
+                <li key={`${cookie.domain}${cookie.path}${cookie.name}`}><code>{cookie.name}</code> · {cookie.domain}{cookie.path} · {cookie.value}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
     )}
     {formInfo && (

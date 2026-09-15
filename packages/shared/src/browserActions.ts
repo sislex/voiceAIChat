@@ -121,6 +121,12 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
       return { kind: 'command', command: { type: 'selector', action: { kind: 'metrics' } } }
     case 'measure':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'measure', selector: action.selector } } }
+    case 'media':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'media', ...(action.selector ? { selector: action.selector } : {}), ...(action.do ? { do: action.do } : {}), ...(action.seconds !== undefined ? { seconds: action.seconds } : {}) } } }
+    case 'environment': {
+      const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
+      return { kind: 'command', command: { type: 'environment', ...options } }
+    }
     case 'highlight':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'highlight', selector: action.selector, ...(action.ms !== undefined ? { ms: action.ms } : {}) } } }
     case 'focusOrder':

@@ -889,6 +889,77 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'emulate',
+        {
+          description:
+            'Среда, в которой сидит человек: тема системы (dark/light), уменьшенная анимация, ' +
+            'высокий контраст, отсутствие сети и геопозиция. Страница ведёт себя под ними по-разному, ' +
+            'и такие дефекты иначе находит только тот, у кого именно такая настройка. ' +
+            'Действует на все вкладки сессии и переживает переходы. Ответ показывает, что теперь в силе.',
+          inputSchema: {
+            colorScheme: z.enum(['light', 'dark', 'no-preference']).optional().describe('prefers-color-scheme страницы'),
+            reducedMotion: z.enum(['reduce', 'no-preference']).optional().describe('prefers-reduced-motion'),
+            forcedColors: z.enum(['active', 'none']).optional().describe('Режим высокой контрастности системы'),
+            offline: z.boolean().optional().describe('Отключить сеть: так проверяется поведение без интернета'),
+            geolocation: z.object({
+              latitude: z.number().min(-90).max(90),
+              longitude: z.number().min(-180).max(180),
+              accuracy: z.number().min(0).optional()
+            }).nullable().optional().describe('Координаты для страницы; null убирает позицию. Разрешение geolocation выдаётся автоматически'),
+            permissions: z.array(z.string().max(64)).max(16).optional().describe('Разрешения сайта (geolocation, clipboard-read…); пустой список отзывает все')
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'environment', ...options })
+          return toolResult(result ?? { ok: false, error: 'Эмуляция среды доступна только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'cookies',
+        {
+          description:
+            'Cookies сессии браузера: list читает, add ставит одну, clear убирает все или одну по имени. ' +
+            'Значение длинной cookie возвращается сокращённым — это доступ к аккаунту, и в переписке ему не место. ' +
+            'Для входа тестовой учёткой обычно достаточно add с url сайта.',
+          inputSchema: {
+            action: z.enum(['list', 'add', 'clear']).describe('Что сделать'),
+            name: z.string().max(200).optional().describe('Имя cookie'),
+            value: z.string().max(4_096).optional().describe('Значение (для add)'),
+            url: z.string().max(L.url).optional().describe('Адрес сайта (для add, вместо domain/path)'),
+            domain: z.string().max(253).optional().describe('Домен (для add вместе с path)'),
+            path: z.string().max(1_024).optional().describe('Путь (по умолчанию /)'),
+            expires: z.number().optional().describe('Срок жизни, unix-время в секундах'),
+            httpOnly: z.boolean().optional(),
+            secure: z.boolean().optional(),
+            sameSite: z.enum(['Strict', 'Lax', 'None']).optional()
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'cookies', ...options })
+          return toolResult(result ?? { ok: false, error: 'Cookies доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'media',
+        {
+          description:
+            'Видео и аудио страницы: что играет, сколько длится, где сейчас, выключен ли звук. ' +
+            'do управляет ими как человек — play, pause, mute, unmute; seconds перематывает. ' +
+            'Отказ автовоспроизведения возвращается причиной, а не молчанием: человек увидел бы то же самое.',
+          inputSchema: { frame: frameSchema,
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор конкретного video/audio'),
+            do: z.enum(['play', 'pause', 'mute', 'unmute']).optional().describe('Действие над первым найденным элементом'),
+            seconds: z.number().min(0).max(86_400).optional().describe('Перемотать на эту секунду')
+          }
+        },
+        async ({ frame, selector, do: action, seconds }) => run({ kind: 'media', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(action ? { do: action } : {}), ...(seconds !== undefined ? { seconds } : {}) })
+      )
+
+      server.registerTool(
         'scroll-until',
         {
           description:

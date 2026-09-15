@@ -144,6 +144,10 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'measure'; selector: string; diagnostic?: boolean }
   /** Обвести элемент в кадре, чтобы человек увидел, о чём речь. */
   | { kind: 'highlight'; selector: string; ms?: number; diagnostic?: boolean }
+  /** Видео и аудио страницы: состояние и управление, как у человека. */
+  | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number; diagnostic?: boolean }
+  /** Среда браузера: тема системы, уменьшенная анимация, контраст, сеть, место. */
+  | { kind: 'environment'; colorScheme?: 'light' | 'dark' | 'no-preference'; reducedMotion?: 'reduce' | 'no-preference'; forcedColors?: 'active' | 'none'; offline?: boolean; geolocation?: { latitude: number; longitude: number; accuracy?: number } | null; permissions?: string[]; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
   | { kind: 'screenshot'; selector?: string; rect?: { x: number; y: number; width: number; height: number }; diagnostic?: boolean }
   /** Ошибки открытой страницы: JS-исключения, unhandledrejection, console.error, неуспешные fetch/XHR. */
@@ -561,6 +565,23 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return true
     case 'measure':
       return bounded(value.selector, L.selector)
+    case 'media':
+      return optBounded(value.selector, L.selector) &&
+        (value.do === undefined || ['play', 'pause', 'mute', 'unmute'].includes(value.do as string)) &&
+        (value.seconds === undefined || (typeof value.seconds === 'number' && Number.isFinite(value.seconds) && value.seconds >= 0 && value.seconds <= 86_400))
+    case 'environment':
+      return (
+        (value.colorScheme === undefined || ['light', 'dark', 'no-preference'].includes(value.colorScheme as string)) &&
+        (value.reducedMotion === undefined || ['reduce', 'no-preference'].includes(value.reducedMotion as string)) &&
+        (value.forcedColors === undefined || ['active', 'none'].includes(value.forcedColors as string)) &&
+        (value.offline === undefined || typeof value.offline === 'boolean') &&
+        (value.geolocation === undefined || value.geolocation === null || (record(value.geolocation) &&
+          typeof value.geolocation.latitude === 'number' && Math.abs(value.geolocation.latitude) <= 90 &&
+          typeof value.geolocation.longitude === 'number' && Math.abs(value.geolocation.longitude) <= 180 &&
+          (value.geolocation.accuracy === undefined || (typeof value.geolocation.accuracy === 'number' && value.geolocation.accuracy >= 0)))) &&
+        (value.permissions === undefined || (Array.isArray(value.permissions) && value.permissions.length <= 16 && value.permissions.every((item) => bounded(item, 64)))) &&
+        ['colorScheme', 'reducedMotion', 'forcedColors', 'offline', 'geolocation', 'permissions'].some((key) => value[key] !== undefined)
+      )
     case 'highlight':
       return bounded(value.selector, L.selector) &&
         (value.ms === undefined || (typeof value.ms === 'number' && Number.isFinite(value.ms) && value.ms >= 100 && value.ms <= 10_000))

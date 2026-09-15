@@ -5,6 +5,7 @@ import { readElementTargets } from './elementTargets.js'
 import { focusOrderScript, focusStateScript, pasteScript, selectElementScript, selectionScript } from './focusActions.js'
 import { dropFilesScript, formStateScript, optionsScript, submitScript, validityScript } from './formActions.js'
 import { highlightScript, listScript, measureScript, pageMetricsScript, scrollStepScript, tableScript } from './contentActions.js'
+import { mediaScript } from './environmentActions.js'
 import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js'
 
 /**
@@ -333,6 +334,12 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const ms = Math.min(Math.max(action.ms ?? 1500, 100), 10_000)
       const shown = await page.evaluate(highlightScript(action.selector, ms))
       return shown ? { ok: true } : { ok: false, error: 'Элемент не найден' }
+    }
+    if (action.kind === 'media') {
+      const media = await page.evaluate(mediaScript(action.selector ?? null, action.do ?? null, action.seconds ?? null)) as NonNullable<BrowserSelectorResult['media']> | { error: string } | null
+      if (!media) return { ok: false, error: 'На странице нет видео или аудио' }
+      if (!Array.isArray(media)) return { ok: false, error: `Воспроизведение отклонено страницей: ${media.error}` }
+      return { ok: true, media }
     }
     if (action.kind === 'table') {
       const offset = Math.max(action.offset ?? 0, 0)

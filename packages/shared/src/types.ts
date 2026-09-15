@@ -203,6 +203,57 @@ export interface BrowserFrameMetadata {
   timestamp: number
 }
 
+/**
+ * Emulated environment of the browser. Everything here is a context-level
+ * setting in Playwright, so it survives navigation and applies to every tab —
+ * which is exactly how a person's own machine behaves.
+ */
+export interface BrowserEnvironmentOptions {
+  colorScheme?: 'light' | 'dark' | 'no-preference'
+  reducedMotion?: 'reduce' | 'no-preference'
+  forcedColors?: 'active' | 'none'
+  offline?: boolean
+  /** Coordinates given to the page; `null` revokes the position. */
+  geolocation?: { latitude: number; longitude: number; accuracy?: number } | null
+  /** Permissions the site would otherwise have to ask the person for. */
+  permissions?: string[]
+}
+
+/** Current emulation, echoed back so the model can see what is in effect. */
+export interface BrowserEnvironmentState {
+  colorScheme: 'light' | 'dark' | 'no-preference'
+  reducedMotion: 'reduce' | 'no-preference'
+  forcedColors: 'active' | 'none'
+  offline: boolean
+  geolocation?: { latitude: number; longitude: number; accuracy?: number } | null
+  permissions: string[]
+}
+
+export interface BrowserCookieRequest {
+  /** `list` reads, `add` sets one, `clear` drops all or those named. */
+  action: 'list' | 'add' | 'clear'
+  name?: string
+  value?: string
+  url?: string
+  domain?: string
+  path?: string
+  expires?: number
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: 'Strict' | 'Lax' | 'None'
+}
+
+export interface BrowserCookieInfo {
+  name: string
+  value: string
+  domain: string
+  path: string
+  expires?: number
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: string
+}
+
 export type BrowserInputAction =
   | { type: 'mouseMove'; x: number; y: number }
   | { type: 'mouseDown'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
@@ -301,6 +352,8 @@ export type BrowserSelectorAction =
   | { kind: 'measure'; selector: string }
   /** Draw a box around an element so the person sees what the model means. */
   | { kind: 'highlight'; selector: string; ms?: number }
+  /** Video and audio of the page: state, and play/pause/seek/mute as a person does. */
+  | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number }
 
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
@@ -354,6 +407,8 @@ export interface BrowserSelectorResult {
   measured?: { selector: string; rect: { x: number; y: number; width: number; height: number }; inViewport: boolean; hidden: boolean; covered: boolean; coveredBy?: string; scrollToTop: number }
   /** How the feed scrolled for `scrollUntil`: steps taken and whether it ended. */
   scrolledUntil?: { found: boolean; scrolls: number; atBottom: boolean; top: number }
+  /** Media elements of the page for `media`, with what the person would see. */
+  media?: Array<{ selector: string; kind: 'video' | 'audio'; paused: boolean; muted: boolean; currentTime: number; duration: number; volume: number; src?: string; readyState: number }>
   /**
    * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
    * проверкам сценария — «текста нет» и «до текста не дочитали» это разные
@@ -532,6 +587,14 @@ export type BrowserCommand = BrowserFrameTarget & (
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
   | { type: 'resize'; viewport: Pick<BrowserViewport, 'width'> & Partial<Pick<BrowserViewport, 'height' | 'deviceScaleFactor'>> }
+  /**
+   * The conditions the person is actually in: system theme, reduced motion,
+   * high contrast, a phone without network, a location. Pages behave differently
+   * under each, and none of it could be reproduced from the model's side.
+   */
+  | ({ type: 'environment' } & BrowserEnvironmentOptions)
+  /** Cookies of the session: read them, add one, or drop them by name. */
+  | ({ type: 'cookies' } & BrowserCookieRequest)
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)
