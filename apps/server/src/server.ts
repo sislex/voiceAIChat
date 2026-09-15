@@ -125,6 +125,7 @@ import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
 import { FileKnowledgeBaseService } from './kb/service.js'
 import { registerKbRoutes, registerKbResearchRoutes } from './kb/routes.js'
+import { registerUniversalSearch } from './routes/universalSearch.js'
 import { ScopedKnowledgeBase } from './kb/scoped.js'
 import { kbViewOf } from './kb/access.js'
 import { KbResearchManager } from './kb/research.js'
@@ -607,6 +608,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (kanbanRemote && !opts.config.dbUrl && !opts.db) throw new Error('VC_KANBAN_MODE=remote требует общую базу VC_DB_URL (Postgres)')
   // Снимок «что открыто» у виджета и мост в браузер: состояние ядра, которое mcp__kanban__* читает через
   // порт `KanbanCore.widgets`; сам MCP канбана регистрирует кластер.
+  registerUniversalSearch(app, db, kb, make.service)
   const widgetContexts = new WidgetContextStore()
   const widgetUiRelay = new WidgetUiRelay()
   const imageStudioCore = new LocalImageStudioCore({

@@ -102,6 +102,7 @@ export const useProjectsActions = (): AppRuntime['projects']['actions'] => useAp
 export interface CreateRuntimeOptions extends BrowserClientOverrides {
   /** Чат из адреса (#/chat/:id) на момент монтирования — открыть его первым. */
   initialChatId?: string | null
+  initialChatContext?: { scope: 'kanban'; projectId: string }
   /** Стартуем на доске: индекс чатов не нужен, пока список не откроют. */
   skipConversations?: boolean
   now?: () => number
@@ -115,9 +116,10 @@ export interface CreateRuntimeOptions extends BrowserClientOverrides {
  */
 export function useCreateAppRuntime(options: CreateRuntimeOptions = {}): AppRuntime {
   const initialChatId = useRef(options.initialChatId ?? null)
+  const initialChatContext = useRef(options.initialChatContext)
   const skipConversations = useRef(options.skipConversations ?? false)
   const runtime = useMemo(() => {
-    const { initialChatId: _ignored, skipConversations: _skip, now, delays, realtime, ...overrides } = options
+    const { initialChatId: _ignored, initialChatContext: _context, skipConversations: _skip, now, delays, realtime, ...overrides } = options
     const runtimeDeps: AppRuntimeDeps = {
       clients: createBrowserClients(overrides),
       realtime: realtime ?? createBrowserRealtime(),
@@ -139,7 +141,7 @@ export function useCreateAppRuntime(options: CreateRuntimeOptions = {}): AppRunt
       clearTimeout(pendingDispose.current)
       pendingDispose.current = null
     } else {
-      void runtime.start(initialChatId.current, { skipConversations: skipConversations.current })
+      void runtime.start(initialChatId.current, { skipConversations: skipConversations.current, ...(initialChatContext.current ? { initialChatContext: initialChatContext.current } : {}) })
     }
     return () => {
       pendingDispose.current = setTimeout(() => {
