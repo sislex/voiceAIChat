@@ -4,7 +4,7 @@ import { createReaderHostBridge, type ReaderHostRegistration } from './hostBridg
 
 const type = WEB_RECORDER_MESSAGE_TYPE
 
-function harness(overrides: { conversationId?: string; onBookmarks?: (bookmarks: { url: string; label: string; at: number }[]) => void; onWaitingForPerson?: (waiting: { kind: 'question' | 'handover'; text: string; options?: string[]; since: number } | null) => void } = {}) {
+function harness(overrides: { conversationId?: string; onNotes?: (notes: { text: string; url: string | null; at: number }[]) => void; onBookmarks?: (bookmarks: { url: string; label: string; at: number }[]) => void; onWaitingForPerson?: (waiting: { kind: 'question' | 'handover'; text: string; options?: string[]; since: number } | null) => void } = {}) {
   let seq = 0
   const sent: WebRecorderHostMessage[] = []
   const saves: Array<string | null> = []
@@ -16,6 +16,7 @@ function harness(overrides: { conversationId?: string; onBookmarks?: (bookmarks:
     capabilities: ['mcp-actions'],
     onSaveUrl: url => saves.push(url),
     onRegistration: (registration) => registrations.push(registration),
+    ...(overrides.onNotes ? { onNotes: overrides.onNotes } : {}),
     ...(overrides.onBookmarks ? { onBookmarks: overrides.onBookmarks } : {}),
     ...(overrides.onWaitingForPerson ? { onWaitingForPerson: overrides.onWaitingForPerson } : {})
   })
@@ -226,7 +227,7 @@ describe('open waitFor и viewport', () => {
 describe('status и outline', () => {
   it('status отвечает без страницы и после готовности, open несёт outline', async () => {
     const h = harness()
-    expect(await h.bridge.run({ kind: 'status' })).toEqual({ ok: true, result: { connected: false, pageStatus: 'empty', page: null } })
+    expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { connected: false, pageStatus: 'empty', page: null, actions: 0, since: expect.any(Number) } })
     h.ready()
     const registrationId = h.bridge.registrationId()!
     expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { connected: true, pageStatus: 'empty', page: null } })
@@ -630,6 +631,31 @@ it('переданный человеку шаг ждёт его кнопки, �
   await Promise.resolve()
   h.bridge.dispose()
   await expect(pending).resolves.toMatchObject({ ok: true, result: { returned: false } })
+})
+it('заметки ассистента и человеческий текст отчёта собираются мостом (круг 20)', async () => {
+  const seen: { text: string }[][] = []
+  const h = harness({ onNotes: (list: { text: string; url: string | null; at: number }[]) => seen.push(list.map(item => ({ text: item.text }))) })
+  h.ready(); const id = h.bridge.registrationId()!
+  const open = h.bridge.run({ kind: 'open', url: 'https://shop.example/cart' })
+  await Promise.resolve()
+  h.from(id, { kind: 'page-status', status: 'ready', url: 'https://shop.example/cart', title: 'Корзина' })
+  await open
+  await expect(h.bridge.run({ kind: 'note', text: 'Доставка считается только после ввода индекса' })).resolves.toMatchObject({ ok: true, result: { notes: [{ text: 'Доставка считается только после ввода индекса', url: 'https://shop.example/cart' }] } })
+  expect(seen.at(-1)).toEqual([{ text: 'Доставка считается только после ввода индекса' }])
+  const asked = h.bridge.run({ kind: 'question', question: 'Какой индекс?' })
+  await Promise.resolve()
+  h.bridge.answerQuestion('101000')
+  await asked
+  const plain = await h.bridge.run({ kind: 'report' })
+  expect(plain).toMatchObject({ ok: true, result: { notes: [{ text: expect.stringContaining('индекса') }], durationMs: expect.any(Number) } })
+  expect((plain.result as { text?: string }).text).toBeUndefined()
+  const readable = await h.bridge.run({ kind: 'report', readable: true })
+  const text = (readable.result as { text: string }).text
+  expect(text).toContain('Сеанс Web Reader')
+  expect(text).toContain('Корзина')
+  expect(text).toContain('Заметка: Доставка считается только после ввода индекса')
+  expect(text).toContain('Спросил «Какой индекс?» — ответ: 101000')
+  h.bridge.dispose()
 })
 it('промежуточный empty от reset open не отказывает следующему read', async () => {
   const h = harness(); h.ready(); const id = h.bridge.registrationId()!
