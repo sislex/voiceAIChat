@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-13
-checked: 62166a80
+updated: 2026-09-15
+checked: 9336bc5d
 areas:
   - package.json
   - scripts
@@ -143,6 +143,16 @@ Server запускает исходники через tsx. Основной We
 | web | `npm run -w @voicechat/web typecheck` | package test при наличии | `npm run -w @voicechat/web build` |
 | desktop | `npm run typecheck:desktop` | `npm run test:desktop` | electron-vite build; native rebuild |
 | agent tray | `npm run typecheck:agent-tray` | `npm run test:agent-tray` | electron-vite build/dist |
+
+Desktop has its own lockfile and is excluded from the root npm workspaces.
+Before a gate that selects desktop, run `npm ci --prefix apps/desktop` in a
+fresh checkout. Root `npm ci` alone does not install `electron` or
+`electron-vite`; missing-module errors in desktop typecheck can therefore be
+an environment setup failure. See `apps/desktop/package.json` and the root
+workspace list. Desktop tests run their existing Node native-module rebuild. Agent tray and
+login-application are also excluded from root workspaces and keep separate
+lockfiles: use `npm ci --prefix apps/agent-tray` and
+`npm ci --prefix apps/login-application` when those consumers are selected.
 
 `npm run verify` выполняет полный набор. Для локального шага предпочтителен узкий гейт затронутых пакетов, затем полный verify перед релизом/крупным merge.
 

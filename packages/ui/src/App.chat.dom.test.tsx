@@ -230,7 +230,7 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
 
   it('на мобильной ширине показывает centered-композер в пустом чате с id и после первой реплики переводит его в docked', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
-      matches: query === '(max-width: 768px)',
+      matches: query === '(max-width: 720px)',
       media: query,
       onchange: null,
       addListener: vi.fn(),

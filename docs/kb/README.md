@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-15 | ⚠ 1 коммит(ов) в areas после сверки: 7d27213d feat: measure UI performance and guard regressions (CHAT-469) |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 129 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 4 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1509 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1510 коммит(ов) в areas после сверки: 9336bc5d docs(kb): update after merge eb81b464-e00f-4771-8f4b-0897afee36cc … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 21 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 48 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 42 коммит(ов) в areas после сверки: abc8c97e fix(merge): автоисправление упавших проверок задачи 178dbbf8-de0f-4502-880c-ec4d83ff97fe … |
@@ -39,7 +39,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 70 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 203 коммит(ов) в areas после сверки: 7d27213d feat: measure UI performance and guard regressions (CHAT-469) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-15 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-15 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 155 коммит(ов) в areas после сверки: 7d27213d feat: measure UI performance and guard regressions (CHAT-469) … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-15 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-15, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 852. Последние:
+Всего записей: 853. Последние:
 
 - [2026-09-15-germany-4-8-60-universal-search.md](log/2026-09-15-germany-4-8-60-universal-search.md) — universal-search
 - [2026-09-15-germany-4-8-60-universal-search-kb.md](log/2026-09-15-germany-4-8-60-universal-search-kb.md) — universal-search-kb

@@ -19,7 +19,7 @@
 
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { decl, mediaBody, atRuleBodies } from './cssRules'
+import { decl, atRuleBodies } from './cssRules'
 
 describe('app.css — скролл длинной колонки доски', () => {
   // @testCase TC5
@@ -32,6 +32,7 @@ describe('app.css — скролл длинной колонки доски', ()
     expect(mobile).toMatch(/\.jboard \.jcol-content:not\(\[hidden\]\)[^{]*\{[^}]*overflow-y: auto/)
     expect(mobile).toMatch(/\.jboard \.jcol-head[^}]*position: sticky; top: 0/)
     expect(mobile).toContain('env(safe-area-inset-bottom, 0px)')
+    expect(mobile).toMatch(/\.jboard-mobile-create[^}]*bottom:[^;]*var\(--vc-shell-bottom, 0px\)/)
     expect(mobile).toContain('.jcard--mobile > :not(.jcard-top):not(.jcard-foot):not(.jcard-mobile-status)')
     expect(decl('.jcard-grip, .jcol-grip', 'touch-action')).toBe('none')
   })
@@ -47,7 +48,7 @@ describe('app.css — скролл длинной колонки доски', ()
   })
 
   it('на мобильной ширине корень использует динамическую высоту viewport', () => {
-    const mobile = mediaBody('(max-width: 768px)')
+    const mobile = atRuleBodies('@media (max-width: 720px)').join('\n')
     expect(mobile).toMatch(/\.app,\s*\.app--console\s*\{[^}]*height:\s*100dvh/s)
   })
 

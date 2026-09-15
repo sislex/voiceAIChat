@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePolling } from '@voicechat/ui-kit'
 import type { RendererApi } from '@shared/ipc'
 import type { KbDocument, KbDocumentKind, KbResearchRun, KbScope, KbSearchResult, KbStatus } from '@shared/kb'
 import { KB_SCOPE_LABELS, KB_SCOPES } from '@shared/kb'
@@ -93,17 +94,14 @@ export function KnowledgeBase({ api, onClose, variant = 'modal', documentId = nu
   // финише перечитываем список статей (их могло стать больше).
   const researching = research?.state === 'running'
   const doneRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (!researching || !projectFilter) return
-    const timer = window.setInterval(() => {
-      void api['kb:researchStatus']({ projectId: projectFilter }).then((run) => {
-        if (!run) return
-        setResearch(run)
-        if (run.state !== 'running' && doneRef.current !== run.finishedAt) { doneRef.current = run.finishedAt; reload() }
-      }).catch(() => { /* следующая попытка через интервал */ })
-    }, RESEARCH_POLL_MS)
-    return () => window.clearInterval(timer)
-  }, [api, researching, projectFilter, reload])
+  usePolling(() => {
+    if (!projectFilter) return
+    void api['kb:researchStatus']({ projectId: projectFilter }).then((run) => {
+      if (!run) return
+      setResearch(run)
+      if (run.state !== 'running' && doneRef.current !== run.finishedAt) { doneRef.current = run.finishedAt; reload() }
+    }).catch(() => { /* следующая попытка через интервал */ })
+  }, { enabled: researching && Boolean(projectFilter), intervalMs: RESEARCH_POLL_MS })
 
   const selectedId = document?.id
   const statusText = useMemo(() => !status ? 'Проверка индекса…' : status.available ? `${status.documents} документов · ${status.chunks} разделов · ${status.searchMode === 'hybrid' ? 'BM25 + LLM' : 'BM25'}` : 'База знаний недоступна', [status])

@@ -33,7 +33,8 @@ import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 
 export function PreparationRunSteps({ steps, fallback }: { steps: TaskPreparationStep[]; fallback: string }): JSX.Element {
-  return <ol className="ci-step-list" data-testid="task-preparation-feed" aria-live="polite">
+  return <><p className="vc-sr-only" role="status">{steps.map(step => `${step.name}: ${step.status}`).join('; ')}</p>
+  <ol className="ci-step-list" data-testid="task-preparation-feed">
     {steps.map((step) => <li key={step.id} className="ci-step">
       <details>
         <summary className="ci-step-head"><span className="ci-step-title">{step.name}</span><span className="ci-lozenge">{step.status}</span><span className="ci-step-dur">{step.durationMs == null ? '—' : fmtDuration(step.durationMs)}</span></summary>
@@ -42,7 +43,7 @@ export function PreparationRunSteps({ steps, fallback }: { steps: TaskPreparatio
       </details>
     </li>)}
     {!steps.length && <li>{fallback}</li>}
-  </ol>
+  </ol></>
 }
 
 export interface RunFeedCache {

@@ -5,8 +5,8 @@
 // общем стеке (useDialogStack) один и тот же, поэтому Esc всегда достаётся
 // верхнему окну, а не всем сразу.
 
-import { type ReactNode } from 'react'
-import { useDialogStack } from '@voicechat/ui-kit'
+import { useRef, type ReactNode } from 'react'
+import { useDialogStack, useFocusTrap } from '@voicechat/ui-kit'
 
 export interface PopupFrameProps {
   title: string
@@ -21,7 +21,9 @@ export interface PopupFrameProps {
 }
 
 export function PopupFrame({ title, onClose, testId, panelClassName, overlayClassName = '', onEscape, children }: PopupFrameProps): JSX.Element {
-  const { zIndex } = useDialogStack({ onEscape: onEscape ?? onClose })
+  const { zIndex, top } = useDialogStack({ onEscape: onEscape ?? onClose })
+  const panelRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(panelRef, top)
 
   return (
     <div
@@ -30,7 +32,7 @@ export function PopupFrame({ title, onClose, testId, panelClassName, overlayClas
       onClick={onClose}
       data-testid={testId}
     >
-      <div className={panelClassName} onClick={(event) => event.stopPropagation()} role="dialog" aria-label={title}>
+      <div ref={panelRef} tabIndex={-1} className={panelClassName} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
         {children}
       </div>
     </div>

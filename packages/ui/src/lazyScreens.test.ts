@@ -29,6 +29,7 @@ const LAZY: Array<readonly [string, string]> = [
   ['SessionsDialogHost', './components/SessionsDialogHost'],
   ['TaskModal', './components/kanban/TaskModal'],
   ['ProjectSettings', './components/ProjectSettings'],
+  ['ReleaseCenter', './components/releases/ReleaseCenter'],
 ]
 
 describe('тяжёлые экраны не возвращаются в главный чанк', () => {
@@ -44,7 +45,7 @@ describe('тяжёлые экраны не возвращаются в глав�
     const offenders = statics
       .map((match) => match[1]!.split(',').map((part) => part.trim()))
       .flat()
-      .filter((part) => part === name || part.endsWith(` ${name}`))
+      .filter((part) => part.length > 0 && !part.startsWith('type '))
     expect(offenders, `${name} тянется статически из ${path}`).toEqual([])
   })
 

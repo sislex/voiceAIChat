@@ -26,6 +26,8 @@ export function ModelPricesPage({
   onDeleteModelPrice = () => undefined
 }: ModelPricesPageProps): JSX.Element {
   const [history, setHistory] = useState<import('@shared/admin').SecurityEvent[]>([])
+  const [priceLimit, setPriceLimit] = useState(20)
+  const [historyLimit, setHistoryLimit] = useState(100)
   const [historyError, setHistoryError] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -41,15 +43,17 @@ export function ModelPricesPage({
     <section className="uadmin-sec" data-testid="model-prices-section">
       <p>Официальные тарифы, USD за 1 млн токенов. Базовая категория: Standard / short context.</p>
       <table className="utable"><thead><tr><th>Провайдер / модель</th><th>Режим / контекст</th><th>Input</th><th>Cached input</th><th>Cache writes</th><th>Output</th><th>Источник / дата</th><th>Действия</th></tr></thead><tbody>
-        {modelPrices.flatMap((price) => {
+        {modelPrices.slice(0, priceLimit).flatMap((price) => {
           const tiers = [{ mode: 'standard', context: 'short', inputPerMillion: price.inputPerMillion, cachedInputPerMillion: price.cachedInputPerMillion, cacheWritePerMillion: price.cacheWritePerMillion, outputPerMillion: price.outputPerMillion }, ...(price.tiers ?? [])]
           return tiers.map((tier, index) => <tr key={price.provider + price.model + tier.mode + tier.context}><td>{index === 0 ? `${price.provider} / ${price.model}` : ''}</td><td>{tier.mode === 'fast' ? 'Fast mode' : tier.mode[0]!.toUpperCase() + tier.mode.slice(1)} / {tier.context} context</td><td>{shown(tier.inputPerMillion)}</td><td>{shown(tier.cachedInputPerMillion)}</td><td>{shown(tier.cacheWritePerMillion)}</td><td>{shown(tier.outputPerMillion)}</td><td>{index === 0 && <><a href={price.sourceUrl} target="_blank" rel="noreferrer">источник</a> · {formatDate(price.effectiveAt)}</>}</td><td>{index === 0 && <><Button size="sm" onClick={() => { setEditingPrice(price.provider + price.model); setPriceDraft({ provider: price.provider, model: price.model, inputPerMillion: price.inputPerMillion, cachedInputPerMillion: price.cachedInputPerMillion, cacheWritePerMillion: price.cacheWritePerMillion, outputPerMillion: price.outputPerMillion, sourceUrl: price.sourceUrl, effectiveAt: price.effectiveAt, tiers: price.tiers ?? [] }) }}>Править</Button><Button variant="danger" size="sm" onClick={() => onDeleteModelPrice(price.provider, price.model)}>Удалить</Button></>}</td></tr>)
         })}
       </tbody></table>
+      {modelPrices.length > priceLimit && <Button onClick={() => setPriceLimit(limit => limit + 20)}>Показать ещё модели ({modelPrices.length - priceLimit})</Button>}
       <section aria-label="История цен"><h3>История изменений цены</h3>
         {historyError && <p role="alert">{historyError}</p>}
         {history.length === 0 && <p>Изменений пока нет</p>}
-        <ul>{history.map((event) => <li key={event.id}>{new Date(event.at).toLocaleString('ru-RU')} · {event.user} · {event.details}</li>)}</ul>
+        <ul>{history.slice(0, historyLimit).map((event) => <li key={event.id}>{new Date(event.at).toLocaleString('ru-RU')} · {event.user} · {event.details}</li>)}</ul>
+        {history.length > historyLimit && <Button onClick={() => setHistoryLimit(limit => limit + 100)}>Показать ещё события ({history.length - historyLimit})</Button>}
       </section>
       {!valid && <p role="alert">Укажите неотрицательные цены, не более двух знаков после запятой.</p>}
       {values.includes(0) && <p role="status">Цена 0: эти токены будут считаться бесплатными.</p>}

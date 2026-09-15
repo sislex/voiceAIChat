@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: 0311b57e
+checked: 9336bc5d
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2332,9 +2332,72 @@ The registry-only `CommandPalette` mode (used by existing isolated stories witho
 
 Тесты: `lib/fuzzy.test.ts`, `lib/hotkeys.test.ts`, `lib/commands.test.ts`, `lib/appCommands.test.ts`, `lib/useHotkeys.test.tsx`, `components/CommandPalette.dom.test.tsx`, `components/HotkeysCheatSheet.dom.test.tsx`, `App.commands.dom.test.tsx` (клавиши в собранном приложении) плюс проверки реестра в `KanbanBoard.dom.test.tsx` и `RunFeed.dom.test.tsx`. Сториз — `CommandPalette.stories.tsx` (в том числе `HugeList` на 600 бесед) и `HotkeysCheatSheet.stories.tsx`.
 
+## Аудит доступности и производительности (2026-09-15)
+
+Scope: chat and its sidebar, project board, task card, Release Center, global and
+project settings, admin. Changes are shared primitives, attributes and loading
+boundaries; the screen designs are retained.
+
+- Focus: ui-kit owns the common two-pixel accent `:focus-visible` outline.
+  `useFocusTrap` is shared by Dialog and PopupFrame; hidden panels, disabled
+  fieldsets and collapsed details are excluded, empty dialogs retain focus, and
+  closing restores the opener. The browser audit found a zero-height hidden task
+  chat panel reachable by Tab; the shared `[hidden]` display rule fixes it.
+- Navigation: App provides “К содержимому”, a focusable named main landmark,
+  existing named navigation and sidebar landmarks, and document titles derived
+  from section/project. Embedded ChatColumn and personalization content use
+  sections so they do not create nested main landmarks.
+- Announcements: individual toasts own status/alert roles, with no live parent.
+  Chat's reply announcer owns start/end events; the preparing bubble is silent.
+  PreparationRunSteps announces names/statuses separately from its growing logs.
+  Board movement retains its dedicated atomic kanban-live region.
+- Contrast: `--control-border` is separate from decorative `--border` and
+  `--border-soft`. Input/select/search/secondary-button boundaries and inactive
+  switches use it. CONTRAST_PAIRS gates UI pairs at 3:1 and text at 4.5:1 in
+  light, dark and green themes, including selected/hovered control backgrounds.
+- Motion: shared reduced-motion rules disable animation, transitions and smooth
+  scrolling on elements and pseudo-elements. Foundations → “Фокус и движение”
+  demonstrates keyboard navigation, a modal and skeletons.
+- Loading: ReleaseCenter is lazy; settings route metadata no longer imports its
+  screen. Rare-screen Suspense states use labelled skeletons. Production chunk
+  budgets in the accessibility E2E are 60 KB for ReleaseCenter, 40 KB for
+  SettingsModal and 90 KB for ProjectSettings; missing/eager chunks fail.
+- Polling: see the complete migrated list below. Periodic server reads stop
+  while hidden and refresh on return.
+- Large lists: Sidebar renders 100 conversations plus the selected row, then
+  “Показать ещё беседы”; filtering precedes paging. MachineConsole initially
+  shows the latest 100 output entries, retaining older output behind a button.
+  Admin UsersList already provides server pages of 40 and bounded local pages,
+  with existing thousand-user regression tests. Engines and invitations now
+  page in batches of 100; model prices in batches of 20 models and price-history
+  events in batches of 100. Console paging is covered with 201 executed commands.
+- Mobile: stylesheet viewport breakpoints use 720px (desktop starts at 721px);
+  composer matchMedia uses the same boundary. Shared mobile controls have a
+  40px minimum. The Playwright fixture uses the production stories/bridges,
+  checks document scrollWidth, button geometry, Tab focus and reduced motion
+  for all seven screens plus the full shell at 390×844. The board's floating
+  Create button includes the measured bottom-navigation inset; the real-route
+  browser test checks that the button does not cover navigation at 390/320px.
+
+Verification is automated keyboard navigation in Chromium and DOM/axe tests,
+not a claimed manual VoiceOver/NVDA session. Remaining audit work: human
+screen-reader listening for pronunciation, interruption and announcement timing,
+and device-level zoom/OS accessibility checks. Decorative separators remain
+below 3:1 by design; they no longer represent control boundaries. No axe rule
+exceptions were added.
+
+Final validation: `npm run gate:fast` and `npm run build:storybook` passed.
+The final E2E group passed all 25 tests, including the eight-screen audit and
+three production chunk budgets; all 719 Storybook axe cases passed.
+
 ## Опрос сервера и видимость вкладки
 
-`lib/usePolling.ts` — опрос, который встаёт вместе со вкладкой браузера.
+`packages/ui-kit/src/usePolling.ts` owns visibility-aware polling;
+`packages/ui-foundation/src/lib/usePolling.ts` re-exports it for existing callers.
+Admin and sessions use the kit directly, keeping their package boundaries intact.
+Sessions sets `refreshOnVisible: false` when its host already supplies `onVisible`:
+the host owns the immediate refresh and the hook only resumes the timer, avoiding
+a duplicate request on return.
 Панели QA опрашивают состояние этапа каждые 1,5–2 с; на голом `setInterval`
 таймер крутился и в фоновой вкладке, то есть карточка, оставленная открытой на
 ночь, продолжала стучать в сервер. Хук снимает таймер по `document.hidden` и по
@@ -2344,17 +2407,29 @@ The registry-only `CommandPalette` mode (used by existing isolated stories witho
 перезапускала бы таймер. Потребители — `ComponentQaPanel`,
 `IntegrationTestPanel`, `GenericQaStageRunPanel`.
 
+The 2026-09-15 audit also migrated App's board refresh (10 s), settings catalogs
+(300 s), machine refresh (30 s), performance flush (5 s), ReleaseCenter list/detail
+fallbacks (5/2 s), ApplicationReleaseCenter (3 s), ManualQaPanel preparation (2 s),
+KnowledgeBase research, MachineVpn (30 s), AgentFleetUpdate canary (5 s), and
+SessionsPanel refresh (60 s). Initial loads remain separate from periodic refresh.
+Local elapsed-time clocks and toast expiry are not server polls. Make's presence
+heartbeat renews editing ownership; it is not a read-only status poll, and pausing
+it would let another editor acquire an actively edited file. Its iframe scroll
+sampling is also local, not a server request.
+
 ## Ленивые чанки главного бандла
 
-`App.tsx` держит одиннадцать экранов вне главного чанка через `React.lazy`:
-`SessionsDialogHost` (окно сессий тянет весь модуль устройств), `UsersAdmin`
-(`@voicechat/admin-app`), `AccountPage`, **`MakePane`** (две тысячи строк с
-редактором, историей снимков и комментариями — только Make-режим чата),
-**`SettingsModal`** (семь разделов из меню аккаунта), **`ProjectPage`** и
-**`ProjectBoard`** (доска, карточка задачи и все её панели ранов, QA и merge —
-самая тяжёлая часть интерфейса), **`WebReaderFrame`** (только беседа-ридер),
-**`MachineStatus`**, **`MachineUtility`** и **`KnowledgeBase`**.
-Итог: `index-` 1 032 КБ против 1 336 КБ до выноса (−304 КБ, −23%).
+`App.tsx` uses `React.lazy` for SessionsDialogHost, UsersAdmin and the performance
+dashboard, AccountPage, SettingsModal, ProjectPage/ProjectBoard and their empty
+states, TaskModal, ProjectSettings, ReleaseCenter, MachineStatus/MachineUtility,
+KnowledgeBase, ContextInspector and Git panels. Make, Image Studio, Playwright
+Reader and Web Reader use independent application artifacts, not host chunks.
+
+The 2026-09-15 audit moved ReleaseCenter behind Suspense and removed the
+SETTINGS_SECTIONS value import from SettingsModal: route metadata now lives in
+`lib/settingsSections.ts`. `lazyScreens.test.ts` rejects every runtime value import
+from a lazy screen module, including helper constants. Storybook screen fixtures
+are loaded lazily only by `src/test/accessibilityBrowser.tsx`, outside production.
 
 **Статический импорт значения из того же модуля сводит ленивый чанк на нет.**
 Rollup положит модуль в главный чанк, а `import()` вернёт уже загруженное — так

@@ -130,8 +130,6 @@ it('keeps keyboard, touch, focus and geometry usable at all five sizes in both t
       // Mobile opens the existing sidebar before the same touch control.
       if (width! <= 720) {
         await page.getByRole('button', { name: 'Ещё', exact: true }).click()
-      } else if (width! <= 768) {
-        await page.getByRole('button', { name: 'Открыть боковую панель', exact: true }).first().click()
       }
       const button = page.locator('.cmdk-open')
       await button.waitFor({ state: 'visible' })
