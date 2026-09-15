@@ -118,7 +118,15 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   let pageOutline: PreviewPageOutline | undefined
   // Куда ходила панель в этом разговоре: status отвечает историей, как вкладка браузера помнит путь.
   const history: string[] = []
-  const remember = (url: string | null): void => { if (url && history[0] !== url) { history.unshift(url); if (history.length > 5) history.length = 5 } }
+  // Заголовки посещённых страниц: back {to} ищет по ним так же, как человек ищет вкладку по названию.
+  const visited: { url: string; title: string }[] = []
+  const remember = (url: string | null, title?: string): void => {
+    if (!url) return
+    if (history[0] !== url) { history.unshift(url); if (history.length > 5) history.length = 5 }
+    const known = visited.find(item => item.url === url)
+    if (known) { if (title) known.title = title; return }
+    visited.unshift({ url, title: title ?? '' }); if (visited.length > 20) visited.length = 20
+  }
   let manual = false
   let viewport: { width: number; height: number } | undefined
   // Последнее завершённое действие: модель после паузы спрашивает status и продолжает с того места.
@@ -258,6 +266,13 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         const error = failed.length ? failed.map(({ item, index }) => `Шаг ${index + 1} из ${steps.length} (${item.kind}): ${item.error ?? 'не выполнен'}`).join('; ') : undefined
         return { ok: completed === steps.length, result: { page: lastPage, steps: results, completed, total: steps.length }, ...(error ? { error } : {}) }
       })()
+    }
+    // back {to} — «вернись на страницу поиска»: мост знает адреса и заголовки этого сеанса и открывает найденный.
+    if (action.kind === 'back' && action.to) {
+      const needle = action.to.trim().toLowerCase()
+      const match = visited.find(item => item.url !== approvedUrl && (item.url.toLowerCase().includes(needle) || item.title.toLowerCase().includes(needle)))
+      if (!match) return Promise.resolve({ ok: false, error: `Страницы «${action.to}» не было в этом сеансе. Открытые адреса: ${visited.map(item => item.title || item.url).slice(0, 5).join(', ') || 'нет'}.` })
+      return run({ kind: 'open', url: match.url })
     }
     if (action.kind === 'report') {
       const page = approvedUrl && pageStatus !== 'empty' ? { url: approvedUrl, title: pageTitle ?? '' } : null
@@ -401,7 +416,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           if (message.status === 'ready') {
             const changed = message.url !== approvedUrl
             approvedUrl = message.url
-            remember(message.url)
+            remember(message.url, pageTitle)
             if (changed) options.onSaveUrl?.(message.url)
             flush()
           }
