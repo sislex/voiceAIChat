@@ -59,6 +59,13 @@ describe('resumable onboarding', () => {
     expect(screen.getByRole('button', { name: 'Продолжить в чате' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Пропустить шаг' })).toBeTruthy()
     await expectNoViolations()
+    const user = userEvent.setup()
+    const exit = screen.getByRole('button', { name: 'Продолжить в чате' })
+    for (let i = 0; i < 20 && document.activeElement !== exit; i++) await user.tab()
+    expect(document.activeElement).toBe(exit)
+    expect(exit.hasAttribute('disabled')).toBe(false)
+    await user.keyboard('{Enter}')
+    expect(f.done).toHaveBeenCalledTimes(1)
   })
 
   // @testCase TC-STATE-1
@@ -99,6 +106,9 @@ describe('resumable onboarding', () => {
     expect(createBrowserAudioController).not.toHaveBeenCalled()
     await waitFor(() => expect(f.save).toHaveBeenCalled())
     expect(f.api._state.settings.onboarding?.results.tts.status).toBe('success')
+    expect(f.api._state.settings.onboarding?.results.microphone.status).toBe('warning')
+    expect(open).not.toHaveBeenCalled()
+    expect(createBrowserAudioController).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Продолжить в чате' }))
     expect(f.done).toHaveBeenCalledTimes(1)
   })
@@ -121,6 +131,7 @@ describe('resumable onboarding', () => {
   })
 
   // @testCase TC-DEGRADED-1
+  // @testCase TC-UI-1
   it('keeps chat exit available after a service error without claiming a working LLM', async () => {
     const f = onboardingFixture()
     f.api['system:capabilities'] = vi.fn().mockRejectedValue(new Error('offline'))

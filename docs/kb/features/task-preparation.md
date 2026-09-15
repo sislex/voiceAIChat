@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
 updated: 2026-09-15
-checked: 27d26b48
+checked: 9336bc5d
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/ipc.ts
@@ -43,6 +43,17 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
+
+CHAT-474 removes contradictory output instructions: research gaps belong in
+`sources[].summary` and follow-up work in `scope/testCases`, inside the single
+DevelopmentReadiness object; no trailing `kb-gaps` block is requested. A material
+clarification remains an intermediate question, never a completed brief. Recovery
+explicitly prohibits replacing the brief with a question or guessing missing
+requirements, sources or answers. `taskPreparation.test.ts` covers the canonical
+response and prompt (`TC-BRIEF-1`), incompatible recovery objects and UI prerequisites
+(`TC-BRIEF-NEG-1`), and preservation/idempotence of compatible normalization
+(`TC-NORM-1`). This prompt defect is not evidence of the historical onboarding
+Automated QA failure.
 
 CHAT-469 links existing strict regressions to T7 (schema, prompt and dependent
 UI/coverage requirements), T8 (compatible normalization preserving requirements),

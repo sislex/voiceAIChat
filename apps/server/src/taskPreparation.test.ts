@@ -684,6 +684,53 @@ describe('подготовка к разработке: движок из нас
 })
 
 describe('подготовка к разработке: диагностика и контракт', () => {
+  // @testCase TC-BRIEF-1
+  it('requires a complete brief without contradictory output instructions', async () => {
+    const { project, task } = await taskInBacklog()
+    const input = compatibleReadiness()
+    claudeAnswer = () => ({ text: input })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(1)
+    const prompt = claudeCalls[0].prompt
+    expect(prompt).toContain('ровно один JSON-объект schemaVersion=2')
+    expect(prompt).toContain('Отдельный блок kb-gaps вне JSON запрещён')
+    expect(prompt).not.toContain('в финальном блоке kb-gaps')
+    expect(prompt).toContain('не завершает подготовку и не заменяет DevelopmentReadiness')
+    expect(prompt).toContain('sources[].summary')
+    const { confirmation, ...brief } = run.readiness!
+    expect(confirmation?.confirmed).toBe(true)
+    expect(brief).toEqual(JSON.parse(input))
+  })
+
+  // @testCase TC-BRIEF-NEG-1
+  // @testCase TC-NORM-1
+  it.each(['question', 'missing-ui-test', 'empty-exclusion', 'boolean', 'version', 'object-list'])(
+    'rejects incompatible recovery content without inventing data: %s', async variant => {
+      const { project, task } = await taskInBacklog()
+      const input = JSON.parse(compatibleReadiness())
+      input.uiImpact = 'existing_components'
+      input.affectedComponents = [{
+        id: 'onboarding', name: 'OnboardingModal', reusable: true, storybookStoryId: null,
+        exclusionReason: 'No Storybook story', alternativeVerification: 'DOM regression tests',
+        coverage: { required: ['TC-UI-1'] }
+      }]
+      if (variant === 'missing-ui-test') input.testCases = input.testCases.filter((test: { testType: string }) => test.testType !== 'ui')
+      if (variant === 'empty-exclusion') input.affectedComponents[0].exclusionReason = ''
+      if (variant === 'boolean') input.testCases[0].required = 'yes'
+      if (variant === 'version') input.schemaVersion = '2'
+      if (variant === 'object-list') input.scope = [{ id: 'S1', text: 'Preserve requirement' }]
+      const recovery = variant === 'question' ? JSON.stringify({ question: 'Which machine?', material: true }) : JSON.stringify(input)
+      claudeAnswer = attempt => ({ text: attempt < 3 ? 'Invalid response' : recovery })
+      const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+      expect(run.status).toBe('blocked')
+      expect(run.readiness).toBeNull()
+      expect(claudeCalls).toHaveLength(3)
+      expect(run.questions ?? []).toHaveLength(0)
+      expect(claudeCalls[2].prompt).toContain('Объект вопроса не является DevelopmentReadiness')
+      expect(claudeCalls[2].prompt).toContain('неоднозначные значения нельзя исправлять догадками')
+    })
+
   it('ошибка авторизации CLI называет движок и профиль пользователя', async () => {
     const { project, task } = await taskInBacklog()
     await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
@@ -763,6 +810,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC11
   // @testCase TC-BRIEF-FORMAT
   // @testCase TC-BRIEF-CONTRACT
+  // @testCase TC-BRIEF-NEG-1
   it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()
@@ -1078,6 +1126,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC7
+  // @testCase TC-NORM-1
   it('preserves the whole brief through every compatible conversion and a second preparation', async () => {
     const input = JSON.parse(compatibleReadiness())
     input.scope = 'Keep direct DNS blocked'

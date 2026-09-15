@@ -23,11 +23,11 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-15 | ⚠ 1 коммит(ов) в areas после сверки: 7d27213d feat: measure UI performance and guard regressions (CHAT-469) |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 129 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 4 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1509 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1510 коммит(ов) в areas после сверки: 9336bc5d docs(kb): update after merge eb81b464-e00f-4771-8f4b-0897afee36cc … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 21 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 48 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 42 коммит(ов) в areas после сверки: abc8c97e fix(merge): автоисправление упавших проверок задачи 178dbbf8-de0f-4502-880c-ec4d83ff97fe … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-15 | ⚠ 4 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-15 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 363 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 24 коммит(ов) в areas после сверки: e8c00896 fix(llm): price Codex turns as the difference of thread totals, not the totals … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 21 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 852. Последние:
+Всего записей: 853. Последние:
 
 - [2026-09-15-germany-4-8-60-universal-search.md](log/2026-09-15-germany-4-8-60-universal-search.md) — universal-search
 - [2026-09-15-germany-4-8-60-universal-search-kb.md](log/2026-09-15-germany-4-8-60-universal-search-kb.md) — universal-search-kb

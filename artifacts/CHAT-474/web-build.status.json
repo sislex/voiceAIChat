@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "runId": "20260915194513807-5feb673f-8f3e-4586-8598-261daea92d00",
+  "pid": 90164,
+  "startedAt": "2026-09-15T19:45:13.820Z",
+  "command": [
+    "npm",
+    "run",
+    "-w",
+    "@voicechat/web",
+    "build"
+  ],
+  "state": "finished",
+  "finishedAt": "2026-09-15T19:45:40.625Z",
+  "exitCode": 0,
+  "signal": null
+}
