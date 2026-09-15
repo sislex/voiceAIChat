@@ -638,3 +638,37 @@ UI (desktop and phone):
 | 10 | «Копировать текст страницы»; phone gets 44 px rows in the drawer | Recorder, `recorder.css` |
 
 Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-18.md`.
+
+## Cycle 19 — asking the person instead of guessing
+
+Model (proxy engine, MCP `browser`):
+
+| # | Improvement | Where | Check |
+|---|---|---|---|
+| 01 | `question {question, options?, timeoutMs?}` — ask the person in the panel and wait for a live answer | `hostBridge.ts` | bridge test |
+| 02 | The answer comes back as `answer`; a declined or timed-out question returns `answered: false` | `hostBridge.ts` | bridge test |
+| 03 | `handover {reason}` — hand the step to the person and wait until they return control | `hostBridge.ts` | bridge test |
+| 04 | A second question while one is open is refused with the pending text | `hostBridge.ts` | bridge test |
+| 05 | While the panel waits, page actions are refused: no acting behind the person's back | `hostBridge.ts` | bridge test |
+| 06 | `status.waitingFor` — what the panel is waiting for and since when | `hostBridge.ts` | bridge test |
+| 07 | `report.questions` — questions with answers as part of the task report | `hostBridge.ts` | bridge test |
+| 08 | Closing the panel releases a pending question instead of hanging the turn | `hostBridge.ts` | bridge test |
+| 09 | MCP tools `ask-user` and `hand-over` | `previewMcp.ts` | MCP test |
+| 10 | Feed phrases and labels: «Спросил: …», «вы ответили: …», «Передал шаг вам» | relay, `actionLabel.ts` | shared + MCP tests |
+
+UI (desktop and phone):
+
+| # | Improvement | Where |
+|---|---|---|
+| 01 | Question card in the panel, announced assertively | `WebReaderFrame` |
+| 02 | Quick answers as buttons from `options` | `WebReaderFrame` |
+| 03 | Free-text answer with «Ответить» | `WebReaderFrame` |
+| 04 | Escape and «Не сейчас» decline the question | `WebReaderFrame` |
+| 05 | Focus lands on the answer field as the question appears | `WebReaderFrame` |
+| 06 | Handover banner with «Готово, продолжай» | `WebReaderFrame` |
+| 07 | The card shows how long the assistant has been waiting | `WebReaderFrame` |
+| 08 | The live line reads «ждёт вашего ответа» while the question is open | `actionLabel.ts` |
+| 09 | The card clears when the conversation changes | `WebReaderFrame` |
+| 10 | Phone: 44 px answer field and buttons | `panel.css` |
+
+Evidence: `docs/kb/log/2026-09-15-*-web-reader-user-like-cycle-19.md`.

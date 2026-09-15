@@ -4,7 +4,7 @@ import { createReaderHostBridge, type ReaderHostRegistration } from './hostBridg
 
 const type = WEB_RECORDER_MESSAGE_TYPE
 
-function harness(overrides: { conversationId?: string; onBookmarks?: (bookmarks: { url: string; label: string; at: number }[]) => void } = {}) {
+function harness(overrides: { conversationId?: string; onBookmarks?: (bookmarks: { url: string; label: string; at: number }[]) => void; onWaitingForPerson?: (waiting: { kind: 'question' | 'handover'; text: string; options?: string[]; since: number } | null) => void } = {}) {
   let seq = 0
   const sent: WebRecorderHostMessage[] = []
   const saves: Array<string | null> = []
@@ -16,7 +16,8 @@ function harness(overrides: { conversationId?: string; onBookmarks?: (bookmarks:
     capabilities: ['mcp-actions'],
     onSaveUrl: url => saves.push(url),
     onRegistration: (registration) => registrations.push(registration),
-    ...(overrides.onBookmarks ? { onBookmarks: overrides.onBookmarks } : {})
+    ...(overrides.onBookmarks ? { onBookmarks: overrides.onBookmarks } : {}),
+    ...(overrides.onWaitingForPerson ? { onWaitingForPerson: overrides.onWaitingForPerson } : {})
   })
   const ready = (ids: { conversationId?: string | null; registrationId?: string | null } = {}) =>
     bridge.receive({ type, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: ids.conversationId ?? null, registrationId: ids.registrationId ?? null, capabilities: ['read'] })
@@ -590,6 +591,45 @@ it('закладки сеанса: модель кладёт, убирает и 
   await expect(h.bridge.run({ kind: 'bookmark', remove: 'Сюда вернуться' })).resolves.toMatchObject({ ok: true, result: { bookmarks: [] } })
   expect(seen.at(-1)).toEqual([])
   h.bridge.dispose()
+})
+it('вопрос человеку: панель ждёт живой ответ, отказ и таймаут честно возвращаются модели (круг 19)', async () => {
+  const waits: ({ kind: string; text: string; options?: string[] } | null)[] = []
+  const h = harness({ onWaitingForPerson: (next: { kind: string; text: string; options?: string[] } | null) => waits.push(next) })
+  h.ready()
+  const asked = h.bridge.run({ kind: 'question', question: 'Какой размер брать?', options: ['M', 'L'] })
+  await Promise.resolve()
+  expect(waits.at(-1)).toMatchObject({ kind: 'question', text: 'Какой размер брать?', options: ['M', 'L'] })
+  expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { waitingFor: { kind: 'question', text: 'Какой размер брать?' } } })
+  await expect(h.bridge.run({ kind: 'question', question: 'А цвет?' })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('уже ждёт') })
+  // Пока человек не ответил, модель не должна действовать за его спиной.
+  await expect(h.bridge.run({ kind: 'read' })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('ждёт человека') })
+  expect(await h.bridge.run({ kind: 'report' })).toMatchObject({ ok: true })
+  h.bridge.answerQuestion('L')
+  await expect(asked).resolves.toMatchObject({ ok: true, result: { answered: true, answer: 'L' } })
+  expect(waits.at(-1)).toBeNull()
+  expect(await h.bridge.run({ kind: 'report' })).toMatchObject({ ok: true, result: { questions: [{ question: 'Какой размер брать?', answer: 'L', answered: true }] } })
+  const declined = h.bridge.run({ kind: 'question', question: 'Продолжаем?' })
+  await Promise.resolve()
+  h.bridge.answerQuestion(null)
+  await expect(declined).resolves.toMatchObject({ ok: true, result: { answered: false } })
+  const timed = h.bridge.run({ kind: 'question', question: 'Ещё раз?', timeoutMs: 5_000 })
+  await Promise.resolve()
+  await vi.advanceTimersByTimeAsync(5_000)
+  await expect(timed).resolves.toMatchObject({ ok: true, result: { answered: false } })
+  h.bridge.dispose()
+})
+it('переданный человеку шаг ждёт его кнопки, а закрытие панели отпускает ожидание (круг 19)', async () => {
+  const h = harness()
+  h.ready()
+  const handed = h.bridge.run({ kind: 'handover', reason: 'войдите в аккаунт' })
+  await Promise.resolve()
+  expect(await h.bridge.run({ kind: 'status' })).toMatchObject({ ok: true, result: { waitingFor: { kind: 'handover', text: 'войдите в аккаунт' } } })
+  h.bridge.finishHandover()
+  await expect(handed).resolves.toMatchObject({ ok: true, result: { returned: true } })
+  const pending = h.bridge.run({ kind: 'handover', reason: 'подтвердите код' })
+  await Promise.resolve()
+  h.bridge.dispose()
+  await expect(pending).resolves.toMatchObject({ ok: true, result: { returned: false } })
 })
 it('промежуточный empty от reset open не отказывает следующему read', async () => {
   const h = harness(); h.ready(); const id = h.bridge.registrationId()!

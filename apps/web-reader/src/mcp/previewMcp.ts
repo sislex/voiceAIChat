@@ -388,6 +388,25 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         inputSchema: { frame: frameSchema, what: z.enum(['cookies', 'dialog', 'any']).optional().describe('Что убрать: баннер cookie, окно или любое из них (по умолчанию any)') }
       }, async ({ frame, what }) => run({ kind: 'dismiss', ...(frame !== undefined ? { frame } : {}), ...(what ? { what } : {}) }))
 
+      server.registerTool('ask-user', {
+        description: 'Спросить пользователя прямо в панели и дождаться его ответа: выбор за человеком (размер, адрес, какой из похожих пунктов). ' +
+          'Панель покажет вопрос, быстрые ответы options и поле для свободного ответа. Ответ придёт в answer; answered: false — человек отложил вопрос или не ответил за timeoutMs (по умолчанию 2 минуты). Не угадывай за него.',
+        inputSchema: {
+          question: z.string().min(1).max(500).describe('Вопрос человеку словами'),
+          options: z.array(z.string().min(1).max(80)).min(1).max(6).optional().describe('Быстрые ответы кнопками'),
+          timeoutMs: z.number().int().min(5_000).max(600_000).optional().describe('Сколько ждать ответа, мс (по умолчанию 120000)')
+        }
+      }, async ({ question, options: answers, timeoutMs }) => run({ kind: 'question', question, ...(answers?.length ? { options: answers } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) }))
+
+      server.registerTool('hand-over', {
+        description: 'Передать шаг человеку и подождать: «войди сам», «подтверди код из письма», «выбери способ оплаты». ' +
+          'Панель покажет причину и кнопку «Готово, продолжай»; ответ придёт, когда человек вернёт управление или истечёт timeoutMs.',
+        inputSchema: {
+          reason: z.string().min(1).max(300).describe('Что должен сделать человек'),
+          timeoutMs: z.number().int().min(5_000).max(600_000).optional().describe('Сколько ждать, мс (по умолчанию 120000)')
+        }
+      }, async ({ reason, timeoutMs }) => run({ kind: 'handover', reason, ...(timeoutMs !== undefined ? { timeoutMs } : {}) }))
+
       server.registerTool('bookmark', {
         description: 'Положить закладку на открытую страницу панели, как человек сохраняет вкладку: список закладок видит и пользователь в панели, и ты в status.bookmarks и report. ' +
           'Без label подписью станет заголовок страницы; remove убирает закладку по адресу или подписи.',
