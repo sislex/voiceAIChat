@@ -189,6 +189,8 @@ export interface BrowserSessionMetadata {
   history?: BrowserHistoryEntry[]
   /** Emulated device, so the panel shows touch and pixel ratio, not just width. */
   device?: BrowserDeviceState
+  /** Открытая просьба модели к человеку: панель показывает её и ждёт ответа. */
+  ask?: BrowserAskRequest
   /**
    * Внутренний адрес, с которого страница пришла на самом деле, если оператор
    * настроил алиас. Сам `currentUrl` при этом остаётся тем, который назвал
@@ -518,6 +520,20 @@ export interface BrowserDeviceState {
   userAgent?: string
 }
 
+/**
+ * Просьба модели к человеку. Живёт в сессии, а не в переписке: человек смотрит
+ * на кадр браузера, и просьба должна быть там же, где экран, которого она
+ * касается.
+ */
+export interface BrowserAskRequest {
+  id: string
+  text: string
+  at: number
+  /** Сколько ждать ответа; по истечении просьба закрывается как неотвеченная. */
+  timeoutMs: number
+  answered?: { done: boolean; text?: string; at: number }
+}
+
 /** Finger gesture: a tap is not a mouse click, and pages handle them apart. */
 export interface BrowserTouchAction {
   gesture: 'tap' | 'swipe' | 'long-press'
@@ -710,6 +726,14 @@ export type BrowserCommand = BrowserFrameTarget & (
   | { type: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean }
   /** A line the model writes into the panel so the person sees its intent. */
   | { type: 'note'; text: string }
+  /**
+   * Просьба к человеку и ожидание его ответа. Есть места, где модель не должна
+   * действовать сама: код из СМС, капча, вход по паролю из менеджера. Раньше она
+   * упиралась в такой экран и либо стояла молча, либо пыталась пройти его сама.
+   */
+  | { type: 'ask'; text: string; timeoutMs?: number }
+  /** Ответ человека на просьбу: сделал или отказался. */
+  | { type: 'answer'; askId: string; done: boolean; text?: string }
   /** Emulated device: size, pixel ratio, touch, orientation, user agent. */
   | ({ type: 'device' } & BrowserDeviceOptions)
   /** A finger gesture on the page — tap, swipe, long press. */

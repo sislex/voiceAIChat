@@ -895,6 +895,27 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'ask',
+        {
+          description:
+            'Попросить человека сделать что-то в браузере и дождаться ответа: код из СМС, капча, ' +
+            'вход паролем из менеджера, подтверждение в приложении банка. Это места, где действовать ' +
+            'самой нельзя и не нужно. Просьба появляется прямо в панели — там же, где экран, которого ' +
+            'она касается, — и вызов возвращается, когда человек нажал «Сделал» или отказался. ' +
+            'Пиши, что именно сделать и зачем; по таймауту вернётся timedOut.',
+          inputSchema: {
+            text: z.string().min(1).max(500).describe('Что нужно сделать человеку'),
+            timeoutMs: z.number().int().min(5_000).max(600_000).optional().describe('Сколько ждать ответа (по умолчанию 120000)')
+          }
+        },
+        async ({ text, timeoutMs }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'ask', text, ...(timeoutMs !== undefined ? { timeoutMs } : {}) })
+          return toolResult(result ?? { ok: false, error: 'Просьбы к человеку доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
         'device',
         {
           description:

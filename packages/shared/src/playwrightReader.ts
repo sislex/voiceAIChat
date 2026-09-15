@@ -28,6 +28,7 @@ export type BrowserControlCommand =
   | ({ type: 'cookies' } & BrowserCookieRequest)
   | { type: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean }
   | { type: 'note'; text: string }
+  | { type: 'ask'; text: string; timeoutMs?: number }
   | ({ type: 'device' } & BrowserDeviceOptions)
   | ({ type: 'touch' } & BrowserTouchAction)
 
@@ -38,6 +39,9 @@ export interface BrowserImageResult extends Partial<BrowserScreenshotMetadata> {
 /** Эмуляция среды и cookies: ответ показывает, что теперь в силе. */
 export interface BrowserEnvironmentResult { environment: BrowserEnvironmentState }
 export interface BrowserCookiesResult { cookies: BrowserCookieInfo[]; total: number }
+/** Итог просьбы к человеку: сделал, отказался или не ответил вовремя. */
+export interface BrowserAskResult { ask: { id: string; done: boolean; text?: string; timedOut?: boolean; waitedMs: number } }
+
 /** Эмулированное устройство: что теперь считает страница о посетителе. */
 export interface BrowserDeviceResult { device: BrowserDeviceState }
 
@@ -46,7 +50,7 @@ export interface BrowserHistoryResult { history: { total: number; entries: Brows
 
 export interface BrowserActionOutcome {
   ok: boolean
-  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult
+  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult | BrowserEnvironmentResult | BrowserCookiesResult | BrowserHistoryResult | BrowserDeviceResult | BrowserAskResult
   error?: string
 }
 
