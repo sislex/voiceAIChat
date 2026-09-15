@@ -702,6 +702,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-12
   // @testCase T10
   // @testCase TC12
+  // @testCase TC-BRIEF-NORMALIZATION
   it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -724,6 +725,8 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-13
   // @testCase TC-BRIEF-SCHEMA
   // @testCase TC11
+  // @testCase TC-BRIEF-FORMAT
+  // @testCase TC-BRIEF-CONTRACT
   it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()
@@ -876,6 +879,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-SCHEMA-NORMALIZATION
   // @testCase TC-12
+  // @testCase TC-BRIEF-NORMALIZATION
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -913,6 +917,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC-12
+  // @testCase TC-BRIEF-NORMALIZATION
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -941,6 +946,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC7
   // @testCase TC-12
+  // @testCase TC-BRIEF-NORMALIZATION
   it('не подменяет неоднозначный статус источника на available', async () => {
     const { project, task } = await taskInBacklog()
     const malformed = JSON.parse(compatibleReadiness())

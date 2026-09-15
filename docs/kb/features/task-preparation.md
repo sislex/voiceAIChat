@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-09-14
-checked: 4632bced
+updated: 2026-09-15
+checked: 4cb0d1bf
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/ipc.ts
@@ -43,6 +43,9 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
+
+CHAT-471 verifies the existing strict preparation contract alongside universal search. Coverage markers in `apps/server/src/taskPreparation.test.ts` identify `TC-BRIEF-FORMAT` (complete-object parsing and wrapper rejection) and `TC-BRIEF-NORMALIZATION` (absent decision links, idempotence, compatible flags, references and coverage). `TC-BRIEF-CONTRACT` also covers the required UI scenario and nonempty component coverage in `packages/shared/src/qa.test.ts`. The parser accepts only one JSON object with unique keys; runtime validation still requires numeric `schemaVersion=2`. Compatible normalization does not extract JSON from prose, change source kinds, infer missing requirements or supply missing UI tests. The documentation regression `TC-BRIEF-KB` checks these rules against executable parser examples.
+
 
 CHAT-466 additionally rejects duplicate JSON member names before any field normalization. Names are compared after JSON string decoding, so an escaped spelling of the same name is also rejected. This prevents last-value-wins parsing from silently discarding requirements, source statuses or decision links. Repeated names in independent objects and JSON-looking text inside string values remain valid. The preparation prompt requires unique member names. `apps/server/src/taskPreparation.test.ts` uses `TC-BRIEF-SCHEMA`, `TC-BRIEF-NORMALIZATION` and `TC-BRIEF-REGRESSION` markers for strict format and dependent UI/component constraints, duplicate-key ambiguity, rejection of both known prefixes, and whole-brief preservation through compatible normalization and a second preparation. The whole-brief comparison checks source status and references, requirement text, IDs and test metadata; server-generated confirmation is verified separately. The focused suite passed 81 tests on the development MacBook.
 

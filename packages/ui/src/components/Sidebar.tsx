@@ -691,6 +691,11 @@ export function Sidebar({
           <span className="logodot" style={{ background: ACCENT }} />
           Голос·Чат
         </span>
+        {onOpenCommandPalette && (
+          <IconButton className="cmdk-open" aria-label="Командная палитра" title={`Командная палитра (${formatCombo(paletteShortcut)})`} onClick={onOpenCommandPalette}>
+            {formatCombo(paletteShortcut)}
+          </IconButton>
+        )}
         {onToggleCollapse && (
           <button className="side-collapse" onClick={onToggleCollapse} title="Свернуть панель" aria-label="Свернуть панель">«</button>
         )}
@@ -753,11 +758,7 @@ export function Sidebar({
                   <FilterIcon />
                 </IconButton>
               )}
-              {onOpenCommandPalette && (
-                <IconButton className="cmdk-open" aria-label="Командная палитра" title={`Командная палитра (${formatCombo(paletteShortcut)})`} onClick={onOpenCommandPalette}>
-                  {formatCombo(paletteShortcut)}
-                </IconButton>
-              )}
+
             </div>
           </div>
         </>) : (
