@@ -96,6 +96,16 @@ export interface PreviewReportResult {
   failed: number
   actions: number
   lastAction?: { kind: string; ok: boolean; at: number; error?: string }
+  /** Закладки сеанса — что человек и модель отметили как важное. */
+  bookmarks?: PreviewBookmarkEntry[]
+  /** Вопросы человеку и его ответы за сеанс — часть отчёта о работе. */
+  questions?: { question: string; answer?: string; answered: boolean; at: number }[]
+  /** Заметки ассистента для человека. */
+  notes?: { text: string; url: string | null; at: number }[]
+  /** Сколько длится сеанс панели. */
+  durationMs?: number
+  /** Готовый человеческий текст отчёта (report {readable: true}). */
+  text?: string
 }
 
 export interface PreviewSequenceResult {
@@ -114,6 +124,29 @@ export interface PreviewFillField {
   value: string
   /** Значение не возвращать и не записывать (пароли, коды). */
   secret?: boolean
+}
+
+export const PREVIEW_HOTKEY_MODIFIERS = ['shift', 'ctrl', 'alt', 'meta', 'primary'] as const
+export type PreviewHotkeyModifier = (typeof PREVIEW_HOTKEY_MODIFIERS)[number]
+
+export type PreviewExpectation =
+  | { is: 'text'; selector?: string; value: string; absent?: boolean }
+  | { is: 'visible'; selector: string; absent?: boolean }
+  | { is: 'count'; selector: string; value: number }
+  | { is: 'value'; selector: string; value: string }
+  | { is: 'url'; value: string }
+
+export interface PreviewFormField {
+  selector: string
+  value?: string
+  values?: string[]
+  checked?: boolean
+}
+
+export interface PreviewUploadFile {
+  name: string
+  mimeType?: string
+  base64: string
 }
 
 /** Точка или элемент — источник/цель перетаскивания. */
@@ -140,7 +173,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** level — уровень заголовка для role: heading. */
   /** below/above/leftOf/rightOf — ориентир по сторонам: «кнопка под ценой»; ближайшее с той стороны идёт первым. */
   /** details — подробности элемента (атрибуты, размеры, путь по странице), когда описания мало. */
-  | ({ kind: 'find'; text?: string; selector?: string; role?: string; level?: number; near?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; details?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean } & PreviewSpatialHints)
+  /** in — искать только в разделе под этим заголовком, как человек смотрит в нужной главе. */
+  | ({ kind: 'find'; text?: string; selector?: string; role?: string; level?: number; near?: string; in?: string; exact?: boolean; nth?: number; href?: string; enabled?: boolean; checked?: boolean; reveal?: boolean; details?: boolean; limit?: number; visibleOnly?: boolean; onScreen?: boolean; diagnostic?: boolean } & PreviewSpatialHints)
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   /** near — текст рядом с целью («Удалить» возле «Заказ №5»), exact — точное совпадение текста. */
   /** x/y — клик по точке вьюпорта (карты, canvas), когда у цели нет текста и селектора. */
@@ -152,13 +186,17 @@ export type PreviewAction = BrowserFrameTarget & (
   /** perKey — посимвольный ввод с событиями клавиатуры: для полей, слушающих keydown (маски, автодополнение). */
   /** secret — значение не возвращать и не записывать в сценарий, даже если поле не помечено как пароль. */
   /** blur — убрать фокус после ввода: формы часто проверяют поле именно по blur. */
-  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; secret?: boolean; blur?: boolean; diagnostic?: boolean }
+  | { kind: 'type'; selector?: string; field?: string; near?: string; text: string; submit?: boolean; append?: boolean; perKey?: boolean; waitFor?: string; secret?: boolean; blur?: boolean; delay?: number; diagnostic?: boolean }
   /** visible — только то, что сейчас в видимой области окна: экран пользователя, а не весь документ. */
   /** section — прочитать раздел под заголовком с этим текстом, как человек листает до нужного места. */
   /** brief — короткое человеческое описание страницы вместо полной структуры. */
   /** parts — какие части отдать (headings, links, buttons, inputs, forms, landmarks, text): меньше ответ — меньше контекста. */
   /** around — текст вокруг фразы (±600 символов); markdown — текст с заголовками и списками в лёгкой разметке. */
-  | { kind: 'read'; selector?: string; section?: string; around?: string; markdown?: boolean; limit?: number; offset?: number; visible?: boolean; brief?: boolean; parts?: PreviewReadPart[]; diagnostic?: boolean }
+  /** main — только основное содержимое страницы (article/main/самый текстовый блок), без меню, шапки и подвала. */
+  /** next — продолжить чтение с того места, где остановился прошлый read этой страницы: человек не считает символы. */
+  /** toc — оглавление страницы: заголовки с уровнями и селекторами, чтобы прыгнуть в нужный раздел. */
+  /** table — прочитать одну таблицу по подписи или селектору; rowOffset листает её строки. */
+  | { kind: 'read'; selector?: string; section?: string; around?: string; markdown?: boolean; main?: boolean; next?: boolean; toc?: boolean; table?: string; rowOffset?: number; limit?: number; offset?: number; visible?: boolean; brief?: boolean; parts?: PreviewReadPart[]; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   /** waitMs — подождать после наведения, пока меню анимируется, и только потом собрать revealed. */
@@ -167,7 +205,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** to: 'element' прокручивает страницу так, чтобы selector оказался в видимой области. */
   /** to: nextPage/prevPage — на экран вниз/вверх, как PageDown/PageUp. */
   /** percent — к доле высоты документа (0–100). */
-  | { kind: 'scroll'; selector?: string; text?: string; to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; percent?: number; dx?: number; dy?: number; diagnostic?: boolean }
+  /** until — листать ленту, пока не покажется текст (ленивая подгрузка), не больше maxScreens экранов. */
+  | { kind: 'scroll'; selector?: string; text?: string; to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; percent?: number; dx?: number; dy?: number; until?: string; maxScreens?: number; diagnostic?: boolean }
   /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
   /** repeat повторяет нажатие (ArrowDown ×3) одним действием. */
   | { kind: 'press'; key: string; selector?: string; repeat?: number; waitFor?: string; diagnostic?: boolean }
@@ -180,7 +219,8 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Дождаться появления элемента (selector или видимый text) с таймаутом. */
   | ({ kind: 'wait'; diagnostic?: boolean } & BrowserWaitOptions)
   /** Назад по истории внутренней страницы (переход подтверждается page-ready). */
-  | { kind: 'back'; steps?: number; diagnostic?: boolean }
+  /** to — вернуться к странице этого сеанса по части адреса или заголовка («вернись на страницу поиска»); исполняет мост панели. */
+  | { kind: 'back'; steps?: number; to?: string; diagnostic?: boolean }
   /** Вперёд по истории внутренней страницы (симметрично back). */
   | { kind: 'forward'; steps?: number; diagnostic?: boolean }
   /** Сохранённые правки edit-режима текущей страницы (перенести «как поправил» в код). */
@@ -194,11 +234,72 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Перетаскивание pointer-событиями (или HTML5 DnD у draggable) от from к to. */
   | { kind: 'drag'; from: PreviewDragPoint; to: PreviewDragPoint; diagnostic?: boolean }
   /** Установить значение сложного контрола: select (по value или подписи option), checkbox/radio (checked), date/range (value). */
-  | { kind: 'set'; selector: string; value?: string; checked?: boolean; diagnostic?: boolean }
+  | { kind: 'set'; selector: string; value?: string; values?: string[]; checked?: boolean; diagnostic?: boolean }
   /** Загрузить файл в input type=file: содержимое приходит base64 от модели. */
-  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string; diagnostic?: boolean }
+  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string; files?: PreviewUploadFile[]; diagnostic?: boolean }
   /** Ширина вьюпорта превью в пикселях (исполняет Reader, не страница); 0 — адаптив. */
   | { kind: 'viewport'; width: number; diagnostic?: boolean }
+  /**
+   * Keyboard shortcut with modifiers held, the way a person presses it
+   * (Control+A, Meta+C, Shift+Tab). Separate from `press` because the model
+   * kept spelling shortcuts as three keyDown/keyUp calls and lost a modifier
+   * in the middle, leaving the page typing in uppercase forever.
+   */
+  | { kind: 'hotkey'; key: string; modifiers: PreviewHotkeyModifier[]; repeat?: number; selector?: string; diagnostic?: boolean }
+  /** Empty an input the way Ctrl+A Delete does, firing input/change. */
+  | { kind: 'clear'; selector: string; diagnostic?: boolean }
+  /** Select the text of an element (or the whole page) as a drag would. */
+  | { kind: 'selectText'; selector?: string; diagnostic?: boolean }
+  /** Read the current selection — what Ctrl+C would copy. */
+  | { kind: 'copy'; diagnostic?: boolean }
+  /** Paste text into the focused field (or `selector`), firing a paste event. */
+  | { kind: 'paste'; selector?: string; text: string; diagnostic?: boolean }
+  /** Tab order of the page: the path a keyboard-only person walks, in order. */
+  | { kind: 'focusOrder'; selector?: string; limit?: number; diagnostic?: boolean }
+  /** Прокручивать ленту, пока не появится цель или не кончится содержимое. */
+  | { kind: 'scrollUntil'; selector?: string; text?: string; container?: string; maxScrolls?: number; step?: number; diagnostic?: boolean }
+  /** Сколько узлов подходит под условие — проверка без чтения их текста. */
+  | { kind: 'count'; selector?: string; text?: string; visibleOnly?: boolean; diagnostic?: boolean }
+  /** Таблица строками под заголовками, с порциями. */
+  | { kind: 'table'; selector: string; offset?: number; limit?: number; columns?: string[]; diagnostic?: boolean }
+  /** Повторяющиеся блоки (карточки, лента) записями со своими действиями. */
+  | { kind: 'list'; selector: string; offset?: number; limit?: number; diagnostic?: boolean }
+  /** Куда прокручена страница и сколько её осталось ниже. */
+  | { kind: 'metrics'; diagnostic?: boolean }
+  /** Геометрия элемента: виден ли, перекрыт ли, сколько прокрутки до него. */
+  | { kind: 'measure'; selector: string; diagnostic?: boolean }
+  /** Обвести элемент в кадре, чтобы человек увидел, о чём речь. */
+  | { kind: 'highlight'; selector: string; ms?: number; diagnostic?: boolean }
+  /** Видео и аудио страницы: состояние и управление, как у человека. */
+  | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number; diagnostic?: boolean }
+  /** Хранилище сайта: что страница держит между перезагрузками. */
+  | { kind: 'storage'; area?: 'local' | 'session' | 'both'; do?: 'read' | 'set' | 'remove' | 'clear'; key?: string; value?: string; limit?: number; diagnostic?: boolean }
+  /** Исходник страницы порциями — та самая разметка, что смотрит человек. */
+  | { kind: 'source'; selector?: string; offset?: number; limit?: number; diagnostic?: boolean }
+  /** Таблица как CSV: форма, которую человек вставляет в таблицу. */
+  | { kind: 'csv'; selector: string; offset?: number; limit?: number; diagnostic?: boolean }
+  /** Несколько проверок разом с общим вердиктом — как человек описывает экран. */
+  | { kind: 'expect'; checks: PreviewExpectation[]; diagnostic?: boolean }
+  /** Что происходило в сессии: обе стороны, в порядке событий. */
+  | { kind: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean; diagnostic?: boolean }
+  /** Строка от модели в панель человека: чем она сейчас занята. */
+  | { kind: 'note'; text: string; diagnostic?: boolean }
+  /** Среда браузера: тема системы, уменьшенная анимация, контраст, сеть, место. */
+  | { kind: 'environment'; colorScheme?: 'light' | 'dark' | 'no-preference'; reducedMotion?: 'reduce' | 'no-preference'; forcedColors?: 'active' | 'none'; offline?: boolean; geolocation?: { latitude: number; longitude: number; accuracy?: number } | null; permissions?: string[]; diagnostic?: boolean }
+  /** Заполнить форму целиком: человек заполняет её одним действием, а не полем за вызов. */
+  | { kind: 'fillForm'; selector?: string; fields: PreviewFormField[]; delay?: number; diagnostic?: boolean }
+  /** Что сейчас в форме: поля, значения, обязательность — проверка результата заполнения. */
+  | { kind: 'formState'; selector?: string; limit?: number; diagnostic?: boolean }
+  /** Валидация браузера: какие поля не дают отправить форму и почему. */
+  | { kind: 'validity'; selector?: string; diagnostic?: boolean }
+  /** Отправить форму так же, как Enter: с валидацией и обработчиком submit. */
+  | { kind: 'submit'; selector?: string; diagnostic?: boolean }
+  /** Варианты контрола: select, datalist, группа radio. */
+  | { kind: 'options'; selector: string; limit?: number; diagnostic?: boolean }
+  /** Перетащить файлы в зону загрузки — путь без input[type=file]. */
+  | { kind: 'dropFile'; selector: string; files: PreviewUploadFile[]; diagnostic?: boolean }
+  /** Где сейчас фокус: чтение, которое ничего не двигает. */
+  | { kind: 'focusState'; diagnostic?: boolean }
   /** Дерево доступности страницы: роли и имена как их видит скринридер. */
   | { kind: 'a11y'; selector?: string; limit?: number; diagnostic?: boolean }
   /** Состояние панели без обращения к странице: подключена ли, что открыто, загружена ли страница. */
@@ -210,12 +311,27 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Что изменилось на странице с прошлого снимка (read/changes/действие): появившиеся и исчезнувшие тексты. */
   | { kind: 'changes'; selector?: string; diagnostic?: boolean }
   /** Отчёт о сеансе панели: где были, что проверили, что упало — для отчёта по задаче. */
-  | { kind: 'report'; diagnostic?: boolean }
+  /** readable — готовый человеческий текст отчёта, который можно показать пользователю или вложить в ответ. */
+  | { kind: 'report'; readable?: boolean; diagnostic?: boolean }
+  /** Оставить пользователю заметку в панели: «нашёл дешевле на другой вкладке», «форма падает без индекса». */
+  | { kind: 'note'; text: string; diagnostic?: boolean }
+  /** Запомнить открытую страницу в панели, как человек кладёт закладку: список видит и пользователь, и модель. */
+  | { kind: 'bookmark'; label?: string; remove?: string; diagnostic?: boolean }
+  /** Спросить человека прямо в панели и дождаться ответа: «какой размер брать?», «этот пункт?». options — быстрые ответы кнопками. */
+  | { kind: 'question'; question: string; options?: string[]; timeoutMs?: number; diagnostic?: boolean }
+  /** Передать шаг человеку («войди сам, я подожду») и ждать, пока он вернёт управление. */
+  | { kind: 'handover'; reason: string; timeoutMs?: number; diagnostic?: boolean }
   /** Показать пользователю элемент: прокрутить к нему и подсветить с подписью на несколько секунд. */
   /** all — подсветить все совпадения (до 10), не только первое. */
   | { kind: 'show'; selector?: string; text?: string; near?: string; label?: string; all?: boolean; diagnostic?: boolean }
   /** Убрать то, что мешает читать: баннер cookie (предпочтительно «отклонить»/«только необходимые») или всплывающее окно — как человек закрывает их первым делом. */
   | { kind: 'dismiss'; what?: 'cookies' | 'dialog' | 'any'; diagnostic?: boolean }
+  /** Поиск по самому сайту: найти его поле поиска, ввести запрос и отправить — первое, что делает человек на большом сайте. */
+  | { kind: 'search'; text: string; in?: string; waitFor?: string; diagnostic?: boolean }
+  /** Поставить курсор в поле, ничего не вводя: так человек готовится печатать и проверяет, куда попадёт ввод. */
+  | { kind: 'focus'; selector?: string; field?: string; near?: string; diagnostic?: boolean }
+  /** Выделить текст на странице — пользователь видит выделение и понимает, о каком месте речь. */
+  | { kind: 'select'; text?: string; selector?: string; near?: string; diagnostic?: boolean }
   /** Проверка ожидания как у тестировщика: pass/fail с фактическим значением, без исключений. */
   /** url/title — проверка адреса и заголовка страницы (мост панели), без text/selector. */
   | { kind: 'check'; text?: string; selector?: string; near?: string; state?: 'visible' | 'hidden' | 'present' | 'absent'; value?: string; contains?: string; count?: number; enabled?: boolean; checked?: boolean; url?: string; title?: string; diagnostic?: boolean }
@@ -293,6 +409,13 @@ export interface PreviewStatusResult {
   checks?: { passed: number; failed: number }
   /** Сводка текущей страницы, как у open. */
   outline?: PreviewPageOutline
+  /** Закладки этого сеанса панели: их видит и пользователь. */
+  bookmarks?: PreviewBookmarkEntry[]
+  /** Панель ждёт человека: заданный вопрос или переданный ему шаг. */
+  waitingFor?: { kind: 'question' | 'handover'; text: string; since: number }
+  /** Сколько действий панель выполнила за сеанс и когда он начался. */
+  actions?: number
+  since?: number
   /** Размер видимой области страницы: понять, мобильная ли раскладка у пользователя. */
   viewport?: { width: number; height: number }
 }
@@ -404,6 +527,22 @@ export interface PreviewReadResult {
   images?: { selector: string; alt: string; src: string; width: number; height: number }[]
   /** Что лежит поверх страницы: баннер cookie, модальное окно, липкая панель — то, что человек убирает первым. */
   overlays?: { selector: string; text: string; kind: 'cookies' | 'dialog' | 'sticky' }[]
+  /** Путь по сайту (хлебные крошки) — где страница лежит в иерархии. */
+  breadcrumbs?: { text: string; href?: string }[]
+  /** Листалка страницы: куда вести «дальше» и «назад», как их видит человек. */
+  pagination?: { next?: string; prev?: string; label?: string }
+  /** Что за материал: дата публикации и автор, если страница их показывает. */
+  published?: { date?: string; author?: string }
+  /** Поле поиска самого сайта (для search). */
+  search?: string
+  /** Прочитано только основное содержимое (main: true) — selector найденного блока. */
+  main?: string
+  /** Оглавление страницы: заголовки с уровнями и селекторами для scroll и read {section}. */
+  toc?: { level: number; text: string; selector: string }[]
+  /** Однотипные списки карточек: сколько элементов и первые из них — так человек оценивает выдачу. */
+  lists?: { selector: string; count: number; items: string[] }[]
+  /** Прочитана одна таблица (table): её строки с учётом rowOffset. */
+  table?: { selector: string; caption?: string; headers: string[]; rows: string[][]; totalRows: number; rowOffset: number; nextRowOffset?: number }
   /** Элемент с фокусом — где сейчас «курсор» пользователя. */
   focus?: string
   /** Текст, выделенный пользователем на странице (до 2000 символов). */
@@ -468,6 +607,9 @@ export interface PreviewScrollResult {
   atBottom?: boolean
   /** Насколько долистано, 0–100: «на середине страницы». */
   percent?: number
+  /** Итог scroll {until}: нашёлся ли текст и сколько экранов пролистали. */
+  found?: PreviewActionElement
+  screens?: number
   /** Элемент, к которому листали (to: element). */
   element?: PreviewActionElement
 }
@@ -487,6 +629,64 @@ export interface PreviewScreenshotResult {
   dataUrl: string
   /** Пронумерованные на снимке элементы (marks: true). */
   marks?: { n: number; selector: string; text: string; role?: string }[]
+}
+
+export interface PreviewNoteResult {
+  page: PreviewPageInfo | null
+  notes: { text: string; url: string | null; at: number }[]
+}
+
+export interface PreviewQuestionResult {
+  page: PreviewPageInfo | null
+  question: string
+  /** Ответ человека; answered: false — он не ответил за отведённое время или отложил вопрос. */
+  answered: boolean
+  answer?: string
+  waitedMs: number
+}
+
+export interface PreviewHandoverResult {
+  page: PreviewPageInfo | null
+  reason: string
+  /** Человек вернул управление (true) или время вышло. */
+  returned: boolean
+  waitedMs: number
+}
+
+export interface PreviewBookmarkEntry {
+  url: string
+  label: string
+  at: number
+}
+
+export interface PreviewBookmarkResult {
+  page: PreviewPageInfo | null
+  bookmarks: PreviewBookmarkEntry[]
+  added?: PreviewBookmarkEntry
+  removed?: PreviewBookmarkEntry
+}
+
+export interface PreviewSearchResult {
+  page: PreviewPageInfo
+  /** Поле поиска сайта, которым воспользовались. */
+  field: PreviewActionElement
+  query: string
+  submitted: boolean
+  /** Подсказки, которые сайт показал под полем. */
+  suggestions?: string[]
+  navigated?: boolean
+  waited?: { text: string; found: boolean; error?: string }
+}
+
+export interface PreviewFocusResult {
+  page: PreviewPageInfo
+  focused: PreviewActionElement
+}
+
+export interface PreviewSelectResult {
+  page: PreviewPageInfo
+  selected: string
+  target: PreviewActionElement
 }
 
 export interface PreviewDismissResult {
@@ -682,6 +882,13 @@ export type PreviewActionResult =
   | PreviewCheckResult
   | PreviewShowResult
   | PreviewDismissResult
+  | PreviewSearchResult
+  | PreviewFocusResult
+  | PreviewSelectResult
+  | PreviewBookmarkResult
+  | PreviewQuestionResult
+  | PreviewHandoverResult
+  | PreviewNoteResult
   | PreviewSequenceResult
   | PreviewChangesResult
   | PreviewReportResult
@@ -735,7 +942,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.role === undefined || (bounded(value.role, 40) && /^[a-zа-яё]+$/i.test(value.role))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
         (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
-        (value.onScreen === undefined || typeof value.onScreen === 'boolean') && (value.details === undefined || typeof value.details === 'boolean') &&
+        (value.onScreen === undefined || typeof value.onScreen === 'boolean') && (value.details === undefined || typeof value.details === 'boolean') && optBounded(value.in, L.text) &&
         (PREVIEW_SPATIAL_SIDES as readonly string[]).every((side) => optBounded(value[side], L.text)) &&
         (value.text !== undefined || value.selector !== undefined || value.role !== undefined || value.href !== undefined)
       )
@@ -758,9 +965,14 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         bounded(value.text, L.text) &&
         (value.submit === undefined || typeof value.submit === 'boolean') &&
         (value.append === undefined || typeof value.append === 'boolean') &&
-        (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean') && (value.blur === undefined || typeof value.blur === 'boolean')
+        (value.perKey === undefined || typeof value.perKey === 'boolean') && optBounded(value.waitFor, L.text) && (value.secret === undefined || typeof value.secret === 'boolean') && (value.blur === undefined || typeof value.blur === 'boolean') &&
+        // Посимвольный ввод: пауза больше пятой доли секунды превращает
+        // проверку в ожидание, а не в ввод.
+        (value.delay === undefined || (typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay >= 0 && value.delay <= 200))
     case 'read':
-      return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) && optBounded(value.around, L.text) && (value.markdown === undefined || typeof value.markdown === 'boolean') &&
+      return optBounded(value.selector, L.selector) && optBounded(value.section, L.text) && optBounded(value.around, L.text) && (value.markdown === undefined || typeof value.markdown === 'boolean') && (value.main === undefined || typeof value.main === 'boolean') &&
+        (value.next === undefined || typeof value.next === 'boolean') && (value.toc === undefined || typeof value.toc === 'boolean') && optBounded(value.table, L.text) &&
+        (value.rowOffset === undefined || (typeof value.rowOffset === 'number' && Number.isInteger(value.rowOffset) && value.rowOffset >= 0 && value.rowOffset <= 100_000)) &&
         (value.visible === undefined || typeof value.visible === 'boolean') && (value.brief === undefined || typeof value.brief === 'boolean') &&
         (value.parts === undefined || (Array.isArray(value.parts) && value.parts.length >= 1 && value.parts.length <= 9 && value.parts.every((part) => (PREVIEW_READ_PARTS as readonly string[]).includes(part as string)))) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
@@ -784,7 +996,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.percent === undefined || (typeof value.percent === 'number' && Number.isFinite(value.percent) && value.percent >= 0 && value.percent <= 100)) &&
         (value.dy === undefined || (typeof value.dy === 'number' && Number.isFinite(value.dy) && Math.abs(value.dy) <= 100_000)) &&
         (value.dx === undefined || (typeof value.dx === 'number' && Number.isFinite(value.dx) && Math.abs(value.dx) <= 100_000)) &&
-        (value.to !== undefined || value.dy !== undefined || value.dx !== undefined || value.percent !== undefined)
+        optBounded(value.until, L.text) &&
+        (value.maxScreens === undefined || (typeof value.maxScreens === 'number' && Number.isInteger(value.maxScreens) && value.maxScreens >= 1 && value.maxScreens <= 50)) &&
+        (value.to !== undefined || value.dy !== undefined || value.dx !== undefined || value.percent !== undefined || value.until !== undefined)
       )
     case 'press':
       return (
@@ -822,7 +1036,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return isBrowserWaitOptions(value)
     case 'back':
     case 'forward':
-      return value.steps === undefined || (typeof value.steps === 'number' && Number.isInteger(value.steps) && value.steps >= 1 && value.steps <= 20)
+      return (value.steps === undefined || (typeof value.steps === 'number' && Number.isInteger(value.steps) && value.steps >= 1 && value.steps <= 20)) &&
+        (value.to === undefined || (value.kind === 'back' && bounded(value.to, L.text) && value.to.trim().length > 0))
     case 'edits':
     case 'status':
       return true
@@ -840,8 +1055,32 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return optBounded(value.selector, L.selector)
     case 'dismiss':
       return value.what === undefined || value.what === 'cookies' || value.what === 'dialog' || value.what === 'any'
-    case 'report':
+    case 'search':
+      return bounded(value.text, L.text) && value.text.trim().length > 0 && optBounded(value.in, L.selector) && optBounded(value.waitFor, L.text)
+    case 'focus':
+      return optBounded(value.selector, L.selector) && optBounded(value.field, L.text) && optBounded(value.near, L.text) &&
+        (bounded(value.selector, L.selector) && value.selector.length > 0 || bounded(value.field, L.text) && value.field.trim().length > 0)
+    /** Чтение фокуса — отдельный вид: `focus` ставит фокус и требует цель, а
+     *  «где сейчас курсор» обязано ничего не двигать, иначе обход формы табом
+     *  превращается в бесконечный цикл «спросил — сам же и сдвинул». */
+    case 'focusState':
       return true
+    case 'select':
+      return optBounded(value.text, L.text) && optBounded(value.selector, L.selector) && optBounded(value.near, L.text) &&
+        (value.text !== undefined || value.selector !== undefined)
+    case 'report':
+      return value.readable === undefined || typeof value.readable === 'boolean'
+    case 'note':
+      return bounded(value.text, 500) && value.text.trim().length > 0
+    case 'bookmark':
+      return optBounded(value.label, 120) && optBounded(value.remove, L.url) && !(value.label !== undefined && value.remove !== undefined)
+    case 'question':
+      return bounded(value.question, 500) && value.question.trim().length > 0 &&
+        (value.options === undefined || (Array.isArray(value.options) && value.options.length >= 1 && value.options.length <= 6 && value.options.every((option) => bounded(option, 80) && option.trim().length > 0))) &&
+        (value.timeoutMs === undefined || (typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs) && value.timeoutMs >= 5_000 && value.timeoutMs <= 600_000))
+    case 'handover':
+      return bounded(value.reason, 300) && value.reason.trim().length > 0 &&
+        (value.timeoutMs === undefined || (typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs) && value.timeoutMs >= 5_000 && value.timeoutMs <= 600_000))
     case 'network':
       return (
         validDiagnosticOptions(value) &&
@@ -870,9 +1109,15 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         bounded(value.selector, L.selector) &&
         optBounded(value.value, L.text) &&
         (value.checked === undefined || typeof value.checked === 'boolean') &&
-        (value.value !== undefined || value.checked !== undefined)
+        // Несколько значений — это select multiple: по одному они затирают
+        // друг друга, поэтому список считается полноценным «что выбрать».
+        (value.values === undefined || (Array.isArray(value.values) && value.values.length > 0 && value.values.length <= 64 && value.values.every((item) => bounded(item, L.text)))) &&
+        (value.value !== undefined || value.values !== undefined || value.checked !== undefined)
       )
     case 'upload':
+      // Несколько файлов передаются массивом; одиночная форма остаётся ради
+      // совместимости с уже написанными ходами модели.
+      if (value.files !== undefined) return bounded(value.selector, L.selector) && isUploadFiles(value.files)
       return (
         bounded(value.selector, L.selector) &&
         bounded(value.name, 255) && value.name.length > 0 &&
@@ -881,6 +1126,113 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       )
     case 'viewport':
       return typeof value.width === 'number' && Number.isFinite(value.width) && value.width >= 0 && value.width <= 10_000
+    case 'storage':
+      return (
+        (value.area === undefined || ['local', 'session', 'both'].includes(value.area as string)) &&
+        (value.do === undefined || ['read', 'set', 'remove', 'clear'].includes(value.do as string)) &&
+        optBounded(value.key, 400) && optBounded(value.value, 100_000) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        // Запись без ключа поменяла бы неизвестно что, а `set` без значения —
+        // это `remove`, и лучше сказать об этом, чем угадывать.
+        (value.do !== 'set' || (typeof value.key === 'string' && typeof value.value === 'string')) &&
+        (value.do !== 'remove' || typeof value.key === 'string')
+      )
+    case 'source':
+      return optBounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000))
+    case 'csv':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 500))
+    case 'expect':
+      return Array.isArray(value.checks) && value.checks.length > 0 && value.checks.length <= 20 && value.checks.every((check) => isExpectation(check))
+    case 'history':
+      return (value.actor === undefined || value.actor === 'user' || value.actor === 'assistant') &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        (value.clear === undefined || typeof value.clear === 'boolean')
+    case 'note':
+      return bounded(value.text, 500) && value.text.trim().length > 0
+    case 'media':
+      return optBounded(value.selector, L.selector) &&
+        (value.do === undefined || ['play', 'pause', 'mute', 'unmute'].includes(value.do as string)) &&
+        (value.seconds === undefined || (typeof value.seconds === 'number' && Number.isFinite(value.seconds) && value.seconds >= 0 && value.seconds <= 86_400))
+    case 'environment':
+      return (
+        (value.colorScheme === undefined || ['light', 'dark', 'no-preference'].includes(value.colorScheme as string)) &&
+        (value.reducedMotion === undefined || ['reduce', 'no-preference'].includes(value.reducedMotion as string)) &&
+        (value.forcedColors === undefined || ['active', 'none'].includes(value.forcedColors as string)) &&
+        (value.offline === undefined || typeof value.offline === 'boolean') &&
+        (value.geolocation === undefined || value.geolocation === null || (record(value.geolocation) &&
+          typeof value.geolocation.latitude === 'number' && Math.abs(value.geolocation.latitude) <= 90 &&
+          typeof value.geolocation.longitude === 'number' && Math.abs(value.geolocation.longitude) <= 180 &&
+          (value.geolocation.accuracy === undefined || (typeof value.geolocation.accuracy === 'number' && value.geolocation.accuracy >= 0)))) &&
+        (value.permissions === undefined || (Array.isArray(value.permissions) && value.permissions.length <= 16 && value.permissions.every((item) => bounded(item, 64)))) &&
+        ['colorScheme', 'reducedMotion', 'forcedColors', 'offline', 'geolocation', 'permissions'].some((key) => value[key] !== undefined)
+      )
+    case 'highlight':
+      return bounded(value.selector, L.selector) &&
+        (value.ms === undefined || (typeof value.ms === 'number' && Number.isFinite(value.ms) && value.ms >= 100 && value.ms <= 10_000))
+    case 'focusOrder':
+      return optBounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200))
+    case 'fillForm':
+      return (
+        optBounded(value.selector, L.selector) &&
+        Array.isArray(value.fields) && value.fields.length > 0 && value.fields.length <= 50 &&
+        value.fields.every((field) => isFormField(field)) &&
+        (value.delay === undefined || (typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay >= 0 && value.delay <= 200))
+      )
+    case 'formState':
+      return optBounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200))
+    case 'validity':
+    case 'submit':
+      return optBounded(value.selector, L.selector)
+    case 'options':
+      return bounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 500))
+    case 'dropFile':
+      return bounded(value.selector, L.selector) && isUploadFiles(value.files)
+    case 'hotkey':
+      return (
+        typeof value.key === 'string' && value.key.length >= 1 && value.key.length <= 32 &&
+        Array.isArray(value.modifiers) && value.modifiers.length > 0 && value.modifiers.length <= 4 &&
+        value.modifiers.every((item) => (PREVIEW_HOTKEY_MODIFIERS as readonly string[]).includes(item as string)) &&
+        optBounded(value.selector, L.selector) && keyRepeat(value.repeat)
+      )
+    case 'selectText':
+      return optBounded(value.selector, L.selector)
+    case 'clear':
+      return bounded(value.selector, L.selector)
+    case 'copy':
+      return true
+    case 'paste':
+      return bounded(value.text, L.text) && optBounded(value.selector, L.selector)
+    case 'scrollUntil':
+      return (
+        optBounded(value.selector, L.selector) && optBounded(value.text, L.text) && optBounded(value.container, L.selector) &&
+        (value.selector !== undefined || value.text !== undefined) &&
+        (value.maxScrolls === undefined || (typeof value.maxScrolls === 'number' && Number.isInteger(value.maxScrolls) && value.maxScrolls >= 1 && value.maxScrolls <= 50)) &&
+        (value.step === undefined || (typeof value.step === 'number' && Number.isFinite(value.step) && value.step > 0 && value.step <= 10_000))
+      )
+    case 'count':
+      return optBounded(value.selector, L.selector) && optBounded(value.text, L.text) &&
+        (value.selector !== undefined || value.text !== undefined) &&
+        (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean')
+    case 'table':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        (value.columns === undefined || (Array.isArray(value.columns) && value.columns.length > 0 && value.columns.length <= 32 && value.columns.every((item) => bounded(item, 200))))
+    case 'list':
+      return bounded(value.selector, L.selector) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isInteger(value.offset) && value.offset >= 0)) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 100))
+    case 'metrics':
+      return true
+    case 'measure':
+      return bounded(value.selector, L.selector)
     case 'a11y':
       return optBounded(value.selector, L.selector) && (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit)))
     default:
@@ -890,6 +1242,47 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
 
 function validDiagnosticOptions(value: Record<string, unknown>): boolean {
   try { normalizeBrowserDiagnosticOptions(value); return true } catch { return false }
+}
+
+function isExpectation(value: unknown): boolean {
+  if (!record(value)) return false
+  const L = PREVIEW_ACTION_LIMITS
+  if (value.is === 'text') return bounded(value.value, L.text) && optBounded(value.selector, L.selector) && (value.absent === undefined || typeof value.absent === 'boolean')
+  if (value.is === 'visible') return bounded(value.selector, L.selector) && (value.absent === undefined || typeof value.absent === 'boolean')
+  if (value.is === 'count') return bounded(value.selector, L.selector) && typeof value.value === 'number' && Number.isInteger(value.value) && value.value >= 0 && value.value <= 100_000
+  if (value.is === 'value') return bounded(value.selector, L.selector) && typeof value.value === 'string' && value.value.length <= L.text
+  if (value.is === 'url') return bounded(value.value, L.url)
+  return false
+}
+
+function isFormField(value: unknown): boolean {
+  if (!record(value)) return false
+  const L = PREVIEW_ACTION_LIMITS
+  return bounded(value.selector, L.selector) &&
+    optBounded(value.value, L.text) &&
+    (value.values === undefined || (Array.isArray(value.values) && value.values.length > 0 && value.values.length <= 64 && value.values.every((item) => bounded(item, L.text)))) &&
+    (value.checked === undefined || typeof value.checked === 'boolean') &&
+    (value.value !== undefined || value.values !== undefined || value.checked !== undefined)
+}
+
+/** Общий бюджет на все файлы тот же, что на один: он упирается в память раннера. */
+function isUploadFiles(value: unknown): boolean {
+  const L = PREVIEW_ACTION_LIMITS
+  if (!Array.isArray(value) || value.length === 0 || value.length > 16) return false
+  let total = 0
+  for (const item of value) {
+    if (!record(item)) return false
+    if (!bounded(item.name, 255) || item.name.length === 0) return false
+    if (!optBounded(item.mimeType, 100)) return false
+    if (!bounded(item.base64, L.uploadBase64)) return false
+    total += (item.base64 as string).length
+  }
+  return total <= L.uploadBase64
+}
+
+/** Repeat of a keystroke: a person holds a key, but not a thousand times. */
+function keyRepeat(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 50)
 }
 
 function logLimit(value: unknown): boolean {
@@ -1035,6 +1428,15 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'find/click {below|above|leftOf|rightOf: текст-ориентир} — «кнопка под ценой», «поле справа от подписи»: ближайшее с той стороны идёт первым; find {details: true} — атрибуты, размер и путь элемента по ориентирам; ' +
     'read {parts: [images]} — видимые картинки с alt и адресом; read.overlays — что лежит поверх страницы (баннер cookie, окно, липкая панель); dismiss {what?: cookies|dialog|any} — убрать баннер cookie (предпочитая «отклонить»/«только необходимые») или закрыть всплывающее окно, как человек делает первым делом; ' +
     'click {peek: true} — не нажимать, а узнать, куда ведёт ссылка (href, external, newTab); scroll.percent — насколько долистано. ' +
+    'search {text} — искать на самом сайте: панель найдёт его поле поиска, введёт запрос и отправит (первое, что делает человек на большом сайте); focus {field} ставит курсор, ничего не вводя; ' +
+    'select {text} выделяет место на странице — пользователь видит, о чём речь. read {main: true} — только основное содержимое без меню и подвала; read.breadcrumbs — путь по сайту; ' +
+    'read.pagination — куда вести «дальше» и «назад»; read.published — дата и автор материала; wait {stable: true} — дождаться, пока страница перестанет меняться; back {to: «часть адреса или заголовка»} — вернуться к странице этого сеанса. ' +
+    'Длинные страницы и списки: scroll {until: текст} листает ленту с ленивой подгрузкой, пока текст не покажется (maxScreens ограничивает); read {next: true} продолжает чтение с того места, где остановился прошлый read; ' +
+    'read {toc: true} — оглавление с селекторами для scroll и read {section}; read {table: подпись, rowOffset} читает одну таблицу постранично; read.lists — однотипные карточки списка с их числом; find {in: заголовок раздела} ищет только в нём. ' +
+    'bookmark {label?} кладёт закладку на открытую страницу (bookmark {remove: адрес} убирает): список видят и пользователь в панели, и ты в status.bookmarks и report. ' +
+    'note {text} оставляет пользователю заметку в панели («нашёл дешевле», «форма падает без индекса») — она видна ему сразу и попадает в report.notes; report {readable: true} отдаёт готовый человеческий текст отчёта с длительностью сеанса. ' +
+    'Не угадывай за человека: question {question, options?} задаёт ему вопрос прямо в панели и ждёт ответа (до 10 минут, ответ приходит в answer); handover {reason} передаёт шаг ему («войди сам, я подожду») ' +
+    'и ждёт, пока он вернёт управление. Пока панель ждёт, это видно в status.waitingFor, а вопросы с ответами попадают в report.questions. Спрашивай, когда выбор за человеком: размер, адрес доставки, какой из похожих пунктов нужен. ' +
     'status — состояние панели без обращения к странице: подключена ли, что открыто (url, title), загружена ли страница; вызывай его первым, если не уверен, что панель открыта. ' +
     'click {selector|text} — клик по элементу; type {selector|field, text, submit?, append?} — ввести текст в поле: field — подпись, ' +
     'placeholder или name поля, как его называет человек; ответ содержит итоговое value. ' +

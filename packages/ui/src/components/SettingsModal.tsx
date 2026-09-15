@@ -3,7 +3,7 @@ import { ShortcutSettings } from './ShortcutSettings'
 import { ProjectTypesSettings } from './ProjectTypesSettings'
 import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
-import { Dialog, ErrorState } from '@voicechat/ui-kit'
+import { Dialog, ErrorState, Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
@@ -57,6 +57,10 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
 ]
 
 export interface SettingsModalProps {
+  catalogErrors?: Record<string, string>
+  catalogLoading?: string[]
+  catalogRefreshing?: boolean
+  onRetryCatalog?: (name: string) => void
   settings: Settings
   /**
    * Раздел, с которого открыть окно. Нужен переходам из других экранов:
@@ -126,6 +130,7 @@ export interface SettingsModalProps {
 }
 
 export function SettingsModal({
+  catalogErrors = {}, catalogLoading = [], catalogRefreshing = false, onRetryCatalog,
   projectTypes = [],
   projectTypesStatus = 'ready',
   projectTypesError = null,
@@ -211,6 +216,9 @@ export function SettingsModal({
           </nav>
 
           <div className="settpane" data-testid="settings-pane">
+            {catalogRefreshing && <RefreshIndicator />}
+            {catalogLoading.map(name => <div key={name} role="status" aria-label={`Загрузка: ${name}`}><Skeleton variant="list" count={1} height={48} /></div>)}
+            {Object.entries(catalogErrors).map(([name, detail]) => <ErrorState key={name} compact message={`Не удалось загрузить: ${name}`} detail={detail} onRetry={() => onRetryCatalog?.(name)} />)}
             {section === 'llm' && (
               <>
                 <LlmSettingsEditor

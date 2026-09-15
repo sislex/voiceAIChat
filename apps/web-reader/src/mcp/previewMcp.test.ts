@@ -203,7 +203,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'changes', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'dismiss', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'report', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'ask', 'ask-user', 'audit', 'back', 'bookmark', 'cancel-download', 'changes', 'check', 'check-report', 'choose', 'clear', 'click', 'close-other-tabs', 'close-tab', 'console', 'cookies', 'copy', 'count', 'csv', 'delete-download', 'device', 'dialogs', 'dismiss', 'downloads', 'drag', 'drop-file', 'edits', 'emulate', 'environment', 'errors', 'evaluate', 'expect', 'fill', 'fill-form', 'find', 'find-tab', 'focus', 'focus-order', 'focused', 'form-state', 'forward', 'frames', 'hand-over', 'handle-dialog', 'highlight', 'history', 'hotkey', 'hover', 'list', 'measure', 'media', 'metrics', 'network', 'network-rules', 'new-tab', 'note', 'open', 'options', 'paste', 'press', 'probe', 'read', 'read-download', 'record', 'record-check', 'reload', 'replay', 'report', 'reset-session', 'screenshot', 'scroll', 'scroll-until', 'search', 'select', 'select-tab', 'select-text', 'sequence', 'session-info', 'set', 'show', 'snapshot', 'source', 'status', 'stop-loading', 'storage', 'styles', 'submit', 'table', 'tabs', 'test-users', 'touch', 'type', 'upload', 'validity', 'viewport', 'wait', 'wait-new-tab'])
   })
 
   it.each([
@@ -610,6 +610,81 @@ describe('previewMcp — инструменты browser', () => {
     expect(result.text).toContain('загружается')
   })
 
+  it('note и report {text} доходят до клиента как действия панели (круг 20)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: null, notes: [{ text: 'Цена без доставки', url: null, at: 1 }] } })
+    }
+    const noted = await call('note', { text: 'Цена без доставки' })
+    expect(noted.isError).toBeFalsy()
+    await call('report', { readable: true })
+    await call('report', {})
+    expect(seen).toEqual([
+      { kind: 'note', text: 'Цена без доставки' },
+      { kind: 'report', readable: true },
+      { kind: 'report' }
+    ])
+  })
+  it('ask-user и hand-over доходят до клиента как действия панели (круг 19)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: null, question: 'Какой размер?', answered: true, answer: 'L', waitedMs: 10 } })
+    }
+    const answer = await call('ask-user', { question: 'Какой размер?', options: ['M', 'L'] })
+    expect(answer.isError).toBeFalsy()
+    expect(answer.text).toContain('"answer"')
+    await call('hand-over', { reason: 'войдите в аккаунт' })
+    expect(seen).toEqual([
+      { kind: 'question', question: 'Какой размер?', options: ['M', 'L'] },
+      { kind: 'handover', reason: 'войдите в аккаунт' }
+    ])
+  })
+  it('bookmark, read next/toc/table, scroll until и find in доходят до клиента (круг 18)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, bookmarks: [] } })
+    }
+    await call('bookmark', { label: 'Сюда вернуться' })
+    expect(await call('bookmark', { label: 'x', remove: 'y' })).toMatchObject({ isError: true })
+    await call('read', { next: true, toc: true })
+    await call('read', { table: 'Цены', rowOffset: 20 })
+    await call('scroll', { until: 'Отзывы', maxScreens: 5 })
+    await call('find', { text: 'Условия', in: 'Доставка' })
+    expect(seen).toEqual([
+      { kind: 'bookmark', label: 'Сюда вернуться' },
+      { kind: 'read', next: true, toc: true },
+      { kind: 'read', table: 'Цены', rowOffset: 20 },
+      { kind: 'scroll', until: 'Отзывы', maxScreens: 5 },
+      { kind: 'find', text: 'Условия', in: 'Доставка' }
+    ])
+  })
+  it('search, focus, select и read main доходят до клиента как действия (круг 17)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, field: { selector: '#q', tag: 'input', text: '' }, query: 'наушники', submitted: true } })
+    }
+    const answer = await call('search', { text: 'наушники' })
+    expect(answer.isError).toBeFalsy()
+    await call('focus', { field: 'Комментарий' })
+    await call('select', { text: 'Важное условие' })
+    await call('read', { main: true })
+    expect(await call('focus', {})).toMatchObject({ isError: true })
+    expect(await call('select', {})).toMatchObject({ isError: true })
+    expect(seen).toEqual([
+      { kind: 'search', text: 'наушники' },
+      { kind: 'focus', field: 'Комментарий' },
+      { kind: 'select', text: 'Важное условие' },
+      { kind: 'read', main: true }
+    ])
+  })
   it('dismiss, find со стороной и details, click peek доходят до клиента как действия (круг 16)', async () => {
     await makeApp()
     const seen: unknown[] = []

@@ -85,6 +85,9 @@ describe.each(['embedded', 'remote'] as const)('Reader %s: вход на соб�
     const recorder = page.frameLocator('iframe[title="Web Reader"]')
     await recorder.getByRole('textbox', { name: 'Адрес превью' }).waitFor()
     const site = recorder.frameLocator('iframe[title="Предпросмотр сайта"]')
+    // Внутри превью поднимается всё наше приложение, а не простая страница: первый экран приходит
+    // заметно позже обычного таймаута локатора, и под нагрузкой тест падал именно на этом ожидании.
+    await site.getByRole('textbox', { name: 'Пользователь', exact: true }).waitFor({ timeout: 30_000 })
     await site.getByRole('textbox', { name: 'Пользователь', exact: true }).fill('admin')
     await site.getByLabel('Пароль', { exact: true }).fill(PASSWORD)
     await site.getByRole('button', { name: 'Войти', exact: true }).click()

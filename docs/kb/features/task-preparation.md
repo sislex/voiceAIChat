@@ -44,6 +44,17 @@ Realtime передаёт только адресное событие `task-pre
 
 ## DevelopmentReadiness и readiness-гейт
 
+CHAT-472 adds the `Development Brief готов:` prefix regression (`TC-BRIEF-01`) and verifies preservation of columnId, onMoveTask ordering and autonomous workflow requirements during nullable-reference normalization (`TC-BRIEF-02`). `TC-BRIEF-03` checks this existing article against executable parser examples in `apps/server/src/taskPreparation.test.ts`. Complete-response parsing, duplicate-key rejection and the runtime schema remain the existing implementation; no broader coercions were added.
+
+CHAT-468 reuses the strict complete-response parser and existing schema v2
+validation. Its TC6 marker covers both supplied prefixed responses
+(`Подготовка завершена.` and `Исправленный Development Brief:`); TC7 covers
+whole-brief preservation through compatible conversions and repeated parsing;
+TC8 covers required UI tests, coverage, exclusion, alternative verification
+and required fields. These regressions live in `apps/server/src/taskPreparation.test.ts`.
+Normalization runs only after the whole JSON object parses successfully and
+does not extract JSON from surrounding prose or manufacture required values.
+
 CHAT-471 verifies the existing strict preparation contract alongside universal search. Coverage markers in `apps/server/src/taskPreparation.test.ts` identify `TC-BRIEF-FORMAT` (complete-object parsing and wrapper rejection) and `TC-BRIEF-NORMALIZATION` (absent decision links, idempotence, compatible flags, references and coverage). `TC-BRIEF-CONTRACT` also covers the required UI scenario and nonempty component coverage in `packages/shared/src/qa.test.ts`. The parser accepts only one JSON object with unique keys; runtime validation still requires numeric `schemaVersion=2`. Compatible normalization does not extract JSON from prose, change source kinds, infer missing requirements or supply missing UI tests. The documentation regression `TC-BRIEF-KB` checks these rules against executable parser examples.
 
 

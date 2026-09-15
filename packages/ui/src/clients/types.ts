@@ -140,6 +140,7 @@ export type OperationsClient = Pick<
   | 'cx:transcript'
   | 'cx:resume'
 > & {
+  cachedAgents?: () => Awaited<ReturnType<RendererApi['agents:list']>> | undefined
   /** Файловые операции и exec на машине. */
   fs?: RendererFsBridge
   /** Чтение файлов с диска сервера (картинки, созданные CLI). */
@@ -211,6 +212,10 @@ export type ProjectsClient = Pick<
   | 'tasks:delete'
   | 'tasks:openChat'
 > & {
+  invalidateProjectReads?: (id?: string) => void
+  boardReadFresh?: (id: string, includeCompleted: boolean) => boolean
+  cachedBoard?: (id: string, includeCompleted?: boolean) => Awaited<ReturnType<RendererApi['board:get']>> | undefined
+  cachedProject?: (id: string) => Awaited<ReturnType<RendererApi['projects:get']>> | undefined
   /** Живая доска (web). */
   board?: RendererBoardBridge
   /** CI-раннер (web). */
@@ -258,6 +263,7 @@ export interface DownloadPort {
 
 /** Полный набор клиентов приложения — то, что получает `createAppRuntime`. */
 export interface AppClients {
+  reads?: import('./readResources').ReadResources
   session?: SessionClient
   settings: SettingsClient
   chat: ChatClient
