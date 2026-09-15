@@ -386,3 +386,22 @@ describe('среда браузера и медиа', () => {
     expect(isPreviewAction({ kind: 'media', seconds: -1 })).toBe(false)
   })
 })
+
+// Круг 5: проверки, лента сессии и заметки модели.
+describe('проверки, лента и заметки', () => {
+  it('набор проверок ограничен и проверяет каждую по своему виду', () => {
+    expect(isPreviewAction({ kind: 'expect', checks: [{ is: 'text', value: 'Итого' }] })).toBe(true)
+    expect(isPreviewAction({ kind: 'expect', checks: [] })).toBe(false)
+    expect(isPreviewAction({ kind: 'expect', checks: [{ is: 'visible' }] })).toBe(false)
+    expect(isPreviewAction({ kind: 'expect', checks: [{ is: 'count', selector: '.row', value: 1.5 }] })).toBe(false)
+    expect(isPreviewAction({ kind: 'expect', checks: [{ is: 'nothing', value: 'x' }] })).toBe(false)
+  })
+
+  it('заметка не может быть пустой, а лента ограничена по глубине', () => {
+    expect(isPreviewAction({ kind: 'note', text: 'проверяю форму входа' })).toBe(true)
+    expect(isPreviewAction({ kind: 'note', text: '   ' })).toBe(false)
+    expect(isPreviewAction({ kind: 'history', limit: 200 })).toBe(true)
+    expect(isPreviewAction({ kind: 'history', limit: 201 })).toBe(false)
+    expect(isPreviewAction({ kind: 'history', actor: 'robot' })).toBe(false)
+  })
+})

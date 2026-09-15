@@ -479,3 +479,53 @@ describe('медиа страницы', () => {
     expect(result.error).toContain('отклонено страницей')
   })
 })
+
+// Круг 5: набор проверок одним вердиктом — как человек описывает экран вслух.
+describe('проверки страницы', () => {
+  it('сводит несколько условий в один вердикт', async () => {
+    const target = locator({ innerText: async () => 'Итого 500', count: async () => 3, filter: () => locator({ count: async () => 3 }) })
+    const result = await runSelectorAction(page(target), {
+      kind: 'expect',
+      checks: [{ is: 'text', value: 'Итого 500' }, { is: 'count', selector: '.row', value: 3 }]
+    })
+    expect(result.expected?.passed).toBe(true)
+    expect(result.expected?.checks).toHaveLength(2)
+  })
+
+  it('несошедшаяся проверка показывает, что на странице вместо ожидаемого', async () => {
+    const target = locator({ innerText: async () => 'Итого 320' })
+    const result = await runSelectorAction(page(target), { kind: 'expect', checks: [{ is: 'text', value: 'Итого 500' }] })
+    expect(result.expected?.passed).toBe(false)
+    expect(result.expected?.checks[0].actual).toContain('320')
+  })
+
+  it('проверка отсутствия текста сходится, когда текста нет', async () => {
+    const target = locator({ innerText: async () => 'Готово' })
+    const result = await runSelectorAction(page(target), { kind: 'expect', checks: [{ is: 'text', value: 'Ошибка', absent: true }] })
+    expect(result.expected?.passed).toBe(true)
+  })
+
+  it('число элементов сравнивается с видимыми, а не со всеми', async () => {
+    const visible = locator({ count: async () => 2 })
+    const target = locator({ count: async () => 5, filter: () => visible })
+    const result = await runSelectorAction(page(target), { kind: 'expect', checks: [{ is: 'count', selector: '.row', value: 2 }] })
+    expect(result.expected?.passed).toBe(true)
+    expect(result.expected?.checks[0].actual).toBe('2 шт.')
+  })
+
+  it('адрес сверяется с публичным, а не внутренним', async () => {
+    const result = await runSelectorAction(page(locator()), { kind: 'expect', checks: [{ is: 'url', value: 'https://a.b/*' }] },
+      () => 'https://a.b/page', 'http://internal:8787/page')
+    expect(result.expected?.passed).toBe(true)
+  })
+
+  it('упавшая проверка не отменяет остальные', async () => {
+    const target = locator({ innerText: async () => { throw new Error('элемент исчез') } })
+    const result = await runSelectorAction(page(target), {
+      kind: 'expect',
+      checks: [{ is: 'text', selector: '#gone', value: 'x' }, { is: 'visible', selector: '#a' }]
+    })
+    expect(result.expected?.checks).toHaveLength(2)
+    expect(result.expected?.passed).toBe(false)
+  })
+})

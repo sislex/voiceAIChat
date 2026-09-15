@@ -71,6 +71,15 @@ export type PreviewClickModifier = (typeof PREVIEW_CLICK_MODIFIERS)[number]
 export const PREVIEW_HOTKEY_MODIFIERS = ['shift', 'ctrl', 'alt', 'meta', 'primary'] as const
 export type PreviewHotkeyModifier = (typeof PREVIEW_HOTKEY_MODIFIERS)[number]
 
+/** Одна проверка `expect`: намеренно узкий набор — это то, что человек говорит
+ *  об экране вслух, а не язык выражений. */
+export type PreviewExpectation =
+  | { is: 'text'; selector?: string; value: string; absent?: boolean }
+  | { is: 'visible'; selector: string; absent?: boolean }
+  | { is: 'count'; selector: string; value: number }
+  | { is: 'value'; selector: string; value: string }
+  | { is: 'url'; value: string }
+
 /** Поле формы в массовом заполнении. */
 export interface PreviewFormField {
   selector: string
@@ -146,6 +155,12 @@ export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'highlight'; selector: string; ms?: number; diagnostic?: boolean }
   /** Видео и аудио страницы: состояние и управление, как у человека. */
   | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number; diagnostic?: boolean }
+  /** Несколько проверок разом с общим вердиктом — как человек описывает экран. */
+  | { kind: 'expect'; checks: PreviewExpectation[]; diagnostic?: boolean }
+  /** Что происходило в сессии: обе стороны, в порядке событий. */
+  | { kind: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean; diagnostic?: boolean }
+  /** Строка от модели в панель человека: чем она сейчас занята. */
+  | { kind: 'note'; text: string; diagnostic?: boolean }
   /** Среда браузера: тема системы, уменьшенная анимация, контраст, сеть, место. */
   | { kind: 'environment'; colorScheme?: 'light' | 'dark' | 'no-preference'; reducedMotion?: 'reduce' | 'no-preference'; forcedColors?: 'active' | 'none'; offline?: boolean; geolocation?: { latitude: number; longitude: number; accuracy?: number } | null; permissions?: string[]; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
@@ -565,6 +580,14 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return true
     case 'measure':
       return bounded(value.selector, L.selector)
+    case 'expect':
+      return Array.isArray(value.checks) && value.checks.length > 0 && value.checks.length <= 20 && value.checks.every((check) => isExpectation(check))
+    case 'history':
+      return (value.actor === undefined || value.actor === 'user' || value.actor === 'assistant') &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+        (value.clear === undefined || typeof value.clear === 'boolean')
+    case 'note':
+      return bounded(value.text, 500) && value.text.trim().length > 0
     case 'media':
       return optBounded(value.selector, L.selector) &&
         (value.do === undefined || ['play', 'pause', 'mute', 'unmute'].includes(value.do as string)) &&
@@ -679,6 +702,17 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
 
 function validDiagnosticOptions(value: Record<string, unknown>): boolean {
   try { normalizeBrowserDiagnosticOptions(value); return true } catch { return false }
+}
+
+function isExpectation(value: unknown): boolean {
+  if (!record(value)) return false
+  const L = PREVIEW_ACTION_LIMITS
+  if (value.is === 'text') return bounded(value.value, L.text) && optBounded(value.selector, L.selector) && (value.absent === undefined || typeof value.absent === 'boolean')
+  if (value.is === 'visible') return bounded(value.selector, L.selector) && (value.absent === undefined || typeof value.absent === 'boolean')
+  if (value.is === 'count') return bounded(value.selector, L.selector) && typeof value.value === 'number' && Number.isInteger(value.value) && value.value >= 0 && value.value <= 100_000
+  if (value.is === 'value') return bounded(value.selector, L.selector) && typeof value.value === 'string' && value.value.length <= L.text
+  if (value.is === 'url') return bounded(value.value, L.url)
+  return false
 }
 
 function isFormField(value: unknown): boolean {

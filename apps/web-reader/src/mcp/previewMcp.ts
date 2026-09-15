@@ -889,6 +889,63 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'expect',
+        {
+          description:
+            'Несколько проверок страницы разом, одним вердиктом: есть ли текст, виден ли элемент, ' +
+            'сколько их, что в поле, какой адрес. Человек описывает экран одним предложением — ' +
+            '«итого 500, ошибки нет, три строки»; здесь то же самое, и ответ говорит, ' +
+            'что именно не сошлось и что на странице вместо этого.',
+          inputSchema: { frame: frameSchema,
+            checks: z.array(z.union([
+              z.object({ is: z.literal('text'), value: z.string().max(L.text), selector: z.string().max(L.selector).optional(), absent: z.boolean().optional() }),
+              z.object({ is: z.literal('visible'), selector: z.string().max(L.selector), absent: z.boolean().optional() }),
+              z.object({ is: z.literal('count'), selector: z.string().max(L.selector), value: z.number().int().min(0).max(100_000) }),
+              z.object({ is: z.literal('value'), selector: z.string().max(L.selector), value: z.string().max(L.text) }),
+              z.object({ is: z.literal('url'), value: z.string().max(L.url) })
+            ])).min(1).max(20).describe('Проверки; все должны сойтись')
+          }
+        },
+        async ({ frame, checks }) => run({ kind: 'expect', ...(frame !== undefined ? { frame } : {}), checks: checks as never })
+      )
+
+      server.registerTool(
+        'note',
+        {
+          description:
+            'Оставить человеку строку о том, чем ты сейчас занят в браузере: она появится в ленте панели ' +
+            'рядом с действиями. По списку команд намерение не восстанавливается, а человек смотрит на кадр ' +
+            'и не понимает, что происходит. Пиши коротко и по делу, перед долгим участком работы.',
+          inputSchema: { text: z.string().min(1).max(500).describe('Что ты делаешь и зачем') }
+        },
+        async ({ text }) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'note', text })
+          return toolResult(result ?? { ok: false, error: 'Заметки доступны только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
+        'history',
+        {
+          description:
+            'Что происходило в этой браузерной сессии: действия человека и модели в порядке событий, ' +
+            'с итогом каждого. Полезно после передачи управления («что человек успел сделать»), ' +
+            'при разборе своей же ошибки и для отчёта в задаче. clear очищает ленту.',
+          inputSchema: {
+            actor: z.enum(['user', 'assistant']).optional().describe('Только человек или только модель'),
+            limit: z.number().int().min(1).max(200).optional().describe('Сколько последних записей (по умолчанию 30)'),
+            clear: z.boolean().optional().describe('Очистить ленту')
+          }
+        },
+        async (options) => {
+          if (!entry) return noContext
+          const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'history', ...options })
+          return toolResult(result ?? { ok: false, error: 'Лента сессии доступна только в Playwright Reader или Chromium-проверке.' })
+        }
+      )
+
+      server.registerTool(
         'emulate',
         {
           description:

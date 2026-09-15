@@ -185,6 +185,8 @@ export interface BrowserSessionMetadata {
   /** Ручной режим запрещает модели менять страницу до возврата управления. */
   control?: 'shared' | 'user'
   queuedCommands?: number
+  /** Tail of the session log: the panel shows it as a live feed of both sides. */
+  history?: BrowserHistoryEntry[]
   /**
    * Внутренний адрес, с которого страница пришла на самом деле, если оператор
    * настроил алиас. Сам `currentUrl` при этом остаётся тем, который назвал
@@ -354,6 +356,12 @@ export type BrowserSelectorAction =
   | { kind: 'highlight'; selector: string; ms?: number }
   /** Video and audio of the page: state, and play/pause/seek/mute as a person does. */
   | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number }
+  /**
+   * Several checks at once, answered as one verdict. A person looking at a page
+   * says "the total is 500, the error is gone, three rows" in one breath; the
+   * model had to read each of them separately and reason about raw text.
+   */
+  | { kind: 'expect'; checks: BrowserExpectation[] }
 
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
@@ -409,6 +417,10 @@ export interface BrowserSelectorResult {
   scrolledUntil?: { found: boolean; scrolls: number; atBottom: boolean; top: number }
   /** Media elements of the page for `media`, with what the person would see. */
   media?: Array<{ selector: string; kind: 'video' | 'audio'; paused: boolean; muted: boolean; currentTime: number; duration: number; volume: number; src?: string; readyState: number }>
+  /** Verdict of `expect`: which checks passed and what the page actually showed. */
+  expected?: { passed: boolean; checks: Array<{ ok: boolean; describe: string; actual?: string }> }
+  /** Session log for `history`: what happened in this browser, by whom. */
+  history?: { total: number; entries: BrowserHistoryEntry[] }
   /**
    * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
    * проверкам сценария — «текста нет» и «до текста не дочитали» это разные
@@ -416,6 +428,37 @@ export interface BrowserSelectorResult {
    */
   truncated?: boolean
   error?: string
+}
+
+/**
+ * One check of `expect`. Deliberately narrow: these are the things a person
+ * states about a page out loud, not a general expression language.
+ */
+export type BrowserExpectation =
+  | { is: 'text'; selector?: string; value: string; absent?: boolean }
+  | { is: 'visible'; selector: string; absent?: boolean }
+  | { is: 'count'; selector: string; value: number }
+  | { is: 'value'; selector: string; value: string }
+  | { is: 'url'; value: string }
+
+/**
+ * One line of what happened in the browser session. Kept by the runner because
+ * only it sees both sides: the person clicking in the panel and the model
+ * acting through MCP. Without it nobody could answer "what did the model just
+ * do here" — the page state is the only trace, and it lies about the order.
+ */
+export interface BrowserHistoryEntry {
+  at: number
+  actor: 'user' | 'assistant'
+  /** Short human wording: "клик по «Войти»", "переход на …", "заметка". */
+  title: string
+  kind: string
+  selector?: string
+  url?: string
+  ok: boolean
+  error?: string
+  /** Free-text note left by the model for the person watching the panel. */
+  note?: string
 }
 
 /** One field of a form fill: value, checkbox state or a chosen option. */
@@ -595,6 +638,10 @@ export type BrowserCommand = BrowserFrameTarget & (
   | ({ type: 'environment' } & BrowserEnvironmentOptions)
   /** Cookies of the session: read them, add one, or drop them by name. */
   | ({ type: 'cookies' } & BrowserCookieRequest)
+  /** What happened in this session, by both sides; `clear` empties the log. */
+  | { type: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean }
+  /** A line the model writes into the panel so the person sees its intent. */
+  | { type: 'note'; text: string }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)

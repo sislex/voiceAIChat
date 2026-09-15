@@ -259,3 +259,16 @@ describe('среда и медиа', () => {
     })
   })
 })
+
+// Круг 5: проверки — селекторная команда, лента и заметка — команды сессии.
+describe('проверки, лента и заметки', () => {
+  it('набор проверок доезжает целиком', () => {
+    const checks = [{ is: 'text' as const, value: 'Итого' }, { is: 'count' as const, selector: '.row', value: 3 }]
+    expect(planModelAction({ kind: 'expect', checks })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'expect', checks } } })
+  })
+
+  it('лента и заметка уходят командами уровня сессии', () => {
+    expect(planModelAction({ kind: 'history', actor: 'assistant', limit: 10 })).toEqual({ kind: 'command', command: { type: 'history', actor: 'assistant', limit: 10 } })
+    expect(planModelAction({ kind: 'note', text: 'проверяю вход' })).toEqual({ kind: 'command', command: { type: 'note', text: 'проверяю вход' } })
+  })
+})
