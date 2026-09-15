@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-13
-checked: 06c94c52
+updated: 2026-09-15
+checked: 4cb0d1bf
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -857,6 +857,15 @@ debounce-таймер, pending-сигнал и подписку. Фоновая 
 подключения. В desktop живой синхронизации нет.
 
 ## Фронтенд
+
+`projectsStore.openProject(id, { board: false })` loads only project details.
+`ensureBoard(id)` loads the board once when the board tab becomes active; a
+repeated call for an already loaded or loading board does not request it again.
+The regression is in `packages/ui/src/store/appRuntime.projects.test.ts`.
+CHAT-468 shares allowlisted board/detail reads through the session read cache.
+Board bridge change/reconnect events invalidate that project's reads before
+scheduling synchronization. Local project, task and column mutations invalidate
+at both start and settlement, fencing responses that raced a successful write.
 
 Проектный фронтенд разделён между двумя пакетами, и **граница пока проведена только
 наполовину**. Экраны — `ProjectPage`, `ProjectBoard`, `ProjectSettings`, `KanbanBoard`,

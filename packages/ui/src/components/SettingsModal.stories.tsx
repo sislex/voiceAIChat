@@ -34,6 +34,18 @@ type Story = StoryObj<typeof SettingsModal>
 /** Обычное окно: настройки пришли с сервера. */
 export const Loaded: Story = {}
 
+export const CatalogLoading: Story = {
+  args: { section: 'llm', catalogLoading: ['MCP-серверы'] }
+}
+
+export const CatalogError: Story = {
+  args: { section: 'llm', catalogErrors: { 'MCP-серверы': 'Network unavailable' }, onRetryCatalog: () => {} }
+}
+
+export const CatalogRefreshing: Story = {
+  args: { section: 'llm', catalogRefreshing: true }
+}
+
 /**
  * Настройки не загрузились (сервер в перезапуске — типичное окно деплоя).
  * На экране дефолты, и это состояние обязано быть видно: сохранение сейчас
