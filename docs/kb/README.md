@@ -10,11 +10,11 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 20 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 45 коммит(ов) в areas после сверки: 0269cde9 feat(reader): круг 17 — поиск по сайту и ориентиры страницы … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 46 коммит(ов) в areas после сверки: 64bdfb2a feat(reader): круг 18 — длинные страницы, списки и закладки … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 48 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 7 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 22 коммит(ов) в areas после сверки: 0269cde9 feat(reader): круг 17 — поиск по сайту и ориентиры страницы … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 23 коммит(ов) в areas после сверки: 64bdfb2a feat(reader): круг 18 — длинные страницы, списки и закладки … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 20 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 186 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-13 | ⚠ 6 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 126 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 54 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1477 коммит(ов) в areas после сверки: 0269cde9 feat(reader): круг 17 — поиск по сайту и ориентиры страницы … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1478 коммит(ов) в areas после сверки: 64bdfb2a feat(reader): круг 18 — длинные страницы, списки и закладки … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 15 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 43 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 40 коммит(ов) в areas после сверки: 4632bced Merge main into CHAT-466 (task 2c900bc5-86d3-4216-857c-529cc8951e5f) … |
@@ -36,7 +36,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-15 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-15 | ⚠ 4 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ⚠ 6 коммит(ов) в areas после сверки: a6abbb37 Merge main into CHAT-468 (task 0d08841b-d123-4eab-8613-cf70eef8fdb4) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 44 коммит(ов) в areas после сверки: 0269cde9 feat(reader): круг 17 — поиск по сайту и ориентиры страницы … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 45 коммит(ов) в areas после сверки: 64bdfb2a feat(reader): круг 18 — длинные страницы, списки и закладки … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 202 коммит(ов) в areas после сверки: f20ec036 feat(search): add authorized universal command palette … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-13 | ✓ |
@@ -74,18 +74,18 @@
 
 ## Журнал сессий
 
-Всего записей: 846. Последние:
+Всего записей: 847. Последние:
 
 - [2026-09-15-germany-4-8-60-universal-search.md](log/2026-09-15-germany-4-8-60-universal-search.md) — universal-search
 - [2026-09-15-germany-4-8-60-universal-search-kb.md](log/2026-09-15-germany-4-8-60-universal-search-kb.md) — universal-search-kb
 - [2026-09-15-germany-4-8-60-chat468-route-read-cache.md](log/2026-09-15-germany-4-8-60-chat468-route-read-cache.md) — chat468-route-read-cache
 - [2026-09-15-germany-4-8-60-chat468-route-cache-kb.md](log/2026-09-15-germany-4-8-60-chat468-route-cache-kb.md) — chat468-route-cache-kb
+- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-19.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-19.md) — web-reader-user-like-cycle-19
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-18.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-18.md) — web-reader-user-like-cycle-18
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-17.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-17.md) — web-reader-user-like-cycle-17
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-16.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-16.md) — web-reader-user-like-cycle-16
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-15.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-15.md) — web-reader-user-like-cycle-15
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-14.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-14.md) — web-reader-user-like-cycle-14
-- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-13.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-13.md) — web-reader-user-like-cycle-13
 
 ## Исторические планы
 

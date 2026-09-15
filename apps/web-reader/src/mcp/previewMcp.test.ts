@@ -203,7 +203,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'bookmark', 'cancel-download', 'changes', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'dismiss', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'focus', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'report', 'reset-session', 'screenshot', 'scroll', 'search', 'select', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'ask-user', 'audit', 'back', 'bookmark', 'cancel-download', 'changes', 'check', 'choose', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'dismiss', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'fill', 'find', 'focus', 'forward', 'frames', 'hand-over', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'report', 'reset-session', 'screenshot', 'scroll', 'search', 'select', 'select-tab', 'sequence', 'set', 'show', 'status', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
   })
 
   it.each([
@@ -610,6 +610,22 @@ describe('previewMcp — инструменты browser', () => {
     expect(result.text).toContain('загружается')
   })
 
+  it('ask-user и hand-over доходят до клиента как действия панели (круг 19)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: null, question: 'Какой размер?', answered: true, answer: 'L', waitedMs: 10 } })
+    }
+    const answer = await call('ask-user', { question: 'Какой размер?', options: ['M', 'L'] })
+    expect(answer.isError).toBeFalsy()
+    expect(answer.text).toContain('"answer"')
+    await call('hand-over', { reason: 'войдите в аккаунт' })
+    expect(seen).toEqual([
+      { kind: 'question', question: 'Какой размер?', options: ['M', 'L'] },
+      { kind: 'handover', reason: 'войдите в аккаунт' }
+    ])
+  })
   it('bookmark, read next/toc/table, scroll until и find in доходят до клиента (круг 18)', async () => {
     await makeApp()
     const seen: unknown[] = []
