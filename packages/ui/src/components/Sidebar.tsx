@@ -270,6 +270,7 @@ export interface SidebarProps {
   onOpenAccount?: () => void
   /** Warm the lazy account chunk when pointer or keyboard intent is visible. */
   onAccountIntent?: () => void
+  onSettingsIntent?: () => void
   onOpenSettings: () => void
   /** Открыть файловый проводник по машине-агенту (web). */
   onOpenFiles?: () => void
@@ -375,6 +376,7 @@ export function Sidebar({
   onOpenPersonalization,
   onOpenAccount,
   onAccountIntent,
+  onSettingsIntent,
   onOpenSettings,
   onOpenFiles,
   onOpenConsole,
@@ -1048,7 +1050,7 @@ export function Sidebar({
                   </Button>
                 )}
                 {onOpenPersonalization && <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenPersonalization)}><span className="footico">✨</span>Персонализация</Button>}
-                <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSettings)}>
+                <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onMouseEnter={onSettingsIntent} onFocus={onSettingsIntent} onTouchStart={onSettingsIntent} onClick={acct(onOpenSettings)}>
                   <GearIcon />
                   Настройки
                 </Button>
@@ -1113,7 +1115,7 @@ export function Sidebar({
                 </IconButton>
               )}
             </div>
-            <Button variant="ghost" fullWidth className="sidefoot-row" onClick={onOpenSettings}>
+            <Button variant="ghost" fullWidth className="sidefoot-row" onMouseEnter={onSettingsIntent} onFocus={onSettingsIntent} onTouchStart={onSettingsIntent} onClick={onOpenSettings}>
               <GearIcon />
               Настройки
             </Button>

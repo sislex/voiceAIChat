@@ -1,0 +1,298 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Route measurements</title><style>body{font:14px system-ui;margin:24px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px;border-bottom:1px solid #bbb}th{overflow-wrap:anywhere;max-width:480px}.timeline{position:relative;min-width:180px}i{position:absolute;height:12px;background:#376bc7;top:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere}section{margin-block:32px}</style><h1>Route measurements</h1><pre>{
+  &quot;commit&quot;: &quot;18dea635707b4bb39080096818495516a91e3664&quot;,
+  &quot;conditions&quot;: {
+    &quot;scenario&quot;: &quot;returning admin, onboarded, existing chat with a fixed Markdown/code message; no optional-surface intent&quot;,
+    &quot;viewport&quot;: {
+      &quot;width&quot;: 1440,
+      &quot;height&quot;: 900
+    },
+    &quot;theme&quot;: &quot;light&quot;,
+    &quot;settleMs&quot;: 5000,
+    &quot;transport&quot;: &quot;localhost HTTP and Electron file; Electron signs in through UI on each navigation because the HTTP fixture cookie is cross-site from file origin; compression calculated per resource&quot;,
+    &quot;node&quot;: &quot;v22.23.2&quot;,
+    &quot;zlib&quot;: &quot;1.3.1-e00f703&quot;,
+    &quot;brotli&quot;: &quot;1.1.0&quot;,
+    &quot;cpu&quot;: &quot;unthrottled&quot;,
+    &quot;network&quot;: &quot;unthrottled loopback; Google font stylesheet fetched and measured&quot;,
+    &quot;cache&quot;: &quot;CDP clearBrowserCache for cold, same context reload for warm&quot;,
+    &quot;actualViewports&quot;: {
+      &quot;web&quot;: {
+        &quot;width&quot;: 1440,
+        &quot;height&quot;: 900,
+        &quot;deviceScaleFactor&quot;: 1
+      },
+      &quot;electron&quot;: {
+        &quot;width&quot;: 1440,
+        &quot;height&quot;: 873,
+        &quot;deviceScaleFactor&quot;: 1
+      }
+    }
+  },
+  &quot;tools&quot;: {
+    &quot;web&quot;: &quot;151.0.7922.34&quot;,
+    &quot;electron&quot;: &quot;33.4.11&quot;
+  }
+}</pre><section><h2>web/chat/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:5031595,&quot;gzip&quot;:1349629,&quot;brotli&quot;:1060012},&quot;css&quot;:{&quot;raw&quot;:496739,&quot;gzip&quot;:85126,&quot;brotli&quot;:69486}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:10.468021999417402%;width:29.591119293651662%"></i></td><td>19.5 + 55.0 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:10.809429151506682%;width:29.154547242429896%"></i></td><td>20.1 + 54.2 ms</td></tr><tr><th>web/assets/index-REj5nPyW.js</th><td>1119192</td><td>322357</td><td>251130</td><td class="timeline"><i style="left:11.121803830973768%;width:67.42224212481234%"></i></td><td>20.7 + 125.4 ms</td></tr><tr><th>web/assets/react-BHR-zMpM.js</th><td>142490</td><td>45621</td><td>39921</td><td class="timeline"><i style="left:11.223419023377195%;width:41.058631155884555%"></i></td><td>20.9 + 76.4 ms</td></tr><tr><th>web/assets/monaco-DpaXHH7b.js</th><td>3143804</td><td>805573</td><td>625890</td><td class="timeline"><i style="left:11.726658803666876%;width:88.27334119633312%"></i></td><td>21.8 + 164.2 ms</td></tr><tr><th>web/assets/terminal-DGHPw4qf.js</th><td>291446</td><td>72213</td><td>59896</td><td class="timeline"><i style="left:11.81698341913659%;width:56.51227248795278%"></i></td><td>22.0 + 105.1 ms</td></tr><tr><th>web/assets/markdown-C65z0Iha.js</th><td>334187</td><td>103581</td><td>82954</td><td class="timeline"><i style="left:11.914297732370175%;width:57.06820162726645%"></i></td><td>22.2 + 106.1 ms</td></tr><tr><th>web/assets/monaco-Cff06kPg.css</th><td>115142</td><td>17905</td><td>15509</td><td class="timeline"><i style="left:12.103013419091674%;width:46.87652906047858%"></i></td><td>22.5 + 87.2 ms</td></tr><tr><th>web/assets/terminal-DYP7pi_n.css</th><td>4150</td><td>1674</td><td>1207</td><td class="timeline"><i style="left:12.1815101041024%;width:61.451651729366695%"></i></td><td>22.7 + 114.3 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:12.291190726804075%;width:69.47928679568771%"></i></td><td>22.9 + 129.2 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:12.529905928471724%;width:81.40864068160383%"></i></td><td>23.3 + 151.4 ms</td></tr></tbody></table></section><section><h2>web/chat/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:5031595,&quot;gzip&quot;:1349629,&quot;brotli&quot;:1060012},&quot;css&quot;:{&quot;raw&quot;:496739,&quot;gzip&quot;:85126,&quot;brotli&quot;:69486}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:59.862761803881924%;width:10.064009252292893%"></i></td><td>33.8 + 5.7 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:60.637598721837314%;width:0.49468843026110954%"></i></td><td>34.2 + 0.3 ms</td></tr><tr><th>web/assets/index-REj5nPyW.js</th><td>1119192</td><td>322357</td><td>251130</td><td class="timeline"><i style="left:61.28832050545364%;width:17.975493449815332%"></i></td><td>34.6 + 10.1 ms</td></tr><tr><th>web/assets/react-BHR-zMpM.js</th><td>142490</td><td>45621</td><td>39921</td><td class="timeline"><i style="left:61.48158501722681%;width:19.805315773420414%"></i></td><td>34.7 + 11.2 ms</td></tr><tr><th>web/assets/monaco-DpaXHH7b.js</th><td>3143804</td><td>805573</td><td>625890</td><td class="timeline"><i style="left:61.72981866778873%;width:28.945546564667247%"></i></td><td>34.8 + 16.3 ms</td></tr><tr><th>web/assets/terminal-DGHPw4qf.js</th><td>291446</td><td>72213</td><td>59896</td><td class="timeline"><i style="left:61.91244377322318%;width:30.404795592350304%"></i></td><td>34.9 + 17.1 ms</td></tr><tr><th>web/assets/markdown-C65z0Iha.js</th><td>334187</td><td>103581</td><td>82954</td><td class="timeline"><i style="left:62.02591950122355%;width:31.654817616868346%"></i></td><td>35.0 + 17.9 ms</td></tr><tr><th>web/assets/monaco-Cff06kPg.css</th><td>115142</td><td>17905</td><td>15509</td><td class="timeline"><i style="left:62.345074636314756%;width:18.060605318641258%"></i></td><td>35.2 + 10.2 ms</td></tr><tr><th>web/assets/terminal-DYP7pi_n.css</th><td>4150</td><td>1674</td><td>1207</td><td class="timeline"><i style="left:62.580896773442774%;width:32.388872398447866%"></i></td><td>35.3 + 18.3 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:62.78834828762881%;width:34.401316445603634%"></i></td><td>35.4 + 19.4 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:62.884092799025915%;width:37.11590720097409%"></i></td><td>35.5 + 20.9 ms</td></tr></tbody></table></section><section><h2>web/account/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:5038510,&quot;gzip&quot;:1352393,&quot;brotli&quot;:1062442},&quot;css&quot;:{&quot;raw&quot;:496739,&quot;gzip&quot;:85126,&quot;brotli&quot;:69486}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:4.3011042440034135%;width:1.16560501856795%"></i></td><td>17.5 + 4.7 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:4.579776900868518%;width:9.275155351545413%"></i></td><td>18.6 + 37.7 ms</td></tr><tr><th>web/assets/index-REj5nPyW.js</th><td>1119192</td><td>322357</td><td>251130</td><td class="timeline"><i style="left:5.577882678538425%;width:4.790565266695819%"></i></td><td>22.7 + 19.5 ms</td></tr><tr><th>web/assets/react-BHR-zMpM.js</th><td>142490</td><td>45621</td><td>39921</td><td class="timeline"><i style="left:5.969697696993221%;width:16.57992437710057%"></i></td><td>24.3 + 67.4 ms</td></tr><tr><th>web/assets/monaco-DpaXHH7b.js</th><td>3143804</td><td>805573</td><td>625890</td><td class="timeline"><i style="left:10.545539052274835%;width:22.039747255875277%"></i></td><td>42.9 + 89.6 ms</td></tr><tr><th>web/assets/terminal-DGHPw4qf.js</th><td>291446</td><td>72213</td><td>59896</td><td class="timeline"><i style="left:10.606291134520447%;width:12.799026168971508%"></i></td><td>43.1 + 52.0 ms</td></tr><tr><th>web/assets/markdown-C65z0Iha.js</th><td>334187</td><td>103581</td><td>82954</td><td class="timeline"><i style="left:10.66901169325702%;width:16.970509332314354%"></i></td><td>43.4 + 69.0 ms</td></tr><tr><th>web/assets/monaco-Cff06kPg.css</th><td>115142</td><td>17905</td><td>15509</td><td class="timeline"><i style="left:10.795188878321751%;width:6.871633358662065%"></i></td><td>43.9 + 27.9 ms</td></tr><tr><th>web/assets/terminal-DYP7pi_n.css</th><td>4150</td><td>1674</td><td>1207</td><td class="timeline"><i style="left:10.826426010626433%;width:9.395922041050035%"></i></td><td>44.0 + 38.2 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:10.852989653225938%;width:17.240327598023512%"></i></td><td>44.1 + 70.1 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:10.881275009057525%;width:18.312467513804624%"></i></td><td>44.2 + 74.5 ms</td></tr><tr><th>web/assets/AccountPage-CyT-oeRA.js</th><td>6915</td><td>2764</td><td>2430</td><td class="timeline"><i style="left:97.29984980468078%;width:2.7001501953192184%"></i></td><td>395.6 + 11.0 ms</td></tr></tbody></table></section><section><h2>web/account/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:5038510,&quot;gzip&quot;:1352393,&quot;brotli&quot;:1062442},&quot;css&quot;:{&quot;raw&quot;:496739,&quot;gzip&quot;:85126,&quot;brotli&quot;:69486}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:9.16177335338359%;width:7.159856172591021%"></i></td><td>29.9 + 23.4 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:9.223337307767457%;width:0.2%"></i></td><td>30.1 + 0.2 ms</td></tr><tr><th>web/assets/index-REj5nPyW.js</th><td>1119192</td><td>322357</td><td>251130</td><td class="timeline"><i style="left:9.29592868837569%;width:7.203043420081816%"></i></td><td>30.3 + 23.5 ms</td></tr><tr><th>web/assets/react-BHR-zMpM.js</th><td>142490</td><td>45621</td><td>39921</td><td class="timeline"><i style="left:9.336359079310393%;width:7.90506213253049%"></i></td><td>30.5 + 25.8 ms</td></tr><tr><th>web/assets/monaco-DpaXHH7b.js</th><td>3143804</td><td>805573</td><td>625890</td><td class="timeline"><i style="left:9.370357389151101%;width:8.735110221537873%"></i></td><td>30.6 + 28.5 ms</td></tr><tr><th>web/assets/terminal-DGHPw4qf.js</th><td>291446</td><td>72213</td><td>59896</td><td class="timeline"><i style="left:9.403742869467049%;width:10.228585120633506%"></i></td><td>30.7 + 33.4 ms</td></tr><tr><th>web/assets/markdown-C65z0Iha.js</th><td>334187</td><td>103581</td><td>82954</td><td class="timeline"><i style="left:9.433147002584487%;width:10.828302196695901%"></i></td><td>30.8 + 35.4 ms</td></tr><tr><th>web/assets/monaco-Cff06kPg.css</th><td>115142</td><td>17905</td><td>15509</td><td class="timeline"><i style="left:9.46959546211713%;width:11.305197486651169%"></i></td><td>30.9 + 36.9 ms</td></tr><tr><th>web/assets/terminal-DYP7pi_n.css</th><td>4150</td><td>1674</td><td>1207</td><td class="timeline"><i style="left:9.505431676328566%;width:11.859583872394989%"></i></td><td>31.0 + 38.7 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:9.74985134210396%;width:12.482886414209139%"></i></td><td>31.8 + 40.8 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:9.77313010099156%;width:14.71023372435927%"></i></td><td>31.9 + 48.0 ms</td></tr><tr><th>web/assets/AccountPage-CyT-oeRA.js</th><td>6915</td><td>2764</td><td>2430</td><td class="timeline"><i style="left:98.47068947089649%;width:1.5293105291035165%"></i></td><td>321.5 + 5.0 ms</td></tr></tbody></table></section><section><h2>web/settings/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:5031595,&quot;gzip&quot;:1349629,&quot;brotli&quot;:1060012},&quot;css&quot;:{&quot;raw&quot;:496739,&quot;gzip&quot;:85126,&quot;brotli&quot;:69486}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:35.39885793716558%;width:11.64761367903808%"></i></td><td>61.9 + 20.4 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:35.59968862812432%;width:20.5762870098824%"></i></td><td>62.2 + 36.0 ms</td></tr><tr><th>web/assets/index-REj5nPyW.js</th><td>1119192</td><td>322357</td><td>251130</td><td class="timeline"><i style="left:35.65347229307484%;width:37.58510940582697%"></i></td><td>62.3 + 65.7 ms</td></tr><tr><th>web/assets/react-BHR-zMpM.js</th><td>142490</td><td>45621</td><td>39921</td><td class="timeline"><i style="left:35.702678949912986%;width:18.32766862190618%"></i></td><td>62.4 + 32.0 ms</td></tr><tr><th>web/assets/monaco-DpaXHH7b.js</th><td>3143804</td><td>805573</td><td>625890</td><td class="timeline"><i style="left:35.884628663916004%;width:64.115371336084%"></i></td><td>62.7 + 112.1 ms</td></tr><tr><th>web/assets/terminal-DGHPw4qf.js</th><td>291446</td><td>72213</td><td>59896</td><td class="timeline"><i style="left:35.9447048965289%;width:25.436278416151335%"></i></td><td>62.8 + 44.5 ms</td></tr><tr><th>web/assets/markdown-C65z0Iha.js</th><td>334187</td><td>103581</td><td>82954</td><td class="timeline"><i style="left:35.99276675567751%;width:30.604667843280055%"></i></td><td>62.9 + 53.5 ms</td></tr><tr><th>web/assets/monaco-Cff06kPg.css</th><td>115142</td><td>17905</td><td>15509</td><td class="timeline"><i style="left:36.05112852006328%;width:30.120040822896293%"></i></td><td>63.0 + 52.6 ms</td></tr><tr><th>web/assets/terminal-DYP7pi_n.css</th><td>4150</td><td>1674</td><td>1207</td><td class="timeline"><i style="left:36.11406729256143%;width:29.86828682422655%"></i></td><td>63.1 + 52.2 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:36.160984354020506%;width:32.419009574077315%"></i></td><td>63.2 + 56.7 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:36.21019101085865%;width:56.91292741892069%"></i></td><td>63.3 + 99.5 ms</td></tr></tbody></table></section><section><h2>web/settings/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:5031595,&quot;gzip&quot;:1349629,&quot;brotli&quot;:1060012},&quot;css&quot;:{&quot;raw&quot;:496739,&quot;gzip&quot;:85126,&quot;brotli&quot;:69486}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:44.543691982850625%;width:12.39014326559617%"></i></td><td>18.6 + 5.2 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:46.03797742752244%;width:2.571903880113322%"></i></td><td>19.2 + 1.1 ms</td></tr><tr><th>web/assets/index-REj5nPyW.js</th><td>1119192</td><td>322357</td><td>251130</td><td class="timeline"><i style="left:48.79427189742165%;width:13.7072273894522%"></i></td><td>20.4 + 5.7 ms</td></tr><tr><th>web/assets/react-BHR-zMpM.js</th><td>142490</td><td>45621</td><td>39921</td><td class="timeline"><i style="left:49.677912528612055%;width:21.47800499339035%"></i></td><td>20.7 + 9.0 ms</td></tr><tr><th>web/assets/monaco-DpaXHH7b.js</th><td>3143804</td><td>805573</td><td>625890</td><td class="timeline"><i style="left:50.2598231037892%;width:31.006490347789793%"></i></td><td>21.0 + 12.9 ms</td></tr><tr><th>web/assets/terminal-DGHPw4qf.js</th><td>291446</td><td>72213</td><td>59896</td><td class="timeline"><i style="left:50.71481613330421%;width:33.47302621909037%"></i></td><td>21.2 + 14.0 ms</td></tr><tr><th>web/assets/markdown-C65z0Iha.js</th><td>334187</td><td>103581</td><td>82954</td><td class="timeline"><i style="left:51.24883174379236%;width:35.50133184176556%"></i></td><td>21.4 + 14.8 ms</td></tr><tr><th>web/assets/monaco-Cff06kPg.css</th><td>115142</td><td>17905</td><td>15509</td><td class="timeline"><i style="left:53.25079193862794%;width:22.85256216137013%"></i></td><td>22.2 + 9.5 ms</td></tr><tr><th>web/assets/terminal-DYP7pi_n.css</th><td>4150</td><td>1674</td><td>1207</td><td class="timeline"><i style="left:53.93567714463795%;width:34.44048075472891%"></i></td><td>22.5 + 14.4 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:54.733110493400346%;width:40.29310750076437%"></i></td><td>22.9 + 16.8 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:55.489833578928625%;width:44.510166421071375%"></i></td><td>23.2 + 18.6 ms</td></tr></tbody></table></section><section><h2>web/account/navigation</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:5038510,&quot;gzip&quot;:1352393,&quot;brotli&quot;:1062442},&quot;css&quot;:{&quot;raw&quot;:496739,&quot;gzip&quot;:85126,&quot;brotli&quot;:69486}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:0.614925353989803%;width:0.8671735974514976%"></i></td><td>34.5 + 48.6 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:0.6218316384164841%;width:0.786618307866936%"></i></td><td>34.8 + 44.1 ms</td></tr><tr><th>web/assets/index-REj5nPyW.js</th><td>1119192</td><td>322357</td><td>251130</td><td class="timeline"><i style="left:0.6236518817495823%;width:2.8581590364452993%"></i></td><td>34.9 + 160.2 ms</td></tr><tr><th>web/assets/react-BHR-zMpM.js</th><td>142490</td><td>45621</td><td>39921</td><td class="timeline"><i style="left:0.6255256666568707%;width:1.8277155992767464%"></i></td><td>35.1 + 102.4 ms</td></tr><tr><th>web/assets/monaco-DpaXHH7b.js</th><td>3143804</td><td>805573</td><td>625890</td><td class="timeline"><i style="left:0.6275601103246022%;width:3.1185448503506823%"></i></td><td>35.2 + 174.8 ms</td></tr><tr><th>web/assets/terminal-DGHPw4qf.js</th><td>291446</td><td>72213</td><td>59896</td><td class="timeline"><i style="left:0.6294695669227687%;width:2.031851990045364%"></i></td><td>35.3 + 113.9 ms</td></tr><tr><th>web/assets/markdown-C65z0Iha.js</th><td>334187</td><td>103581</td><td>82954</td><td class="timeline"><i style="left:0.6311827271074867%;width:2.6736886054319813%"></i></td><td>35.4 + 149.8 ms</td></tr><tr><th>web/assets/monaco-Cff06kPg.css</th><td>115142</td><td>17905</td><td>15509</td><td class="timeline"><i style="left:0.6332885141569744%;width:1.8041950546342358%"></i></td><td>35.5 + 101.1 ms</td></tr><tr><th>web/assets/terminal-DYP7pi_n.css</th><td>4150</td><td>1674</td><td>1207</td><td class="timeline"><i style="left:0.6350374141083165%;width:2.210879526904826%"></i></td><td>35.6 + 123.9 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:0.6366256552992153%;width:2.213520695658342%"></i></td><td>35.7 + 124.0 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:0.6382674721021773%;width:2.529906196826471%"></i></td><td>35.8 + 141.8 ms</td></tr><tr><th>web/assets/AccountPage-CyT-oeRA.js</th><td>6915</td><td>2764</td><td>2430</td><td class="timeline"><i style="left:99.87829268372323%;width:0.2%"></i></td><td>5596.8 + 6.8 ms</td></tr></tbody></table></section><section><h2>web/settings/navigation</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:5031595,&quot;gzip&quot;:1349629,&quot;brotli&quot;:1060012},&quot;css&quot;:{&quot;raw&quot;:496739,&quot;gzip&quot;:85126,&quot;brotli&quot;:69486}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:13.815036425611549%;width:8.468607138083144%"></i></td><td>15.8 + 9.7 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:16.079579935837454%;width:32.85472864590295%"></i></td><td>18.4 + 37.5 ms</td></tr><tr><th>web/assets/index-REj5nPyW.js</th><td>1119192</td><td>322357</td><td>251130</td><td class="timeline"><i style="left:16.317861916856035%;width:65.77252873947333%"></i></td><td>18.6 + 75.1 ms</td></tr><tr><th>web/assets/react-BHR-zMpM.js</th><td>142490</td><td>45621</td><td>39921</td><td class="timeline"><i style="left:16.528985095575457%;width:33.15695762598583%"></i></td><td>18.9 + 37.8 ms</td></tr><tr><th>web/assets/monaco-DpaXHH7b.js</th><td>3143804</td><td>805573</td><td>625890</td><td class="timeline"><i style="left:16.814571915519316%;width:83.18542808448069%"></i></td><td>19.2 + 95.0 ms</td></tr><tr><th>web/assets/terminal-DGHPw4qf.js</th><td>291446</td><td>72213</td><td>59896</td><td class="timeline"><i style="left:17.0808849084347%;width:57.882978545648974%"></i></td><td>19.5 + 66.1 ms</td></tr><tr><th>web/assets/markdown-C65z0Iha.js</th><td>334187</td><td>103581</td><td>82954</td><td class="timeline"><i style="left:17.328802967517714%;width:58.37443356503142%"></i></td><td>19.8 + 66.6 ms</td></tr><tr><th>web/assets/monaco-Cff06kPg.css</th><td>115142</td><td>17905</td><td>15509</td><td class="timeline"><i style="left:17.604752038497526%;width:14.188225170431759%"></i></td><td>20.1 + 16.2 ms</td></tr><tr><th>web/assets/terminal-DYP7pi_n.css</th><td>4150</td><td>1674</td><td>1207</td><td class="timeline"><i style="left:17.89121608073787%;width:23.06593871140222%"></i></td><td>20.4 + 26.3 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:18.147015773292342%;width:35.62299157866595%"></i></td><td>20.7 + 40.7 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:18.329232388718086%;width:48.76172637347948%"></i></td><td>20.9 + 55.7 ms</td></tr></tbody></table></section><section><h2>electron/chat/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:3313613,&quot;gzip&quot;:710004,&quot;brotli&quot;:537731},&quot;css&quot;:{&quot;raw&quot;:620585,&quot;gzip&quot;:135284,&quot;brotli&quot;:91107}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:23.508798611837996%;width:1.3710268480745273%"></i></td><td>57.6 + 3.4 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:25.310288170168842%;width:74.68971182983117%"></i></td><td>62.0 + 182.9 ms</td></tr><tr><th>electron/assets/index-D8uKfX0R.js</th><td>1976653</td><td>420399</td><td>307171</td><td class="timeline"><i style="left:25.60148302894533%;width:13.190363627181622%"></i></td><td>62.7 + 32.3 ms</td></tr><tr><th>electron/assets/react-CFJZ7fIF.js</th><td>215706</td><td>53868</td><td>45921</td><td class="timeline"><i style="left:25.70521862189163%;width:12.516898251476205%"></i></td><td>62.9 + 30.6 ms</td></tr><tr><th>electron/assets/terminal-Ixw0CWPY.js</th><td>402790</td><td>77567</td><td>62644</td><td class="timeline"><i style="left:25.826516252121184%;width:13.26918597655315%"></i></td><td>63.2 + 32.5 ms</td></tr><tr><th>electron/assets/markdown-Bf8Fxnkt.js</th><td>717988</td><td>157886</td><td>121774</td><td class="timeline"><i style="left:25.895128549478002%;width:14.496861575523587%"></i></td><td>63.4 + 35.5 ms</td></tr><tr><th>electron/assets/terminal-BKlWQB97.css</th><td>5559</td><td>2073</td><td>1562</td><td class="timeline"><i style="left:25.989062274376607%;width:5.683002041021102%"></i></td><td>63.6 + 13.9 ms</td></tr><tr><th>electron/assets/markdown-DqdTtQ31.css</th><td>2177</td><td>795</td><td>642</td><td class="timeline"><i style="left:26.474251237340756%;width:5.991758937080849%"></i></td><td>64.8 + 14.7 ms</td></tr><tr><th>electron/assets/index-BksBPc_x.css</th><td>604273</td><td>131734</td><td>88360</td><td class="timeline"><i style="left:26.57390265368576%;width:6.5941613536732655%"></i></td><td>65.1 + 16.1 ms</td></tr></tbody></table></section><section><h2>electron/chat/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:3313613,&quot;gzip&quot;:710004,&quot;brotli&quot;:537731},&quot;css&quot;:{&quot;raw&quot;:620585,&quot;gzip&quot;:135284,&quot;brotli&quot;:91107}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:50.87893694750083%;width:2.4315623715347736%"></i></td><td>58.4 + 2.8 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:54.47660326680057%;width:7.110797636796713%"></i></td><td>62.5 + 8.2 ms</td></tr><tr><th>electron/assets/index-D8uKfX0R.js</th><td>1976653</td><td>420399</td><td>307171</td><td class="timeline"><i style="left:54.724119238669665%;width:7.700820498516141%"></i></td><td>62.8 + 8.8 ms</td></tr><tr><th>electron/assets/react-CFJZ7fIF.js</th><td>215706</td><td>53868</td><td>45921</td><td class="timeline"><i style="left:57.60364697036919%;width:3.3449257139570525%"></i></td><td>66.1 + 3.8 ms</td></tr><tr><th>electron/assets/terminal-Ixw0CWPY.js</th><td>402790</td><td>77567</td><td>62644</td><td class="timeline"><i style="left:57.846802708830324%;width:38.48406503413632%"></i></td><td>66.4 + 44.2 ms</td></tr><tr><th>electron/assets/markdown-Bf8Fxnkt.js</th><td>717988</td><td>157886</td><td>121774</td><td class="timeline"><i style="left:58.11523383767199%;width:41.88476616232801%"></i></td><td>66.7 + 48.1 ms</td></tr><tr><th>electron/assets/terminal-BKlWQB97.css</th><td>5559</td><td>2073</td><td>1562</td><td class="timeline"><i style="left:58.375820535918066%;width:30.580175350202545%"></i></td><td>67.0 + 35.1 ms</td></tr><tr><th>electron/assets/markdown-DqdTtQ31.css</th><td>2177</td><td>795</td><td>642</td><td class="timeline"><i style="left:58.57017091682759%;width:31.882239454443873%"></i></td><td>67.2 + 36.6 ms</td></tr><tr><th>electron/assets/index-BksBPc_x.css</th><td>604273</td><td>131734</td><td>88360</td><td class="timeline"><i style="left:58.77846639802664%;width:19.858639005421285%"></i></td><td>67.4 + 22.8 ms</td></tr></tbody></table></section><section><h2>electron/account/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:3328265,&quot;gzip&quot;:713631,&quot;brotli&quot;:540807},&quot;css&quot;:{&quot;raw&quot;:620585,&quot;gzip&quot;:135284,&quot;brotli&quot;:91107}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:9.725360693068085%;width:0.35547858024418416%"></i></td><td>79.8 + 2.9 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:10.205836025669186%;width:4.964873003955531%"></i></td><td>83.7 + 40.7 ms</td></tr><tr><th>electron/assets/index-D8uKfX0R.js</th><td>1976653</td><td>420399</td><td>307171</td><td class="timeline"><i style="left:10.254859212549885%;width:4.955482808867371%"></i></td><td>84.1 + 40.6 ms</td></tr><tr><th>electron/assets/react-CFJZ7fIF.js</th><td>215706</td><td>53868</td><td>45921</td><td class="timeline"><i style="left:10.302297014631572%;width:5.3659600066681055%"></i></td><td>84.5 + 44.0 ms</td></tr><tr><th>electron/assets/terminal-Ixw0CWPY.js</th><td>402790</td><td>77567</td><td>62644</td><td class="timeline"><i style="left:10.327296365102955%;width:4.980969916369789%"></i></td><td>84.7 + 40.8 ms</td></tr><tr><th>electron/assets/markdown-Bf8Fxnkt.js</th><td>717988</td><td>157886</td><td>121774</td><td class="timeline"><i style="left:10.35095432558961%;width:5.8452160629903895%"></i></td><td>84.9 + 47.9 ms</td></tr><tr><th>electron/assets/terminal-BKlWQB97.css</th><td>5559</td><td>2073</td><td>1562</td><td class="timeline"><i style="left:10.479853366792334%;width:1.9458039834979493%"></i></td><td>85.9 + 16.0 ms</td></tr><tr><th>electron/assets/markdown-DqdTtQ31.css</th><td>2177</td><td>795</td><td>642</td><td class="timeline"><i style="left:11.442633644205365%;width:3.5545432032127677%"></i></td><td>93.8 + 29.1 ms</td></tr><tr><th>electron/assets/index-BksBPc_x.css</th><td>604273</td><td>131734</td><td>88360</td><td class="timeline"><i style="left:11.485925162626963%;width:1.3256977920237047%"></i></td><td>94.2 + 10.9 ms</td></tr><tr><th>electron/assets/AccountPage-CLHZ4F86.js</th><td>14652</td><td>3627</td><td>3076</td><td class="timeline"><i style="left:81.71180970023364%;width:18.288190299766356%"></i></td><td>670.1 + 150.0 ms</td></tr></tbody></table></section><section><h2>electron/account/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:3328265,&quot;gzip&quot;:713631,&quot;brotli&quot;:540807},&quot;css&quot;:{&quot;raw&quot;:620585,&quot;gzip&quot;:135284,&quot;brotli&quot;:91107}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:20.876409686251385%;width:1.805867468245356%"></i></td><td>84.6 + 7.3 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:24.277924956596394%;width:1.098965821158579%"></i></td><td>98.4 + 4.5 ms</td></tr><tr><th>electron/assets/index-D8uKfX0R.js</th><td>1976653</td><td>420399</td><td>307171</td><td class="timeline"><i style="left:24.653211295963466%;width:4.0067606800499584%"></i></td><td>99.9 + 16.2 ms</td></tr><tr><th>electron/assets/react-CFJZ7fIF.js</th><td>215706</td><td>53868</td><td>45921</td><td class="timeline"><i style="left:24.717856621098264%;width:11.26576044522804%"></i></td><td>100.2 + 45.7 ms</td></tr><tr><th>electron/assets/terminal-Ixw0CWPY.js</th><td>402790</td><td>77567</td><td>62644</td><td class="timeline"><i style="left:24.93621836792127%;width:11.341756021896%"></i></td><td>101.1 + 46.0 ms</td></tr><tr><th>electron/assets/markdown-Bf8Fxnkt.js</th><td>717988</td><td>157886</td><td>121774</td><td class="timeline"><i style="left:25.390214781462035%;width:11.919859750836707%"></i></td><td>102.9 + 48.3 ms</td></tr><tr><th>electron/assets/terminal-BKlWQB97.css</th><td>5559</td><td>2073</td><td>1562</td><td class="timeline"><i style="left:25.592538968298843%;width:1.7530655973805438%"></i></td><td>103.7 + 7.1 ms</td></tr><tr><th>electron/assets/markdown-DqdTtQ31.css</th><td>2177</td><td>795</td><td>642</td><td class="timeline"><i style="left:25.6522494423856%;width:8.4092869077644%"></i></td><td>104.0 + 34.1 ms</td></tr><tr><th>electron/assets/index-BksBPc_x.css</th><td>604273</td><td>131734</td><td>88360</td><td class="timeline"><i style="left:25.865676338160558%;width:3.3218192613109663%"></i></td><td>104.8 + 13.5 ms</td></tr><tr><th>electron/assets/AccountPage-CLHZ4F86.js</th><td>14652</td><td>3627</td><td>3076</td><td class="timeline"><i style="left:65.51136231570507%;width:34.48863768429493%"></i></td><td>265.5 + 139.8 ms</td></tr></tbody></table></section><section><h2>electron/settings/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:3313613,&quot;gzip&quot;:710004,&quot;brotli&quot;:537731},&quot;css&quot;:{&quot;raw&quot;:620585,&quot;gzip&quot;:135284,&quot;brotli&quot;:91107}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:53.444738036722974%;width:4.009369681901437%"></i></td><td>115.9 + 8.7 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:58.15499834147994%;width:16.037017868789185%"></i></td><td>126.1 + 34.8 ms</td></tr><tr><th>electron/assets/index-D8uKfX0R.js</th><td>1976653</td><td>420399</td><td>307171</td><td class="timeline"><i style="left:58.321920701237154%;width:9.525653587291167%"></i></td><td>126.5 + 20.7 ms</td></tr><tr><th>electron/assets/react-CFJZ7fIF.js</th><td>215706</td><td>53868</td><td>45921</td><td class="timeline"><i style="left:58.48515443145875%;width:38.382972181409684%"></i></td><td>126.8 + 83.2 ms</td></tr><tr><th>electron/assets/terminal-Ixw0CWPY.js</th><td>402790</td><td>77567</td><td>62644</td><td class="timeline"><i style="left:58.56492698180175%;width:39.45505731645693%"></i></td><td>127.0 + 85.6 ms</td></tr><tr><th>electron/assets/markdown-Bf8Fxnkt.js</th><td>717988</td><td>157886</td><td>121774</td><td class="timeline"><i style="left:58.771505187322184%;width:41.22849481267782%"></i></td><td>127.5 + 89.4 ms</td></tr><tr><th>electron/assets/terminal-BKlWQB97.css</th><td>5559</td><td>2073</td><td>1562</td><td class="timeline"><i style="left:59.055089031283124%;width:20.4447885640875%"></i></td><td>128.1 + 44.3 ms</td></tr><tr><th>electron/assets/markdown-DqdTtQ31.css</th><td>2177</td><td>795</td><td>642</td><td class="timeline"><i style="left:59.16760014763314%;width:22.106175802774942%"></i></td><td>128.3 + 47.9 ms</td></tr><tr><th>electron/assets/index-BksBPc_x.css</th><td>604273</td><td>131734</td><td>88360</td><td class="timeline"><i style="left:59.338212016427505%;width:23.798457292701592%"></i></td><td>128.7 + 51.6 ms</td></tr></tbody></table></section><section><h2>electron/settings/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:3313613,&quot;gzip&quot;:710004,&quot;brotli&quot;:537731},&quot;css&quot;:{&quot;raw&quot;:620585,&quot;gzip&quot;:135284,&quot;brotli&quot;:91107}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:52.77048355794521%;width:6.877171415993106%"></i></td><td>85.8 + 11.2 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:60.52943822697985%;width:3.6993086842002545%"></i></td><td>98.4 + 6.0 ms</td></tr><tr><th>electron/assets/index-D8uKfX0R.js</th><td>1976653</td><td>420399</td><td>307171</td><td class="timeline"><i style="left:60.71145294447481%;width:7.533896326743851%"></i></td><td>98.7 + 12.3 ms</td></tr><tr><th>electron/assets/react-CFJZ7fIF.js</th><td>215706</td><td>53868</td><td>45921</td><td class="timeline"><i style="left:60.891621594791864%;width:36.82582658772098%"></i></td><td>99.0 + 59.9 ms</td></tr><tr><th>electron/assets/terminal-Ixw0CWPY.js</th><td>402790</td><td>77567</td><td>62644</td><td class="timeline"><i style="left:60.99738693530517%;width:30.13128211734663%"></i></td><td>99.2 + 49.0 ms</td></tr><tr><th>electron/assets/markdown-Bf8Fxnkt.js</th><td>717988</td><td>157886</td><td>121774</td><td class="timeline"><i style="left:61.878554441670474%;width:38.12144555832953%"></i></td><td>100.6 + 62.0 ms</td></tr><tr><th>electron/assets/terminal-BKlWQB97.css</th><td>5559</td><td>2073</td><td>1562</td><td class="timeline"><i style="left:63.249808215435245%;width:26.029821655367265%"></i></td><td>102.9 + 42.3 ms</td></tr><tr><th>electron/assets/markdown-DqdTtQ31.css</th><td>2177</td><td>795</td><td>642</td><td class="timeline"><i style="left:63.465026339414386%;width:16.4113753580479%"></i></td><td>103.2 + 26.7 ms</td></tr><tr><th>electron/assets/index-BksBPc_x.css</th><td>604273</td><td>131734</td><td>88360</td><td class="timeline"><i style="left:63.56710189127354%;width:17.496079394306065%"></i></td><td>103.4 + 28.5 ms</td></tr></tbody></table></section><section><h2>electron/account/navigation</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:3328265,&quot;gzip&quot;:713631,&quot;brotli&quot;:540807},&quot;css&quot;:{&quot;raw&quot;:620585,&quot;gzip&quot;:135284,&quot;brotli&quot;:91107}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:1.1813291478404069%;width:0.2%"></i></td><td>66.6 + 4.6 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:1.2809411448300376%;width:0.6291611099626698%"></i></td><td>72.2 + 35.5 ms</td></tr><tr><th>electron/assets/index-D8uKfX0R.js</th><td>1976653</td><td>420399</td><td>307171</td><td class="timeline"><i style="left:1.2867954890404643%;width:0.2%"></i></td><td>72.5 + 3.7 ms</td></tr><tr><th>electron/assets/react-CFJZ7fIF.js</th><td>215706</td><td>53868</td><td>45921</td><td class="timeline"><i style="left:1.2907515769612705%;width:1.0025597620625815%"></i></td><td>72.8 + 56.5 ms</td></tr><tr><th>electron/assets/terminal-Ixw0CWPY.js</th><td>402790</td><td>77567</td><td>62644</td><td class="timeline"><i style="left:1.294707664882077%;width:0.8503121634927282%"></i></td><td>73.0 + 47.9 ms</td></tr><tr><th>electron/assets/markdown-Bf8Fxnkt.js</th><td>717988</td><td>157886</td><td>121774</td><td class="timeline"><i style="left:1.2981847560821014%;width:1.0306959468790038%"></i></td><td>73.2 + 58.1 ms</td></tr><tr><th>electron/assets/terminal-BKlWQB97.css</th><td>5559</td><td>2073</td><td>1562</td><td class="timeline"><i style="left:1.3022472952379727%;width:0.4582861694329499%"></i></td><td>73.4 + 25.8 ms</td></tr><tr><th>electron/assets/markdown-DqdTtQ31.css</th><td>2177</td><td>795</td><td>642</td><td class="timeline"><i style="left:1.3062388781828043%;width:0.4775699155597031%"></i></td><td>73.6 + 26.9 ms</td></tr><tr><th>electron/assets/index-BksBPc_x.css</th><td>604273</td><td>131734</td><td>88360</td><td class="timeline"><i style="left:1.3097691950003612%;width:0.5027257026533796%"></i></td><td>73.8 + 28.3 ms</td></tr><tr><th>electron/assets/AccountPage-CLHZ4F86.js</th><td>14652</td><td>3627</td><td>3076</td><td class="timeline"><i style="left:99.91060644181434%;width:0.2%"></i></td><td>5631.8 + 5.0 ms</td></tr></tbody></table></section><section><h2>electron/settings/navigation</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:3313613,&quot;gzip&quot;:710004,&quot;brotli&quot;:537731},&quot;css&quot;:{&quot;raw&quot;:620585,&quot;gzip&quot;:135284,&quot;brotli&quot;:91107}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:49.398879550930545%;width:6.144957535292525%"></i></td><td>64.6 + 8.0 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:56.93562329850306%;width:25.48628396063945%"></i></td><td>74.5 + 33.3 ms</td></tr><tr><th>electron/assets/index-D8uKfX0R.js</th><td>1976653</td><td>420399</td><td>307171</td><td class="timeline"><i style="left:57.17790536909775%;width:34.88562387942957%"></i></td><td>74.8 + 45.6 ms</td></tr><tr><th>electron/assets/react-CFJZ7fIF.js</th><td>215706</td><td>53868</td><td>45921</td><td class="timeline"><i style="left:57.361336741493844%;width:35.84176040004597%"></i></td><td>75.1 + 46.9 ms</td></tr><tr><th>electron/assets/terminal-Ixw0CWPY.js</th><td>402790</td><td>77567</td><td>62644</td><td class="timeline"><i style="left:57.488210508291445%;width:38.32190696321257%"></i></td><td>75.2 + 50.1 ms</td></tr><tr><th>electron/assets/markdown-Bf8Fxnkt.js</th><td>717988</td><td>157886</td><td>121774</td><td class="timeline"><i style="left:57.64489156332455%;width:42.35510843667545%"></i></td><td>75.4 + 55.4 ms</td></tr><tr><th>electron/assets/terminal-BKlWQB97.css</th><td>5559</td><td>2073</td><td>1562</td><td class="timeline"><i style="left:57.787051642267585%;width:8.907129705962115%"></i></td><td>75.6 + 11.7 ms</td></tr><tr><th>electron/assets/markdown-DqdTtQ31.css</th><td>2177</td><td>795</td><td>642</td><td class="timeline"><i style="left:57.927681049099924%;width:12.235650557586677%"></i></td><td>75.8 + 16.0 ms</td></tr><tr><th>electron/assets/index-BksBPc_x.css</th><td>604273</td><td>131734</td><td>88360</td><td class="timeline"><i style="left:58.169199241422234%;width:14.906871649222083%"></i></td><td>76.1 + 19.5 ms</td></tr></tbody></table></section><details><summary>Complete chunk graph (static and dynamic edges)</summary><pre>web/assets/AccountPage-CyT-oeRA.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/CiSlotEditor-DTTrMKwi.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js
+  dynamic:
+web/assets/GitWorkspaceList-CUIdiQZi.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/KnowledgeBase-BWIZOPRE.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/MachineStatus-4ADguD3z.css
+  static:
+  dynamic:
+web/assets/MachineStatus-C0kHoLEZ.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/qrcode-C2qLkN4o.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/MonacoCodeEditor-Lds1Phi3.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/monaco-DpaXHH7b.js, web/assets/monacoSetup-DeBE_VvU.js
+  dynamic:
+web/assets/MonacoDiffEditor-k3qRH9yw.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/monaco-DpaXHH7b.js, web/assets/monacoSetup-DeBE_VvU.js
+  dynamic:
+web/assets/ProjectBoard-BVEV1wfJ.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/TaskModal-BgJBNA22.js, web/assets/CiSlotEditor-DTTrMKwi.js, web/assets/terminal-DGHPw4qf.js, web/assets/monaco-DpaXHH7b.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/ProjectPage-DQhmdGxl.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/ProjectSettings-BLe83APl.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/CiSlotEditor-DTTrMKwi.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/SessionsDialogHost-DW8ceIUn.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/sessionsStore-Dhsuv8rj.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/TaskModal-BgJBNA22.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js, web/assets/CiSlotEditor-DTTrMKwi.js
+  dynamic:
+web/assets/css.worker-BRIrhzkG.js
+  static:
+  dynamic:
+web/assets/editor.worker-DX6ApQqM.js
+  static:
+  dynamic:
+web/assets/html.worker-CBI4EQBP.js
+  static:
+  dynamic:
+web/assets/index-CmkqfZfz.js
+  static: web/assets/index-REj5nPyW.js, web/assets/index-REj5nPyW.js, web/assets/react-BHR-zMpM.js, web/assets/sessionsStore-Dhsuv8rj.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic:
+web/assets/index-DXMOwslQ.css
+  static:
+  dynamic:
+web/assets/index-REj5nPyW.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/monaco-DpaXHH7b.js, web/assets/terminal-DGHPw4qf.js, web/assets/markdown-C65z0Iha.js
+  dynamic: web/assets/MonacoCodeEditor-Lds1Phi3.js, web/assets/MonacoDiffEditor-k3qRH9yw.js, web/assets/SessionsDialogHost-DW8ceIUn.js, web/assets/index-CmkqfZfz.js, web/assets/AccountPage-CyT-oeRA.js, web/assets/TaskModal-BgJBNA22.js, web/assets/ProjectSettings-BLe83APl.js, web/assets/MachineStatus-C0kHoLEZ.js, web/assets/KnowledgeBase-BWIZOPRE.js, web/assets/ProjectPage-DQhmdGxl.js, web/assets/ProjectPage-DQhmdGxl.js, web/assets/ProjectPage-DQhmdGxl.js, web/assets/ProjectBoard-BVEV1wfJ.js, web/assets/GitWorkspaceList-CUIdiQZi.js
+web/assets/json.worker-CIZWV9vN.js
+  static:
+  dynamic:
+web/assets/markdown-BEHUn5zE.css
+  static:
+  dynamic:
+web/assets/markdown-C65z0Iha.js
+  static: web/assets/react-BHR-zMpM.js
+  dynamic:
+web/assets/monaco-Cff06kPg.css
+  static:
+  dynamic:
+web/assets/monaco-DpaXHH7b.js
+  static: web/assets/react-BHR-zMpM.js
+  dynamic:
+web/assets/monacoSetup-DeBE_VvU.js
+  static: web/assets/monaco-DpaXHH7b.js
+  dynamic: web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js
+web/assets/prettier-DycMSh8D.js
+  static:
+  dynamic:
+web/assets/qrcode-C2qLkN4o.js
+  static:
+  dynamic:
+web/assets/react-BHR-zMpM.js
+  static:
+  dynamic:
+web/assets/sessionsStore-Dhsuv8rj.js
+  static: web/assets/react-BHR-zMpM.js, web/assets/index-REj5nPyW.js
+  dynamic:
+web/assets/terminal-DGHPw4qf.js
+  static:
+  dynamic:
+web/assets/terminal-DYP7pi_n.css
+  static:
+  dynamic:
+web/assets/ts.worker-Ds4I2Msu.js
+  static:
+  dynamic:
+web/theme-init.js
+  static:
+  dynamic:
+web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css
+  static:
+  dynamic:
+electron/assets/AccountPage-CLHZ4F86.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/CiSlotEditor-BwBlVxVG.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js
+  dynamic:
+electron/assets/GitWorkspaceList-BMgWPcGi.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/KnowledgeBase-yW7DimwY.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/MachineStatus-BgaLS9bt.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/qrcode-BzWjNt9H.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/MachineStatus-Cwnw1qHU.css
+  static:
+  dynamic:
+electron/assets/MonacoCodeEditor-BPX9W35J.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/MonacoDiffEditor-DXaHhqs4.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/ProjectBoard-pvN8mnBz.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/TaskModal-BiZEfAPn.js, electron/assets/CiSlotEditor-BwBlVxVG.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/ProjectPage-Ba1VPlTh.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/ProjectSettings-mlYMOWgr.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/CiSlotEditor-BwBlVxVG.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/SessionsDialogHost-DrdrshWY.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/sessionsStore-Bstqghuw.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/TaskModal-BiZEfAPn.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js, electron/assets/CiSlotEditor-BwBlVxVG.js
+  dynamic:
+electron/assets/agent-log-CCU1MG2U.js
+  static:
+  dynamic:
+electron/assets/agent-setup-Dcb69TpT.js
+  static:
+  dynamic:
+electron/assets/babel-DVeTUIEq.js
+  static:
+  dynamic:
+electron/assets/css-Dc1e6frd.js
+  static:
+  dynamic:
+electron/assets/css.worker-rtSqh8pb.js
+  static:
+  dynamic:
+electron/assets/cssMode-D-tbq4Za.js
+  static: electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/editor.worker-ZSx8gsAZ.js
+  static:
+  dynamic:
+electron/assets/estree-DL7DLHAB.js
+  static:
+  dynamic:
+electron/assets/html-CBW6-o2_.js
+  static:
+  dynamic:
+electron/assets/html-TXn10Qp7.js
+  static: electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/html.worker-CLkxC0C0.js
+  static:
+  dynamic:
+electron/assets/htmlMode-BvAl3PBi.js
+  static: electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/index-BksBPc_x.css
+  static:
+  dynamic:
+electron/assets/index-Cckja4SW.js
+  static: electron/assets/index-D8uKfX0R.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/sessionsStore-Bstqghuw.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/index-D8uKfX0R.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic: electron/assets/MonacoCodeEditor-BPX9W35J.js, electron/assets/MonacoDiffEditor-DXaHhqs4.js, electron/assets/SessionsDialogHost-DrdrshWY.js, electron/assets/index-Cckja4SW.js, electron/assets/AccountPage-CLHZ4F86.js, electron/assets/TaskModal-BiZEfAPn.js, electron/assets/ProjectSettings-mlYMOWgr.js, electron/assets/MachineStatus-BgaLS9bt.js, electron/assets/KnowledgeBase-yW7DimwY.js, electron/assets/ProjectPage-Ba1VPlTh.js, electron/assets/ProjectPage-Ba1VPlTh.js, electron/assets/ProjectPage-Ba1VPlTh.js, electron/assets/ProjectBoard-pvN8mnBz.js, electron/assets/GitWorkspaceList-BMgWPcGi.js
+electron/assets/javascript-BMJaaiFM.js
+  static: electron/assets/typescript-CwN0QmCr.js, electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/json.worker-CYJeM0Vc.js
+  static:
+  dynamic:
+electron/assets/jsonMode-BdRC3dT_.js
+  static: electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/markdown-Bf8Fxnkt.js
+  static: electron/assets/react-CFJZ7fIF.js
+  dynamic:
+electron/assets/markdown-C1LDbTIq.js
+  static:
+  dynamic:
+electron/assets/markdown-DqdTtQ31.css
+  static:
+  dynamic:
+electron/assets/markdown-aNdcxj5d.js
+  static:
+  dynamic:
+electron/assets/monacoSetup-B6F6NJSG.css
+  static:
+  dynamic:
+electron/assets/monacoSetup-BZg5pJA1.js
+  static: electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js
+  dynamic: electron/assets/tsMode-DhaJl3NT.js, electron/assets/htmlMode-BvAl3PBi.js, electron/assets/cssMode-D-tbq4Za.js, electron/assets/jsonMode-BdRC3dT_.js, electron/assets/javascript-BMJaaiFM.js, electron/assets/typescript-CwN0QmCr.js, electron/assets/html-TXn10Qp7.js, electron/assets/css-Dc1e6frd.js, electron/assets/markdown-C1LDbTIq.js, electron/assets/xml-DhKSs_dX.js, electron/assets/yaml-CE428WSg.js, electron/assets/babel-DVeTUIEq.js, electron/assets/estree-DL7DLHAB.js, electron/assets/typescript-LJosMJj_.js, electron/assets/estree-DL7DLHAB.js, electron/assets/html-CBW6-o2_.js, electron/assets/babel-DVeTUIEq.js, electron/assets/postcss-D0LOvqqW.js, electron/assets/estree-DL7DLHAB.js, electron/assets/postcss-D0LOvqqW.js, electron/assets/babel-DVeTUIEq.js, electron/assets/estree-DL7DLHAB.js, electron/assets/markdown-aNdcxj5d.js, electron/assets/yaml-8mHiCpW-.js, electron/assets/standalone-bUBVPhGa.js
+electron/assets/postcss-D0LOvqqW.js
+  static:
+  dynamic:
+electron/assets/qrcode-BzWjNt9H.js
+  static:
+  dynamic:
+electron/assets/react-CFJZ7fIF.js
+  static:
+  dynamic:
+electron/assets/remote-setup-CAzIUqe1.js
+  static:
+  dynamic:
+electron/assets/sessionsStore-Bstqghuw.js
+  static: electron/assets/react-CFJZ7fIF.js, electron/assets/index-D8uKfX0R.js
+  dynamic:
+electron/assets/standalone-bUBVPhGa.js
+  static:
+  dynamic:
+electron/assets/terminal-BKlWQB97.css
+  static:
+  dynamic:
+electron/assets/terminal-Ixw0CWPY.js
+  static:
+  dynamic:
+electron/assets/ts.worker-D6bfeQIp.js
+  static:
+  dynamic:
+electron/assets/tsMode-DhaJl3NT.js
+  static: electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/typescript-CwN0QmCr.js
+  static: electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/typescript-LJosMJj_.js
+  static:
+  dynamic:
+electron/assets/xml-DhKSs_dX.js
+  static: electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/assets/yaml-8mHiCpW-.js
+  static:
+  dynamic:
+electron/assets/yaml-CE428WSg.js
+  static: electron/assets/monacoSetup-BZg5pJA1.js, electron/assets/index-D8uKfX0R.js, electron/assets/react-CFJZ7fIF.js, electron/assets/terminal-Ixw0CWPY.js, electron/assets/markdown-Bf8Fxnkt.js
+  dynamic:
+electron/theme-init.js
+  static:
+  dynamic:
+electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css
+  static:
+  dynamic: </pre></details></html>

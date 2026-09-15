@@ -174,11 +174,16 @@ export function runStatic(options = {}) {
  */
 function entryChunk(root) {
   const html = join(root, 'apps/web/dist/index.html')
-  if (!existsSync(html)) return null
-  return readFileSync(html, 'utf8').match(/src="[^"]*\/(index-[^"/]+\.js)"/)?.[1] ?? null
+  if (!existsSync(html)) fail('bundle entry missing', html)
+  const scripts = [...readFileSync(html, 'utf8').matchAll(/<script\b[^>]*>/g)].map(match => match[0]).filter(tag => /type=["']module["']/.test(tag))
+  if (scripts.length !== 1) fail('ambiguous bundle entry', String(scripts.length))
+  const entry = scripts[0].match(/src=["'][^"']*\/([^"'/]+\.js)["']/)?.[1]
+  if (!entry) fail('bundle entry missing', html)
+  return entry
 }
 export function checkBundle({ root = ROOT } = {}) {
   const baseline = JSON.parse(readFileSync(join(root, 'frontend-quality/bundle-baseline.json'), 'utf8'))
+  if (!baseline.maxBytes || !Object.keys(baseline.maxBytes).length || ![...Object.values(baseline.maxBytes), baseline.totalJsMaxBytes].every(value => Number.isSafeInteger(value) && value > 0)) fail('invalid bundle budget', 'expected positive integer byte limits')
   const dir = join(root, 'apps/web/dist/assets')
   const assets = files(dir).filter((path) => extname(path) === '.js')
   const entry = entryChunk(root)
@@ -188,8 +193,8 @@ export function checkBundle({ root = ROOT } = {}) {
     const byPrefix = assets.filter((path) => relative(dir, path).startsWith(group))
     // Группа входного чанка — ровно один файл из index.html; остальные группы
     // остаются суммой по префиксу (там это и нужно: `markdown-` бывает не одним).
-    const matches = entry && group === 'index-'
-      ? byPrefix.filter((path) => relative(dir, path) === entry)
+    const matches = group === 'index-'
+      ? assets.filter((path) => relative(dir, path) === entry)
       : byPrefix
     const actual = matches.reduce((sum, path) => sum + statSync(path).size, 0)
     measured[group] = actual

@@ -538,6 +538,21 @@ describe('App — отдельная страница Web Reader', () => {
   })
 })
 
+// @testCase TC-RECOVERY
+it('blocks chunk refresh when the current chat draft is not persisted', async () => {
+  const { api, lisbon } = await seededApi()
+  window.location.hash = `#/chat/${lisbon}`
+  render(<App api={api} delays={SLOW} />)
+  const draft = await screen.findByLabelText('Поле ввода сообщения')
+  await userEvent.clear(draft)
+  await userEvent.type(draft, 'Keep this draft')
+  await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.chat.drafts.v1') ?? '{}')[lisbon]).toBe('Keep this draft'))
+  expect(window.dispatchEvent(new Event('vc:before-chunk-refresh', { cancelable: true }))).toBe(true)
+  localStorage.removeItem('vc.chat.drafts.v1')
+  expect(window.dispatchEvent(new Event('vc:before-chunk-refresh', { cancelable: true }))).toBe(false)
+  expect(screen.getByLabelText('Поле ввода сообщения')).toHaveValue('Keep this draft')
+})
+
 describe('App — настройки разговора привязаны к инициатору', () => {
   // @testCase TC-UI-1
   it('открывает настройки отменённого task-чата, отсутствующего в sidebar-индексе', async () => {
@@ -550,7 +565,7 @@ describe('App — настройки разговора привязаны к и
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки разговора' }))
 
     expect(await screen.findByRole('dialog', { name: 'Настройки разговора' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Название разговора')).toHaveValue('Настройки отменённой задачи')
+    expect(await screen.findByLabelText('Название разговора')).toHaveValue('Настройки отменённой задачи')
   })
 
   // @testCase tc-ui-loading

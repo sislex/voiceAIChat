@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: 27f2a83e
+checked: 18dea635
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -58,6 +58,8 @@ HTTP-сервера. Он читает `/applications/<id>/manifest.json`, пр�
 API, загружает JS/CSS по SRI и сверяет регистрацию версии/SHA. React, UI-kit и общие
 реестры команд/маршрута предоставляет оболочка: второго контекста React нет.
 Ошибка загрузки или render одной панели показывает локальный повтор и сохраняет чат.
+
+Shell chunks use `packages/ui/src/runtime/lazyScreen.tsx`: each mounted surface has its own error boundary and up to three explicit local retries. Chromium caches real failed module imports, so a persistent failure additionally offers an explicit refresh: HTTP HTML is checked first, a sessionStorage guard permits only one refresh, and no refresh occurs automatically. Existing beforeunload guards remain active; the App additionally vetoes refresh while there are chat attachments or the current chat draft does not match persisted storage, both before and after the HTTP preflight. Other open editors must be saved before choosing refresh. A shared loader coalesces intent and activation, clears rejected promises, and turns a stalled load into a recoverable error after 30 seconds. Account and Settings intent handlers run on hover, focus and touchstart; the Account callback retains its session guard. Settings routing metadata lives in `components/settingsContract.ts`, so reading section IDs does not import the settings UI. Settings, Sessions, the command palette, hotkeys and two-factor windows provide a Dialog frame during loading/recovery; Account preserves its dedicated loading skeleton. The independent application host and manifest/SRI checks remain separate from these shell chunk boundaries. `lazyScreen.dom.test.tsx` tests draft preservation, bounded retries and failed-prefetch recovery; `lazyBoundary.e2e.test.ts` covers the shared boundary in Chromium at five viewport sizes in both themes. Its reduced viewport, CSS zoom and safe-area padding are emulations, not evidence of a real on-screen keyboard.
 
 `npm run build:frontends` собирает все панели; `npm run -w @voicechat/make-app build`
 — только Make UI. У каждого есть `frontend.tsx`, `panelContract.ts`, `panel.css` и

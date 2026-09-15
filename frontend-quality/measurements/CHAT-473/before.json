@@ -1,0 +1,3592 @@
+{
+  "schemaVersion": 1,
+  "commit": "18dea635707b4bb39080096818495516a91e3664",
+  "dirty": true,
+  "compression": {
+    "gzip": {
+      "level": 9
+    },
+    "brotli": {
+      "quality": 11
+    }
+  },
+  "conditions": {
+    "scenario": "returning admin, onboarded, existing chat with a fixed Markdown/code message; no optional-surface intent",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "theme": "light",
+    "settleMs": 5000,
+    "transport": "localhost HTTP and Electron file; Electron signs in through UI on each navigation because the HTTP fixture cookie is cross-site from file origin; compression calculated per resource",
+    "node": "v22.23.2",
+    "zlib": "1.3.1-e00f703",
+    "brotli": "1.1.0",
+    "cpu": "unthrottled",
+    "network": "unthrottled loopback; Google font stylesheet fetched and measured",
+    "cache": "CDP clearBrowserCache for cold, same context reload for warm",
+    "actualViewports": {
+      "web": {
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "electron": {
+        "width": 1440,
+        "height": 873,
+        "deviceScaleFactor": 1
+      }
+    }
+  },
+  "resources": {
+    "web/assets/AccountPage-CyT-oeRA.js": {
+      "type": "js",
+      "sha256": "f5ba7c05b3b6c003d593dba2f340540f29b856b1e0e22ea25e7b33613297180f",
+      "raw": 6915,
+      "gzip": 2764,
+      "brotli": 2430,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/CiSlotEditor-DTTrMKwi.js": {
+      "type": "js",
+      "sha256": "fe07b986d05af959c0df5eab92d6f84941211248c749c090ee51a6ccd2e3387c",
+      "raw": 8722,
+      "gzip": 3850,
+      "brotli": 3329,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/GitWorkspaceList-CUIdiQZi.js": {
+      "type": "js",
+      "sha256": "18889602f739e0cb46a77b3bb712a6bb3b44dbdf24190a9ec079079abb6f4997",
+      "raw": 2245,
+      "gzip": 1073,
+      "brotli": 868,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/KnowledgeBase-BWIZOPRE.js": {
+      "type": "js",
+      "sha256": "2dc654f842cdbd582c093c40da7cf3433573a67d59cb1adb073a421c168a56b7",
+      "raw": 9217,
+      "gzip": 3720,
+      "brotli": 3144,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/MachineStatus-4ADguD3z.css": {
+      "type": "css",
+      "sha256": "abf75dea2f75e88d0487cbf8b63fe1e5447a1aacc49bea22a7fe344ad1df41da",
+      "raw": 406,
+      "gzip": 236,
+      "brotli": 170,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/MachineStatus-C0kHoLEZ.js": {
+      "type": "js",
+      "sha256": "674849db54aea010a4b663a1a372618696c43681cc4f773735f01c693b557596",
+      "raw": 43418,
+      "gzip": 13384,
+      "brotli": 11654,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/qrcode-C2qLkN4o.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/MonacoCodeEditor-Lds1Phi3.js": {
+      "type": "js",
+      "sha256": "2b899a9f3dabd99aea5f39836bcdbc681ef1d6a9e4c660f4ec8f0a76b114979c",
+      "raw": 2685,
+      "gzip": 1380,
+      "brotli": 1204,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/monacoSetup-DeBE_VvU.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/MonacoDiffEditor-k3qRH9yw.js": {
+      "type": "js",
+      "sha256": "efac360109074113015728fa0e0aa587e15da3a81cd2dde7eece90d63d87b8c4",
+      "raw": 654,
+      "gzip": 448,
+      "brotli": 365,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/monacoSetup-DeBE_VvU.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ProjectBoard-BVEV1wfJ.js": {
+      "type": "js",
+      "sha256": "cef15c0f7a921c0a94dae9ec8aafee101fd4e7d4a5e2ef4a43cc0adeee2bc20b",
+      "raw": 230198,
+      "gzip": 63102,
+      "brotli": 52537,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/TaskModal-BgJBNA22.js",
+        "web/assets/CiSlotEditor-DTTrMKwi.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ProjectPage-DQhmdGxl.js": {
+      "type": "js",
+      "sha256": "d3e25f4782cd864766727f230db6570733c77558e0c0673436889b9369521666",
+      "raw": 3271,
+      "gzip": 1654,
+      "brotli": 1349,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ProjectSettings-BLe83APl.js": {
+      "type": "js",
+      "sha256": "440b085ffd68f124bd8f1c262e631fa2f494eb1cefa70755a41ce497437cf49b",
+      "raw": 75772,
+      "gzip": 21189,
+      "brotli": 18409,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/CiSlotEditor-DTTrMKwi.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/SessionsDialogHost-DW8ceIUn.js": {
+      "type": "js",
+      "sha256": "44d4807e05b29d766ec26e5d7a6169ad6deb60e04e7ae92a414316cbf48680b4",
+      "raw": 2043,
+      "gzip": 957,
+      "brotli": 833,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/sessionsStore-Dhsuv8rj.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/TaskModal-BgJBNA22.js": {
+      "type": "js",
+      "sha256": "a5f791aecfbb487d6d502ab7974e8863ca903f498daa300ed4b0bde31f6453cb",
+      "raw": 187504,
+      "gzip": 51894,
+      "brotli": 43107,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/CiSlotEditor-DTTrMKwi.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/css.worker-BRIrhzkG.js": {
+      "type": "js",
+      "sha256": "0802b285dc2c065b345f48c69beeaaf88d27ef840f6daa337609e68ccb480c7b",
+      "raw": 1011293,
+      "gzip": 227206,
+      "brotli": 174717,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/editor.worker-DX6ApQqM.js": {
+      "type": "js",
+      "sha256": "f4240aa0920bfbcc9f6bf4aa69d93a2ee5ca37c9400ed0cdee830430a2985a57",
+      "raw": 231738,
+      "gzip": 71275,
+      "brotli": 58494,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/html.worker-CBI4EQBP.js": {
+      "type": "js",
+      "sha256": "cbde8e547a46ad90b506408f239b60e38bc137d9b9eb4f6c4dca28429e748de9",
+      "raw": 673877,
+      "gzip": 176405,
+      "brotli": 142676,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/index-CmkqfZfz.js": {
+      "type": "js",
+      "sha256": "acdb530cd2ee373eefbcee50fe1967736047b77203a5c00ae1f3590c69c98c82",
+      "raw": 38454,
+      "gzip": 11692,
+      "brotli": 10203,
+      "imports": [
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/sessionsStore-Dhsuv8rj.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/index-DXMOwslQ.css": {
+      "type": "css",
+      "sha256": "32015b5dac948d44a57b41aa6cfb69f902a1b9854f1398c146289159c1c8b2b0",
+      "raw": 367555,
+      "gzip": 64251,
+      "brotli": 51735,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/index-REj5nPyW.js": {
+      "type": "js",
+      "sha256": "e305e9cf4e93f5ec2ab9f8bee95a5e8429d76a66f1f9692c42c3261d90236f31",
+      "raw": 1119192,
+      "gzip": 322357,
+      "brotli": 251130,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/markdown-C65z0Iha.js"
+      ],
+      "dynamicImports": [
+        "web/assets/MonacoCodeEditor-Lds1Phi3.js",
+        "web/assets/MonacoDiffEditor-k3qRH9yw.js",
+        "web/assets/SessionsDialogHost-DW8ceIUn.js",
+        "web/assets/index-CmkqfZfz.js",
+        "web/assets/AccountPage-CyT-oeRA.js",
+        "web/assets/TaskModal-BgJBNA22.js",
+        "web/assets/ProjectSettings-BLe83APl.js",
+        "web/assets/MachineStatus-C0kHoLEZ.js",
+        "web/assets/KnowledgeBase-BWIZOPRE.js",
+        "web/assets/ProjectPage-DQhmdGxl.js",
+        "web/assets/ProjectPage-DQhmdGxl.js",
+        "web/assets/ProjectPage-DQhmdGxl.js",
+        "web/assets/ProjectBoard-BVEV1wfJ.js",
+        "web/assets/GitWorkspaceList-CUIdiQZi.js"
+      ]
+    },
+    "web/assets/json.worker-CIZWV9vN.js": {
+      "type": "js",
+      "sha256": "f2c4ac3096645971de78f9de2b90a13fa86c98a957891d7a43fa13f5023163ef",
+      "raw": 364153,
+      "gzip": 109546,
+      "brotli": 90024,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/markdown-BEHUn5zE.css": {
+      "type": "css",
+      "sha256": "a597b77cebd36d2d2a00f9a3a63322c48a69a0cbc0fdaf59fba0630347ba988e",
+      "raw": 1316,
+      "gzip": 614,
+      "brotli": 492,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/markdown-C65z0Iha.js": {
+      "type": "js",
+      "sha256": "f8626a7fb8b30aa30c5587252536a361298efaac29b62b67cbf3a20fc0dc6c8b",
+      "raw": 334187,
+      "gzip": 103581,
+      "brotli": 82954,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/monaco-Cff06kPg.css": {
+      "type": "css",
+      "sha256": "f2e586f679c3b834231fdb86d1f1d7b92b7fa1657745d292c45c39f0d8605dae",
+      "raw": 115142,
+      "gzip": 17905,
+      "brotli": 15509,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/monaco-DpaXHH7b.js": {
+      "type": "js",
+      "sha256": "7f28f0c555411810d7d1b0b83498e49a2ef97179b618a4f266df0844d87d55f0",
+      "raw": 3143804,
+      "gzip": 805573,
+      "brotli": 625890,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/monacoSetup-DeBE_VvU.js": {
+      "type": "js",
+      "sha256": "a690d064151f158f717681ae35fa3fdb4c83b117c99981bc8ec90a10cfb59eb2",
+      "raw": 1120178,
+      "gzip": 123811,
+      "brotli": 75162,
+      "imports": [
+        "web/assets/monaco-DpaXHH7b.js"
+      ],
+      "dynamicImports": [
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js"
+      ]
+    },
+    "web/assets/prettier-DycMSh8D.js": {
+      "type": "js",
+      "sha256": "7a49a595d6950814b3de74e4addcfcac11c6bbb18239adf67c37eac149546d12",
+      "raw": 1598327,
+      "gzip": 466478,
+      "brotli": 354905,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/qrcode-C2qLkN4o.js": {
+      "type": "js",
+      "sha256": "f27ad5ec53dc17b6035b77714959be11a8a4ac848929d79163e79f26725abdcd",
+      "raw": 24038,
+      "gzip": 9441,
+      "brotli": 8318,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/react-BHR-zMpM.js": {
+      "type": "js",
+      "sha256": "991c709cd4f48d626a08b7b4784bc5eebfbad1cfa7b5736841c13cb4a44fb55e",
+      "raw": 142490,
+      "gzip": 45621,
+      "brotli": 39921,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/sessionsStore-Dhsuv8rj.js": {
+      "type": "js",
+      "sha256": "0de76ea42eb390b4cc68dc6eb55ab50536e885d551b5575b0850037ffde530f4",
+      "raw": 25419,
+      "gzip": 8200,
+      "brotli": 7218,
+      "imports": [
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/index-REj5nPyW.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/terminal-DGHPw4qf.js": {
+      "type": "js",
+      "sha256": "cbec866be49b897426d72533e091017628d41107cf39439f56ff6d8cc3059ce8",
+      "raw": 291446,
+      "gzip": 72213,
+      "brotli": 59896,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/terminal-DYP7pi_n.css": {
+      "type": "css",
+      "sha256": "7c5a01f382f76539fc9b4db6b18e18a7035741845fd14968c5cdc0a7e373d817",
+      "raw": 4150,
+      "gzip": 1674,
+      "brotli": 1207,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/ts.worker-Ds4I2Msu.js": {
+      "type": "js",
+      "sha256": "f1058ff106b5e51c71dea1677f42ae6b6e3a653c6686edce44e89c8cb93a2dcc",
+      "raw": 6022668,
+      "gzip": 1361351,
+      "brotli": 994007,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/theme-init.js": {
+      "type": "js",
+      "sha256": "2a996011959a0711f225d9ea1fea8dede11eb16cdea514c3c8ff140bf95322eb",
+      "raw": 476,
+      "gzip": 284,
+      "brotli": 221,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css": {
+      "type": "css",
+      "sha256": "c1fd31c0371bddd4d33b4867f559c050c3cbd40b49442c686192654ff1d62c33",
+      "raw": 8576,
+      "gzip": 682,
+      "brotli": 543,
+      "imports": [],
+      "dynamicImports": [],
+      "source": "https://fonts.googleapis.com"
+    },
+    "electron/assets/AccountPage-CLHZ4F86.js": {
+      "type": "js",
+      "sha256": "12e71441947906af0076cabab56107613fbbd352171bbe4478c4d42498998aff",
+      "raw": 14652,
+      "gzip": 3627,
+      "brotli": 3076,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/CiSlotEditor-BwBlVxVG.js": {
+      "type": "js",
+      "sha256": "4560306a45102974240c49f70fc9c5e0fcbd60f35935d0bacf3410cc4cb5f873",
+      "raw": 13597,
+      "gzip": 4529,
+      "brotli": 3868,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/GitWorkspaceList-BMgWPcGi.js": {
+      "type": "js",
+      "sha256": "b7b7c6bbafa4ce80c17bc6d3d08bad9632720457ca157cc75bf9460b8a661d5a",
+      "raw": 3591,
+      "gzip": 1230,
+      "brotli": 1006,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/KnowledgeBase-yW7DimwY.js": {
+      "type": "js",
+      "sha256": "1ae487131257518dfff24bfa4febc507955f44edc739d0ada773cea3162bf198",
+      "raw": 16536,
+      "gzip": 4579,
+      "brotli": 3862,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/MachineStatus-BgaLS9bt.js": {
+      "type": "js",
+      "sha256": "7dd8bfffd3524d05c2ee08b9c78a5c2f2ea8612f115adbd722c129259171620f",
+      "raw": 75009,
+      "gzip": 16397,
+      "brotli": 13952,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/qrcode-BzWjNt9H.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/MachineStatus-Cwnw1qHU.css": {
+      "type": "css",
+      "sha256": "5da637763554baeaebacd5e47b7350cf0a9587e7f57c746059dd490be49bfd5f",
+      "raw": 514,
+      "gzip": 255,
+      "brotli": 201,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/MonacoCodeEditor-BPX9W35J.js": {
+      "type": "js",
+      "sha256": "9e3521fbb6fc8029c8abdd8ea059d568d59f0616e6428d88fa50ce50794f6591",
+      "raw": 4549,
+      "gzip": 1709,
+      "brotli": 1484,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/MonacoDiffEditor-DXaHhqs4.js": {
+      "type": "js",
+      "sha256": "fdc278f849ebbc4b51c4d1d29e7f811b2024db989ac32a5e133a4f0be1c9c771",
+      "raw": 1092,
+      "gzip": 598,
+      "brotli": 492,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ProjectBoard-pvN8mnBz.js": {
+      "type": "js",
+      "sha256": "6621dd2f62ab59078186faec3ea7bfcccf833d01a9b0684797fb83c65da6cd45",
+      "raw": 413747,
+      "gzip": 80289,
+      "brotli": 62539,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/TaskModal-BiZEfAPn.js",
+        "electron/assets/CiSlotEditor-BwBlVxVG.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ProjectPage-Ba1VPlTh.js": {
+      "type": "js",
+      "sha256": "bc4924bd2891871343e09edf4831cf00a3a6a9df0adaf214683e7953874c18d5",
+      "raw": 5857,
+      "gzip": 2109,
+      "brotli": 1721,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ProjectSettings-mlYMOWgr.js": {
+      "type": "js",
+      "sha256": "3400a8a75227031bad1e409edb0cd146e72eb8e9fd864f9a3c3d46fa976610b8",
+      "raw": 126131,
+      "gzip": 25855,
+      "brotli": 21717,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/CiSlotEditor-BwBlVxVG.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/SessionsDialogHost-DrdrshWY.js": {
+      "type": "js",
+      "sha256": "666a8cbc9767fbfda4c1fce50ad842deb454fa43120b0458bee9ea080bd2b383",
+      "raw": 4268,
+      "gzip": 1711,
+      "brotli": 1388,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/sessionsStore-Bstqghuw.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/TaskModal-BiZEfAPn.js": {
+      "type": "js",
+      "sha256": "c1f541475c77e43d70c1bd971170cc5e7c3bcf0561cf08dbd3fafc6ced40f9e2",
+      "raw": 338072,
+      "gzip": 65505,
+      "brotli": 50857,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/CiSlotEditor-BwBlVxVG.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/agent-log-CCU1MG2U.js": {
+      "type": "js",
+      "sha256": "c6501a68434478370f5bf634ea917f794ae789b4556c4026c610c190028a9da5",
+      "raw": 842,
+      "gzip": 485,
+      "brotli": 366,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/agent-setup-Dcb69TpT.js": {
+      "type": "js",
+      "sha256": "ddc8fa0e02de169cf26f96ea1ae9b008a480be4209bc561f0ffef0354f094282",
+      "raw": 710,
+      "gzip": 412,
+      "brotli": 314,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/babel-DVeTUIEq.js": {
+      "type": "js",
+      "sha256": "8d58528f58677b16ef2814dc0419d51e572639768ad13daf2e75209ea36f9f02",
+      "raw": 391957,
+      "gzip": 88648,
+      "brotli": 70248,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/css-Dc1e6frd.js": {
+      "type": "js",
+      "sha256": "03c28aa193b8b85dd49b1227841e541ee9b2261374bfef177cf9e76d7f265a5d",
+      "raw": 6486,
+      "gzip": 1785,
+      "brotli": 1580,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/css.worker-rtSqh8pb.js": {
+      "type": "js",
+      "sha256": "f021dd43fb3be8e2e7ecbed950571133340fbcf96d1337229e5ed7a3e8e01c9c",
+      "raw": 1829726,
+      "gzip": 286859,
+      "brotli": 215984,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/cssMode-D-tbq4Za.js": {
+      "type": "js",
+      "sha256": "a4b72534a9a15c8e926682fc49119063e13c1f27aa2a6862e05964c897fff96d",
+      "raw": 69024,
+      "gzip": 12464,
+      "brotli": 10854,
+      "imports": [
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/editor.worker-ZSx8gsAZ.js": {
+      "type": "js",
+      "sha256": "bb5db056e7892fb160426b6ebbec3a9f2c884da834349dcf104c8d1c5772373d",
+      "raw": 503165,
+      "gzip": 100637,
+      "brotli": 81506,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/estree-DL7DLHAB.js": {
+      "type": "js",
+      "sha256": "942f77bc98f0b57880b90ea79a262e175a49565b914cd0bfa88b0acb8c4333f4",
+      "raw": 244662,
+      "gzip": 60887,
+      "brotli": 50181,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/html-CBW6-o2_.js": {
+      "type": "js",
+      "sha256": "49c88222bec1a2141522bf0c96fa0d6a6f1f2d229692c435afd28e95063d25da",
+      "raw": 174558,
+      "gzip": 48558,
+      "brotli": 41433,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/html-TXn10Qp7.js": {
+      "type": "js",
+      "sha256": "e6cbc642264c16fa4c05048578c6ab911d1e3700d0dbe4b0584f18aec06516f1",
+      "raw": 8905,
+      "gzip": 2046,
+      "brotli": 1782,
+      "imports": [
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/html.worker-CLkxC0C0.js": {
+      "type": "js",
+      "sha256": "4679e7b1959628eb694e2195f59cb3e67d3badb35023a1e115c2d0324e27673a",
+      "raw": 1204400,
+      "gzip": 225470,
+      "brotli": 177212,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/htmlMode-BvAl3PBi.js": {
+      "type": "js",
+      "sha256": "c1d6f991b92628875c1739bf48d5bc5840de03b202d7825a54f3ce62c407d50d",
+      "raw": 70037,
+      "gzip": 12589,
+      "brotli": 10967,
+      "imports": [
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/index-BksBPc_x.css": {
+      "type": "css",
+      "sha256": "fc10bd41e6e04a5f23ff6ce2ebb4c106895d7b68f1ade623e6026a7de64023db",
+      "raw": 604273,
+      "gzip": 131734,
+      "brotli": 88360,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/index-Cckja4SW.js": {
+      "type": "js",
+      "sha256": "f88190603d21787988d923d83579a4f21b602003be7c9e93287607ec45d508f3",
+      "raw": 70106,
+      "gzip": 14452,
+      "brotli": 12081,
+      "imports": [
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/sessionsStore-Bstqghuw.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/index-D8uKfX0R.js": {
+      "type": "js",
+      "sha256": "582e658bcf5c989b1080119d70c110980767c2d5e7f61ba31fc3af2dc99b5bda",
+      "raw": 1976653,
+      "gzip": 420399,
+      "brotli": 307171,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/MonacoCodeEditor-BPX9W35J.js",
+        "electron/assets/MonacoDiffEditor-DXaHhqs4.js",
+        "electron/assets/SessionsDialogHost-DrdrshWY.js",
+        "electron/assets/index-Cckja4SW.js",
+        "electron/assets/AccountPage-CLHZ4F86.js",
+        "electron/assets/TaskModal-BiZEfAPn.js",
+        "electron/assets/ProjectSettings-mlYMOWgr.js",
+        "electron/assets/MachineStatus-BgaLS9bt.js",
+        "electron/assets/KnowledgeBase-yW7DimwY.js",
+        "electron/assets/ProjectPage-Ba1VPlTh.js",
+        "electron/assets/ProjectPage-Ba1VPlTh.js",
+        "electron/assets/ProjectPage-Ba1VPlTh.js",
+        "electron/assets/ProjectBoard-pvN8mnBz.js",
+        "electron/assets/GitWorkspaceList-BMgWPcGi.js"
+      ]
+    },
+    "electron/assets/javascript-BMJaaiFM.js": {
+      "type": "js",
+      "sha256": "1e47765d0b196ec53b10d1c9c05efb3b2687e1fb89fc77b30a2e59a81c9942ec",
+      "raw": 1819,
+      "gzip": 764,
+      "brotli": 641,
+      "imports": [
+        "electron/assets/typescript-CwN0QmCr.js",
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/json.worker-CYJeM0Vc.js": {
+      "type": "js",
+      "sha256": "68f54cb8ff6cc0007608fe987bdc501e911bcb6e51e7490026ebbb6c063b87e0",
+      "raw": 802600,
+      "gzip": 153557,
+      "brotli": 124073,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/jsonMode-BdRC3dT_.js": {
+      "type": "js",
+      "sha256": "b8de86284e8721291321a5a209e7d9949b02adab7cf0a2b258fae1206296989f",
+      "raw": 91860,
+      "gzip": 17077,
+      "brotli": 14696,
+      "imports": [
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/markdown-Bf8Fxnkt.js": {
+      "type": "js",
+      "sha256": "cb9a01f1faefb621e0d72c92edd574d02f5160dde762a36ed80d912d71efacad",
+      "raw": 717988,
+      "gzip": 157886,
+      "brotli": 121774,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/markdown-C1LDbTIq.js": {
+      "type": "js",
+      "sha256": "9edbd50a712c3a964b569da43a74122137899d50560be7098475f4ec52727cba",
+      "raw": 7032,
+      "gzip": 2222,
+      "brotli": 1914,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/markdown-DqdTtQ31.css": {
+      "type": "css",
+      "sha256": "603240e9a7c78cbb006986228155c433b14ac61236805eaa79bfeb96d3c73f75",
+      "raw": 2177,
+      "gzip": 795,
+      "brotli": 642,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/markdown-aNdcxj5d.js": {
+      "type": "js",
+      "sha256": "6082ea22ed363428b890833f99c31197363292e30f32cf12c9b86f86c426e414",
+      "raw": 180997,
+      "gzip": 55923,
+      "brotli": 46950,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/monacoSetup-B6F6NJSG.css": {
+      "type": "css",
+      "sha256": "dc5e603743f40e8be69940107a88efb5f08283b9be1d314af23bbaaae8dcf9d5",
+      "raw": 164436,
+      "gzip": 23733,
+      "brotli": 19587,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/monacoSetup-BZg5pJA1.js": {
+      "type": "js",
+      "sha256": "c13cedcee1327987784bc7eaade1c67ed881818e320c1ad30f7c59ec138183e8",
+      "raw": 6824414,
+      "gzip": 1171185,
+      "brotli": 857077,
+      "imports": [
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/tsMode-DhaJl3NT.js",
+        "electron/assets/htmlMode-BvAl3PBi.js",
+        "electron/assets/cssMode-D-tbq4Za.js",
+        "electron/assets/jsonMode-BdRC3dT_.js",
+        "electron/assets/javascript-BMJaaiFM.js",
+        "electron/assets/typescript-CwN0QmCr.js",
+        "electron/assets/html-TXn10Qp7.js",
+        "electron/assets/css-Dc1e6frd.js",
+        "electron/assets/markdown-C1LDbTIq.js",
+        "electron/assets/xml-DhKSs_dX.js",
+        "electron/assets/yaml-CE428WSg.js",
+        "electron/assets/babel-DVeTUIEq.js",
+        "electron/assets/estree-DL7DLHAB.js",
+        "electron/assets/typescript-LJosMJj_.js",
+        "electron/assets/estree-DL7DLHAB.js",
+        "electron/assets/html-CBW6-o2_.js",
+        "electron/assets/babel-DVeTUIEq.js",
+        "electron/assets/postcss-D0LOvqqW.js",
+        "electron/assets/estree-DL7DLHAB.js",
+        "electron/assets/postcss-D0LOvqqW.js",
+        "electron/assets/babel-DVeTUIEq.js",
+        "electron/assets/estree-DL7DLHAB.js",
+        "electron/assets/markdown-aNdcxj5d.js",
+        "electron/assets/yaml-8mHiCpW-.js",
+        "electron/assets/standalone-bUBVPhGa.js"
+      ]
+    },
+    "electron/assets/postcss-D0LOvqqW.js": {
+      "type": "js",
+      "sha256": "756a4525a06d1fd9f03f534f1d37ee42a7573a6dfc9ce533569a0d93a53c6f4e",
+      "raw": 202363,
+      "gzip": 48386,
+      "brotli": 40539,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/qrcode-BzWjNt9H.js": {
+      "type": "js",
+      "sha256": "23d2519ae7d13f55f47efddfc4a3065fe08eb52767d7f6201fad0db4f0af5f4b",
+      "raw": 53054,
+      "gzip": 12973,
+      "brotli": 11437,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/react-CFJZ7fIF.js": {
+      "type": "js",
+      "sha256": "5b933fb258287de3abbb4cb1000109bbf19fb7c7c9de742d2608f9805a369f93",
+      "raw": 215706,
+      "gzip": 53868,
+      "brotli": 45921,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/remote-setup-CAzIUqe1.js": {
+      "type": "js",
+      "sha256": "90c0f457259656e2e573a9b3946e0856dd7f5b45194e448a84007c3feeab1dc0",
+      "raw": 636,
+      "gzip": 383,
+      "brotli": 310,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/sessionsStore-Bstqghuw.js": {
+      "type": "js",
+      "sha256": "d056c1b1bb6e17daafe246fd6a7e5639d23416bb83dc78ece7e852d2c766b382",
+      "raw": 41620,
+      "gzip": 9861,
+      "brotli": 8611,
+      "imports": [
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/index-D8uKfX0R.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/standalone-bUBVPhGa.js": {
+      "type": "js",
+      "sha256": "c3c10c11081c26ac41026ee53e4c5db25e598f5d3ad8fe625367395cd7779615",
+      "raw": 100791,
+      "gzip": 28979,
+      "brotli": 24845,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/terminal-BKlWQB97.css": {
+      "type": "css",
+      "sha256": "ba8e6985669488981ccf40c0cefe3aba80722cb6c92de7ad628b0bd717faf2b6",
+      "raw": 5559,
+      "gzip": 2073,
+      "brotli": 1562,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/terminal-Ixw0CWPY.js": {
+      "type": "js",
+      "sha256": "1d7dc883d5d3e35b2f65e4d70122d4d0035765a34f7a57c4f779c4707dad92b1",
+      "raw": 402790,
+      "gzip": 77567,
+      "brotli": 62644,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/ts.worker-D6bfeQIp.js": {
+      "type": "js",
+      "sha256": "bac9038af1d96422ce0ae3d524fd754a41bb2ecaeb0df99470e0f3424f06e870",
+      "raw": 12093603,
+      "gzip": 1928875,
+      "brotli": 1323759,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/tsMode-DhaJl3NT.js": {
+      "type": "js",
+      "sha256": "faad3e3d359ffc528d1f437bb34b1fb83dd2f2704cc929c3662d58a32f913fa3",
+      "raw": 43351,
+      "gzip": 8308,
+      "brotli": 7327,
+      "imports": [
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/typescript-CwN0QmCr.js": {
+      "type": "js",
+      "sha256": "f860dcc3544e5e8014f72559e7e5b9836f346ecbe08dc5bfba23e1afbb232cd7",
+      "raw": 9245,
+      "gzip": 3021,
+      "brotli": 2647,
+      "imports": [
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/typescript-LJosMJj_.js": {
+      "type": "js",
+      "sha256": "fc8511d44530cdd5f7afcd5389a6c83002292bbf87a71882b64d82fc389c685e",
+      "raw": 582861,
+      "gzip": 131858,
+      "brotli": 106789,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/xml-DhKSs_dX.js": {
+      "type": "js",
+      "sha256": "d3e3f8066243dc9ef93696f80248f87fccaec19b9f013896af718916ee14931c",
+      "raw": 4101,
+      "gzip": 1475,
+      "brotli": 1275,
+      "imports": [
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/yaml-8mHiCpW-.js": {
+      "type": "js",
+      "sha256": "97371b2de25ce665bf372ce988e758db650f44077f51974792e013b022527b3f",
+      "raw": 165380,
+      "gzip": 41786,
+      "brotli": 36591,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/yaml-CE428WSg.js": {
+      "type": "js",
+      "sha256": "2cde5e0556f509bf4b8890247da77c65eefa92b701b0795084ab5f34b1eb474b",
+      "raw": 7136,
+      "gzip": 2242,
+      "brotli": 1955,
+      "imports": [
+        "electron/assets/monacoSetup-BZg5pJA1.js",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/assets/markdown-Bf8Fxnkt.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/theme-init.js": {
+      "type": "js",
+      "sha256": "2a996011959a0711f225d9ea1fea8dede11eb16cdea514c3c8ff140bf95322eb",
+      "raw": 476,
+      "gzip": 284,
+      "brotli": 221,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css": {
+      "type": "css",
+      "sha256": "c1fd31c0371bddd4d33b4867f559c050c3cbd40b49442c686192654ff1d62c33",
+      "raw": 8576,
+      "gzip": 682,
+      "brotli": 543,
+      "imports": [],
+      "dynamicImports": [],
+      "source": "https://fonts.googleapis.com"
+    }
+  },
+  "routes": {
+    "web/chat/cold": {
+      "ready": true,
+      "initial": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 19.46999740600586,
+          "duration": 55.038002014160156,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 20.104997634887695,
+          "duration": 54.22599983215332,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-REj5nPyW.js",
+          "start": 20.685998916625977,
+          "duration": 125.40199851989746,
+          "transfer": 1119506,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-BHR-zMpM.js",
+          "start": 20.874998092651367,
+          "duration": 76.36700057983398,
+          "transfer": 142802,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-DpaXHH7b.js",
+          "start": 21.810998916625977,
+          "duration": 164.1840000152588,
+          "transfer": 3144118,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DGHPw4qf.js",
+          "start": 21.9789981842041,
+          "duration": 105.11000061035156,
+          "transfer": 291758,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-C65z0Iha.js",
+          "start": 22.159997940063477,
+          "duration": 106.14400100708008,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-Cff06kPg.css",
+          "start": 22.51099967956543,
+          "duration": 87.1879997253418,
+          "transfer": 115440,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DYP7pi_n.css",
+          "start": 22.656999588012695,
+          "duration": 114.29699897766113,
+          "transfer": 4445,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 22.861000061035156,
+          "duration": 129.2279987335205,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXMOwslQ.css",
+          "start": 23.30499839782715,
+          "duration": 151.41600036621094,
+          "transfer": 367853,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 5031595,
+          "gzip": 1349629,
+          "brotli": 1060012
+        },
+        "css": {
+          "raw": 496739,
+          "gzip": 85126,
+          "brotli": 69486
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/chat/warm": {
+      "ready": true,
+      "initial": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 33.76199913024902,
+          "duration": 5.676000595092773,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 34.19899940490723,
+          "duration": 0.27899932861328125,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-REj5nPyW.js",
+          "start": 34.56599998474121,
+          "duration": 10.137998580932617,
+          "transfer": 246,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-BHR-zMpM.js",
+          "start": 34.67499923706055,
+          "duration": 11.170000076293945,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-DpaXHH7b.js",
+          "start": 34.81500053405762,
+          "duration": 16.32499885559082,
+          "transfer": 246,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DGHPw4qf.js",
+          "start": 34.917999267578125,
+          "duration": 17.148000717163086,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-C65z0Iha.js",
+          "start": 34.981998443603516,
+          "duration": 17.85300064086914,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-Cff06kPg.css",
+          "start": 35.1619987487793,
+          "duration": 10.18600082397461,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DYP7pi_n.css",
+          "start": 35.295000076293945,
+          "duration": 18.267000198364258,
+          "transfer": 244,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 35.41200065612793,
+          "duration": 19.40199851989746,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXMOwslQ.css",
+          "start": 35.465999603271484,
+          "duration": 20.933000564575195,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 5031595,
+          "gzip": 1349629,
+          "brotli": 1060012
+        },
+        "css": {
+          "raw": 496739,
+          "gzip": 85126,
+          "brotli": 69486
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/account/cold": {
+      "ready": true,
+      "initial": [
+        "web/assets/AccountPage-CyT-oeRA.js",
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 17.48699951171875,
+          "duration": 4.73900032043457,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 18.619998931884766,
+          "duration": 37.709999084472656,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-REj5nPyW.js",
+          "start": 22.677997589111328,
+          "duration": 19.477001190185547,
+          "transfer": 1119506,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-BHR-zMpM.js",
+          "start": 24.270999908447266,
+          "duration": 67.40899848937988,
+          "transfer": 142802,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-DpaXHH7b.js",
+          "start": 42.87499809265137,
+          "duration": 89.60700035095215,
+          "transfer": 3144118,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DGHPw4qf.js",
+          "start": 43.12199783325195,
+          "duration": 52.03700065612793,
+          "transfer": 291758,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-C65z0Iha.js",
+          "start": 43.37700080871582,
+          "duration": 68.99699974060059,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-Cff06kPg.css",
+          "start": 43.88999938964844,
+          "duration": 27.937999725341797,
+          "transfer": 115440,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DYP7pi_n.css",
+          "start": 44.01700019836426,
+          "duration": 38.20100021362305,
+          "transfer": 4445,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 44.125,
+          "duration": 70.0939998626709,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXMOwslQ.css",
+          "start": 44.239999771118164,
+          "duration": 74.45299911499023,
+          "transfer": 367853,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/AccountPage-CyT-oeRA.js",
+          "start": 395.5919990539551,
+          "duration": 10.97800064086914,
+          "transfer": 7224,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 5038510,
+          "gzip": 1352393,
+          "brotli": 1062442
+        },
+        "css": {
+          "raw": 496739,
+          "gzip": 85126,
+          "brotli": 69486
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/AccountPage-CyT-oeRA.js",
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/account/warm": {
+      "ready": true,
+      "initial": [
+        "web/assets/AccountPage-CyT-oeRA.js",
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 29.911998748779297,
+          "duration": 23.375999450683594,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 30.11299705505371,
+          "duration": 0.18200111389160156,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-REj5nPyW.js",
+          "start": 30.349998474121094,
+          "duration": 23.517000198364258,
+          "transfer": 246,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-BHR-zMpM.js",
+          "start": 30.481998443603516,
+          "duration": 25.80900001525879,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-DpaXHH7b.js",
+          "start": 30.592998504638672,
+          "duration": 28.518999099731445,
+          "transfer": 246,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DGHPw4qf.js",
+          "start": 30.701997756958008,
+          "duration": 33.39500045776367,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-C65z0Iha.js",
+          "start": 30.797998428344727,
+          "duration": 35.35299873352051,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-Cff06kPg.css",
+          "start": 30.9169979095459,
+          "duration": 36.90999984741211,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DYP7pi_n.css",
+          "start": 31.033998489379883,
+          "duration": 38.71999931335449,
+          "transfer": 244,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 31.83199691772461,
+          "duration": 40.755001068115234,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXMOwslQ.css",
+          "start": 31.90799903869629,
+          "duration": 48.027000427246094,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/AccountPage-CyT-oeRA.js",
+          "start": 321.49399757385254,
+          "duration": 4.993000030517578,
+          "transfer": 244,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 5038510,
+          "gzip": 1352393,
+          "brotli": 1062442
+        },
+        "css": {
+          "raw": 496739,
+          "gzip": 85126,
+          "brotli": 69486
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/AccountPage-CyT-oeRA.js",
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/settings/cold": {
+      "ready": true,
+      "initial": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 61.86800003051758,
+          "duration": 20.35700035095215,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 62.2189998626709,
+          "duration": 35.96199989318848,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-REj5nPyW.js",
+          "start": 62.3129997253418,
+          "duration": 65.68899917602539,
+          "transfer": 1119506,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-BHR-zMpM.js",
+          "start": 62.39900016784668,
+          "duration": 32.031999588012695,
+          "transfer": 142802,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-DpaXHH7b.js",
+          "start": 62.71700096130371,
+          "duration": 112.05699920654297,
+          "transfer": 3144118,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DGHPw4qf.js",
+          "start": 62.821998596191406,
+          "duration": 44.45600128173828,
+          "transfer": 291758,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-C65z0Iha.js",
+          "start": 62.90599822998047,
+          "duration": 53.4890022277832,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-Cff06kPg.css",
+          "start": 63.007999420166016,
+          "duration": 52.64200019836426,
+          "transfer": 115440,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DYP7pi_n.css",
+          "start": 63.11800003051758,
+          "duration": 52.20199966430664,
+          "transfer": 4445,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 63.19999885559082,
+          "duration": 56.65999984741211,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXMOwslQ.css",
+          "start": 63.2859992980957,
+          "duration": 99.4689998626709,
+          "transfer": 367853,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 5031595,
+          "gzip": 1349629,
+          "brotli": 1060012
+        },
+        "css": {
+          "raw": 496739,
+          "gzip": 85126,
+          "brotli": 69486
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/settings/warm": {
+      "ready": true,
+      "initial": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 18.60099983215332,
+          "duration": 5.173999786376953,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 19.224998474121094,
+          "duration": 1.0740013122558594,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-REj5nPyW.js",
+          "start": 20.375999450683594,
+          "duration": 5.724000930786133,
+          "transfer": 246,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-BHR-zMpM.js",
+          "start": 20.744998931884766,
+          "duration": 8.968999862670898,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-DpaXHH7b.js",
+          "start": 20.987998962402344,
+          "duration": 12.947999954223633,
+          "transfer": 246,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DGHPw4qf.js",
+          "start": 21.17799949645996,
+          "duration": 13.97800064086914,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-C65z0Iha.js",
+          "start": 21.400999069213867,
+          "duration": 14.825000762939453,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-Cff06kPg.css",
+          "start": 22.236997604370117,
+          "duration": 9.543001174926758,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DYP7pi_n.css",
+          "start": 22.522998809814453,
+          "duration": 14.381999969482422,
+          "transfer": 244,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 22.855998992919922,
+          "duration": 16.825998306274414,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXMOwslQ.css",
+          "start": 23.171998977661133,
+          "duration": 18.586999893188477,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 5031595,
+          "gzip": 1349629,
+          "brotli": 1060012
+        },
+        "css": {
+          "raw": 496739,
+          "gzip": 85126,
+          "brotli": 69486
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/account/navigation": {
+      "ready": true,
+      "initial": [
+        "web/assets/AccountPage-CyT-oeRA.js",
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 34.45800018310547,
+          "duration": 48.593000411987305,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 34.845001220703125,
+          "duration": 44.07899856567383,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-REj5nPyW.js",
+          "start": 34.94700050354004,
+          "duration": 160.1599998474121,
+          "transfer": 1119506,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-BHR-zMpM.js",
+          "start": 35.05200004577637,
+          "duration": 102.41799926757812,
+          "transfer": 142802,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-DpaXHH7b.js",
+          "start": 35.16600227355957,
+          "duration": 174.75099754333496,
+          "transfer": 3144118,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DGHPw4qf.js",
+          "start": 35.273000717163086,
+          "duration": 113.85700035095215,
+          "transfer": 291758,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-C65z0Iha.js",
+          "start": 35.36899948120117,
+          "duration": 149.82300186157227,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-Cff06kPg.css",
+          "start": 35.48699951171875,
+          "duration": 101.10000038146973,
+          "transfer": 115440,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DYP7pi_n.css",
+          "start": 35.58500099182129,
+          "duration": 123.88899993896484,
+          "transfer": 4445,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 35.67399978637695,
+          "duration": 124.03700065612793,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXMOwslQ.css",
+          "start": 35.766000747680664,
+          "duration": 141.76600074768066,
+          "transfer": 367853,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/AccountPage-CyT-oeRA.js",
+          "start": 5596.787000656128,
+          "duration": 6.819999694824219,
+          "transfer": 7224,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 5038510,
+          "gzip": 1352393,
+          "brotli": 1062442
+        },
+        "css": {
+          "raw": 496739,
+          "gzip": 85126,
+          "brotli": 69486
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/AccountPage-CyT-oeRA.js"
+      ]
+    },
+    "web/settings/navigation": {
+      "ready": true,
+      "initial": [
+        "web/assets/index-DXMOwslQ.css",
+        "web/assets/index-REj5nPyW.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/markdown-C65z0Iha.js",
+        "web/assets/monaco-Cff06kPg.css",
+        "web/assets/monaco-DpaXHH7b.js",
+        "web/assets/react-BHR-zMpM.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/terminal-DYP7pi_n.css",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 15.770002365112305,
+          "duration": 9.666999816894531,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 18.35500144958496,
+          "duration": 37.50400161743164,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-REj5nPyW.js",
+          "start": 18.627002716064453,
+          "duration": 75.07999992370605,
+          "transfer": 1119506,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-BHR-zMpM.js",
+          "start": 18.86800193786621,
+          "duration": 37.8489990234375,
+          "transfer": 142802,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-DpaXHH7b.js",
+          "start": 19.194002151489258,
+          "duration": 94.95699882507324,
+          "transfer": 3144118,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DGHPw4qf.js",
+          "start": 19.498001098632812,
+          "duration": 66.07399940490723,
+          "transfer": 291758,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-C65z0Iha.js",
+          "start": 19.781002044677734,
+          "duration": 66.63500022888184,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/monaco-Cff06kPg.css",
+          "start": 20.09600067138672,
+          "duration": 16.196001052856445,
+          "transfer": 115440,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/terminal-DYP7pi_n.css",
+          "start": 20.423002243041992,
+          "duration": 26.329999923706055,
+          "transfer": 4445,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 20.71500015258789,
+          "duration": 40.66400146484375,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXMOwslQ.css",
+          "start": 20.923002243041992,
+          "duration": 55.6619987487793,
+          "transfer": 367853,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 5031595,
+          "gzip": 1349629,
+          "brotli": 1060012
+        },
+        "css": {
+          "raw": 496739,
+          "gzip": 85126,
+          "brotli": 69486
+        }
+      },
+      "errors": [],
+      "additionalResources": []
+    },
+    "electron/chat/cold": {
+      "ready": true,
+      "initial": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 57.56199836730957,
+          "duration": 3.3570003509521484,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 61.972999572753906,
+          "duration": 182.8799991607666,
+          "transfer": 1168,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-D8uKfX0R.js",
+          "start": 62.68599891662598,
+          "duration": 32.297000885009766,
+          "transfer": 1976653,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-CFJZ7fIF.js",
+          "start": 62.939998626708984,
+          "duration": 30.648000717163086,
+          "transfer": 215706,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-Ixw0CWPY.js",
+          "start": 63.23699951171875,
+          "duration": 32.489999771118164,
+          "transfer": 402790,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-Bf8Fxnkt.js",
+          "start": 63.404998779296875,
+          "duration": 35.49600028991699,
+          "transfer": 717988,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-BKlWQB97.css",
+          "start": 63.6349983215332,
+          "duration": 13.915000915527344,
+          "transfer": 5559,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DqdTtQ31.css",
+          "start": 64.822998046875,
+          "duration": 14.671001434326172,
+          "transfer": 2177,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-BksBPc_x.css",
+          "start": 65.06699752807617,
+          "duration": 16.1460018157959,
+          "transfer": 604273,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 3313613,
+          "gzip": 710004,
+          "brotli": 537731
+        },
+        "css": {
+          "raw": 620585,
+          "gzip": 135284,
+          "brotli": 91107
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/chat/warm": {
+      "ready": true,
+      "initial": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 58.37900161743164,
+          "duration": 2.789999008178711,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 62.50699996948242,
+          "duration": 8.159000396728516,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-D8uKfX0R.js",
+          "start": 62.79100227355957,
+          "duration": 8.83599853515625,
+          "transfer": 1976653,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-CFJZ7fIF.js",
+          "start": 66.09500122070312,
+          "duration": 3.838001251220703,
+          "transfer": 215706,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-Ixw0CWPY.js",
+          "start": 66.3740005493164,
+          "duration": 44.15700149536133,
+          "transfer": 402790,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-Bf8Fxnkt.js",
+          "start": 66.6820011138916,
+          "duration": 48.05900001525879,
+          "transfer": 717988,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-BKlWQB97.css",
+          "start": 66.98100090026855,
+          "duration": 35.08799934387207,
+          "transfer": 5559,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DqdTtQ31.css",
+          "start": 67.20400047302246,
+          "duration": 36.582000732421875,
+          "transfer": 2177,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-BksBPc_x.css",
+          "start": 67.44300079345703,
+          "duration": 22.786001205444336,
+          "transfer": 604273,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 3313613,
+          "gzip": 710004,
+          "brotli": 537731
+        },
+        "css": {
+          "raw": 620585,
+          "gzip": 135284,
+          "brotli": 91107
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/account/cold": {
+      "ready": true,
+      "initial": [
+        "electron/assets/AccountPage-CLHZ4F86.js",
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 79.75,
+          "duration": 2.914999008178711,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 83.68999862670898,
+          "duration": 40.7130012512207,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-D8uKfX0R.js",
+          "start": 84.09199905395508,
+          "duration": 40.63599967956543,
+          "transfer": 1976653,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-CFJZ7fIF.js",
+          "start": 84.48099899291992,
+          "duration": 44.00199890136719,
+          "transfer": 215706,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-Ixw0CWPY.js",
+          "start": 84.68599891662598,
+          "duration": 40.84499931335449,
+          "transfer": 402790,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-Bf8Fxnkt.js",
+          "start": 84.8799991607666,
+          "duration": 47.93199920654297,
+          "transfer": 717988,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-BKlWQB97.css",
+          "start": 85.93699836730957,
+          "duration": 15.956001281738281,
+          "transfer": 5559,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DqdTtQ31.css",
+          "start": 93.83199882507324,
+          "duration": 29.148000717163086,
+          "transfer": 2177,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-BksBPc_x.css",
+          "start": 94.18699836730957,
+          "duration": 10.871000289916992,
+          "transfer": 604273,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/AccountPage-CLHZ4F86.js",
+          "start": 670.0539989471436,
+          "duration": 149.9670009613037,
+          "transfer": 14652,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 3328265,
+          "gzip": 713631,
+          "brotli": 540807
+        },
+        "css": {
+          "raw": 620585,
+          "gzip": 135284,
+          "brotli": 91107
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/AccountPage-CLHZ4F86.js",
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/account/warm": {
+      "ready": true,
+      "initial": [
+        "electron/assets/AccountPage-CLHZ4F86.js",
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 84.61000061035156,
+          "duration": 7.319000244140625,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 98.3960018157959,
+          "duration": 4.453998565673828,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-D8uKfX0R.js",
+          "start": 99.91699981689453,
+          "duration": 16.23900032043457,
+          "transfer": 1976653,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-CFJZ7fIF.js",
+          "start": 100.17900085449219,
+          "duration": 45.659000396728516,
+          "transfer": 215706,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-Ixw0CWPY.js",
+          "start": 101.06399917602539,
+          "duration": 45.967002868652344,
+          "transfer": 402790,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-Bf8Fxnkt.js",
+          "start": 102.90400123596191,
+          "duration": 48.30999946594238,
+          "transfer": 717988,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-BKlWQB97.css",
+          "start": 103.72400093078613,
+          "duration": 7.104999542236328,
+          "transfer": 5559,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DqdTtQ31.css",
+          "start": 103.96600151062012,
+          "duration": 34.08199882507324,
+          "transfer": 2177,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-BksBPc_x.css",
+          "start": 104.83099937438965,
+          "duration": 13.463001251220703,
+          "transfer": 604273,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/AccountPage-CLHZ4F86.js",
+          "start": 265.51099967956543,
+          "duration": 139.77899932861328,
+          "transfer": 14652,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 3328265,
+          "gzip": 713631,
+          "brotli": 540807
+        },
+        "css": {
+          "raw": 620585,
+          "gzip": 135284,
+          "brotli": 91107
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/AccountPage-CLHZ4F86.js",
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/settings/cold": {
+      "ready": true,
+      "initial": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 115.90399932861328,
+          "duration": 8.694999694824219,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 126.11899948120117,
+          "duration": 34.77899932861328,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-D8uKfX0R.js",
+          "start": 126.48099899291992,
+          "duration": 20.65799903869629,
+          "transfer": 1976653,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-CFJZ7fIF.js",
+          "start": 126.83499908447266,
+          "duration": 83.23999977111816,
+          "transfer": 215706,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-Ixw0CWPY.js",
+          "start": 127.00799942016602,
+          "duration": 85.56499862670898,
+          "transfer": 402790,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-Bf8Fxnkt.js",
+          "start": 127.45599937438965,
+          "duration": 89.4109992980957,
+          "transfer": 717988,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-BKlWQB97.css",
+          "start": 128.0709991455078,
+          "duration": 44.33799934387207,
+          "transfer": 5559,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DqdTtQ31.css",
+          "start": 128.31499862670898,
+          "duration": 47.94099998474121,
+          "transfer": 2177,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-BksBPc_x.css",
+          "start": 128.68499946594238,
+          "duration": 51.611000061035156,
+          "transfer": 604273,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 3313613,
+          "gzip": 710004,
+          "brotli": 537731
+        },
+        "css": {
+          "raw": 620585,
+          "gzip": 135284,
+          "brotli": 91107
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/settings/warm": {
+      "ready": true,
+      "initial": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 85.8179988861084,
+          "duration": 11.184000015258789,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 98.43599891662598,
+          "duration": 6.016000747680664,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-D8uKfX0R.js",
+          "start": 98.73200035095215,
+          "duration": 12.251998901367188,
+          "transfer": 1976653,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-CFJZ7fIF.js",
+          "start": 99.02499961853027,
+          "duration": 59.88800048828125,
+          "transfer": 215706,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-Ixw0CWPY.js",
+          "start": 99.19700050354004,
+          "duration": 49.00099754333496,
+          "transfer": 402790,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-Bf8Fxnkt.js",
+          "start": 100.6299991607666,
+          "duration": 61.9950008392334,
+          "transfer": 717988,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-BKlWQB97.css",
+          "start": 102.86000061035156,
+          "duration": 42.330997467041016,
+          "transfer": 5559,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DqdTtQ31.css",
+          "start": 103.20999908447266,
+          "duration": 26.68899917602539,
+          "transfer": 2177,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-BksBPc_x.css",
+          "start": 103.3759994506836,
+          "duration": 28.452999114990234,
+          "transfer": 604273,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 3313613,
+          "gzip": 710004,
+          "brotli": 537731
+        },
+        "css": {
+          "raw": 620585,
+          "gzip": 135284,
+          "brotli": 91107
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/account/navigation": {
+      "ready": true,
+      "initial": [
+        "electron/assets/AccountPage-CLHZ4F86.js",
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 66.59000015258789,
+          "duration": 4.586999893188477,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 72.20499992370605,
+          "duration": 35.46500015258789,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-D8uKfX0R.js",
+          "start": 72.53500175476074,
+          "duration": 3.681997299194336,
+          "transfer": 1976653,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-CFJZ7fIF.js",
+          "start": 72.75800132751465,
+          "duration": 56.51300048828125,
+          "transfer": 215706,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-Ixw0CWPY.js",
+          "start": 72.98100090026855,
+          "duration": 47.930999755859375,
+          "transfer": 402790,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-Bf8Fxnkt.js",
+          "start": 73.17700004577637,
+          "duration": 58.09900093078613,
+          "transfer": 717988,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-BKlWQB97.css",
+          "start": 73.4060001373291,
+          "duration": 25.83300018310547,
+          "transfer": 5559,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DqdTtQ31.css",
+          "start": 73.63100051879883,
+          "duration": 26.920000076293945,
+          "transfer": 2177,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-BksBPc_x.css",
+          "start": 73.82999992370605,
+          "duration": 28.33799934387207,
+          "transfer": 604273,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/AccountPage-CLHZ4F86.js",
+          "start": 5631.832000732422,
+          "duration": 5.038999557495117,
+          "transfer": 14652,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 3328265,
+          "gzip": 713631,
+          "brotli": 540807
+        },
+        "css": {
+          "raw": 620585,
+          "gzip": 135284,
+          "brotli": 91107
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/AccountPage-CLHZ4F86.js"
+      ]
+    },
+    "electron/settings/navigation": {
+      "ready": true,
+      "initial": [
+        "electron/assets/index-BksBPc_x.css",
+        "electron/assets/index-D8uKfX0R.js",
+        "electron/assets/markdown-Bf8Fxnkt.js",
+        "electron/assets/markdown-DqdTtQ31.css",
+        "electron/assets/react-CFJZ7fIF.js",
+        "electron/assets/terminal-BKlWQB97.css",
+        "electron/assets/terminal-Ixw0CWPY.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 64.63299942016602,
+          "duration": 8.040000915527344,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 74.49399948120117,
+          "duration": 33.345998764038086,
+          "transfer": 820,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-D8uKfX0R.js",
+          "start": 74.81099891662598,
+          "duration": 45.64400100708008,
+          "transfer": 1976653,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-CFJZ7fIF.js",
+          "start": 75.05099868774414,
+          "duration": 46.89500045776367,
+          "transfer": 215706,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-Ixw0CWPY.js",
+          "start": 75.21699905395508,
+          "duration": 50.13999938964844,
+          "transfer": 402790,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-Bf8Fxnkt.js",
+          "start": 75.42199897766113,
+          "duration": 55.41699981689453,
+          "transfer": 717988,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/terminal-BKlWQB97.css",
+          "start": 75.60799980163574,
+          "duration": 11.653999328613281,
+          "transfer": 5559,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DqdTtQ31.css",
+          "start": 75.7919979095459,
+          "duration": 16.009002685546875,
+          "transfer": 2177,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-BksBPc_x.css",
+          "start": 76.10799789428711,
+          "duration": 19.50400161743164,
+          "transfer": 604273,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 3313613,
+          "gzip": 710004,
+          "brotli": 537731
+        },
+        "css": {
+          "raw": 620585,
+          "gzip": 135284,
+          "brotli": 91107
+        }
+      },
+      "errors": [],
+      "additionalResources": []
+    }
+  },
+  "tools": {
+    "web": "151.0.7922.34",
+    "electron": "33.4.11"
+  },
+  "activations": {
+    "web/editor": {
+      "ready": true,
+      "workers": [
+        "ts.worker-Ds4I2Msu.js"
+      ]
+    },
+    "electron/editor": {
+      "ready": true,
+      "workers": [
+        "ts.worker-D6bfeQIp.js"
+      ]
+    }
+  }
+}

@@ -21,6 +21,7 @@ function makeStore(seed: string[] = []): { store: TestStore; api: FakeApi } {
   return { store, api }
 }
 
+// @testCase TC-RECOVERY
 // @testCase T1
 it('keeps drafts per conversation through remount and does not clear newer text on acknowledgement', async () => {
   localStorage.clear()
