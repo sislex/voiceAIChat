@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-15
-checked: 834a490d
+checked: 4cb0d1bf
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -298,6 +298,53 @@ build-time флагом `VITE_REDUX_DEVTOOLS=true`. Перед `init` и `send` 
 Воспроизводимый Component QA — DOM-сценарий `TC-UI-1` в `packages/admin-app/src/UsersAdmin.dom.test.tsx`: он подаёт синхронизированные OpenAI-строки, проверяет восемь колонок (включая «Режим / контекст»), базовый режим `Standard / short context`, четыре ценовых значения, ссылку на официальный источник и действия, включая передачу точной пары provider/model при удалении. Длинный идентификатор последней модели включён специально как регрессия табличной раскладки; это проверка DOM без запуска реального сервера или базы.
 
 ## Состояние приложения
+
+Route read ownership (CHAT-468): bootstrap reads settings, model engines/access,
+the visible chat index and project navigation. It does not request the machine
+list, Account profile/usage/security, or Settings-only catalogs. Machines calls
+`openMachines` on authenticated route entry. Settings calls `loadCatalogs(section)`;
+LLM needs capabilities/MCP, STT needs microphones/status/models/capabilities,
+TTS needs voices/catalog/capabilities, and voice dialog needs microphones/voices/
+capabilities. Project types load on the projectTypes section. Active chat loads
+installed TTS voices only when playback is enabled, and local model status only
+when STT is enabled. Voice metadata loads independently and cannot delay chat
+startup; the browser fixture supplies the remote runner's voice list locally.
+Creating a chat/project requests machines before the existing
+machine-required guard. Confirmed enrollment invalidates the machine list before
+polling, so a cached offline snapshot cannot hide the newly connected machine.
+Machines checks freshness every 30 seconds while open; board refreshes every
+10 seconds while visible and preserves its current snapshot and completed-task
+filter. Server access denials clear that project's cached navigation and details.
+Saving a board view invalidates only that project's view, not its snapshot.
+Realtime machine snapshots seed the machine cache and fence older HTTP responses;
+profile summaries invalidate when machine ids/online states change. STT model status
+shares the catalog TTL and invalidates with model-download completion.
+
+`clients/readResources.ts` wraps an allowlist of RendererApi reads without changing
+REST, WS or IPC shapes. The same API instance shares one in-memory `ReadCache`
+across stores and Account. Keys contain the channel and recursively sorted object
+parameters; board flags and security defaults normalize before key construction.
+Projects are separated by id. Runtime logout, expiry, user change and dispose
+clear entries and fence outstanding generations. No responses persist to storage.
+TTL milliseconds: profile/access/settings 60000, usage/security/machines/projects
+30000, catalogs 300000, board 10000. Concurrent callers share one promise;
+subscription cleanup suppresses delivery only to that subscriber. Invalidation
+uses entry identity, so late completions cannot populate a replacement entry.
+Diagnostics contain only the resource family and hit/miss.
+
+Account keeps a stable range instant between freshness ticks, reuses it across
+visits within the usage TTL, checks freshness on tab entry and every 30 seconds, and
+retains previous data during refresh. Profile completion is guarded by effect
+cleanup. History and Usage keep their filter controls mounted while their data
+skeleton loads, allowing A → B → A changes before the slow response completes.
+Repeated settings invalidations during an existing refresh queue a current follow-up
+read; reset/dispose fence that queue. An obsolete settings snapshot does not discard
+independent model-access and engine-catalog responses. Overview retry reloads only failed blocks. Settings catalog failures
+are recorded individually and have an individual retry action. Cache behavior,
+cold bootstrap and isolated retries are covered by `readCache.test.ts`,
+`readResources.test.ts` and `AccountPage.dom.test.tsx`. Browser measurement and
+responsive scenarios live in `packages/ui/src/test/routeResources.browser.test.ts`; measurements are
+written to `.generated_images/chat468/before.json` and `after.json`.
 
 ### Адаптивный композер VoiceBar
 

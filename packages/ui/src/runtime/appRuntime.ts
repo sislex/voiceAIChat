@@ -252,12 +252,19 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
 
   const handlers: RealtimeHandlers = {
     authStatus: (status) => settings.actions.applyLoginStatus(status),
-    settingsChanged: () => void settings.actions.refreshSettings(),
+    settingsChanged: () => {
+      clients.reads?.invalidate('settings:get')
+      void settings.actions.refreshSettings(true)
+    },
     sttPartial: (update) => voice.actions.applySttPartial(update),
     sttFinal: (update) => void voice.actions.applySttFinal(update),
     sttError: (message) => voice.actions.applySttError(message),
     modelDownloadProgress: (percent) => settings.actions.applyDownloadProgress(percent),
-    modelDownloadDone: () => settings.actions.applyDownloadDone(),
+    modelDownloadDone: () => {
+      clients.reads?.invalidate('stt:models')
+      clients.reads?.invalidate('stt:status')
+      settings.actions.applyDownloadDone()
+    },
     modelDownloadError: (message) => settings.actions.applyDownloadError(message),
     turnToken: (delta, conversationId) => chat.actions.applyClaudeToken(delta, conversationId),
     turnDone: (text, meta, engine, message, conversationId) =>
@@ -276,8 +283,18 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     turnLog: (entry, conversationId) => chat.actions.applyClaudeLog(entry, conversationId),
     ccTail: (items) => operations.actions.applyCcTailItems(items),
     cxTail: (items) => operations.actions.applyCxTailItems(items),
-    agents: (list) => operations.actions.applyAgents(list),
-    boardChanged: (projectId) => projects.actions.applyBoardChanged(projectId),
+    agents: (list) => {
+      const summary = (agents: typeof list) => agents.map(agent => [agent.id, agent.online]).sort(([a], [b]) => String(a).localeCompare(String(b)))
+      const changed = JSON.stringify(summary(operations.getState().agents)) !== JSON.stringify(summary(list))
+      // Realtime supplies the current snapshot; do not turn it into another HTTP read.
+      clients.reads?.seedAgents(list)
+      if (changed) clients.reads?.invalidate('me:profile')
+      operations.actions.applyAgents(list)
+    },
+    boardChanged: (projectId) => {
+      clients.reads?.invalidateProject(projectId)
+      projects.actions.applyBoardChanged(projectId)
+    },
     ciSnapshot: (runId, detail, log) => projects.actions.applyCiSnapshot(runId, detail, log),
     ciRun: (runId, run) => projects.actions.applyCiRun(runId, run),
     ciStep: (runId, step) => projects.actions.applyCiStep(runId, step),
@@ -294,7 +311,11 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     },
     ttsError: (message) => voice.actions.applyTtsError(message),
     voiceDownloadProgress: (id, percent) => settings.actions.applyVoiceProgress(id, percent),
-    voiceDownloadDone: (id) => void settings.actions.applyVoiceDone(id),
+    voiceDownloadDone: (id) => {
+      clients.reads?.invalidate('tts:catalog')
+      clients.reads?.invalidate('tts:voices')
+      void settings.actions.applyVoiceDone(id)
+    },
     voiceDownloadError: (id, message) => settings.actions.applyVoiceError(id, message)
   }
 
@@ -304,6 +325,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
 
   let bootstrapping: Promise<void> | null = null
   let disposed = false
+  let sessionGeneration = 0
 
   /**
    * Защищённый bootstrap. Идемпотентен: повторный вход в той же вкладке не
@@ -312,6 +334,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
    */
   async function bootstrap(preferredChatId?: string | null, options?: BootstrapOptions): Promise<void> {
     if (bootstrapping) return bootstrapping
+    const generation = sessionGeneration
     const run = (async () => {
       // 1) Права и каталог движков — раньше любой фильтрации моделей.
       const settingsLoad = settings.actions.load().catch((err: unknown) => {
@@ -323,18 +346,17 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       const needsConversations = !options?.skipConversations || Boolean(preferredChatId)
       const conversationsLoad = needsConversations ? chat.actions.ensureConversationIndex().catch(() => []) : Promise.resolve([])
       await Promise.all([settingsLoad, conversationsLoad])
-      if (disposed) return
+      if (disposed || generation !== sessionGeneration) return
       // 3) Необязательные домены — параллельно и без права уронить bootstrap.
       await Promise.all([
-        projects.actions.loadNavigation(),
-        operations.actions.refreshAgents(),
-        settings.actions.loadCatalogs() // отказ отдельного каталога стор глотает сам
+        projects.actions.loadNavigation()
       ])
-      if (disposed) return
+      if (disposed || generation !== sessionGeneration) return
       // 4) Адрес важнее «самого свежего»: чат по ссылке может быть и из другого
       // проекта — selectConversation сам переключит фильтр сайдбара. Открытая
       // доска чат не подставляет: незачем грузить сообщения того, кого не видно.
       if (!needsConversations) return
+      void settings.actions.loadChatVoice().catch(error => console.warn('[voice] voice metadata unavailable', error))
       const visible = chat.getState().conversations
       const wanted = preferredChatId ?? null
       // Список — фильтруемый индекс сайдбара, а не реестр доступных разговоров:
@@ -350,12 +372,15 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     try {
       await run
     } finally {
-      bootstrapping = null
+      if (bootstrapping === run) bootstrapping = null
     }
   }
 
   /** Полная очистка пользовательских доменов (logout / вход другим пользователем). */
   function clearUserDomains(): void {
+    sessionGeneration++
+    bootstrapping = null
+    clients.reads?.clear()
     voice.actions.reset()
     chat.actions.reset()
     operations.actions.reset()
@@ -401,11 +426,13 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       await bootstrap(preferredChatId ?? null, options)
     },
     async login(name, password, remember = true) {
+      clients.reads?.clear()
       const user: SessionUser | null = await session.actions.login(name, password, remember)
       if (!user) return
       await bootstrap(null)
     },
     async loginCode(code) {
+      clients.reads?.clear()
       const user: SessionUser | null = await session.actions.loginCode(code)
       if (!user) return
       await bootstrap(null)
@@ -448,6 +475,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     },
     dispose() {
       disposed = true
+      clients.reads?.clear()
       disconnect?.()
       unsubUnauthorized?.()
       for (const store of stores) store.dispose()

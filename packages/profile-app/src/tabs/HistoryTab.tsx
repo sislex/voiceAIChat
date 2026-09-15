@@ -1,7 +1,7 @@
 // История: журнал безопасности с фильтром по группе событий и выгрузкой в CSV.
 
 import { useEffect, useState } from 'react'
-import { Button, EmptyState } from '@voicechat/ui-kit'
+import { Button, EmptyState, Skeleton } from '@voicechat/ui-kit'
 import type { ProfileSecurityEvent } from '../contracts'
 import { formatDateTime } from '../format'
 import { securityEventsToCsv, shortUserAgent } from '../model'
@@ -31,9 +31,8 @@ const GROUPS: Array<{ id: SecurityGroup; label: string }> = [
 export function HistoryTab({ events, userName, group = 'all', onChangeGroup, onExportCsv }: HistoryTabProps): JSX.Element {
   const [visibleCount, setVisibleCount] = useState(50)
   useEffect(() => { setVisibleCount(50) }, [events, group])
-  if (events === null) return <p className="vcp-loading">Загружаем журнал…</p>
-  const visible = events.slice(0, visibleCount)
-  const remaining = events.length - visible.length
+  const visible = (events ?? []).slice(0, visibleCount)
+  const remaining = (events?.length ?? 0) - visible.length
 
   return (
     <section className="vcp-history" data-testid="history-tab">
@@ -43,7 +42,7 @@ export function HistoryTab({ events, userName, group = 'all', onChangeGroup, onE
           <select aria-label="Тип событий" value={group} onChange={(event) => onChangeGroup?.(event.target.value as SecurityGroup)}>
             {GROUPS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
-          {onExportCsv && events.length > 0 && (
+          {onExportCsv && events && events.length > 0 && (
             <Button
               size="sm"
               variant="ghost"
@@ -60,7 +59,7 @@ export function HistoryTab({ events, userName, group = 'all', onChangeGroup, onE
         </div>
       </div>
 
-      {visible.length === 0
+      {events === null ? <><p className="vcp-loading" role="status">Загружаем журнал…</p><Skeleton variant="list" count={4} height={72} lines={2} testId="profile-history-skeleton" /></> : visible.length === 0
         ? <EmptyState icon="🛡" title="Событий пока нет" description="Входы, выходы, неудачные попытки и смена пароля появятся здесь." />
         : (
           <ul className="vcp-audit" role="list">
@@ -80,7 +79,7 @@ export function HistoryTab({ events, userName, group = 'all', onChangeGroup, onE
           <Button size="sm" variant="ghost" onClick={() => setVisibleCount((count) => count + 50)}>
             Показать ещё {Math.min(50, remaining)}
           </Button>
-          <span>{visible.length} из {events.length}</span>
+          <span>{visible.length} из {events?.length ?? 0}</span>
         </div>
       )}
     </section>

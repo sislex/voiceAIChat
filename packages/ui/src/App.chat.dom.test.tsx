@@ -2,6 +2,7 @@ import './test/applicationPanels'
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readResources } from './clients/readResources'
 import App, { openWebReaderWorkspace } from './App'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
@@ -314,6 +315,7 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
     render(<App api={api} delays={SLOW} />)
     await screen.findByText('Погода в июле?')
     api['projects:list'] = vi.fn().mockRejectedValue(new Error('projects unavailable'))
+    readResources(api).invalidate('projects:list')
 
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     expect(await screen.findByText(/Не удалось загрузить проекты: projects unavailable/)).toHaveAttribute('role', 'alert')
