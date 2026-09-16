@@ -6,7 +6,8 @@ import { FileExplorer } from './FileExplorer'
 import { MachineConsole } from './MachineConsole'
 import { MachineTerminal } from './MachineTerminal'
 import type { ConsoleHistoryStore, MachineOps, SwitchUtility, UtilityVariant } from '@voicechat/ui-foundation/components/machine'
-import { GitTargetPane } from './git/GitTargetPane'
+import { lazyScreen } from '../runtime/lazyScreen'
+const GitTargetPane = lazyScreen(() => import('./git/GitTargetPane').then(module => ({ default: module.GitTargetPane })))
 
 export interface MachineUtilityProps {
   tool: ToolSpec
@@ -60,9 +61,9 @@ export function MachineUtility({
         />
       )
   }
-  if (tool.kind === 'console') {
+  if (tool.kind === 'console' || tool.kind === 'terminal') {
     // Настоящий терминал (xterm+PTY), если доступен мост; иначе — однострочная консоль.
-    if (pty) {
+    if (pty && tool.kind === 'terminal') {
       return (
         <MachineTerminal
           agents={agents}

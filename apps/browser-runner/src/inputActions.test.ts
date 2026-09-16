@@ -73,3 +73,36 @@ it.each([
   expect(move).not.toHaveBeenCalled()
   expect(click).not.toHaveBeenCalled()
 })
+// Сочетание клавиш одним вызовом: три отдельных keyDown/press/keyUp теряли
+// модификатор посередине, и страница до конца сессии печатала заглавными.
+it('сочетание уходит одним нажатием: удерживать модификаторы вручную нечем и незачем', async () => {
+  const press = vi.fn(async () => {})
+  const down = vi.fn(async () => {})
+  const page = { keyboard: { down, up: vi.fn(async () => {}), press } } as unknown as Page
+  await runBrowserInput(page, { type: 'hotkey', key: 'a', modifiers: ['Control', 'Shift'] })
+  expect(press).toHaveBeenCalledWith('Control+Shift+a')
+  // Ручное удержание оставляло модификатор зажатым, если нажатие падало посередине.
+  expect(down).not.toHaveBeenCalled()
+})
+
+it('primary-модификатор доезжает до раннера как ControlOrMeta: Control+A на macOS не выделяет', async () => {
+  const press = vi.fn(async () => {})
+  const page = { keyboard: { press } } as unknown as Page
+  await runBrowserInput(page, { type: 'hotkey', key: 'a', modifiers: ['ControlOrMeta'] })
+  expect(press).toHaveBeenCalledWith('ControlOrMeta+a')
+})
+
+it('пустой список модификаторов отвергается: это обычный press, а не сочетание', async () => {
+  const page = { keyboard: { down: vi.fn(), up: vi.fn(), press: vi.fn() } } as unknown as Page
+  await expect(runBrowserInput(page, { type: 'hotkey', key: 'a', modifiers: [] })).rejects.toThrow('модификаторы')
+})
+
+it('repeat повторяет нажатие, но не больше потолка', async () => {
+  const press = vi.fn(async () => {})
+  const page = { keyboard: { press } } as unknown as Page
+  await runBrowserInput(page, { type: 'press', key: 'ArrowDown', repeat: 4 })
+  expect(press).toHaveBeenCalledTimes(4)
+  press.mockClear()
+  await runBrowserInput(page, { type: 'press', key: 'ArrowDown', repeat: 500 })
+  expect(press).toHaveBeenCalledTimes(50)
+})

@@ -63,6 +63,8 @@ describe.skipIf(!existsSync(WEB_DIST))('Панель кода E2E', () => {
 
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     await page.goto(`${BASE}/`)
     await page.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
     // Токен читается при загрузке приложения: без перезагрузки страница осталась бы
@@ -113,7 +115,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Панель кода E2E', () => {
     const phone = await browser.newPage({ viewport: { width: 390, height: 780 } })
     try {
       await phone.goto(`${BASE}/`)
-      await phone.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
+      await phone.evaluate((t) => { localStorage.setItem('vc.session.token', t); localStorage.setItem('vc:shell:admin:tour', 'true') }, token)
       await phone.goto(`${BASE}/#/projects/${projectId}/code`)
       await phone.reload()
       await phone.getByTestId('git-workspace-list').waitFor({ state: 'visible', timeout: 30_000 })

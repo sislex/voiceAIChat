@@ -67,7 +67,7 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     case 'type':
       return {
         kind: 'command',
-        command: { type: 'selector', action: { kind: 'type', selector: action.selector, text: action.text, ...(action.submit ? { submit: true } : {}) } }
+        command: { type: 'selector', action: { kind: 'type', ...(action.selector ? { selector: action.selector } : {}), ...(action.field ? { field: action.field } : {}), text: action.text, ...(action.submit ? { submit: true } : {}), ...(action.append ? { append: true } : {}), ...(action.delay !== undefined ? { delay: action.delay } : {}) } }
       }
     case 'read':
       return { kind: 'command', command: { type: 'selector', action: { kind: 'read', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}), ...(action.offset !== undefined ? { offset: action.offset } : {}) } } }
@@ -76,7 +76,7 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
         kind: 'command',
         command: {
           type: 'selector',
-          action: { kind: 'find', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}), ...(action.visibleOnly !== undefined ? { visibleOnly: action.visibleOnly } : {}) }
+          action: { kind: 'find', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(action.role ? { role: action.role } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}), ...(action.visibleOnly !== undefined ? { visibleOnly: action.visibleOnly } : {}) }
         }
       }
     case 'wait': {
@@ -89,8 +89,65 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     }
     case 'press':
       return action.selector
-        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key } } }
-        : { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key } } }
+        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key, ...(action.repeat !== undefined ? { repeat: action.repeat } : {}) } } }
+        : { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key, ...(action.repeat !== undefined ? { repeat: action.repeat } : {}) } } }
+    case 'hotkey': {
+      // Modifier names travel lowercase in the model-facing contract and as
+      // Playwright key names inside the runner; translate once, here.
+      const modifiers = action.modifiers.map((value) => ({ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta', primary: 'ControlOrMeta' } as const)[value])
+      return action.selector
+        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key, modifiers, ...(action.repeat !== undefined ? { repeat: action.repeat } : {}) } } }
+        : { kind: 'command', command: { type: 'input', action: { type: 'hotkey', key: action.key, modifiers, ...(action.repeat !== undefined ? { repeat: action.repeat } : {}) } } }
+    }
+    case 'focus':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'focus', ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'focusState':
+      // Раннер различает по наличию селектора: без него `focus` только читает.
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'focus' } } }
+    case 'clear':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'clear', selector: action.selector } } }
+    case 'selectText':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'selectText', ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'copy':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'copy' } } }
+    case 'paste':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'paste', text: action.text, ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'scrollUntil':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'scrollUntil', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(action.container ? { container: action.container } : {}), ...(action.maxScrolls !== undefined ? { maxScrolls: action.maxScrolls } : {}), ...(action.step !== undefined ? { step: action.step } : {}) } } }
+    case 'count':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'count', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}), ...(action.visibleOnly !== undefined ? { visibleOnly: action.visibleOnly } : {}) } } }
+    case 'table':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'table', selector: action.selector, ...(action.offset !== undefined ? { offset: action.offset } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}), ...(action.columns ? { columns: action.columns } : {}) } } }
+    case 'list':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'list', selector: action.selector, ...(action.offset !== undefined ? { offset: action.offset } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'metrics':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'metrics' } } }
+    case 'measure':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'measure', selector: action.selector } } }
+    case 'storage':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'storage', ...(action.area ? { area: action.area } : {}), ...(action.do ? { do: action.do } : {}), ...(action.key !== undefined ? { key: action.key } : {}), ...(action.value !== undefined ? { value: action.value } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'source':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'source', ...(action.selector ? { selector: action.selector } : {}), ...(action.offset !== undefined ? { offset: action.offset } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'csv':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'csv', selector: action.selector, ...(action.offset !== undefined ? { offset: action.offset } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'expect':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'expect', checks: action.checks } } }
+    case 'history': {
+      const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
+      return { kind: 'command', command: { type: 'history', ...options } }
+    }
+    case 'note':
+      return { kind: 'command', command: { type: 'note', text: action.text } }
+    case 'media':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'media', ...(action.selector ? { selector: action.selector } : {}), ...(action.do ? { do: action.do } : {}), ...(action.seconds !== undefined ? { seconds: action.seconds } : {}) } } }
+    case 'environment': {
+      const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
+      return { kind: 'command', command: { type: 'environment', ...options } }
+    }
+    case 'highlight':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'highlight', selector: action.selector, ...(action.ms !== undefined ? { ms: action.ms } : {}) } } }
+    case 'focusOrder':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'focusOrder', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
     case 'console': {
       const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
       return { kind: 'command', command: { type: 'inspect', action: { kind: 'console', ...options, regex: false } } }
@@ -126,9 +183,37 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
         kind: 'command',
         command: {
           type: 'selector',
-          action: { kind: 'set', selector: action.selector, ...(typeof action.value === 'string' ? { value: action.value } : {}), ...(typeof action.checked === 'boolean' ? { checked: action.checked } : {}) }
+          action: { kind: 'set', selector: action.selector, ...(typeof action.value === 'string' ? { value: action.value } : {}), ...(action.values !== undefined ? { values: action.values } : {}), ...(typeof action.checked === 'boolean' ? { checked: action.checked } : {}) }
         }
       }
+    case 'fillForm':
+      return {
+        kind: 'command',
+        command: {
+          type: 'selector',
+          action: {
+            kind: 'fillForm',
+            ...(action.selector ? { selector: action.selector } : {}),
+            fields: action.fields.map((field) => ({
+              selector: field.selector,
+              ...(field.value !== undefined ? { value: field.value } : {}),
+              ...(field.values !== undefined ? { values: field.values } : {}),
+              ...(field.checked !== undefined ? { checked: field.checked } : {})
+            })),
+            ...(action.delay !== undefined ? { delay: action.delay } : {})
+          }
+        }
+      }
+    case 'formState':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'formState', ...(action.selector ? { selector: action.selector } : {}), ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'validity':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'validity', ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'submit':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'submit', ...(action.selector ? { selector: action.selector } : {}) } } }
+    case 'options':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'options', selector: action.selector, ...(action.limit !== undefined ? { limit: action.limit } : {}) } } }
+    case 'dropFile':
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'dropFile', selector: action.selector, files: action.files.map((file) => ({ name: file.name, base64: file.base64, ...(file.mimeType ? { mimeType: file.mimeType } : {}) })) } } }
     case 'a11y':
       return {
         kind: 'command',
@@ -155,7 +240,14 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     case 'upload':
       return {
         kind: 'command',
-        command: { type: 'selector', action: { kind: 'upload', selector: action.selector, name: action.name, base64: action.base64, ...(action.mimeType ? { mimeType: action.mimeType } : {}) } }
+        command: {
+          type: 'selector',
+          // Несколько файлов передаются массивом; одиночные поля остаются
+          // заполненными, чтобы старый раннер загрузил хотя бы первый файл.
+          action: action.files?.length
+            ? { kind: 'upload', selector: action.selector, name: action.files[0].name, base64: action.files[0].base64, files: action.files.map((file) => ({ name: file.name, base64: file.base64, ...(file.mimeType ? { mimeType: file.mimeType } : {}) })) }
+            : { kind: 'upload', selector: action.selector, name: action.name, base64: action.base64, ...(action.mimeType ? { mimeType: action.mimeType } : {}) }
+        }
       }
     default:
       return { kind: 'unsupported', reason: `Действие «${(action as { kind: string }).kind}» в Playwright Reader пока не поддерживается.` }

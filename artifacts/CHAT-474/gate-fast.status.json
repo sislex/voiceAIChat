@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "runId": "20260915194443239-097be328-c78f-4187-b251-155adedb2d78",
+  "pid": 86276,
+  "startedAt": "2026-09-15T19:44:43.241Z",
+  "command": [
+    "npm",
+    "run",
+    "gate:fast"
+  ],
+  "state": "finished",
+  "finishedAt": "2026-09-15T19:51:41.690Z",
+  "exitCode": 0,
+  "signal": null
+}

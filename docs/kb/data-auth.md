@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-12
-checked: d9864647
+updated: 2026-09-13
+checked: 0b6c1d15
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -329,13 +329,36 @@ Claude, Codex и других внешних сервисов.
 
 ## Админка
 
+Access management (CHAT-453): `GET /api/admin/users` accepts `limit` (1–200),
+`offset` (non-negative), `q`, `role`, `state` (`online`, `blocked`, `inactive`),
+`sort` (`activity`, `login`, `name`, `spend`) and `asc=1`. Filtering and sorting
+precede slicing; requests without pagination retain the full array response.
+`DELETE /api/admin/users/:name/sessions` revokes the user's sessions in one
+repository update; `{ exceptCurrent: true }` preserves the authenticated SID.
+If the current SID is unavailable when targeting oneself, the server refuses
+with 409 rather than accidentally ending the current session.
+Inactive means no login for 30 days; never-used accounts qualify only after
+30 days from creation. Login sorting uses `lastLogin`, not session activity.
+`IdentityRepo.setUserRole` locks administrators inside a transaction before
+counting them; demoting the last one returns HTTP 409 with an explanatory Russian error.
+
+`GET /api/admin/security?user=<login>&group=login` returns the last 50 login
+results, filtering in SQL before LIMIT. `group=prices` selects model-price audit
+entries (actor, timestamp and changed base rates) from the same existing journal.
+New price writes require finite non-negative values with at most two decimals.
+Reset codes remain one hash per user: issuing a new one replaces the previous
+code. GET on the existing `/reset-code` path returns expiry with an empty code;
+DELETE clears the hash and expiry. The plaintext is only returned on issuance.
+
 `/api/admin/users*` (`routes/admin.ts`, типы в `packages/shared/src/admin.ts`):
 список, создание/удаление, блокировка, отчёт по использованию
 (`UsageReport`/`UsageUnit`), просмотр чужих разговоров и сообщений. Отчёт принимает
 `from`, `to`, `unit` и необязательный `conversationId`, возвращает агрегаты по
 бакетам, моделям и разговорам. Для сообщений Codex без `meta.costUsd`
-`model_prices` редактируются только админом через `GET/PUT/DELETE /api/admin/model-prices`. `usageReport` всегда возвращает две независимые суммы: `costUsd` (что сообщил CLI) и `costFromPrices` (пересчёт по `model_prices`) для Claude и Codex; обычный вход считается как
-`inputTokens - cacheReadTokens`, чтобы кэш не оплачивался дважды. Таблица содержит
+`model_prices` редактируются только админом через `GET/PUT/DELETE /api/admin/model-prices`. `usageReport` всегда возвращает две независимые суммы: `costUsd` (что сообщил CLI) и `costFromPrices` (пересчёт по `model_prices`) для Claude и Codex; `meta.inputTokens`
+у всех движков — вход **без** кэша (Codex приводится `TurnManager` и разовой
+миграцией `migrateCodexThreadUsage`, см. [llm.md](llm.md)), поэтому SQL берёт его
+как есть и отдельно платит за `cacheReadTokens`. Таблица содержит
 USD за 1M обычных/кэшированных/записанных в кэш/выходных токенов, URL источника и
 даты тарифа/обновления. Базовые четыре поля — Standard/short context; дополнительные
 официальные сочетания режима (`standard`/`batch`/`flex`/`fast`) и контекста

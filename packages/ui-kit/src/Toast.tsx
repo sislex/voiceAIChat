@@ -47,6 +47,8 @@ export interface ToastOptions {
   closeLabel?: string
   lang?: string
   action?: ToastAction
+  /** Suppress persistence for sensitive messages. */
+  history?: boolean
   /** Сколько держать на экране, мс. 0 — до крестика (так ведут себя ошибки). */
   duration?: number
 }
@@ -56,6 +58,7 @@ export interface ToastApi {
   error: (text: string, options?: ToastOptions) => string
   info: (text: string, options?: ToastOptions) => string
   dismiss: (id: string) => void
+  clear?: () => void
 }
 
 /** Автозакрытие обычного тоста. */
@@ -80,6 +83,7 @@ interface ToastItem {
   closeLabel?: string
   lang?: string
   id: string
+  count: number
   kind: ToastKind
   text: string
   action?: ToastAction
@@ -94,7 +98,7 @@ function ToastMessage({ item, dismiss }: { item: ToastItem; dismiss: (id: string
       lang={lang}
       className={`vc-toast vc-toast--${item.kind}`}
       data-testid={`toast-${item.kind}`}
-      {...(item.kind === 'error' ? { role: 'alert', 'aria-live': 'assertive' as const } : { role: 'status' })}
+      role={item.kind === 'error' ? 'alert' : 'status'}
       // Handle Escape locally so a notification does not intercept dialog or application shortcuts.
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return
@@ -105,7 +109,7 @@ function ToastMessage({ item, dismiss }: { item: ToastItem; dismiss: (id: string
       <span className="vc-toast-icon" aria-hidden="true">
         {ICON[item.kind]}
       </span>
-      <span className="vc-toast-text">{translate(item.text)}</span>
+      <span className="vc-toast-text">{translate(item.text)}{item.count > 1 && <span aria-label={`${item.count} повторения`}> ×{item.count}</span>}</span>
       {item.action && (
         <button
           className="vc-toast-action"
@@ -127,7 +131,8 @@ function ToastMessage({ item, dismiss }: { item: ToastItem; dismiss: (id: string
 const ToastContext = createContext<ToastApi | null>(null)
 
 let seq = 0
-const nextId = (): string => `toast-${++seq}`
+const toastSessionId = Math.random().toString(36).slice(2)
+const nextId = (): string => `toast-${toastSessionId}-${++seq}`
 
 export interface ToastProviderProps {
   children: ReactNode
@@ -142,7 +147,20 @@ export interface ToastProviderProps {
 
 export function ToastProvider({ children, avoidSelector }: ToastProviderProps): JSX.Element {
   const [items, setItems] = useState<ToastItem[]>([])
-  const [paused, setPaused] = useState(false)
+  const [hovered, setHovered] = useState(false)
+  const [held, setHeld] = useState(false)
+  const [focused, setFocused] = useState(false)
+  useEffect(() => {
+    if (!held) return
+    const release = (): void => setHeld(false)
+    window.addEventListener('pointerup', release)
+    window.addEventListener('pointercancel', release)
+    window.addEventListener('blur', release)
+    return () => { window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); window.removeEventListener('blur', release) }
+  }, [held])
+  const paused = hovered || held || focused
+  const itemsRef = useRef<ToastItem[]>([])
+  itemsRef.current = items
   // Остаток времени живёт в ref: перезапуск таймера (новый тост, пауза) не
   // должен обнулять отсчёт уже показанным.
   const left = useRef(new Map<string, number>())
@@ -150,13 +168,20 @@ export function ToastProvider({ children, avoidSelector }: ToastProviderProps): 
 
   const dismiss = useCallback((id: string): void => {
     left.current.delete(id)
+    itemsRef.current = itemsRef.current.filter(item => item.id !== id)
     setItems((all) => all.filter((item) => item.id !== id))
   }, [])
 
   const push = useCallback((kind: ToastKind, text: string, options?: ToastOptions): string => {
-    const id = nextId()
+    const existing = !options?.action ? itemsRef.current.find(item => !item.action && item.kind === kind && item.text === text && item.lang === options?.lang && item.localeSource === options?.localeSource) : undefined
+    const id = existing?.id ?? nextId()
+    if (options?.history !== false && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('vc:toast', { detail: { id, kind, text, time: Date.now() } }))
     const duration = options?.duration ?? (kind === 'error' ? 0 : options?.action ? TOAST_ACTION_DURATION_MS : TOAST_DURATION_MS)
-    setItems((all) => [...all, { id, kind, text, duration, localeSource: options?.localeSource, closeLabel: options?.closeLabel, lang: options?.lang, ...(options?.action ? { action: options.action } : {}) }])
+    const next = existing
+      ? itemsRef.current.map(item => item.id === id ? { ...item, count: item.count + 1 } : item)
+      : [...itemsRef.current, { id, count: 1, kind, text, duration, localeSource: options?.localeSource, closeLabel: options?.closeLabel, lang: options?.lang, ...(options?.action ? { action: options.action } : {}) }]
+    itemsRef.current = next
+    setItems(next)
     return id
   }, [])
 
@@ -165,7 +190,8 @@ export function ToastProvider({ children, avoidSelector }: ToastProviderProps): 
       success: (text, options) => push('success', text, options),
       error: (text, options) => push('error', text, options),
       info: (text, options) => push('info', text, options),
-      dismiss
+      dismiss,
+      clear: () => { left.current.clear(); itemsRef.current = []; setItems([]) }
     }),
     [push, dismiss]
   )
@@ -243,12 +269,17 @@ export function ToastProvider({ children, avoidSelector }: ToastProviderProps): 
       className={`vc-toasts${phone ? ' vc-toasts--phone' : ''}`}
       // Отступ нужен только на телефоне: на десктопе стек стоит в углу, где
       // композера нет.
-      style={phone && avoidHeight > 0 ? { bottom: `calc(${avoidHeight}px + 12px)` } : undefined}
+      style={phone ? { bottom: `calc(${avoidHeight}px + 12px + var(--vc-shell-bottom, 0px))` } : undefined}
       data-testid="toasts"
-      aria-live="polite"
-      aria-atomic="false"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
+      // Each toast owns its announcement; a live parent would announce it twice.
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false) }}
+      onPointerDown={() => setHeld(true)}
+      onPointerUp={() => setHeld(false)}
+      onPointerCancel={() => setHeld(false)}
+      onLostPointerCapture={() => setHeld(false)}
     >
       {visible.map((item) => <ToastMessage key={item.id} item={item} dismiss={dismiss} />)}
     </div>

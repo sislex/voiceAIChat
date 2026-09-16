@@ -47,6 +47,8 @@ describe('Reader: модель управляет настоящим App чер�
   beforeEach(async () => {
     const conversation = await api('/api/conversations', 'POST', { title: 'Reader model QA', assistantKind: 'web-recorder' }); conversationId = conversation.id ?? conversation.conversation.id
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(7000)
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     page.on('websocket', socket => socket.on('framereceived', event => {
       try { const message = JSON.parse(String(event.payload)); if (message.t === 'reader.changed') changed.push(message) } catch { /* бинарные кадры к этим проверкам не относятся */ }
     }))

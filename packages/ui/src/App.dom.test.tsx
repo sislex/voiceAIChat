@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import App from './App'
+import App, { machineCommandNoticePolicy } from './App'
+import { readNotifications, resetPreferenceCache, type ShellNotification } from './lib/shellPreferences'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { PreviewAction } from '@shared/previewActions'
@@ -51,7 +52,7 @@ async function renderApp(): Promise<FakeApi> {
 function setChatViewport(mobile: boolean): () => void {
   const original = window.matchMedia
   window.matchMedia = ((query: string) => ({
-    matches: query === '(max-width: 768px)' ? mobile : false,
+    matches: query === '(max-width: 720px)' ? mobile : false,
     media: query,
     onchange: null,
     addEventListener: () => undefined,
@@ -64,7 +65,87 @@ function setChatViewport(mobile: boolean): () => void {
 }
 
 /** Открыть настройки и перейти в раздел меню (Агент — по умолчанию). */
+describe('App — уведомления команд машин', () => {
+  const success = {
+    machineId: 'm1', machineName: 'Mac', source: 'chat' as const, command: 'npm test',
+    exitCode: 0, timedOut: false, error: null, durationMs: 12_000, conversationId: 'c1'
+  }
+  const failure = { ...success, command: 'npm run fail', exitCode: 1 }
+
+  const renderWithMachineEvents = async (settings: Partial<typeof DEFAULT_SETTINGS>) => {
+    let receive: ((event: typeof success) => void) | undefined
+    window.realtime = new Proxy({}, {
+      get: (_target, key) => key === 'onMachineCommand'
+        ? (callback: (event: typeof success) => void) => { receive = callback; return () => { receive = undefined } }
+        : () => () => undefined
+    }) as typeof window.realtime
+    const api = await seededApi()
+    await api['settings:save'](settings)
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Поездка в Лиссабон', {}, { timeout: 10_000 })
+    return { emit: (event: typeof success) => act(() => receive?.(event)), restore: () => { delete window.realtime } }
+  }
+
+  // @testCase TC-BEHAVIOR-1
+  it('в режиме failures показывает только неуспешное завершение', async () => {
+    const bridge = await renderWithMachineEvents({ machineCommandNotices: 'failures', machineCommandNoticeSeconds: 8 })
+    bridge.emit(success)
+    expect(screen.queryByText(/npm test/)).not.toBeInTheDocument()
+    bridge.emit(failure)
+    expect(await screen.findByText(/npm run fail/)).toBeInTheDocument()
+    bridge.restore()
+  })
+
+  // @testCase TC-BEHAVIOR-2
+  it('в режиме off сохраняет оба исхода в истории без тостов', async () => {
+    localStorage.clear()
+    resetPreferenceCache()
+    const bridge = await renderWithMachineEvents({ machineCommandNotices: 'off' })
+    bridge.emit(success)
+    bridge.emit(failure)
+    expect(screen.queryByText(/npm test/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/npm run fail/)).not.toBeInTheDocument()
+    expect(readNotifications('local').filter(item => item.source === 'machine')).toHaveLength(2)
+    bridge.restore()
+  })
+
+  // @testCase TC-BEHAVIOR-3
+  it('задаёт одинаковую длительность success и error, включая бессрочную', () => {
+    for (const seconds of [4, 0]) {
+      const settings = { machineCommandNotices: 'all' as const, machineCommandNoticeSeconds: seconds }
+      expect(machineCommandNoticePolicy(success, settings)).toMatchObject({ failed: false, shouldShow: true, duration: seconds * 1000 })
+      expect(machineCommandNoticePolicy(failure, settings)).toMatchObject({ failed: true, shouldShow: true, duration: seconds * 1000 })
+    }
+  })
+
+  // @testCase TC-HISTORY-1
+  it('валидатор истории принимает machine и прежние источники, но не неизвестный', () => {
+    localStorage.clear()
+    resetPreferenceCache()
+    const entries: ShellNotification[] = ['machine', 'toast', 'run', 'release', 'invitation'].map((source, index) => ({
+      id: String(index), text: source, kind: 'info', source: source as ShellNotification['source'], time: index, read: false
+    }))
+    localStorage.setItem('vc:shell:user:notifications', JSON.stringify(entries))
+    expect(readNotifications('user')).toEqual(entries)
+    localStorage.setItem('vc:shell:other:notifications', JSON.stringify([{ ...entries[0], source: 'unknown' }]))
+    resetPreferenceCache()
+    expect(readNotifications('other')).toEqual([])
+  })
+})
+
 describe('App — версия релиза', () => {
+  it('offers a keyboard skip link, one main landmark and a route title', async () => {
+    await renderApp()
+    const skip = screen.getByRole('link', { name: 'К содержимому' })
+    skip.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByRole('main')).toHaveFocus()
+    expect(document.title).toContain('Чат')
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    await screen.findByRole('dialog', { name: 'Настройки' })
+    expect(document.title).toContain('Настройки')
+  })
+
   it('сохраняет номер версии и показывает коммит с задачей в подсказке', async () => {
     await renderApp()
 
@@ -122,7 +203,8 @@ describe('App — StrictMode (dev double-effect)', () => {
 })
 
 describe('App — онбординг первого запуска', () => {
-  it('показывается при onboarded=false и скрывается после «Начать»', async () => {
+  // @testCase TC-DEGRADED-1
+  it('показывается при onboarded=false и закрывается без обязательной настройки', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: false })
     render(<App api={api} delays={SLOW} />)
@@ -130,7 +212,7 @@ describe('App — онбординг первого запуска', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Добро пожаловать' })
     expect(dialog).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /Начать/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Продолжить в чате' }))
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Добро пожаловать' })).not.toBeInTheDocument()
     )
@@ -181,7 +263,7 @@ describe('App — действия модели в веб-превью (мост
     bridge.emit({ conversationId: inactive.id, requestId: 'r2', action: { kind: 'open', url: 'https://shop.example/' } })
     await waitFor(() => expect(bridge.results).toHaveLength(1))
     expect(bridge.results[0].ok).toBe(false)
-    expect(bridge.results[0].error).toContain('не открыт')
+    expect(bridge.results[0].error).toContain('другой чат')
     expect(api._state.conversations.find((c) => c.id === inactive.id)?.previewUrl ?? null).toBeNull()
   })
 
@@ -237,7 +319,9 @@ describe('App — действия модели в веб-превью (мост
         bridge.changed({ ...change, action: { kind: 'errors' } })
       })
       const history = await screen.findByRole('region', { name: 'Действия ассистента' })
-      expect(within(history).getAllByRole('listitem')).toHaveLength(2)
+      // Два одинаковых чтения одной страницы схлопываются в одну строку «×2».
+      expect(within(history).getAllByRole('listitem')).toHaveLength(1)
+      expect(within(history).getByLabelText('повторено 2 раз')).toBeInTheDocument()
       expect(within(history).queryByText('Нажал Чужая кнопка')).not.toBeInTheDocument()
       await userEvent.click(within(history).getAllByRole('button', { name: /^Повторить действие \d+:/ })[0])
       await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'command', action: { kind: 'errors' }, requestId: expect.any(String) }), window.location.origin))
@@ -338,7 +422,7 @@ describe('App — действия модели в веб-превью (мост
     await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(second.id))
     bridge.emit({ conversationId: first.id, requestId: 'old-chat', action: { kind: 'read' } })
     await waitFor(() => expect(bridge.results).toHaveLength(1))
-    expect(bridge.results[0]).toMatchObject({ requestId: 'old-chat', ok: false, error: expect.stringContaining('не открыт') })
+    expect(bridge.results[0]).toMatchObject({ requestId: 'old-chat', ok: false, error: expect.stringContaining('другой чат') })
   })
 
   it('Playwright Reader монтирует browser-панель (Chromium), а не iframe веб-превью', async () => {
@@ -423,7 +507,8 @@ describe('App — интеграция UI со стором и IPC', () => {
     const api = await seededApi()
     window.location.hash = '#/settings/llm'
     render(<App api={api} delays={SLOW} />)
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    await screen.findByRole('button', { name: 'LLM' })
+    const dialog = screen.getByRole('dialog', { name: 'Настройки' })
     const sections = [
       ['llm', 'LLM'], ['aiAssist', 'AI-помощник'], ['download', 'Скачать'], ['stt', 'Распознавание'],
       ['tts', 'Озвучка'], ['dialog', 'Голосовой диалог'], ['instructions', 'Инструкции'], ['storage', 'Хранилище'],
@@ -440,7 +525,8 @@ describe('App — интеграция UI со стором и IPC', () => {
     const api = await seededApi()
     window.location.hash = '#/settings/llm'
     const view = render(<App api={api} delays={SLOW} />)
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    await screen.findByRole('button', { name: 'LLM' })
+    const dialog = screen.getByRole('dialog', { name: 'Настройки' })
     await userEvent.click(within(dialog).getByRole('button', { name: 'AI-помощник' }))
     expect(window.location.hash).toBe('#/settings/aiAssist')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Инструкции' }))
@@ -459,7 +545,8 @@ describe('App — интеграция UI со стором и IPC', () => {
     const api = await seededApi()
     window.location.hash = route
     render(<App api={api} delays={SLOW} />)
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    await screen.findByRole('button', { name: 'LLM' })
+    const dialog = screen.getByRole('dialog', { name: 'Настройки' })
     await waitFor(() => expect(window.location.hash).toBe('#/settings/llm'))
     expect(within(dialog).getByRole('button', { name: 'LLM' })).toHaveAttribute('aria-pressed', 'true')
   })
@@ -471,7 +558,8 @@ describe('App — интеграция UI со стором и IPC', () => {
     const chat = api._state.conversations.find((conversation) => conversation.title === 'Поездка в Лиссабон')!
     window.location.hash = `#/chat/${chat.id}/context`
     fireEvent(window, new HashChangeEvent('hashchange'))
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки разговора' })
+    await screen.findByRole('tab', { name: 'Контекст' })
+    const dialog = screen.getByRole('dialog', { name: 'Настройки разговора' })
     expect(within(dialog).getByRole('tab', { name: 'Контекст' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('dialog', { name: 'Настройки' })).not.toBeInTheDocument()
   })
@@ -693,7 +781,7 @@ describe('App — мобильное меню', () => {
   const desktopMatchMedia = window.matchMedia
   beforeEach(() => {
     window.matchMedia = ((query: string) => ({
-      matches: query === '(max-width: 768px)',
+      matches: query === '(max-width: 720px)',
       media: query,
       onchange: null,
       addEventListener: () => {},
@@ -729,6 +817,7 @@ describe('App — мобильное меню', () => {
 })
 
 describe('App — доступность', () => {
+  // @testCase TC1
   it('без нарушений axe: сайдбар, чат и композер', async () => {
     await renderApp()
     // Единственное место, где включено правило region: у целого приложения весь
@@ -1117,7 +1206,7 @@ describe('App — Sidebar в рабочих split-режимах', () => {
     '%s использует закрываемый мобильный overlay',
     async (mode) => {
       window.matchMedia = ((query: string) => ({
-        matches: query === '(max-width: 768px)',
+        matches: query === '(max-width: 720px)',
         media: query,
         onchange: null,
         addEventListener: () => undefined,
@@ -1227,7 +1316,7 @@ describe('App — Sidebar в рабочих split-режимах', () => {
 
   it('console-reader switches mounted chat and PTY panes with accessible mobile tabs', async () => {
     window.matchMedia = ((query: string) => ({
-      matches: query === '(max-width: 768px)', media: query, onchange: null,
+      matches: query === '(max-width: 720px)', media: query, onchange: null,
       addEventListener: () => undefined, removeEventListener: () => undefined,
       addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => true
     })) as typeof window.matchMedia
@@ -1330,13 +1419,15 @@ describe('App — выход из аккаунта', () => {
     expect(screen.queryByText('Пользователи')).not.toBeInTheDocument()
   })
 
+  // @testCase TC-REGRESSION
   it('«Сессии и устройства» открывается и со страницы-утилиты, а не только из чата', async () => {
     const api = await seededApi()
+    const sessions = vi.fn().mockResolvedValue([])
     ;(window as unknown as { session: unknown }).session = {
       me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
       login: vi.fn(),
       logout: vi.fn(),
-      sessions: vi.fn().mockResolvedValue([]),
+      sessions,
       revokeSession: vi.fn()
     }
     // Окно жило внутри блока страницы чата, поэтому с #/users (как и с доски
@@ -1346,6 +1437,7 @@ describe('App — выход из аккаунта', () => {
 
     await userEvent.click(await screen.findByTitle('Роль: admin'))
     await userEvent.click(screen.getByRole('menuitem', { name: /Сессии и устройства/ }))
-    expect(await screen.findByRole('dialog', { name: 'Сессии и устройства' })).toBeInTheDocument()
+    await waitFor(() => expect(sessions).toHaveBeenCalled())
+    expect(screen.getByRole('dialog', { name: 'Сессии и устройства' })).toBeInTheDocument()
   })
 })

@@ -9,6 +9,7 @@
 //   (ошибки: {"type":"error","message":".."} / {"type":"turn.failed","error":{"message":".."}})
 
 import type { ClaudeLogEntry, TurnMeta } from './types'
+import { codexThreadUsageOf } from './codexUsage'
 
 export type CodexStreamEvent =
   | { kind: 'session'; sessionId: string }
@@ -18,12 +19,22 @@ export type CodexStreamEvent =
   | { kind: 'error'; message: string }
   | { kind: 'ignore' }
 
+/**
+ * `usage` of `turn.completed` is `ThreadTokenUsage.total` — the cumulative
+ * counters of the whole thread (every resumed turn included), not of this turn.
+ * The parser cannot know the previous totals, so it exposes the raw numbers in
+ * the usage fields (live counter) and duplicates them in `codexThreadUsage`; the
+ * TurnManager turns them into the turn's own spend via `codexTurnUsage`.
+ * `input_tokens` includes `cached_input_tokens` — Codex semantics.
+ */
 function usageMeta(usage: unknown): TurnMeta {
   const meta: TurnMeta = {}
   const u = (usage ?? {}) as Record<string, unknown>
   if (typeof u.input_tokens === 'number') meta.inputTokens = u.input_tokens
   if (typeof u.output_tokens === 'number') meta.outputTokens = u.output_tokens
   if (typeof u.cached_input_tokens === 'number') meta.cacheReadTokens = u.cached_input_tokens
+  if (typeof u.cache_write_input_tokens === 'number') meta.cacheCreationTokens = u.cache_write_input_tokens
+  if (Object.keys(meta).length > 0) meta.codexThreadUsage = codexThreadUsageOf(meta)
   return meta
 }
 

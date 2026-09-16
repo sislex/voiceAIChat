@@ -28,6 +28,9 @@ import { THEME_KEY, userThemeKey } from '@voicechat/ui-foundation/persistence'
 
 
 export interface SettingsState {
+  catalogErrors: Record<string, string>
+  catalogLoading: string[]
+  catalogLoaded: Record<string, boolean>
   settings: Settings
   /**
    * Настройки пришли с сервера (а не остались дефолтами стора). Пока это не так,
@@ -73,7 +76,8 @@ export interface SettingsActions {
   /** Загрузить настройки, движки и права (защищённый bootstrap). */
   load(): Promise<void>
   /** Догрузить каталоги и возможности — они не блокируют показ чата. */
-  loadCatalogs(): Promise<void>
+  loadCatalogs(section?: string, only?: string): Promise<void>
+  loadChatVoice(): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<void>
   completeOnboarding(): Promise<void>
   refreshMics(): Promise<void>
@@ -92,7 +96,7 @@ export interface SettingsActions {
   /** Машину удалили: сбросить ссылки на неё в настройках. */
   forgetAgent(id: string): void
   /** Настройки изменены снаружи (соседняя вкладка): перечитать их с сервера. */
-  refreshSettings(): Promise<void>
+  refreshSettings(revalidate?: boolean): Promise<void>
   /** Известен вошедший: до ответа сервера рисуем интерфейс его темой, а не чужой. */
   hydrateThemeFor(login: string): void
   reset(): void
@@ -128,6 +132,9 @@ export interface SettingsDeps {
 
 function initialState(ttsAvailable: boolean, theme: Settings['theme'] = DEFAULT_SETTINGS.theme): SettingsState {
   return {
+    catalogErrors: {},
+    catalogLoading: [],
+    catalogLoaded: {},
     settings: { ...DEFAULT_SETTINGS, theme },
     settingsLoaded: false,
     llmEngines: [],
@@ -151,8 +158,8 @@ function initialState(ttsAvailable: boolean, theme: Settings['theme'] = DEFAULT_
 /** Тема на момент создания стора: человек ещё может быть неизвестен. */
 function startTheme(deps: SettingsDeps): Settings['theme'] {
   const login = deps.currentUser?.()
-  const raw = (login ? deps.prefs?.get(userThemeKey(login)) : null) ?? deps.prefs?.get(THEME_KEY)
-  return raw === 'dark' || raw === 'light' || raw === 'green' ? raw : DEFAULT_SETTINGS.theme
+  const raw = login ? deps.prefs?.get(userThemeKey(login)) : deps.prefs?.get(THEME_KEY)
+  return raw === 'dark' || raw === 'light' || raw === 'green' || raw === 'system' ? raw : DEFAULT_SETTINGS.theme
 }
 
 export function createSettingsStore(deps: SettingsDeps): SettingsStore {
@@ -174,8 +181,8 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
 
   /** Тема из предпочтений: сначала личная, иначе последняя тема браузера. */
   function readTheme(login?: string | null): Settings['theme'] {
-    const raw = (login ? deps.prefs?.get(userThemeKey(login)) : null) ?? deps.prefs?.get(THEME_KEY)
-    return raw === 'dark' || raw === 'light' || raw === 'green' ? raw : DEFAULT_SETTINGS.theme
+    const raw = login ? deps.prefs?.get(userThemeKey(login)) : deps.prefs?.get(THEME_KEY)
+    return raw === 'dark' || raw === 'light' || raw === 'green' || raw === 'system' ? raw : DEFAULT_SETTINGS.theme
   }
 
   /**
@@ -184,6 +191,7 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
    * прежним пользователем, «воскресит» его настройки уже в чужой сессии.
    */
   let epoch = 0
+  let catalogsGeneration = 0
   /** Номер последнего начатого сохранения: ответы могут прийти не по порядку. */
   let lastSave = 0
 
@@ -226,12 +234,14 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
 
   /** Перечитывание в полёте: реконнект и `online` часто приходят парой. */
   let refreshing: Promise<void> | null = null
+  let refreshPending = false
+  core.onDispose(() => { epoch++; refreshing = null; refreshPending = false })
 
   /** Перечитать настройки с сервера (сигнал извне: соседняя вкладка, реконнект, сеть). */
-  async function refreshSettings(): Promise<void> {
-    if (refreshing) return refreshing
+  async function refreshSettings(revalidate = false): Promise<void> {
+    if (refreshing) { refreshPending ||= revalidate; return refreshing }
     const startedAt = epoch
-    refreshing = (async () => {
+    const run = (async () => {
       try {
         const settings = await client['settings:get']()
         // Своё несохранённое изменение важнее чужого снимка: пока патч в
@@ -243,10 +253,17 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         console.warn('[settings] не удалось перечитать настройки', err)
       }
     })()
+    refreshing = run
     try {
-      await refreshing
+      await run
     } finally {
-      refreshing = null
+      if (refreshing === run) refreshing = null
+      // Reconnect/online can invalidate a read already owned by this store.
+      // Coalesce the newer signal into a follow-up instead of leaving defaults visible.
+      if (refreshPending && startedAt === epoch) {
+        refreshPending = false
+        await refreshSettings()
+      }
     }
   }
 
@@ -302,7 +319,9 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
    * голос навсегда. Пока голоса нет — его подменяет `selectEffectiveVoice`.
    */
   async function refreshTtsVoices(): Promise<void> {
-    setState({ ttsVoices: await client['tts:voices']() })
+    const startedAt = epoch
+    const ttsVoices = await client['tts:voices']()
+    if (startedAt === epoch) setState({ ttsVoices })
   }
 
   /** Голос для синтеза: сохранённый, а если его сейчас нет — дефолтный или первый доступный. */
@@ -314,54 +333,49 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   }
 
   async function refreshVoiceCatalog(): Promise<void> {
+    const startedAt = epoch
     const catalog = await client['tts:catalog']()
-    setState({ voiceCatalog: catalog.voices, voicesDownloadable: catalog.downloadable })
+    if (startedAt === epoch) setState({ voiceCatalog: catalog.voices, voicesDownloadable: catalog.downloadable })
   }
 
   async function refreshWhisperModels(): Promise<void> {
     if (!client['stt:models']) return
-    try {
-      setState({ whisperModels: await client['stt:models']() })
-    } catch (err) {
-      console.warn('[stt] не удалось получить список моделей', err)
-    }
+    const startedAt = epoch
+    const whisperModels = await client['stt:models']()
+    if (startedAt === epoch) setState({ whisperModels })
   }
 
   async function refreshModelStatus(): Promise<void> {
     if (!client.sttStatus) return
-    try {
-      const status = await client.sttStatus()
-      setState({ modelPresent: status.present })
-    } catch (err) {
-      console.warn('[stt] не удалось получить статус модели', err)
-    }
+    const startedAt = epoch
+    const status = await client.sttStatus()
+    if (startedAt === epoch) setState({ modelPresent: status.present })
   }
 
-  async function refreshMics(): Promise<void> {
+  async function refreshMics(strict = false): Promise<void> {
     if (!client.listMics) return
+    const startedAt = epoch
     try {
-      setState({ mics: await client.listMics() })
+      const mics = await client.listMics()
+      if (startedAt === epoch) setState({ mics })
     } catch (err) {
+      if (strict) throw err
       console.warn('[audio] не удалось получить список микрофонов', err)
     }
   }
 
   async function refreshCapabilities(): Promise<void> {
     if (!client['system:capabilities']) return
-    try {
-      setState({ capabilities: await client['system:capabilities']() })
-    } catch (err) {
-      console.warn('[system] не удалось получить возможности системы', err)
-    }
+    const startedAt = epoch
+    const capabilities = await client['system:capabilities']()
+    if (startedAt === epoch) setState({ capabilities })
   }
 
   async function refreshMcpServers(): Promise<void> {
     if (!client['mcp:list']) return
-    try {
-      setState({ mcpServers: await client['mcp:list']() })
-    } catch (err) {
-      console.warn('[mcp] не удалось получить список серверов', err)
-    }
+    const startedAt = epoch
+    const mcpServers = await client['mcp:list']()
+    if (startedAt === epoch) setState({ mcpServers })
   }
 
   async function refreshLoginStatus(): Promise<void> {
@@ -379,11 +393,12 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
     dispose: core.dispose,
     actions: {
       async load() {
+        const startedAt = epoch
         // Права и каталог движков нужны раньше любой фильтрации моделей, но их
         // отказ не должен оставлять настройки дефолтными: на дефолтах интерфейс
         // выглядит «сброшенным», а сохранение уносит их на сервер.
-        const [settings, llmEngines, llmAccess] = await Promise.all([
-          client['settings:get'](),
+        const [settingsResult, llmEngines, llmAccess] = await Promise.all([
+          client['settings:get']().then(value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason })),
           client['llm:engines']().catch((err: unknown) => {
             console.warn('[settings] каталог движков LLM недоступен', err)
             return getState().llmEngines
@@ -393,15 +408,28 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
             return getState().llmAccess
           })
         ])
-        setState({ settings, settingsLoaded: true, llmEngines, llmAccess })
+        if (!stillCurrent(startedAt)) return
+        // A superseded settings snapshot must not discard independent access/catalog reads.
+        setState({ llmEngines, llmAccess })
+        if (settingsResult.status === 'rejected') throw settingsResult.reason
+        const settings = settingsResult.value
+        setState({ settings, settingsLoaded: true })
         rememberTheme(settings)
       },
-      async loadCatalogs() {
+      async loadChatVoice() {
+        // Active chat playback needs installed voices, not the Settings download catalog.
+        if (deps.tts.enabled) await refreshTtsVoices()
+        if (deps.stt.enabled) await refreshModelStatus()
+      },
+      async loadCatalogs(section, only) {
+        if (!only) setState({ catalogErrors: {} })
+        const startedAt = epoch
+        const generation = only ? catalogsGeneration : ++catalogsGeneration
         // Каталоги независимы, и отказ одного не должен отменять остальные:
         // на стенде без Piper падение `tts:voices` уносило с собой и
         // возможности системы, и список MCP — экран настроек оставался пустым.
         const catalogs: Array<[string, () => Promise<void>]> = [
-          ['микрофоны', refreshMics],
+          ['микрофоны', () => refreshMics(true)],
           ['статус модели', refreshModelStatus],
           ['модели Whisper', refreshWhisperModels],
           ['голоса TTS', refreshTtsVoices],
@@ -409,12 +437,30 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
           ['возможности системы', refreshCapabilities],
           ['MCP-серверы', refreshMcpServers]
         ]
-        const failed = (await Promise.allSettled(catalogs.map(([, load]) => load())))
-          .map((result, index) => result.status === 'rejected' ? { name: catalogs[index][0], reason: result.reason } : null)
-          .filter((item): item is { name: string; reason: unknown } => item !== null)
-        if (failed.length) {
-          console.warn('[settings] каталоги загружены не полностью:', failed.map((item) => item.name).join(', '), failed[0].reason)
+        const sections: Record<string, string[]> = {
+          llm: ['возможности системы', 'MCP-серверы'],
+          stt: ['микрофоны', 'статус модели', 'модели Whisper', 'возможности системы'],
+          tts: ['голоса TTS', 'каталог голосов', 'возможности системы'],
+          dialog: ['микрофоны', 'голоса TTS', 'возможности системы']
         }
+        const selected = catalogs.filter(([name]) => (!section || sections[section]?.includes(name)) && (!only || name === only))
+        const catalogErrors = { ...getState().catalogErrors }
+        for (const [name] of selected) delete catalogErrors[name]
+        setState({ catalogErrors, catalogLoading: [...new Set([...(only ? getState().catalogLoading : []), ...selected.map(([name]) => name)])] })
+        await Promise.all(selected.map(async ([name, load]) => {
+          let error: string | null = null
+          let loaded = false
+          try { await load(); loaded = true }
+          catch (cause) {
+            if (!(cause instanceof Error && cause.name === 'AbortError')) error = cause instanceof Error ? cause.message : String(cause)
+          }
+          if (startedAt !== epoch || generation !== catalogsGeneration) return
+          setState({
+            catalogLoading: getState().catalogLoading.filter(item => item !== name),
+            catalogLoaded: { ...getState().catalogLoaded, ...(loaded ? { [name]: true } : {}) },
+            catalogErrors: { ...getState().catalogErrors, ...(error ? { [name]: error } : {}) }
+          })
+        }))
       },
       updateSettings,
       async completeOnboarding() {
@@ -433,7 +479,7 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
       },
       applyDownloadDone() {
         setState({ downloading: false, downloadPercent: 100, modelPresent: true })
-        void refreshWhisperModels() // обновить размеры в списке моделей
+        void refreshWhisperModels().catch(() => {}) // Download events do not create unhandled rejections.
       },
       applyDownloadError(message) {
         setState({ downloading: false })
@@ -491,6 +537,8 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         // Тема — настройка взгляда: она переживает выход, как и свёрнутый сайдбар.
         // Новая эпоха: ответы запросов прежнего пользователя больше не применяются.
         epoch += 1
+        refreshing = null
+        refreshPending = false
         core.resetState(initialState(deps.tts.enabled, savedTheme()))
       },
       selectAllowedProviders() {

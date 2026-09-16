@@ -5,13 +5,16 @@
 // редакторе строки — `AgentCard`; другого места для неё в UI нет.
 // Данные приходят живым пушем (state.agents).
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import type { AgentCreated, AgentInfo, AgentPolicy, AgentTelemetry, DiskUsage, BatchExecResult } from '@shared/agentProtocol'
 import { AGENT_VERSION, compareVersions } from '@shared/version'
 import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentInstall'
 import { recommendedMachineStoragePath, type MachineStorage } from '@shared/projects'
+import { MACHINE_FLEET_FILTER_KEY, MACHINE_FLEET_SORT_KEY } from '@voicechat/ui-foundation/persistence'
 import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { AgentCard } from './AgentCard'
+import { MachineVpn } from './MachineVpn'
+import type { VpnBridge } from '@shared/vpn'
 import { AgentCommands } from './AgentCommands'
 import { MachineCommandLog } from './MachineCommandLog'
 import { MachineBatchCommand } from './MachineBatchCommand'
@@ -25,6 +28,7 @@ import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 
 export interface MachineStatusProps {
+  vpn?: VpnBridge
   /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
   variant?: 'modal' | 'page'
   agents: AgentInfo[]
@@ -298,6 +302,7 @@ function AgentActions({
 }
 
 export function MachineStatus({
+  vpn,
   agents,
   status = 'ready',
   error = null,
@@ -322,6 +327,11 @@ export function MachineStatus({
   onClose,
   variant = 'modal'
 }: MachineStatusProps): JSX.Element {
+  const [fleetFilter, setFleetFilter] = useState(() => { try { return localStorage.getItem(MACHINE_FLEET_FILTER_KEY) ?? '' } catch { return '' } })
+  const [fleetSort, setFleetSort] = useState(() => { try { return localStorage.getItem(MACHINE_FLEET_SORT_KEY) ?? 'name' } catch { return 'name' } })
+  useEffect(() => { try { localStorage.setItem(MACHINE_FLEET_FILTER_KEY, fleetFilter); localStorage.setItem(MACHINE_FLEET_SORT_KEY, fleetSort) } catch { /* Preferences are optional when storage is restricted. */ } }, [fleetFilter, fleetSort])
+  const visibleAgents = agents.filter((agent) => fleetFilter === 'online' ? agent.online : fleetFilter === 'offline' ? !agent.online : fleetFilter === 'outdated' ? isOutdated(agent) : fleetFilter === 'battery' ? (agent.telemetry?.battery?.percent ?? 100) < 20 : true)
+    .sort((a, b) => fleetSort === 'lastSeen' ? (b.lastSeen ?? -Infinity) - (a.lastSeen ?? -Infinity) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name))
   const [name, setName] = useState('')
   const [created, setCreated] = useState<AgentCreated | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -331,6 +341,7 @@ export function MachineStatus({
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
   /** Машина с раскрытым редактором политики (одна на таблицу). */
   const [policyId, setPolicyId] = useState<string | null>(null)
+  const [vpnId, setVpnId] = useState<string | null>(null)
   const [logId, setLogId] = useState<string | null>(null)
   const [storageId, setStorageId] = useState<string | null>(null)
   const [storageDraft, setStorageDraft] = useState<Record<string, string>>({})
@@ -422,6 +433,15 @@ export function MachineStatus({
   return (
     <ToolFrame title="Машины" variant={variant} onClose={onClose} testId="machines-overlay">
       <div className="mst-body">
+        <div className="mst-filters">
+          <select aria-label="Фильтр машин" value={fleetFilter} onChange={(event) => setFleetFilter(event.target.value)}>
+            <option value="">Все машины</option><option value="online">В сети</option><option value="offline">Не в сети</option><option value="outdated">Устаревший агент</option><option value="battery">Батарея ниже 20%</option>
+          </select>
+          <select aria-label="Сортировка машин" value={fleetSort} onChange={(event) => setFleetSort(event.target.value)}>
+            <option value="name">По имени</option><option value="lastSeen">По последнему подключению</option>
+          </select>
+        </div>
+        {agents.length > 0 && visibleAgents.length === 0 && <EmptyState title="Нет машин по выбранному фильтру" description="Выберите другой фильтр." />}
         {view.state === 'skeleton' && (
           /* Высота косточки — высота строки таблицы машин с полосками CPU/памяти. */
           <Skeleton variant="list" item="block" count={3} height={46} gap={6} testId="machine-skeleton" />
@@ -466,7 +486,7 @@ export function MachineStatus({
               </tr>
             </thead>
             <tbody>
-              {agents.map((a) => (
+              {visibleAgents.map((a) => (
                 <Fragment key={a.id}>
                   <tr data-testid={`machine-row-${a.id}`}>
                     <td className="mst-name">
@@ -481,6 +501,7 @@ export function MachineStatus({
                           {policyId === a.id ? '▾' : '▸'}
                         </IconButton>
                         {a.name}
+                        {a.ownership !== 'project' && <Button size="sm" aria-label={'VPN ' + a.name} aria-expanded={vpnId === a.id} onClick={() => setVpnId(current => current === a.id ? null : a.id)}>VPN</Button>}
                         {onLoadCommands && (
                           <Button size="sm" aria-expanded={logId === a.id} aria-label={`Журнал команд ${a.name}`} title="Журнал команд машины: кто, когда и что выполнял" onClick={() => setLogId((cur) => (cur === a.id ? null : a.id))}>
                             {logId === a.id ? 'Журнал ▾' : 'Журнал'}
@@ -556,6 +577,7 @@ export function MachineStatus({
                       }
                     />
                   </tr>
+                  {vpnId === a.id && <tr className="mst-policyrow"><td colSpan={cols}><MachineVpn key={a.id} agent={a} bridge={vpn} /></td></tr>}
                   {storageId === a.id && (
                     <tr className="mst-policyrow" data-testid={`machine-storage-${a.id}`}>
                       <td colSpan={cols}>

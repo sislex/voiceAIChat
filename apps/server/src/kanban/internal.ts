@@ -25,7 +25,7 @@ export type KanbanEvent =
   | { kind: 'board'; projectId: string }
   | { kind: 'preparationRun'; update: { userId: string; projectId: string; taskId: string; runId: string } }
   | { kind: 'taskRepositories'; update: { projectId: string; taskId: string } }
-  | { kind: 'qaStage'; update: { projectId: string; taskId: string; stage: QaRunStage } }
+  | { kind: 'qaStage'; update: { projectId: string; taskId: string; stage: QaRunStage | 'manual_qa' } }
   | { kind: 'improvements'; projectId: string }
   | { kind: 'release'; update: { projectId: string; releaseId: string; status: ReleaseStatus } }
   | { kind: 'notification'; event: { projectId: string; userId?: string; kind?: 'membership' } }

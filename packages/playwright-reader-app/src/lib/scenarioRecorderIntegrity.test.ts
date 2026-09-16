@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest'
-import { expectOnLastStep, loadScenario, recordClick, recordNavigate, recordScroll, removeStep, toScenario, type RecordedStep } from './scenarioRecorder'
+import { describe, expect, it } from 'vitest'
+import { expectOnLastStep, loadScenario, moveStep, recordClick, recordNavigate, recordScroll, removeStep, toggleStep, toScenario, type RecordedStep } from './scenarioRecorder'
 const element = { selector: '#button', tag: 'button', text: 'Кнопка', stability: 'id' as const, rect: { x: 0, y: 0, width: 80, height: 30 } }
 
 it('проверка первого перехода остаётся шагом без повторной навигации', () => {
@@ -46,4 +46,39 @@ it('повторяющиеся id старого импорта исправля
   const result = loadScenario({ startUrl: 'https://project.test', steps: [original, original, original] })
   expect(result).toHaveLength(4)
   expect(new Set(result.map(s => s.id)).size).toBe(4)
+})
+
+// Круг 8: запись правится, а не переписывается заново — каждый повтор прохода
+// это снова десять кликов по живому сайту.
+describe('правка записанного сценария', () => {
+  const step = (id: string, over: Partial<RecordedStep> = {}): RecordedStep => ({
+    id, title: id, action: { kind: 'click', selector: `#${id}` }, stability: 'testid', ...over
+  })
+
+  it('шаг двигается вверх и вниз, а за края — нет', () => {
+    const steps = [step('a'), step('b'), step('c')]
+    expect(moveStep(steps, 'b', -1).map((item) => item.id)).toEqual(['b', 'a', 'c'])
+    expect(moveStep(steps, 'b', 1).map((item) => item.id)).toEqual(['a', 'c', 'b'])
+    expect(moveStep(steps, 'a', -1)).toBe(steps)
+    expect(moveStep(steps, 'c', 1)).toBe(steps)
+  })
+
+  it('выключенный шаг остаётся в записи, но в сценарий не уезжает', () => {
+    const steps = toggleStep([step('a'), step('b')], 'b')
+    expect(steps[1].skipped).toBe(true)
+    expect(toScenario(steps, 'https://a.b/').steps.map((item) => item.id)).toEqual(['a'])
+  })
+
+  it('выключенный первый переход не задаёт стартовый адрес', () => {
+    const steps = toggleStep([
+      { ...step('open'), action: { kind: 'open', url: 'https://old.example/' } },
+      step('a')
+    ], 'open')
+    expect(toScenario(steps, 'https://new.example/').startUrl).toBe('https://new.example/')
+  })
+
+  it('повторное выключение возвращает шаг в сценарий', () => {
+    const steps = toggleStep(toggleStep([step('a')], 'a'), 'a')
+    expect(toScenario(steps, 'https://a.b/').steps).toHaveLength(1)
+  })
 })

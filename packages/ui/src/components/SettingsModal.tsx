@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { ShortcutSettings } from './ShortcutSettings'
 import { ProjectTypesSettings } from './ProjectTypesSettings'
 import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
-import { Dialog, ErrorState } from '@voicechat/ui-kit'
+import { Dialog, ErrorState, Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
@@ -37,8 +38,8 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-export type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'security' | 'ui' | 'projectTypes'
-export const SETTINGS_SECTIONS: readonly SettingsSection[] = ['llm', 'aiAssist', 'download', 'stt', 'tts', 'dialog', 'instructions', 'storage', 'security', 'ui', 'projectTypes']
+import type { SettingsSection } from '../lib/settingsSections'
+export { SETTINGS_SECTIONS, type SettingsSection } from '../lib/settingsSections'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
@@ -56,6 +57,10 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
 ]
 
 export interface SettingsModalProps {
+  catalogErrors?: Record<string, string>
+  catalogLoading?: string[]
+  catalogRefreshing?: boolean
+  onRetryCatalog?: (name: string) => void
   settings: Settings
   /**
    * Раздел, с которого открыть окно. Нужен переходам из других экранов:
@@ -118,12 +123,14 @@ export interface SettingsModalProps {
   /** Роль текущего пользователя — ограничивает список моделей Claude. */
   role: UserRole
   llmAccess?: UserLlmAccess[]
+  onOpenOnboarding?: () => void
   onClose: () => void
   /** Глобальная доступность голосового ввода. */
   voiceInputEnabled?: boolean
 }
 
 export function SettingsModal({
+  catalogErrors = {}, catalogLoading = [], catalogRefreshing = false, onRetryCatalog,
   projectTypes = [],
   projectTypesStatus = 'ready',
   projectTypesError = null,
@@ -156,6 +163,7 @@ export function SettingsModal({
   role: _role,
   llmAccess = [],
   onClose,
+  onOpenOnboarding,
   voiceInputEnabled = true,
   initialSection,
   section: controlledSection,
@@ -183,6 +191,7 @@ export function SettingsModal({
 
   return (
     <Dialog title="Настройки" size="md" testId="overlay" onClose={onClose}>
+        {onOpenOnboarding && <Button onClick={onOpenOnboarding}>Мастер первого запуска</Button>}
         {!settingsLoaded && (
           <ErrorState
             compact
@@ -207,6 +216,9 @@ export function SettingsModal({
           </nav>
 
           <div className="settpane" data-testid="settings-pane">
+            {catalogRefreshing && <RefreshIndicator />}
+            {catalogLoading.map(name => <div key={name} role="status" aria-label={`Загрузка: ${name}`}><Skeleton variant="list" count={1} height={48} /></div>)}
+            {Object.entries(catalogErrors).map(([name, detail]) => <ErrorState key={name} compact message={`Не удалось загрузить: ${name}`} detail={detail} onRetry={() => onRetryCatalog?.(name)} />)}
             {section === 'llm' && (
               <>
                 <LlmSettingsEditor
@@ -677,6 +689,7 @@ export function SettingsModal({
 
             {section === 'ui' && (
               <>
+                <ShortcutSettings key={currentUsername ?? 'local'} userId={currentUsername ?? 'local'} />
                 <div className="frow">
                   <div>
                     <p className="flab">Тема интерфейса</p>
@@ -691,7 +704,59 @@ export function SettingsModal({
                     <option value="light">Светлая</option>
                     <option value="dark">Тёмная</option>
                     <option value="green">Зелёная</option>
+                    <option value="system">Как в системе</option>
                   </select>
+                </div>
+
+                <h3>Команды на машинах</h3>
+                <div className="frow">
+                  <div>
+                    <p className="flab">Уведомления о завершении</p>
+                    <p className="fsub">Какие завершения долгих команд показывать</p>
+                  </div>
+                  <select
+                    className="sel"
+                    aria-label="Уведомления о завершении команд"
+                    value={settings.machineCommandNotices}
+                    onChange={(e) => onChange({ machineCommandNotices: e.target.value as Settings['machineCommandNotices'] })}
+                  >
+                    <option value="all">Все</option>
+                    <option value="failures">Только неуспешные</option>
+                    <option value="off">Не показывать</option>
+                  </select>
+                </div>
+                <div className="frow">
+                  <div>
+                    <p className="flab">Длительность уведомления</p>
+                    <p className="fsub">Через сколько скрыть уведомление</p>
+                  </div>
+                  <select
+                    className="sel"
+                    aria-label="Длительность уведомления команд"
+                    value={settings.machineCommandNoticeSeconds}
+                    disabled={settings.machineCommandNotices === 'off'}
+                    onChange={(e) => onChange({ machineCommandNoticeSeconds: Number(e.target.value) })}
+                  >
+                    <option value={4}>4 секунды</option>
+                    <option value={8}>8 секунд</option>
+                    <option value={15}>15 секунд</option>
+                    <option value={30}>30 секунд</option>
+                    <option value={0}>Не скрывать</option>
+                  </select>
+                </div>
+                <div className="frow">
+                  <div>
+                    <p className="flab">Системные уведомления</p>
+                    <p className="fsub">Показывать в фоне, если браузеру уже разрешено</p>
+                  </div>
+                  <button
+                    className={settings.machineCommandSystemNotifications ? 'sw on' : 'sw'}
+                    onClick={() => onChange({ machineCommandSystemNotifications: !settings.machineCommandSystemNotifications })}
+                    disabled={settings.machineCommandNotices === 'off'}
+                    role="switch"
+                    aria-checked={settings.machineCommandSystemNotifications}
+                    aria-label="Системные уведомления команд" title="Системные уведомления команд"
+                  />
                 </div>
 
                 <div className="frow">

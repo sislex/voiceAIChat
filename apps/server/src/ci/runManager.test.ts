@@ -13,6 +13,7 @@ import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { createCiRunManager } from './runManager.js'
+import type { TemporaryCleanup } from '../cleanup/service.js'
 import type { BrowserRunnerClient } from '../browser/runnerClient.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
@@ -166,6 +167,24 @@ async function setup() {
   const task = (await db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' }))!
   return { project, task, agent, readyColId: ready.id }
 }
+
+// @testCase TC-06
+it('finishes the actual CI run when ownership registration fails before bootstrap', async () => {
+  const { project, task } = await setup()
+  const modelWork = vi.fn(async () => ({ ok: true }))
+  const cleanup = {
+    consume: async <T>(_taskId: string, work: () => Promise<T>) => work(),
+    register: vi.fn(async () => { throw new Error('machine_inspection_unavailable') }),
+    cycle: vi.fn(async () => {})
+  } as unknown as TemporaryCleanup
+  const manager = createCiRunManager({ db, executor: ciExecutor, boardChanged: () => {}, modelWork, cleanup })
+  const started = await manager.start('admin', project.id, task.id)
+  expect('run' in started).toBe(true)
+  if (!('run' in started)) return
+  await vi.waitFor(async () => expect((await db.ci.getCiRunRaw(started.run.id))?.status).toBe('failed'))
+  expect((await db.ci.getCiRunRaw(started.run.id))?.error).toContain('machine_inspection_unavailable')
+  expect(modelWork).not.toHaveBeenCalled()
+})
 
 it('автоматическая доработка сохраняет диагностику до первого вызова модели', async () => {
   const { project, task } = await setup()
@@ -426,7 +445,8 @@ describe('ci run manager', () => {
     expect(scripts.some((script) => script.includes('/node_modules'))).toBe(false)
   })
 
-  it('у закрытой задачи удаляет только node_modules и сохраняет задачный npm-кэш', async () => {
+  // @testCase TC-04
+  it('retains closed-task dependencies when no cleanup ownership service is configured', async () => {
     const { project, task, agent } = await setup()
     await db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
     // Карточку закрывает merge-ран уже после development-рана, поэтому здесь
@@ -437,13 +457,9 @@ describe('ci run manager', () => {
     try {
       const runId = await run(project.id, task.id)
       expect((await waitRun(runId)).run.status).toBe('success')
-      for (let i = 0; i < 100 && !scripts.some((script) => script.includes('/node_modules')); i++) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-
-      const cleanup = scripts.find((script) => script.includes('/node_modules'))
-      expect(cleanup).toContain(`'/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository/P-1/node_modules'`)
-      expect(cleanup).not.toContain('.npm-cache')
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(scripts.some(script => script.includes('rm -rf') && script.includes('/node_modules'))).toBe(false)
+      expect(scripts.some(script => script.includes('-mtime'))).toBe(false)
     } finally {
       db.sync.tasks.isTaskClosed = isTaskClosed
     }
@@ -1181,6 +1197,26 @@ describe('ci run manager', () => {
     // FLAKY выполнялся дважды (упал, затем прошёл на повторе).
     expect(scripts.filter((x) => x === 'FLAKY build').length).toBe(2)
   })
+  it('selected earlier command restarts it and rejects foreign step identities', async () => {
+    const { project, task } = await setup()
+    await db.ci.updateCiSettings({ maxFixAttempts: 0 })
+    const ok = await db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'ok', script: 'echo ok' })
+    const flaky = await db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'flaky', script: 'FLAKY build' })
+    await db.ci.setCiSlotCommands('task', task.id, 'before_model', [ok.id, flaky.id])
+    const runId = await run(project.id, task.id)
+    const failed = await waitRun(runId)
+    const missing = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'claude', model: 'opus', stepId: 'foreign-step' } })
+    expect(missing.statusCode).toBe(409)
+    expect((await db.ci.getCiRunRaw(runId))?.status).toBe('failed')
+    expect(failed.run.status).toBe('failed')
+    const selected = (await db.ci.getCiRun('admin', runId))!.steps.find((step) => step.commandId === ok.id)!
+    const response = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'claude', model: 'opus', stepId: selected.id } })
+    expect(response.statusCode).toBe(202)
+    expect((await waitRun(runId)).run.status).toBe('success')
+    expect(scripts.filter((script) => script === 'echo ok')).toHaveLength(2)
+    expect(scripts.filter((script) => script === 'FLAKY build')).toHaveLength(2)
+  })
+
   // --- Автозадача «Пересборка прода» (мерж в прод-ветку без пересборки прода) ---
 
   /** Команда мержа ветки задачи в прод-ветку (шаг раннер узнаёт по названию/скрипту). */

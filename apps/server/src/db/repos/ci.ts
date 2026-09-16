@@ -7,6 +7,8 @@ import { calculateKbHit, filesReadFromCiLog } from '../../ci/kbHit.js'
 import { testStages } from '../../ci/testStages.js'
 import { trimHistoricalRunLogs } from '../../ci/qaStateLogs.js'
 import { BaseRepo } from './base.js'
+import { hasProjectPermission } from '../../users/auth.js'
+import type { ChangeMergeMachineRequest, ChangeMergeMachineResult } from '@voicechat/shared'
 import { parseStringArray, normCiStatus, normKbContextMode, normRunMode, normClarifyLevel, clampClarifyMax, parseJsonValue, parseSlotProgress, mapCiRun, type TaskRow, type CiRunRow } from './support.js'
 
 /** Сколько строк лога рана отдаётся по умолчанию: лента показывает конец, а не всю историю. */
@@ -1220,6 +1222,18 @@ export class CiRepo extends BaseRepo {
     await this.sql.run(`INSERT INTO ci_events (id, project_id, run_id, command_id, type, actor_type, actor_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [this.newId(), args.projectId, args.runId ?? null, args.commandId ?? null, args.type, args.actorType, args.actorId ?? null, JSON.stringify(args.payload ?? {}), this.now()])
   }
 
+  /** Only trusted Reader events participate; model-authored log lines cannot satisfy the gate. */
+  async getCiBrowserEvidence(userId: string, runId: string, stepId: string): Promise<import('@voicechat/shared').CiBrowserEvidenceEvent[]> {
+    if (!await this.getCiRun(userId, runId)) return []
+    const rows = await this.sql.all(`SELECT payload FROM ci_events WHERE run_id = ? AND type = 'browser.observed' ORDER BY created_at ASC LIMIT 10000`, [runId]) as Array<{ payload: string }>
+    return rows.flatMap(row => {
+      try {
+        const value = JSON.parse(row.payload)
+        return value.stepId === stepId && value.event ? [value.event] : []
+      } catch { return [] }
+    })
+  }
+
   // --- Метрики (на лету, окно metrics_window) ---
 
   async ciCommandMetrics(userId: string, projectId: string): Promise<CiCommandMetric[]> {
@@ -1373,6 +1387,7 @@ export class CiRepo extends BaseRepo {
   mapComponentQaRun(row: Record<string, unknown>): ComponentQaRun {
     const status = row.status as ComponentQaRun['status']
     return {
+      machineId:row.qa_machine_id==null?null:String(row.qa_machine_id),
       id:String(row.id), projectId:String(row.project_id), taskId:String(row.task_id),
       developmentRunId:String(row.development_run_id), linkedFixRunId:row.linked_fix_run_id as string|null,
       branch:String(row.branch), commitSha:String(row.commit_sha), attempt:Number(row.attempt), status,
@@ -1392,7 +1407,7 @@ export class CiRepo extends BaseRepo {
   }
 
   async getComponentQaRun(userId: string, runId: string): Promise<ComponentQaRun | null> {
-    const row = (await this.sql.get(`SELECT r.* FROM component_qa_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string,unknown>|undefined
+    const row = (await this.sql.get(`SELECT r.*,w.agent_id AS qa_machine_id FROM component_qa_runs r LEFT JOIN ci_runs d ON d.id=r.development_run_id LEFT JOIN ci_workspaces w ON w.id=d.workspace_id JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string,unknown>|undefined
     return row ? this.mapComponentQaRun(row) : null
   }
 
@@ -1479,6 +1494,7 @@ export class CiRepo extends BaseRepo {
   private mapIntegrationTestRun(row:Record<string,unknown>):IntegrationTestRun {
     const status=row.status as IntegrationTestRun['status']
     return {
+      machineId:row.qa_machine_id==null?null:String(row.qa_machine_id),
       id:String(row.id),projectId:String(row.project_id),taskId:String(row.task_id),
       developmentRunId:row.development_run_id==null?'':String(row.development_run_id),linkedFixRunId:row.linked_fix_run_id as string|null,
       branch:String(row.branch),commitSha:String(row.commit_sha),attempt:Number(row.attempt),status,
@@ -1494,7 +1510,7 @@ export class CiRepo extends BaseRepo {
   }
 
   async getIntegrationTestRun(userId:string,runId:string):Promise<IntegrationTestRun|null> {
-    const row=(await this.sql.get(`SELECT r.* FROM integration_test_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string,unknown>|undefined
+    const row=(await this.sql.get(`SELECT r.*,w.agent_id AS qa_machine_id FROM integration_test_runs r LEFT JOIN ci_runs d ON d.id=r.development_run_id LEFT JOIN ci_workspaces w ON w.id=d.workspace_id JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string,unknown>|undefined
     return row?this.mapIntegrationTestRun(row):null
   }
 
@@ -1502,7 +1518,7 @@ export class CiRepo extends BaseRepo {
     if(!(await this.repos.projects.isProjectMember(userId,projectId))) return null
     const input=await this.repos.tasks.currentIntegrationInputs(projectId,taskId)
     if(!input.task) return null
-    const allRuns=((await this.sql.all(`SELECT * FROM integration_test_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`, [taskId])) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
+    const allRuns=((await this.sql.all(`SELECT r.*,w.agent_id AS qa_machine_id FROM integration_test_runs r LEFT JOIN ci_runs d ON d.id=r.development_run_id LEFT JOIN ci_workspaces w ON w.id=d.workspace_id WHERE r.task_id=? ORDER BY r.attempt DESC,r.created_at DESC`, [taskId])) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
     const activeRun=allRuns.find((run)=>run.status==='queued'||run.status==='running')??null
     const latestRun=allRuns[0]??null
     // Историческим попыткам оставляем только хвост лога: полный текст каждой
@@ -1542,8 +1558,8 @@ export class CiRepo extends BaseRepo {
       const status:IntegrationTestRun['status']=skipped?'skipped':reasons.length?'blocked':'queued'
       const attempt=Number(((await this.sql.get(`SELECT COALESCE(MAX(attempt),0)+1 n FROM integration_test_runs WHERE task_id=?`, [taskId])) as {n:number}).n)
       const id=this.newId()
-      await this.sql.run(`INSERT INTO integration_test_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,readiness_run_id,snapshot_version,test_cases_json,blocker_reasons_json,summary,created_at,finished_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, projectId, taskId, input.dev?.id??null, input.workspace?.branch??'', currentSha, attempt, status, input.prep?.id??'', version, JSON.stringify(cases), JSON.stringify(reasons), skipped?'Нет обязательных automatable-кейсов':reasons.length?'Запуск заблокирован предусловиями':'', ts, status==='queued'?null:ts])
+      await this.sql.run(`INSERT INTO integration_test_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,readiness_run_id,snapshot_version,test_cases_json,blocker_reasons_json,summary,created_at,finished_at,failure_classification,failure_reason)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, projectId, taskId, input.dev?.id??null, input.workspace?.branch??'', currentSha, attempt, status, input.prep?.id??'', version, JSON.stringify(cases), JSON.stringify(reasons), skipped?'Нет обязательных automatable-кейсов':reasons.length?'Запуск заблокирован предусловиями':'', ts, status==='queued'?null:ts, reasons.length?'infrastructure':null, reasons[0]??null])
       if(skipped){
         const target=await this.repos.projects.getColumnIdBySemantic(projectId,'automated_qa')
         if(!target||!canTransitionWorkflow('integration_tests','automated_qa','automation')) throw new Error('automated_qa transition unavailable')
@@ -1676,6 +1692,69 @@ export class CiRepo extends BaseRepo {
     return row ? await this.mapMergeRun(row) : null
   }
 
+  /** Claim before reading executor input; the returned assignment is the committed one. */
+  async claimQueuedMergeRun(runId: string): Promise<MergeRun | null> {
+    return this.sql.transaction(async () => {
+      const result = await this.sql.run(`UPDATE merge_runs SET status='checking',stage='checking' WHERE id=? AND status='queued'`, [runId])
+      return result.changes ? await this.getMergeRunRaw(runId) : null
+    })
+  }
+
+  async cancelQueuedMergeRun(userId: string, runId: string, version: number): Promise<MergeRun | null> {
+    return this.sql.transaction(async () => {
+      if (!await this.getMergeRun(userId, runId)) return null
+      const result = await this.sql.run(`UPDATE merge_runs SET status='cancelled',stage='cancelled',finished_at=?,error='Отменено пользователем' WHERE id=? AND status='queued' AND assignment_version=?`, [this.now(), runId, version])
+      return result.changes ? await this.getMergeRun(userId, runId) : null
+    })
+  }
+
+  async mergeMachineAccess(userId: string, runId: string, agentId: string): Promise<ChangeMergeMachineResult | null> {
+    const run = await this.getMergeRun(userId, runId)
+    if (!run) return { ok: false, code: 'not_found', error: 'Merge-ран недоступен' }
+    const user = await this.repos.identity.getUser(userId)
+    if (!user || user.blocked || !hasProjectPermission(user.role, 'task:merge') ||
+        !await this.repos.machines.canUseAgent(userId, agentId, run.projectId) ||
+        !await this.repos.machines.getProjectMachine(run.projectId, agentId)) {
+      return { ok: false, code: 'forbidden', error: 'Нет прав на смену машины или машина не принадлежит проекту' }
+    }
+    return null
+  }
+
+  async mergeMachinePreflightSnapshot(userId: string, run: MergeRun, agentId: string): Promise<string> {
+    const machine = await this.repos.machines.getProjectMachine(run.projectId, agentId)
+    const project = await this.repos.projects.getProject(userId, run.projectId)
+    const workspace = await this.findLatestPushedCiWorkspace(run.projectId, run.taskId)
+    return JSON.stringify({ machine, origin: project?.gitUrl, workspace })
+  }
+
+  /** Preflight runs outside the SQL lane; revalidate DB inputs and CAS inside it. */
+  async changeQueuedMergeMachine(userId: string, runId: string, input: ChangeMergeMachineRequest,
+    machineSnapshot: string, isOnline: () => boolean): Promise<ChangeMergeMachineResult> {
+    return this.sql.transaction(async () => {
+      const denied = await this.mergeMachineAccess(userId, runId, input.agentId)
+      if (denied) return denied
+      const run = (await this.getMergeRun(userId, runId))!
+      const conflict = (fresh: MergeRun): ChangeMergeMachineResult => ({
+        ok: false, code: fresh.status === 'queued' ? 'assignment_changed' : 'not_queued',
+        error: fresh.status === 'queued' ? 'Назначение уже изменено другим запросом' : 'Ран больше не находится в очереди', run: fresh
+      })
+      if (run.status !== 'queued' || (run.assignmentVersion ?? 0) !== input.expectedAssignmentVersion) return conflict(run)
+      if (run.agentId === input.agentId) return { ok: true, run }
+      if (!isOnline() || await this.mergeMachinePreflightSnapshot(userId, run, input.agentId) !== machineSnapshot) {
+        return { ok: false, code: 'readiness_failed', error: 'Готовность или настройки машины изменились; повторите проверку' }
+      }
+      const name = await this.repos.machines.agentName(input.agentId)
+      const result = await this.sql.run(`UPDATE merge_runs SET agent_id=?,machine_name=?,assignment_version=assignment_version+1
+        WHERE id=? AND status='queued' AND assignment_version=?`, [input.agentId, name, runId, input.expectedAssignmentVersion])
+      if (!result.changes) return conflict((await this.getMergeRun(userId, runId))!)
+      await this.repos.qa.addPreviewAudit(userId, run.projectId, run.taskId, 'merge.machine_changed', {
+        runId, oldAgentId: run.agentId, newAgentId: input.agentId, actor: userId,
+        at: this.now(), reason: 'user_requested', assignmentVersion: input.expectedAssignmentVersion + 1
+      })
+      return { ok: true, run: (await this.getMergeRun(userId, runId))! }
+    })
+  }
+
   async getMergeRunRaw(runId: string): Promise<MergeRun | null> {
     const row = (await this.sql.get(`SELECT * FROM merge_runs WHERE id=?`, [runId])) as Record<string, unknown> | undefined
     return row ? await this.mapMergeRun(row) : null
@@ -1760,7 +1839,7 @@ export class CiRepo extends BaseRepo {
       productionStatus: r.production_status as string | null, error: r.error as string | null, recommendedAction: r.recommended_action as string | null,
       log: String(r.log ?? ''), canCancel: !r.push_started_at && ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']),
       canRetry: !ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']) && r.status !== 'success', pushStartedAt: r.push_started_at as number | null,
-      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at), machineName: await this.repos.machines.agentName(String(r.agent_id))
+      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at), assignmentVersion: Number(r.assignment_version ?? 0), machineName: r.machine_name == null ? await this.repos.machines.agentName(String(r.agent_id)) : String(r.machine_name)
     }
   }
 

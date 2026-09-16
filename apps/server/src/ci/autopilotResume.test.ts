@@ -33,12 +33,14 @@ describe('возобновление рана после сбоя машины',
 })
 
 describe('перезапуск development-рана', () => {
+  // @testCase TC-4
   it('грязная копия задачи распознаётся: перезапуск её не лечит', () => {
     expect(isDirtyWorkspaceFailure('Рабочая копия содержит локальные изменения: /path/CHAT-413')).toBe(true)
     expect(isDirtyWorkspaceFailure('Шаг «Работа модели» завершился с ошибкой.')).toBe(false)
     expect(isDirtyWorkspaceFailure(null)).toBe(false)
   })
 
+  // @testCase TC-3
   it('между перезапусками выдерживается пауза', () => {
     const now = 1_000_000
     expect(retryAllowedNow({ finishedAt: now - AUTOPILOT_RETRY_BACKOFF_MS, now })).toBe(true)

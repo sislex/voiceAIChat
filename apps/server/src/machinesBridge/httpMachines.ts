@@ -183,7 +183,7 @@ export class HttpMachines implements MachinesService {
   cancelAll(agentId: string): void { this.fire('cancelAll', agentId) }
   gitAccess(agentId: string, request: Parameters<MachinesService['gitAccess']>[1]) { return this.slow<Awaited<ReturnType<MachinesService['gitAccess']>>>('gitAccess', agentId, request) }
   fsList(agentId: string, path: string) { return this.slow<Awaited<ReturnType<MachinesService['fsList']>>>('fsList', agentId, path) }
-  fsRead(agentId: string, path: string) { return this.slow<Awaited<ReturnType<MachinesService['fsRead']>>>('fsRead', agentId, path) }
+  fsRead(agentId: string, path: string, mode?: 'prefix') { return this.slow<Awaited<ReturnType<MachinesService['fsRead']>>>('fsRead', agentId, path, ...(mode ? [mode] : [])) }
   fsWrite(agentId: string, path: string, dataBase64: string) { return this.slow<Awaited<ReturnType<MachinesService['fsWrite']>>>('fsWrite', agentId, path, dataBase64) }
   fsMkdir(agentId: string, path: string) { return this.slow<Awaited<ReturnType<MachinesService['fsMkdir']>>>('fsMkdir', agentId, path) }
   fsDelete(agentId: string, path: string) { return this.slow<Awaited<ReturnType<MachinesService['fsDelete']>>>('fsDelete', agentId, path) }

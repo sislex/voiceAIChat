@@ -19,5 +19,6 @@ export interface ReaderCore {
   previewAction(userId: string, conversationId: string, action: PreviewAction, timeoutMs?: number): Promise<PreviewActionOutcome>
   issuePreviewRunKey(userId: string): string | Promise<string>
   listPreviews(): Promise<PreviewEnvironment[]>
+  logBrowserEvidence?(entry: PreviewToolEntry, event: import('@voicechat/shared').CiBrowserEvidenceEvent): Promise<void>
   logBrowserShot(userId: string, conversationId: string, pngBase64: string): Promise<void>
 }

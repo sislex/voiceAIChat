@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-12
-checked: d9864647
+updated: 2026-09-15
+checked: 68124e0f
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -375,8 +375,8 @@ csrf», а `POST …/qa/integration/runs` — 403. Регрессия закре
 
 | Роут | Отдаёт | Где реализован |
 |---|---|---|
-| `GET /api/me/profile` | `UserProfileInfo`: роль, email, даты, лимит, живые сессии, свои машины с online/версией/телеметрией | `apps/server/src/routes/rest.ts` |
-| `GET /api/me/security?limit=` | свой журнал безопасности (`SecurityEvent[]`, максимум 500) | там же |
+| `GET /api/me/profile` | `UserProfileInfo`: role, email, dates, limit, live sessions, and machine online/total counts; full machine records are omitted | `apps/server/src/routes/rest.ts` |
+| `GET /api/me/security?limit=&group=` | own security log (`SecurityEvent[]`, maximum 500); optional `group=auth|account|machines` filters it server-side | same file |
 | `GET /api/me/usage`, `GET /api/usage` | свой отчёт по расходу | там же (`usageForMe`) |
 | `GET /api/me/llm-access` | свои запреты моделей | там же |
 
@@ -385,6 +385,12 @@ csrf», а `POST …/qa/integration/runs` — 403. Регрессия закре
 роли, блокировка, удаление и лимит остаются под `requireAdmin`. Права на группу
 проверяет `auth.permissions.test.ts` (`/api/me/*` → `null`, то есть любая
 аутентифицированная роль), изоляцию данных — `rest.test.ts`.
+
+The account UI treats these routes as independent resources. `me:profile` is
+the only request that gates the profile shell. Model access, usage, security
+events, and full machine telemetry load for the tabs that consume them and are
+cached for the lifetime of the page. The `me:security` renderer bridge accepts
+the same optional `group` as HTTP.
 
 Что изменилось в админских ответах вместе с этим: `AdminUserInfo` расширяет
 `UserProfileInfo` и содержит `lastSeenAt`/`liveSessions` (агрегат

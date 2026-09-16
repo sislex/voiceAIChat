@@ -1,12 +1,15 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-09-04
-checked: 65b84e5f
+updated: 2026-09-16
+checked: 10474aad
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - apps/server/src/merge
+  - apps/server/src/cleanup
+  - packages/shared/src/temporaryResources.ts
+  - packages/ui/src/components/ci/TemporaryResources.tsx
   - apps/server/src/ci/testStages.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
@@ -49,6 +52,57 @@ diff и отсутствие конфликтных маркеров. Прове
 проекта» упёрлись в лимит на 34-й минуте, пока параллельно шёл модельный шаг
 актуализации БЗ. Начало и итог каждой команды пишутся в лог рана с
 длительностью — иначе полчаса тишины в ленте не отличить от зависшего рана.
+
+## Смена машины рана в очереди
+
+Для существующего рана со статусом `queued` обе merge-поверхности показывают
+общий `QueuedMergeMachine`: селектор перечисляет проектные машины вместе с
+результатом проверки готовности, недоступные варианты блокирует, а повторную
+отправку не допускает. Клиент вызывает `POST /api/merge/runs/:runId/machine`
+через общий renderer-метод `changeMergeMachine`, передавая `agentId` и
+ожидаемую ревизию назначения. Контракт запроса, результата и фильтра устаревших
+снимков находится в `packages/shared/src/merge.ts`, маршрут — в
+`apps/server/src/routes/projects.ts`.
+
+Сервер разрешает операцию участнику проекта с правом `task:merge` только для
+доступной ему машины этого проекта. До записи `MergeRunManager` проверяет
+готовность машины; внутри транзакции повторно проверяются доступ, принадлежность,
+online/policy и неизменность входов preflight — конфигурации машины, Git origin и
+последнего pushed workspace. CAS по `status='queued'` и
+`assignment_version` меняет в существующей строке только `agent_id`,
+`machine_name` и монотонную ревизию. Вместе с назначением транзакционно
+создаётся audit-событие `merge.machine_changed`; ошибка аудита откатывает
+назначение. Реализация сосредоточена в
+`apps/server/src/db/repos/ci.ts` и `apps/server/src/merge/runManager.ts`.
+
+Идентификатор и время создания рана, pinned source/target SHA, стадии, лог,
+semantic merge, положение карточки и настройки автопилота не меняются.
+Актуальный повтор выбора той же машины — no-op. Устаревшая ревизия даёт
+`assignment_changed`, а уже начавшийся ран — `not_queued`; только после
+проверки членства конфликт содержит свежий разрешённый пользователю snapshot.
+Ответы 403/404 snapshot не раскрывают, а провал готовности возвращается как 422
+с существующим кодом и сообщением readiness.
+
+Очередь merge не является FIFO development CI: `MergeRunManager` держит один
+процесс-глобальный слот и запускает отложенный callback. Перед первой командой
+callback атомарно переводит строку `queued → checking` через
+`claimQueuedMergeRun` и исполняет назначение из возвращённой зафиксированной
+строки, поэтому ранее захваченный объект рана не может запустить старую машину.
+Отмена queued-рана также сверяет ревизию; reconcile после рестарта читает
+сохранённое назначение, а автопилот повторно использует тот же активный run id.
+
+После успешной фиксации `merge.snapshot` отправляется всем активным участникам
+проекта, а `boardChanged` инвалидирует доску. Web и desktop используют один
+REST/realtime-мост; reconnect перечитывает историю и готовность машин.
+`acceptMergeSnapshot` не даёт запоздалому HTTP/realtime-ответу откатить более
+новую ревизию или вернуть уже claimed-ран в `queued`. Получателей определяет
+`activeProjectMemberNames`; заблокированные пользователи исключаются.
+
+Гонки с claim, отменой, автопилотом, сменой прав и конфигурации, потерей realtime
+и рестартом покрыты `apps/server/src/merge/changeMachine.test.ts`.
+Обе UI-поверхности и защита от запоздалых снимков покрыты
+`packages/ui/src/components/ci/QueuedMergeMachine.dom.test.tsx`; доступность,
+темы и размеры экранов — `e2e/accessibility.e2e.test.ts`.
 
 ## Граница подсистемы
 
@@ -119,7 +173,8 @@ feature-вариант производного индекса, который �
 `kb_update`. Полученный merge-коммит становится неизменяемым проверяемым SHA. Из него создаются два непересекающихся detached
 worktree: один для обязательного гейта, второй для актуализации БЗ. Обе ветви
 запускаются через `Promise.allSettled` одновременно; ошибка любой запрещает
-публикацию, отмена прерывает модель, а оба worktree удаляются в `finally`.
+публикацию, отмена прерывает модель. Worktree cleanup is scheduled after actual
+executor settlement through the persistent temporary-resource lifecycle.
 
 После успешной пары индекс БЗ проверяется в KB-worktree. Если файлы изменились,
 создаётся отдельный дочерний `docs(kb)`-коммит в feature; пустой коммит не
@@ -263,15 +318,17 @@ Origin существующего клона сверяется каноничн
 без протокола, `git@`, `.git`), поэтому машинный rewrite SSH→HTTPS (`insteadOf`,
 MacBook) не валит проверку, а посторонний репозиторий отклоняется.
 
-Копии репозиториев задачи учитываются в `task_repositories` (машина, путь,
-`dev-workspace` | `merge-clone`, `active` | `deleted`): workspace разработки
-регистрируется при merge-ране, запись помечается `deleted` только после
-подтверждённого `rm -rf`. Постоянный merge-клон — project-scoped, в учёте задач
-не значится и при их закрытии не удаляется. Успешный merge и **ручной перенос
-карточки в Done** (хук в маршруте `…/move`) удаляют все активные копии задачи
-на доступных машинах (`releaseTaskRepositories` — публичный метод менеджера);
-запись недоступной машины остаётся до следующей очистки. Список отдаёт
-`GET …/tasks/:taskId/repositories`, в UI он виден во вкладке «Merge» задачи.
+Task repository copies remain represented by `TaskRepository` / `task_repositories`:
+`agentId`, `machineName`, `path`, `kind=dev-workspace|merge-clone` and
+`state=active|deleted`. This display contract is separate from the persistent
+ownership registry. `releaseTaskRepositories` schedules a lifecycle check after
+merge or a manual move to Done; it never deletes a path merely because the task
+is closed. `deleted` is recorded only after verified filesystem removal or
+absence and Git reconciliation. Permanent project merge clones are excluded.
+Offline machines remain pending; unconfirmed legacy workspaces are listed with
+an ownership reason and retained. `GET …/tasks/:taskId/repositories` and the
+existing `getTaskRepositories`, `onTaskRepositoriesUpdated`, and `onReconnect`
+flows continue to refresh MergePanel without erasing run history.
 
 Обязательная стадия `kb_update` переиспользует `ci/modelHooks.ts`
 (`kbUpdateForMerge`) и `kb/codeUpdate.ts`. Хук получает путь **KB-worktree** как
@@ -345,12 +402,19 @@ source и main, `merging` — проверяемый SHA («main + feature»), �
 `pushing` — итоговый SHA, отправленный в main. Любая остановка пишет
 `Остановка merge: <причина>`, а `finally` — общую длительность рана.
 
-Очистка изолированных каталогов идёт через `cleanupWorktrees`: после успеха,
-перед рекурсивным перезапуском из-за нового main и в `finally` (то есть и при
-ошибке, и при отмене пользователем). Каталоги снимаются в обратном порядке
-`git worktree remove --force`, затем `git worktree prune` убирает служебные
-записи. Ошибки самой очистки проглатываются: отключившаяся машина не должна
-подменять настоящую причину остановки рана.
+Each merge execution generation registers its process temporary directory and
+separate test/KB worktrees before creation, then binds the exact Git registration.
+A changed main creates fresh worktree paths; previous attempts are retained until
+the owner has ended and all lifecycle checks pass. `decision_required`, deployment,
+production checks and rollback do not authorize cleanup. Cleanup checks dirty,
+staged and untracked files, publication of HEAD, remote process state and preview
+consumers. Failed/cancelled/interrupted owners obey the diagnostic retention period;
+unpublished work is retained even after expiry. Removal uses descriptor-relative,
+no-follow traversal and removes only the verified worktree registration (including
+an already absent worktree); there is no forced removal or global Git prune.
+Unknown registration or publication state postpones cleanup with a journal reason.
+See [the CI lifecycle settings](ci-runner.md#защита-диска-и-очистка-development-рана).
+`cleanup/remote.test.ts` verifies real Git metadata and unpublished work preservation.
 
 Managed workspace обычного разговора не является частью этого cleanup. Его запись
 живёт в отдельной таблице `conversation_workspaces`, а канонический chat-путь и

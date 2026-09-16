@@ -216,10 +216,22 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     }),
   ),
   definition("web", "Веб-оболочка", "apps/web", {
-    e2eFiles: ["e2e/applicationReleases.e2e.test.ts"],
+    e2eFiles: ["e2e/applicationReleases.e2e.test.ts", "e2e/accessibility.e2e.test.ts", "e2e/machine-vpn.e2e.test.ts", "e2e/universalSearch.e2e.test.ts"],
     browserPaths: [
       "packages/ui/src/runtime",
+      "packages/ui/src/App.tsx",
+      "packages/ui/src/styles",
+      "e2e/accessibility.e2e.test.ts",
+      "packages/ui/src/test/accessibilityBrowser.tsx",
       "packages/ui/src/components/releases/ApplicationReleaseCenter.tsx",
+      "packages/ui/src/components/MachineVpn.tsx",
+      "packages/ui/src/components/MachineVpn.css",
+      "packages/ui/src/components/MachineVpn.stories.tsx",
+      "packages/ui/src/test/fixtures/vpn.ts",
+      "e2e/machine-vpn.e2e.test.ts",
+      "e2e/universalSearch.e2e.test.ts",
+      "packages/ui/src/components/CommandPalette.tsx",
+      "packages/ui/src/lib/useUniversalSearch.ts",
     ],
     paths: ["apps/web", "packages/ui"],
     workspaces: ["@voicechat/ui", "@voicechat/web"],
@@ -422,7 +434,12 @@ export function applicationForPath(
     ),
   );
   if (matches.length > 1) throw new Error(`Несколько владельцев ${path}`);
-  return matches[0];
+  if (matches[0]) return matches[0];
+  // Shared E2E suites retain the conservative full-gate fallback.
+  const e2eOwners = catalog.filter(
+    (app) => app.e2eFiles.includes(path) && app.browserPaths.includes(path),
+  );
+  return e2eOwners.length === 1 ? e2eOwners[0] : undefined;
 }
 /** Манифест не может захватить чужой сервис или скрыть обязательную зависимость. */
 export function validateCatalogArtifact(

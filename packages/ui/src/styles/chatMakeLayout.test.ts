@@ -33,7 +33,7 @@ describe('app.css — chat и Make split layout', () => {
   })
 
   it('mobile снимает desktop minimum колонки чата', () => {
-    const mobile = atRuleBodies('@media (max-width: 768px)').join('\n')
+    const mobile = atRuleBodies('@media (max-width: 720px)').join('\n')
     expect(mobile).toMatch(/\.chat-split-chat[^}]*min-width:\s*0/s)
   })
 })

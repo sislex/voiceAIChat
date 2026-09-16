@@ -320,7 +320,7 @@ describe('ClaudeCli', () => {
     expect(config.mcpServers.browser.url).toContain('turn=t1')
     const hint = args[args.indexOf('--append-system-prompt') + 1]
     expect(hint).toContain('mcp__browser__')
-    expect(hint).toContain('веб-превью')
+    expect(hint).toContain('панель Web Reader')
     // Без remote allow-list не передаём: он выключил бы автоодобрение Read/Grep.
     expect(args).not.toContain('--allowedTools')
   })
@@ -358,7 +358,7 @@ describe('ClaudeCli', () => {
     expect(hint).toContain('изолированный Chromium')
     const allowed = args[args.indexOf('--allowedTools') + 1]
     // Смотреть страницу — снимок, ошибки и ожидание — без автоодобрения бесполезно.
-    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network', 'frames', 'styles', 'reset-session', 'downloads', 'read-download', 'cancel-download', 'delete-download', 'dialogs', 'handle-dialog', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
+    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network', 'viewport', 'evaluate', 'frames', 'styles', 'reset-session', 'downloads', 'read-download', 'cancel-download', 'delete-download', 'dialogs', 'handle-dialog', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
   })
 
   it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {

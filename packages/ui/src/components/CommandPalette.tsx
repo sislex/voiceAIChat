@@ -23,8 +23,14 @@ import { formatCombo } from '../lib/hotkeys'
 import { useCommandRegistry } from '@voicechat/ui-foundation/runtime'
 import { Dialog } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
+import type { RendererApi } from '@shared/ipc'
+import { SEARCH_LABELS, searchText } from '@shared/universalSearch'
+import { useUniversalSearch } from '../lib/useUniversalSearch'
 
 export interface CommandPaletteProps {
+  userId?: string
+  api?: RendererApi
+  onNavigate?: (href: string) => void
   open: boolean
   onClose: () => void
   /** Команды; по умолчанию — общий реестр (в тестах и сториз инжектится список). */
@@ -63,21 +69,49 @@ function Highlighted({ text, indices }: { text: string; indices: number[] }): JS
 
 export function CommandPalette({
   open,
+  userId,
   onClose,
   commands,
   limitPerSection,
-  apple
+  apple,
+  api,
+  onNavigate
 }: CommandPaletteProps): JSX.Element | null {
   // Реестр читаем только при открытом окне: сборка списка из сотен бесед на
   // каждый рендер приложения не нужна никому.
   const registry = useCommandRegistry(open && commands == null)
-  const available = commands ?? registry
+  const available = useMemo(() => api
+    ? (commands ?? registry).filter(command => command.section === 'action').map(command => ({
+      ...command, title: searchText(command.title), hint: searchText(command.hint ?? ''), keywords: (command.keywords ?? []).map(searchText)
+    })).filter(command => command.title)
+    : commands ?? registry, [api, commands, registry])
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
-  const [recent, setRecent] = useState<string[]>([])
+  const recent = recentCommandIds(userId)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const baseId = useId()
+  const remote = useUniversalSearch(api, open, userId, query)
+
+  useEffect(() => {
+    if (!open) return
+    const viewport = window.visualViewport
+    const update = (): void => {
+      const dialog = inputRef.current?.closest<HTMLElement>('.cmdk')
+      dialog?.style.setProperty('--cmdk-height', String(viewport?.height ?? window.innerHeight) + 'px')
+      dialog?.style.setProperty('--cmdk-top', String(viewport?.offsetTop ?? 0) + 'px')
+      listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest' })
+    }
+    update()
+    viewport?.addEventListener('resize', update)
+    viewport?.addEventListener('scroll', update)
+    window.addEventListener('resize', update)
+    return () => {
+      viewport?.removeEventListener('resize', update)
+      viewport?.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [open])
 
   // Открытие — с чистого листа: запрос из прошлого раза сбивает с толку, а
   // «недавние» с прошлого открытия могли устареть.
@@ -85,10 +119,9 @@ export function CommandPalette({
     if (!open) return
     setQuery('')
     setActive(0)
-    setRecent(recentCommandIds())
-  }, [open])
+  }, [open, userId])
 
-  const groups: CommandGroup[] = useMemo(
+  const localGroups: CommandGroup[] = useMemo(
     () =>
       open
         ? searchCommands(available, query, {
@@ -98,7 +131,23 @@ export function CommandPalette({
         : [],
     [open, available, query, limitPerSection, recent]
   )
-  const flat = useMemo(() => groups.flatMap((group) => group.hits), [groups])
+  const groups: Array<Omit<CommandGroup, 'key'> & { key: string }> = [
+    ...localGroups,
+    ...(remote.page?.groups.filter(group => group.hits.length).map(group => ({
+      key: 'search-' + group.source,
+      title: (query.trim() ? '' : 'Недавние · ') + SEARCH_LABELS[group.source],
+      hidden: 0,
+      hits: group.hits.map(hit => ({
+        indices: [],
+        score: 0,
+        command: {
+          id: '__search:' + hit.id, title: hit.title, hint: hit.snippet, section: 'action' as const,
+          run: () => { void remote.select(hit, href => { onClose(); onNavigate?.(href) }) }
+        }
+      }))
+    })) ?? [])
+  ]
+  const flat = groups.flatMap((group) => group.hits)
   const index = flat.length ? Math.min(active, flat.length - 1) : 0
   const activeId = flat.length ? `${baseId}-item-${index}` : undefined
 
@@ -112,7 +161,9 @@ export function CommandPalette({
   if (!open) return null
 
   const run = (hit: CommandHit): void => {
-    rememberCommand(hit.command.id)
+    if (hit.command.enabled?.() === false) return
+    if (hit.command.id.startsWith('__search:')) { hit.command.run(); return }
+    rememberCommand(hit.command.id, userId)
     // Сначала закрываем: команда может открыть своё окно, и палитра не должна
     // остаться слоем под ним.
     onClose()
@@ -156,7 +207,7 @@ export function CommandPalette({
 
   return (
     <Dialog
-      title="Команды"
+      title={api ? 'Поиск и команды' : 'Команды'}
       ariaLabel="Командная палитра"
       size="md"
       className="cmdk"
@@ -176,7 +227,7 @@ export function CommandPalette({
           aria-autocomplete="list"
           {...(activeId ? { 'aria-activedescendant': activeId } : {})}
           aria-label="Поиск команды, беседы, проекта или задачи"
-          placeholder="Команда, беседа, проект, #номер задачи…"
+          placeholder={api ? 'Чаты, сообщения, проекты, задачи, файлы, знания…' : 'Команда, беседа, проект, #номер задачи…'}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value)
@@ -184,15 +235,19 @@ export function CommandPalette({
           }}
           onKeyDown={onInputKeyDown}
         />
-        <div className="cmdk-list" id={`${baseId}-list`} role="listbox" aria-label="Команды" ref={listRef}>
-          {groups.length === 0 && (
+        {remote.loading && <p role="status">Поиск…</p>}
+        {remote.error && <p role="alert">{remote.error} <button onClick={remote.retry}>Повторить</button></p>}
+        {remote.page?.groups.some(group => group.status === 'unavailable') && <p role="status">{remote.page.groups.every(group => group.status === 'unavailable') ? 'Поиск недоступен' : 'Частичная выдача'}: {remote.page.groups.filter(group => group.status === 'unavailable').map(group => SEARCH_LABELS[group.source]).join(', ')}. <button onClick={remote.retry}>Повторить</button></p>}
+        {api && !query.trim() && !remote.loading && !remote.page?.groups.some(group => group.hits.length) && <p role="status">Недавних доступных переходов пока нет.</p>}
+          {groups.length === 0 && !remote.loading && !remote.error && (
             <EmptyState
               compact
               icon="🔍"
               title="Ничего не найдено"
-              description="Попробуйте короче: палитра ищет по буквам подряд, но с пропусками."
+              description="Попробуйте изменить запрос."
             />
           )}
+        <div className="cmdk-list" id={`${baseId}-list`} role="listbox" aria-label="Команды" ref={listRef}>
           {groups.map((group) => (
             <div className="cmdk-group" key={group.key} role="group" aria-labelledby={`${baseId}-${group.key}`}>
               <p className="cmdk-sec" id={`${baseId}-${group.key}`}>
@@ -218,10 +273,14 @@ export function CommandPalette({
                     <span className="cmdk-title">
                       <Highlighted text={hit.command.title} indices={hit.indices} />
                     </span>
-                    {hit.command.hint && <span className="cmdk-hint">{hit.command.hint}</span>}
-                    {hit.command.hotkey && (
+                    {hit.command.hint && <span className="cmdk-hint"><Highlighted text={hit.command.hint} indices={
+                      hit.command.id.startsWith('__search:') && query.trim() && hit.command.hint.toLowerCase().includes(query.trim().toLowerCase())
+                        ? Array.from({ length: query.trim().length }, (_, offset) => hit.command.hint!.toLowerCase().indexOf(query.trim().toLowerCase()) + offset)
+                        : []
+                    } /></span>}
+                    {hit.command.hotkey ? (
                       <kbd className="cmdk-key">{formatCombo(hit.command.hotkey, apple)}</kbd>
-                    )}
+                    ) : <span className="cmdk-key" aria-label="Сочетание не назначено">—</span>}
                   </div>
                 )
               })}
@@ -233,6 +292,7 @@ export function CommandPalette({
             </div>
           ))}
         </div>
+        {remote.page?.nextCursor && <button disabled={remote.loading} onClick={() => void remote.loadMore()}>Загрузить ещё</button>}
       </div>
     </Dialog>
   )

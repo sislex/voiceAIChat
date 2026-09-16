@@ -279,6 +279,21 @@ describe('AgentRegistry', () => {
     expect(sock.sent.some((m) => m.t === 'exec.cancel')).toBe(true)
   })
 
+  // @testCase T5
+  it('sends only a bounded operation and refuses an old agent without full-read fallback', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Mac', sock, DEFAULT_AGENT_POLICY, '0.17.0')
+    const pending = reg.fsRead('a1', '/large.txt', 'prefix')
+    expect(sock.sent[0]).toEqual({ t: 'fs.read-prefix', opId: 'exec-1', path: '/large.txt' })
+    const result = { root: '/', cwd: '/', dataBase64: 'YQ==', bytesRead: 1, fileSize: 40000000, truncated: true }
+    await reg.handleMessage('a1', { t: 'fs.result', opId: 'exec-1', result })
+    await expect(pending).resolves.toEqual(result)
+    reg.register('old', 'Old', sock, DEFAULT_AGENT_POLICY, '0.16.0')
+    await expect(reg.fsRead('old', '/large.txt', 'prefix')).rejects.toThrow(/устарел/i)
+    expect(sock.sent.some((message) => message.t === 'fs.read')).toBe(false)
+  })
+
   it('fsList: шлёт fs.list и резолвится по fs.result (по opId)', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()

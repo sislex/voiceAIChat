@@ -226,6 +226,7 @@ export function registerCiRoutes(
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
     if (!await db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     return {
+      commandContext: await ci.commandContext(uid(req), req.params.id, req.params.taskId),
       config: await db.ci.resolveTaskSlots(req.params.id, req.params.taskId),
       overridden: await db.ci.hasCiSlotConfig('task', req.params.taskId),
       projectDefault: await db.ci.getCiSlotConfig('project', req.params.id),
@@ -281,7 +282,11 @@ export function registerCiRoutes(
       return res.interaction
     }
   )
-  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => await db.ci.getCiRun(uid(req), req.params.runId) ?? nf(reply))
+  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => {
+    const detail = await db.ci.getCiRun(uid(req), req.params.runId)
+    if (!detail) return nf(reply)
+    return { ...detail, queue: await ci.queueSummary(uid(req), detail.run.projectId) }
+  })
   app.get<{ Params: { runId: string }; Querystring: { limit?: string } }>('/api/ci/runs/:runId/log', async (req, reply) => {
     if (!await db.ci.getCiRun(uid(req), req.params.runId)) return nf(reply)
     // Полный лог длинного рана не помещается в память процесса, поэтому отдаём
@@ -384,8 +389,9 @@ export function registerCiRoutes(
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)
   })
-  app.post<{ Params: { runId: string }; Body: { provider?: 'claude' | 'codex'; model?: string; llmEngineId?: string | null } }>('/api/ci/runs/:runId/retry-from-step', workflowGuard, async (req, reply) => {
-    const selection = req.body?.provider && req.body.model !== undefined ? { provider: req.body.provider, model: req.body.model, llmEngineId: req.body.llmEngineId ?? null } : undefined
+  app.post<{ Params: { runId: string }; Body: { provider?: 'claude' | 'codex'; model?: string; llmEngineId?: string | null; stepId?: string } }>('/api/ci/runs/:runId/retry-from-step', workflowGuard, async (req, reply) => {
+    if (req.body?.stepId !== undefined && (typeof req.body.stepId !== 'string' || !req.body.stepId.trim())) return bad(reply, new Error('Некорректный stepId'))
+    const selection = req.body?.provider && req.body.model !== undefined ? { provider: req.body.provider, model: req.body.model, llmEngineId: req.body.llmEngineId ?? null, stepId: req.body.stepId } : undefined
     const res = await ci.retryFromFailed(uid(req), req.params.runId, selection)
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)

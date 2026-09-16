@@ -8,7 +8,8 @@ import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
 import type { ServerFileInfo, TurnTarget } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
-import { MachineUtility } from './MachineUtility'
+import { lazyScreen } from '../runtime/lazyScreen'
+const MachineUtility = lazyScreen(() => import('./MachineUtility').then(module => ({ default: module.MachineUtility })))
 import { MessageImage } from './MessageImage'
 import type { ConsoleHistoryStore, MachineOps, SwitchUtility } from '@voicechat/ui-foundation/components/machine'
 import {
@@ -36,7 +37,13 @@ import {
 } from './MessageTimeline'
 import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
+import { uiPerformance } from '../lib/uiPerformance'
 import { useDismissibleMenu } from '../lib/useDismissibleMenu'
+import { ChatSearchContext, HighlightText } from './Markdown'
+import { useHotkeys } from '../lib/useHotkeys'
+import { useCommandSource } from '@voicechat/ui-foundation/runtime'
+import { CHAT_COMPACT_KEY } from '@voicechat/ui-foundation/persistence'
+import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 
 /** Сколько держим подсветку сообщения, к которому перешли из поиска. */
 const HIGHLIGHT_MS = 2000
@@ -77,6 +84,9 @@ function modeLabel(mode?: string): string {
 }
 
 export interface ChatColumnProps {
+  failedSubmits?: { operationId: string; conversationId: string | null; text: string; attachmentIds: string[]; error: string; retrying: boolean }[]
+  onRetryFailedSubmit?: (id: string) => void
+  onDeleteFailedSubmit?: (id: string) => void
   title: string
   /** Id нужен для независимого восстановления ручной позиции каждого разговора. */
   conversationId?: string | null
@@ -111,6 +121,7 @@ export interface ChatColumnProps {
   state: VoiceState
   messages: Message[]
   /** Идёт загрузка сообщений разговора — показываем лоадер вместо ленты. */
+  performanceReady?: boolean
   loadingMessages?: boolean
   /**
    * Сообщение, к которому надо прокрутить ленту и подсветить его (переход из
@@ -207,6 +218,7 @@ export interface ChatColumnProps {
 }
 
 export function ChatColumn({
+  failedSubmits = [], onRetryFailedSubmit, onDeleteFailedSubmit,
   title,
   conversationId,
   onRenameTitle,
@@ -225,6 +237,7 @@ export function ChatColumn({
   canExecutePlan = true,
   state,
   messages,
+  performanceReady = false,
   loadingMessages = false,
   highlightMessageId = null,
   onHighlightDone,
@@ -268,6 +281,57 @@ export function ChatColumn({
   onOpenMachines,
   onOpenKbDocument
 }: ChatColumnProps): JSX.Element {
+  const previousAi = useRef(messages.filter(m => m.role === 'ai').at(-1)?.id)
+  useEffect(() => {
+    const last = messages.filter(m => m.role === 'ai').at(-1)
+    const newAi = last && last.id !== previousAi.current && last.text.trim()
+    previousAi.current = last?.id
+    const generation = uiPerformance().messageGeneration()
+    const frame = requestAnimationFrame(() => {
+      const p = uiPerformance()
+      if (performanceReady && !loadingMessages) { p.mark('route', 'chat_ready'); p.finish('route', 'chat') }
+      const response = streamingReply.trim()
+        ? rootRef.current?.querySelector('[data-testid="streaming"] .md')
+        : newAi ? Array.from(rootRef.current?.querySelectorAll('.msg.ai[data-mid] .md') ?? []).at(-1) : null
+      const rendered = Array.from(response?.querySelectorAll('p,code,li,h1,h2,h3,blockquote,td') ?? []).some(node => node.textContent?.trim())
+      if (rendered && generation === p.messageGeneration()) p.mark('message', 'message_first_token')
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [performanceReady, loadingMessages, streamingReply, messages, conversationId])
+  const rootRef = useRef<HTMLElement>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [matchIndex, setMatchIndex] = useState(0)
+  const [matchCount, setMatchCount] = useState(0)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const mobile = useMediaQuery(MOBILE_QUERY)
+  const [density, setDensity] = useState<boolean | null>(() => {
+    try { const value = localStorage.getItem(CHAT_COMPACT_KEY); return value === 'true' ? true : value === 'false' ? false : null } catch { return null }
+  })
+  const compact = density ?? mobile
+  const toggleCompact = (): void => {
+    setDensity(!compact)
+    try { localStorage.setItem(CHAT_COMPACT_KEY, String(!compact)) } catch { /* Keep the in-memory choice. */ }
+  }
+  const openSearch = (): void => { setSearchOpen(true); requestAnimationFrame(() => searchRef.current?.focus()) }
+  useHotkeys({ enabled: false, onPushStart() {}, onPushEnd() {}, onEscape() {}, bindings: [{ combo: 'mod+f', enabled: () => Boolean(rootRef.current?.contains(document.activeElement)), onDown: openSearch }] })
+  useCommandSource(() => [
+    { id: `chat.search.${conversationId ?? 'draft'}`, title: 'Поиск по беседе', section: 'action', run: openSearch },
+    { id: `chat.compact.${conversationId ?? 'draft'}`, title: 'Компактная лента', section: 'action', run: toggleCompact }
+  ])
+  useEffect(() => { setQuery(''); setMatchIndex(0); setSearchOpen(false) }, [conversationId])
+  useLayoutEffect(() => {
+    const marks = Array.from(rootRef.current?.querySelectorAll<HTMLElement>('[data-chat-match]') ?? [])
+    setMatchCount(marks.length)
+    const current = marks.length ? Math.min(matchIndex, marks.length - 1) : 0
+    if (current !== matchIndex) setMatchIndex(current)
+    marks.forEach((mark, index) => mark.classList.toggle('chat-match-current', current === index))
+    if (searchOpen && marks[current]) {
+      autoFollowRef.current = false
+      marks[current].scrollIntoView?.({ block: 'center' })
+    }
+  }, [query, searchOpen, matchIndex, messages, streamingReply])
+  const [copyError, setCopyError] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const exportMenuRef = useRef<HTMLSpanElement>(null)
   useDismissibleMenu(exportOpen, exportMenuRef, () => setExportOpen(false))
@@ -279,6 +343,9 @@ export function ChatColumn({
   const lastScrollHeightRef = useRef(0)
   const lastMessageIdRef = useRef<string | null>(null)
   const [hasNewContent, setHasNewContent] = useState(false)
+  const [newCount, setNewCount] = useState(0)
+  const seenReplies = useRef(new Set(messages.filter((m) => m.role === 'ai').map((m) => m.id)))
+  const countedStream = useRef(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   // Поле редактирования — как композер: от двух строк до четырёх, дальше скролл.
@@ -333,13 +400,21 @@ export function ChatColumn({
     setTitleDraft('')
   }
 
-  const copyMessage = (m: Message): void => {
-    void copyText(m.text).then((copied) => {
+  const copyMessage = (m: Message, plain = false): void => {
+    const body = Array.from(rootRef.current?.querySelectorAll<HTMLElement>('[data-mid]') ?? []).find((element) => element.dataset.mid === m.id)
+    const text = plain ? Array.from(body?.querySelectorAll('.md') ?? []).map((element) => {
+      const clone = element.cloneNode(true) as HTMLElement
+      clone.querySelectorAll('button, [role="alert"]').forEach((node) => node.remove())
+      clone.querySelectorAll('p, li, pre, h1, h2, h3, tr').forEach((node) => node.append('\n'))
+      return clone.textContent ?? ''
+    }).join('\n').trim() : m.text
+    void copyText(text).then((copied) => {
+      setCopyError(!copied)
       if (!copied) return
       setCopiedId(m.id)
       setTimeout(() => setCopiedId((id) => (id === m.id ? null : id)), 1500)
     }).catch(() => {
-      // Clipboard permissions and browser support are outside the chat's control.
+      setCopyError(true)
     })
   }
 
@@ -374,6 +449,7 @@ export function ChatColumn({
     lastScrollHeightRef.current = el.scrollHeight
     if (restoreFollow) autoFollowRef.current = true
     setHasNewContent(false)
+    setNewCount(0)
     persistScroll(el)
     requestAnimationFrame(() => { programmaticScrollRef.current = false })
   }, [persistScroll])
@@ -388,7 +464,7 @@ export function ChatColumn({
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
     const atBottom = distance <= BOTTOM_THRESHOLD_PX
     autoFollowRef.current = atBottom
-    if (atBottom) setHasNewContent(false)
+    if (atBottom) { setHasNewContent(false); setNewCount(0) }
     persistScroll(el)
   }, [persistScroll])
 
@@ -398,6 +474,9 @@ export function ChatColumn({
     const el = scrollRef.current
     if (!el) return
     activeConversationRef.current = conversationKey
+    seenReplies.current = new Set(messages.filter((m) => m.role === 'ai').map((m) => m.id))
+    countedStream.current = false
+    setNewCount(0)
     const saved = readSavedScrolls()[conversationKey]
     autoFollowRef.current = saved?.autoFollow ?? true
     setHasNewContent(false)
@@ -411,6 +490,16 @@ export function ChatColumn({
   // Новое собственное сообщение начинает новый ход и всегда возвращает follow.
   // В остальных случаях токены двигают ленту только если пользователь был у конца.
   useEffect(() => {
+    let added = 0
+    let finalizedStream = false
+    for (const message of messages) {
+      if (message.role !== 'ai' || seenReplies.current.has(message.id)) continue
+      seenReplies.current.add(message.id)
+      if (countedStream.current) { countedStream.current = false; finalizedStream = true }
+      else added++
+    }
+    if (streamingReply && !countedStream.current && !finalizedStream && !autoFollowRef.current && added === 0) { countedStream.current = true; added++ }
+    if (!autoFollowRef.current && added) setNewCount((count) => count + added)
     const last = messages[messages.length - 1]
     const ownMessageAdded = Boolean(last && last.role !== 'ai' && last.id !== lastMessageIdRef.current)
     lastMessageIdRef.current = last?.id ?? null
@@ -419,7 +508,7 @@ export function ChatColumn({
     } else if (autoFollowRef.current) {
       scrollToBottom(false)
     } else {
-      setHasNewContent(true)
+      if (added) setHasNewContent(true)
     }
   }, [messages, liveSegments, state, streamingReply, scrollToBottom])
 
@@ -434,7 +523,7 @@ export function ChatColumn({
       lastScrollHeightRef.current = el.scrollHeight
       if (!grew) return
       if (autoFollowRef.current) scrollToBottom(false)
-      else setHasNewContent(true)
+
     })
     observer.observe(content)
     return () => observer.disconnect()
@@ -480,8 +569,9 @@ export function ChatColumn({
   const [replyAnnounce, setReplyAnnounce] = useState('')
   useEffect(() => {
     if (hasStream) setReplyAnnounce(`${aiLabel} отвечает…`)
-    else setReplyAnnounce((prev) => (prev === '' ? '' : 'Ответ получен'))
-  }, [hasStream, aiLabel])
+    else if (showPreparingReply) setReplyAnnounce('Готовим ответ…')
+    else setReplyAnnounce(prev => prev === '' ? '' : prev === 'Готовим ответ…' ? 'Подготовка ответа завершена' : 'Ответ получен')
+  }, [hasStream, showPreparingReply, aiLabel])
   useEffect(() => {
     if (!hasStream) { streamStartRef.current = null; return }
     if (streamStartRef.current === null) streamStartRef.current = Date.now()
@@ -496,7 +586,8 @@ export function ChatColumn({
   }, [showPreparingReply, hasStream])
 
   return (
-    <main className={messages.length === 0 ? 'main main--empty' : 'main main--conversation'} data-chat-layout={composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')}>
+    <ChatSearchContext.Provider value={searchOpen ? query : ''}>
+    <section aria-label="Чат" ref={rootRef} className={`${messages.length === 0 ? 'main main--empty' : 'main main--conversation'}${compact ? ' main--compact' : ''}`} data-chat-layout={composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')}>
       <header className="mhead">
         {onToggleSidebar && (
           <SidebarToggle className="burger" expanded={sidebarExpanded} onToggle={onToggleSidebar} />
@@ -602,6 +693,8 @@ export function ChatColumn({
           </label>
         )}
         <span className="mhead-right">
+          <Button size="sm" variant="secondary" onClick={openSearch}>Поиск</Button>
+          <details className="chat-menu"><summary aria-label="Меню беседы" title="Меню беседы">⋯</summary><Button size="sm" aria-pressed={compact} onClick={toggleCompact}>Компактная лента</Button></details>
           {onExport && messages.length > 0 && (
             <span className="exportwrap" ref={exportMenuRef}>
               <IconButton
@@ -639,6 +732,17 @@ export function ChatColumn({
         </span>
       </header>
 
+      {searchOpen && <div className="chat-search" role="search" aria-label="Поиск по беседе">
+        <input ref={searchRef} aria-label="Найти в беседе" value={query} onChange={(event) => { setQuery(event.target.value); setMatchIndex(0) }} onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.stopPropagation(); setSearchOpen(false); scrollRef.current?.focus() }
+          if (event.key === 'Enter' && matchCount) setMatchIndex((index) => (index + (event.shiftKey ? matchCount - 1 : 1)) % matchCount)
+        }} />
+        <span role="status">{matchCount ? matchIndex + 1 : 0} / {matchCount}</span>
+        <IconButton title="Предыдущее совпадение" aria-label="Предыдущее совпадение" disabled={!matchCount} onClick={() => setMatchIndex((index) => (index + matchCount - 1) % matchCount)}>↑</IconButton>
+        <IconButton title="Следующее совпадение" aria-label="Следующее совпадение" disabled={!matchCount} onClick={() => setMatchIndex((index) => (index + 1) % matchCount)}>↓</IconButton>
+        <IconButton title="Закрыть поиск" aria-label="Закрыть поиск" onClick={() => setSearchOpen(false)}>×</IconButton>
+      </div>}
+      {copyError && <p role="alert">Не удалось скопировать сообщение</p>}
       {taskHeader}
 
       {error && (
@@ -705,6 +809,12 @@ export function ChatColumn({
               <RefreshIndicator label="Обновляем историю…" />
             </div>
           )}
+          {failedSubmits.filter((item) => item.conversationId === (conversationId ?? null)).map((item) => <div className="msg me" key={item.operationId}>
+            <p>{item.text}</p><p role="alert">{item.error}</p>
+            {item.attachmentIds.length > 0 && <span>Вложений: {item.attachmentIds.length}</span>}
+            <Button size="sm" disabled={item.retrying} onClick={() => onRetryFailedSubmit?.(item.operationId)}>Повторить</Button>
+            <Button size="sm" disabled={item.retrying} onClick={() => onDeleteFailedSubmit?.(item.operationId)}>Удалить</Button>
+          </div>)}
           {messages.map((m) => {
             const isAi = m.role === 'ai'
             const isEditing = editingId === m.id
@@ -800,6 +910,7 @@ export function ChatColumn({
                     >
                       {copiedId === m.id ? '✓' : '⧉'}
                     </button>
+                    <Button size="sm" variant="ghost" onClick={() => copyMessage(m, true)}>Копировать текст</Button>
                     {m.meta?.interrupted && (
                       <p className="msg-interrupted" data-testid="msg-interrupted">
                         ⚠️ Ответ прерван перезапуском сервера — сохранена набранная часть.
@@ -874,7 +985,7 @@ export function ChatColumn({
                     >
                       {copiedId === m.id ? '✓' : '⧉'}
                     </button>
-                    <p>{m.text}</p>
+                    <p><HighlightText>{m.text}</HighlightText></p>
                     {m.meta?.previewElement && (
                       <details className="message-preview-context" data-testid="message-preview-context">
                         <summary>⌖ {m.meta.previewElement.tag}{m.meta.previewElement.id ? `#${m.meta.previewElement.id}` : m.meta.previewElement.classes[0] ? `.${m.meta.previewElement.classes[0]}` : ''} · {m.meta.previewElement.pageUrl}</summary>
@@ -970,7 +1081,7 @@ export function ChatColumn({
                     <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(prepStart)}`}>{clockTime(prepStart)}</span>
                   </span>
                 </div>
-                <div className="bub" role="status" aria-live="polite">
+                <div className="bub">
                   <span className="reply-preparing" data-testid="reply-preparing-inner">
                     <Dots />
                     <span>Готовим ответ…</span>
@@ -1073,7 +1184,7 @@ export function ChatColumn({
             aria-label="К новому сообщению"
             onClick={() => scrollToBottom()}
           >
-            ↓ К новому сообщению
+            ↓ Новые сообщения ({newCount})
           </Button>
         </div>
       )}
@@ -1082,6 +1193,7 @@ export function ChatColumn({
       <div className={(composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')) === 'centered' ? 'chat-composer chat-composer--centered' : 'chat-composer chat-composer--docked'}>
         {voiceBar}
       </div>
-    </main>
+    </section>
+    </ChatSearchContext.Provider>
   )
 }

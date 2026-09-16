@@ -14,7 +14,7 @@ const server = readFileSync(join(srcDir, 'server.ts'), 'utf8')
 const module = readFileSync(join(srcDir, 'kanban', 'module.ts'), 'utf8')
 
 /** Каталоги и файлы кластера — то, что уедет в пакет `apps/kanban`. */
-const CLUSTER_DIRS = ['ci', 'merge', 'orchestration', 'releases', 'preview', 'projects', 'kanban']
+const CLUSTER_DIRS = ['ci', 'merge', 'cleanup', 'orchestration', 'releases', 'preview', 'projects', 'kanban']
 const CLUSTER_FILES = ['routes/projects.ts', 'routes/ci.ts', 'routes/qa.ts', 'routes/releases.ts', 'routes/applicationReleases.ts', 'routes/featurePreview.ts', 'routes/projectTypes.ts', 'routes/invitations.ts', 'mcp/kanbanMcp.ts']
 
 /**

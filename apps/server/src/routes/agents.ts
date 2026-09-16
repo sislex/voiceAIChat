@@ -2,6 +2,8 @@
 // токен), удаление (отзыв токена + разрыв соединения).
 
 import { randomUUID } from 'node:crypto'
+import { registerVpnRoutes } from '../machines/vpn/routes.js'
+import { VpnService } from '../machines/vpn/service.js'
 import { createReadStream, existsSync } from 'node:fs'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
@@ -148,6 +150,7 @@ export async function registerAgentRoutes(
   artifacts: AppArtifacts = {},
   commandGate?: CommandGate
 ): Promise<void> {
+  registerVpnRoutes(app, new VpnService(db.machines, registry, () => process.env.VC_VPN_SECRET_KEY))
   const withLiveStatus = async (agents: Awaited<ReturnType<VoiceChatDb['machines']['listAgents']>>, userId?: string, projectId?: string | null): Promise<AgentInfo[]> => {
     const online = registry.onlineIds()
     return await Promise.all(agents.map(async (a) => ({
@@ -623,6 +626,11 @@ export async function registerAgentRoutes(
   app.get<{ Params: { id: string }; Querystring: { path?: string; projectId?: string } }>(
     '/api/agents/:id/fs/file',
     async (req, reply) => withFs(req, reply, (id) => registry.fsRead(id, req.query.path ?? ''))
+  )
+  app.get<{ Params: { id: string }; Querystring: { path: string; projectId?: string } }>(
+    '/api/agents/:id/fs/preview',
+    { schema: { querystring: { type: 'object', required: ['path'], additionalProperties: false, properties: { path: { type: 'string', minLength: 1 }, projectId: { type: 'string' } } } } },
+    async (req, reply) => withFs(req, reply, (id) => registry.fsRead(id, req.query.path, 'prefix'))
   )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string; dataBase64?: string } }>(
     '/api/agents/:id/fs/file',

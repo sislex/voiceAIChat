@@ -29,6 +29,7 @@ import type { FsResult, FsCopyResult } from '@shared/agentProtocol'
 import type { SessionUser, SessionInfo } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
+import { createVpnBridge } from './vpnBridge'
 import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
@@ -142,7 +143,7 @@ export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
   return {
     onAction: (cb) =>
       ws.on('preview.action', (m) => cb({ conversationId: m.conversationId, requestId: m.requestId, action: m.action })),
-    onChanged: (cb) => ws.on('reader.changed', (m) => cb({ conversationId: m.conversationId, address: m.address, title: m.title, navigated: m.navigated, action: m.action })),
+    onChanged: (cb) => ws.on('reader.changed', (m) => cb({ conversationId: m.conversationId, address: m.address, title: m.title, navigated: m.navigated, action: m.action, ...(m.summary !== undefined ? { summary: m.summary } : {}), ...(m.ok !== undefined ? { ok: m.ok } : {}) })),
     result: (m) =>
       ws.send({
         t: 'preview.result',
@@ -179,6 +180,8 @@ export function makeRealtimeBridge(ws: WsClient): RendererRealtimeBridge {
   return {
     onConnected: (cb) => ws.onConnected(cb),
     connected: () => ws.isConnected(),
+    onDisconnected: (cb) => ws.onDisconnected(cb),
+    retry: () => ws.retry(),
     onTaskPreparationNotificationsInvalidated: (cb) =>
       ws.on('task-preparation.notifications.invalidate', (m) => cb({ projectId: m.projectId })),
     onInvitationsInvalidated: (cb) => ws.on('invitations.invalidate', () => cb()),
@@ -548,6 +551,8 @@ export function makeFsBridge(httpBase: string): RendererFsBridge {
     `${httpBase}${REST.agentFs(agentId)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`
   return {
     list: (id, path, projectId) => credentialedFetch(q(id, path, projectId), { headers: authHeaders() }).then(asResult),
+    readPrefix: (id, path, projectId) =>
+      credentialedFetch(`${httpBase}${REST.agentFsPreview(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, { headers: authHeaders() }).then(asResult),
     read: (id, path, projectId) =>
       credentialedFetch(`${httpBase}${REST.agentFsFile(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, {
         headers: authHeaders()
@@ -629,6 +634,22 @@ function toWsBase(httpBase: string): string {
   return `${proto}//${window.location.host}`
 }
 
+/** Web and Electron use a separate per-check connection with the same session scope. */
+export function makeOnboardingBridge(wsBase: string): import('@shared/ipc').RendererOnboardingBridge {
+  return {
+    open: () => {
+      const diagnostic = new WsClient(`${wsBase}/ws`, () => getToken() ?? (getCsrf() ? 'cookie' : null))
+      // An interrupted diagnostic must never replay side effects after reconnect.
+      diagnostic.onDisconnected(() => diagnostic.close())
+      return {
+        audio: makeAudioBridge(diagnostic), stt: makeSttBridge(diagnostic),
+        tts: makeTtsBridge(diagnostic), claude: makeClaudeBridge(diagnostic),
+        close: () => diagnostic.close()
+      }
+    }
+  }
+}
+
 let ws: WsClient | null = null
 
 /**
@@ -656,6 +677,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   ws = new WsClient(`${wsBase}/ws`, () => getToken() ?? (getCsrf() ? 'cookie' : null))
   void migrateLegacyToken(httpBase)
   window.api = createHttpApi(httpBase, `${wsBase}/agent`)
+  window.onboarding = makeOnboardingBridge(wsBase)
   window.audio = makeAudioBridge(ws)
   window.auth = makeAuthBridge(ws)
   window.stt = makeSttBridge(ws)
@@ -663,7 +685,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   window.tts = makeTtsBridge(ws)
   window.cc = makeCcBridge(ws)
   window.codex = makeCodexBridge(ws)
-  window.agents = makeAgentsBridge(ws)
+  window.agents = { ...makeAgentsBridge(ws), vpn: createVpnBridge(httpBase) }
   window.realtime = makeRealtimeBridge(ws)
   window.board = makeBoardBridge(ws)
   window.ci = makeCiBridge(httpBase, ws)

@@ -11,6 +11,22 @@ const list: MakeComment[] = [
 ]
 
 describe('MakeCommentsPanel', () => {
+  // @testCase T5
+  it('filters comments and preserves a private reply draft after a failed save', async () => {
+    const onReply = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined)
+    render(<MakeCommentsPanel comments={list.map((comment) => ({ ...comment, canReply: true, ownerReply: 'Previous reply' }))} selected={null} onReply={onReply} onAdd={async () => {}} onResolve={() => {}} onRemove={() => {}} onHighlight={() => {}} onClose={() => {}} />)
+    await userEvent.selectOptions(screen.getByLabelText('Фильтр комментариев'), 'new')
+    expect(screen.queryByText('Синий')).not.toBeInTheDocument()
+    const reply = screen.getByLabelText('Внутренний ответ на Крупнее')
+    await userEvent.clear(reply)
+    await userEvent.type(reply, 'Private draft')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ответ' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить ответ')
+    expect(reply).toHaveValue('Private draft')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ответ' }))
+    expect(onReply).toHaveBeenLastCalledWith('c1', 'Private draft')
+  })
+
   it('нумерует только открытые, подсвечивает, решает, удаляет и собирает промпт', async () => {
     const onAdd = vi.fn(async () => {}); const onResolve = vi.fn(); const onRemove = vi.fn(); const onHighlight = vi.fn(); const onAsk = vi.fn()
     render(<MakeCommentsPanel comments={list} selected={{ selector: 'p.lead', tag: 'p', text: 'Текст' }} onAdd={onAdd} onResolve={onResolve} onRemove={onRemove} onHighlight={onHighlight} onAskAssistant={onAsk} onClose={() => {}} />)
