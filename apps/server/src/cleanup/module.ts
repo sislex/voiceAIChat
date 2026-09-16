@@ -5,7 +5,7 @@ import type { FeaturePreviewManager } from '../preview/manager.js'
 import { isTerminalCiStatus, ACTIVE_MERGE_STATUSES, QA_RUN_STAGES, isMachineStoragePathAllowed } from '@voicechat/shared'
 import { join, dirname } from 'node:path'
 import { uid } from '../users/auth.js'
-import { CleanupStore } from './store.js'
+import { CleanupStore, CleanupBusy } from './store.js'
 import { TemporaryCleanup, cleanupDuration } from './service.js'
 import { RemoteResourceBackend } from './remote.js'
 
@@ -64,7 +64,7 @@ export function createTemporaryCleanup(db: VoiceChatDb, machines: KanbanMachines
 }
 export function registerCleanupRoutes(app: FastifyInstance, db: VoiceChatDb, cleanup: TemporaryCleanup): void {
   const releases = new WeakMap<object, () => Promise<void>>()
-  app.addHook('preHandler', async req => {
+  app.addHook('preHandler', async (req, reply) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return
     const taskMatch = /^\/api\/projects\/[^/]+\/tasks\/([^/?]+)/.exec(req.url)
     const runMatch = /^\/api\/(ci|merge)\/runs\/([^/?]+)/.exec(req.url)
@@ -73,7 +73,16 @@ export function registerCleanupRoutes(app: FastifyInstance, db: VoiceChatDb, cle
       const run = runMatch[1] === 'merge' ? await db.ci.getMergeRun(req.user.name, runMatch[2]) : (await db.ci.getCiRun(req.user.name, runMatch[2]))?.run
       taskId = run?.taskId ?? null
     }
-    if (taskId) releases.set(req, await cleanup.acquire(taskId))
+    if (!taskId) return
+    try {
+      releases.set(req, await cleanup.acquire(taskId))
+    } catch (error) {
+      // A busy registry is a temporary state of the cleanup sweep, not a broken
+      // request: 500 told clients (and people) that their retry itself failed.
+      if (!(error instanceof CleanupBusy)) throw error
+      await reply.code(503).header('retry-after', '5').send({ error: 'cleanup_or_consumer_busy' })
+      return reply
+    }
   })
   app.addHook('onResponse', async req => { const release = releases.get(req); releases.delete(req); await release?.() })
   app.get<{ Params: { projectId: string; taskId: string } }>('/api/projects/:projectId/tasks/:taskId/temporary-resources', async (req, reply) => {

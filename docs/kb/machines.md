@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-09-16
-checked: 42054046
+checked: 9e663b79
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -12,6 +12,7 @@ areas:
   - apps/server/src/db/schema.ts
   - apps/server/src/mcp
   - apps/server/src/manifests.ts
+  - apps/server/src/machines
   - apps/server/src/routes/agents.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/routes/rest.ts
@@ -613,19 +614,22 @@ The UI combines command-text search, source and result filters (success, error, 
 Всё, что проходит через `AgentRegistry.exec`, попадает в `machine_commands` (`db.addMachineCommand`,
 по 5000 последних записей на машину): `registry.exec(agentId, command, timeoutMs, signal, meta)` принимает
 `ExecMeta {source: 'console'|'chat'|'system', userId?, conversationId?}` и после завершения (в том числе отказа
-политикой или «не в сети») вызывает подписчиков `onCommand` — сервер (`server.ts`) пишет запись, подставляя
+политикой или «не в сети») вызывает подписчиков `onCommand` — модуль `apps/server/src/machines/module.ts` пишет запись, подставляя
 владельца машины, если `userId` не передан. Консоль (`POST /api/agents/:id/exec`) даёт `source: console`,
 MCP-инструменты `remoteBashMcp.ts` — `chat` с `conversationId` из `&conv=` в MCP-URL (`turns.ts`), остальные
 вызовы (обновление агента, релиз KB, health превью) — `system`. Стриминговый `execStream` PTY в журнал не пишет.
 
 **Долгие команды** (`config.longCommandMs` ← `VC_LONG_COMMAND_MS`, по умолчанию 10 с): тот же `onCommand`-подписчик
-в `server.ts` для команд `console`/`chat` дольше порога публикует владельцу WS-сообщение `machine.command`
-(`MachineCommandEvent`) через `ciRunManager.publish` — сессии форвардят его как и `ci.*`. Для команды из чата
-полный вывод (`output` в payload `onCommand`, в БД — только выдержка) пишется на машину чата в
+в `apps/server/src/machines/module.ts` для команд `console`/`chat` дольше порога публикует владельцу WS-сообщение
+`machine.command` (`MachineCommandEvent`) через пользовательский frame hub. Для команды из чата полный вывод
+(`output` в payload `onCommand`, в БД — только выдержка) пишется на машину чата в
 `<chatRoot>/artifacts/commands/<ГГГГММДД-ЧЧММСС>__<slug>.log` с шапкой `$ команда / # exit …`, и событие несёт
-`logPath`. UI (`App.tsx`, `realtime.onMachineCommand`): тост — успех на 8 с с действием «Журнал» (страница машин)
-или «Открыть лог» (проводник на файле), ошибка/ненулевой код — до закрытия; во вкладке в фоне дополнительно
-`new Notification(...)`, если разрешение уже выдано (само оно не запрашивается). Тест — `commandNotify.test.ts`.
+`logPath`. UI (`App.tsx`, `realtime.onMachineCommand`) всегда сохраняет событие в истории колокольчика с
+`source: machine`, а показ тоста и системного уведомления фильтрует серверно сохраняемыми
+`machineCommandNotices`, `machineCommandNoticeSeconds` и `machineCommandSystemNotifications` (контракт и UI —
+в [ui.md](ui.md)). Действие остаётся «Журнал» (страница машин) или «Открыть лог» (проводник на файле). Системное уведомление создаётся только
+для разрешённого режимом события, во вкладке в фоне, при включённой настройке и уже выданном разрешении браузера;
+само разрешение не запрашивается. Тест серверного журнала и полного лога — `commandNotify.test.ts`.
 
 Чтение: `GET /api/agents/:id/commands?limit&q&source[&format=csv]` (`canUseAgent`), мост `agents:commands`.
 UI — кнопка «Журнал» в строке машины на странице «Машины» (`MachineCommandLog.tsx`): поиск по подстроке,
