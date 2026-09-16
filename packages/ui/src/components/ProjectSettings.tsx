@@ -128,7 +128,7 @@ function TagEditor({ label, tags, editable, onChange }: {
             )}
           </span>
         ))}
-        {tags.length === 0 && <span className="proj-muted">—</span>}
+        {tags.length === 0 && <span className="proj-muted">Нет назначенных навыков</span>}
       </div>
       {editable && (
         <input
@@ -260,6 +260,7 @@ function ProjectSettingsDraft(props: ProjectSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
   const dirty = Object.keys(patch).length > 0
   const errors = Object.fromEntries(Object.entries(patch).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, projectFieldError(key, String(value))]))
   const invalid = Object.values(errors).some(Boolean)
@@ -294,20 +295,24 @@ function ProjectSettingsDraft(props: ProjectSettingsProps): JSX.Element {
   }
   const save = async (): Promise<void> => {
     if (saving || invalid || !dirty) return
-    setSaving(true); setError('')
-    try { await props.onUpdate(props.detail.id, patch); setPatch({}) }
+    setSaving(true); setError(''); setSaved(false)
+    try { await props.onUpdate(props.detail.id, patch); setPatch({}); setSaved(true) }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setSaving(false) }
   }
   const detail = { ...props.detail, ...patch, defaultSkills: { ...props.detail.defaultSkills, ...patch.defaultSkills } }
-  return <div className="project-settings-form">
+  return <div className="project-settings-form" aria-busy={saving}>
     <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <ProjectSettingsForm {...props} detail={detail} onUpdate={update} unsaved={dirty} errors={errors} />
     </fieldset>
-    {error && <p role="alert" className="proj-error">{error}</p>}
+    <div className="project-settings-save-status" aria-live="polite" aria-atomic="true">
+      {saving && <p>Сохранение…</p>}
+      {saved && !dirty && <p>Сохранено</p>}
+      {error && <p role="alert" className="proj-error">Ошибка сохранения: <span>{error}</span></p>}
+    </div>
     <StickyActionBar open={dirty} title="Есть несохранённые изменения" hint={invalid ? 'Исправьте ошибки в полях перед сохранением.' : undefined}>
       <Button variant="primary" disabled={invalid || saving} loading={saving} onClick={() => void save()}>Сохранить</Button>
-      <Button disabled={saving} onClick={() => { setPatch({}); setError('') }}>Отменить</Button>
+      <Button disabled={saving} onClick={() => { setPatch({}); setError(''); setSaved(false) }}>Отменить</Button>
     </StickyActionBar>
   </div>
 }
@@ -478,6 +483,8 @@ function ProjectSettingsForm(props: ProjectSettingsProps & { unsaved: boolean; e
         onTabChange={(tab) => setActiveTab(tab)}
         tabs={tabs}
       />
+      <div className="project-settings-scroll" role="tabpanel" aria-labelledby={`project-settings-heading-${activeTab}`} tabIndex={0}>
+      <h2 id={`project-settings-heading-${activeTab}`} className="project-settings-heading">{tabs.find(tab => tab.id === activeTab)?.label ?? 'Настройки'}</h2>
       {activeTab === 'general' && <>
       <section className="proj-section" aria-label="Тип и возможности проекта">
         {isOwner && (props.projectTypes?.length ?? 0) > 0 ? (
@@ -540,10 +547,10 @@ function ProjectSettingsForm(props: ProjectSettingsProps & { unsaved: boolean; e
       </section>
       {isOwner ? (
         <div className="proj-meta-edit">
-          <input className="login-input" aria-label="Название проекта" aria-invalid={!!props.errors.name} aria-describedby="project-error-name" value={name} onChange={(e) => setName(e.target.value)} />{fieldError('name', name)}
+          <input className="login-input" aria-label="Название проекта" aria-invalid={!!props.errors.name} aria-describedby={props.errors.name ? 'project-error-name' : undefined} value={name} onChange={(e) => setName(e.target.value)} />{fieldError('name', name)}
           <textarea className="login-input" aria-label="Описание" placeholder="Описание" value={description} onChange={(e) => setDescription(e.target.value)} />
-          {features.git && <><input className="login-input" aria-label="Git-репозиторий" aria-invalid={!!props.errors.gitUrl} aria-describedby="project-error-gitUrl" placeholder="git@…" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} />{fieldError('gitUrl', gitUrl)}</>}
-          {features.preview && <><input className="login-input" type="url" aria-label="URL веб-превью" aria-invalid={!!props.errors.previewUrl} aria-describedby="project-error-previewUrl" placeholder="https://example.com" value={previewUrl} onChange={(e) => setPreviewUrl(e.target.value)} />{fieldError('previewUrl', previewUrl)}</>}
+          {features.git && <><input className="login-input" aria-label="Git-репозиторий" aria-invalid={!!props.errors.gitUrl} aria-describedby={props.errors.gitUrl ? 'project-error-gitUrl' : undefined} placeholder="git@…" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} />{fieldError('gitUrl', gitUrl)}</>}
+          {features.preview && <><input className="login-input" type="url" aria-label="URL веб-превью" aria-invalid={!!props.errors.previewUrl} aria-describedby={props.errors.previewUrl ? 'project-error-previewUrl' : undefined} placeholder="https://example.com" value={previewUrl} onChange={(e) => setPreviewUrl(e.target.value)} />{fieldError('previewUrl', previewUrl)}</>}
         </div>
       ) : (
         <div className="proj-meta-ro">
@@ -651,8 +658,8 @@ function ProjectSettingsForm(props: ProjectSettingsProps & { unsaved: boolean; e
         </div>
       )}
 
-      {activeTab === 'workflow' && <div className="proj-section feature-policy">
-        <p className="proj-field-label">Workflow фич</p>
+      {activeTab === 'workflow' && <section className="proj-section feature-policy" aria-label="Workflow и CI">
+        <h3 className="proj-section-heading">Политика и команды Workflow</h3>
         <label>Типовая команда из CI/CiCommands<select className="login-input" disabled={!isOwner} value="" onChange={event => {
           const command = props.ciCommands?.find(command => command.id === event.target.value)
           if (command) props.onUpdate(detail.id, { testCommand: command.script })
@@ -671,14 +678,14 @@ function ProjectSettingsForm(props: ProjectSettingsProps & { unsaved: boolean; e
         <label>Коммиты<select className="sel" disabled={!isOwner} value={detail.commitPolicy} onChange={(e) => props.onUpdate(detail.id, { commitPolicy: e.target.value as ProjectSummary['commitPolicy'] })}><option value="agent_commits">Агент создаёт коммиты</option><option value="final_system_commit">Итоговый системный коммит</option><option value="manual_user_confirmation">Подтверждать коммит</option></select></label>
         <label>Merge<select className="sel" disabled={!isOwner} value={detail.mergeTransport} onChange={(e) => props.onUpdate(detail.id, { mergeTransport: e.target.value as ProjectSummary['mergeTransport'] })}><option value="local">Локальный merge commit</option><option value="github_pull_request">GitHub Pull Request</option></select></label>
         <label>План агента<select className="sel" disabled={!isOwner} value={detail.agentPlanApprovalMode} onChange={(e) => props.onUpdate(detail.id, { agentPlanApprovalMode: e.target.value as ProjectSummary['agentPlanApprovalMode'] })}><option value="manual">Подтверждать</option><option value="automatic">Запускать автоматически</option></select></label>
-        <><label>Команда тестирования<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.testCommand} aria-describedby="project-error-testCommand" value={detail.testCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { testCommand: e.target.value })} placeholder="npm test" /></label>{fieldError('testCommand', detail.testCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.testCommand ?? ''} label="Команда тестирования" /></>
+        <><label>Команда тестирования<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.testCommand} aria-describedby={props.errors.testCommand ? 'project-error-testCommand' : undefined} value={detail.testCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { testCommand: e.target.value })} placeholder="npm test" /></label>{fieldError('testCommand', detail.testCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.testCommand ?? ''} label="Команда тестирования" /></>
         {/* Пустые поля наследуют команду тестирования — так пост-development
             стадии сужают гейт, а не заводят вторую копию настройки. */}
-        <><label>Команда Component QA<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.componentQaCommand} aria-describedby="project-error-componentQaCommand" value={detail.componentQaCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { componentQaCommand: e.target.value })} placeholder="как команда тестирования" /></label>{fieldError('componentQaCommand', detail.componentQaCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.componentQaCommand ?? ''} label="Команда Component QA" /></>
-        <><label>Команда интеграционных тестов<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.integrationTestCommand} aria-describedby="project-error-integrationTestCommand" value={detail.integrationTestCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { integrationTestCommand: e.target.value })} placeholder="как команда тестирования" /></label>{fieldError('integrationTestCommand', detail.integrationTestCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.integrationTestCommand ?? ''} label="Команда интеграционных тестов" /></>
+        <><label>Команда Component QA<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.componentQaCommand} aria-describedby={props.errors.componentQaCommand ? 'project-error-componentQaCommand' : undefined} value={detail.componentQaCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { componentQaCommand: e.target.value })} placeholder="как команда тестирования" /></label>{fieldError('componentQaCommand', detail.componentQaCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.componentQaCommand ?? ''} label="Команда Component QA" /></>
+        <><label>Команда интеграционных тестов<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.integrationTestCommand} aria-describedby={props.errors.integrationTestCommand ? 'project-error-integrationTestCommand' : undefined} value={detail.integrationTestCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { integrationTestCommand: e.target.value })} placeholder="как команда тестирования" /></label>{fieldError('integrationTestCommand', detail.integrationTestCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.integrationTestCommand ?? ''} label="Команда интеграционных тестов" /></>
         <label>Этап Automated QA<select className="sel" disabled={!isOwner} value={detail.automatedQaMode ?? 'command'} onChange={(e) => props.onUpdate(detail.id, { automatedQaMode: e.target.value as AutomatedQaMode })}><option value="command">Команда в воркспейсе</option><option value="playwright">Сценарий в браузере (Playwright)</option></select></label>
         {(detail.automatedQaMode ?? 'command') === 'command'
-          ? <><label>Команда Automated QA<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.automatedQaCommand} aria-describedby="project-error-automatedQaCommand" value={detail.automatedQaCommand ?? 'npm test'} onChange={(e) => props.onUpdate(detail.id, { automatedQaCommand: e.target.value })} placeholder="npm test" /></label>{fieldError('automatedQaCommand', detail.automatedQaCommand ?? 'npm test')}<ProjectCommandCheck project={detail} command={detail.automatedQaCommand ?? 'npm test'} label="Команда Automated QA" /></>
+          ? <><label>Команда Automated QA<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.automatedQaCommand} aria-describedby={props.errors.automatedQaCommand ? 'project-error-automatedQaCommand' : undefined} value={detail.automatedQaCommand ?? 'npm test'} onChange={(e) => props.onUpdate(detail.id, { automatedQaCommand: e.target.value })} placeholder="npm test" /></label>{fieldError('automatedQaCommand', detail.automatedQaCommand ?? 'npm test')}<ProjectCommandCheck project={detail} command={detail.automatedQaCommand ?? 'npm test'} label="Команда Automated QA" /></>
           : <AutomatedQaScenarioEditor detail={detail} isOwner={isOwner} onUpdate={props.onUpdate} {...(props.checkAutomatedQa ? { onCheck: props.checkAutomatedQa } : {})} />}
         <label className="pset-check"><input type="checkbox" disabled={!isOwner} checked={detail.autoPilotDefault ?? false} onChange={(e) => props.onUpdate(detail.id, { autoPilotDefault: e.target.checked })} /> Включать автопроход у новых задач</label>
         <label className="pset-check"><input type="checkbox" disabled={!isOwner} checked={detail.autoPilotRequiresManualQa ?? false} onChange={(e) => props.onUpdate(detail.id, { autoPilotRequiresManualQa: e.target.checked })} /> Останавливать новые задачи на ручном QA</label>
@@ -710,13 +717,13 @@ function ProjectSettingsForm(props: ProjectSettingsProps & { unsaved: boolean; e
           </div>}
         </div>}
         <label>Production checkout<input className="login-input" disabled={!isOwner||detail.productionEnvironmentMode==='managed'} value={detail.productionCheckoutPath ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionCheckoutPath: e.target.value })} placeholder="/root/voiceAIChat" /></label>
-        <><label>Штатная команда production-деплоя<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.productionDeployCommand} aria-describedby="project-error-productionDeployCommand" value={detail.productionDeployCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionDeployCommand: e.target.value })} placeholder="voicechat-deploy" /></label>{fieldError('productionDeployCommand', detail.productionDeployCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.productionDeployCommand ?? ''} label="Штатная команда production-деплоя" /></>
-        <><label>Команда health-check<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.productionHealthCheckCommand} aria-describedby="project-error-productionHealthCheckCommand" value={detail.productionHealthCheckCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionHealthCheckCommand: e.target.value })} placeholder="curl -fsS http://127.0.0.1:8787/api/health" /></label>{fieldError('productionHealthCheckCommand', detail.productionHealthCheckCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.productionHealthCheckCommand ?? ''} label="Команда health-check" /></>
-        <><label>CI: базовая ветка<input className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.ciBaseBranch} aria-describedby="project-error-ciBaseBranch" value={detail.ciBaseBranch ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBaseBranch: e.target.value })} placeholder="main" /></label>{fieldError('ciBaseBranch', detail.ciBaseBranch ?? '')}</>
-        <><label>CI: шаблон ветки<input className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.ciBranchTemplate} aria-describedby="project-error-ciBranchTemplate" value={detail.ciBranchTemplate ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBranchTemplate: e.target.value })} placeholder="{task_number}" /></label>{fieldError('ciBranchTemplate', detail.ciBranchTemplate ?? '')}<p className="proj-hint">Подстановки: {'{task_number}'} → CHAT-123, {'{slug}'} → task-title.</p></>
+        <><label>Штатная команда production-деплоя<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.productionDeployCommand} aria-describedby={props.errors.productionDeployCommand ? 'project-error-productionDeployCommand' : undefined} value={detail.productionDeployCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionDeployCommand: e.target.value })} placeholder="voicechat-deploy" /></label>{fieldError('productionDeployCommand', detail.productionDeployCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.productionDeployCommand ?? ''} label="Штатная команда production-деплоя" /></>
+        <><label>Команда health-check<textarea rows={2} className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.productionHealthCheckCommand} aria-describedby={props.errors.productionHealthCheckCommand ? 'project-error-productionHealthCheckCommand' : undefined} value={detail.productionHealthCheckCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionHealthCheckCommand: e.target.value })} placeholder="curl -fsS http://127.0.0.1:8787/api/health" /></label>{fieldError('productionHealthCheckCommand', detail.productionHealthCheckCommand ?? '')}<ProjectCommandCheck project={detail} command={detail.productionHealthCheckCommand ?? ''} label="Команда health-check" /></>
+        <><label>CI: базовая ветка<input className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.ciBaseBranch} aria-describedby={props.errors.ciBaseBranch ? 'project-error-ciBaseBranch' : undefined} value={detail.ciBaseBranch ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBaseBranch: e.target.value })} placeholder="main" /></label>{fieldError('ciBaseBranch', detail.ciBaseBranch ?? '')}</>
+        <><label>CI: шаблон ветки<input className="login-input" disabled={!isOwner} aria-invalid={!!props.errors.ciBranchTemplate} aria-describedby={props.errors.ciBranchTemplate ? 'project-error-ciBranchTemplate' : undefined} value={detail.ciBranchTemplate ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBranchTemplate: e.target.value })} placeholder="{task_number}" /></label>{fieldError('ciBranchTemplate', detail.ciBranchTemplate ?? '')}<p className="proj-hint">Подстановки: {'{task_number}'} → CHAT-123, {'{slug}'} → task-title.</p></>
         <label>CI: повтор директории<select className="sel" disabled={!isOwner} value={detail.ciReuseStrategy ?? 'fail'} onChange={(e) => props.onUpdate(detail.id, { ciReuseStrategy: e.target.value as 'reuse' | 'clean' | 'fail' })}><option value="fail">Упасть, если существует</option><option value="reuse">Переиспользовать</option><option value="clean">Очистить и заново</option></select></label>
         <div className="ci-defaults-wrap"><div className="convsettings-caption">Команды воркфлоу по умолчанию</div><CiProjectDefaults projectId={detail.id} editable={isOwner} section="commands" /></div>
-      </div>}
+      </section>}
 
       {activeTab === 'members' && <div className="proj-section">
         <p className="proj-field-label">Участники</p>
@@ -765,7 +772,7 @@ function ProjectSettingsForm(props: ProjectSettingsProps & { unsaved: boolean; e
                       title={lastOwner ? 'Сначала назначьте другого владельца' : 'Убрать участника'}
                       disabled={lastOwner}
                       onClick={() => {
-                        if (m.role === 'owner' && !window.confirm(`Удалить владельца ${m.username} из проекта?`)) return
+                        if (!window.confirm(`Удалить участника ${m.username} из проекта?`)) return
                         props.onRemoveMember(detail.id, m.username)
                       }}
                     >
@@ -890,6 +897,7 @@ function ProjectSettingsForm(props: ProjectSettingsProps & { unsaved: boolean; e
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }

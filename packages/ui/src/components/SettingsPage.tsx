@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionUser, UserPersonalization } from '@shared/types'
 import { DEFAULT_PERSONALIZATION } from '@shared/types'
 import { Button } from '@voicechat/ui-kit'
@@ -16,8 +16,23 @@ export function SettingsPage<T extends string>({ tabs, activeTab, onTabChange, a
   onTabChange: (tab: T) => void
   ariaLabel: string
 }): JSX.Element {
-  return <div className="proj-settings-tabs" role="tablist" aria-label={ariaLabel} data-testid="settings-page">
-    {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => onTabChange(tab.id)}>{tab.label}</button>)}
+  const tablist = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const selected = tablist.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    selected?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+  }, [activeTab])
+  const moveFocus = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const current = tabs.findIndex((tab) => tab.id === activeTab)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+    onTabChange(tabs[next].id)
+  }
+  return <div className="proj-settings-tabs-wrap" data-overflow-hint="Прокрутите вкладки">
+    <div ref={tablist} className="proj-settings-tabs" role="tablist" aria-label={ariaLabel} data-testid="settings-page" onKeyDown={moveFocus}>
+      {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1} className={activeTab === tab.id ? 'active' : ''} onClick={() => onTabChange(tab.id)}>{tab.label}</button>)}
+    </div>
   </div>
 }
 

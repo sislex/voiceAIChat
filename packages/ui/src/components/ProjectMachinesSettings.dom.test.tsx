@@ -24,6 +24,7 @@ it('checks the directory on the selected machine and explains failures', async (
   expect(await screen.findByText(/ENOENT/)).toHaveTextContent('Проверьте путь и разрешения')
 })
 
+// @testCase TC-UI-06
 it('показывает две таблицы, подписи и readonly-конфигурацию чужой машины', () => {
   setup()
   expect(screen.getByRole('heading', { name: 'Мои машины' })).toBeInTheDocument()
