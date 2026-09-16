@@ -6,6 +6,7 @@ import { expect, userEvent, waitFor, within } from '@storybook/test'
 import { CiTaskSettings } from './CiTaskSettings'
 import { withBridges, type BridgeSetup } from '../../test/storyBridges'
 import { makeCommands, makeLlmConfig } from '../../test/fixtures/index'
+import { DEFAULT_DEVELOPMENT_PREVIEW } from '@shared/ci'
 
 /** Общая часть засева: справочник команд у всех сториз одинаковый. */
 const seedCommands: BridgeSetup = ({ ci }) => {
@@ -35,7 +36,8 @@ export const Overridden: Story = {
         overridden: true,
         projectDefault: { beforeModel: ['cmd-1'], afterModel: [] },
         enabledStages: ['before_model', 'model_work', 'after_model', 'summary'],
-        browserCheck: { mode: 'off', devServerPort: 5173, startPath: '/' }
+        browserCheck: { mode: 'off', devServerPort: 5173, startPath: '/', failurePolicy: 'continue' },
+        developmentPreview: structuredClone(DEFAULT_DEVELOPMENT_PREVIEW)
       })
       ci.getTaskCiLlm = async () => ({
         config: makeLlmConfig({ provider: 'claude', model: 'opus', mode: 'plan' }),
@@ -75,7 +77,8 @@ export const CleanupWarning: Story = {
         overridden: true,
         projectDefault: { beforeModel: [], afterModel: [] },
         enabledStages: ['before_model', 'model_work', 'after_model', 'summary'],
-        browserCheck: { mode: 'off', devServerPort: 5173, startPath: '/' }
+        browserCheck: { mode: 'off', devServerPort: 5173, startPath: '/', failurePolicy: 'continue' },
+        developmentPreview: structuredClone(DEFAULT_DEVELOPMENT_PREVIEW)
       })
     })
   ]
