@@ -1,0 +1,24 @@
+
+> @voicechat/ui@0.1.0 test
+> vitest run --silent src/components/SettingsModal.dom.test.tsx
+
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui
+
+10:44:06 PM [vite] warning: This case clause will never be evaluated because it duplicates an earlier case clause
+1152|          (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+1153|          (value.clear === undefined || typeof value.clear === 'boolean')
+1154|      case 'note':
+   |           ^
+1155|        return bounded(value.text, 500) && value.text.trim().length > 0
+1156|      case 'media':
+
+  Plugin: vite:esbuild
+  File: /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/shared/src/previewActions.ts
+ ✓ src/components/SettingsModal.dom.test.tsx (46 tests) 2048ms
+
+ Test Files  1 passed (1)
+      Tests  46 passed (46)
+   Start at  22:44:04
+   Duration  3.85s (transform 633ms, setup 124ms, collect 921ms, tests 2.05s, environment 344ms, prepare 52ms)
+

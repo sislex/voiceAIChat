@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "runId": "20260915194403325-e33f86d4-fa62-459c-9991-b7fd718064ee",
+  "pid": 84255,
+  "startedAt": "2026-09-15T19:44:03.328Z",
+  "command": [
+    "npm",
+    "run",
+    "-w",
+    "@voicechat/server",
+    "test",
+    "--",
+    "src/taskPreparation.test.ts",
+    "src/ci/componentQa.test.ts"
+  ],
+  "state": "finished",
+  "finishedAt": "2026-09-15T19:44:28.709Z",
+  "exitCode": 0,
+  "signal": null
+}
