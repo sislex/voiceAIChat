@@ -5,7 +5,8 @@ import { ApplicationReleaseManager, createApplicationReleaseRuntime } from '../r
 // `buildServer` (~1 000 строк) и замыкалось на его локальные переменные; теперь зависимости от ядра
 // перечислены явно в `KanbanDeps` — это первый шаг к отдельному сервису канбана
 // (docs/plans/kanban-service.md). Код внутри перенесён как есть.
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
+import { ciBrowserCheckUrl, browserEvidenceComplete } from '@voicechat/shared'
 import { join } from 'node:path'
 import { type FastifyInstance } from 'fastify'
 import { taskReworkContext } from '@voicechat/shared'
@@ -23,6 +24,9 @@ import { knowledgeBaseTimeoutMs, ReleaseManager, releaseKnowledgeBaseCommand } f
 import { releaseCiTarget, releaseProductionTarget } from '../releases/targets.js'
 import { ManagedEnvironmentResolver } from '../releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from '../preview/manager.js'
+import { DevelopmentPreviewManager } from '../ci/developmentPreview.js'
+import { developmentBrowserCheck } from '../ci/developmentPreviewBrowser.js'
+import { createDevelopmentDockerRuntime } from '../ci/developmentPreviewDocker.js'
 import { createCiRunManager, type CiRunManager } from '../ci/runManager.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from '../ci/componentQa.js'
 import { automatedQaRemarks } from '@voicechat/shared'
@@ -122,7 +126,53 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
     preparationDeltaThrottle.set(runId, now)
     boardHub.emitPreparationRun({ userId, projectId, taskId, runId }) // дельты карточку не меняют — board не трогаем
   }
+  const developmentRuntime = createDevelopmentDockerRuntime({
+    executor: ciExecutor, enabled: process.env.VC_DEVELOPMENT_PREVIEW_ENABLED === 'true',
+    image: process.env.VC_DEVELOPMENT_PREVIEW_IMAGE, guardImage: process.env.VC_DEVELOPMENT_PREVIEW_GUARD_IMAGE,
+    async engine(input, id) {
+      if (id) return db.llm.getLlmEngine(id)
+      const run = await db.ci.getCiRun(input.userId, input.runId)
+      const role = (await db.identity.getUser(input.userId))?.role ?? 'developer'
+      return (await db.llm.resolveLlmEngine(run?.run.llmEngineId, input.kind, role)).engine
+    },
+    closeBrowser: async (input) => { await browserRunner?.stop('task-' + input.taskId) }
+  })
+  if (browserRunner) developmentRuntime.check = developmentBrowserCheck(browserRunner, previewMcpBaseUrl.split('/mcp/')[0], join(config.dataDir, 'ci-browser-shots'))
+  const developmentPreviews = new DevelopmentPreviewManager(developmentRuntime, join(config.dataDir, 'development-previews.json'))
+  app.get<{Params:{runId:string}}>('/api/ci/runs/:runId/development-preview',async(req,reply)=>{
+    if (!await db.ci.getCiRun(uid(req),req.params.runId)) return reply.code(404).send({error:'not_found'})
+    return developmentPreviews.status(req.params.runId)
+  })
+  app.post<{Params:{runId:string};Body:{operation?:unknown}}>('/api/ci/runs/:runId/development-preview',async(req,reply)=>{
+    const detail=await db.ci.getCiRun(uid(req),req.params.runId)
+    if (!detail) return reply.code(404).send({error:'not_found'})
+    if (detail.run.triggeredBy !== uid(req)) return reply.code(403).send({error:'forbidden'})
+    if (detail.run.status !== 'running') return reply.code(409).send({error:'development_run_not_active'})
+    if (req.body?.operation !== 'restart' && req.body?.operation !== 'stop') return reply.code(400).send({error:'invalid_operation'})
+    if (!developmentPreviews.status(req.params.runId)) return reply.code(404).send({error:'preview_not_found'})
+    return developmentPreviews.invoke(req.params.runId,req.body.operation)
+  })
+  await developmentPreviews.sweep(true)
+  const previewGc = setInterval(() => { void developmentPreviews.sweep().catch(() => {}) }, 30000)
+  previewGc.unref()
+  app.addHook('onClose', async () => { clearInterval(previewGc); await developmentPreviews.sweep(true) })
   const ciModelHooks = createCiModelHooks({
+    developmentPreviews,
+    async verifyBrowserOnly(ctx, check) {
+      if (!developmentRuntime.check || !ctx.agentId) return false
+      let sha = ''
+      const result = await ciExecutor.run({agentId:ctx.agentId,workdir:ctx.workspacePath,script:'git rev-parse --verify HEAD',env:{},timeoutMs:10000},async(chunk)=>{sha+=chunk},ctx.signal)
+      sha=sha.trim()
+      if(result.exitCode!==0||!/^[a-f0-9]{40,64}$/.test(sha))return false
+      const status={url:ciBrowserCheckUrl(check,ctx.agentId),sha,configDigest:createHash('sha256').update(JSON.stringify(check)).digest('hex')}
+      const evidence=await developmentRuntime.check({
+        projectId:ctx.project.id,taskId:ctx.task.id,runId:ctx.run.id,userId:ctx.run.triggeredBy,agentId:ctx.agentId,
+        workspace:ctx.workspacePath,kind:ctx.run.llmProvider,model:ctx.run.llmModel,
+        settings:await db.ci.getTaskDevelopmentPreview(ctx.task.id),check
+      },status,ctx.signal)
+      await ctx.log(ctx.parentStepId,'system','Browser evidence: '+JSON.stringify(evidence)+'\n')
+      return browserEvidenceComplete(evidence,status.url,status.sha,status.configDigest)&&!evidence.findings.console.length&&!evidence.findings.runtime.length&&!evidence.findings.network.length
+    },
     db,
     claude: await claude,
     codex: await codex,

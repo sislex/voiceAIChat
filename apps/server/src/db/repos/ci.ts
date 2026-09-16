@@ -1,6 +1,7 @@
 // Домен «ci»: таблицы ci_commands, ci_slot_commands, ci_command_suggestions, ci_events, ci_fix_attempts, ci_gate_results, ci_interactions, ci_llm_configs, ci_stage_llm_configs, ci_run_kb_gaps, ci_run_kb_metrics, ci_run_logs, ci_run_steps, ci_run_tool_calls, ci_run_tool_responses, ci_run_usage, ci_runs, ci_settings, ci_stage_runs, ci_task_browser_checks, ci_task_process_stages, ci_test_events, ci_test_fix_cycles, ci_test_fix_decisions, ci_test_fix_targeted_runs, ci_test_fix_task_state, ci_test_group_configs, ci_test_group_runs, ci_test_runs, ci_test_targeted_runs, ci_workspaces, merge_runs, integration_test_runs, component_qa_runs.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
+import { normalizeDevelopmentPreview, type DevelopmentPreviewSettings } from '@voicechat/shared'
 import { DEFAULT_CODEX_MODEL, isProviderAllowed, firstAllowedProvider, clampModel, type LlmProvider, type KbContextMode, type CiCommand, type CiCommandInput, type CiCommandScope, type CiSlot, type CiSlotConfig, type CiBrowserCheck, type CiProcessStage, CI_PROCESS_STAGES, DEFAULT_CI_BROWSER_CHECK, normalizeCiBrowserCheck, normalizeCiProcessStages, type CiLlmConfig, DEFAULT_CI_CLAUDE_MODEL, CI_KB_UPDATE_COMMAND_ID, CI_KB_UPDATE_COMMAND_NAME, DEFAULT_CI_LLM_CONFIG, type CiRunMode, type CiClarifyLevel, type CiInteraction, type CiInteractionKind, type CiInteractionStatus, type CiPlanDecision, type QuestionSpec, type CiGlobalSettings, DEFAULT_CI_GLOBAL_SETTINGS, type CiRun, type MergeRun, ACTIVE_MERGE_STATUSES, type CiRunDetail, type CiExecutionLlmSnapshot, type CiStageRun, type CiRunStep, type CiStatus, type CiStepKind, type CiInitiatedBy, type CiSlotProgress, type CiLogLine, type CiFixAttempt, type CiFixDiagnosticContext, type CiTargetedTestRun, type CiTestFailure, type CiWorkspace, type CiWorkspaceReportItem, type CiCommandSuggestion, type CiRunSummary, type CiCommandMetric, type CiModelWorkMetric, type CiEventActor, type CiRunUsage, type CiUsageKind, CI_USAGE_KINDS, type CiStageLlmSelection, type CiStageLlmSnapshot, resolveCiStageLlm, type CiInputSemantics, type CiToolCalls, type CiToolChars, type CiToolKind, type CiRunToolResponse, type CiRunReport, type CiRunReportStep, type CiTaskReport, type KbGapNote, CI_TOOL_KINDS, CI_TOOL_RESPONSES_KEEP, CI_TOOL_RESPONSES_SHOWN, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS, ciTaskTotals, ciUsageStages, ciUsageTotals, normCiStageModels, buildCiAutomationProgress, isVerificationCommand, componentQaLaunchReasons, componentQaSemanticVersion, canTransitionWorkflow, type DevelopmentReadiness, type ComponentQaRun, type ComponentQaScenarioSnapshot, type ComponentQaCommandResult, type ComponentQaArtifact, type IntegrationTestRun, type IntegrationTestTaskState, type IntegrationTestCommandResult, integrationTestSemanticVersion, integrationTestGate } from '@voicechat/shared'
 import { calculateKbHit, filesReadFromCiLog } from '../../ci/kbHit.js'
 import { testStages } from '../../ci/testStages.js'
@@ -443,8 +444,21 @@ export class CiRepo extends BaseRepo {
 
   async setTaskBrowserCheck(taskId: string, value: unknown): Promise<CiBrowserCheck> {
     const normalized = normalizeCiBrowserCheck(value)
-    await this.sql.run(`INSERT INTO ci_task_browser_checks (task_id, check_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET check_json=excluded.check_json`, [taskId, JSON.stringify(normalized)])
+    await this.sql.run(`INSERT INTO ci_task_browser_checks (task_id, check_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET check_json=excluded.check_json`, [taskId, JSON.stringify({ ...normalized, developmentPreview: await this.getTaskDevelopmentPreview(taskId) })])
     return normalized
+  }
+
+  async getTaskDevelopmentPreview(taskId: string): Promise<DevelopmentPreviewSettings> {
+    const row = await this.sql.get<{ check_json: string }>(`SELECT check_json FROM ci_task_browser_checks WHERE task_id = ?`, [taskId])
+    try { return normalizeDevelopmentPreview(row ? JSON.parse(row.check_json).developmentPreview : undefined) }
+    catch { return normalizeDevelopmentPreview(undefined) }
+  }
+
+  async setTaskDevelopmentPreview(taskId: string, value: unknown): Promise<DevelopmentPreviewSettings> {
+    const developmentPreview = normalizeDevelopmentPreview(value)
+    const check = await this.getTaskBrowserCheck(taskId)
+    await this.sql.run(`INSERT INTO ci_task_browser_checks (task_id, check_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET check_json=excluded.check_json`, [taskId, JSON.stringify({ ...check, developmentPreview })])
+    return developmentPreview
   }
 
   async getCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): Promise<CiLlmConfig | null> {
