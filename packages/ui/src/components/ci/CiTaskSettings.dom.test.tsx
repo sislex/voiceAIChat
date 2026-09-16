@@ -7,6 +7,7 @@ import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 describe('CiTaskSettings', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
+  // @testCase TC-UI-01
   it('defaults to continue and saves preview independently of browser mode', async () => {
     const ci = createFakeCi()
     const save = vi.spyOn(ci, 'putTaskCi')

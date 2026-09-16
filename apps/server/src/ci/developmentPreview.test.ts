@@ -12,6 +12,9 @@ const runtime = (): DevelopmentPreviewRuntime => ({
   stop:vi.fn(async()=>{}),logs:vi.fn(async()=>'')
 })
 describe('managed development preview',()=>{
+  // @testCase TC-INT-03
+  // @testCase TC-INT-04
+  // @testCase TC-E2E-02
   it.each(['continue','block'] as const)('applies %s only after diagnosis while keeping tools available',async(policy)=>{
     const r=runtime(); r.prepare=vi.fn(async()=>{throw new DevelopmentPreviewError('docker_unavailable','Docker is down')})
     const m=new DevelopmentPreviewManager(r); m.register(input(policy))
@@ -33,6 +36,7 @@ describe('managed development preview',()=>{
     expect(r.prepare).toHaveBeenCalledTimes(2)
     expect(r.stop).toHaveBeenCalled()
   })
+  // @testCase TC-INT-05
   it('does not pass an unopened browser and cleans up expired resources',async()=>{
     let now=100
     const r=runtime(),m=new DevelopmentPreviewManager(r,undefined,()=>now);m.register(input())
@@ -44,6 +48,7 @@ describe('managed development preview',()=>{
     expect(m.status('run')?.state).toBe('expired')
     expect(r.stop).toHaveBeenCalled()
   })
+  // @testCase TC-NEG-01
   it('isolates names and rejects unpinned images',()=>{
     const i=input(),name=previewResourceName(i.projectId,i.taskId,i.runId),image='runtime@sha256:'+'a'.repeat(64)
     expect(name).not.toBe(previewResourceName(i.projectId,i.taskId,'other'))
