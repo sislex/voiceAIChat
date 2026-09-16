@@ -92,6 +92,15 @@ export class QaRepo extends BaseRepo {
     await this.sql.run(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`, [this.newId(), projectId, taskId, action, 'automation', JSON.stringify(payload), this.now()])
   }
 
+  /** Persisted guard: restarting the coordinator must not repeat the same stop event. */
+  async hasAutoPilotStopForRun(taskId: string, runId: string): Promise<boolean> {
+    const row = await this.sql.get(
+      `SELECT id FROM qa_audit WHERE task_id=? AND action='autopilot.stopped' AND payload_json LIKE ? LIMIT 1`,
+      [taskId, `%"runId":${JSON.stringify(runId)}%`]
+    )
+    return Boolean(row)
+  }
+
   /**
    * Новая попытка этапа. Для Playwright-режима фиксируется **снимок** сценария:
    * настройку проекта владелец правит, а ран обязан помнить, что прогонял

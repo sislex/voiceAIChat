@@ -312,3 +312,47 @@ describe('автопроход: начало конвейера', () => {
     expect(await semanticOf(projectId, taskId)).toBe('decision_required')
   })
 })
+
+describe('автопроход: общий development-предохранитель', () => {
+  async function failedDevelopmentInReady(error: string, status: 'failed' | 'timeout' = 'failed') {
+    const { projectId, taskId, columns } = await taskInBacklog()
+    const machine = await db.machines.createAgent('admin', 'Online dev')
+    await db.machines.linkMachine('admin', projectId, machine.id)
+    await db.machines.setProjectMachineReposRoot('admin', projectId, machine.id, '/repos')
+    await db.machines.setProjectMachinePath('admin', projectId, machine.id, '/repo')
+    vi.spyOn(AgentRegistry.prototype, 'isOnline').mockReturnValue(true)
+    for (const semantic of ['preparation', 'ready']) {
+      await db.tasks.moveTask('admin', projectId, taskId, { columnId: columns.find(column => column.semanticType === semantic)!.id })
+    }
+    await db.ready
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown; get(...values: unknown[]): unknown; all(...values: unknown[]): unknown[] } } }).db
+    raw.prepare(`INSERT INTO ci_runs (id,project_id,task_id,status,triggered_by,mode,error,terminal_column_id,created_at,finished_at) VALUES (?,?,?,?,'admin','development',?,?,1,2)`)
+      .run('dirty-run', projectId, taskId, status, error, columns.find(column => column.semanticType === 'ready')!.id)
+    return { projectId, taskId, raw }
+  }
+
+  // @testCase TC-1
+  // @testCase TC-10
+  it.each(['failed', 'timeout'] as const)('blocks the full dirty-workspace rollback cycle in ready (%s)', async (status) => {
+    const fixture = await failedDevelopmentInReady('Рабочая копия содержит локальные изменения: /repo/CHAT-477', status)
+    await enableAutoPilot(fixture.projectId, fixture.taskId)
+    await eventually(async () => fixture.raw.prepare(`SELECT * FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).all(fixture.taskId).length, count => count === 1)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(fixture.raw.prepare('SELECT * FROM ci_runs WHERE task_id=?').all(fixture.taskId)).toHaveLength(1)
+    expect(await semanticOf(fixture.projectId, fixture.taskId)).toBe('ready')
+    const audit = fixture.raw.prepare(`SELECT payload_json FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).get(fixture.taskId) as { payload_json: string }
+    expect(JSON.parse(audit.payload_json)).toMatchObject({ runId: 'dirty-run', blockedBy: 'dirty_workspace' })
+  })
+
+  // @testCase TC-2
+  it('deduplicates concurrent and pending board updates for the persisted dirty blocker', async () => {
+    const fixture = await failedDevelopmentInReady('Рабочая копия содержит локальные изменения')
+    await Promise.all(Array.from({ length: 8 }, (_, index) =>
+      inj({ method: 'PATCH', url: `/api/projects/${fixture.projectId}/tasks/${fixture.taskId}`, payload: { autoPilot: true, title: `Dirty ${index}` } })
+    ))
+    await eventually(async () => fixture.raw.prepare(`SELECT * FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).all(fixture.taskId).length, count => count === 1)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(fixture.raw.prepare(`SELECT * FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).all(fixture.taskId)).toHaveLength(1)
+    expect(fixture.raw.prepare('SELECT * FROM ci_runs WHERE task_id=?').all(fixture.taskId)).toHaveLength(1)
+  })
+})
