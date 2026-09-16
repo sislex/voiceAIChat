@@ -9,6 +9,7 @@ let server:ChildProcess, browser:Browser
 const root=resolve(__dirname,'../../../../..')
 const port=19000+Math.floor(Math.random()*1000)
 const base=`http://127.0.0.1:${port}`
+const teardownTimeoutMs=120000
 beforeAll(async()=>{
   await mkdir(resolve(root,'.generated_images'),{recursive:true})
   server=spawn('npm',['run','-w','@voicechat/ui','storybook','--','--ci','--no-open','--port',String(port)],{cwd:root,stdio:'ignore',detached:true})
@@ -19,11 +20,14 @@ beforeAll(async()=>{
   }
   browser=await chromium.launch()
 },120000)
+// @testCase TC-01
 afterAll(async()=>{
   await browser?.close()
   if(server?.pid)try{process.kill(-server.pid,'SIGTERM')}catch{}
-},120000)
+},teardownTimeoutMs)
 
+// @testCase TC-02
+// @testCase TC-04
 // @testCase TC-08
 it.each([
  ['qa-stage-runs--component-mobile','.component-qa-panel'],
