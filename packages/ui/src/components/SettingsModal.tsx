@@ -708,6 +708,57 @@ export function SettingsModal({
                   </select>
                 </div>
 
+                <h3>Команды на машинах</h3>
+                <div className="frow">
+                  <div>
+                    <p className="flab">Уведомления о завершении</p>
+                    <p className="fsub">Какие завершения долгих команд показывать</p>
+                  </div>
+                  <select
+                    className="sel"
+                    aria-label="Уведомления о завершении команд"
+                    value={settings.machineCommandNotices}
+                    onChange={(e) => onChange({ machineCommandNotices: e.target.value as Settings['machineCommandNotices'] })}
+                  >
+                    <option value="all">Все</option>
+                    <option value="failures">Только неуспешные</option>
+                    <option value="off">Не показывать</option>
+                  </select>
+                </div>
+                <div className="frow">
+                  <div>
+                    <p className="flab">Длительность уведомления</p>
+                    <p className="fsub">Через сколько скрыть уведомление</p>
+                  </div>
+                  <select
+                    className="sel"
+                    aria-label="Длительность уведомления команд"
+                    value={settings.machineCommandNoticeSeconds}
+                    disabled={settings.machineCommandNotices === 'off'}
+                    onChange={(e) => onChange({ machineCommandNoticeSeconds: Number(e.target.value) })}
+                  >
+                    <option value={4}>4 секунды</option>
+                    <option value={8}>8 секунд</option>
+                    <option value={15}>15 секунд</option>
+                    <option value={30}>30 секунд</option>
+                    <option value={0}>Не скрывать</option>
+                  </select>
+                </div>
+                <div className="frow">
+                  <div>
+                    <p className="flab">Системные уведомления</p>
+                    <p className="fsub">Показывать в фоне, если браузеру уже разрешено</p>
+                  </div>
+                  <button
+                    className={settings.machineCommandSystemNotifications ? 'sw on' : 'sw'}
+                    onClick={() => onChange({ machineCommandSystemNotifications: !settings.machineCommandSystemNotifications })}
+                    disabled={settings.machineCommandNotices === 'off'}
+                    role="switch"
+                    aria-checked={settings.machineCommandSystemNotifications}
+                    aria-label="Системные уведомления команд" title="Системные уведомления команд"
+                  />
+                </div>
+
                 <div className="frow">
                   <div>
                     <p className="flab">Режим консоли</p>

@@ -1546,6 +1546,12 @@ export interface Settings {
   theme: 'light' | 'dark' | 'green' | 'system'
   /** Пользователь прошёл (или пропустил) приветственный мастер. */
   onboarded: boolean
+  /** Какие завершения долгих команд машины показывать пользователю. */
+  machineCommandNotices: 'all' | 'failures' | 'off'
+  /** Длительность тоста в секундах; 0 — до ручного закрытия. */
+  machineCommandNoticeSeconds: number
+  /** Показывать системное уведомление для разрешённых режимом событий. */
+  machineCommandSystemNotifications: boolean
   /** Режим прав агента для Claude CLI. */
   permissionMode: PermissionMode
   /** Рабочий каталог для сессии агента (доступ к репозиторию); null — по умолчанию. */
@@ -1921,6 +1927,9 @@ export const DEFAULT_SETTINGS: Settings = {
   showConsole: false,
   theme: 'light',
   onboarded: false,
+  machineCommandNotices: 'failures',
+  machineCommandNoticeSeconds: 8,
+  machineCommandSystemNotifications: true,
   permissionMode: 'bypassPermissions',
   workdir: null,
   bargeIn: false,
@@ -1969,13 +1978,17 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
   if (typeof input.model === 'string') patch.model = normalizeClaudeModel(input.model)
   oneOf('whisperModel', WHISPER_MODELS)
   oneOf('theme', ['light', 'dark', 'green', 'system'] as const)
+  oneOf('machineCommandNotices', ['all', 'failures', 'off'] as const)
   oneOf('permissionMode', PERMISSION_MODES.map((mode) => mode.id))
   oneOf('llmProvider', ['claude', 'codex'] as const)
   oneOf('aiAssistProvider', ['claude', 'codex'] as const)
-  for (const key of ['diarization', 'autoSpeak', 'showConsole', 'onboarded', 'bargeIn', 'handsFree', 'loginNewDeviceEmails'] as const) bool(key)
+  for (const key of ['diarization', 'autoSpeak', 'showConsole', 'onboarded', 'bargeIn', 'handsFree', 'loginNewDeviceEmails', 'machineCommandSystemNotifications'] as const) bool(key)
   for (const key of ['voice', 'codexModel', 'aiAssistModel'] as const) text(key)
   for (const key of ['micDeviceId', 'workdir', 'execTarget', 'llmEngineId', 'defaultAgentId', 'defaultContextPresetId'] as const) nullableText(key)
   if (Number.isInteger(input.generatedFilesTtlDays)) patch.generatedFilesTtlDays = input.generatedFilesTtlDays
+  if (typeof input.machineCommandNoticeSeconds === 'number' && Number.isFinite(input.machineCommandNoticeSeconds)) {
+    patch.machineCommandNoticeSeconds = Math.min(120, Math.max(0, input.machineCommandNoticeSeconds))
+  }
   if (Array.isArray(input.aiAssistPrompts)) {
     patch.aiAssistPrompts = (input.aiAssistPrompts as unknown[])
       .filter((item): item is ModifierPrompt => typeof item === 'object' && item !== null && typeof (item as ModifierPrompt).id === 'string')
