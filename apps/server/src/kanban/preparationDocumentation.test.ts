@@ -5,6 +5,7 @@ import { preparationJsonObject } from './preparation.js'
 
 // @testCase T10
 // @testCase TC-BRIEF-KB
+// @testCase TC-BRIEF-04
 it('keeps the existing preparation article consistent with executable strict-format examples', () => {
   const article = readFileSync(resolve(__dirname, '../../../../docs/kb/features/task-preparation.md'), 'utf8')
   for (const rule of ['schemaVersion=2', 'TC-BRIEF-FORMAT', 'TC-BRIEF-NORMALIZATION', 'TC-BRIEF-CONTRACT', 'unique keys', 'missing UI tests', 'CHAT-469', 'T7', 'T8', 'T9', 'T10']) expect(article).toContain(rule)

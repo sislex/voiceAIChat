@@ -21,13 +21,13 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 351 коммит(ов) в areas после сверки: a8a6b22b feat(ui): improve accessibility and performance (CHAT-461) … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 8 коммит(ов) в areas после сверки: 7d27213d feat: measure UI performance and guard regressions (CHAT-469) … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-15 | ⚠ 2 коммит(ов) в areas после сверки: a8a6b22b feat(ui): improve accessibility and performance (CHAT-461) … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 129 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 5 коммит(ов) в areas после сверки: a8a6b22b feat(ui): improve accessibility and performance (CHAT-461) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1517 коммит(ов) в areas после сверки: 4e9fc7ad Merge main into CHAT-461 (task 2d56b85a-845b-4eee-98aa-6daee37ac859) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1518 коммит(ов) в areas после сверки: 8005c179 docs(kb): update after merge 2d56b85a-845b-4eee-98aa-6daee37ac859 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 22 коммит(ов) в areas после сверки: a8a6b22b feat(ui): improve accessibility and performance (CHAT-461) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 49 коммит(ов) в areas после сверки: a8a6b22b feat(ui): improve accessibility and performance (CHAT-461) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 43 коммит(ов) в areas после сверки: 8a4d81e8 fix(preparation): reconcile strict brief output and verify onboarding QA … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-15 | ⚠ 2 коммит(ов) в areas после сверки: 4e9fc7ad Merge main into CHAT-461 (task 2d56b85a-845b-4eee-98aa-6daee37ac859) … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-16 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 363 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 24 коммит(ов) в areas после сверки: e8c00896 fix(llm): price Codex turns as the difference of thread totals, not the totals … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 22 коммит(ов) в areas после сверки: a8a6b22b feat(ui): improve accessibility and performance (CHAT-461) … |
@@ -74,9 +74,10 @@
 
 ## Журнал сессий
 
-Всего записей: 858. Последние:
+Всего записей: 859. Последние:
 
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md) — vpn-marker-discovery-kb
+- [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-475-queued-merge-machine.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-475-queued-merge-machine.md) — chat-475-queued-merge-machine
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-accessibility-performance-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-accessibility-performance-kb.md) — accessibility-performance-kb
 - [2026-09-15-germany-4-8-60-universal-search.md](log/2026-09-15-germany-4-8-60-universal-search.md) — universal-search
 - [2026-09-15-germany-4-8-60-universal-search-kb.md](log/2026-09-15-germany-4-8-60-universal-search-kb.md) — universal-search-kb
@@ -85,7 +86,6 @@
 - [2026-09-15-germany-4-8-60-chat-469-ui-performance.md](log/2026-09-15-germany-4-8-60-chat-469-ui-performance.md) — chat-469-ui-performance
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-20.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-20.md) — web-reader-user-like-cycle-20
 - [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-19.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-19.md) — web-reader-user-like-cycle-19
-- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-18.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-18.md) — web-reader-user-like-cycle-18
 
 ## Исторические планы
 

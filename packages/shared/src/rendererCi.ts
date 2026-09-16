@@ -144,6 +144,7 @@ export interface RendererCiRest {
   ): Promise<MergeRun>
   getMerge(runId: string): Promise<MergeRun>
   cancelMerge(runId: string): Promise<MergeRun>
+  changeMergeMachine(runId: string, request: import('./merge').ChangeMergeMachineRequest): Promise<import('./merge').ChangeMergeMachineResult>
   /** agentId выбирает машину новой попытки; unpin=true снимает закреплённый SHA. */
   retryMerge(
     runId: string,

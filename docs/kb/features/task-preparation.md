@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-09-15
-checked: d8638e71
+updated: 2026-09-16
+checked: 8005c179
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/ipc.ts
@@ -43,6 +43,19 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
+
+CHAT-475 makes the prompt's no-progress-message rule explicit and states that
+normalization cannot repair response framing. TC-BRIEF-01/02 in
+`apps/server/src/taskPreparation.test.ts` exercise the complete preparation
+pipeline and preservation of every canonical requirement with only an absent
+optional decision link normalized. TC-BRIEF-03 retains two prose-prefix regression
+fixtures and rejects them before normalization; stripping the prefix in the
+test fixture leaves its requirements identical. TC-BRIEF-04 in
+`kanban/preparationDocumentation.test.ts` checks this existing article against
+executable single-object, schemaVersion=2 and idempotent-normalization examples.
+Existing strict type/enum and conditional UI-readiness checks remain in force;
+no missing fields or ambiguous values are guessed.
+
 
 CHAT-474 removes contradictory output instructions: research gaps belong in
 `sources[].summary` and follow-up work in `scope/testCases`, inside the single

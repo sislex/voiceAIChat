@@ -730,6 +730,11 @@ export class ProjectsRepo extends BaseRepo {
     return await Promise.all(rows.map(async (r) => await this.mapProjectSummary(r, r.my_role)))
   }
 
+  async activeProjectMemberNames(projectId: string): Promise<string[]> {
+    const rows = await this.sql.all<{ username: string }>(`SELECT pm.username FROM project_members pm JOIN users u ON u.name=pm.username WHERE pm.project_id=? AND u.blocked=0`, [projectId])
+    return rows.map(row => row.username)
+  }
+
   async getProject(userId: string, id: string): Promise<ProjectDetail | null> {
     const row = (await this.sql.get(`SELECT p.*, m.role AS my_role FROM projects p
          JOIN project_members m ON m.project_id = p.id

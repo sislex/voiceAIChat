@@ -4,6 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import type { MergeRun, TaskRepository } from '@shared/merge'
 import { MergePanel } from './MergePanel'
+import { queuedMergeCi } from '../../test/fixtures/queuedMerge'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 
 const stagesDone = [
@@ -48,6 +49,12 @@ type Story = StoryObj<typeof MergePanel>
 
 /** Успешный ран: зелёный бейдж, все стадии пройдены, деплой ещё не запускался. */
 export const Success: Story = { decorators: [withCi(baseRun)] }
+
+/** Shared fixtures exercise the queued action in DOM, Storybook and Chromium. */
+export const Queued: Story = {
+  args: { runId: 'queued-475' },
+  decorators: [Story => { window.ci = queuedMergeCi(); return <Story /> }]
+}
 
 /** Ран в работе: стадия testing выполняется, лог открыт, доступна отмена. */
 export const Running: Story = {

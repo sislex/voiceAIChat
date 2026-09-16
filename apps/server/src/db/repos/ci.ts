@@ -6,6 +6,8 @@ import { calculateKbHit, filesReadFromCiLog } from '../../ci/kbHit.js'
 import { testStages } from '../../ci/testStages.js'
 import { trimHistoricalRunLogs } from '../../ci/qaStateLogs.js'
 import { BaseRepo } from './base.js'
+import { hasProjectPermission } from '../../users/auth.js'
+import type { ChangeMergeMachineRequest, ChangeMergeMachineResult } from '@voicechat/shared'
 import { parseStringArray, normCiStatus, normKbContextMode, normRunMode, normClarifyLevel, clampClarifyMax, parseJsonValue, parseSlotProgress, mapCiRun, type TaskRow, type CiRunRow } from './support.js'
 
 /** Сколько строк лога рана отдаётся по умолчанию: лента показывает конец, а не всю историю. */
@@ -1676,6 +1678,69 @@ export class CiRepo extends BaseRepo {
     return row ? await this.mapMergeRun(row) : null
   }
 
+  /** Claim before reading executor input; the returned assignment is the committed one. */
+  async claimQueuedMergeRun(runId: string): Promise<MergeRun | null> {
+    return this.sql.transaction(async () => {
+      const result = await this.sql.run(`UPDATE merge_runs SET status='checking',stage='checking' WHERE id=? AND status='queued'`, [runId])
+      return result.changes ? await this.getMergeRunRaw(runId) : null
+    })
+  }
+
+  async cancelQueuedMergeRun(userId: string, runId: string, version: number): Promise<MergeRun | null> {
+    return this.sql.transaction(async () => {
+      if (!await this.getMergeRun(userId, runId)) return null
+      const result = await this.sql.run(`UPDATE merge_runs SET status='cancelled',stage='cancelled',finished_at=?,error='Отменено пользователем' WHERE id=? AND status='queued' AND assignment_version=?`, [this.now(), runId, version])
+      return result.changes ? await this.getMergeRun(userId, runId) : null
+    })
+  }
+
+  async mergeMachineAccess(userId: string, runId: string, agentId: string): Promise<ChangeMergeMachineResult | null> {
+    const run = await this.getMergeRun(userId, runId)
+    if (!run) return { ok: false, code: 'not_found', error: 'Merge-ран недоступен' }
+    const user = await this.repos.identity.getUser(userId)
+    if (!user || user.blocked || !hasProjectPermission(user.role, 'task:merge') ||
+        !await this.repos.machines.canUseAgent(userId, agentId, run.projectId) ||
+        !await this.repos.machines.getProjectMachine(run.projectId, agentId)) {
+      return { ok: false, code: 'forbidden', error: 'Нет прав на смену машины или машина не принадлежит проекту' }
+    }
+    return null
+  }
+
+  async mergeMachinePreflightSnapshot(userId: string, run: MergeRun, agentId: string): Promise<string> {
+    const machine = await this.repos.machines.getProjectMachine(run.projectId, agentId)
+    const project = await this.repos.projects.getProject(userId, run.projectId)
+    const workspace = await this.findLatestPushedCiWorkspace(run.projectId, run.taskId)
+    return JSON.stringify({ machine, origin: project?.gitUrl, workspace })
+  }
+
+  /** Preflight runs outside the SQL lane; revalidate DB inputs and CAS inside it. */
+  async changeQueuedMergeMachine(userId: string, runId: string, input: ChangeMergeMachineRequest,
+    machineSnapshot: string, isOnline: () => boolean): Promise<ChangeMergeMachineResult> {
+    return this.sql.transaction(async () => {
+      const denied = await this.mergeMachineAccess(userId, runId, input.agentId)
+      if (denied) return denied
+      const run = (await this.getMergeRun(userId, runId))!
+      const conflict = (fresh: MergeRun): ChangeMergeMachineResult => ({
+        ok: false, code: fresh.status === 'queued' ? 'assignment_changed' : 'not_queued',
+        error: fresh.status === 'queued' ? 'Назначение уже изменено другим запросом' : 'Ран больше не находится в очереди', run: fresh
+      })
+      if (run.status !== 'queued' || (run.assignmentVersion ?? 0) !== input.expectedAssignmentVersion) return conflict(run)
+      if (run.agentId === input.agentId) return { ok: true, run }
+      if (!isOnline() || await this.mergeMachinePreflightSnapshot(userId, run, input.agentId) !== machineSnapshot) {
+        return { ok: false, code: 'readiness_failed', error: 'Готовность или настройки машины изменились; повторите проверку' }
+      }
+      const name = await this.repos.machines.agentName(input.agentId)
+      const result = await this.sql.run(`UPDATE merge_runs SET agent_id=?,machine_name=?,assignment_version=assignment_version+1
+        WHERE id=? AND status='queued' AND assignment_version=?`, [input.agentId, name, runId, input.expectedAssignmentVersion])
+      if (!result.changes) return conflict((await this.getMergeRun(userId, runId))!)
+      await this.repos.qa.addPreviewAudit(userId, run.projectId, run.taskId, 'merge.machine_changed', {
+        runId, oldAgentId: run.agentId, newAgentId: input.agentId, actor: userId,
+        at: this.now(), reason: 'user_requested', assignmentVersion: input.expectedAssignmentVersion + 1
+      })
+      return { ok: true, run: (await this.getMergeRun(userId, runId))! }
+    })
+  }
+
   async getMergeRunRaw(runId: string): Promise<MergeRun | null> {
     const row = (await this.sql.get(`SELECT * FROM merge_runs WHERE id=?`, [runId])) as Record<string, unknown> | undefined
     return row ? await this.mapMergeRun(row) : null
@@ -1760,7 +1825,7 @@ export class CiRepo extends BaseRepo {
       productionStatus: r.production_status as string | null, error: r.error as string | null, recommendedAction: r.recommended_action as string | null,
       log: String(r.log ?? ''), canCancel: !r.push_started_at && ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']),
       canRetry: !ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']) && r.status !== 'success', pushStartedAt: r.push_started_at as number | null,
-      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at), machineName: await this.repos.machines.agentName(String(r.agent_id))
+      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at), assignmentVersion: Number(r.assignment_version ?? 0), machineName: r.machine_name == null ? await this.repos.machines.agentName(String(r.agent_id)) : String(r.machine_name)
     }
   }
 
