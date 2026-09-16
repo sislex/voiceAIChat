@@ -26,7 +26,7 @@ import type {
 } from '@shared/ipc'
 import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/protocol'
 import type { FsResult, FsCopyResult } from '@shared/agentProtocol'
-import type { SessionUser, SessionInfo } from '@shared/types'
+import type { BrowserSessionMetadata, SessionUser, SessionInfo } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
 import { createVpnBridge } from './vpnBridge'
@@ -501,6 +501,37 @@ export function makeBrowserBridge(httpBase: string): RendererBrowserBridge {
     start: (conversationId, viewport) => post(REST.browserSessionStart(conversationId), viewport ? { viewport } : {}),
     command: (conversationId, req) => post(REST.browserSessionCommand(conversationId), req),
     screenshot: (conversationId, req) => post(REST.browserSessionScreenshot(conversationId), req),
+    subscribeFrames: (conversationId, req, onFrame, onError) => {
+      const controller = new AbortController()
+      let lastSeq = 0
+      void (async () => {
+        while (!controller.signal.aborted) {
+          try {
+            const query = new URLSearchParams({ incarnation: req.incarnation, after: String(lastSeq) })
+            const response = await credentialedFetch(`${httpBase}${REST.browserSessionFrames(conversationId)}?${query}`, { headers: sessionHeaders(), signal: controller.signal })
+            if (!response.ok || !response.body) throw new Error(`Browser Runner frames: ${response.status}`)
+            const reader = response.body.getReader(), decoder = new TextDecoder()
+            let pending = ''
+            while (!controller.signal.aborted) {
+              const { done, value } = await reader.read()
+              if (done) break
+              pending += decoder.decode(value, { stream: true })
+              let newline: number
+              while ((newline = pending.indexOf('\n')) >= 0) {
+                const line = pending.slice(0, newline); pending = pending.slice(newline + 1)
+                if (!line) continue
+                const frame = JSON.parse(line) as { seq: number; dataUrl?: string; page?: { url: string; title: string }; status?: BrowserSessionMetadata }
+                if (Number.isSafeInteger(frame.seq) && frame.seq > lastSeq && (frame.dataUrl === undefined || frame.dataUrl.startsWith('data:image/'))) { lastSeq = frame.seq; onFrame(frame) }
+              }
+            }
+          } catch (error) {
+            if (!controller.signal.aborted) onError?.(error instanceof Error ? error : new Error('Поток кадров прерван'))
+          }
+          if (!controller.signal.aborted) await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      })()
+      return () => controller.abort()
+    },
     stop: async (conversationId) => {
       // После переноса Bearer в cookie остановка тоже требует CSRF. Иначе
       // перезапуск получал прежнюю incarnation, скрывая отказ DELETE.
