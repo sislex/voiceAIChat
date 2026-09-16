@@ -826,7 +826,7 @@ describe('browser evidence execution gate', () => {
 describe('браузерная проверка стадии разработки', () => {
   it('принимает режим, порт и путь', () => {
     expect(normalizeCiBrowserCheck({ mode: 'chromium', devServerPort: 8799, startPath: '/projects?tab=board' }))
-      .toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/projects?tab=board' })
+      .toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/projects?tab=board', failurePolicy: 'continue' })
   })
 
   it('битое значение означает «проверок нет», а не отказ', () => {

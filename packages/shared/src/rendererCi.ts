@@ -65,6 +65,7 @@ export interface CiTaskConfig {
   projectDefault: CiSlotConfig
   enabledStages: import('./ci').CiProcessStage[]
   browserCheck: import('./ci').CiBrowserCheck
+  developmentPreview?: import('./developmentPreview').DevelopmentPreviewSettings
 }
 
 /** Ответ GET метрик проекта. */
@@ -75,6 +76,7 @@ export interface CiMetrics {
 
 /** REST-часть моста (реализация — createCiRest в httpApi.ts). */
 export interface RendererCiRest {
+  developmentPreview?(runId: string, operation?: 'status' | 'restart' | 'stop'): Promise<import('./developmentPreview').DevelopmentPreviewStatus | null>
   listCommands(projectId?: string): Promise<CiCommand[]>
   getCommand(id: string): Promise<CiCommand>
   createCommand(input: CiCommandInput): Promise<CiCommand>
@@ -114,11 +116,13 @@ export interface RendererCiRest {
     config: Partial<CiSlotConfig> & {
       enabledStages?: import('./ci').CiProcessStage[]
       browserCheck?: import('./ci').CiBrowserCheck
+      developmentPreview?: import('./developmentPreview').DevelopmentPreviewSettings
     }
   ): Promise<
     CiSlotConfig & {
       enabledStages: import('./ci').CiProcessStage[]
       browserCheck: import('./ci').CiBrowserCheck
+      developmentPreview?: import('./developmentPreview').DevelopmentPreviewSettings
     }
   >
   startRun(

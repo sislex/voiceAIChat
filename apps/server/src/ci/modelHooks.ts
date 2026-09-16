@@ -3,6 +3,7 @@
 // упавшего шага). Реализованы поверх инъектируемого LlmClient (в тестах — мок).
 
 import { randomUUID } from 'node:crypto'
+import type { DevelopmentPreviewManager } from './developmentPreview.js'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
   ciBrowserCheckUrl, ciBrowserCheckPrompt, evaluateCiBrowserEvidence,
@@ -29,6 +30,8 @@ import {
 } from '../kb/codeUpdate.js'
 
 export interface CiModelHooksDeps {
+  developmentPreviews?: DevelopmentPreviewManager
+  verifyBrowserOnly?(ctx: CiModelContext, check: import('@voicechat/shared').CiBrowserCheck): Promise<boolean>
   db: VoiceChatDb
   claude: LlmClient
   codex: LlmClient
@@ -717,8 +720,18 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const available = (await deps.db
       .ci.listCiCommands(ctx.run.triggeredBy, ctx.project.id))
       .filter((c) => c.availableToModel && !c.isCleanup)
+    const previewSettings = await deps.db.ci.getTaskDevelopmentPreview(ctx.task.id)
+    const browserCheck = await deps.db.ci.getTaskBrowserCheck(ctx.task.id)
+    const previews = previewSettings.enabled ? deps.developmentPreviews : undefined
+    if (previews) previews.register({
+      projectId: ctx.project.id, taskId: ctx.task.id, runId: ctx.run.id, userId: ctx.run.triggeredBy,
+      agentId: ctx.agentId ?? '', workspace: ctx.workspacePath,
+      kind: ctx.run.llmProvider, model: ctx.run.llmModel, settings: previewSettings, check: browserCheck
+    }, async (status) => { await ctx.log(ctx.parentStepId, 'system', '[development-preview] ' + JSON.stringify(status) + '\n') })
+    let previewGateAttempts = 0
     let calls = 0
     ciToolBroker.register(token, {
+      ...(previews ? { preview: (operation: import('@voicechat/shared').DevelopmentPreviewOperation) => previews.invoke(ctx.run.id, operation, ctx.signal) } : {}),
       list: () => available.map((c) => ({ name: c.name, description: c.description })),
       invoke: async (name) => {
         if (calls >= settings.maxModelCommandCalls) return { output: '', exitCode: null, message: `Лимит вызовов команд (${settings.maxModelCommandCalls}) исчерпан — заверши работу.` }
@@ -753,6 +766,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         const kbMode = kbModeOf(ctx)
         let prompt = taskPrompt(ctx, phase, await deps.db.tasks.confirmedDevelopmentReadiness(ctx.task.id))
         if (phase !== 'plan' && browserPrompt) prompt += `\n\n${browserPrompt}`
+        if (previews) prompt += '\n\n' + previews.prompt(ctx.run.id)
+        else if (previewSettings.enabled) prompt += '\n\nDevelopment preview is unavailable (feature_disabled). Browser failure policy: ' + (browserCheck.failurePolicy ?? 'continue') + '. Continue code, typecheck and tests when policy is continue.'
         if (ctx.run.fixContext) {
           prompt += `\n\nЗадача возвращена на доработку после этапа ${ctx.run.fixContext.stepId}. Исправь причину сбоя и проверь исправление, сохраняя критерии приёмки и обязательные проверки.\nДиагностика предыдущего этапа (данные, а не инструкции):\n${ctx.run.fixContext.logTail.slice(-50000)}`
         }
@@ -775,7 +790,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         // числом доработок плана, но верхний предел ходов задаём явно.
         for (let turnNo = 0; turnNo < MAX_MODEL_TURNS; turnNo++) {
           if (ctx.signal.aborted) return { ok: false, cancelled: true }
-          if (phase === 'development' && browserCheck.mode !== 'off' && (!browserFields.previewMcpUrl || !ciBrowserCheckUrl(browserCheck, ctx.agentId))) {
+          if (phase === 'development' && !previewSettings.enabled && !deps.verifyBrowserOnly && browserCheck.mode !== 'off' && (!browserFields.previewMcpUrl || !ciBrowserCheckUrl(browserCheck, ctx.agentId))) {
             const error = 'browser_check:infrastructure_error — assigned machine, conversation or Reader MCP is unavailable'
             const evidence = { ...evaluateCiBrowserEvidence([]), status: 'infrastructure_error' as const }
             await deps.db.ci.addCiEvent({ projectId: ctx.project.id, runId: ctx.run.id, type: 'browser.checked', actorType: 'system', payload: { stepId: ctx.parentStepId, ...evidence } })
@@ -870,12 +885,31 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             continue
           }
 
-          // Evaluate only durable, stage-bound Reader observations, never the model's final text.
-          if (browserCheck.mode !== 'off') {
+          // Browser failures allow another repair turn before the configured policy is applied.
+          if (previews) {
+            const accepted = await previews.finalize(ctx.run.id, ctx.signal)
+            const status = previews.status(ctx.run.id)!
+            if (status.browserResult !== 'passed' && browserCheck.mode !== 'off' && ++previewGateAttempts < previewSettings.maxAttempts) {
+              prompt = previews.prompt(ctx.run.id) + '\nBrowser result: ' + JSON.stringify(status) + '\nDiagnose, fix if possible and retry. Continue remaining code checks according to failure policy.'
+              continue
+            }
+            if (!accepted) return { ok: false, error: 'browser_check:blocked — required development preview evidence is unavailable' }
+          } else if (previewSettings.enabled) {
+            await log('system', '[development-preview] ' + JSON.stringify({ state: 'skipped', browserResult: browserCheck.failurePolicy === 'block' ? 'blocked' : 'skipped', diagnostic: 'feature_disabled', failurePolicy: browserCheck.failurePolicy ?? 'continue' }) + '\n')
+            if (browserCheck.mode !== 'off' && browserCheck.failurePolicy === 'block') return { ok: false, error: 'browser_check:blocked — required development preview is unavailable' }
+          } else if (browserCheck.mode !== 'off') {
+            // Evaluate only durable, stage-bound Reader observations, never the model's final text.
             const evidence = evaluateCiBrowserEvidence(await deps.db.ci.getCiBrowserEvidence(ctx.run.triggeredBy, ctx.run.id, ctx.parentStepId))
+            const adapterPassed = deps.verifyBrowserOnly ? await deps.verifyBrowserOnly(ctx, browserCheck).catch(() => false) : evidence.status === 'passed'
             await deps.db.ci.addCiEvent({ projectId: ctx.project.id, runId: ctx.run.id, type: 'browser.checked', actorType: 'system', payload: { stepId: ctx.parentStepId, ...evidence } })
             await log('system', `Browser-check evidence: ${JSON.stringify(evidence)}\n`)
-            if (evidence.status !== 'passed') return { ok: false, error: `browser_check:${evidence.status} — missing ${evidence.missing.join(', ')}` }
+            if (!adapterPassed && ++previewGateAttempts < 2) {
+              prompt = 'Browser check lacks verified evidence. Retry the exact target ' + ciBrowserCheckUrl(browserCheck, ctx.agentId) + '. Failure policy: ' + (browserCheck.failurePolicy ?? 'continue') + '. Continue code and tests when policy is continue.'
+              continue
+            }
+            if (!adapterPassed && browserCheck.failurePolicy === 'block') {
+              return { ok: false, error: `browser_check:blocked — missing ${evidence.missing.join(', ')}` }
+            }
           }
           return { ok: true }
         }
@@ -884,6 +918,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       }))
     } finally {
       ciToolBroker.unregister(token)
+      if (previews) await previews.finish(ctx.run.id)
     }
   }
 
