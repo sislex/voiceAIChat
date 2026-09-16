@@ -262,6 +262,36 @@ function renderModal(role: UserRole, overrides: Partial<SettingsModalProps> = {}
   render(<SettingsModal {...props} />)
 }
 
+describe('SettingsModal · Команды на машинах', () => {
+  // @testCase TC-UI-1
+  it('отправляет серверные патчи из трёх контролов', async () => {
+    const onChange = vi.fn()
+    renderModal('admin', { onChange })
+    await userEvent.click(screen.getByRole('button', { name: 'Интерфейс' }))
+    await userEvent.selectOptions(screen.getByLabelText('Уведомления о завершении команд'), 'all')
+    await userEvent.selectOptions(screen.getByLabelText('Длительность уведомления команд'), '15')
+    await userEvent.click(screen.getByRole('switch', { name: 'Системные уведомления команд' }))
+    expect(onChange).toHaveBeenCalledWith({ machineCommandNotices: 'all' })
+    expect(onChange).toHaveBeenCalledWith({ machineCommandNoticeSeconds: 15 })
+    expect(onChange).toHaveBeenCalledWith({ machineCommandSystemNotifications: false })
+  })
+
+  // @testCase TC-UI-2
+  it('в режиме off сохраняет значения зависимых контролов, но блокирует их', async () => {
+    renderModal('admin', { settings: {
+      ...DEFAULT_SETTINGS, machineCommandNotices: 'off', machineCommandNoticeSeconds: 30,
+      machineCommandSystemNotifications: true
+    } })
+    await userEvent.click(screen.getByRole('button', { name: 'Интерфейс' }))
+    const duration = screen.getByLabelText('Длительность уведомления команд') as HTMLSelectElement
+    const system = screen.getByRole('switch', { name: 'Системные уведомления команд' })
+    expect(duration).toBeDisabled()
+    expect(duration.value).toBe('30')
+    expect(system).toBeDisabled()
+    expect(system).toHaveAttribute('aria-checked', 'true')
+  })
+})
+
 describe('SettingsModal · Инструкции', () => {
   /** Список инструкций из последнего вызова onChange. */
   const last = (onChange: ReturnType<typeof vi.fn>): Array<{ id: string; title?: string; enabled?: boolean; text?: string; kind?: string }> =>

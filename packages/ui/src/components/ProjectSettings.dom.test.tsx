@@ -27,6 +27,39 @@ describe('Project settings draft', () => {
     fireEvent.change(screen.getByLabelText('Git-репозиторий'), { target: { value: 'bad-url' } })
     await expectNoViolations()
   })
+  // @testCase TC-02
+  it('keeps error descriptions in sync with rendered alerts', () => {
+    render(<ProjectSettings {...props()} />)
+    const cases = [
+      { label: 'Название проекта', invalid: '', valid: 'Проект' },
+      { label: 'Git-репозиторий', invalid: 'bad-url', valid: 'https://github.com/team/repo.git' },
+      { label: 'URL веб-превью', invalid: 'bad-url', valid: 'https://preview.example' }
+    ]
+
+    for (const item of cases) {
+      const field = screen.getByLabelText(item.label)
+      expect(field).not.toHaveAttribute('aria-describedby')
+      fireEvent.change(field, { target: { value: item.invalid } })
+      const descriptionId = field.getAttribute('aria-describedby')
+      expect(descriptionId).toBeTruthy()
+      const alert = document.getElementById(descriptionId!)
+      expect(alert).toHaveAttribute('role', 'alert')
+      fireEvent.change(field, { target: { value: item.valid } })
+      expect(field).not.toHaveAttribute('aria-describedby')
+      expect(document.getElementById(descriptionId!)).toBeNull()
+    }
+  })
+
+  // @testCase TC-05
+  it('has one page heading followed by no skipped heading levels', () => {
+    render(<ProjectSettings {...props()} />)
+    const headings = screen.getAllByRole('heading')
+    expect(headings.filter(heading => heading.tagName === 'H1')).toHaveLength(1)
+    expect(headings[0]).toHaveTextContent('Настройки проекта')
+    const levels = headings.map(heading => Number(heading.tagName.slice(1)))
+    expect(levels.every((level, index) => index === 0 || level <= levels[index - 1]! + 1)).toBe(true)
+  })
+
   it('checks legacy checkout and health without deploying', async () => {
     const bridges = installStoryBridges()
     const exec = vi.fn().mockResolvedValueOnce({ exitCode: 0, output: 'true', timedOut: false }).mockResolvedValueOnce({ exitCode: 1, output: 'connection refused', timedOut: false })

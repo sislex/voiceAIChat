@@ -145,3 +145,33 @@ it('does not silently reset a damaged persistent registry and validates settings
   for (const value of ['-1', '1.5', 'NaN', 'Infinity', '']) expect(() => cleanupDuration(value, 100)).toThrow()
   expect(cleanupDuration('0', 100)).toBe(0)
 })
+// @testCase TC-03
+it('inspects without holding the registry, so task requests are not queued behind a sweep', async () => {
+  const f = fixture(); await f.register()
+  const entered = gate(), finish = gate()
+  vi.mocked(f.backend.inspect).mockImplementationOnce(async r => {
+    entered.release(); await finish.promise
+    return { present: true, identity: f.files.get(r.path) ?? null, gitCommonDir: null, gitRegistration: null, bytes: 42, sizeReason: null, reasons: [] }
+  })
+  const sweep = f.service.cycle()
+  await entered.promise
+  const work = vi.fn(async () => {})
+  // The consumer registers while the sweep is inspecting: waiting here is what
+  // turned opening a task chat into a minute-long request and then a 500.
+  await f.service.consume('t', work)
+  expect(work).toHaveBeenCalledOnce()
+  finish.release(); await sweep
+  expect(f.backend.remove).toHaveBeenCalledOnce()
+})
+// @testCase TC-07
+it('bounds the attempt journal per task instead of rewriting an ever-growing registry', async () => {
+  const f = fixture(); await f.register()
+  f.owner.terminal = false
+  await f.service.cycle()
+  const oldest = f.store.read().attempts[0].id
+  for (let i = 0; i < 102; i++) await f.service.cycle()
+  const attempts = f.store.read().attempts
+  expect(attempts).toHaveLength(100)
+  expect(attempts.some(a => a.id === oldest)).toBe(false)
+  expect(attempts.every(a => a.resource.taskId === 't')).toBe(true)
+})
