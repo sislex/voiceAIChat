@@ -51,7 +51,7 @@ export function NewTaskManualQaPanel(props: NewTaskManualQaPanelProps): JSX.Elem
       description="Отдельный проход для каждого development-цикла и набора доработок."
       badge={<Badge>{pluralRu(stages.length, 'проход', 'прохода', 'проходов')}</Badge>}
     />
-    <StageRail testId="new-task-manual-qa-rail">
+    <StageRail testId="new-task-manual-qa-rail" panel={panel}>
       {stages.map((stage, index) => {
         const status = stageStatusOf(stage, (session: QaSession) => qaSessionStageStatus(session.status))
         const latest = stage.items[stage.items.length - 1]
@@ -61,6 +61,7 @@ export function NewTaskManualQaPanel(props: NewTaskManualQaPanelProps): JSX.Elem
           key={stage.key}
           number={stage.number}
           status={status}
+          error={latest?.summary}
           statusLabel={SESSION_LABEL[status] ?? undefined}
           eyebrow={`Проход ${stage.number}`}
           title={stageTitle('Ручное QA', stage)}
@@ -76,7 +77,7 @@ export function NewTaskManualQaPanel(props: NewTaskManualQaPanelProps): JSX.Elem
             { id: 'scenarios', title: 'Сценарии', ok: progress ? progress.total > 0 : null, note: progress ? `${progress.passed}/${progress.total} проверено успешно` : 'Сессия ещё не создана' },
             { id: 'decision', title: 'Решение проверяющего', ok: status === 'success' ? true : status === 'failed' || status === 'blocked' ? false : null, note: latest ? `${SESSION_LABEL[status] ?? 'Проверяется'} · ${formatDateTime(latest.startedAt)}` : 'Ожидает' }
           ]} />
-          {hostsPanel && <div className="new-task-stage-panel">{panel}</div>}
+
         </StageCard>
       })}
     </StageRail>

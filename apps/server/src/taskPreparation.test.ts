@@ -591,6 +591,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('missing_acceptance_criteria')
   })
 
+  // @testCase TC8
   // @testCase TC-SCHEMA-SINGLE-JSON
   it('отклоняет служебный текст и несколько JSON-объектов вместо чистого Development Brief', async () => {
     const { project, task } = await taskInBacklog()
@@ -609,6 +610,51 @@ describe('подготовка к разработке: диагностика �
     expect(run.error).toContain('ровно один JSON-объект')
   })
 
+  // @testCase TC8
+  it('removes only null decision links, preserving strings and all other decision fields', async () => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    const decisions = Array.from({ length: 4 }, (_, index) => ({ id: 'D' + index, text: 'Decision', rationale: 'Reason', questionId: null }))
+    input.decisions = [...decisions, { id: 'linked', text: 'Linked', rationale: 'Answered', questionId: 'Q1' }, { id: 'absent', text: 'Absent', rationale: 'Independent' }]
+    claudeAnswer = () => ({ text: JSON.stringify(input) })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(1)
+    expect(claudeCalls[0].prompt).toContain('decisions[].questionId — необязательная строка')
+    expect(run.readiness?.decisions).toEqual([...decisions.map(({ questionId: _ignored, ...decision }) => decision), ...input.decisions.slice(4)])
+    expect(run.readiness?.scope).toEqual(input.scope)
+    expect(run.readiness?.testCases).toEqual(input.testCases)
+    const other = await taskInBacklog()
+    claudeAnswer = () => ({ text: JSON.stringify(run.readiness) })
+    const again = await settled(adminTok, (await launch(adminTok, other.project.id, other.task.id)).id)
+    expect(again.status).toBe('success')
+    expect(again.readiness?.decisions).toEqual(run.readiness?.decisions)
+  })
+
+  // @testCase TC8
+  it.each([12, true, [], {}])('rejects incompatible decision questionId %j without coercion', async (questionId) => {
+    const { project, task } = await taskInBacklog()
+    const input = JSON.parse(compatibleReadiness())
+    input.decisions = [{ id: 'D1', text: 'Decision', rationale: 'Reason', questionId }]
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify(input) : compatibleReadiness() })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(2)
+    expect(claudeCalls[1].prompt).toContain('decisions[0].questionId должен быть строкой')
+  })
+
+  // @testCase TC8
+  it.each(['markdown', 'trailing', 'multiple'])('rejects %s outside a single brief object', async (kind) => {
+    const { project, task } = await taskInBacklog()
+    const json = compatibleReadiness()
+    const text = kind === 'markdown' ? '```json\n' + json + '\n```' : kind === 'trailing' ? json + '\nDone' : json + '\n' + json
+    claudeAnswer = () => ({ text })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+  })
+
+  // @testCase TC8
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })

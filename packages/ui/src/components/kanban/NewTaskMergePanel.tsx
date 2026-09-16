@@ -27,6 +27,8 @@ export interface NewTaskMergePanelProps {
 const runStatus = (run: MergeRun): StageStatus => mergeStageStatus(run.status)
 
 export function NewTaskMergePanel(props: NewTaskMergePanelProps): JSX.Element {
+  const [retry, setRetry] = useState<(() => void) | null>(null)
+  const onRetryAction = useCallback((action: (() => void) | null) => setRetry(() => action), [])
   const [runs, setRuns] = useState<MergeRun[]>([])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
@@ -43,7 +45,17 @@ export function NewTaskMergePanel(props: NewTaskMergePanelProps): JSX.Element {
       description="Отдельный проход для каждого development-цикла и набора доработок."
       badge={<Badge>{pluralRu(stages.length, 'проход', 'прохода', 'проходов')}</Badge>}
     />
-    <StageRail testId="new-task-merge-rail">
+    <StageRail testId="new-task-merge-rail" panel={<MergePanel
+                projectId={props.projectId} taskId={props.taskId}
+                runId={props.activeRunId}
+                selectedRunId={selectedRun?.id ?? null}
+                onSelectRun={setSelectedRunId}
+                onRunsChange={onRunsChange}
+                onRetryAction={onRetryAction}
+                hideHistory
+                canStart={props.canStart}
+                {...(props.onStartMerge ? { onStartMerge: props.onStartMerge } : {})}
+              />}>
       {stages.map((stage, index) => {
         const status = stageStatusOf(stage, runStatus)
         const isSelected = stage.key === selected.key
@@ -53,6 +65,8 @@ export function NewTaskMergePanel(props: NewTaskMergePanelProps): JSX.Element {
           key={stage.key}
           number={stage.number}
           status={status}
+          error={latest?.error}
+          onRetry={retry ?? undefined}
           statusLabel={MERGE_LABEL[status] ?? undefined}
           eyebrow={`Проход ${stage.number}`}
           title={stageTitle('Merge', stage)}
@@ -76,18 +90,7 @@ export function NewTaskMergePanel(props: NewTaskMergePanelProps): JSX.Element {
               onSelect={setSelectedRunId}
               attempts={stage.items.map((run, at) => ({ id: run.id, label: `Ран ${at + 1}`, status: runStatus(run), at: run.createdAt, note: run.machineName ?? run.agentId }))}
             />
-            <div className="new-task-stage-panel">
-              <MergePanel
-                projectId={props.projectId} taskId={props.taskId}
-                runId={props.activeRunId}
-                selectedRunId={selectedRun?.id ?? null}
-                onSelectRun={setSelectedRunId}
-                onRunsChange={onRunsChange}
-                hideHistory
-                canStart={props.canStart}
-                {...(props.onStartMerge ? { onStartMerge: props.onStartMerge } : {})}
-              />
-            </div>
+
           </>}
         </StageCard>
       })}

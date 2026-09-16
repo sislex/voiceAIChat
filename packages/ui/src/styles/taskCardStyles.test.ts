@@ -30,6 +30,17 @@ function rule(selector: string): string {
 }
 
 describe('стили открытой карточки задачи', () => {
+  // @testCase TC7
+  it('keeps the new title, editor, dates and mobile rail constrained to their columns', () => {
+    expect(rule('.new-task-title')).toContain('text-overflow: ellipsis')
+    expect(rule('.new-task-title--expanded')).toContain('white-space: normal')
+    for (const cls of ['new-task-statement', 'new-task-side-summary', 'new-task-workflow-dates', 'new-task-mini-timeline', 'new-task-stage-error']) expect(styled(cls)).toBe(true)
+    expect(rule('.new-task-statement textarea')).toContain('min-width: 0')
+    expect(rule('.new-task-mini-timeline')).toContain('flex-wrap: wrap')
+    expect(css).toContain('.new-task-side:not([open]) > :not(summary) { display: none; }')
+    expect(css).toContain('.new-task-stage-content, .new-task-column { min-width: 0; overflow-wrap: anywhere; }')
+  })
+
   it.each([
     // Общий язык лент: раскрываемая строка, шеврон, точка статуса.
     'vc-feed', 'vc-feed-item', 'vc-feed-caret', 'vc-feed-status', 'vc-feed-dot',

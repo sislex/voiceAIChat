@@ -21,6 +21,7 @@ const bridge = (): void => {
 afterEach(() => { delete (window as { ci?: unknown }).ci })
 
 describe('NewTaskPreparationPanel', () => {
+  // @testCase TC2
   it('раскладывает попытки по этапам: исходная постановка и каждый цикл доработки', async () => {
     bridge()
     const loadRuns = vi.fn(async () => [run(), run({ id: 'r2', attempt: 2, status: 'running', createdAt: 2_000, finishedAt: null, canCancel: true })])
@@ -36,12 +37,18 @@ describe('NewTaskPreparationPanel', () => {
     // Функциональная панель стоит в выбранном этапе и показывает его попытку.
     expect(second).toHaveTextContent('Попытка 2')
     expect(loadRuns).toHaveBeenCalledTimes(1)
+    const panel = second.querySelector('[data-stage-panel-slot]')?.firstElementChild
     // Переход к первому этапу переносит панель туда; статусы рейки при этом
     // не сбрасываются — пока панель грузится, она молчит о списке попыток.
     fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
     await waitFor(() => expect(screen.getByTestId('new-task-preparation-stage-1')).toHaveAttribute('aria-current', 'step'))
     expect(screen.getByTestId('new-task-preparation-stage-2')).toHaveTextContent('Выполняется')
     await waitFor(() => expect(screen.getByTestId('new-task-preparation-stage-1')).toHaveTextContent('Development Brief и результат'))
+    for (let index = 0; index < 4; index++) fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
+    expect(first.querySelector('[data-stage-panel-slot]')?.firstElementChild).toBe(panel)
+    expect(loadRuns).toHaveBeenCalledOnce()
+    expect(window.ci!.getTaskMachines).toHaveBeenCalledOnce()
+    expect(window.ci!.getTaskPreparationLlm).toHaveBeenCalledOnce()
   })
 
   it('цикл без попыток предлагает запуск подготовки прямо в своём этапе', async () => {

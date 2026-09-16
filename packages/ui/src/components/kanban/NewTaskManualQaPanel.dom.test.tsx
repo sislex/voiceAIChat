@@ -18,11 +18,12 @@ const cycle: TaskReworkCycleViewModel = {
 afterEach(() => { delete window.qa })
 
 describe('NewTaskManualQaPanel', () => {
+  // @testCase TC2
   it('показывает тестовое окружение активной сессии и проходы по циклам', async () => {
     const active = session({ id: 's2', status: 'active', startedAt: 2_000, finishedAt: null, appUrl: 'https://preview.test/CHAT-445-2' })
     const state: QaTaskState = { criteria: [], versions: [], sessions: [active, session({})], activeSession: active, preparation: null }
     window.qa = { get: vi.fn().mockResolvedValue(state), createCriterion: vi.fn(), reviseCriterion: vi.fn(), completePreparation: vi.fn(), startSession: vi.fn(), saveResult: vi.fn(), addAttachment: vi.fn(), complete: vi.fn(), requestFix: vi.fn() }
-    render(<NewTaskManualQaPanel projectId="p1" taskId="t1" cycles={[cycle]} workflow={[]} runActive={false} />)
+    const { rerender } = render(<NewTaskManualQaPanel projectId="p1" taskId="t1" cycles={[cycle]} workflow={[]} runActive={false} />)
     expect(await screen.findByRole('link', { name: 'https://preview.test/CHAT-445-2' })).toBeTruthy()
     expect(screen.getByText('2 прохода')).toBeTruthy()
     const first = screen.getByTestId('new-task-manual-qa-stage-1')
@@ -32,6 +33,10 @@ describe('NewTaskManualQaPanel', () => {
     // Панель ручного QA — в проходе активной сессии.
     expect(second.querySelector('.manual-qa')).toBeTruthy()
     expect(first.querySelector('.manual-qa')).toBeNull()
+    const panel = second.querySelector('.manual-qa')
+    rerender(<NewTaskManualQaPanel projectId="p1" taskId="t1" cycles={[]} workflow={[]} runActive={false} />)
+    expect(screen.getByTestId('new-task-manual-qa-stage-1').querySelector('.manual-qa')).toBe(panel)
+    expect(window.qa!.get).toHaveBeenCalledOnce()
   })
 
   it('без сессий объясняет, когда появится preview', async () => {
