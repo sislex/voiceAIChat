@@ -13,6 +13,7 @@ import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
 import { AgentRegistry } from './agents/registry.js'
+import { MergeRunManager } from './merge/runManager.js'
 import type { Board, LlmClient, LlmHandle, LlmRequest, ProjectDetail, Task, TaskPreparationRun } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
@@ -79,6 +80,45 @@ const enableAutoPilot = (projectId: string, taskId: string) =>
   inj({ method: 'PATCH', url: `/api/projects/${projectId}/tasks/${taskId}`, payload: { autoPilot: true } })
 
 describe('автопроход: ручное QA и независимость карточек', () => {
+  // @testCase TC-INT-01
+  it('keeps one queued merge and task placement when reassignment overlaps an autopilot tick', async () => {
+    const { projectId, columns } = await taskInBacklog()
+    const task = (await db.tasks.createTask('admin', projectId, { title: 'Merge race', columnId: columns.find(column => column.semanticType === 'merge')!.id }))!
+    const machines = []
+    for (const name of ['A', 'B']) {
+      const machine = await db.machines.createAgent('admin', name)
+      await db.machines.linkMachine('admin', projectId, machine.id)
+      await db.machines.setProjectMachineReposRoot('admin', projectId, machine.id, '/repos')
+      machines.push(machine)
+    }
+    await db.ready
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,1,'released',3)`)
+      .run('ws-merge-race', projectId, task.id, machines[0].id, '/repos/project/task', 'CHAT-475', 'a'.repeat(40))
+    const run = await db.ci.startMergeRun('admin', projectId, task.id)
+    vi.spyOn(AgentRegistry.prototype, 'isOnline').mockReturnValue(true)
+    vi.spyOn(MergeRunManager.prototype, 'start').mockImplementation(() => {})
+    let entered!: () => void, resume!: () => void
+    const waiting = new Promise<void>(resolve => { entered = resolve })
+    const barrier = new Promise<void>(resolve => { resume = resolve })
+    vi.spyOn(MergeRunManager.prototype, 'checkReadiness').mockImplementation(async () => {
+      entered(); await barrier
+      return { ready: true, selectable: true, mode: 'legacy', code: 'ready', message: 'Ready' }
+    })
+    const changing = inj({ method: 'POST', url: `/api/merge/runs/${run.id}/machine`, payload: { agentId: machines[1].id, expectedAssignmentVersion: 0 } })
+    const pending = changing.then(response => response)
+    await waiting
+    const snapshots = vi.spyOn(db.tasks, 'autoPilotSnapshot')
+    await enableAutoPilot(projectId, task.id)
+    await eventually(async () => snapshots.mock.calls.length, count => count > 0)
+    const before = (await db.tasks.getTaskDetail('admin', projectId, task.id))!
+    resume()
+    expect((await pending).statusCode).toBe(200)
+    const after = (await db.tasks.getTaskDetail('admin', projectId, task.id))!
+    expect(after).toMatchObject({ columnId: before.columnId, position: before.position, autoPilot: true, autoPilotRequiresManualQa: false })
+    expect(await db.ci.listMergeRuns('admin', projectId, task.id)).toMatchObject([{ id: run.id, agentId: machines[1].id, status: 'queued' }])
+  })
+
   it('пропуски двух QA-этапов сразу приводят к Automated QA и очереди merge', async () => {
     const { projectId, taskId, columns } = await taskInBacklog()
     const machine = await db.machines.createAgent('admin', 'QA')
@@ -270,5 +310,49 @@ describe('автопроход: начало конвейера', () => {
     await new Promise((resolve) => setTimeout(resolve, 60))
     expect((await runs(projectId, taskId)).length).toBe(2)
     expect(await semanticOf(projectId, taskId)).toBe('decision_required')
+  })
+})
+
+describe('автопроход: общий development-предохранитель', () => {
+  async function failedDevelopmentInReady(error: string, status: 'failed' | 'timeout' = 'failed') {
+    const { projectId, taskId, columns } = await taskInBacklog()
+    const machine = await db.machines.createAgent('admin', 'Online dev')
+    await db.machines.linkMachine('admin', projectId, machine.id)
+    await db.machines.setProjectMachineReposRoot('admin', projectId, machine.id, '/repos')
+    await db.machines.setProjectMachinePath('admin', projectId, machine.id, '/repo')
+    vi.spyOn(AgentRegistry.prototype, 'isOnline').mockReturnValue(true)
+    for (const semantic of ['preparation', 'ready']) {
+      await db.tasks.moveTask('admin', projectId, taskId, { columnId: columns.find(column => column.semanticType === semantic)!.id })
+    }
+    await db.ready
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown; get(...values: unknown[]): unknown; all(...values: unknown[]): unknown[] } } }).db
+    raw.prepare(`INSERT INTO ci_runs (id,project_id,task_id,status,triggered_by,mode,error,terminal_column_id,created_at,finished_at) VALUES (?,?,?,?,'admin','development',?,?,1,2)`)
+      .run('dirty-run', projectId, taskId, status, error, columns.find(column => column.semanticType === 'ready')!.id)
+    return { projectId, taskId, raw }
+  }
+
+  // @testCase TC-1
+  // @testCase TC-10
+  it.each(['failed', 'timeout'] as const)('blocks the full dirty-workspace rollback cycle in ready (%s)', async (status) => {
+    const fixture = await failedDevelopmentInReady('Рабочая копия содержит локальные изменения: /repo/CHAT-477', status)
+    await enableAutoPilot(fixture.projectId, fixture.taskId)
+    await eventually(async () => fixture.raw.prepare(`SELECT * FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).all(fixture.taskId).length, count => count === 1)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(fixture.raw.prepare('SELECT * FROM ci_runs WHERE task_id=?').all(fixture.taskId)).toHaveLength(1)
+    expect(await semanticOf(fixture.projectId, fixture.taskId)).toBe('ready')
+    const audit = fixture.raw.prepare(`SELECT payload_json FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).get(fixture.taskId) as { payload_json: string }
+    expect(JSON.parse(audit.payload_json)).toMatchObject({ runId: 'dirty-run', blockedBy: 'dirty_workspace' })
+  })
+
+  // @testCase TC-2
+  it('deduplicates concurrent and pending board updates for the persisted dirty blocker', async () => {
+    const fixture = await failedDevelopmentInReady('Рабочая копия содержит локальные изменения')
+    await Promise.all(Array.from({ length: 8 }, (_, index) =>
+      inj({ method: 'PATCH', url: `/api/projects/${fixture.projectId}/tasks/${fixture.taskId}`, payload: { autoPilot: true, title: `Dirty ${index}` } })
+    ))
+    await eventually(async () => fixture.raw.prepare(`SELECT * FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).all(fixture.taskId).length, count => count === 1)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(fixture.raw.prepare(`SELECT * FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).all(fixture.taskId)).toHaveLength(1)
+    expect(fixture.raw.prepare('SELECT * FROM ci_runs WHERE task_id=?').all(fixture.taskId)).toHaveLength(1)
   })
 })

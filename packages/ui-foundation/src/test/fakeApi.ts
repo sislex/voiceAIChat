@@ -1977,6 +1977,7 @@ export function createFakeCi(): FakeCi {
     listMergeRuns: async () => [],
     deployMergeRun: async () => { throw new Error('merge run not found') },
     cancelMerge: async () => { throw new Error('merge run not found') },
+    changeMergeMachine: async () => ({ ok: false, code: 'not_found', error: 'merge run not found' }),
     retryMerge: async () => { throw new Error('merge run not found') },
     forceStartRun: async (projectId, taskId, agentId) => { const run = { ...mkRun(projectId, taskId), agentId }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
     getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [], interactions: [] },

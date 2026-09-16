@@ -32,6 +32,31 @@ it('keeps the documented complete-response rule executable', () => {
   }
 })
 
+// @testCase TC-BRIEF-01
+// @testCase TC-BRIEF-02
+it('preserves a canonical brief through the complete preparation pipeline and states the normalization boundary', async () => {
+  const { project, task } = await taskInBacklog()
+  const original = JSON.parse(compatibleReadiness())
+  original.decisions = [{ id: 'D1', text: 'Keep the queued run id', rationale: 'Preserve identity', questionId: null }]
+  claudeAnswer = () => ({ text: JSON.stringify(original) })
+  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+  const expected = structuredClone(original)
+  delete expected.decisions[0].questionId
+  expect(run.readiness).toMatchObject(expected)
+  expect(preparationJsonObject(JSON.stringify(expected))).toEqual(expected)
+  expect(claudeCalls[0].prompt).toContain('Не отправляй промежуточные сообщения')
+  expect(claudeCalls[0].prompt).toContain('Нормализация не исправляет формат ответа')
+})
+
+// @testCase TC-BRIEF-03
+it.each(['Подготовка завершена.\n', 'Исправленный Development Brief:\n'])('rejects external prose without changing the extracted fixture requirements: %s', prefix => {
+  const object = JSON.parse(compatibleReadiness())
+  object.businessRules = ['Keep run id', 'Keep autoPilot=true', 'Keep source and target SHA']
+  const json = JSON.stringify(object)
+  expect(() => preparationJsonObject(prefix + json)).toThrow()
+  expect(preparationJsonObject(json)).toEqual(object)
+})
+
 const SECRET = 'test-secret'
 
 // @testCase TC9
@@ -88,6 +113,7 @@ it('normalizes only absent decision references and preserves compatible nulls an
   expect(original.decisions[0].questionId).toBeNull()
 })
 
+// @testCase TC-8
 // @testCase T12
 // @testCase T13
 // @testCase TC-BRIEF-02
@@ -95,6 +121,8 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
   expect(() => preparationJsonObject(input)).toThrow()
 })
 
+// @testCase TC-6
+// @testCase TC-7
 // @testCase TC-BRIEF-REGRESSION
 // @testCase TC-BRIEF-03
 // @testCase T13
@@ -721,6 +749,8 @@ describe('подготовка к разработке: диагностика �
     expect(brief).toEqual(JSON.parse(input))
   })
 
+  // @testCase TC-BRIEF-01
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NEG-1
   // @testCase TC-NORM-1
   // @testCase TC-09
@@ -805,6 +835,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-12
   // @testCase T10
   // @testCase TC12
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC-10
   it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
@@ -992,6 +1023,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-SCHEMA-NORMALIZATION
   // @testCase TC-12
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase T8
   // @testCase TC-10
@@ -1032,6 +1064,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC-12
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC-10
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
@@ -1051,6 +1084,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC6
   // @testCase TC-BRIEF-1
+  // @testCase TC-BRIEF-01
   it('rejects an unknown test type with a precise schema diagnostic', async () => {
     const { project, task } = await taskInBacklog()
     const invalid = JSON.parse(compatibleReadiness())
@@ -1063,6 +1097,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC7
   // @testCase TC-12
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC-10
   it('не подменяет неоднозначный статус источника на available', async () => {
@@ -1151,6 +1186,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(3)
   })
 
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC7
   // @testCase TC-NORM-1
@@ -1186,6 +1222,7 @@ describe('подготовка к разработке: диагностика �
     }
   })
 
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC7
   it('normalizes an absent decision link without changing requirements and is idempotent', async () => {

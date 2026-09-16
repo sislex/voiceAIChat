@@ -837,6 +837,15 @@ export function createCiRest(httpBase: string): RendererCiRest {
     getTaskRepositories: (projectId, taskId) => req<import('@shared/merge').TaskRepository[]>(REST.taskRepositories(projectId, taskId)),
     getMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`),
     cancelMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
+    changeMergeMachine: async (runId, request) => {
+      const response = await credentialedFetch(httpBase + REST.mergeRunMachine(runId), {
+        method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify(request)
+      })
+      const result = await response.json()
+      if (response.status === 401) notifyUnauthorized()
+      if (typeof result?.ok === 'boolean' && (response.ok || [403, 404, 409, 422].includes(response.status))) return result
+      throw new Error(serverErrorMessage(result) || `Смена машины → ${response.status}`)
+    },
     retryMerge: (runId, agentId, unpin) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST', body: JSON.stringify({ ...(agentId ? { agentId } : {}), ...(unpin ? { unpin: true } : {}) }) }),
     listMergeRuns: (projectId, taskId) => req<import('@shared/merge').MergeRun[]>(REST.taskMergeRuns(projectId, taskId)),
     deployMergeRun: (runId) => req<import('@shared/merge').MergeRun>(REST.mergeRunDeploy(runId), { method: 'POST' }),
