@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-16 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 4 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 11 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1528 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1529 коммит(ов) в areas после сверки: d4e54236 docs(kb): update after merge 41f084dc-558e-46a5-bde5-3ce03c4e9914 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 26 коммит(ов) в areas после сверки: 029aba73 Merge main into CHAT-475 (task 7b1d7895-80a2-44f7-8f2c-7e53ac1f78a7) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 55 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 2 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
