@@ -58,6 +58,7 @@ beforeEach(async () => {
 afterEach(async () => { await app.close(); rmSync(dataDir, { recursive: true, force: true }) })
 
 describe('уведомления о долгих командах', () => {
+  // @testCase TC-SERVER-1
   it('команда из чата пишет полный лог в artifacts/commands хранилища чата; консольная — нет', async () => {
     const machine = await db.machines.createAgent(U, 'Мак')
     const fs = await connectAgent(machine.id)
