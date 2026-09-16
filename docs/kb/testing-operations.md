@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-15
-checked: 9336bc5d
+updated: 2026-09-16
+checked: 4e9fc7ad
 areas:
   - package.json
   - scripts
@@ -151,8 +151,11 @@ fresh checkout. Root `npm ci` alone does not install `electron` or
 an environment setup failure. See `apps/desktop/package.json` and the root
 workspace list. Desktop tests run their existing Node native-module rebuild. Agent tray and
 login-application are also excluded from root workspaces and keep separate
-lockfiles: use `npm ci --prefix apps/agent-tray` and
-`npm ci --prefix apps/login-application` when those consumers are selected.
+lockfiles (`apps/agent-tray/package-lock.json` and
+`apps/login-application/package-lock.json`): use `npm ci --prefix apps/agent-tray`
+and `npm ci --prefix apps/login-application` when those consumers are selected.
+The corresponding dependency manifests are each app's `package.json`; the root
+workspace list in `package.json` intentionally omits all three Electron apps.
 
 `npm run verify` выполняет полный набор. Для локального шага предпочтителен узкий гейт затронутых пакетов, затем полный verify перед релизом/крупным merge.
 
