@@ -735,7 +735,9 @@ Git URLs accept HTTPS, SSH URLs and SCP-style SSH syntax. CI branch names reject
 spaces and invalid Git ref syntax. Branch templates support `{task_number}` and
 legacy `{slug}`, each once, matching `ci/runManager.ts`. Edited command fields
 must be nonempty; existing empty optional overrides remain compatible with
-inheritance. Errors appear below fields and set `aria-invalid`.
+inheritance. Errors appear below fields and set `aria-invalid`. An input receives
+`aria-describedby` only while its matching `role=alert` error is rendered; correcting
+the value removes both the message and the relationship.
 CI commands have multiline input, shell syntax preview, catalog suggestions from
 CI/CiCommands and an explicit machine check. Checks use the project default
 machine and its path, preserve the command exit code, support cancellation and
@@ -754,9 +756,18 @@ tool itself only returns credentials; it does not authenticate. Passwords are
 not copied into the request text. Unsaved credentials or a missing preview URL
 disable the action. Production-password warnings remain visible.
 
-At phone widths, tabs scroll horizontally, forms use one column and the save bar
-includes the bottom safe area. Stories cover validation, unsaved changes,
-production results and a 390px layout.
+The application shell keeps the document fixed. Its flex chain from `.app` through
+`.app-content`, `.toolpage`, `.widget-assistant`, `.widget-assistant-widget`
+and `.project-settings-form` is shrinkable with `min-height: 0`. Within settings,
+the H1 and tab list remain outside the sole vertical scroll surface,
+`.project-settings-content`; the sticky save bar reserves the bottom safe area.
+
+At phone widths, tabs form a horizontally scrollable, single-line tablist and forms
+use one column. Selecting a tab by pointer, touch, route change or the Home/End/arrow
+keys automatically brings the active tab into view, including at 375 px. The page
+has one H1, validation relationships follow the rendered alerts, and App title
+segments are deduplicated before the single `ChatAI` suffix. Stories cover
+validation, unsaved changes, production results and the constrained mobile layout.
 
 ## Чаты завершённых задач скрыты из списка бесед
 
