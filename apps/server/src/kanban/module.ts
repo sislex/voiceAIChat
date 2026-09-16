@@ -26,7 +26,7 @@ import { FeaturePreviewManager } from '../preview/manager.js'
 import { createCiRunManager, type CiRunManager } from '../ci/runManager.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from '../ci/componentQa.js'
 import { automatedQaRemarks } from '@voicechat/shared'
-import { isDirtyWorkspaceFailure, retryAllowedNow, shouldResumeAfterInfraFailure } from '../ci/autopilotResume.js'
+import { isDirtyWorkspaceFailure, retryAllowedNow, shouldResumeAfterInfraFailure, trailingQaStageFailures } from '../ci/autopilotResume.js'
 import { createIntegrationTestRunner } from '../ci/integrationTests.js'
 import { createAutomatedQaCheck } from '../ci/automatedQaCheck.js'
 import { createTemporaryCleanup, registerCleanupRoutes, startTemporaryCleanup } from '../cleanup/module.js'
@@ -1031,11 +1031,25 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
                 : true
             if (needsMachine && !await projectHasOnlineMachine(userId, projectId)) continue
             if (stage === 'component_qa' || stage === 'integration_tests' || stage === 'automated_qa') {
-              const latest = stage === 'component_qa'
-                ? (await db.tasks.getComponentQaTaskState(userId, projectId, task.id))?.latestRun
+              const history: ReadonlyArray<{ id: string; status: string; finishedAt: number | null }> = stage === 'component_qa'
+                ? (await db.tasks.getComponentQaTaskState(userId, projectId, task.id))?.runs ?? []
                 : stage === 'integration_tests'
-                  ? (await db.ci.getIntegrationTestTaskState(userId, projectId, task.id))?.latestRun
-                  : (await db.qa.listQaStageRuns(userId, projectId, task.id, stage))[0]
+                  ? (await db.ci.getIntegrationTestTaskState(userId, projectId, task.id))?.runs ?? []
+                  : await db.qa.listQaStageRuns(userId, projectId, task.id, stage)
+              const latest = history[0]
+              // A stage that only ever fails has to reach a person. Infrastructure
+              // failures skip the fix-cycle counter on purpose, so this streak is
+              // the only thing between a broken environment and an endless queue of
+              // half-hour runs — the same safeguard merge already has.
+              const failures = trailingQaStageFailures(history)
+              const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
+              if (failures >= limit) {
+                await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage, runId: latest?.id ?? null, reason: 'Подряд упавшие раны этапа', failures, limit })
+                try { await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', `autopilot.${stage}_limit_exhausted`) }
+                catch { /* переход недоступен из текущей колонки */ }
+                emitBoard(projectId)
+                continue
+              }
               // A completion event must not immediately repeat the same failure.
               // Persisted finishedAt keeps the retry delay across server restarts.
               if (latest && (latest.status === 'blocked' || latest.status === 'failed')
