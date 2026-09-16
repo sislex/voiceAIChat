@@ -42,6 +42,30 @@ export function isDirtyWorkspaceFailure(error: string | null | undefined): boole
   return Boolean(error && classifyPipelineFailure(error).code === 'workspace_dirty')
 }
 
+/**
+ * Statuses that end a QA stage attempt without moving the task forward.
+ * `cancelled` is a person's decision rather than a failing pipeline, so it
+ * interrupts the streak instead of counting towards it.
+ */
+const QA_STAGE_FAILURE_STATUSES = new Set(['failed', 'blocked', 'gate_failed', 'interrupted', 'timeout'])
+
+/**
+ * How many runs of a QA stage failed in a row, newest first. The autopilot
+ * restarts a failed stage after the backoff, and an infrastructure failure
+ * deliberately never reaches the fix-cycle counter — it is not the developer's
+ * fault. Without a streak limit that combination restarted a broken stage
+ * forever: in production three tasks each burned five 30-minute Automated QA
+ * runs in a row on «Лимит времени Automated QA исчерпан», never reaching a person.
+ */
+export function trailingQaStageFailures(runs: ReadonlyArray<{ status: string }>): number {
+  let count = 0
+  for (const run of runs) {
+    if (!QA_STAGE_FAILURE_STATUSES.has(run.status)) break
+    count += 1
+  }
+  return count
+}
+
 export interface AutopilotRetryInput {
   /** Когда завершился последний ран задачи; null — время неизвестно. */
   finishedAt: number | null
