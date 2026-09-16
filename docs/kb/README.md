@@ -12,10 +12,10 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 28 коммит(ов) в areas после сверки: 9e663b79 feat: configure machine command notifications … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 75 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 57 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ код изменён 2026-09-15, сверка 2026-09-11 (по датам: правки того же дня не видны — поставь checked) |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: effba481 perf(ui): reduce initial bundles and enforce route budgets |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 33 коммит(ов) в areas после сверки: 9e663b79 feat: configure machine command notifications … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 25 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-16 | ⚠ 6 коммит(ов) в areas после сверки: 9e663b79 feat: configure machine command notifications … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-16 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 7 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 198 коммит(ов) в areas после сверки: 9e663b79 feat: configure machine command notifications … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 356 коммит(ов) в areas после сверки: 9e663b79 feat: configure machine command notifications … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-16 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 4 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 12 коммит(ов) в areas после сверки: 9e663b79 feat: configure machine command notifications … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1530 коммит(ов) в areas после сверки: 9e663b79 feat: configure machine command notifications … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1531 коммит(ов) в areas после сверки: d67c25c6 docs(kb): update after merge 154a6cb1-bf9a-46fd-9959-b59a8f12fffd … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 26 коммит(ов) в areas после сверки: 029aba73 Merge main into CHAT-475 (task 7b1d7895-80a2-44f7-8f2c-7e53ac1f78a7) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 56 коммит(ов) в areas после сверки: 9e663b79 feat: configure machine command notifications … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 2 коммит(ов) в areas после сверки: d486b032 Merge main into CHAT-476 (task 41f084dc-558e-46a5-bde5-3ce03c4e9914) … |
@@ -74,7 +74,7 @@
 
 ## Журнал сессий
 
-Всего записей: 866. Последние:
+Всего записей: 867. Последние:
 
 - [2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md](log/2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md) — temporary-resource-lifecycle
 - [2026-09-16-pc-radvilovich-machine-command-notices.md](log/2026-09-16-pc-radvilovich-machine-command-notices.md) — machine-command-notices
@@ -82,10 +82,10 @@
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md) — vpn-marker-discovery-kb
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-temporary-cleanup-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-temporary-cleanup-kb.md) — temporary-cleanup-kb
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-queued-merge-machine-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-queued-merge-machine-kb.md) — queued-merge-machine-kb
+- [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-cleanup-lock-stall.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-cleanup-lock-stall.md) — cleanup-lock-stall
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-475-queued-merge-machine.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-475-queued-merge-machine.md) — chat-475-queued-merge-machine
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-473-route-budgets-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-473-route-budgets-kb.md) — chat-473-route-budgets-kb
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-accessibility-performance-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-accessibility-performance-kb.md) — accessibility-performance-kb
-- [2026-09-15-germany-4-8-60-universal-search.md](log/2026-09-15-germany-4-8-60-universal-search.md) — universal-search
 
 ## Исторические планы
 
