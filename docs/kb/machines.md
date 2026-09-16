@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-09-15
-checked: 9336bc5d
+updated: 2026-09-16
+checked: 42054046
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -262,7 +262,12 @@ role, checks actual state, and explicitly releases protection. The agent's opera
 
 The integration runner discovers markers only in changed test files from the
 feature diff (with a first-parent HEAD fallback), not across the whole checkout.
-Existing VPN markers outside that diff do not satisfy a new run. The VPN
+This selection and the exact-ID marker match live in
+`apps/server/src/ci/integrationTests.ts`: implementation files still select the
+normal gate, but only changed paths accepted as tests are passed to the marker
+scan. Consequently an existing VPN test elsewhere in the checkout is invisible
+to coverage accounting until that test file is part of the feature diff, and a
+different or merely similar case ID does not cover the required case. The VPN
 coverage files are `MachineVpn.dom.test.tsx` (TC-UI, TC-REGRESSION),
 `machines/vpn/service.test.ts` (TC-API, TC-ISOLATION, TC-MIGRATION,
 TC-STATE, TC-SECRETS), and agent `vpn/system.test.ts` (TC-NETWORK) plus
