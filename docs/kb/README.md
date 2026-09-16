@@ -9,40 +9,41 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 101 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 10 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 32 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-12 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-12 | ✓ |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-12 | ✓ |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 153 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 316 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 3 коммит(ов) в areas после сверки: d9864647 fix(llm-runner): keep silent CLI response streams alive … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 85 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 108 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-12 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1406 коммит(ов) в areas после сверки: d9864647 fix(llm-runner): keep silent CLI response streams alive … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-11 | ⚠ 44 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 15 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-11 | ⚠ 6 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 322 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 22 коммит(ов) в areas после сверки: ac3e00c1 fix(kanban): advance autonomous QA delivery and add task manual QA pause … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-12 | ✓ |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-10 | ⚠ 15 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 227 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-12 | ⚠ 3 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-12 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-12 | ⚠ 5 коммит(ов) в areas после сверки: 515502f7 feat(releases): Release Center improvement cycle 6 — production readiness, filters, ETA … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 7 коммит(ов) в areas после сверки: 515502f7 feat(releases): Release Center improvement cycle 6 — production readiness, filters, ETA … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 200 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-12 | ⚠ 1 коммит(ов) в areas после сверки: 9c4bebf1 feat(image-studio): add object editing and version history |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 152 коммит(ов) в areas после сверки: dc007d14 feat(releases): Release Center improvement cycle 5 — live release updates over WS … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-12 | ⚠ 8 коммит(ов) в areas после сверки: b5d92e42 feat(releases): Release Center improvement cycle 7 — deep links, log reading, remembered mode … |
-| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-12, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 30 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 78 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 60 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ код изменён 2026-09-15, сверка 2026-09-11 (по датам: правки того же дня не видны — поставь checked) |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 35 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 26 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-16 | ⚠ 13 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ✓ |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 8 коммит(ов) в areas после сверки: 7d3df3fc fix(ui): make project settings layout accessible … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 203 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 361 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 12 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 3 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 8 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 16 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1542 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 30 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 61 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 5 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-16 | ⚠ 12 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 370 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 27 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 34 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-16 | ⚠ 4 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 263 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-17 | ⚠ 3 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-15 | ⚠ 25 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ⚠ 32 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 78 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 206 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-15 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-16 | ✓ |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 158 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-16 | ⚠ 10 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-17, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
 ## Инструкции по пакетам
@@ -74,18 +75,18 @@
 
 ## Журнал сессий
 
-Всего записей: 794. Последние:
+Всего записей: 873. Последние:
 
-- [2026-09-12-germany-4-8-60-runner-stream-heartbeat.md](log/2026-09-12-germany-4-8-60-runner-stream-heartbeat.md) — runner-stream-heartbeat
-- [2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md](log/2026-09-12-alexeys-macbook-air-2-release-task-modal-test-timeout.md) — release-task-modal-test-timeout
-- [2026-09-12-alexeys-macbook-air-2-release-center-improvement-cycles.md](log/2026-09-12-alexeys-macbook-air-2-release-center-improvement-cycles.md) — release-center-improvement-cycles
-- [2026-09-12-alexeys-macbook-air-2-new-task-card-functional-tabs.md](log/2026-09-12-alexeys-macbook-air-2-new-task-card-functional-tabs.md) — new-task-card-functional-tabs
-- [2026-09-12-alexeys-macbook-air-2-kanban-visible-export.md](log/2026-09-12-alexeys-macbook-air-2-kanban-visible-export.md) — kanban-visible-export
-- [2026-09-12-alexeys-macbook-air-2-kanban-task-permalinks.md](log/2026-09-12-alexeys-macbook-air-2-kanban-task-permalinks.md) — kanban-task-permalinks
-- [2026-09-12-alexeys-macbook-air-2-kanban-board-diagnostics.md](log/2026-09-12-alexeys-macbook-air-2-kanban-board-diagnostics.md) — kanban-board-diagnostics
-- [2026-09-12-alexeys-macbook-air-2-image-studio-local-attachments.md](log/2026-09-12-alexeys-macbook-air-2-image-studio-local-attachments.md) — image-studio-local-attachments
-- [2026-09-12-alexeys-macbook-air-2-image-studio-history-objects.md](log/2026-09-12-alexeys-macbook-air-2-image-studio-history-objects.md) — image-studio-history-objects
-- [2026-09-12-alexeys-macbook-air-2-development-preview.md](log/2026-09-12-alexeys-macbook-air-2-development-preview.md) — development-preview
+- [2026-09-17-pc-radvilovich-project-settings-layout-a11y.md](log/2026-09-17-pc-radvilovich-project-settings-layout-a11y.md) — project-settings-layout-a11y
+- [2026-09-17-pc-radvilovich-component-qa-browser-teardown.md](log/2026-09-17-pc-radvilovich-component-qa-browser-teardown.md) — component-qa-browser-teardown
+- [2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-development-preview.md](log/2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-development-preview.md) — development-preview
+- [2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md](log/2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md) — temporary-resource-lifecycle
+- [2026-09-16-pc-radvilovich-run-admission.md](log/2026-09-16-pc-radvilovich-run-admission.md) — run-admission
+- [2026-09-16-pc-radvilovich-machine-command-notices.md](log/2026-09-16-pc-radvilovich-machine-command-notices.md) — machine-command-notices
+- [2026-09-16-pc-radvilovich-autopilot-dirty-workspace-guard.md](log/2026-09-16-pc-radvilovich-autopilot-dirty-workspace-guard.md) — autopilot-dirty-workspace-guard
+- [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md) — vpn-marker-discovery-kb
+- [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-temporary-cleanup-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-temporary-cleanup-kb.md) — temporary-cleanup-kb
+- [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-queued-merge-machine-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-queued-merge-machine-kb.md) — queued-merge-machine-kb
 
 ## Исторические планы
 
