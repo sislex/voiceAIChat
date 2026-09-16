@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
 updated: 2026-09-16
-checked: d76642f9
+checked: a92960ef
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/kanban/module.ts
@@ -15,6 +15,8 @@ areas:
   - apps/server/src/ci/integrationTests.ts
   - apps/server/src/ci/runManager.ts
   - apps/server/src/ci/modelHooks.ts
+  - apps/server/src/ci/autopilotResume.ts
+  - apps/server/src/ci/runAdmission.ts
   - packages/ui/src/components/kanban/TaskCard.tsx
   - packages/ui/src/components/kanban/TaskModal.tsx
   - packages/ui/src/components/ci/RunFeed.tsx
@@ -67,6 +69,16 @@ when its executor never starts. Retrying failed or blocked QA respects the share
 delay using persisted `finishedAt`, preventing immediate infrastructure retry
 loops. A zero retry limit still permits the first preparation and merge attempts.
 
+The delay alone was not a limit: an infrastructure failure deliberately skips the
+fix-cycle counter, so a QA stage whose environment is broken restarted after every
+backoff forever — in production three tasks each queued five 30-minute Automated QA
+runs on «Лимит времени Automated QA исчерпан» and nobody was told. The tick now
+counts the streak of failed stage runs (`trailingQaStageFailures` in
+`ci/autopilotResume.ts`, newest first over `runs` of the stage; `cancelled` breaks
+the streak) and at `autoPilotFixLimit` records `autopilot.stopped` and moves the
+task to `decision_required` — the safeguard merge already had. Regression:
+`autopilotPipeline.test.ts › останавливает этап после лимита подряд упавших ранов`.
+
 Начало конвейера покрыто тем же координатором. Из `backlog` и `preparation`
 карточка сама уходит в подготовку (`launchTaskPreparation` идемпотентен и
 переносит её в колонку `preparation`), из `ready` — сама встаёт в очередь
@@ -117,6 +129,23 @@ code failure сохраняется новый fix-run, а инфраструк�
 лимита `AUTOPILOT_INFRA_RESUMES`. При исчерпании общего лимита карточка по
 доступному workflow переходит в `decision_required` с `autopilot.stopped`.
 Успешный ран обнуляет последовательность отказов.
+
+Общая детерминированная матрица причин и API допуска находятся в
+`apps/server/src/ci/runAdmission.ts`. Политики одинаково моделируют development,
+Component QA, Integration Tests, Automated QA и merge: инфраструктурные причины
+(`offline`, отсутствующий toolchain, недоступный origin, ENOSPC) повторяемы и
+предпочитают продолжение с упавшего шага; dirty workspace и незавершённый merge
+сохраняют работу и требуют решения человека; исчерпанный бюджет, неверная
+привязка и неизвестная причина закрывают допуск. `admitPipelineRun` принимает
+сериализуемый snapshot и проверяет абсолютный workspace, владельца и версию
+привязки, активную попытку, блокирующее решение, сохранённые budget и
+`nextRetryAt`; первый запуск разрешён при нулевом retry-limit.
+`AdmissionReservations` предоставляет процессную дедупликацию одновременных
+резерваций. На текущем срезе production-пути ещё не вызывают `admitPipelineRun`
+и не используют `AdmissionReservations`: матрица закреплена unit-тестами, а из
+рабочего кода к ней подключён только `isDirtyWorkspaceFailure` через
+`classifyPipelineFailure`. Поэтому проверка версии привязки до её атомарной
+активации пока является контрактом API, а не сквозной гарантией всех запусков.
 
 Регрессия в `apps/server/src/autopilotPipeline.test.ts` воспроизводит
 `ready → development → failed/timeout dirty → ready`, конкурентные board-события
