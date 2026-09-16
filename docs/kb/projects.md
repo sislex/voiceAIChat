@@ -754,9 +754,19 @@ tool itself only returns credentials; it does not authenticate. Passwords are
 not copied into the request text. Unsaved credentials or a missing preview URL
 disable the action. Production-password warnings remain visible.
 
-At phone widths, tabs scroll horizontally, forms use one column and the save bar
-includes the bottom safe area. Stories cover validation, unsaved changes,
-production results and a 390px layout.
+The settings shell keeps the tab navigation outside a single focusable internal
+vertical scroll surface; the document and tab panels do not add competing
+vertical scrollers. The active horizontal tab is scrolled into view and the tab
+list uses roving tabindex with arrow/Home/End navigation. Each active panel has
+an `h2`; field errors only set `aria-describedby` while the stable error element
+exists, and save pending/success/failure states are announced locally.
+
+At phone widths, tabs scroll horizontally with a continuation cue, forms and
+selects use the full single column, the save bar includes the bottom safe area,
+and machine tables become bordered cards while preserving the same controls.
+Long machine values remain selectable and have a copy action whose failure
+message tells the user to select the value manually. Stories cover validation,
+unsaved changes, production results and a 390px layout.
 
 ## Чаты завершённых задач скрыты из списка бесед
 

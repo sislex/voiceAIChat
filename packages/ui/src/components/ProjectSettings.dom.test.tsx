@@ -21,6 +21,50 @@ function props(over: Partial<ProjectSettingsProps> = {}): ProjectSettingsProps {
   }
 }
 
+describe('Project settings accessibility and responsive contracts', () => {
+  // @testCase TC-UI-01
+  it('keeps tabs outside the single internal settings scroller', () => {
+    render(<ProjectSettings {...props()} />)
+    const root = screen.getByTestId('project-settings')
+    const scroller = root.querySelector('.project-settings-scroll')
+    expect(scroller).toHaveAttribute('role', 'tabpanel')
+    expect(root.querySelector('.proj-settings-tabs-wrap')).not.toBe(scroller)
+    expect(scroller).toContainElement(screen.getByLabelText('Название проекта'))
+  })
+
+  // @testCase TC-UI-02
+  it('uses roving tabs, keyboard navigation and reveals the active mobile tab', async () => {
+    const reveal = vi.fn()
+    HTMLElement.prototype.scrollIntoView = reveal
+    render(<ProjectSettings {...props()} />)
+    const general = screen.getByRole('tab', { name: 'Общее' })
+    expect(general).toHaveAttribute('tabindex', '0')
+    fireEvent.keyDown(general, { key: 'End' })
+    expect(screen.getByRole('tab', { name: 'Машины' })).toHaveAttribute('aria-selected', 'true')
+    expect(reveal).toHaveBeenCalled()
+  })
+
+  // @testCase TC-REG-03
+  it('has a tab heading and only references errors that exist', () => {
+    render(<ProjectSettings {...props()} />)
+    expect(screen.getByRole('heading', { level: 2, name: 'Общее' })).toBeInTheDocument()
+    const git = screen.getByLabelText('Git-репозиторий')
+    expect(git).not.toHaveAttribute('aria-describedby')
+    fireEvent.change(git, { target: { value: 'bad-url' } })
+    const errorId = git.getAttribute('aria-describedby')
+    expect(errorId).toBeTruthy()
+    expect(document.getElementById(errorId!)).toHaveAttribute('role', 'alert')
+  })
+
+  // @testCase TC-REG-09
+  it('does not dim project role text with opacity', async () => {
+    render(<ProjectSettings {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Участники' }))
+    expect(screen.getByLabelText(/Роль /)).toHaveClass('sel')
+    expect(screen.getByTestId('project-settings')).toHaveClass('proj-detail')
+  })
+})
+
 describe('Project settings draft', () => {
   it('has accessible invalid and dirty form states', async () => {
     render(<ProjectSettings {...props()} />)
@@ -44,6 +88,7 @@ describe('Project settings draft', () => {
     expect(exec.mock.calls[1][1]).toContain('curl -fsS')
   })
 
+  // @testCase TC-UI-05
   it('runs a draft command on the project machine and limits displayed output', async () => {
     const bridges = installStoryBridges()
     const exec = vi.fn().mockResolvedValue({ exitCode: 0, timedOut: false, output: Array.from({ length: 60 }, (_, i) => 'line-' + (i + 1)).join('\n') })
@@ -82,6 +127,7 @@ describe('Project settings draft', () => {
     expect(Boolean(projectFieldError(String(field), String(value)))).toBe(invalid)
   })
 
+  // @testCase TC-INT-08
   it('collects fields, blocks invalid saves, cancels and warns before leaving', async () => {
     const onUpdate = vi.fn()
     render(<ProjectSettings {...props({ onUpdate })} />)
@@ -160,6 +206,7 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(kbSelect()).toBeDisabled()
   })
 
+  // @testCase TC-UI-04
   it('раскладывает настройки по вкладкам и сохраняет выбранную вкладку при обновлении detail', async () => {
     const view = render(<ProjectSettings {...props()} />)
     expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
@@ -178,6 +225,7 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(provider).toHaveTextContent('Codex')
   })
 
+  // @testCase TC-NEG-07
   it('показывает всех владельцев, текущего пользователя и защищает последнего', async () => {
     render(<ProjectSettings {...props({
       currentUsername: 'admin',
@@ -193,6 +241,22 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(screen.getByLabelText('Роль admin')).toBeDisabled()
     expect(screen.getByText(/Сначала назначьте другого владельца/)).toBeInTheDocument()
     expect(screen.getByLabelText('Убрать admin')).toBeDisabled()
+  })
+
+  it('удаление участника требует подтверждения с именем', async () => {
+    const onRemoveMember = vi.fn()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(<ProjectSettings {...props({ onRemoveMember, detail: detail({ members: [
+      { username: 'admin', role: 'owner', addedAt: 1 },
+      { username: 'bob', role: 'member', addedAt: 2 }
+    ] }) })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Участники' }))
+    await userEvent.click(screen.getByLabelText('Убрать bob'))
+    expect(confirm).toHaveBeenLastCalledWith('Удалить участника bob из проекта?')
+    expect(onRemoveMember).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByLabelText('Убрать bob'))
+    expect(onRemoveMember).toHaveBeenCalledWith('p1', 'bob')
+    confirm.mockRestore()
   })
 
   it('назначение владельца требует подтверждения и вызывает смену роли', async () => {
