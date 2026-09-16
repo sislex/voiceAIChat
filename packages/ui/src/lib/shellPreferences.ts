@@ -41,14 +41,14 @@ export interface ShellNotification {
   id: string
   text: string
   kind: 'success' | 'error' | 'info'
-  source: 'toast' | 'run' | 'release' | 'invitation'
+  source: 'toast' | 'run' | 'release' | 'invitation' | 'machine'
   time: number
   read: boolean
 }
 const EMPTY_NOTIFICATIONS: ShellNotification[] = []
 const validNotifications = (value: unknown): value is ShellNotification[] => Array.isArray(value) && value.length <= 50 && value.every(item =>
   item && typeof item.id === 'string' && typeof item.text === 'string' && typeof item.time === 'number' && Number.isFinite(item.time) &&
-  typeof item.read === 'boolean' && ['success', 'error', 'info'].includes(item.kind) && ['toast', 'run', 'release', 'invitation'].includes(item.source))
+  typeof item.read === 'boolean' && ['success', 'error', 'info'].includes(item.kind) && ['toast', 'run', 'release', 'invitation', 'machine'].includes(item.source))
 export function readNotifications(user: string): ShellNotification[] {
   return readPreference(userKey(user, 'notifications'), EMPTY_NOTIFICATIONS, validNotifications)
 }
