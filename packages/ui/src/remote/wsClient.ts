@@ -12,7 +12,10 @@ export class WsClient {
   private queue: Array<string | ArrayBuffer> = []
   private listeners = new Map<string, Set<Listener>>()
   private connectedListeners = new Set<(reconnected: boolean) => void>()
+  private disconnectedListeners = new Set<() => void>()
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private hasConnected = false
+  private disconnected = false
   private closed = false
   // Буфер сообщений, пришедших ДО регистрации слушателей: сокет открывается на
   // загрузке модуля, а подписки — позже, в React-эффекте. Без буфера снапшот
@@ -35,7 +38,8 @@ export class WsClient {
   }
 
   private connect(): void {
-    if (this.closed) return
+    if (this.closed || this.ws) return
+    this.reconnectTimer = null
     const token = this.tokenProvider ? this.tokenProvider() : undefined
     // Провайдер задан, но токена нет — соединение отложено до логина (reconnect()).
     if (this.tokenProvider && !token) return
@@ -49,6 +53,7 @@ export class WsClient {
       const pending = this.queue
       this.queue = []
       for (const m of pending) ws.send(m)
+      this.disconnected = false
       const reconnected = this.hasConnected
       this.hasConnected = true
       for (const listener of [...this.connectedListeners]) listener(reconnected)
@@ -68,8 +73,15 @@ export class WsClient {
       this.dispatch(msg)
     }
     ws.onclose = () => {
+      if (this.ws !== ws) return
       this.ws = null
-      if (!this.closed) setTimeout(() => this.connect(), 1000)
+      if (!this.closed) {
+        if (this.hasConnected) {
+          this.disconnected = true
+          for (const listener of this.disconnectedListeners) listener()
+        }
+        this.reconnectTimer = setTimeout(() => this.connect(), 1000)
+      }
     }
     ws.onerror = () => {
       try {
@@ -143,9 +155,25 @@ export class WsClient {
     return () => this.connectedListeners.delete(cb)
   }
 
+  onDisconnected(cb: () => void): () => void {
+    this.disconnectedListeners.add(cb)
+    if (this.disconnected) cb()
+    return () => { this.disconnectedListeners.delete(cb) }
+  }
+
+  retry(): void {
+    if (this.closed || this.ws) return
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+    this.connect()
+  }
+
   /** Пере-дозвон с актуальным токеном (после логина/логаута). */
   reconnect(): void {
     if (this.closed) return
+    this.disconnected = false
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
     const prev = this.ws
     this.ws = null
     if (prev) {
@@ -161,6 +189,8 @@ export class WsClient {
 
   close(): void {
     this.closed = true
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
     this.ws?.close()
   }
 }

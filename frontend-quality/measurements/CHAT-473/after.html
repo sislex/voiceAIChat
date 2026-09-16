@@ -1,0 +1,448 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Route measurements</title><style>body{font:14px system-ui;margin:24px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px;border-bottom:1px solid #bbb}th{overflow-wrap:anywhere;max-width:480px}.timeline{position:relative;min-width:180px}i{position:absolute;height:12px;background:#376bc7;top:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere}section{margin-block:32px}</style><h1>Route measurements</h1><pre>{
+  &quot;commit&quot;: &quot;18dea635707b4bb39080096818495516a91e3664&quot;,
+  &quot;conditions&quot;: {
+    &quot;scenario&quot;: &quot;returning admin, onboarded, existing chat with a fixed Markdown/code message; no optional-surface intent&quot;,
+    &quot;viewport&quot;: {
+      &quot;width&quot;: 1440,
+      &quot;height&quot;: 900
+    },
+    &quot;theme&quot;: &quot;light&quot;,
+    &quot;settleMs&quot;: 5000,
+    &quot;transport&quot;: &quot;localhost HTTP and Electron file; Electron signs in through UI on each navigation because the HTTP fixture cookie is cross-site from file origin; compression calculated per resource&quot;,
+    &quot;node&quot;: &quot;v22.23.2&quot;,
+    &quot;zlib&quot;: &quot;1.3.1-e00f703&quot;,
+    &quot;brotli&quot;: &quot;1.1.0&quot;,
+    &quot;cpu&quot;: &quot;unthrottled&quot;,
+    &quot;network&quot;: &quot;unthrottled loopback; Google font stylesheet fetched and measured&quot;,
+    &quot;cache&quot;: &quot;CDP clearBrowserCache for cold, same context reload for warm&quot;,
+    &quot;actualViewports&quot;: {
+      &quot;web&quot;: {
+        &quot;width&quot;: 1440,
+        &quot;height&quot;: 900,
+        &quot;deviceScaleFactor&quot;: 1
+      },
+      &quot;electron&quot;: {
+        &quot;width&quot;: 1440,
+        &quot;height&quot;: 873,
+        &quot;deviceScaleFactor&quot;: 1
+      }
+    }
+  },
+  &quot;tools&quot;: {
+    &quot;web&quot;: &quot;151.0.7922.34&quot;,
+    &quot;electron&quot;: &quot;33.4.11&quot;
+  }
+}</pre><section><h2>web/chat/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1209801,&quot;gzip&quot;:363241,&quot;brotli&quot;:296037},&quot;css&quot;:{&quot;raw&quot;:377447,&quot;gzip&quot;:65547,&quot;brotli&quot;:52770}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:33.993893779109%;width:42.88584688309209%"></i></td><td>17.3 + 21.8 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:34.61833865104067%;width:65.38166134895933%"></i></td><td>17.6 + 33.2 ms</td></tr><tr><th>web/assets/index-CixcKOT6.js</th><td>731631</td><td>215726</td><td>172605</td><td class="timeline"><i style="left:34.900031861157494%;width:60.2856270110477%"></i></td><td>17.7 + 30.6 ms</td></tr><tr><th>web/assets/react-Ztm9MH8b.js</th><td>143507</td><td>46135</td><td>40375</td><td class="timeline"><i style="left:35.08125722324001%;width:49.20318927180723%"></i></td><td>17.8 + 25.0 ms</td></tr><tr><th>web/assets/markdown-B45geBhu.js</th><td>334187</td><td>101096</td><td>82836</td><td class="timeline"><i style="left:35.49689504002934%;width:52.82576906371781%"></i></td><td>18.0 + 26.8 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:35.96178614851207%;width:23.876683794543627%"></i></td><td>18.3 + 12.1 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:36.44834134120444%;width:39.44843752583083%"></i></td><td>18.5 + 20.0 ms</td></tr></tbody></table></section><section><h2>web/chat/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1209801,&quot;gzip&quot;:363241,&quot;brotli&quot;:296037},&quot;css&quot;:{&quot;raw&quot;:377447,&quot;gzip&quot;:65547,&quot;brotli&quot;:52770}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:55.956677035327395%;width:15.353174859662552%"></i></td><td>16.4 + 4.5 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:56.63101783177955%;width:0.8173821930350792%"></i></td><td>16.6 + 0.2 ms</td></tr><tr><th>web/assets/index-CixcKOT6.js</th><td>731631</td><td>215726</td><td>172605</td><td class="timeline"><i style="left:57.60165959200722%;width:33.68639830273133%"></i></td><td>16.9 + 9.9 ms</td></tr><tr><th>web/assets/react-Ztm9MH8b.js</th><td>143507</td><td>46135</td><td>40375</td><td class="timeline"><i style="left:58.16701739524994%;width:39.121997356787276%"></i></td><td>17.1 + 11.5 ms</td></tr><tr><th>web/assets/markdown-B45geBhu.js</th><td>334187</td><td>101096</td><td>82836</td><td class="timeline"><i style="left:58.42585606410749%;width:41.57414393589251%"></i></td><td>17.2 + 12.2 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:58.70853496572885%;width:22.542739463607756%"></i></td><td>17.2 + 6.6 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:59.43055622770865%;width:26.043869276273547%"></i></td><td>17.5 + 7.6 ms</td></tr></tbody></table></section><section><h2>web/account/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1228027,&quot;gzip&quot;:369258,&quot;brotli&quot;:301104},&quot;css&quot;:{&quot;raw&quot;:377447,&quot;gzip&quot;:65547,&quot;brotli&quot;:52770}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:9.520789341474961%;width:9.053981141764618%"></i></td><td>17.0 + 16.1 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:10.522860370384631%;width:21.257245513785563%"></i></td><td>18.8 + 37.9 ms</td></tr><tr><th>web/assets/index-CixcKOT6.js</th><td>731631</td><td>215726</td><td>172605</td><td class="timeline"><i style="left:10.899337824233271%;width:25.641444181540564%"></i></td><td>19.4 + 45.7 ms</td></tr><tr><th>web/assets/react-Ztm9MH8b.js</th><td>143507</td><td>46135</td><td>40375</td><td class="timeline"><i style="left:11.004819830030645%;width:20.95258297733366%"></i></td><td>19.6 + 37.3 ms</td></tr><tr><th>web/assets/markdown-B45geBhu.js</th><td>334187</td><td>101096</td><td>82836</td><td class="timeline"><i style="left:11.124888053720602%;width:23.875757356991873%"></i></td><td>19.8 + 42.6 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:11.21578063115924%;width:7.288856148792863%"></i></td><td>20.0 + 13.0 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:11.293769274969941%;width:16.79113180211363%"></i></td><td>20.1 + 29.9 ms</td></tr><tr><th>web/assets/AccountPage-B9hK-CwK.js</th><td>6905</td><td>2760</td><td>2410</td><td class="timeline"><i style="left:89.54334586264123%;width:10.374738023286453%"></i></td><td>159.6 + 18.5 ms</td></tr><tr><th>web/assets/applicationCatalog-D1VnkHgS.js</th><td>11321</td><td>3257</td><td>2657</td><td class="timeline"><i style="left:89.77843331691643%;width:10.221566683083564%"></i></td><td>160.0 + 18.2 ms</td></tr></tbody></table></section><section><h2>web/account/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1228027,&quot;gzip&quot;:369258,&quot;brotli&quot;:301104},&quot;css&quot;:{&quot;raw&quot;:377447,&quot;gzip&quot;:65547,&quot;brotli&quot;:52770}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:9.222826498780673%;width:4.610507373969895%"></i></td><td>15.3 + 7.6 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:9.503020158705459%;width:0.2%"></i></td><td>15.7 + 0.3 ms</td></tr><tr><th>web/assets/index-CixcKOT6.js</th><td>731631</td><td>215726</td><td>172605</td><td class="timeline"><i style="left:9.689614370388423%;width:4.369565244182723%"></i></td><td>16.0 + 7.2 ms</td></tr><tr><th>web/assets/react-Ztm9MH8b.js</th><td>143507</td><td>46135</td><td>40375</td><td class="timeline"><i style="left:9.844807588317412%;width:4.476449329550256%"></i></td><td>16.3 + 7.4 ms</td></tr><tr><th>web/assets/markdown-B45geBhu.js</th><td>334187</td><td>101096</td><td>82836</td><td class="timeline"><i style="left:9.95954105828801%;width:5.002415686984187%"></i></td><td>16.5 + 8.3 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:10.094203787508324%;width:4.6213767272346225%"></i></td><td>16.7 + 7.7 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:10.256039324000172%;width:4.970410008429536%"></i></td><td>17.0 + 8.2 ms</td></tr><tr><th>web/assets/AccountPage-B9hK-CwK.js</th><td>6905</td><td>2760</td><td>2410</td><td class="timeline"><i style="left:83.39794687971873%;width:16.01872002786203%"></i></td><td>138.1 + 26.5 ms</td></tr><tr><th>web/assets/applicationCatalog-D1VnkHgS.js</th><td>11321</td><td>3257</td><td>2657</td><td class="timeline"><i style="left:84.6334538376079%;width:15.3665461623921%"></i></td><td>140.2 + 25.4 ms</td></tr></tbody></table></section><section><h2>web/settings/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1245917,&quot;gzip&quot;:374215,&quot;brotli&quot;:305447},&quot;css&quot;:{&quot;raw&quot;:377447,&quot;gzip&quot;:65547,&quot;brotli&quot;:52770}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:8.08287427170467%;width:11.661215899166507%"></i></td><td>20.6 + 29.7 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:8.159435112257569%;width:16.09429195859032%"></i></td><td>20.8 + 41.0 ms</td></tr><tr><th>web/assets/index-CixcKOT6.js</th><td>731631</td><td>215726</td><td>172605</td><td class="timeline"><i style="left:8.190059897797013%;width:16.214826082108768%"></i></td><td>20.9 + 41.3 ms</td></tr><tr><th>web/assets/react-Ztm9MH8b.js</th><td>143507</td><td>46135</td><td>40375</td><td class="timeline"><i style="left:8.24816798518993%;width:13.167699236283973%"></i></td><td>21.0 + 33.5 ms</td></tr><tr><th>web/assets/markdown-B45geBhu.js</th><td>334187</td><td>101096</td><td>82836</td><td class="timeline"><i style="left:8.274080170768507%;width:13.921531009525555%"></i></td><td>21.1 + 35.5 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:8.311379579452911%;width:9.863407315810823%"></i></td><td>21.2 + 25.1 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:8.334543434846141%;width:11.225015460106157%"></i></td><td>21.2 + 28.6 ms</td></tr><tr><th>web/assets/SettingsModal-RVtBKXIG.js</th><td>32142</td><td>9271</td><td>7970</td><td class="timeline"><i style="left:83.91787932492534%;width:5.810781031330597%"></i></td><td>213.7 + 14.8 ms</td></tr><tr><th>web/assets/chatInstructions-BlcY6kSF.js</th><td>621</td><td>370</td><td>321</td><td class="timeline"><i style="left:84.00504183044661%;width:14.754671204641573%"></i></td><td>214.0 + 37.6 ms</td></tr><tr><th>web/assets/LlmSettingsEditor-Fr16SbGS.js</th><td>3353</td><td>1333</td><td>1119</td><td class="timeline"><i style="left:84.05215584823434%;width:15.94784415176567%"></i></td><td>214.1 + 40.6 ms</td></tr></tbody></table></section><section><h2>web/settings/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1245917,&quot;gzip&quot;:374215,&quot;brotli&quot;:305447},&quot;css&quot;:{&quot;raw&quot;:377447,&quot;gzip&quot;:65547,&quot;brotli&quot;:52770}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:10.085537386580862%;width:4.462686782146812%"></i></td><td>19.3 + 8.6 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:10.389278162439181%;width:0.2%"></i></td><td>19.9 + 0.3 ms</td></tr><tr><th>web/assets/index-CixcKOT6.js</th><td>731631</td><td>215726</td><td>172605</td><td class="timeline"><i style="left:10.63560964615866%;width:4.96631239301207%"></i></td><td>20.4 + 9.5 ms</td></tr><tr><th>web/assets/react-Ztm9MH8b.js</th><td>143507</td><td>46135</td><td>40375</td><td class="timeline"><i style="left:10.976926815978606%;width:10.924216937225363%"></i></td><td>21.0 + 20.9 ms</td></tr><tr><th>web/assets/markdown-B45geBhu.js</th><td>334187</td><td>101096</td><td>82836</td><td class="timeline"><i style="left:11.533262305597109%;width:11.112096916178443%"></i></td><td>22.1 + 21.3 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:11.65434113363289%;width:8.94259645147803%"></i></td><td>22.3 + 17.1 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:11.735756156169321%;width:9.334014484485948%"></i></td><td>22.5 + 17.9 ms</td></tr><tr><th>web/assets/SettingsModal-RVtBKXIG.js</th><td>32142</td><td>9271</td><td>7970</td><td class="timeline"><i style="left:79.94374082483336%;width:8.745322622891427%"></i></td><td>153.2 + 16.8 ms</td></tr><tr><th>web/assets/chatInstructions-BlcY6kSF.js</th><td>621</td><td>370</td><td>321</td><td class="timeline"><i style="left:80.0491625731949%;width:8.981217048922288%"></i></td><td>153.4 + 17.2 ms</td></tr><tr><th>web/assets/LlmSettingsEditor-Fr16SbGS.js</th><td>3353</td><td>1333</td><td>1119</td><td class="timeline"><i style="left:80.24695900123659%;width:19.75304099876341%"></i></td><td>153.8 + 37.8 ms</td></tr></tbody></table></section><section><h2>web/account/navigation</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1228027,&quot;gzip&quot;:369258,&quot;brotli&quot;:301104},&quot;css&quot;:{&quot;raw&quot;:377447,&quot;gzip&quot;:65547,&quot;brotli&quot;:52770}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:0.3830276746347704%;width:0.21198330002107574%"></i></td><td>20.3 + 11.2 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:0.40936980493456254%;width:0.6926750434940201%"></i></td><td>21.7 + 36.7 ms</td></tr><tr><th>web/assets/index-CixcKOT6.js</th><td>731631</td><td>215726</td><td>172605</td><td class="timeline"><i style="left:0.4119190108192558%;width:0.7744206401618922%"></i></td><td>21.8 + 41.0 ms</td></tr><tr><th>web/assets/react-Ztm9MH8b.js</th><td>143507</td><td>46135</td><td>40375</td><td class="timeline"><i style="left:0.4134674864557617%;width:0.39632144944655506%"></i></td><td>21.9 + 21.0 ms</td></tr><tr><th>web/assets/markdown-B45geBhu.js</th><td>334187</td><td>101096</td><td>82836</td><td class="timeline"><i style="left:0.41514807217145966%;width:0.7223406355052208%"></i></td><td>22.0 + 38.3 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:0.4165265479241634%;width:0.25448942986572065%"></i></td><td>22.1 + 13.5 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:0.4178106233176625%;width:0.7007381884064526%"></i></td><td>22.1 + 37.1 ms</td></tr><tr><th>web/assets/AccountPage-B9hK-CwK.js</th><td>6905</td><td>2760</td><td>2410</td><td class="timeline"><i style="left:99.34926461216155%;width:0.6324753113364725%"></i></td><td>5261.2 + 33.5 ms</td></tr><tr><th>web/assets/applicationCatalog-D1VnkHgS.js</th><td>11321</td><td>3257</td><td>2657</td><td class="timeline"><i style="left:99.35789426727997%;width:0.642105732720018%"></i></td><td>5261.7 + 34.0 ms</td></tr></tbody></table></section><section><h2>web/settings/navigation</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1245917,&quot;gzip&quot;:374215,&quot;brotli&quot;:305447},&quot;css&quot;:{&quot;raw&quot;:377447,&quot;gzip&quot;:65547,&quot;brotli&quot;:52770}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>web/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:0.2903634949168187%;width:0.3688345170765602%"></i></td><td>15.3 + 19.5 ms</td></tr><tr><th>web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:0.2957185387379582%;width:0.7559858075407941%"></i></td><td>15.6 + 40.0 ms</td></tr><tr><th>web/assets/index-CixcKOT6.js</th><td>731631</td><td>215726</td><td>172605</td><td class="timeline"><i style="left:0.2975350612456872%;width:0.8254876528226525%"></i></td><td>15.7 + 43.6 ms</td></tr><tr><th>web/assets/react-Ztm9MH8b.js</th><td>143507</td><td>46135</td><td>40375</td><td class="timeline"><i style="left:0.29940835572108326%;width:0.6254594746538156%"></i></td><td>15.8 + 33.1 ms</td></tr><tr><th>web/assets/markdown-B45geBhu.js</th><td>334187</td><td>101096</td><td>82836</td><td class="timeline"><i style="left:0.3102130392484582%;width:0.7817769912374352%"></i></td><td>16.4 + 41.3 ms</td></tr><tr><th>web/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:0.3135812446588672%;width:0.2%"></i></td><td>16.6 + 9.0 ms</td></tr><tr><th>web/assets/index-DXMOwslQ.css</th><td>367555</td><td>64251</td><td>51735</td><td class="timeline"><i style="left:0.3152653112725474%;width:0.33872902475245487%"></i></td><td>16.7 + 17.9 ms</td></tr><tr><th>web/assets/SettingsModal-RVtBKXIG.js</th><td>32142</td><td>9271</td><td>7970</td><td class="timeline"><i style="left:99.84705061664374%;width:0.2%"></i></td><td>5276.7 + 6.0 ms</td></tr><tr><th>web/assets/chatInstructions-BlcY6kSF.js</th><td>621</td><td>370</td><td>321</td><td class="timeline"><i style="left:99.85180011687078%;width:0.2%"></i></td><td>5276.9 + 5.6 ms</td></tr><tr><th>web/assets/LlmSettingsEditor-Fr16SbGS.js</th><td>3353</td><td>1333</td><td>1119</td><td class="timeline"><i style="left:99.85439249887561%;width:0.2%"></i></td><td>5277.1 + 7.7 ms</td></tr></tbody></table></section><section><h2>electron/chat/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1194933,&quot;gzip&quot;:358523,&quot;brotli&quot;:292366},&quot;css&quot;:{&quot;raw&quot;:375620,&quot;gzip&quot;:65226,&quot;brotli&quot;:52554}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:24.961106716199378%;width:1.2150531611816144%"></i></td><td>76.1 + 3.7 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:26.47582053824933%;width:73.52417946175068%"></i></td><td>80.7 + 224.0 ms</td></tr><tr><th>electron/assets/index-BATWdCu-.js</th><td>716542</td><td>210912</td><td>168801</td><td class="timeline"><i style="left:26.58577238414116%;width:9.019358632720788%"></i></td><td>81.0 + 27.5 ms</td></tr><tr><th>electron/assets/react-Bbqgwd8K.js</th><td>143728</td><td>46231</td><td>40410</td><td class="timeline"><i style="left:26.67045238333409%;width:0.6918779186943673%"></i></td><td>81.3 + 2.1 ms</td></tr><tr><th>electron/assets/markdown-DMT30cMY.js</th><td>334187</td><td>101096</td><td>82934</td><td class="timeline"><i style="left:26.725920984903507%;width:8.085913561294626%"></i></td><td>81.4 + 24.6 ms</td></tr><tr><th>electron/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:26.77777869663767%;width:7.278504070442551%"></i></td><td>81.6 + 22.2 ms</td></tr><tr><th>electron/assets/index-CFewkoMg.css</th><td>365728</td><td>63930</td><td>51519</td><td class="timeline"><i style="left:26.833575333275334%;width:2.835124460104516%"></i></td><td>81.8 + 8.6 ms</td></tr></tbody></table></section><section><h2>electron/chat/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1194933,&quot;gzip&quot;:358523,&quot;brotli&quot;:292366},&quot;css&quot;:{&quot;raw&quot;:375620,&quot;gzip&quot;:65226,&quot;brotli&quot;:52554}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:60.00924493689348%;width:1.8049384181062123%"></i></td><td>63.6 + 1.9 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:62.71901094795821%;width:6.712144154646062%"></i></td><td>66.5 + 7.1 ms</td></tr><tr><th>electron/assets/index-BATWdCu-.js</th><td>716542</td><td>210912</td><td>168801</td><td class="timeline"><i style="left:63.182276369732904%;width:6.520612068378629%"></i></td><td>67.0 + 6.9 ms</td></tr><tr><th>electron/assets/react-Bbqgwd8K.js</th><td>143728</td><td>46231</td><td>40410</td><td class="timeline"><i style="left:63.437025022066315%;width:29.053562092792983%"></i></td><td>67.2 + 30.8 ms</td></tr><tr><th>electron/assets/markdown-DMT30cMY.js</th><td>334187</td><td>101096</td><td>82934</td><td class="timeline"><i style="left:65.38820663718876%;width:34.61179336281124%"></i></td><td>69.3 + 36.7 ms</td></tr><tr><th>electron/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:65.74013762272347%;width:10.019152668744887%"></i></td><td>69.7 + 10.6 ms</td></tr><tr><th>electron/assets/index-CFewkoMg.css</th><td>365728</td><td>63930</td><td>51519</td><td class="timeline"><i style="left:66.00243382339669%;width:11.06078992309797%"></i></td><td>70.0 + 11.7 ms</td></tr></tbody></table></section><section><h2>electron/account/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1213119,&quot;gzip&quot;:364511,&quot;brotli&quot;:297406},&quot;css&quot;:{&quot;raw&quot;:375620,&quot;gzip&quot;:65226,&quot;brotli&quot;:52554}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:16.657774629586346%;width:0.7664876185879096%"></i></td><td>51.2 + 2.4 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:17.81986880102777%;width:13.553432819527917%"></i></td><td>54.8 + 41.7 ms</td></tr><tr><th>electron/assets/index-BATWdCu-.js</th><td>716542</td><td>210912</td><td>168801</td><td class="timeline"><i style="left:17.995223921503584%;width:1.8924708881217378%"></i></td><td>55.3 + 5.8 ms</td></tr><tr><th>electron/assets/react-Bbqgwd8K.js</th><td>143728</td><td>46231</td><td>40410</td><td class="timeline"><i style="left:18.167651399349573%;width:7.763130304998745%"></i></td><td>55.8 + 23.9 ms</td></tr><tr><th>electron/assets/markdown-DMT30cMY.js</th><td>334187</td><td>101096</td><td>82934</td><td class="timeline"><i style="left:18.342031052632915%;width:8.000949454734005%"></i></td><td>56.4 + 24.6 ms</td></tr><tr><th>electron/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:18.446137354381193%;width:7.005427475878921%"></i></td><td>56.7 + 21.5 ms</td></tr><tr><th>electron/assets/index-CFewkoMg.css</th><td>365728</td><td>63930</td><td>51519</td><td class="timeline"><i style="left:18.516735241120877%;width:3.7507805676684165%"></i></td><td>56.9 + 11.5 ms</td></tr><tr><th>electron/assets/AccountPage-eXgJBQTv.js</th><td>6865</td><td>2731</td><td>2383</td><td class="timeline"><i style="left:84.74734490644074%;width:14.818984222308377%"></i></td><td>260.5 + 45.6 ms</td></tr><tr><th>electron/assets/applicationCatalog-D1VnkHgS.js</th><td>11321</td><td>3257</td><td>2657</td><td class="timeline"><i style="left:84.88398601758377%;width:15.116013982416234%"></i></td><td>260.9 + 46.5 ms</td></tr></tbody></table></section><section><h2>electron/account/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1213119,&quot;gzip&quot;:364511,&quot;brotli&quot;:297406},&quot;css&quot;:{&quot;raw&quot;:375620,&quot;gzip&quot;:65226,&quot;brotli&quot;:52554}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:11.577858787926605%;width:0.5167338973577236%"></i></td><td>57.0 + 2.5 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:12.308155085195848%;width:1.382157940252145%"></i></td><td>60.6 + 6.8 ms</td></tr><tr><th>electron/assets/index-BATWdCu-.js</th><td>716542</td><td>210912</td><td>168801</td><td class="timeline"><i style="left:12.36789525869404%;width:3.4188192065192644%"></i></td><td>60.9 + 16.8 ms</td></tr><tr><th>electron/assets/react-Bbqgwd8K.js</th><td>143728</td><td>46231</td><td>40410</td><td class="timeline"><i style="left:12.426010347545299%;width:7.893661669522981%"></i></td><td>61.2 + 38.8 ms</td></tr><tr><th>electron/assets/markdown-DMT30cMY.js</th><td>334187</td><td>101096</td><td>82934</td><td class="timeline"><i style="left:12.503835352857248%;width:9.262611969756497%"></i></td><td>61.5 + 45.6 ms</td></tr><tr><th>electron/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:12.548945501253522%;width:6.8524715252749555%"></i></td><td>61.8 + 33.7 ms</td></tr><tr><th>electron/assets/index-CFewkoMg.css</th><td>365728</td><td>63930</td><td>51519</td><td class="timeline"><i style="left:12.586130600553577%;width:4.459400089363765%"></i></td><td>61.9 + 21.9 ms</td></tr><tr><th>electron/assets/AccountPage-eXgJBQTv.js</th><td>6865</td><td>2731</td><td>2383</td><td class="timeline"><i style="left:95.22015592991431%;width:4.779844070085695%"></i></td><td>468.6 + 23.5 ms</td></tr><tr><th>electron/assets/applicationCatalog-D1VnkHgS.js</th><td>11321</td><td>3257</td><td>2657</td><td class="timeline"><i style="left:95.32459968996888%;width:4.414289940967492%"></i></td><td>469.1 + 21.7 ms</td></tr></tbody></table></section><section><h2>electron/settings/cold</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1230762,&quot;gzip&quot;:369406,&quot;brotli&quot;:301707},&quot;css&quot;:{&quot;raw&quot;:375620,&quot;gzip&quot;:65226,&quot;brotli&quot;:52554}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:6.075510687779022%;width:0.24649192293054473%"></i></td><td>69.6 + 2.8 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:6.419883651583557%;width:74.72281624669529%"></i></td><td>73.5 + 855.8 ms</td></tr><tr><th>electron/assets/index-BATWdCu-.js</th><td>716542</td><td>210912</td><td>168801</td><td class="timeline"><i style="left:6.449134149456559%;width:0.43998371238482314%"></i></td><td>73.9 + 5.0 ms</td></tr><tr><th>electron/assets/react-Bbqgwd8K.js</th><td>143728</td><td>46231</td><td>40410</td><td class="timeline"><i style="left:6.470002785471444%;width:1.7282385247424839%"></i></td><td>74.1 + 19.8 ms</td></tr><tr><th>electron/assets/markdown-DMT30cMY.js</th><td>334187</td><td>101096</td><td>82934</td><td class="timeline"><i style="left:6.483362069995489%;width:1.8030682380815424%"></i></td><td>74.3 + 20.6 ms</td></tr><tr><th>electron/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:6.496721354519535%;width:1.562862753179934%"></i></td><td>74.4 + 17.9 ms</td></tr><tr><th>electron/assets/index-CFewkoMg.css</th><td>365728</td><td>63930</td><td>51519</td><td class="timeline"><i style="left:6.7195509095376815%;width:0.5844037467830157%"></i></td><td>77.0 + 6.7 ms</td></tr><tr><th>electron/assets/SettingsModal-s9XYjm3k.js</th><td>32007</td><td>9219</td><td>7938</td><td class="timeline"><i style="left:97.74245378540412%;width:1.6652840455585443%"></i></td><td>1119.4 + 19.1 ms</td></tr><tr><th>electron/assets/chatInstructions-B2090c6T.js</th><td>597</td><td>349</td><td>299</td><td class="timeline"><i style="left:97.90381307814866%;width:1.8558069015679968%"></i></td><td>1121.3 + 21.3 ms</td></tr><tr><th>electron/assets/LlmSettingsEditor-CJXB4thG.js</th><td>3225</td><td>1315</td><td>1104</td><td class="timeline"><i style="left:97.94860605168994%;width:2.051393948310061%"></i></td><td>1121.8 + 23.5 ms</td></tr></tbody></table></section><section><h2>electron/settings/warm</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1230762,&quot;gzip&quot;:369406,&quot;brotli&quot;:301707},&quot;css&quot;:{&quot;raw&quot;:375620,&quot;gzip&quot;:65226,&quot;brotli&quot;:52554}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:22.55557817501109%;width:0.6615482902553756%"></i></td><td>69.9 + 2.0 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:23.85576347796234%;width:2.559385990810302%"></i></td><td>73.9 + 7.9 ms</td></tr><tr><th>electron/assets/index-BATWdCu-.js</th><td>716542</td><td>210912</td><td>168801</td><td class="timeline"><i style="left:23.95128447984777%;width:10.168161994322475%"></i></td><td>74.2 + 31.5 ms</td></tr><tr><th>electron/assets/react-Bbqgwd8K.js</th><td>143728</td><td>46231</td><td>40410</td><td class="timeline"><i style="left:25.097860878350048%;width:10.201078451924682%"></i></td><td>77.8 + 31.6 ms</td></tr><tr><th>electron/assets/markdown-DMT30cMY.js</th><td>334187</td><td>101096</td><td>82934</td><td class="timeline"><i style="left:26.545522719784998%;width:9.138405228589527%"></i></td><td>82.3 + 28.3 ms</td></tr><tr><th>electron/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:27.279680118852305%;width:1.7029228827066307%"></i></td><td>84.5 + 5.3 ms</td></tr><tr><th>electron/assets/index-CFewkoMg.css</th><td>365728</td><td>63930</td><td>51519</td><td class="timeline"><i style="left:27.356162041741673%;width:1.9839998120958866%"></i></td><td>84.8 + 6.1 ms</td></tr><tr><th>electron/assets/SettingsModal-s9XYjm3k.js</th><td>32007</td><td>9219</td><td>7938</td><td class="timeline"><i style="left:86.88746216573942%;width:12.308030262755171%"></i></td><td>269.2 + 38.1 ms</td></tr><tr><th>electron/assets/chatInstructions-B2090c6T.js</th><td>597</td><td>349</td><td>299</td><td class="timeline"><i style="left:86.99879572224172%;width:12.595884616779937%"></i></td><td>269.6 + 39.0 ms</td></tr><tr><th>electron/assets/LlmSettingsEditor-CJXB4thG.js</th><td>3225</td><td>1315</td><td>1104</td><td class="timeline"><i style="left:87.28148714484858%;width:12.718512855151424%"></i></td><td>270.5 + 39.4 ms</td></tr></tbody></table></section><section><h2>electron/account/navigation</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1213119,&quot;gzip&quot;:364511,&quot;brotli&quot;:297406},&quot;css&quot;:{&quot;raw&quot;:375620,&quot;gzip&quot;:65226,&quot;brotli&quot;:52554}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:0.9645216836725902%;width:0.2%"></i></td><td>55.2 + 4.1 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:1.0548354254670596%;width:0.6048032678445577%"></i></td><td>60.4 + 34.6 ms</td></tr><tr><th>electron/assets/index-BATWdCu-.js</th><td>716542</td><td>210912</td><td>168801</td><td class="timeline"><i style="left:1.0599158716840755%;width:0.47667410589552794%"></i></td><td>60.7 + 27.3 ms</td></tr><tr><th>electron/assets/react-Bbqgwd8K.js</th><td>143728</td><td>46231</td><td>40410</td><td class="timeline"><i style="left:1.0629187784657392%;width:0.4640863594245813%"></i></td><td>60.9 + 26.6 ms</td></tr><tr><th>electron/assets/markdown-DMT30cMY.js</th><td>334187</td><td>101096</td><td>82934</td><td class="timeline"><i style="left:1.0652407715226424%;width:0.21434010551382868%"></i></td><td>61.0 + 12.3 ms</td></tr><tr><th>electron/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:1.0678246672812886%;width:0.2%"></i></td><td>61.2 + 10.6 ms</td></tr><tr><th>electron/assets/index-CFewkoMg.css</th><td>365728</td><td>63930</td><td>51519</td><td class="timeline"><i style="left:1.071298932326547%;width:0.2709061940239376%"></i></td><td>61.4 + 15.5 ms</td></tr><tr><th>electron/assets/AccountPage-eXgJBQTv.js</th><td>6865</td><td>2731</td><td>2383</td><td class="timeline"><i style="left:99.73681052849207%;width:0.23401604131637432%"></i></td><td>5712.7 + 13.4 ms</td></tr><tr><th>electron/assets/applicationCatalog-D1VnkHgS.js</th><td>11321</td><td>3257</td><td>2657</td><td class="timeline"><i style="left:99.77593542885558%;width:0.22406457114442238%"></i></td><td>5715.0 + 12.8 ms</td></tr></tbody></table></section><section><h2>electron/settings/navigation</h2><pre>{&quot;js&quot;:{&quot;raw&quot;:1230762,&quot;gzip&quot;:369406,&quot;brotli&quot;:301707},&quot;css&quot;:{&quot;raw&quot;:375620,&quot;gzip&quot;:65226,&quot;brotli&quot;:52554}}</pre><table><thead><tr><th>Unique resource / request</th><th>raw</th><th>gzip 9</th><th>Brotli 11</th><th>Waterfall</th><th>start + duration</th></tr></thead><tbody><tr><th>electron/theme-init.js</th><td>476</td><td>284</td><td>221</td><td class="timeline"><i style="left:1.2245964651046932%;width:0.2%"></i></td><td>69.0 + 5.1 ms</td></tr><tr><th>electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css</th><td>8576</td><td>682</td><td>543</td><td class="timeline"><i style="left:1.3316344731823684%;width:0.7214557033240776%"></i></td><td>75.1 + 40.7 ms</td></tr><tr><th>electron/assets/index-BATWdCu-.js</th><td>716542</td><td>210912</td><td>168801</td><td class="timeline"><i style="left:1.3385338228929058%;width:0.6762816015779726%"></i></td><td>75.5 + 38.1 ms</td></tr><tr><th>electron/assets/react-Bbqgwd8K.js</th><td>143728</td><td>46231</td><td>40410</td><td class="timeline"><i style="left:1.3415489794794233%;width:0.21742817854149407%"></i></td><td>75.6 + 12.3 ms</td></tr><tr><th>electron/assets/markdown-DMT30cMY.js</th><td>334187</td><td>101096</td><td>82934</td><td class="timeline"><i style="left:1.3444399831564218%;width:0.5689775273876634%"></i></td><td>75.8 + 32.1 ms</td></tr><tr><th>electron/assets/markdown-BEHUn5zE.css</th><td>1316</td><td>614</td><td>492</td><td class="timeline"><i style="left:1.3485370629996793%;width:0.2771991780465759%"></i></td><td>76.0 + 15.6 ms</td></tr><tr><th>electron/assets/index-CFewkoMg.css</th><td>365728</td><td>63930</td><td>51519</td><td class="timeline"><i style="left:1.3512861873026936%;width:0.3854432284613797%"></i></td><td>76.2 + 21.7 ms</td></tr><tr><th>electron/assets/SettingsModal-s9XYjm3k.js</th><td>32007</td><td>9219</td><td>7938</td><td class="timeline"><i style="left:99.81286526669767%;width:0.2%"></i></td><td>5627.6 + 8.8 ms</td></tr><tr><th>electron/assets/chatInstructions-B2090c6T.js</th><td>597</td><td>349</td><td>299</td><td class="timeline"><i style="left:99.82114805870651%;width:0.2%"></i></td><td>5628.1 + 9.4 ms</td></tr><tr><th>electron/assets/LlmSettingsEditor-CJXB4thG.js</th><td>3225</td><td>1315</td><td>1104</td><td class="timeline"><i style="left:99.8263802411999%;width:0.2%"></i></td><td>5628.4 + 9.8 ms</td></tr></tbody></table></section><details><summary>Complete chunk graph (static and dynamic edges)</summary><pre>web/assets/AccountPage-B9hK-CwK.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/applicationCatalog-D1VnkHgS.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/CiCommands-DjbkHzU6.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/CiSlotEditor-wPs_jRFn.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js
+  dynamic:
+web/assets/CodeDiff-qS3BRn8p.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/codeHighlight-BfGGlgyw.js, web/assets/index-CixcKOT6.js
+  dynamic: web/assets/MonacoCodeEditor-DyRW-5Z3.js, web/assets/MonacoDiffEditor-Qew9jCo6.js
+web/assets/CommandPalette-BmbKmKgS.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/ConsoleSessionPane-sLOYA9C8.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/MachineTerminal-CXAb5hD5.js, web/assets/markdown-B45geBhu.js, web/assets/terminal-DGHPw4qf.js
+  dynamic:
+web/assets/ContextInspector-D9NAW-8n.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/chatInstructions-BlcY6kSF.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/ConversationSettings-B7QkN1N0.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/SettingsPage-0JMEC7ls.js, web/assets/LlmSettingsEditor-Fr16SbGS.js, web/assets/markdown-B45geBhu.js
+  dynamic: web/assets/ContextInspector-D9NAW-8n.js
+web/assets/EnginesObserver-n9MIWgEc.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/applicationCatalog-D1VnkHgS.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/GitPane-C970XHv9.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/CodeDiff-qS3BRn8p.js, web/assets/gitLabels-Dnt5Wcgg.js, web/assets/markdown-B45geBhu.js, web/assets/codeHighlight-BfGGlgyw.js
+  dynamic:
+web/assets/GitTargetPane-DGWhA6F0.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic: web/assets/GitPane-C970XHv9.js
+web/assets/GitWorkspaceList-CIYVWQQW.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/gitLabels-Dnt5Wcgg.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/HotkeysCheatSheet-C_9sH4Wx.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/KanbanAssistant-BNiXvxjG.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/KbUsagePanel-C8scTAIm.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/kbUsageFormat-DHi-IiWs.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/KnowledgeBase-ClYc3-pV.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/LlmSettingsEditor-Fr16SbGS.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js
+  dynamic:
+web/assets/MachineStatus-4ADguD3z.css
+  static:
+  dynamic:
+web/assets/MachineStatus-DG8xSee3.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/qrcode-C2qLkN4o.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/MachineTerminal-CXAb5hD5.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/terminal-DGHPw4qf.js, web/assets/index-CixcKOT6.js
+  dynamic:
+web/assets/MachineUtility-Dqi1mG4n.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/MachineTerminal-CXAb5hD5.js, web/assets/CodeDiff-qS3BRn8p.js, web/assets/markdown-B45geBhu.js, web/assets/terminal-DGHPw4qf.js, web/assets/codeHighlight-BfGGlgyw.js
+  dynamic: web/assets/GitTargetPane-DGWhA6F0.js
+web/assets/MonacoCodeEditor-DyRW-5Z3.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/monaco-BSSCtlEN.js, web/assets/monacoSetup-CLtb2B7j.js
+  dynamic:
+web/assets/MonacoDiffEditor-Qew9jCo6.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/monaco-BSSCtlEN.js, web/assets/monacoSetup-CLtb2B7j.js
+  dynamic:
+web/assets/ProjectBoard-B_J3eKo5.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/TaskModal-8cvxM_JM.js, web/assets/RunFeed-Dq947K8i.js, web/assets/CiSlotEditor-wPs_jRFn.js, web/assets/markdown-B45geBhu.js, web/assets/kbUsageFormat-DHi-IiWs.js
+  dynamic:
+web/assets/ProjectPage-DJo1ZYAV.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/ProjectSettings-DNfJLaXf.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/LlmSettingsEditor-Fr16SbGS.js, web/assets/CiSlotEditor-wPs_jRFn.js, web/assets/codeHighlight-BfGGlgyw.js, web/assets/SettingsPage-0JMEC7ls.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/ReleaseCenter-C1Ti9T0U.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/applicationCatalog-D1VnkHgS.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/RunFeed-Dq947K8i.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/kbUsageFormat-DHi-IiWs.js
+  dynamic:
+web/assets/SessionsDialogHost-CvRvczgI.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/sessionsStore-U8HGXpCz.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/SettingsModal-RVtBKXIG.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/index-CixcKOT6.js, web/assets/chatInstructions-BlcY6kSF.js, web/assets/LlmSettingsEditor-Fr16SbGS.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/SettingsPage-0JMEC7ls.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/TaskModal-8cvxM_JM.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/CiSlotEditor-wPs_jRFn.js, web/assets/RunFeed-Dq947K8i.js
+  dynamic: web/assets/GitTargetPane-DGWhA6F0.js
+web/assets/TwoFactorDialog-BX4utUO9.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/applicationCatalog-D1VnkHgS.js
+  static:
+  dynamic:
+web/assets/chatInstructions-BlcY6kSF.js
+  static: web/assets/index-CixcKOT6.js
+  dynamic:
+web/assets/codeHighlight-BfGGlgyw.js
+  static: web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/css.worker-BRIrhzkG.js
+  static:
+  dynamic:
+web/assets/editor.worker-DX6ApQqM.js
+  static:
+  dynamic:
+web/assets/gitLabels-Dnt5Wcgg.js
+  static:
+  dynamic:
+web/assets/html.worker-CBI4EQBP.js
+  static:
+  dynamic:
+web/assets/index-CixcKOT6.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/markdown-B45geBhu.js
+  dynamic: web/assets/MachineUtility-Dqi1mG4n.js, web/assets/ConsoleSessionPane-sLOYA9C8.js, web/assets/TwoFactorDialog-BX4utUO9.js, web/assets/EnginesObserver-n9MIWgEc.js, web/assets/SettingsPage-0JMEC7ls.js, web/assets/ReleaseCenter-C1Ti9T0U.js, web/assets/KanbanAssistant-BNiXvxjG.js, web/assets/CiCommands-DjbkHzU6.js, web/assets/RunFeed-Dq947K8i.js, web/assets/ConversationSettings-B7QkN1N0.js, web/assets/KbUsagePanel-C8scTAIm.js, web/assets/CommandPalette-BmbKmKgS.js, web/assets/HotkeysCheatSheet-C_9sH4Wx.js, web/assets/SessionsDialogHost-CvRvczgI.js, web/assets/index-Dy3JqgRB.js, web/assets/AccountPage-B9hK-CwK.js, web/assets/TaskModal-8cvxM_JM.js, web/assets/ProjectSettings-DNfJLaXf.js, web/assets/MachineStatus-DG8xSee3.js, web/assets/MachineUtility-Dqi1mG4n.js, web/assets/KnowledgeBase-ClYc3-pV.js, web/assets/ProjectPage-DJo1ZYAV.js, web/assets/ProjectPage-DJo1ZYAV.js, web/assets/ProjectPage-DJo1ZYAV.js, web/assets/ProjectBoard-B_J3eKo5.js, web/assets/GitPane-C970XHv9.js, web/assets/GitWorkspaceList-CIYVWQQW.js, web/assets/GitTargetPane-DGWhA6F0.js, web/assets/ContextInspector-D9NAW-8n.js, web/assets/SettingsModal-RVtBKXIG.js
+web/assets/index-DXMOwslQ.css
+  static:
+  dynamic:
+web/assets/index-Dy3JqgRB.js
+  static: web/assets/index-CixcKOT6.js, web/assets/index-CixcKOT6.js, web/assets/react-Ztm9MH8b.js, web/assets/sessionsStore-U8HGXpCz.js, web/assets/markdown-B45geBhu.js
+  dynamic:
+web/assets/json.worker-CIZWV9vN.js
+  static:
+  dynamic:
+web/assets/kbUsageFormat-DHi-IiWs.js
+  static: web/assets/react-Ztm9MH8b.js
+  dynamic:
+web/assets/markdown-B45geBhu.js
+  static: web/assets/react-Ztm9MH8b.js
+  dynamic:
+web/assets/markdown-BEHUn5zE.css
+  static:
+  dynamic:
+web/assets/monaco-BSSCtlEN.js
+  static: web/assets/react-Ztm9MH8b.js
+  dynamic:
+web/assets/monaco-Cff06kPg.css
+  static:
+  dynamic:
+web/assets/monacoSetup-CLtb2B7j.js
+  static: web/assets/monaco-BSSCtlEN.js, web/assets/react-Ztm9MH8b.js
+  dynamic: web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js, web/assets/prettier-DycMSh8D.js
+web/assets/prettier-DycMSh8D.js
+  static:
+  dynamic:
+web/assets/qrcode-C2qLkN4o.js
+  static:
+  dynamic:
+web/assets/react-Ztm9MH8b.js
+  static:
+  dynamic:
+web/assets/sessionsStore-U8HGXpCz.js
+  static: web/assets/react-Ztm9MH8b.js, web/assets/index-CixcKOT6.js
+  dynamic:
+web/assets/terminal-DGHPw4qf.js
+  static:
+  dynamic:
+web/assets/terminal-DYP7pi_n.css
+  static:
+  dynamic:
+web/assets/ts.worker-Ds4I2Msu.js
+  static:
+  dynamic:
+web/theme-init.js
+  static:
+  dynamic:
+web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css
+  static:
+  dynamic:
+electron/assets/AccountPage-eXgJBQTv.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/applicationCatalog-D1VnkHgS.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/CiCommands-VcmJs14f.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/CiSlotEditor-BEJHiabZ.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js
+  dynamic:
+electron/assets/CodeDiff-99gR9syJ.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/codeHighlight-BBYexzXZ.js, electron/assets/index-BATWdCu-.js
+  dynamic: electron/assets/MonacoCodeEditor-g8SDH08S.js, electron/assets/MonacoDiffEditor-CPIgYlZ1.js
+electron/assets/CommandPalette-yBV2WXTM.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/ConsoleSessionPane-CETVh4hi.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/MachineTerminal-BeWI0-gE.js, electron/assets/markdown-DMT30cMY.js, electron/assets/terminal-Bs9Bl2ok.js
+  dynamic:
+electron/assets/ContextInspector-Cs8xUuog.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/chatInstructions-B2090c6T.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/ConversationSettings-DpT34dHo.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/SettingsPage-XNnAKu6H.js, electron/assets/LlmSettingsEditor-CJXB4thG.js, electron/assets/markdown-DMT30cMY.js
+  dynamic: electron/assets/ContextInspector-Cs8xUuog.js
+electron/assets/EnginesObserver-pqLZMnW5.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/applicationCatalog-D1VnkHgS.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/GitPane-B1psFeq6.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/CodeDiff-99gR9syJ.js, electron/assets/gitLabels-Dnt5Wcgg.js, electron/assets/markdown-DMT30cMY.js, electron/assets/codeHighlight-BBYexzXZ.js
+  dynamic:
+electron/assets/GitTargetPane-Id_upMDN.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic: electron/assets/GitPane-B1psFeq6.js
+electron/assets/GitWorkspaceList-BmYaHd9L.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/gitLabels-Dnt5Wcgg.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/HotkeysCheatSheet-BAfTSI6h.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/KanbanAssistant-g5EZ8i3U.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/KbUsagePanel-D27-8Umq.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/kbUsageFormat-BQuTxidS.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/KnowledgeBase-CfWsl_4M.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/LlmSettingsEditor-CJXB4thG.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js
+  dynamic:
+electron/assets/MachineStatus-4ADguD3z.css
+  static:
+  dynamic:
+electron/assets/MachineStatus-Bt1EvPfU.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/qrcode-C2qLkN4o.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/MachineTerminal-BeWI0-gE.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/terminal-Bs9Bl2ok.js, electron/assets/index-BATWdCu-.js
+  dynamic:
+electron/assets/MachineUtility-C_uta7Og.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/MachineTerminal-BeWI0-gE.js, electron/assets/CodeDiff-99gR9syJ.js, electron/assets/markdown-DMT30cMY.js, electron/assets/terminal-Bs9Bl2ok.js, electron/assets/codeHighlight-BBYexzXZ.js
+  dynamic: electron/assets/GitTargetPane-Id_upMDN.js
+electron/assets/MonacoCodeEditor-g8SDH08S.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/monacoSetup-Dq5JZMQQ.js
+  dynamic:
+electron/assets/MonacoDiffEditor-CPIgYlZ1.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/monacoSetup-Dq5JZMQQ.js
+  dynamic:
+electron/assets/ProjectBoard-KN2mhgWR.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/TaskModal-D3W04J4W.js, electron/assets/RunFeed-CjaQNuUj.js, electron/assets/CiSlotEditor-BEJHiabZ.js, electron/assets/markdown-DMT30cMY.js, electron/assets/kbUsageFormat-BQuTxidS.js
+  dynamic:
+electron/assets/ProjectPage-pwCoXFqG.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/ProjectSettings-Btm-pUTt.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/LlmSettingsEditor-CJXB4thG.js, electron/assets/CiSlotEditor-BEJHiabZ.js, electron/assets/codeHighlight-BBYexzXZ.js, electron/assets/SettingsPage-XNnAKu6H.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/ReleaseCenter-BR08usPn.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/applicationCatalog-D1VnkHgS.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/RunFeed-CjaQNuUj.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/kbUsageFormat-BQuTxidS.js
+  dynamic:
+electron/assets/SessionsDialogHost-BUezR6gE.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/sessionsStore-BAeiATq6.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/SettingsModal-s9XYjm3k.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/index-BATWdCu-.js, electron/assets/chatInstructions-B2090c6T.js, electron/assets/LlmSettingsEditor-CJXB4thG.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/SettingsPage-XNnAKu6H.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/TaskModal-D3W04J4W.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/CiSlotEditor-BEJHiabZ.js, electron/assets/RunFeed-CjaQNuUj.js
+  dynamic: electron/assets/GitTargetPane-Id_upMDN.js
+electron/assets/TwoFactorDialog-FfADSyLT.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/agent-log-BA6ZqmwP.js
+  static:
+  dynamic:
+electron/assets/agent-setup-Ci0SWepb.js
+  static:
+  dynamic:
+electron/assets/applicationCatalog-D1VnkHgS.js
+  static:
+  dynamic:
+electron/assets/babel-C1DoOr4z.js
+  static:
+  dynamic:
+electron/assets/chatInstructions-B2090c6T.js
+  static: electron/assets/index-BATWdCu-.js
+  dynamic:
+electron/assets/codeHighlight-BBYexzXZ.js
+  static: electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/css-D3h14YRZ.js
+  static:
+  dynamic:
+electron/assets/css.worker-zQUO28Un.js
+  static:
+  dynamic:
+electron/assets/cssMode-IskwSqC5.js
+  static: electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/editor.worker-wFIaQSWA.js
+  static:
+  dynamic:
+electron/assets/estree-DKqUHeFj.js
+  static:
+  dynamic:
+electron/assets/gitLabels-Dnt5Wcgg.js
+  static:
+  dynamic:
+electron/assets/html-BQm5naL7.js
+  static:
+  dynamic:
+electron/assets/html-UmyEjvvP.js
+  static: electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/html.worker-MgVplfgg.js
+  static:
+  dynamic:
+electron/assets/htmlMode-DHtaNooC.js
+  static: electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/index-BATWdCu-.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/markdown-DMT30cMY.js
+  dynamic: electron/assets/MachineUtility-C_uta7Og.js, electron/assets/ConsoleSessionPane-CETVh4hi.js, electron/assets/TwoFactorDialog-FfADSyLT.js, electron/assets/EnginesObserver-pqLZMnW5.js, electron/assets/SettingsPage-XNnAKu6H.js, electron/assets/ReleaseCenter-BR08usPn.js, electron/assets/KanbanAssistant-g5EZ8i3U.js, electron/assets/CiCommands-VcmJs14f.js, electron/assets/RunFeed-CjaQNuUj.js, electron/assets/ConversationSettings-DpT34dHo.js, electron/assets/KbUsagePanel-D27-8Umq.js, electron/assets/CommandPalette-yBV2WXTM.js, electron/assets/HotkeysCheatSheet-BAfTSI6h.js, electron/assets/SessionsDialogHost-BUezR6gE.js, electron/assets/index-JJJmMI9w.js, electron/assets/AccountPage-eXgJBQTv.js, electron/assets/TaskModal-D3W04J4W.js, electron/assets/ProjectSettings-Btm-pUTt.js, electron/assets/MachineStatus-Bt1EvPfU.js, electron/assets/MachineUtility-C_uta7Og.js, electron/assets/KnowledgeBase-CfWsl_4M.js, electron/assets/ProjectPage-pwCoXFqG.js, electron/assets/ProjectPage-pwCoXFqG.js, electron/assets/ProjectPage-pwCoXFqG.js, electron/assets/ProjectBoard-KN2mhgWR.js, electron/assets/GitPane-B1psFeq6.js, electron/assets/GitWorkspaceList-BmYaHd9L.js, electron/assets/GitTargetPane-Id_upMDN.js, electron/assets/ContextInspector-Cs8xUuog.js, electron/assets/SettingsModal-s9XYjm3k.js
+electron/assets/index-CFewkoMg.css
+  static:
+  dynamic:
+electron/assets/index-JJJmMI9w.js
+  static: electron/assets/index-BATWdCu-.js, electron/assets/index-BATWdCu-.js, electron/assets/react-Bbqgwd8K.js, electron/assets/sessionsStore-BAeiATq6.js, electron/assets/markdown-DMT30cMY.js
+  dynamic:
+electron/assets/javascript-Cjr9_nWd.js
+  static: electron/assets/typescript-Bwonw64k.js, electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/json.worker-CdYhYu-b.js
+  static:
+  dynamic:
+electron/assets/jsonMode-cNgN-Zzv.js
+  static: electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/kbUsageFormat-BQuTxidS.js
+  static: electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/markdown-BEHUn5zE.css
+  static:
+  dynamic:
+electron/assets/markdown-DMT30cMY.js
+  static: electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/markdown-DSZPf7rp.js
+  static:
+  dynamic:
+electron/assets/markdown-DluK_Mm7.js
+  static:
+  dynamic:
+electron/assets/monacoSetup-Dq5JZMQQ.js
+  static: electron/assets/react-Bbqgwd8K.js
+  dynamic: electron/assets/tsMode-D9T1aT8I.js, electron/assets/htmlMode-DHtaNooC.js, electron/assets/cssMode-IskwSqC5.js, electron/assets/jsonMode-cNgN-Zzv.js, electron/assets/javascript-Cjr9_nWd.js, electron/assets/typescript-Bwonw64k.js, electron/assets/html-UmyEjvvP.js, electron/assets/css-D3h14YRZ.js, electron/assets/markdown-DSZPf7rp.js, electron/assets/xml-DrLj41Si.js, electron/assets/yaml-iedHx-9g.js, electron/assets/babel-C1DoOr4z.js, electron/assets/estree-DKqUHeFj.js, electron/assets/typescript-BXE1H07_.js, electron/assets/estree-DKqUHeFj.js, electron/assets/html-BQm5naL7.js, electron/assets/babel-C1DoOr4z.js, electron/assets/postcss-CPJrcnLZ.js, electron/assets/estree-DKqUHeFj.js, electron/assets/postcss-CPJrcnLZ.js, electron/assets/babel-C1DoOr4z.js, electron/assets/estree-DKqUHeFj.js, electron/assets/markdown-DluK_Mm7.js, electron/assets/yaml-lRk4UCtu.js, electron/assets/standalone-xTqm29f_.js
+electron/assets/monacoSetup-gm1crtVM.css
+  static:
+  dynamic:
+electron/assets/postcss-CPJrcnLZ.js
+  static:
+  dynamic:
+electron/assets/qrcode-C2qLkN4o.js
+  static:
+  dynamic:
+electron/assets/react-Bbqgwd8K.js
+  static:
+  dynamic:
+electron/assets/remote-setup-CnaSamow.js
+  static:
+  dynamic:
+electron/assets/sessionsStore-BAeiATq6.js
+  static: electron/assets/react-Bbqgwd8K.js, electron/assets/index-BATWdCu-.js
+  dynamic:
+electron/assets/standalone-xTqm29f_.js
+  static:
+  dynamic:
+electron/assets/terminal-Bs9Bl2ok.js
+  static:
+  dynamic:
+electron/assets/terminal-LZoznX6r.css
+  static:
+  dynamic:
+electron/assets/ts.worker-BQHvlPb0.js
+  static:
+  dynamic:
+electron/assets/tsMode-D9T1aT8I.js
+  static: electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/typescript-BXE1H07_.js
+  static:
+  dynamic:
+electron/assets/typescript-Bwonw64k.js
+  static: electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/xml-DrLj41Si.js
+  static: electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/yaml-iedHx-9g.js
+  static: electron/assets/monacoSetup-Dq5JZMQQ.js, electron/assets/react-Bbqgwd8K.js
+  dynamic:
+electron/assets/yaml-lRk4UCtu.js
+  static:
+  dynamic:
+electron/theme-init.js
+  static:
+  dynamic:
+electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css
+  static:
+  dynamic: </pre></details></html>

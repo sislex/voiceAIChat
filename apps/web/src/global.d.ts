@@ -26,6 +26,7 @@ import type { RendererCiBridge, RendererFeaturePreviewBridge, RendererKbBridge, 
 
 declare global {
   interface Window {
+    onboarding?: import('@shared/ipc').RendererOnboardingBridge
     api: RendererApi
     audio: RendererAudioBridge
     auth?: RendererAuthBridge

@@ -4,6 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import type { MergeRun, TaskRepository } from '@shared/merge'
 import { MergePanel } from './MergePanel'
+import { queuedMergeCi } from '../../test/fixtures/queuedMerge'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 
 const stagesDone = [
@@ -48,6 +49,21 @@ type Story = StoryObj<typeof MergePanel>
 
 /** Успешный ран: зелёный бейдж, все стадии пройдены, деплой ещё не запускался. */
 export const Success: Story = { decorators: [withCi(baseRun)] }
+
+/** Open the resource panel to review offline, unknown-size and retained-work states. */
+export const TemporaryResourceReview: Story = {
+  decorators: [(Story) => {
+    const resource = { id: 'temporary-1', projectId: 'p1', taskId: 't1', runId: 'run-1', userId: 'admin', machineId: 'm1', machineName: 'MacBook', path: '/managed/merge-run-tests', root: '/managed', category: 'merge-worktree' as const, generation: 'g1', identity: '1:2', gitCommonDir: null, gitRegistration: null, createdAt: 1, state: 'registered' as const }
+    window.ci = { ...createFakeCi(), getTemporaryResources: async () => ({ candidates: [{ resource, eligible: false, reasons: ['machine_offline', 'git_changes'], retainUntil: null, bytes: null, sizeReason: 'machine_offline' }], attempts: [{ id: 'attempt-1', resource, at: Date.now(), reason: 'machine_offline', outcome: 'deferred', freedBytes: null, error: null }] }) }
+    return <Story />
+  }]
+}
+
+/** Shared fixtures exercise the queued action in DOM, Storybook and Chromium. */
+export const Queued: Story = {
+  args: { runId: 'queued-475' },
+  decorators: [Story => { window.ci = queuedMergeCi(); return <Story /> }]
+}
 
 /** Ран в работе: стадия testing выполняется, лог открыт, доступна отмена. */
 export const Running: Story = {

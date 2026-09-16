@@ -1,5 +1,6 @@
 import { ApplicationReleaseCenter } from './ApplicationReleaseCenter'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePolling } from '@voicechat/ui-kit'
 import { formatDateTime, formatRelativeTime, isoDate } from '../../lib/dateFormat'
 import { compareReleaseBranches, DEFAULT_RELEASE_TIMEOUTS, normalizeReleaseVersionInput, releaseFailureSummary, releaseVersion, suggestNextReleaseVersion, type ProductionReadiness, type ProjectRelease, type ProjectReleaseSummary, type ReleaseBranch, type ReleaseMachine, type ReleaseStep, type ReleaseTimeouts } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
@@ -217,11 +218,7 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   // fallback for hosts without the board bridge (desktop, old servers).
   const liveBridge=typeof window!=='undefined'&&Boolean(window.board?.onReleaseUpdated)
   const anyActive=useMemo(()=>[...releaseItems,...deploymentItems].some(item=>!terminal.has(item.status)),[releaseItems,deploymentItems])
-  useEffect(()=>{
-    if(liveBridge||!anyActive||detail||detailStatus==='loading')return
-    const id=window.setInterval(()=>void refreshReleases(),5000)
-    return()=>window.clearInterval(id)
-  },[liveBridge,anyActive,detail,detailStatus,refreshReleases])
+  usePolling(() => { void refreshReleases() }, { enabled: !liveBridge && anyActive && !detail && detailStatus !== 'loading', intervalMs: 5000 })
   const toast=useToast()
   // Terminal transitions of a run the user watched are announced once: the
   // deploy takes ten minutes, and nobody keeps staring at the table for that long.
@@ -269,13 +266,13 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   // Deep link: the address names a release — open it once the component is up.
   const openedInitial=useRef(false)
   useEffect(()=>{if(initialReleaseId&&!openedInitial.current){openedInitial.current=true;void openDetail(initialReleaseId)}},[initialReleaseId,openDetail])
-  useEffect(()=>{
-    if(liveBridge||!detail||terminal.has(detail.status))return
-    let cancelled=false
-    const update=async()=>{try{const next=await api['releases:get']({projectId,releaseId:detail.id});if(next&&!cancelled)setDetail(next)}catch{}}
-    const id=window.setInterval(()=>void update(),2000)
-    return()=>{cancelled=true;window.clearInterval(id)}
-  },[api,projectId,detail])
+  usePolling(() => {
+    if (!detail) return
+    const request = detailRequest.current
+    void api['releases:get']({ projectId, releaseId: detail.id }).then(next => {
+      if (next && request === detailRequest.current) setDetail(current => current?.id === next.id ? next : current)
+    }).catch(() => undefined)
+  }, { enabled: !liveBridge && Boolean(detail && !terminal.has(detail.status)), intervalMs: 2000 })
   const releases=[...releaseItems,...deploymentItems]
   const preparations=releaseItems
   const deployments=deploymentItems

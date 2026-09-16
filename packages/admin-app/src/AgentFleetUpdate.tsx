@@ -1,7 +1,8 @@
 // Обновление агентов всех машин из админки (machines-roadmap п.16): сначала «канарейка» — одна устаревшая
 // машина в сети; когда она вернулась с новой версией (родитель обновляет список по onRefresh), открывается
 // кнопка «обновить остальные». Транспорта здесь нет — только колбэки родителя (границы admin-app).
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { usePolling } from '@voicechat/ui-kit'
 import type { AdminUserInfo } from '@shared/admin'
 import { compareVersions } from '@shared/version'
 import { Button } from '@voicechat/ui-kit'
@@ -37,11 +38,7 @@ export function AgentFleetUpdate({ users, latestVersion, onUpdate, onRefresh }: 
   const canaryOk = Boolean(canary && canary.online && canary.version && compareVersions(canary.version, latestVersion) >= 0)
 
   // Пока ждём возврата канарейки с новой версией, перечитываем список раз в 5 с.
-  useEffect(() => {
-    if (phase !== 'canary' || canaryOk || !onRefresh) return
-    const timer = setInterval(onRefresh, 5000)
-    return () => clearInterval(timer)
-  }, [phase, canaryOk, onRefresh])
+  usePolling(() => onRefresh?.(), { enabled: phase === 'canary' && !canaryOk && Boolean(onRefresh), intervalMs: 5000 })
 
   const run = async (ids: string[]): Promise<void> => {
     setBusy(new Set(ids))

@@ -43,6 +43,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
    * стор про fetch не знает, а сервер не тратит время на никому не нужный ответ.
    */
   let searchAbort: AbortController | null = null
+  let universalAbort: AbortController | null = null
 
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
@@ -109,8 +110,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
     'imgstudio:cancel': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/cancel`, { method: 'POST', body: '{}' }),
-    'imgstudio:publish': ({ conversationId, password }) =>
-      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: JSON.stringify(password !== undefined ? { password } : {}) }),
+    'imgstudio:publish': ({ conversationId, ...body }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: JSON.stringify(body) }),
     'imgstudio:publication': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/publication`),
     'imgstudio:unpublish': ({ conversationId }) =>
@@ -125,6 +126,23 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/restore`, { method: 'POST', body: JSON.stringify({ name }) }),
     'imgstudio:purge': ({ conversationId, name }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/trash/purge`, { method: 'POST', body: JSON.stringify(name !== undefined ? { name } : {}) }),
+    'imgstudio:preview': async ({ conversationId, settings }) => {
+      const result = await req<{ url: string }>(`/api/image-studio/${encodeURIComponent(conversationId)}/preview`, { method: 'POST', body: JSON.stringify({ settings }) })
+      return { url: httpBase + result.url }
+    },
+    'imgstudio:archive': async ({ conversationId, paths }) => {
+      const ticket = await req<{ url: string }>(`/api/image-studio/${encodeURIComponent(conversationId)}/archive`, { method: 'POST', body: JSON.stringify({ paths }) })
+      const link = document.createElement('a')
+      link.href = httpBase + ticket.url
+      link.download = 'gallery.zip'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    },
+    'imgstudio:enqueue': ({ conversationId, ...body }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks`, { method: 'POST', body: JSON.stringify(body) }),
+    'imgstudio:tasks': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks`),
+    'imgstudio:cancelTask': ({ conversationId, taskId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
+    'imgstudio:tags': ({ conversationId, ...body }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/tags`, { method: 'POST', body: JSON.stringify(body) }),
     'imgstudio:list': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/files`),
     'imgstudio:read': async ({ conversationId, path }) => {
       // Байты картинки — через авторизованный fetch: <img src> без токена
@@ -166,7 +184,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.makeTaskLinks(conversationId), { method: 'POST', body: JSON.stringify(body) }),
     'make:linkableTasks': ({ conversationId }) => req(`${REST.makeTaskLinks(conversationId)}/tasks`),
     'make:read': ({ conversationId, path }) => req(`${REST.makeFile(conversationId)}?path=${encodeURIComponent(path)}`),
-    'make:write': ({ conversationId, path, content }) => req(REST.makeFile(conversationId), { method: 'PUT', body: JSON.stringify({ path, content }) }),
+    'make:write': ({ conversationId, ...body }) => req(REST.makeFile(conversationId), { method: 'PUT', body: JSON.stringify(body) }),
     'make:delete': ({ conversationId, path }) => req(`${REST.makeFile(conversationId)}?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
     'make:rename': ({ conversationId, from, to }) => req(REST.makeRename(conversationId), { method: 'POST', body: JSON.stringify({ from, to }) }),
     'make:snapshot': ({ conversationId, label }) => req(REST.makeSnapshots(conversationId), { method: 'POST', body: JSON.stringify({ label }) }),
@@ -179,8 +197,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:upload': ({ conversationId, path, dataBase64 }) => req(REST.makeUpload(conversationId), { method: 'POST', body: JSON.stringify({ path, dataBase64 }) }),
     'make:search': ({ conversationId, query, regex, matchCase }) => req(`${REST.makeSearch(conversationId)}?q=${encodeURIComponent(query)}${regex ? '&regex=1' : ''}${matchCase ? '&matchCase=1' : ''}`),
     'make:stories': ({ conversationId }) => req(REST.makeStories(conversationId)),
-    'make:replace': ({ conversationId, query, replacement, matchCase, regex, dryRun }) => req(REST.makeReplace(conversationId), { method: 'POST', body: JSON.stringify({ query, replacement, matchCase, regex, dryRun }) }),
-    'make:snapshotDiff': ({ conversationId, snapshotId }) => req(REST.makeSnapshotDiff(conversationId, snapshotId)),
+    'make:replace': ({ conversationId, ...body }) => req(REST.makeReplace(conversationId), { method: 'POST', body: JSON.stringify(body) }),
+    'make:snapshotDiff': ({ conversationId, snapshotId, compareSnapshotId }) => req(REST.makeSnapshotDiff(conversationId, snapshotId) + (compareSnapshotId ? `?compareSnapshotId=${encodeURIComponent(compareSnapshotId)}` : '')),
     'make:library': () => req(REST.makeLibrary),
     'make:libraryExport': ({ conversationId, name, paths }) => req(REST.makeLibraryExport(conversationId), { method: 'POST', body: JSON.stringify({ name, paths }) }),
     'make:libraryInsert': ({ conversationId, slug }) => req(REST.makeLibraryInsert(conversationId, slug), { method: 'POST' }),
@@ -272,6 +290,15 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (includeCompleted) q.set('includeCompleted', '1')
       return req(`${REST.conversationsSearch}?${q.toString()}`)
     },
+    'search:cancel': async () => { universalAbort?.abort(); universalAbort = null },
+    'search:universal': (request) => {
+      universalAbort?.abort()
+      const controller = new AbortController()
+      universalAbort = controller
+      return req<import('@shared/universalSearch').UniversalSearchResult>(REST.universalSearch, {
+        method: 'POST', body: JSON.stringify(request), signal: controller.signal
+      }).finally(() => { if (universalAbort === controller) universalAbort = null })
+    },
     'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
       searchAbort?.abort()
       const ctl = new AbortController()
@@ -335,7 +362,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'settings:get': () => req(REST.settings),
     'llm:access': () => req(REST.meLlmAccess),
     'me:profile': () => req(REST.meProfile),
-    'me:security': ({ limit }) => req(limit ? `${REST.meSecurity}?limit=${limit}` : REST.meSecurity),
+    'me:security': ({ limit, group }) => {
+      const query = new URLSearchParams()
+      if (limit) query.set('limit', String(limit))
+      if (group && group !== 'all') query.set('group', group)
+      return req(query.size ? `${REST.meSecurity}?${query}` : REST.meSecurity)
+    },
     'llm:engines': () => req(REST.llmEngines),
     // Тело — патч; ответ сервера (вся запись) возвращается вызывающему.
     'settings:save': (patch) => req(REST.settings, { method: 'PUT', body: JSON.stringify(patch) }),
@@ -404,11 +436,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'cx:transcript': ({ id, limit }) =>
       req(`${REST.cxTranscript}?id=${encodeURIComponent(id)}${limit ? `&limit=${limit}` : ''}`),
     'cx:resume': ({ id }) => req(REST.cxResume, { method: 'POST', body: JSON.stringify({ id }) }),
-    'admin:users': () => req(REST.adminUsers),
+    'admin:users': (input) => {
+      const query = new URLSearchParams()
+      for (const [key, value] of Object.entries(input ?? {})) if (value !== undefined) query.set(key, String(value))
+      return req(`${REST.adminUsers}${query.size ? `?${query}` : ''}`)
+    },
     'admin:userSessions': ({ name }) => req(REST.adminSessions(name)),
+    'admin:revokeUserSessions': ({ name, exceptCurrent }) => req(REST.adminSessions(name), { method: 'DELETE', body: JSON.stringify({ exceptCurrent }) }),
     'admin:revokeSession': ({ sid }) => req(REST.adminSessionRevoke(sid), { method: 'DELETE' }),
     'admin:invites': () => req(REST.adminInvites),
-    'admin:resetCode': ({ name }) => req(REST.adminUserResetCode(name), { method: 'POST' }),
+    'admin:resetCode': ({ name, action }) => req(REST.adminUserResetCode(name), { method: action === 'status' ? 'GET' : action === 'revoke' ? 'DELETE' : 'POST' }),
     'admin:signupConfig': () => req(REST.adminSignup),
     'admin:setSignupConfig': (body) => req(REST.adminSignup, { method: 'PUT', body: JSON.stringify(body) }),
     'admin:setUserLlmLimit': ({ name, llmLimitUsd }) => req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ llmLimitUsd }) }),
@@ -431,6 +468,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'admin:makeStats': () => req(REST.adminMakeStats),
     'admin:updateMachine': ({ id }) => req(REST.adminMachineUpdate(id), { method: 'POST' }),
+    'uiPerformance:send': async (body) => {
+      const response = await credentialedFetch(httpBase + REST.uiPerformance, {
+        method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(3000)
+      })
+      if (!response.ok) throw new Error('telemetry_unavailable')
+    },
+    'uiPerformance:report': (body) => req(REST.uiPerformanceReport, { method: 'POST', body: JSON.stringify(body) }),
     'admin:machineStats': () => req(REST.adminMachineStats),
     'admin:revokeMachineToken': ({ id }) => req(REST.adminMachineTokenRevoke(id), { method: 'POST' }),
     'admin:commandPolicy': () => req(REST.adminCommandPolicy),
@@ -789,15 +834,32 @@ export function createCiRest(httpBase: string): RendererCiRest {
     startRun: (projectId, taskId, options) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(options ?? {}) }),
     getMergeMachines: (projectId, taskId) => req<import('@shared/merge').MergeMachinesResponse>(REST.taskMergeMachines(projectId, taskId)),
     startMerge: (projectId, taskId, agentId) => req<import('@shared/merge').MergeRun>(REST.taskMergeStart(projectId, taskId), { method: 'POST', body: JSON.stringify(agentId ? { agentId } : {}) }),
+    getTemporaryResources: (projectId, taskId) => req<import('@shared/temporaryResources').CleanupSnapshot>(REST.taskTemporaryResources(projectId, taskId)),
     getTaskRepositories: (projectId, taskId) => req<import('@shared/merge').TaskRepository[]>(REST.taskRepositories(projectId, taskId)),
     getMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`),
     cancelMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
+    changeMergeMachine: async (runId, request) => {
+      const response = await credentialedFetch(httpBase + REST.mergeRunMachine(runId), {
+        method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify(request)
+      })
+      const result = await response.json()
+      if (response.status === 401) notifyUnauthorized()
+      if (typeof result?.ok === 'boolean' && (response.ok || [403, 404, 409, 422].includes(response.status))) return result
+      throw new Error(serverErrorMessage(result) || `Смена машины → ${response.status}`)
+    },
     retryMerge: (runId, agentId, unpin) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST', body: JSON.stringify({ ...(agentId ? { agentId } : {}), ...(unpin ? { unpin: true } : {}) }) }),
     listMergeRuns: (projectId, taskId) => req<import('@shared/merge').MergeRun[]>(REST.taskMergeRuns(projectId, taskId)),
     deployMergeRun: (runId) => req<import('@shared/merge').MergeRun>(REST.mergeRunDeploy(runId), { method: 'POST' }),
     forceStartRun: (projectId, taskId, agentId) => req<CiRun>(REST.ciRunForceStart(projectId, taskId), { method: 'POST', body: JSON.stringify({ agentId }) }),
     getRun: (runId) => req<CiRunDetail>(REST.ciRun(runId)),
     getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),
+    getBrowserShot: async (runId, name) => {
+      if (!/^\d+\.png$/.test(name)) throw new Error('Invalid screenshot name')
+      const response = await credentialedFetch(httpBase + REST.ciRunBrowserShot(runId, name), { headers: authHeaders() })
+      if (!response.ok) throw new Error(`Screenshot → ${response.status}`)
+      if (!response.headers.get('content-type')?.startsWith('image/png')) throw new Error('Invalid screenshot format')
+      return URL.createObjectURL(await response.blob())
+    },
     getRunKbUsage: (runId) => req<KbRunUsageReport>(REST.ciRunKbUsage(runId)),
     getTaskKbUsage: (projectId, taskId) => req<KbTaskUsageReport>(REST.taskKbUsage(projectId, taskId)),
     getRunReport: (runId) => req<CiRunReport>(REST.ciRunReport(runId)),

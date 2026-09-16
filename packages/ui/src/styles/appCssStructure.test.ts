@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { cssRules } from '@voicechat/ui-foundation/test/cssRules'
 
 const css = readFileSync(fileURLToPath(new URL('./app.css', import.meta.url)), 'utf8')
 
@@ -34,6 +35,22 @@ function topLevelSelectors(): string[] {
 }
 
 describe('структура app.css', () => {
+  // @testCase TC5
+  // @testCase TC-REG-01
+  it('scopes one-column scrolling and floating creation to the available 720px board width', () => {
+    const rules = cssRules(css)
+    const mobile = rules.atRuleBodies('@container kanban (max-width: 720px)').join('\n')
+    expect(mobile).toContain('flex-basis: 100%; width: 100%')
+    expect(mobile).toContain('overflow-x: hidden')
+    expect(mobile).toContain('.jboard .jcol-content:not([hidden])')
+    expect(mobile).toContain('.jboard-mobile-create')
+    const desktop = new Set(topLevelSelectors())
+    expect(desktop.has('.jboard-mobile-create')).toBe(false)
+    expect(desktop.has('.jboard .jcol-content:not([hidden])')).toBe(false)
+    expect(rules.decl('.jboard', 'scroll-snap-type')).toBeNull()
+    expect(rules.decl('.jboard', 'overflow-y')).toBe('auto')
+  })
+
   it('скобки сбалансированы', () => {
     let depth = 0
     let min = 0

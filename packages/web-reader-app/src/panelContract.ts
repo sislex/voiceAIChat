@@ -30,11 +30,34 @@ export interface WebReaderFrameProps {
   onAreaScreenshot?: ((shot: WebRecorderAreaScreenshot) => void) | undefined
   /** Актуальная регистрация iframe (или null): host сверяет по ней MCP-команды. */
   onRegisterHost?: ((registration: ReaderHostRegistration | null) => void) | undefined
-  /** Последние подтверждённые действия модели; кнопка повторяет их через тот же host. */
-  actions?: readonly { id: string; action: PreviewAction; address: string | null; title: string | null }[]
+  /** Последние подтверждённые действия модели; кнопка повторяет их через тот же host. at — время события. */
+  actions?: readonly { id: string; action: PreviewAction; address: string | null; title: string | null; at?: number; summary?: string; ok?: boolean; /** Одинаковые подряд шаги (read, find, errors) схлопнуты; count — сколько раз. */ count?: number }[]
+  /** Заголовок открытой страницы (null — страницы нет): для подписи мобильной вкладки. */
+  onPageTitle?: ((title: string | null) => void) | undefined
+  /** Пользователь выделил текст на странице и хочет спросить о нём в чате. */
+  onAsk?: ((text: string) => void) | undefined
+  /** Пользователь взял управление («Только я управляю») или вернул его. */
+  onControl?: ((manual: boolean) => void) | undefined
+  /** Пользователь управляет сам: повтор и показ шагов ленты недоступны. */
+  manual?: boolean
+  /** Панель остановила опасное действие модели: человек разрешает или отказывает прямо здесь. */
+  confirmRequest?: { action: PreviewAction; reason: string; target: string } | null
+  onConfirmAction?: ((action: PreviewAction) => void) | undefined
+  onDenyAction?: (() => void) | undefined
+  /** Последнее неудавшееся действие модели: панель показывает причину и даёт повторить. */
+  actionError?: { action: PreviewAction; error: string } | null
+  onRetryAction?: ((action: PreviewAction) => void) | undefined
   onRepeatAction?: (action: PreviewAction) => void
+  /** Очистить ленту действий ассистента. */
+  onClearActions?: (() => void) | undefined
+  /** Сколько ошибок страницы накоплено, кроме показанной первой. */
+  pageErrorCount?: number
+  /** Показать на странице элемент прошлого действия (прокрутить к селектору и подсветить). */
+  onRevealAction?: (target: { selector?: string; text?: string }) => void
   pageError?: string | null
   onAskError?: (error: string) => void
+  /** Действие модели, которое сейчас выполняется в панели: человек видит, что ассистент делает. */
+  pendingAction?: PreviewAction | null
   /** Адрес standalone-сборки Reader; production и dev-proxy раздают /web-recorder/. */
   src?: string
 }

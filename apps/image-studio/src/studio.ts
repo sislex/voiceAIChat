@@ -44,6 +44,8 @@ function safeName(raw: string): string {
 }
 
 export interface StudioMeta {
+  tags?: string[]
+  parameters?: import('@voicechat/shared').ImageStudioParameters
   prompt?: string
   source?: string
   tookMs?: number
@@ -52,7 +54,7 @@ export interface StudioMeta {
   selection?: ImageStudioSelectionBounds
 }
 
-interface StudioPublication { token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null; days?: Record<string, number> }
+interface StudioPublication { settings?: import('@voicechat/shared').ImageStudioPublicationSettings; token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null; days?: Record<string, number> }
 
 const PUBLISH_FILE = '.studio-publish.json'
 const TRASH_DIR = '.trash'
@@ -102,7 +104,7 @@ export class ImageStudioStore {
    * пароль/название). password: undefined — не трогать, null/'' — снять,
    * строка — задать; сам пароль не хранится, только хэш с солью.
    */
-  async publish(conversationId: string, options: { password?: string | null; title?: string | null } = {}): Promise<StudioPublication> {
+  async publish(conversationId: string, options: { password?: string | null; title?: string | null; settings?: import('@voicechat/shared').ImageStudioPublicationSettings } = {}): Promise<StudioPublication> {
     return this.withPublishLock(conversationId, async () => {
       const existing = await this.readPublication(conversationId)
       let token = existing?.token
@@ -123,6 +125,8 @@ export class ImageStudioStore {
       }
       const raw: StudioPublication = {
         token,
+        settings: options.settings ?? existing?.settings,
+        days: existing?.days,
         publishedAt: existing?.publishedAt ?? Date.now(),
         views: existing?.views ?? 0,
         passwordHash,
@@ -266,6 +270,8 @@ export class ImageStudioStore {
       const origin = meta[entry.name]
       out.push({
         path: entry.name, size: st.size, updatedAt: Math.round(st.mtimeMs),
+        ...(origin?.tags ? { tags: origin.tags } : {}),
+        ...(origin?.parameters ? { parameters: origin.parameters } : {}),
         ...(origin?.prompt ? { prompt: origin.prompt } : {}),
         ...(origin?.source ? { source: origin.source } : {}),
         ...(origin?.tookMs !== undefined ? { tookMs: origin.tookMs } : {}),

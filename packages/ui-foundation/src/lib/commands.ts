@@ -130,9 +130,9 @@ const RECENT_KEY = 'vc:commands:recent'
 export const RECENT_LIMIT = 5
 
 /** id последних выполненных команд, свежие первыми. */
-export function recentCommandIds(): string[] {
+export function recentCommandIds(userId?: string): string[] {
   try {
-    const raw = localStorage.getItem(RECENT_KEY)
+    const raw = localStorage.getItem(userId ? `${RECENT_KEY}:${encodeURIComponent(userId)}` : RECENT_KEY)
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -144,10 +144,10 @@ export function recentCommandIds(): string[] {
 }
 
 /** Запомнить выполненную команду (в начало списка, без дублей). */
-export function rememberCommand(id: string): void {
-  const next = [id, ...recentCommandIds().filter((item) => item !== id)].slice(0, RECENT_LIMIT)
+export function rememberCommand(id: string, userId?: string): void {
+  const next = [id, ...recentCommandIds(userId).filter((item) => item !== id)].slice(0, RECENT_LIMIT)
   try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+    localStorage.setItem(userId ? `${RECENT_KEY}:${encodeURIComponent(userId)}` : RECENT_KEY, JSON.stringify(next))
   } catch {
     // Персиста нет — палитра работает, просто без истории.
   }

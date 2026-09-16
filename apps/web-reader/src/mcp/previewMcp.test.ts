@@ -34,7 +34,7 @@ describe('PreviewActionRelay', () => {
     const relay = new PreviewActionRelay()
     const outcome = await relay.request(U, CONV, { kind: 'read' })
     expect(outcome.ok).toBe(false)
-    expect(outcome.error).toContain('не подключён')
+    expect(outcome.error).toContain('не подключена')
   })
 
   it('первый успешный ответ выигрывает, отказ другого клиента не мешает', async () => {
@@ -137,6 +137,52 @@ describe('previewMcp — инструменты browser', () => {
     await app.close()
   })
 
+  it('records actual completed browser actions under the signed stage without input or page secrets', async () => {
+    const url = 'http://agent-1.machine.internal:5173/#/releases'
+    const entry = { userId: U, conversationId: CONV, ciCheck: { runId: 'r1', stepId: 's1', url } }
+    const token = createPreviewTurnTokens(SECRET).issue(entry)
+    const logBrowserEvidence = vi.fn()
+    await makeApp(undefined, {
+      logBrowserEvidence,
+      browserExecutor: async () => ({ ok: true, result: { ok: true, page: { url, title: 'secret title' } } })
+    })
+    expect((await call('open', { url }, `?k=${SECRET}&turn=${token}`)).isError).not.toBe(true)
+    expect(logBrowserEvidence).toHaveBeenCalledWith(entry, { action: 'open', ok: true, target: true, requestedTarget: true })
+    await call('type', { selector: '#password', text: 'private-password' }, `?k=${SECRET}&turn=${token}`)
+    expect(JSON.stringify(logBrowserEvidence.mock.calls)).not.toContain('private-password')
+    expect(JSON.stringify(logBrowserEvidence.mock.calls)).not.toContain('secret title')
+    await call('read', {}, `?k=${SECRET}&turn=${TURN}`)
+    expect(logBrowserEvidence).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses actual session URL and viewport when diagnostics omit page metadata', async () => {
+    const url = 'http://agent-1.machine.internal:5173/'
+    const token = createPreviewTurnTokens(SECRET).issue({ userId: U, conversationId: CONV, ciCheck: { runId: 'r1', stepId: 's1', url } })
+    const logBrowserEvidence = vi.fn()
+    const meta = { id: 's', conversationId: CONV, incarnation: 'i', state: 'ready' as const, activeTabId: 't', tabs: [], viewport: { width: 320, height: 800, deviceScaleFactor: 1 }, currentUrl: url, title: '' }
+    await makeApp(undefined, {
+      logBrowserEvidence,
+      browserExecutor: async () => ({ ok: true, result: { ok: true, styles: { width: '320px' } } }),
+      browserControl: async () => ({ ok: true, result: meta })
+    })
+    await call('styles', { selector: 'body' }, `?k=${SECRET}&turn=${token}`)
+    expect(logBrowserEvidence).toHaveBeenLastCalledWith(expect.anything(), { action: 'styles', ok: true, target: true, width: 320 })
+    meta.currentUrl = 'http://other.test/'
+    await call('styles', { selector: 'body' }, `?k=${SECRET}&turn=${token}`)
+    expect(logBrowserEvidence).toHaveBeenLastCalledWith(expect.anything(), { action: 'styles', ok: true, target: false, width: 320 })
+  })
+
+  it('records infrastructure failure without converting it into a successful observation', async () => {
+    const url = 'http://agent-1.machine.internal:5173/'
+    const token = createPreviewTurnTokens(SECRET).issue({ userId: U, conversationId: CONV, ciCheck: { runId: 'r1', stepId: 's1', url } })
+    const logBrowserEvidence = vi.fn()
+    await makeApp(undefined, { logBrowserEvidence, browserExecutor: async () => { throw new Error('private connection details') } })
+    const result = await call('open', { url }, `?k=${SECRET}&turn=${token}`)
+    expect(result.isError).toBe(true)
+    expect(result.text).not.toContain('private connection details')
+    expect(logBrowserEvidence).toHaveBeenCalledWith(expect.anything(), { action: 'open', ok: false, target: false, requestedTarget: true, infrastructureError: true })
+  })
+
   it('неверный секрет → 403', async () => {
     await makeApp()
     const res = await app.inject({
@@ -157,7 +203,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'audit', 'back', 'cancel-download', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'probe', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'accessibility', 'ask', 'ask-user', 'audit', 'back', 'bookmark', 'cancel-download', 'changes', 'check', 'check-report', 'choose', 'clear', 'click', 'close-other-tabs', 'close-tab', 'console', 'cookies', 'copy', 'count', 'csv', 'delete-download', 'device', 'dialogs', 'dismiss', 'downloads', 'drag', 'drop-file', 'edits', 'emulate', 'environment', 'errors', 'evaluate', 'expect', 'fill', 'fill-form', 'find', 'find-tab', 'focus', 'focus-order', 'focused', 'form-state', 'forward', 'frames', 'hand-over', 'handle-dialog', 'highlight', 'history', 'hotkey', 'hover', 'list', 'measure', 'media', 'metrics', 'network', 'network-rules', 'new-tab', 'note', 'open', 'options', 'paste', 'press', 'probe', 'read', 'read-download', 'record', 'record-check', 'reload', 'replay', 'report', 'reset-session', 'screenshot', 'scroll', 'scroll-until', 'search', 'select', 'select-tab', 'select-text', 'sequence', 'session-info', 'set', 'show', 'snapshot', 'source', 'status', 'stop-loading', 'storage', 'styles', 'submit', 'table', 'tabs', 'test-users', 'touch', 'type', 'upload', 'validity', 'viewport', 'wait', 'wait-new-tab'])
   })
 
   it.each([
@@ -286,10 +332,18 @@ describe('previewMcp — инструменты browser', () => {
     const forwarded = vi.fn()
     await makeApp(undefined, { browserExecutor: async () => null })
     client = forwarded
-    const result = await call('wait', { selector: '#spinner', state: 'hidden' })
+    const result = await call('wait', { selector: '.row', count: 3 })
     expect(result.isError).toBe(true)
     expect(result.text).toContain('Playwright Reader')
     expect(forwarded).not.toHaveBeenCalled()
+  })
+
+  it('wait со state hidden уходит в панель: исчезновение спиннера ждёт сам iframe', async () => {
+    await makeApp(undefined, { browserExecutor: async () => null })
+    client = (message) => { if (message.t === 'preview.action') relay.resolve(U, message.requestId, { ok: true, result: { page: { url: 'https://x', title: '' }, waitedMs: 120, state: 'hidden' } }, CONV) }
+    const result = await call('wait', { selector: '#spinner', state: 'hidden' })
+    expect(result.isError).toBeFalsy()
+    expect(result.text).toContain('"state":"hidden"')
   })
 
   it('wait отклоняет противоречивые условия без вызова браузера', async () => {
@@ -556,6 +610,101 @@ describe('previewMcp — инструменты browser', () => {
     expect(result.text).toContain('загружается')
   })
 
+  it('note и report {text} доходят до клиента как действия панели (круг 20)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: null, notes: [{ text: 'Цена без доставки', url: null, at: 1 }] } })
+    }
+    const noted = await call('note', { text: 'Цена без доставки' })
+    expect(noted.isError).toBeFalsy()
+    await call('report', { readable: true })
+    await call('report', {})
+    expect(seen).toEqual([
+      { kind: 'note', text: 'Цена без доставки' },
+      { kind: 'report', readable: true },
+      { kind: 'report' }
+    ])
+  })
+  it('ask-user и hand-over доходят до клиента как действия панели (круг 19)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: null, question: 'Какой размер?', answered: true, answer: 'L', waitedMs: 10 } })
+    }
+    const answer = await call('ask-user', { question: 'Какой размер?', options: ['M', 'L'] })
+    expect(answer.isError).toBeFalsy()
+    expect(answer.text).toContain('"answer"')
+    await call('hand-over', { reason: 'войдите в аккаунт' })
+    expect(seen).toEqual([
+      { kind: 'question', question: 'Какой размер?', options: ['M', 'L'] },
+      { kind: 'handover', reason: 'войдите в аккаунт' }
+    ])
+  })
+  it('bookmark, read next/toc/table, scroll until и find in доходят до клиента (круг 18)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, bookmarks: [] } })
+    }
+    await call('bookmark', { label: 'Сюда вернуться' })
+    expect(await call('bookmark', { label: 'x', remove: 'y' })).toMatchObject({ isError: true })
+    await call('read', { next: true, toc: true })
+    await call('read', { table: 'Цены', rowOffset: 20 })
+    await call('scroll', { until: 'Отзывы', maxScreens: 5 })
+    await call('find', { text: 'Условия', in: 'Доставка' })
+    expect(seen).toEqual([
+      { kind: 'bookmark', label: 'Сюда вернуться' },
+      { kind: 'read', next: true, toc: true },
+      { kind: 'read', table: 'Цены', rowOffset: 20 },
+      { kind: 'scroll', until: 'Отзывы', maxScreens: 5 },
+      { kind: 'find', text: 'Условия', in: 'Доставка' }
+    ])
+  })
+  it('search, focus, select и read main доходят до клиента как действия (круг 17)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, field: { selector: '#q', tag: 'input', text: '' }, query: 'наушники', submitted: true } })
+    }
+    const answer = await call('search', { text: 'наушники' })
+    expect(answer.isError).toBeFalsy()
+    await call('focus', { field: 'Комментарий' })
+    await call('select', { text: 'Важное условие' })
+    await call('read', { main: true })
+    expect(await call('focus', {})).toMatchObject({ isError: true })
+    expect(await call('select', {})).toMatchObject({ isError: true })
+    expect(seen).toEqual([
+      { kind: 'search', text: 'наушники' },
+      { kind: 'focus', field: 'Комментарий' },
+      { kind: 'select', text: 'Важное условие' },
+      { kind: 'read', main: true }
+    ])
+  })
+  it('dismiss, find со стороной и details, click peek доходят до клиента как действия (круг 16)', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, dismissed: true, how: 'rejected', remaining: 0 } })
+    }
+    const answer = await call('dismiss', { what: 'cookies' })
+    expect(answer.isError).toBeFalsy()
+    expect(answer.text).toContain('rejected')
+    await call('find', { role: 'button', below: 'Цена', details: true })
+    await call('click', { text: 'Подробнее', peek: true, rightOf: 'Товар' })
+    await call('read', { parts: ['images'] })
+    expect(seen).toEqual([
+      { kind: 'dismiss', what: 'cookies' },
+      { kind: 'find', role: 'button', below: 'Цена', details: true },
+      { kind: 'click', text: 'Подробнее', rightOf: 'Товар', peek: true },
+      { kind: 'read', parts: ['images'] }
+    ])
+  })
   it('hover/scroll/press доходят до клиента как действия', async () => {
     await makeApp()
     const seen: unknown[] = []
@@ -642,11 +791,30 @@ describe('previewMcp — инструменты browser', () => {
     expect(called).toBe(false)
   })
 
+  it('sequence проверяет шаги и уходит в панель одним действием', async () => {
+    await makeApp()
+    const bad = await call('sequence', { steps: [{ kind: 'open', url: 'https://x.test/' }] })
+    expect(bad.isError).toBe(true)
+    client = (message) => { if (message.t === 'preview.action') relay.resolve(U, message.requestId, { ok: true, result: { page: { url: 'https://x', title: '' }, steps: [{ kind: 'click', ok: true }], completed: 1, total: 1 } }, CONV) }
+    const good = await call('sequence', { steps: [{ kind: 'click', text: 'Войти' }] })
+    expect(good.isError).toBeFalsy()
+    expect(good.text).toContain('"completed":1')
+  })
+
+  it('остановленное опасное действие приходит модели как отказ с инструкцией', async () => {
+    await makeApp()
+    client = (message) => { if (message.t === 'preview.action') relay.resolve(U, message.requestId, { ok: true, result: { page: { url: 'https://x', title: '' }, needsConfirmation: true, reason: 'оплата или перевод', target: { selector: '#pay', tag: 'button', text: 'Оплатить' } } }, CONV) }
+    const result = await call('click', { text: 'Оплатить' })
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('confirm: true')
+    expect(result.text).toContain('«Оплатить»')
+  })
+
   it('find без text и selector — ошибка аргументов', async () => {
     await makeApp()
     const result = await call('find', {})
     expect(result.isError).toBe(true)
-    expect(result.text).toContain('text или selector')
+    expect(result.text).toContain('text, role, selector или href')
   })
 
   it('click передаёт text, ошибка клиента доходит до модели', async () => {

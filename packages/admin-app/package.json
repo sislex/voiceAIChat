@@ -11,7 +11,12 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent"
+    "test": "vitest run --silent",
+    "performance:budget": "node performance/run.mjs",
+    "performance:verify": "node --test performance/runner.test.mjs",
+    "performance:qa": "node performance/run.mjs --qa",
+    "performance:desktop": "xvfb-run -a node performance/desktop.mjs",
+    "performance:release-check": "node --import tsx performance/release-check.mjs"
   },
   "dependencies": {
     "@voicechat/profile-app": "*",

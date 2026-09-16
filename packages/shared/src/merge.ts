@@ -40,6 +40,8 @@ export interface MergeRun {
   revertSha: string | null
   agentId: string
   machineName?: string | null
+  /** Monotonic assignment revision; legacy rows start at zero. */
+  assignmentVersion?: number
   llmEngineId: string | null
   llmProvider: 'claude' | 'codex'
   llmModel: string
@@ -65,6 +67,24 @@ export interface MergeRun {
   finishedAt: number | null
   createdAt: number
 }
+
+/** Delayed queued snapshots must not undo a newer assignment or a claimed run. */
+export function acceptMergeSnapshot(current: Pick<MergeRun, 'id' | 'status' | 'assignmentVersion'> | undefined,
+  next: Pick<MergeRun, 'id' | 'status' | 'assignmentVersion'>): boolean {
+  if (!current || current.id !== next.id) return true
+  if ((next.assignmentVersion ?? 0) < (current.assignmentVersion ?? 0)) return false
+  return !(current.status !== 'queued' && next.status === 'queued')
+}
+
+export interface ChangeMergeMachineRequest {
+  agentId: string
+  expectedAssignmentVersion: number
+}
+
+export type ChangeMergeMachineResult =
+  | { ok: true; run: MergeRun }
+  | { ok: false; code: 'not_queued' | 'assignment_changed'; error: string; run: MergeRun }
+  | { ok: false; code: 'not_found' | 'forbidden' | 'readiness_failed'; error: string; readiness?: MergeMachineReadiness }
 
 export type MergeMachineReadinessCode =
   | 'ready'

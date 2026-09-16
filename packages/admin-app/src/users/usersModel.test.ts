@@ -33,6 +33,12 @@ const summary: UserUsageSummary[] = [
 ]
 
 describe('фильтрация списка', () => {
+  it('finds roles and distinguishes old never-used accounts from new ones', () => {
+    expect(filterUsers(users, { ...DEFAULT_FILTER, query: 'tester' }, NOW).map((u) => u.name)).toEqual(['ipetrov', 'nikita'])
+    const rows = [user('old', { createdAt: NOW - 31 * 86_400_000 }), user('new', { createdAt: NOW - 86_400_000 }), user('returning', { lastLogin: NOW - 1, lastSeenAt: 1 })]
+    expect(filterUsers(rows, { ...DEFAULT_FILTER, state: 'inactive' }, NOW).map((u) => u.name)).toEqual(['old'])
+    expect(filterUsers(rows, { ...DEFAULT_FILTER, sort: 'login' }, NOW)[0]?.name).toBe('returning')
+  })
   it('поиск идёт и по логину, и по почте', () => {
     expect(filterUsers([...users, user('anna', { email: 'anna@voicechat.team' })], { ...DEFAULT_FILTER, query: 'voicechat' }, NOW).map((u) => u.name)).toEqual(['anna'])
     expect(filterUsers(users, { ...DEFAULT_FILTER, query: 'MAR' }, NOW).map((u) => u.name)).toEqual(['marina'])

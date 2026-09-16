@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { MobileScroll, MobileFilters } from './KanbanBoard.stories'
 import { MOBILE_QUERY } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, fireEvent, screen, within, waitFor, cleanup } from '@testing-library/react'
@@ -48,6 +49,18 @@ function renderBoard(props: Partial<KanbanBoardProps> = {}): KanbanBoardProps {
   render(<KanbanBoard {...full} />)
   return full
 }
+
+// @testCase TC8
+it('undoes hiding the actual card without changing task data', () => {
+  renderBoard({ currentUserId: 'chat457-undo' })
+  const card = document.querySelector('[data-task-id="t1"]')!
+  fireEvent.click(within(card as HTMLElement).getByRole('button', { name: /Действия/ }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Скрыть карточку' }))
+  expect(document.querySelector('[data-task-id="t1"]')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Отменить' }))
+  expect(document.querySelector('[data-task-id="t1"]')).toBeInTheDocument()
+  expect(board.tasks[0]!.title).toBe('A')
+})
 
 describe('KanbanBoard (изолированный)', () => {
   it('показывает и копирует диагностический снимок текущего представления', async () => {
@@ -482,6 +495,7 @@ describe('KanbanBoard (изолированный)', () => {
     expect(props.onReorderColumns).not.toHaveBeenCalled()
   })
 
+  // @testCase TC-INT-01
   it('WIP-шкалы показывают запас, предел и превышение независимо от фильтров', async () => {
     const columns = [
       { ...board.columns[0]!, id: 'available', name: 'Есть место', wipLimit: 3, position: 1024 },
@@ -1019,7 +1033,9 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByTestId('kanban-live')).toHaveTextContent('Скрытая обязательная')
   })
 
-  it('не объявляет успех при серверном или сетевом отказе', async () => {
+  // @testCase TC-INT-01
+  // @testCase TC-UI-02
+  it.each(['false', 'reject'])('announces a refused move without false success: %s', async failure => {
     const rejectedBoard: Board = {
       columns: [
         { ...board.columns[0]!, id: 'c1', name: 'Ready', semanticType: 'ready', hidden: false },
@@ -1027,12 +1043,12 @@ describe('KanbanBoard (изолированный)', () => {
       ],
       tasks: [task({ id: 'moving', columnId: 'c1', title: 'Остаётся' })]
     }
-    renderBoard({ board: rejectedBoard, onMoveTask: vi.fn(async () => false) })
+    renderBoard({ board: rejectedBoard, onMoveTask: vi.fn(async () => { if (failure === 'reject') throw new Error('Offline'); return false }) })
 
     const card = screen.getByText('Остаётся').closest('[data-testid="task-card"]')!
     await userEvent.click(within(card as HTMLElement).getByRole('button', { name: /вправо.*Development/ }))
 
-    expect(screen.getByTestId('kanban-live')).toBeEmptyDOMElement()
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Не удалось перенести задачу')
     expect(screen.getByText('Остаётся').closest('[data-testid="task-card"]')).toHaveAttribute('data-task-id', 'moving')
   })
 
@@ -1627,6 +1643,7 @@ describe('KanbanBoard — перенос указателем', () => {
     expect(screen.getByTestId('kanban-live')).toHaveTextContent('Задача «A» осталась на месте.')
   })
 
+  // @testCase TC3
   it('палец: перенос начинается удержанием, короткий скролл его не запускает', () => {
     vi.useFakeTimers()
     try {
@@ -1746,6 +1763,7 @@ describe('KanbanBoard — перенос указателем', () => {
 describe('KanbanBoard — перенос с клавиатуры', () => {
   const live = (): HTMLElement => screen.getByTestId('kanban-live')
 
+  // @testCase TC3
   it('Space берёт задачу, стрелки выбирают место, Enter кладёт', () => {
     const props = renderBoard({ board: dndBoard })
     const card = screen.getAllByTestId('task-card')[0]!
@@ -1757,10 +1775,10 @@ describe('KanbanBoard — перенос с клавиатуры', () => {
     expect(screen.getByTestId('drop-placeholder')).toBeInTheDocument()
 
     fireEvent.keyDown(card, { key: 'ArrowDown' })
-    expect(live()).toHaveTextContent('Задача «A», колонка «To Do», позиция 2 из 2.')
+    expect(live()).toHaveTextContent('Задача A: колонка To Do, позиция 2 из 2.')
 
     fireEvent.keyDown(card, { key: 'ArrowRight' })
-    expect(live()).toHaveTextContent('Задача «A», колонка «In Progress», позиция 2 из 2.')
+    expect(live()).toHaveTextContent('Задача A: колонка In Progress, позиция 2 из 2.')
 
     fireEvent.keyDown(card, { key: 'Enter' })
     expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', 't3', null)
@@ -2102,6 +2120,236 @@ function setMobileViewport(mobile: boolean): void {
 }
 
 describe('KanbanBoard — фильтры на телефоне', () => {
+  // @testCase TC1
+  // @testCase TC2
+  it.each([['MobileScroll', MobileScroll], ['MobileFilters', MobileFilters]] as const)('%s passes mobile axe with shared story data', async (name, story) => {
+    setMobileViewport(true)
+    renderBoard(story.args)
+    expect(screen.getAllByTestId('kanban-column')).toHaveLength(1)
+    expect(screen.getAllByRole('option', { hidden: true }).filter((option) => option.parentElement?.getAttribute('aria-label') === 'Активная колонка')).toHaveLength(6)
+    if (name === 'MobileFilters') {
+      await userEvent.click(screen.getByRole('button', { name: 'Фильтры (0 активных)' }))
+      await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'missing')
+    }
+    await expectNoViolations()
+  })
+
+  // @testCase TC1
+  // @testCase TC-UI-01
+  // @testCase TC-UI-03
+  it('selects a mobile column, restores it, and creates in that column with one FAB', async () => {
+    setMobileViewport(true)
+    const mobileBoard = { ...board, columns: board.columns.map((column) => ({ ...column, hidden: false })) }
+    const props = renderBoard({ board: mobileBoard, scrollScopeId: 'mobile-test' })
+    expect(screen.getAllByTestId('board-mobile-create')).toHaveLength(1)
+    expect(screen.queryByTestId('column-create')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Предыдущая колонка' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Следующая колонка' }))
+    expect(screen.getByText('Колонка 2 из 2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Следующая колонка' })).toBeDisabled()
+    await userEvent.click(screen.getByTestId('board-mobile-create'))
+    await userEvent.type(screen.getByTestId('column-create-title'), 'New mobile task{Enter}')
+    expect(props.onCreateTask).toHaveBeenCalledWith('c2', expect.objectContaining({ title: 'New mobile task' }))
+    cleanup()
+    renderBoard({ board: mobileBoard, scrollScopeId: 'mobile-test' })
+    expect(screen.getByText('Колонка 2 из 2')).toBeInTheDocument()
+    await expectNoViolations()
+  })
+
+  // @testCase TC2
+  // @testCase TC-UI-02
+  it('resets mobile filters, returns focus, and exposes every label through card details', async () => {
+    setMobileViewport(true)
+    renderBoard({ board: { ...board, tasks: [task({ id: 't1', title: 'A', labels: ['one', 'two', 'three'], storyPoints: 8 })] } })
+    const opener = screen.getByRole('button', { name: 'Фильтры (0 активных)' })
+    await userEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'Фильтры и меню доски' })
+    expect(dialog).toHaveClass('vc-dialog--full')
+    await userEvent.type(within(dialog).getByRole('searchbox', { name: 'Поиск на доске' }), 'missing')
+    await expectNoViolations()
+    within(dialog).getByRole('button', { name: 'Сбросить все' }).focus()
+    await userEvent.keyboard('{Escape}')
+    expect(opener).toHaveFocus()
+    expect(screen.getByText('Под фильтр ничего не попало — сбросить')).toBeInTheDocument()
+    await userEvent.click(within(screen.getByTestId('kanban-column')).getByRole('button', { name: 'Сбросить все' }))
+    expect(screen.getByTestId('task-card')).toHaveClass('jcard--mobile')
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Все данные карточки' }))
+    const details = screen.getByRole('dialog', { name: /Все данные:/ })
+    expect(details).toHaveTextContent('one, two, three')
+    expect(details).toHaveTextContent('8 SP')
+    await expectNoViolations(details)
+  })
+
+  // @testCase TC4
+  it('keeps mobile navigation usable when storage throws', async () => {
+    setMobileViewport(true)
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage disabled') })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage disabled') })
+    try {
+      renderBoard({ board: { ...board, columns: board.columns.map((column) => ({ ...column, hidden: false })) }, scrollScopeId: 'no-storage' })
+      await userEvent.click(screen.getByRole('button', { name: 'Следующая колонка' }))
+      expect(screen.getByText('Колонка 2 из 2')).toBeInTheDocument()
+      expect(screen.getByTestId('board-mobile-create')).toBeEnabled()
+    } finally {
+      get.mockRestore()
+      set.mockRestore()
+    }
+  })
+
+  // @testCase TC4
+  it('isolates session columns, tolerates removed columns, and persists density from the mobile menu', async () => {
+    setMobileViewport(true)
+    sessionStorage.setItem('voicechat.kanban.column.v1.other-board', 'c2')
+    sessionStorage.setItem('voicechat.kanban.column.v1.current-board', 'removed')
+    renderBoard({ scrollScopeId: 'current-board', currentUserId: 'mobile-density' })
+    expect(screen.getByText('Колонка 1 из 1')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Фильтры (0 активных)' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Компактная плотность' }))
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByTestId('kanban-board')).toHaveClass('jboard--density-compact')
+    cleanup()
+    renderBoard({ scrollScopeId: 'current-board', currentUserId: 'mobile-density' })
+    expect(screen.getByTestId('kanban-board')).toHaveClass('jboard--density-compact')
+    expect(sessionStorage.getItem('voicechat.kanban.column.v1.other-board')).toBe('c2')
+    cleanup()
+    renderBoard({ board: { columns: [], tasks: [] }, scrollScopeId: 'empty' })
+    expect(screen.queryByText('Колонка 1 из 0')).not.toBeInTheDocument()
+    expect(screen.getByTestId('board-mobile-create')).toBeDisabled()
+  })
+
+  // @testCase TC-UI-01
+  it('isolates selection by user and project and falls back after a column disappears', async () => {
+    setMobileViewport(true)
+    const visible = { ...board, columns: board.columns.map(column => ({ ...column, hidden: false })) }
+    const props = renderBoard({ board: visible, currentUserId: 'alice', scrollScopeId: 'shared-scope' })
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Активная колонка' }), 'c2')
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c2')
+    cleanup()
+    renderBoard({ ...props, currentUserId: 'bob' })
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c1')
+    cleanup()
+    renderBoard({ ...props, board: { ...visible, columns: visible.columns.map(column => ({ ...column, projectId: 'p2' })) } })
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c1')
+    cleanup()
+    renderBoard(props)
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c2')
+    cleanup()
+    renderBoard({ ...props, board })
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c1')
+  })
+
+  // @testCase TC-UI-02
+  it('accepts only deliberate non-interactive horizontal swipes and provides keyboard navigation', () => {
+    setMobileViewport(true)
+    renderBoard({ board: { ...board, columns: board.columns.map(column => ({ ...column, hidden: false })) } })
+    const surface = screen.getByTestId('kanban-board')
+    const gesture = (target: Element, startX: number, endX: number, dy = 0, cancel = false): void => {
+      fireEvent.touchStart(target, { touches: [{ clientX: startX, clientY: 200 }] })
+      fireEvent.touchMove(target, { touches: [{ clientX: endX, clientY: 200 + dy }] })
+      if (cancel) fireEvent.touchCancel(target)
+      fireEvent.touchEnd(target, { touches: [], changedTouches: [{ clientX: endX, clientY: 200 + dy }] })
+    }
+    gesture(surface, 10, 160)
+    gesture(surface, 250, 100, 80)
+    gesture(surface, 250, 100, 0, true)
+    gesture(screen.getByTestId('task-card'), 250, 100)
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c1')
+    gesture(surface, 250, 100)
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c2')
+    fireEvent.keyDown(surface, { key: 'Home' })
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c1')
+    fireEvent.keyDown(surface, { key: 'End' })
+    expect(screen.getByTestId('kanban-column')).toHaveAttribute('data-column-id', 'c2')
+  })
+
+  // @testCase TC-UI-02
+  // @testCase TC-INT-01
+  it('moves through the mobile menu using full unfiltered target ordering', async () => {
+    setMobileViewport(true)
+    const props = renderBoard({
+      board: {
+        columns: board.columns.map(column => ({ ...column, hidden: false })),
+        tasks: [task({ id: 'moving', title: 'Visible' }), task({ id: 'last', columnId: 'c2', title: 'Filtered out', position: 4096 })]
+      },
+      currentUserId: 'mobile-menu-order',
+      view: { ...DEFAULT_BOARD_VIEW, search: 'Visible' },
+      onMoveTask: vi.fn(async () => true)
+    })
+    const card = screen.getByTestId('task-card')
+    card.focus()
+    fireEvent.keyDown(card, { key: 'F10', shiftKey: true })
+    await userEvent.click(screen.getByRole('menuitem', { name: 'В колонку «Скрытая»' }))
+    expect(props.onMoveTask).toHaveBeenCalledWith('moving', 'c2', 'last', null)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('перенесена')
+    expect(screen.getByRole('combobox', { name: 'Активная колонка' })).toHaveValue('c2')
+  })
+
+  // @testCase TC-UI-01
+  // @testCase TC-INT-01
+  it('does not apply a late move announcement or selection to another user', async () => {
+    setMobileViewport(true)
+    let finish!: (value: boolean) => void
+    const onMoveTask = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
+    const props = renderBoard({
+      currentUserId: 'move-alice',
+      board: { ...board, columns: board.columns.map(column => ({ ...column, hidden: false })) },
+      onMoveTask
+    })
+    cleanup()
+    const mounted = render(<KanbanBoard {...props} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'В колонку «Скрытая»' }))
+    mounted.rerender(<KanbanBoard {...props} currentUserId="move-bob" />)
+    await act(async () => finish(true))
+    expect(screen.getByRole('combobox', { name: 'Активная колонка' })).toHaveValue('c1')
+    expect(screen.getByTestId('kanban-live')).not.toHaveTextContent('перенесена')
+  })
+
+  // @testCase TC-UI-02
+  it('updates and deletes through accessible mobile card actions', async () => {
+    setMobileViewport(true)
+    const props = renderBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Добавить флаг' }))
+    expect(props.onUpdateTask).toHaveBeenCalledWith('t1', { flagged: true })
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с «A»' }))
+    const remove = screen.getByRole('menuitem', { name: 'Удалить' })
+    remove.focus()
+    await userEvent.keyboard('{Enter}')
+    const dialog = screen.getByRole('dialog', { name: 'Удалить «A»?' })
+    await expectNoViolations(dialog)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }))
+    await waitFor(() => expect(props.onDeleteTask).toHaveBeenCalledWith('t1'))
+  })
+
+  // @testCase TC-UI-03
+  it('hides fixed create when the visual viewport shrinks and restores it afterwards', () => {
+    setMobileViewport(true)
+    const viewport = new EventTarget()
+    Object.assign(viewport, { height: window.innerHeight, offsetTop: 0 })
+    const original = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+    try {
+      renderBoard()
+      expect(screen.getByTestId('board-mobile-create')).not.toHaveAttribute('hidden')
+      act(() => {
+        Object.assign(viewport, { height: window.innerHeight - 300 })
+        viewport.dispatchEvent(new Event('resize'))
+      })
+      expect(screen.getByTestId('board-mobile-create')).toHaveAttribute('hidden')
+      act(() => {
+        Object.assign(viewport, { height: window.innerHeight })
+        viewport.dispatchEvent(new Event('resize'))
+      })
+      expect(screen.getByTestId('board-mobile-create')).not.toHaveAttribute('hidden')
+    } finally {
+      cleanup()
+      if (original) Object.defineProperty(window, 'visualViewport', original)
+      else Reflect.deleteProperty(window, 'visualViewport')
+    }
+  })
+
   afterEach(() => setMobileViewport(false))
 
   it('на широком экране фильтры развёрнуты, на телефоне свёрнуты в один пункт', async () => {
@@ -2115,20 +2363,17 @@ describe('KanbanBoard — фильтры на телефоне', () => {
     const shell = screen.getByTestId('board-filters-shell')
     // Развёрнутыми фильтры занимали пол-экрана до первой карточки.
     expect(shell).not.toHaveAttribute('open')
-    expect(within(shell).getByText('Фильтры')).toBeInTheDocument()
+    expect(within(shell).getByRole('button', { name: 'Фильтры (0 активных)' })).toHaveAttribute('aria-expanded', 'false')
     expect(within(shell).getByLabelText(/1 задача\. Данные:/)).toHaveTextContent(/1 задача/)
   })
 
   it('число активных фильтров видно в свёрнутом виде', async () => {
     setMobileViewport(true)
     renderBoard()
-    const shell = screen.getByTestId('board-filters-shell') as HTMLDetailsElement
-    // jsdom не раскрывает details по клику на summary — открываем напрямую.
-    shell.open = true
-    const [firstFilter] = within(shell).getAllByRole('checkbox')
-    await userEvent.click(firstFilter)
-    // Иначе непонятно, почему на доске мало карточек.
-    expect(within(shell.querySelector('summary')!).getByText('1')).toBeInTheDocument()
+    const shell = screen.getByTestId('board-filters-shell')
+    await userEvent.click(within(shell).getByRole('button', { name: 'Фильтры (0 активных)' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск на доске' }), 'A')
+    expect(within(shell).getByRole('button', { name: 'Фильтры (1 активных)' })).toBeInTheDocument()
   })
 
   it('мобильная сводка сообщает фоновое обновление при закрытых фильтрах', () => {
@@ -2139,7 +2384,7 @@ describe('KanbanBoard — фильтры на телефоне', () => {
     expect(within(shell).getByLabelText('1 задача. Доска обновляется')).toHaveTextContent('обновляется…')
   })
 
-  it('оставляет активные фильтры видимыми снаружи свёрнутой панели', async () => {
+  it('сохраняет активные фильтры при закрытой мобильной панели', async () => {
     setMobileViewport(true)
     renderBoard({ currentUserId: 'mobile-user', view: { ...DEFAULT_BOARD_VIEW, search: 'A' } })
     const shell = screen.getByTestId('board-filters-shell')

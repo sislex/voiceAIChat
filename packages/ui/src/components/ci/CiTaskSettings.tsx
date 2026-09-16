@@ -22,6 +22,7 @@ export interface CiTaskSettingsProps {
 export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const [commands, setCommands] = useState<CiCommand[]>([])
+  const [commandContext, setCommandContext] = useState<import('@shared/ci').CiCommandContext | null>(null)
   const [before, setBefore] = useState<string[]>([])
   const [after, setAfter] = useState<string[]>([])
   const [overridden, setOverridden] = useState(false)
@@ -64,6 +65,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       setStagesLoading(true)
       void bridge.getTaskCi(props.projectId, props.taskId).then((r) => {
         if (cancelled) return
+        setCommandContext(r.commandContext ?? null)
         setBefore(r.config.beforeModel); setAfter(r.config.afterModel); setOverridden(r.overridden)
         setEnabledStages(r.enabledStages); setStagesLoading(false); setStagesError(null)
         setDevelopmentPreview(r.developmentPreview ?? { ...DEFAULT_DEVELOPMENT_PREVIEW })
@@ -207,8 +209,8 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     {!browserSaved && <Button variant="primary" className="ci-task-save" onClick={saveBrowserCheck}>Сохранить проверку</Button>}
     {browserError && <div className="ci-warn" role="alert">Не удалось сохранить проверку: {browserError}</div>}
     <div className="ci-task-head"><h3 className="ci-task-title">Команды воркфлоу</h3><span className={`lozenge ${overridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{overridden ? 'переопределено' : 'унаследовано'}</span></div>
-    <CiSlotEditor label="До работы модели" commands={commands} value={before} onChange={(v) => { setBefore(v); setSaved(false) }} />
-    <CiSlotEditor label="После работы модели" commands={commands} value={after} onChange={(v) => { setAfter(v); setSaved(false) }} />
+    <CiSlotEditor label="До работы модели" commands={commands} context={commandContext} projectId={props.projectId} value={before} onChange={(v) => { setBefore(v); setSaved(false) }} />
+    <CiSlotEditor label="После работы модели" commands={commands} context={commandContext} projectId={props.projectId} value={after} onChange={(v) => { setAfter(v); setSaved(false) }} />
     {cleanupWarn && <div className="ci-warn">В слоте «после» есть cleanup-команда, но в «до» нет команды, создающей рабочую директорию.</div>}
     {!saved && <Button variant="primary" className="ci-task-save" onClick={save}>Сохранить команды</Button>}
     </>}

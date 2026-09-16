@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionUser, UserPersonalization } from '@shared/types'
 import { DEFAULT_PERSONALIZATION } from '@shared/types'
 import { Button } from '@voicechat/ui-kit'
@@ -16,8 +16,53 @@ export function SettingsPage<T extends string>({ tabs, activeTab, onTabChange, a
   onTabChange: (tab: T) => void
   ariaLabel: string
 }): JSX.Element {
-  return <div className="proj-settings-tabs" role="tablist" aria-label={ariaLabel} data-testid="settings-page">
-    {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => onTabChange(tab.id)}>{tab.label}</button>)}
+  const tabsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const container = tabsRef.current
+    const selected = container?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    if (!container || !selected) return
+    const containerRect = container.getBoundingClientRect()
+    const selectedRect = selected.getBoundingClientRect()
+    const left = container.scrollLeft + selectedRect.left - containerRect.left
+    const right = left + selectedRect.width
+    if (left < container.scrollLeft) container.scrollTo?.({ left, behavior: 'auto' })
+    else if (right > container.scrollLeft + container.clientWidth) {
+      container.scrollTo?.({ left: right - container.clientWidth, behavior: 'auto' })
+    }
+  }, [activeTab, tabs])
+
+  const selectFromKeyboard = (tab: T): void => {
+    onTabChange(tab)
+    requestAnimationFrame(() => {
+      tabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus()
+    })
+  }
+  const move = (current: T, direction: -1 | 1): void => {
+    const index = tabs.findIndex(tab => tab.id === current)
+    const next = tabs[(index + direction + tabs.length) % tabs.length]
+    if (next) selectFromKeyboard(next.id)
+  }
+
+  return <div ref={tabsRef} className="proj-settings-tabs" role="tablist" aria-label={ariaLabel} data-testid="settings-page">
+    {tabs.map((tab) => <button
+      key={tab.id}
+      type="button"
+      role="tab"
+      aria-selected={activeTab === tab.id}
+      tabIndex={activeTab === tab.id ? 0 : -1}
+      className={activeTab === tab.id ? 'active' : ''}
+      onClick={() => onTabChange(tab.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault()
+          move(tab.id, event.key === 'ArrowLeft' ? -1 : 1)
+        } else if (event.key === 'Home' || event.key === 'End') {
+          event.preventDefault()
+          const next = event.key === 'Home' ? tabs[0] : tabs[tabs.length - 1]
+          if (next) selectFromKeyboard(next.id)
+        }
+      }}
+    >{tab.label}</button>)}
   </div>
 }
 
@@ -50,7 +95,7 @@ export function PersonalizationPage({ user, value, onSave, onCancel }: { user: S
   }
   const years = useMemo(() => Array.from({ length: new Date().getFullYear() - 1899 }, (_, i) => new Date().getFullYear() - i), [])
   const number = (raw: string): number | null => raw ? Number(raw) : null
-  return <main className="personalization-page">
+  return <section className="personalization-page">
     <header><h1>Персонализация — {titleName}</h1><p>Настройте обычный язык, объём и тон ответов. Явная просьба в сообщении всегда важнее этих предпочтений.</p></header>
     <section><h2>Как обращаться</h2><label>Имя или обращение<input maxLength={80} value={draft.preferredName ?? ''} onChange={(e) => setDraft({ ...draft, preferredName: e.target.value.replace(/\s+/g, ' ').trimStart() || null })} /></label><label className="personal-check"><input type="checkbox" checked={draft.preferredName === null} onChange={(e) => setDraft({ ...draft, preferredName: e.target.checked ? null : user.name })} /> Без обращения</label></section>
     <section><h2>Дата рождения</h2><p className="field-hint">Используется только для адаптации формулировок и сложности ответа; модели передаётся вычисленный возраст, а не дата.</p><div className="personal-date">
@@ -63,5 +108,5 @@ export function PersonalizationPage({ user, value, onSave, onCancel }: { user: S
     <section><h2>Стиль ответа</h2><label>Объём<select value={draft.responseStyle} onChange={(e) => setDraft({ ...draft, responseStyle: e.target.value as UserPersonalization['responseStyle'] })}><option value="brief">Кратко</option><option value="normal">Обычно</option><option value="detailed">Подробно</option><option value="step-by-step">Пошагово</option></select></label></section>
     <section><h2>Тон общения</h2><label>Тон<select value={draft.tone} onChange={(e) => setDraft({ ...draft, tone: e.target.value as UserPersonalization['tone'] })}><option value="neutral">Нейтральный</option><option value="friendly">Дружелюбный</option><option value="business">Деловой</option><option value="plain">Простой, без сложных терминов</option></select></label></section>
     <div className="personal-actions"><Button variant="primary" loading={saving} disabled={!dirty || !valid} onClick={() => { setSaving(true); void onSave({ ...draft, preferredName: draft.preferredName?.trim().replace(/\s+/g, ' ') || null }).finally(() => setSaving(false)) }}>Сохранить</Button><Button variant="secondary" onClick={() => void leave()}>Отменить изменения</Button><Button variant="ghost" onClick={() => setDraft(DEFAULT_PERSONALIZATION)}>Вернуть настройки по умолчанию</Button></div>
-  </main>
+  </section>
 }

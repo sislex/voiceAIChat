@@ -1,13 +1,57 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@shared/projectTypes'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
+import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { Sidebar, formatConversationCostUsd, type MessageSearchView } from './Sidebar'
 import type { Conversation, MessageSearchHit, PermissionMode, SessionUser } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { TaskChatBadge } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
+
+import { resetPreferenceCache } from '../lib/shellPreferences'
+beforeEach(() => { localStorage.clear(); resetPreferenceCache() })
+
+// @testCase TC5
+it('pins chats, highlights search, collapses project groups and distinguishes swipe from scrolling', () => {
+  const close = vi.fn()
+  const view = setup({ currentUser: { name: 'alice' }, open: true, onCloseMobile: close })
+  fireEvent.click(screen.getByRole('button', { name: 'Закрепить «Чат 1»' }))
+  expect(within(screen.getByRole('region', { name: 'Закреплённые' })).getByRole('button', { name: 'Чат 1' })).toBeInTheDocument()
+  const side = document.getElementById('app-sidebar')!
+  fireEvent.touchStart(side, { touches: [{ clientX: 180, clientY: 100 }] })
+  fireEvent.touchEnd(side, { changedTouches: [{ clientX: 170, clientY: 250 }] })
+  expect(close).not.toHaveBeenCalled()
+  fireEvent.touchStart(side, { touches: [{ clientX: 180, clientY: 100 }] })
+  fireEvent.touchEnd(side, { changedTouches: [{ clientX: 40, clientY: 110 }] })
+  expect(close).toHaveBeenCalledOnce()
+  view.unmount()
+  setup({ searchQuery: 'Чат 2' })
+  expect(document.querySelector('mark')).toHaveTextContent('Чат 2')
+})
+
+// @testCase TC5
+it('collapses project groups and preserves the choice per user', () => {
+  const props = { conversations: [{ ...conv('c1', 'Project chat'), projectId: 'p1' }], projects: [{ id: 'p1', name: 'Project one' }], currentUser: { name: 'alice' } }
+  const view = setup(props)
+  fireEvent.click(screen.getByRole('button', { name: 'Project one' }))
+  expect(screen.queryByRole('button', { name: 'Project chat' })).toBeNull()
+  view.unmount()
+  setup(props)
+  expect(screen.getByRole('button', { name: 'Project one' })).toHaveAttribute('aria-expanded', 'false')
+})
+
+// @testCase TC8
+it('undo restores an archived conversation without undoing a different archive', () => {
+  setup({ currentUser: { name: 'alice' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Архивировать «Чат 1»' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Архивировать «Чат 2»' }))
+  expect(screen.queryByRole('button', { name: 'Чат 1' })).toBeNull()
+  fireEvent.click(screen.getAllByRole('button', { name: 'Отменить' })[0]!)
+  expect(screen.getByRole('button', { name: 'Чат 1' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Чат 2' })).toBeNull()
+})
 
 function conv(id: string, title: string, permissionMode: PermissionMode | null = null): Conversation {
   return { id, title, updatedAt: 1, messageCount: 2, execTarget: null, lastExecTarget: id === 'c1' ? 'm1' : 'none', status: id === 'c1' ? 'developing' : 'planned', permissionMode } as Conversation
@@ -30,6 +74,14 @@ function setup(overrides: Record<string, unknown> = {}) {
   const rendered = render(<Sidebar {...props} />)
   return { ...props, ...rendered }
 }
+
+it('pages large conversation lists and keeps the selected row reachable', async () => {
+  setup({ conversations: Array.from({ length: 250 }, (_, i) => conv('large-' + i, 'Conversation ' + i)), activeId: 'large-249' })
+  expect(screen.getByRole('button', { name: 'Conversation 249' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Conversation 150' })).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: /Показать ещё беседы/ }))
+  expect(screen.getByRole('button', { name: 'Conversation 150' })).toBeInTheDocument()
+})
 
 describe('Sidebar — фильтр «чаты завершённых задач»', () => {
   it('иконка-фильтр над списком переключает флаг и показывает нажатое состояние', async () => {

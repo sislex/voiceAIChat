@@ -2,12 +2,14 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { fn } from '@storybook/test'
 import { UsersAdmin } from './UsersAdmin'
+import { makeSessions } from '@voicechat/sessions-app'
+import { makeConversation } from './test/fixtures/conversations'
 
 const NOW = Date.now()
 
 const conversations = [
-  { id: 'chat-1', title: 'Редизайн кабинета', createdAt: 1, updatedAt: 2, messageCount: 18, claudeSessionId: null, execTarget: null, workdir: '', skillNames: [], llmEngineId: null, llmProvider: 'codex' as const, llmModel: 'gpt-5.6-sol', permissionMode: null, kbContextMode: 'auto' as const, projectId: null, taskId: null, status: 'developing' as const, lastExecTarget: null },
-  { id: 'chat-2', title: 'План релиза', createdAt: 1, updatedAt: 2, messageCount: 7, claudeSessionId: null, execTarget: null, workdir: '', skillNames: [], llmEngineId: null, llmProvider: 'claude' as const, llmModel: 'opus', permissionMode: null, kbContextMode: 'auto' as const, projectId: null, taskId: null, status: 'developing' as const, lastExecTarget: null }
+  makeConversation({ id: 'chat-1', title: 'Редизайн кабинета', messageCount: 18, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' }),
+  makeConversation({ id: 'chat-2', title: 'План релиза', messageCount: 7, llmProvider: 'claude', llmModel: 'opus' })
 ]
 
 const meta: Meta<typeof UsersAdmin> = {
@@ -69,6 +71,11 @@ type Story = StoryObj<typeof UsersAdmin>
 
 /** Список, метрики и карточка выбранного человека — главный экран раздела. */
 export const Overview: Story = {}
+
+export const SearchAndFilters: Story = { args: { selected: null, route: { page: 'users', list: { query: 'tester', state: 'blocked', sort: 'login' } } } }
+export const BulkActions: Story = { args: { selected: null, route: { page: 'users' }, onBulkUsers: fn(async () => {}) } }
+export const SessionsAndDevices: Story = { args: { route: { page: 'users', userName: 'alex', tab: 'sessions' }, sessionsClient: { list: async () => makeSessions(), revoke: fn(async () => {}), revokeOthers: fn(async () => {}) } } }
+export const MobileCards: Story = { parameters: { viewport: { defaultViewport: 'mobile1' } }, args: { selected: null, route: { page: 'users' }, onBulkUsers: fn(async () => {}) } }
 
 /** Новый период без ответов модели: честное пустое состояние вместо нулей. */
 export const EmptyUsage: Story = { args: { usage: null, route: { page: 'users', userName: 'alex', tab: 'usage' } } }

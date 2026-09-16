@@ -11,7 +11,9 @@ import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
 import {
   type ChatStorageBinding,
+  type CodexThreadUsage,
   appendChatInstructionHints,
+  codexTurnUsage,
   effectiveChatInstructions,
   instructionsForAssistantKind,
   stripDisabledInstructionBlocks,
@@ -967,6 +969,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeSources = linkedTask && conv?.projectId
       ? deps.make?.taskSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id }) ?? []
       : []
+    // Codex reports the cumulative totals of the whole thread in
+    // `turn.completed`, so the turn's own spend is the difference from the
+    // previous priced reply of this thread. The baseline is read before the
+    // turn starts: the live counter and the saved meta then share it.
+    const previousThreadUsage = provider === 'codex' ? await deps.db.chat.lastCodexThreadUsage(conversationId) : null
+    let codexThreadId: string | null = sessionId
+    const asTurnSpend = <T extends TurnUsage & { codexThreadUsage?: CodexThreadUsage }>(usage: T): T => {
+      if (!usage.codexThreadUsage) return usage
+      const thread = { ...usage.codexThreadUsage, ...(codexThreadId ? { sessionId: codexThreadId } : {}) }
+      return { ...usage, ...codexTurnUsage(thread, previousThreadUsage), codexThreadUsage: thread }
+    }
     turn.handle = client.send(
       {
         userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
@@ -985,7 +998,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(kanbanMcpUrl ? { kanbanMcpUrl: kanbanExplicitPlan ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
       },
       {
-        onSession: async (sid) => await deps.db.chat.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
+        onSession: async (sid) => {
+          codexThreadId = sid
+          await deps.db.chat.setClaudeSession(userId, conversationId, `${provider}:${sid}`)
+        },
         onInit: (info) => {
           initInfo = info
         },
@@ -996,14 +1012,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         },
         // Живой счётчик токенов: рассылается всем клиентам всегда (в отличие от
         // claude.log, который зависит от verbose) и попадает в снапшот active().
-        onUsage: (usage) => {
+        onUsage: (rawUsage) => {
           if (turn.done) return
+          const usage = asTurnSpend(rawUsage)
           turn.usage = usage
           broadcast({ t: 'claude.usage', conversationId, usage }, userId)
         },
-        onDone: async (text, meta) => {
+        onDone: async (text, rawMeta) => {
           if (turn.done) return
           finish()
+          const meta = rawMeta ? asTurnSpend(rawMeta) : rawMeta
           // Итоговая модель: из потока CLI → из настроек → у Codex с пустой
           // настройкой модель берётся из его config.toml и наружу не видна.
           const resolvedModel =

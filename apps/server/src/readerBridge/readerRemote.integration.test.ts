@@ -149,7 +149,7 @@ describe('ядро (reader remote) + отдельный процесс Web Reade
     // Без подключённого клиента relay ядра отвечает отказом — ответ пришёл из ядра по RPC.
     const offline = await callTool(readerUrl, turn, 'read')
     expect(offline.isError).toBe(true)
-    expect(offline.text).toContain('не подключён')
+    expect(offline.text).toContain('не подключена')
     // Клиент ядра онлайн: отвечает на preview.action — результат возвращается модели через ридер.
     const ws = await connect(coreUrl, annToken)
     try {

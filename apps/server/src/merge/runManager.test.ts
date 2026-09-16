@@ -17,11 +17,13 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
   const db={
     ci: {
       getMergeRunRaw:()=>run,
+      claimQueuedMergeRun:()=>run.status==='queued'?(run={...run,status:'checking',stage:'checking'}):null,
+      cancelQueuedMergeRun:()=>run.status==='queued'?(run={...run,status:'cancelled',stage:'cancelled'}):null,
       getMergeRun:()=>run,
       listActiveMergeRuns:()=>[run],
       updateMergeRun:(_id:string,fields:Partial<MergeRun>)=>(run={...run,...fields}),
       appendMergeLog:(_id:string,chunk:string)=>(run={...run,log:run.log+chunk}),
-      findLatestPushedCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1'})
+      findLatestPushedCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1',branch:run.sourceBranch})
     },
     tasks: {
       moveMergeTask:(_p:string,_t:string,column:string)=>moves.push(column),
@@ -30,7 +32,8 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
       listActiveTaskRepositories:()=>repositories.filter(r=>r.state==='active').map(r=>({taskId:'t1',agentId:r.agentId,path:r.path}))
     },
     projects: {
-      getProject:()=>({gitUrl,testCommand})
+      getProject:()=>({gitUrl,testCommand}),
+      activeProjectMemberNames:()=>['admin']
     },
     machines: {
       getProjectMachine:(_p:string,agentId:string)=>agentId==='a1'?{agentId,path:'/repo',reposRoot:'/legacy-repos',storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:agentId==='a2'?{agentId,path:'/other/project',reposRoot:'/other-repos',storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:agentId==='a3'?{agentId,path:'/missing-root/project',reposRoot:null,storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:null
@@ -79,7 +82,7 @@ describe('MergeRunManager',()=>{
     const s=setup([])
     s.manager.start(s.run)
     expect((await s.manager.cancel(s.run.id,'admin'))?.status).toBe('cancelled')
-    expect(s.moves).toEqual(['merge'])
+    expect(s.moves).toEqual([])
   })
   it('merges from a temporary clone when the released CI workspace no longer exists',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''])
@@ -92,8 +95,8 @@ describe('MergeRunManager',()=>{
     expect(scripts.findIndex(v=>v.includes(`refs/heads/${s.run.sourceBranch}`))).toBeLessThan(scripts.findIndex(v=>v.includes('refs/heads/main')&&v.includes('git push')))
     expect(scripts.findIndex(v=>v.includes('npm ci'))).toBeLessThan(scripts.findIndex(v=>v.includes('affected-check')))
     expect(scripts.findIndex(v=>v.includes('affected-check'))).toBeLessThan(scripts.findIndex(v=>v.includes('git push')))
-    expect(scripts.find(v=>v.includes('git worktree add'))).toContain('.merge-run-r1-tests')
-    expect(scripts.find(v=>v.includes('git worktree add'))).toContain('.merge-run-r1-kb')
+    expect(scripts.find(v=>v.includes('git worktree add'))).toMatch(/\.merge-run-r1-[a-f0-9-]+-tests/)
+    expect(scripts.find(v=>v.includes('git worktree add'))).toMatch(/\.merge-run-r1-[a-f0-9-]+-kb/)
     expect(scripts.find(v=>v.includes('kb.mjs index'))).toContain('kb.mjs check')
     expect(scripts.find(v=>v.includes('npm ci'))).toContain('npm_config_cache')
     expect(scripts.filter(v=>v.includes('npm ci'))).toHaveLength(1)
@@ -229,13 +232,14 @@ describe('MergeRunManager',()=>{
     expect(clone?.script).toContain('mkdir -p')
     expect(s.repositories.some(r=>r.agentId==='a1'&&r.path==='/repo/task'&&r.kind==='dev-workspace')).toBe(true)
   })
-  it('releases all task repositories after a successful merge',async()=>{
+  // @testCase TC-04
+  it('retains task repositories after success without verified cleanup ownership',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n','',''])
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
-    await vi.waitFor(()=>expect(s.repositories.filter(r=>r.state==='active')).toHaveLength(0))
+    expect(s.repositories.every(r=>r.state==='active')).toBe(true)
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
-    expect(scripts.some(v=>v.includes('rm -rf')&&v.includes("'/repo/task'"))).toBe(true)
+    expect(scripts.some(v=>v.includes('rm -rf')&&v.includes("'/repo/task'"))).toBe(false)
     expect(scripts.some(v=>v.includes('rm -rf')&&v.includes('.merge'))).toBe(false)
   })
   it('fails with a clear configuration error when the chosen machine has no repos_root',async()=>{
@@ -245,12 +249,12 @@ describe('MergeRunManager',()=>{
     expect(s.run.error).toBe('MachineStorage отсутствует и legacy reposRoot не настроен')
     expect(s.executor.run).not.toHaveBeenCalled()
   })
-  it('keeps repositories on unavailable machines pending after successful cleanup',async()=>{
+  it('keeps both online and offline repositories until cleanup establishes ownership',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'MERGED\n',''],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'Нечего обновлять'}),agentId=>agentId!=='offline')
     s.repositories.push({agentId:'offline',path:'/offline/repo/task',kind:'dev-workspace',state:'active'})
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
-    await vi.waitFor(()=>expect(s.repositories.find(repo=>repo.agentId==='a1')?.state).toBe('deleted'))
+    expect(s.repositories.find(repo=>repo.agentId==='a1')?.state).toBe('active')
     expect(s.repositories.find(repo=>repo.agentId==='offline')?.state).toBe('active')
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.some(script=>script.includes('/offline/repo/task'))).toBe(false)
@@ -264,12 +268,12 @@ describe('MergeRunManager',()=>{
     expect(s.moves).toContain('merge')
     expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.some(call=>call[0].script.includes('rm -rf'))).toBe(false)
   })
-  it('releases repositories when reconcile confirms an earlier push',async()=>{
+  it('does not infer resource ownership from a reconciled earlier push',async()=>{
     const s=setup([merged+' refs/heads/main\n',''],{...base(),pushStartedAt:5,mergeSha:merged})
     s.repositories.push({agentId:'a1',path:'/repo/task',kind:'dev-workspace',state:'active'})
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
-    await vi.waitFor(()=>expect(s.repositories[0].state).toBe('deleted'))
+    expect(s.repositories[0].state).toBe('active')
   })
   it('runs kb_update on the merged tree before tests and persists its LLM outcome',async()=>{
     const seen:{repo?:string;targetRef?:string}={}
@@ -277,7 +281,7 @@ describe('MergeRunManager',()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),'npm run affected-check','git@example/repo.git',hook)
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
-    expect(seen).toEqual({repo:'/repo/.merge-run-r1-kb',targetRef:'refs/merge-runs/r1/target'})
+    expect(seen).toEqual({repo:expect.stringMatching(/^\/repo\/\.merge-run-r1-[a-f0-9-]+-kb$/),targetRef:'refs/merge-runs/r1/target'})
     expect(s.run.stages.map(stage=>stage.stage)).toEqual(expect.arrayContaining(['merging','kb_update','testing','pushing']))
     expect(s.run.stages.find(stage=>stage.stage==='kb_update')).toMatchObject({status:'passed',message:expect.stringContaining('Файловая БЗ обновлена')})
     expect(s.run).toMatchObject({llmEngineId:'engine-1',llmProvider:'codex',llmModel:'gpt-5.6-luna'})

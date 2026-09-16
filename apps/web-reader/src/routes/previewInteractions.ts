@@ -13,8 +13,24 @@ const chooseTarget=(action,clickable=false)=>{
     const controls=candidates.filter(el=>el.matches(CLICKABLE));if(controls.length)candidates=controls;
     const text=String(action.text||'').trim().toLowerCase();const exact=candidates.filter(el=>textOf(el).toLowerCase()===text);if(exact.length)candidates=exact
   }
-  if(candidates.length!==1)throw new Error('Селектор неоднозначен ('+candidates.length+'): '+candidates.slice(0,5).map(uniqueSelector).join(', '));
+  // Ориентир по стороне уже отсортировал кандидатов по близости: «кнопка под ценой» — ближайшая.
+  if(candidates.length>1&&spatialSide(action))candidates=[candidates[0]];
+  // Кандидаты с контекстом: модель уточнит цель через near или nth, как человек — «та, что в строке заказа 5».
+  if(candidates.length!==1)throw new Error('Селектор неоднозначен ('+candidates.length+'): '+candidates.slice(0,5).map((el,i)=>'#'+(i+1)+' '+uniqueSelector(el)+(contextOf(el)?' — '+contextOf(el).slice(0,60):'')).join('; ')+'. Уточни near (текст рядом) или nth (номер).');
   return candidates[0]
+};
+// Поле по подписи, как его называет человек: label, aria-label, placeholder, name или id.
+const fieldTarget=(field,near)=>{
+  const q=String(field).replace(/\s+/g,' ').trim().toLowerCase();
+  if(!q)throw new Error('Укажи selector или field (подпись поля).');
+  const fields=[...document.querySelectorAll('input:not([type=hidden]),textarea,select,[contenteditable=true],[contenteditable=""]')].filter(el=>actionVisible(el)&&!el.closest('[data-voicechat-inspector]'));
+  const names=el=>[accessibleName(el),el.getAttribute('placeholder')||'',el.getAttribute('name')||'',el.id||'',el.getAttribute('title')||''].map(v=>String(v).replace(/\s+/g,' ').trim().toLowerCase()).filter(Boolean);
+  const exact=fields.filter(el=>names(el).includes(q));
+  let partial=exact.length?exact:fields.filter(el=>names(el).some(name=>name.includes(q)));
+  if(near&&partial.length>1)partial=nearFilter(partial,near);
+  if(!partial.length)throw new Error('Поле не найдено по подписи: '+field);
+  if(partial.length>1)throw new Error('Подпись неоднозначна ('+partial.length+'): '+partial.slice(0,5).map(el=>uniqueSelector(el)+' «'+(names(el)[0]||'')+'»').join(', '));
+  return partial[0]
 };
 const actionable=(el,write=false)=>{
   if(!actionVisible(el))throw new Error('Элемент скрыт');

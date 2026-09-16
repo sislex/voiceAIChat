@@ -4,6 +4,7 @@
 //
 // Голосовая панель внизу — настоящий `VoiceBar` (у него свои сториз): так видно
 // геометрию всей колонки, а не одной ленты.
+import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import type { Message, VoiceState } from '@shared/types'
@@ -99,6 +100,49 @@ const meta: Meta<typeof ChatColumn> = {
 }
 export default meta
 type Story = StoryObj<typeof ChatColumn>
+
+// @testCase T7
+export const NewMessages: Story = {
+  render: (args) => {
+    const [extra, setExtra] = useState(false)
+    return <div style={{ height: 700, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <button onClick={() => setExtra(true)}>Получить новый ответ</button>
+      <ChatColumn {...args} conversationId="story-unread" messages={[...makeLongThread(), ...(extra ? [makeAiMessage({ id: 'new-story-reply', text: 'Новый ответ' })] : [])]} />
+    </div>
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const scroll = canvas.getByTestId('scroll')
+    scroll.dispatchEvent(new Event('wheel', { bubbles: true }))
+    scroll.scrollTop = 0
+    scroll.dispatchEvent(new Event('scroll', { bubbles: true }))
+    await userEvent.click(canvas.getByText('Получить новый ответ'))
+    await expect(canvas.findByText('↓ Новые сообщения (1)')).resolves.toBeTruthy()
+  }
+}
+
+// @testCase T7
+export const SearchAndCompact: Story = {
+  args: { messages: [makeAiMessage({ text: MD_KITCHEN_SINK })] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByText('Поиск'))
+    await userEvent.type(canvas.getByLabelText('Найти в беседе'), 'код')
+    await userEvent.click(canvas.getByLabelText('Меню беседы'))
+    await userEvent.click(canvas.getByText('Компактная лента'))
+  }
+}
+
+// @testCase T7
+export const FailedSubmission: Story = {
+  args: { conversationId: 'failed', failedSubmits: [{ operationId: 'op', conversationId: 'failed', text: 'Сообщение с вложением', attachmentIds: ['upload'], error: 'Нет соединения', retrying: false }], onRetryFailedSubmit: fn(), onDeleteFailedSubmit: fn() }
+}
+
+// @testCase T7
+export const MobileComposer390: Story = {
+  decorators: [(Story) => <div style={{ width: '100%', maxWidth: 390, minWidth: 0, height: 750 }}><Story /></div>],
+  args: { messages: [makeAiMessage({ text: MD_KITCHEN_SINK })] }
+}
 
 /** Обычная беседа: кнопка вопроса есть в DOM, но в покое визуально скрыта. */
 export const Conversation: Story = {

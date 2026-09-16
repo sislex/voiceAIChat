@@ -3,7 +3,9 @@
 // и в трей-приложении (Electron).
 
 import WebSocket from 'ws'
-import { createServer, connect as connectSocket, type Server, type Socket } from 'node:net'
+import { createSystemVpn } from './vpn/system.js'
+import { createServer, connect as connectSocket, isIP, type Server, type Socket } from 'node:net'
+import { lookup as dnsLookup } from 'node:dns'
 import { randomUUID } from 'node:crypto'
 import {
   evaluateAgentCommand,
@@ -14,9 +16,9 @@ import {
   type ServerToAgent
 } from '@voicechat/shared'
 import type { AgentConfig } from './config.js'
-import { runCommand, cancelCommand } from './exec.js'
-import { startPty, writePty, resizePty, killPty } from './pty.js'
-import { fsDelete, fsDeleteFileSafe, fsTrash, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
+import { runCommand, cancelCommand, runningCount } from './exec.js'
+import { startPty, writePty, resizePty, killPty, ptyCount } from './pty.js'
+import { fsDelete, fsDeleteFileSafe, fsTrash, fsList, fsMkdir, fsRead, fsReadPrefix, fsRename, fsWrite } from './fileOps.js'
 import { createTelemetryCollector } from './telemetry.js'
 import { resolveShellInfo } from './platform.js'
 import { ensureImageDir, localAddresses, startImageHost, type ImageHost } from './imageHost.js'
@@ -91,6 +93,7 @@ export function consoleHandlers(): AgentHandlers {
 export function startConnection(config: AgentConfig, handlers: AgentHandlers = {}): AgentConnection {
   let backoff = BACKOFF_START_MS
   let stopped = false
+  let cleanupExclusive = false
   let socket: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let policy: AgentPolicy = DEFAULT_AGENT_POLICY
@@ -116,6 +119,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     )
   }
   const collectTelemetry = createTelemetryCollector(config.rootDir, shellInfo)
+  const vpn = createSystemVpn(config.rootDir, config.serverUrl)
 
   /** Описание раздачи для agent.register (адреса пересчитываем каждый раз: IP меняется). */
   const imageHostInfo = (): { port: number; hosts: string[] } | undefined => {
@@ -127,7 +131,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
   /** Собирает и шлёт телеметрию (ошибки сбора не критичны — просто пропускаем). */
   const pushTelemetry = async (send: (msg: AgentToServer) => void): Promise<void> => {
     try {
-      send({ t: 'agent.telemetry', telemetry: await collectTelemetry() })
+      send({ t: 'agent.telemetry', telemetry: { ...await collectTelemetry(), vpn: await vpn.handle({ action: 'inspect' }) } })
     } catch {
       /* телеметрия best-effort */
     }
@@ -154,7 +158,18 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
       process.env.VC_AGENT_INSECURE_TLS && config.serverUrl.startsWith('wss:')
         ? { rejectUnauthorized: false }
         : undefined
-    const ws = new WebSocket(config.serverUrl, wsOpts)
+    const pinnedControlIp = process.env.VC_VPN_CONTROL_IP
+    const controlHost = new URL(config.serverUrl).hostname
+    // Keep TLS hostname verification while reconnecting without direct DNS.
+    const lookup: typeof dnsLookup = pinnedControlIp && isIP(pinnedControlIp)
+      ? ((hostname: string, options: unknown, callback: (...args: unknown[]) => void) => {
+          if (hostname !== controlHost) { callback(new Error('unexpected control host')); return }
+          const address = { address: pinnedControlIp, family: isIP(pinnedControlIp) }
+          if ((options as { all?: boolean })?.all) callback(null, [address])
+          else callback(null, address.address, address.family)
+        }) as typeof dnsLookup
+      : dnsLookup
+    const ws = new WebSocket(config.serverUrl, { ...wsOpts, lookup })
     socket = ws
     const send = (msg: AgentToServer): void => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
@@ -179,6 +194,9 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         return
       }
       switch (msg.t) {
+        case 'vpn.request':
+          void vpn.handle(msg.request).then(observation => send({ t: 'vpn.result', requestId: msg.requestId, observation }))
+          break
         case 'agent.registered':
           backoff = BACKOFF_START_MS
           applyPolicy(msg.policy ?? DEFAULT_AGENT_POLICY, false)
@@ -207,7 +225,12 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           handlers.onUpdateAvailable?.(msg.version)
           break
         case 'exec.start': {
-          const command = msg.command
+          let command = msg.command
+          const cleanupNonce = /^# voicechat-cleanup-v1 ([a-f0-9-]{36})\n/.exec(command)?.[1]
+          if (cleanupExclusive || (cleanupNonce && (runningCount() > 0 || ptyCount() > 0))) {
+            send({ t: 'exec.error', execId: msg.execId, message: 'cleanup_or_consumer_busy' })
+            break
+          }
           // Локальная проверка политики — жёсткая граница на клиенте (второй барьер).
           const verdict = evaluateAgentCommand(policy, command)
           if (!verdict.allowed) {
@@ -219,7 +242,12 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           }
           handlers.onExec?.(command)
           const started = Date.now()
+          if (cleanupNonce) {
+            cleanupExclusive = true
+            command = 'export VC_CLEANUP_ADMISSION=' + cleanupNonce + '\n' + command
+          }
           runCommand(msg.execId, command, msg.timeoutMs, (out) => {
+            if (cleanupNonce && (out.t === 'exec.done' || (out.t === 'exec.error' && runningCount() === 0))) cleanupExclusive = false
             if (out.t === 'exec.done') {
               handlers.onExecDone?.(command, out.exitCode, out.timedOut === true, Date.now() - started)
             }
@@ -236,6 +264,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           send({ t: 'git.access.result', requestId: msg.requestId, result: handleGitAccess(msg.request) })
           break
         case 'pty.start':
+          if (cleanupExclusive) { send({ t: 'pty.error', ptyId: msg.ptyId, message: 'cleanup_or_consumer_busy' }); break }
           // Живой терминал: доверенный shell без per-command гейта (см. docs/plans/PTY_CONSOLE.md).
           handlers.onLog?.(`терминал открыт (${msg.ptyId})`)
           startPty(msg.ptyId, msg.cols, msg.rows, msg.cwd || config.rootDir, send)
@@ -300,6 +329,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           )
           break
         case 'fs.list':
+        case 'fs.read-prefix':
         case 'fs.read':
         case 'fs.write':
         case 'fs.delete':
@@ -309,10 +339,14 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         case 'fs.mkdir': {
           const root = config.rootDir
           try {
+            if (cleanupExclusive) throw new Error('cleanup_or_consumer_busy')
             let result
             switch (msg.t) {
               case 'fs.list':
                 result = fsList(root, policy, msg.path)
+                break
+              case 'fs.read-prefix':
+                result = fsReadPrefix(root, policy, msg.path)
                 break
               case 'fs.read':
                 result = fsRead(root, policy, msg.path)

@@ -59,6 +59,7 @@ export interface CiProjectLlmConfig {
 }
 
 export interface CiTaskConfig {
+  commandContext?: import('./ci').CiCommandContext | null
   config: CiSlotConfig
   overridden: boolean
   projectDefault: CiSlotConfig
@@ -147,6 +148,7 @@ export interface RendererCiRest {
   ): Promise<MergeRun>
   getMerge(runId: string): Promise<MergeRun>
   cancelMerge(runId: string): Promise<MergeRun>
+  changeMergeMachine(runId: string, request: import('./merge').ChangeMergeMachineRequest): Promise<import('./merge').ChangeMergeMachineResult>
   /** agentId выбирает машину новой попытки; unpin=true снимает закреплённый SHA. */
   retryMerge(
     runId: string,
@@ -162,6 +164,7 @@ export interface RendererCiRest {
     projectId: string,
     taskId: string
   ): Promise<TaskRepository[]>
+  getTemporaryResources?(projectId: string, taskId: string): Promise<import('./temporaryResources').CleanupSnapshot>
   /** Подтверждённый обход очереди на указанной машине; ран из очереди продвигается, а не отменяется. */
   forceStartRun(
     projectId: string,
@@ -170,6 +173,7 @@ export interface RendererCiRest {
   ): Promise<CiRun>
   getRun(runId: string): Promise<CiRunDetail>
   getRunLog(runId: string): Promise<CiLogLine[]>
+  getBrowserShot?(runId: string, name: string): Promise<string>
   /** Обращения модели к БЗ внутри рана (блок в ленте рана). */
   getRunKbUsage(runId: string): Promise<KbRunUsageReport>
   /** Агрегат по всем ранам задачи (блок в модалке задачи). */
@@ -208,6 +212,7 @@ export interface RendererCiRest {
       provider: 'claude' | 'codex'
       model: string
       llmEngineId?: string | null
+      stepId?: string
     }
   ): Promise<CiRun>
   discardChangesAndRetry(runId: string): Promise<CiRun>

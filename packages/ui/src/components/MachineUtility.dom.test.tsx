@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
+import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { MachineUtility } from './MachineUtility'
 import { makeAgent, makeMachineOps, makePolicy } from '../test/fixtures/index'

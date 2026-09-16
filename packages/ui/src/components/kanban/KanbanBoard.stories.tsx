@@ -253,6 +253,33 @@ export const GrabbedCard: Story = {
  * тап по ручке поднимает карточку сразу, удержание на самой карточке 200 мс
  * делает то же, а обычный скролл колонки и доски при этом не ломается.
  */
+const mobileScrollBoard = (): Board => {
+  const columns = Array.from({ length: 6 }, (_, index) => makeColumn({
+    id: `mobile-${index}`, name: index === 1 ? 'Development' : `Колонка ${index + 1}`, position: (index + 1) * 1024
+  }))
+  return makeBoard(columns, columns.flatMap((column, index) =>
+    Array.from({ length: index === 0 ? 15 : 3 }, (_, position) => makeTask({
+      id: `mobile-task-${index}-${position}`, columnId: column.id,
+      title: `Задача ${index + 1}.${position + 1}${index === 0 && position === 14 ? ' — ' + 'LongUnbrokenTitle'.repeat(12) : ''}`,
+      position: (position + 1) * 1024, labels: ['mobile', 'design', 'accessibility'], storyPoints: 5, assignee: 'admin'
+    }))))
+}
+
+export const MobileScroll: Story = {
+  args: { board: mobileScrollBoard(), scrollScopeId: 'mobile-scroll' },
+  parameters: { viewport: { defaultViewport: 'mobile1' } }
+}
+
+export const MobileFilters: Story = {
+  args: { board: mobileScrollBoard(), scrollScopeId: 'mobile-filters' },
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  play: async ({ canvasElement }) => {
+    const button = within(canvasElement).queryByRole('button', { name: /Фильтры \(/ })
+    if (button) await userEvent.click(button)
+    await userEvent.type(within(document.body).getByRole('searchbox', { name: 'Поиск на доске' }), 'no matching task')
+  }
+}
+
 export const MobileViewport: Story = {
   args: { board: dragBoard() },
   parameters: { viewport: { defaultViewport: 'mobile2' } }

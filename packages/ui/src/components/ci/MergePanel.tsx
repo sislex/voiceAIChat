@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { QueuedMergeMachine } from './QueuedMergeMachine'
 import { formatDateTime } from '../../lib/dateFormat'
-import type { MergeMachineReadiness, MergeRun, TaskRepository } from '@shared/merge'
+import { acceptMergeSnapshot, type MergeMachineReadiness, type MergeRun, type TaskRepository } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
 import { Button, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
+import { TemporaryResources } from './TemporaryResources'
 import { MERGE_STATUS_LABEL, MergeRunFeed, mergeStatusTone } from './MergeRunFeed'
 import { StatusPill, type StatusTone } from '@voicechat/ui-kit'
 
@@ -45,6 +47,7 @@ export function MergePanel(props: {
   const [machinesReload, setMachinesReload] = useState(0)
   const [repos, setRepos] = useState<TaskRepository[]>([])
   const [showDeleted, setShowDeleted] = useState(false)
+  const [showCleanup, setShowCleanup] = useState(false)
   const [runs, setRuns] = useState<MergeRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [runsLoaded, setRunsLoaded] = useState(false)
@@ -90,7 +93,7 @@ export function MergePanel(props: {
             if (identityRef.current === key && value) setRepos(value)
           } else {
             const value = await window.ci?.listMergeRuns(props.projectId, props.taskId)
-            if (identityRef.current === key && value) { setRuns(value); setRunsLoaded(true) }
+            if (identityRef.current === key && value) { setRuns(previous => value.map(next => { const current = previous.find(item => item.id === next.id); return acceptMergeSnapshot(current, next) ? next : current! })); setRunsLoaded(true) }
           }
         } catch { /* сохраняем последний успешный снимок при фоновой ошибке */ }
       } while (state.pending && identityRef.current === key)
@@ -99,7 +102,7 @@ export function MergePanel(props: {
     }
   }, [props.projectId, props.taskId])
   const upsertRun = useCallback((run: MergeRun): void => {
-    setRuns((previous) => [run, ...previous.filter((item) => item.id !== run.id)])
+    setRuns(previous => acceptMergeSnapshot(previous.find(item => item.id === run.id), run) ? [run, ...previous.filter(item => item.id !== run.id)] : previous)
   }, [])
   useEffect(() => {
     const key = `${props.projectId}:${props.taskId}`
@@ -130,6 +133,7 @@ export function MergePanel(props: {
     const offReconnect = window.board?.onReconnect?.(() => {
       if (identityRef.current !== key) return
       scheduleRepositories()
+      setMachinesReload(value => value + 1)
       void loadResource('runs')
     })
     return () => {
@@ -199,6 +203,7 @@ export function MergePanel(props: {
           )}
         </>}
       </section>
+      {activeRun && activeRun.id === props.runId && <QueuedMergeMachine key={activeRun.id} run={activeRun} onRunChanged={upsertRun} />}
       {activeRun
         ? <MergeRunFeed runId={activeRun.id} initialRun={activeRun} machines={machines} onRunChanged={(run) => { if (run) upsertRun(run) }} />
         : activeRunId
@@ -223,6 +228,8 @@ export function MergePanel(props: {
           </ul>
         </section>
       )}
+      {window.ci?.getTemporaryResources && <Button size="sm" variant="ghost" onClick={() => setShowCleanup(value => !value)}>Временные ресурсы и журнал</Button>}
+      {showCleanup && <TemporaryResources projectId={props.projectId} taskId={props.taskId} />}
       {repos.length > 0 && (
         <section className="merge-repos" data-testid="task-repositories">
           <div className="merge-repos-head">

@@ -41,7 +41,8 @@ import {
   firstAllowedProvider,
   isProviderAllowed,
   CLAUDE_MODELS,
-  CODEX_MODELS
+  CODEX_MODELS,
+  filterSecurityGroup
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
@@ -1571,9 +1572,13 @@ export async function registerRest(
   // закрыт привилегией users:manage.
   app.get(REST.meProfile, async (req): Promise<UserProfileInfo> => {
     const name = uid(req)
-    const user = await db.identity.getUser(name)
-    const agents = opts.liveAgents ? opts.liveAgents(await db.machines.listAgents(name)) : (await db.machines.listAgents(name)).map((agent) => ({ ...agent, online: opts.isAgentOnline?.(agent.id) ?? false }))
-    const activity = (await db.identity.sessionActivity()).get(name)
+    const [user, storedAgents, activity, conversationCount] = await Promise.all([
+      db.identity.getUser(name),
+      db.machines.listAgents(name),
+      db.identity.sessionActivityForUser(name),
+      db.chat.conversationCount(name)
+    ])
+    const agents = opts.liveAgents ? opts.liveAgents(storedAgents) : storedAgents.map((agent) => ({ ...agent, online: opts.isAgentOnline?.(agent.id) ?? false }))
     return {
       name,
       role: user?.role ?? 'observer',
@@ -1583,15 +1588,23 @@ export async function registerRest(
       email: user?.email ?? null,
       lastLogin: user?.lastLogin ?? null,
       llmLimitUsd: user?.llmLimitUsd ?? null,
-      conversationCount: (await db.chat.conversationCounts()).get(name) ?? 0,
-      agents,
+      conversationCount,
+      // The account shell needs counts immediately; full telemetry is fetched
+      // through the existing agents route only after the Machines tab opens.
+      machinesTotal: agents.length,
+      machinesOnline: agents.filter((agent) => agent.online).length,
       lastSeenAt: activity?.lastSeen ?? null,
       liveSessions: activity?.live ?? 0
     }
   })
-  app.get<{ Querystring: { limit?: string } }>(REST.meSecurity, async (req): Promise<SecurityEvent[]> => {
+  app.get<{ Querystring: { limit?: string; group?: string } }>(REST.meSecurity, async (req): Promise<SecurityEvent[]> => {
     const limit = Number(req.query.limit)
-    return await db.identity.listSecurityEvents({ user: uid(req), limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200 })
+    const events = await db.identity.listSecurityEvents({
+      user: uid(req),
+      limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200,
+      loginsOnly: req.query.group === 'login'
+    })
+    return filterSecurityGroup(events, req.query.group)
   })
 
   // Тело — патч, а не полная замена: неизвестные серверу поля не приходят, а

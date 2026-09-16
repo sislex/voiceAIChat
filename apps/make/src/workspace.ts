@@ -6,7 +6,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile, statfs } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile, statfs } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
   MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, MAKE_STACK_HINTS, MAKE_UI_KIT_HINTS, applyMakeUiKit, isMakeTemplateCompatible, normalizeMakeStack, normalizeMakeUiKit, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isMakeTestPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
@@ -17,9 +17,10 @@ import type {
   MakeProjectLink, AdminDiskStats, MakePublicComment, MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
 import { lintMakeFile, addComponentImports, componentExports, pickEntryFile, type AutoImportSpec } from '@voicechat/shared'
 import { MAKE_DISK_ALERT_BYTES, deployConfigFiles, type MakeDeployTarget } from '@voicechat/shared'
-import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine, type MakeSearchOptions } from '@voicechat/shared'
+import { buildMakeSearchRegex, type MakeReplacePreviewLine, type MakeSearchOptions } from '@voicechat/shared'
 import { MAKE_MODE_HINTS, applyAuthMock, applyCollectionRequest, collectionCandidates, isAuthMock, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
+import type { MakeReplaceOptions, MakeWriteOptions } from '@voicechat/make-contracts'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists' | 'quota'
 
@@ -72,6 +73,14 @@ function resolveRelativeRef(dir: string, value: string): string | null | undefin
 
 export class MakeWorkspaces {
   private readonly revs = new Map<string, number>()
+  private readonly fileMutations = new Map<string, Promise<unknown>>()
+  private readonly replyMutations = new Map<string, Promise<unknown>>()
+
+  private async serialize<T>(queue: Map<string, Promise<unknown>>, id: string, action: () => Promise<T>): Promise<T> {
+    const next = (queue.get(id) ?? Promise.resolve()).then(action, action)
+    queue.set(id, next)
+    try { return await next } finally { if (queue.get(id) === next) queue.delete(id) }
+  }
 
   constructor(private readonly rootDir: string, private readonly limits: { maxUserBytes: number } = { maxUserBytes: MAKE_LIMITS.maxUserBytes }) {}
 
@@ -193,13 +202,44 @@ export class MakeWorkspaces {
     }
   }
 
-  async write(conversationId: string, rawPath: string, content: string): Promise<MakeProjectState> {
-    return this.writeBuffer(conversationId, rawPath, Buffer.from(content, 'utf8'))
+  async directories(conversationId: string): Promise<string[]> {
+    const paths: string[] = []
+    const walk = async (dir: string, prefix: string): Promise<void> => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+        const path = prefix ? `${prefix}/${entry.name}` : entry.name
+        paths.push(path)
+        await walk(join(dir, entry.name), path)
+      }
+    }
+    const root = this.dirOf(conversationId)
+    if (existsSync(root)) await walk(root, '')
+    return paths.sort()
+  }
+
+  async write(conversationId: string, rawPath: string, content: string, options: MakeWriteOptions = {}): Promise<MakeProjectState> {
+    if (options.kind === 'directory' || options.createOnly) {
+      const { path, abs } = await this.resolveFile(conversationId, rawPath)
+      if (existsSync(abs)) throw new MakeError('exists', `Файл «${path}» уже существует`)
+      if (options.kind === 'directory') {
+        if (content !== '') throw new MakeError('invalid_path', 'A directory cannot contain text')
+        if ((await this.directories(conversationId)).length >= MAKE_LIMITS.maxFiles) throw new MakeError('too_many_files', 'Too many directories')
+        await mkdir(abs, { recursive: true })
+        this.bump(conversationId)
+        return this.state(conversationId)
+      }
+    }
+    return this.writeBuffer(conversationId, rawPath, Buffer.from(content, 'utf8'), options.createOnly)
   }
 
   /** Write binary uploads, such as images and fonts, with the same limits as text files. */
-  async writeBuffer(conversationId: string, rawPath: string, content: Buffer): Promise<MakeProjectState> {
+  async writeBuffer(conversationId: string, rawPath: string, content: Buffer, createOnly = false): Promise<MakeProjectState> {
+    return this.serialize(this.fileMutations, conversationId, () => this.writeBufferUnlocked(conversationId, rawPath, content, createOnly))
+  }
+
+  private async writeBufferUnlocked(conversationId: string, rawPath: string, content: Buffer, createOnly: boolean): Promise<MakeProjectState> {
     const { path, abs } = await this.resolveFile(conversationId, rawPath)
+    if (createOnly && existsSync(abs)) throw new MakeError('exists', `Файл «${path}» уже существует`)
     if (content.byteLength > MAKE_LIMITS.maxFileBytes) {
       throw new MakeError('too_large', `Файл «${path}» больше ${Math.round(MAKE_LIMITS.maxFileBytes / 1024)} КБ`)
     }
@@ -222,42 +262,37 @@ export class MakeWorkspaces {
   }
 
   async delete(conversationId: string, rawPath: string): Promise<MakeProjectState> {
+    return this.serialize(this.fileMutations, conversationId, () => this.deleteUnlocked(conversationId, rawPath))
+  }
+
+  private async deleteUnlocked(conversationId: string, rawPath: string): Promise<MakeProjectState> {
     const { path, abs } = await this.resolveFile(conversationId, rawPath)
     try {
       const st = await stat(abs)
-      if (!st.isFile()) throw new MakeError('not_found', `Файл «${path}» не найден`)
+      if (!st.isFile() && !st.isDirectory()) throw new MakeError('not_found', `Файл «${path}» не найден`)
     } catch (error) {
       if (error instanceof MakeError) throw error
       throw new MakeError('not_found', `Файл «${path}» не найден`)
     }
-    await rm(abs)
-    await this.pruneEmptyDirs(conversationId, dirname(abs))
+    await rm(abs, { recursive: true })
     this.bump(conversationId)
     return this.state(conversationId)
   }
 
   async rename(conversationId: string, rawFrom: string, rawTo: string): Promise<MakeProjectState> {
+    return this.serialize(this.fileMutations, conversationId, () => this.renameUnlocked(conversationId, rawFrom, rawTo))
+  }
+
+  private async renameUnlocked(conversationId: string, rawFrom: string, rawTo: string): Promise<MakeProjectState> {
     const from = await this.resolveFile(conversationId, rawFrom)
     const to = await this.resolveFile(conversationId, rawTo)
+    if (to.path.startsWith(from.path + '/')) throw new MakeError('invalid_path', 'Cannot move a directory into itself')
     if (!existsSync(from.abs)) throw new MakeError('not_found', `Файл «${from.path}» не найден`)
     if (existsSync(to.abs)) throw new MakeError('exists', `Файл «${to.path}» уже существует`)
     await mkdir(dirname(to.abs), { recursive: true })
     await rename(from.abs, to.abs)
-    await this.pruneEmptyDirs(conversationId, dirname(from.abs))
     this.bump(conversationId)
     return this.state(conversationId)
-  }
-
-  /** Remove empty ancestor directories up to, but excluding, the project root. */
-  private async pruneEmptyDirs(conversationId: string, dir: string): Promise<void> {
-    const root = resolve(this.dirOf(conversationId))
-    let cursor = resolve(dir)
-    while (cursor !== root && cursor.startsWith(root + sep)) {
-      const entries = await readdir(cursor).catch(() => null)
-      if (!entries || entries.length > 0) return
-      await rmdir(cursor).catch(() => undefined)
-      cursor = dirname(cursor)
-    }
   }
 
   async snapshots(conversationId: string): Promise<MakeSnapshot[]> {
@@ -587,6 +622,33 @@ export class MakeWorkspaces {
     } catch { return [] }
   }
 
+  /** Replies have separate storage so existing comment consumers cannot leak them. */
+  async ownerReplies(conversationId: string): Promise<Record<string, string>> {
+    try {
+      const raw: unknown = JSON.parse(await readFile(join(this.dirOf(conversationId), '.owner-replies.json'), 'utf8'))
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+      return Object.fromEntries(Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+      throw error
+    }
+  }
+
+  async replyToComment(conversationId: string, commentId: string, text: string): Promise<void> {
+    return this.serialize(this.replyMutations, conversationId, () => this.writeOwnerReply(conversationId, commentId, text))
+  }
+
+  private async writeOwnerReply(conversationId: string, commentId: string, text: string): Promise<void> {
+    if (!(await this.comments(conversationId)).some((comment) => comment.id === commentId)) throw new MakeError('not_found', 'Комментарий не найден')
+    if (typeof text !== 'string' || text.length > 2000) throw new MakeError('invalid_path', 'Invalid owner reply')
+    const replies = await this.ownerReplies(conversationId)
+    replies[commentId] = text
+    const path = join(this.dirOf(conversationId), '.owner-replies.json')
+    const temp = path + '.' + randomUUID() + '.tmp'
+    await writeFile(temp, JSON.stringify(replies), 'utf8')
+    await rename(temp, path)
+  }
+
   private async saveComments(conversationId: string, list: MakeComment[]): Promise<MakeComment[]> {
     await writeFile(join(this.dirOf(conversationId), COMMENTS_FILE), JSON.stringify(list), 'utf8')
     return list
@@ -719,6 +781,7 @@ export class MakeWorkspaces {
     const id = `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`
     const dir = join(this.dirOf(conversationId), SNAPSHOTS_DIR, id)
     await mkdir(join(dir, 'files'), { recursive: true })
+    for (const path of await this.directories(conversationId)) await mkdir(join(dir, 'files', ...path.split('/')), { recursive: true })
     for (const file of files) {
       const src = join(this.dirOf(conversationId), ...file.path.split('/'))
       const dst = join(dir, 'files', ...file.path.split('/'))
@@ -747,31 +810,38 @@ export class MakeWorkspaces {
   }
 
   /** Compare a snapshot with current files to identify additions, removals, and changes. */
-  async snapshotDiff(conversationId: string, snapshotId: string): Promise<MakeSnapshotDiff> {
+  async snapshotDiff(conversationId: string, snapshotId: string, compareSnapshotId?: string): Promise<MakeSnapshotDiff> {
     if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
     const snapRoot = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files')
     if (!existsSync(snapRoot)) throw new MakeError('not_found', 'Снимок не найден')
     const before = new Map<string, Buffer>()
-    const walk = async (dir: string, rel: string): Promise<void> => {
+    const walk = async (dir: string, rel: string, target: Map<string, Buffer>): Promise<void> => {
       for (const entry of await readdir(dir, { withFileTypes: true })) {
         const next = rel ? `${rel}/${entry.name}` : entry.name
-        if (entry.isDirectory()) await walk(join(dir, entry.name), next)
-        else before.set(next, await readFile(join(dir, entry.name)))
+        if (entry.isDirectory()) await walk(join(dir, entry.name), next, target)
+        else if (entry.isFile()) target.set(next, await readFile(join(dir, entry.name)))
       }
     }
-    await walk(snapRoot, '')
-    const current = await this.list(conversationId)
+    await walk(snapRoot, '', before)
+    const after = new Map<string, Buffer>()
+    if (compareSnapshotId !== undefined) {
+      if (!ID_RE.test(compareSnapshotId)) throw new MakeError('not_found', 'Снимок не найден')
+      const compareRoot = join(this.dirOf(conversationId), SNAPSHOTS_DIR, compareSnapshotId, 'files')
+      if (!existsSync(compareRoot)) throw new MakeError('not_found', 'Снимок не найден')
+      await walk(compareRoot, '', after)
+    } else {
+      for (const file of await this.list(conversationId)) after.set(file.path, await readFile(join(this.dirOf(conversationId), ...file.path.split('/'))))
+    }
     const files: MakeSnapshotDiffEntry[] = []
-    for (const file of current) {
-      const now = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')))
-      const old = before.get(file.path)
-      if (!old) files.push({ path: file.path, status: 'added', before: null, after: now.length })
-      else files.push({ path: file.path, status: old.equals(now) ? 'same' : 'changed', before: old.length, after: now.length })
-      before.delete(file.path)
+    for (const [path, now] of after) {
+      const old = before.get(path)
+      if (!old) files.push({ path, status: 'added', before: null, after: now.length })
+      else files.push({ path, status: old.equals(now) ? 'same' : 'changed', before: old.length, after: now.length })
+      before.delete(path)
     }
     for (const [path, data] of before) files.push({ path, status: 'removed', before: data.length, after: null })
     files.sort((a, b) => a.path.localeCompare(b.path))
-    return { snapshotId, files }
+    return { snapshotId, ...(compareSnapshotId ? { compareSnapshotId } : {}), files }
   }
 
   /** Read snapshot file text for comparison with the current version. */
@@ -779,11 +849,14 @@ export class MakeWorkspaces {
     if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
     const path = normalizeMakePath(rawPath)
     if (!path) throw new MakeError('invalid_path', 'Недопустимый путь')
-    if (!isMakeTextPath(path)) throw new MakeError('not_text', `Файл «${path}» не текстовый`)
     const src = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files', ...path.split('/'))
-    if (!existsSync(src)) throw new MakeError('not_found', `В снимке нет файла «${path}»`)
+    if (!existsSync(src) || !(await stat(src)).isFile()) throw new MakeError('not_found', `В снимке нет файла «${path}»`)
+    if (!isMakeTextPath(path)) throw new MakeError('not_text', `Файл «${path}» не текстовый`)
     const data = await readFile(src)
-    return { path, size: data.byteLength, updatedAt: (await stat(src)).mtimeMs, content: data.toString('utf8') }
+    let content: string
+    try { if (data.includes(0)) throw new Error('binary'); content = new TextDecoder('utf-8', { fatal: true }).decode(data) }
+    catch { throw new MakeError('not_text', `Файл «${path}» не текстовый`) }
+    return { path, size: data.byteLength, updatedAt: (await stat(src)).mtimeMs, content }
   }
 
   /** Read any snapshot file as a buffer for publication-version previews (roadmap-4, item 37); return null when absent. */
@@ -848,7 +921,7 @@ export class MakeWorkspaces {
   private async clearFiles(conversationId: string): Promise<void> {
     const root = this.dirOf(conversationId)
     for (const entry of await readdir(root)) {
-      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === PROJECT_LINKS_FILE || entry === SHARE_FILE || entry === NOTES_DIR) continue
+      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === '.owner-replies.json' || entry === PROJECT_LINKS_FILE || entry === SHARE_FILE || entry === NOTES_DIR) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
   }
@@ -861,13 +934,15 @@ export class MakeWorkspaces {
     for (const file of await this.list(conversationId)) {
       if (!isMakeTextPath(file.path)) continue
       const { content } = await this.read(conversationId, file.path)
-      const lines = content.split('\n')
-      for (let i = 0; i < lines.length; i++) {
-        re.lastIndex = 0
-        if (re.test(lines[i]!)) {
-          matches.push({ path: file.path, line: i + 1, text: lines[i]!.trim().slice(0, 200) })
-          if (matches.length >= limit) return matches
-        }
+      re.lastIndex = 0
+      let matchIndex = 0
+      for (const match of content.matchAll(re)) {
+        const prefix = content.slice(0, match.index!)
+        const line = prefix.split('\n').length
+        const start = prefix.lastIndexOf('\n') + 1
+        const end = content.indexOf('\n', match.index!)
+        matches.push({ path: file.path, line, column: match.index! - start + 1, matchIndex: matchIndex++, text: content.slice(start, end < 0 ? content.length : end) })
+        if (matches.length >= limit) return matches
       }
     }
     return matches
@@ -879,28 +954,55 @@ export class MakeWorkspaces {
   }
 
   /** Replace text across files using literal matches or regex capture substitutions such as $1. Take a snapshot before editing; dryRun only previews the result. */
-  async replaceAll(conversationId: string, query: string, replacement: string, options: MakeSearchOptions & { dryRun?: boolean } = {}): Promise<{ files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] }> {
+  async replaceAll(conversationId: string, query: string, replacement: string, options: MakeReplaceOptions = {}): Promise<{ files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[]; previewToken?: string }> {
+    return this.serialize(this.fileMutations, conversationId, () => this.replaceUnlocked(conversationId, query, replacement, options))
+  }
+
+  private async replaceUnlocked(conversationId: string, query: string, replacement: string, options: MakeReplaceOptions): Promise<{ files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[]; previewToken?: string }> {
     if (!query) throw new MakeError('invalid_path', 'Пустая строка поиска')
     const re = this.searchRegex(query, options)
     // Without regex mode, $1 must remain literal replacement text; use a replacement function.
     const substitute = options.regex ? replacement : (): string => replacement
     let files = 0, replacements = 0
-    const touched: Array<{ path: string; next: string }> = []
+    const touched: Array<{ path: string; before: string; next: string }> = []
     const preview: MakeReplacePreviewLine[] = []
-    for (const file of await this.list(conversationId)) {
-      if (!isMakeTextPath(file.path)) continue
+    const fingerprint = createHash('sha256').update(JSON.stringify([query, replacement, Boolean(options.regex), Boolean(options.matchCase), options.path, options.matchIndex]))
+    if (options.path !== undefined && (!Number.isInteger(options.matchIndex) || options.matchIndex! < 0)) throw new MakeError('invalid_path', 'Invalid match index')
+    for (const file of (await this.list(conversationId)).sort((a, b) => a.path.localeCompare(b.path))) {
+      if (!isMakeTextPath(file.path) || (options.path !== undefined && file.path !== options.path)) continue
       const { content } = await this.read(conversationId, file.path)
+      fingerprint.update(JSON.stringify([file.path, content]))
       re.lastIndex = 0
-      const count = (content.match(re) ?? []).length
-      if (count === 0) continue
-      files += 1; replacements += count
-      if (options.dryRun) { if (preview.length < 500) preview.push(...previewMakeReplace(file.path, content, re, substitute)); continue }
-      re.lastIndex = 0
-      touched.push({ path: file.path, next: content.replace(re, substitute as string) })
+      const occurrences = [...content.matchAll(re)]
+      if (occurrences.length === 0) continue
+      let next: string
+      if (options.path !== undefined) {
+        const match = occurrences[options.matchIndex!]
+        if (!match) throw new MakeError('invalid_path', 'Search result is stale; search again')
+        const once = new RegExp(re.source, re.flags.replace('g', '') + 'y')
+        once.lastIndex = match.index!
+        next = content.replace(once, substitute as string)
+        replacements += 1
+      } else {
+        re.lastIndex = 0
+        next = content.replace(re, substitute as string)
+        replacements += occurrences.length
+      }
+      files += 1
+      touched.push({ path: file.path, before: content, next })
+      const beforeLines = content.split('\n'), afterLines = next.split('\n')
+      for (let line = 0; line < Math.max(beforeLines.length, afterLines.length); line++) {
+        if (beforeLines[line] !== afterLines[line]) preview.push({ path: file.path, line: line + 1, before: beforeLines[line] ?? '', after: afterLines[line] ?? '' })
+      }
     }
-    if (options.dryRun) return { files, replacements, state: await this.state(conversationId), preview }
+    const previewToken = fingerprint.digest('hex')
+    if (options.dryRun) return { files, replacements, state: await this.state(conversationId), preview, previewToken }
+    if (options.previewToken !== undefined && options.previewToken !== previewToken) throw new MakeError('invalid_path', 'Replacement preview is stale; preview again')
     if (touched.length > 0) {
       await this.snapshot(conversationId, `Перед заменой «${query.slice(0, 30)}» → «${replacement.slice(0, 30)}»`)
+      for (const t of touched) {
+        if ((await this.read(conversationId, t.path)).content !== t.before) throw new MakeError('invalid_path', 'Replacement preview is stale; preview again')
+      }
       for (const t of touched) await writeFile(join(this.dirOf(conversationId), ...t.path.split('/')), t.next, 'utf8')
       this.bump(conversationId)
     }
@@ -955,7 +1057,7 @@ export class MakeWorkspaces {
 
   async state(conversationId: string): Promise<MakeProjectState> {
     const [files, snapshots, published, shared] = await Promise.all([this.list(conversationId), this.snapshots(conversationId), this.publication(conversationId), this.share(conversationId)])
-    return { conversationId, files, snapshots, rev: this.rev(conversationId), published, shared }
+    return { conversationId, files, directories: await this.directories(conversationId), snapshots, rev: this.rev(conversationId), published, shared }
   }
 
   // Publications use unlisted /p/<token>/ links without account authentication.

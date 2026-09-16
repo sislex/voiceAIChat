@@ -153,9 +153,9 @@ export const FULL_ACCESS: ProfileCapabilities = {
 export type ProfilePeriod = 'month' | '7d' | '30d' | 'all'
 
 /** Вкладки карточки. */
-export type ProfileTab = 'overview' | 'access' | 'machines' | 'usage' | 'history'
+export type ProfileTab = 'overview' | 'access' | 'machines' | 'usage' | 'history' | 'sessions'
 
-export const PROFILE_TABS: readonly ProfileTab[] = ['overview', 'access', 'machines', 'usage', 'history']
+export const PROFILE_TABS: readonly ProfileTab[] = ['overview', 'access', 'machines', 'usage', 'history', 'sessions']
 
 /** Действия, которые карточка отдаёт наружу. Нет колбэка — нет и кнопки. */
 export interface ProfileCallbacks {
