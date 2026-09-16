@@ -20,10 +20,10 @@
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 200 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 358 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 8 коммит(ов) в areas после сверки: 7d27213d feat: measure UI performance and guard regressions (CHAT-469) … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-16 | ✓ |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 5 коммит(ов) в areas после сверки: 63808e3c fix(cleanup): keep the temporary-resource registry free during a sweep (#202) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 14 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1538 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1539 коммит(ов) в areas после сверки: d143b206 docs(kb): update after merge 4406e522-009a-4ebe-8bde-4e3b7c71be1b … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 27 коммит(ов) в areas после сверки: 7d3df3fc fix(ui): make project settings layout accessible … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 58 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 2 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-15 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-16 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 155 коммит(ов) в areas после сверки: 7d27213d feat: measure UI performance and guard regressions (CHAT-469) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-16 | ⚠ 2 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-16 | ⚠ 4 коммит(ов) в areas после сверки: 55652032 Merge main into CHAT-481 (task 6fd12089-6f21-43fb-8d52-0e5ee334945a) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-17, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,9 +74,10 @@
 
 ## Журнал сессий
 
-Всего записей: 870. Последние:
+Всего записей: 871. Последние:
 
 - [2026-09-17-pc-radvilovich-project-settings-layout-a11y.md](log/2026-09-17-pc-radvilovich-project-settings-layout-a11y.md) — project-settings-layout-a11y
+- [2026-09-17-pc-radvilovich-component-qa-browser-teardown.md](log/2026-09-17-pc-radvilovich-component-qa-browser-teardown.md) — component-qa-browser-teardown
 - [2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md](log/2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md) — temporary-resource-lifecycle
 - [2026-09-16-pc-radvilovich-run-admission.md](log/2026-09-16-pc-radvilovich-run-admission.md) — run-admission
 - [2026-09-16-pc-radvilovich-machine-command-notices.md](log/2026-09-16-pc-radvilovich-machine-command-notices.md) — machine-command-notices
@@ -85,7 +86,6 @@
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-temporary-cleanup-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-temporary-cleanup-kb.md) — temporary-cleanup-kb
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-queued-merge-machine-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-queued-merge-machine-kb.md) — queued-merge-machine-kb
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-cleanup-lock-stall.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-cleanup-lock-stall.md) — cleanup-lock-stall
-- [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-475-queued-merge-machine.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-475-queued-merge-machine.md) — chat-475-queued-merge-machine
 
 ## Исторические планы
 
