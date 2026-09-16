@@ -1,0 +1,72 @@
+
+> @voicechat/web@0.1.0 build
+> vite build
+
+vite v5.4.21 building for production...
+transforming...
+[plugin:vite:esbuild] [plugin vite:esbuild] ../../packages/shared/src/previewActions.ts: This case clause will never be evaluated because it duplicates an earlier case clause
+1152|          (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+1153|          (value.clear === undefined || typeof value.clear === 'boolean')
+1154|      case 'note':
+   |           ^
+1155|        return bounded(value.text, 500) && value.text.trim().length > 0
+1156|      case 'media':
+
+✓ 1856 modules transformed.
+rendering chunks...
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/git/GitPane.tsx is dynamically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/App.tsx but also statically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/git/GitTargetPane.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/git/GitTargetPane.tsx is dynamically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/App.tsx but also statically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/MachineUtility.tsx, /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/kanban/TaskModal.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/MachineUtility.tsx is dynamically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/App.tsx but also statically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/ChatColumn.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/ContextInspector.tsx is dynamically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/App.tsx but also statically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/ConversationSettings.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/components/SettingsModal.tsx is dynamically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/App.tsx but also statically imported by /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/ui/src/App.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                                 1.25 kB │ gzip:   0.52 kB
+dist/assets/codicon-DCmgc-ay.ttf               80.34 kB
+dist/assets/editor.worker-DX6ApQqM.js         231.68 kB
+dist/assets/json.worker-CIZWV9vN.js           364.09 kB
+dist/assets/html.worker-CBI4EQBP.js           669.69 kB
+dist/assets/css.worker-BRIrhzkG.js          1,011.01 kB
+dist/assets/ts.worker-Ds4I2Msu.js           6,022.42 kB
+dist/assets/MachineStatus-4ADguD3z.css          0.41 kB │ gzip:   0.24 kB
+dist/assets/markdown-BEHUn5zE.css               1.32 kB │ gzip:   0.61 kB
+dist/assets/terminal-DYP7pi_n.css               4.15 kB │ gzip:   1.68 kB
+dist/assets/monaco-Cff06kPg.css               115.14 kB │ gzip:  18.09 kB
+dist/assets/index-BIlSgB-A.css                370.00 kB │ gzip:  65.29 kB
+dist/assets/MonacoDiffEditor-k3qRH9yw.js        0.64 kB │ gzip:   0.45 kB
+dist/assets/GitWorkspaceList-D8_N7zs2.js        1.99 kB │ gzip:   1.07 kB
+dist/assets/SessionsDialogHost-6hvjKtMc.js      2.04 kB │ gzip:   0.96 kB
+dist/assets/MonacoCodeEditor-Lds1Phi3.js        2.67 kB │ gzip:   1.38 kB
+dist/assets/ProjectPage-Cn_Qtep2.js             2.94 kB │ gzip:   1.66 kB
+dist/assets/AccountPage-Dg3XgrWg.js             7.20 kB │ gzip:   2.91 kB
+dist/assets/CiSlotEditor-Dm8nshj4.js            7.91 kB │ gzip:   3.85 kB
+dist/assets/KnowledgeBase-BXPYDxlD.js           8.09 kB │ gzip:   3.72 kB
+dist/assets/sessionsStore-BGpqKgfS.js          23.14 kB │ gzip:   8.20 kB
+dist/assets/qrcode-C2qLkN4o.js                 24.04 kB │ gzip:   9.45 kB
+dist/assets/MachineStatus-Co3165EV.js          37.93 kB │ gzip:  13.42 kB
+dist/assets/index-DMTC-qmS.js                  39.38 kB │ gzip:  13.14 kB
+dist/assets/ProjectSettings-DTQvK--V.js        67.98 kB │ gzip:  21.24 kB
+dist/assets/react-BHR-zMpM.js                 142.49 kB │ gzip:  45.69 kB
+dist/assets/TaskModal-DNWTGCRm.js             171.81 kB │ gzip:  52.02 kB
+dist/assets/ProjectBoard-DAHCEOA9.js          212.32 kB │ gzip:  64.21 kB
+dist/assets/terminal-DGHPw4qf.js              291.26 kB │ gzip:  72.72 kB
+dist/assets/markdown-C65z0Iha.js              334.17 kB │ gzip: 103.70 kB
+dist/assets/index-FBxFbLBk.js               1,056.32 kB │ gzip: 330.85 kB
+dist/assets/monacoSetup-DeBE_VvU.js         1,117.43 kB │ gzip: 126.10 kB
+dist/assets/prettier-DycMSh8D.js            1,587.93 kB │ gzip: 468.02 kB
+dist/assets/monaco-DpaXHH7b.js              3,143.42 kB │ gzip: 808.40 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 25.92s

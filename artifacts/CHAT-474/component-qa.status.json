@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "runId": "20260915194608082-2e3bb95a-b474-49de-97b2-f510eb920f13",
+  "pid": 92746,
+  "startedAt": "2026-09-15T19:46:08.085Z",
+  "command": [
+    "npm",
+    "run",
+    "e2e:settings",
+    "--",
+    "-t",
+    "keeps onboarding navigation and actions reachable across themes, touch and keyboard"
+  ],
+  "state": "finished",
+  "finishedAt": "2026-09-15T19:46:29.368Z",
+  "exitCode": 0,
+  "signal": null
+}

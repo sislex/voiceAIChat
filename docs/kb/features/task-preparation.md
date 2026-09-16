@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
 updated: 2026-09-15
-checked: 27d26b48
+checked: d8638e71
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/ipc.ts
@@ -43,6 +43,16 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
+
+CHAT-474 removes contradictory output instructions: research gaps belong in
+`sources[].summary` and follow-up work in `scope/testCases`, inside the single
+DevelopmentReadiness object; no trailing `kb-gaps` block is requested. A material
+clarification remains an intermediate question, never a completed brief. Recovery
+explicitly prohibits replacing the brief with a question or guessing missing
+requirements, sources or answers. `taskPreparation.test.ts` covers the canonical
+response and prompt (`TC-BRIEF-1`), incompatible recovery objects and UI prerequisites
+(`TC-BRIEF-NEG-1`), and preservation/idempotence of compatible normalization
+(`TC-NORM-1`). Пробелы БЗ при этом остаются внутри единственного объекта: найденное отсутствие описывается в `sources[].summary`, а проверяемая работа по актуализации — в `scope` и `testCases`; отдельный блок `kb-gaps` после JSON запрещён. Объект существенного вопроса является только промежуточным запросом уточнения и не завершает подготовку, а recovery обязан вернуть полный `DevelopmentReadiness`, не додумывая отсутствующие требования или источники. Эти правила закреплены в `apps/server/src/kanban/module.ts` и регрессиях `apps/server/src/taskPreparation.test.ts` (`TC-BRIEF-1`, `TC-BRIEF-NEG-1`, `TC-NORM-1`). Этот дефект prompt не является доказательством причины исторического сбоя onboarding Automated QA.
 
 CHAT-469 links existing strict regressions to T7 (schema, prompt and dependent
 UI/coverage requirements), T8 (compatible normalization preserving requirements),
