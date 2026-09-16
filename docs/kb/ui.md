@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-16
-checked: a8a6b22b
+checked: 4e9fc7ad
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2349,6 +2349,9 @@ boundaries; the screen designs are retained.
   fieldsets and collapsed details are excluded, empty dialogs retain focus, and
   closing restores the opener. The browser audit found a zero-height hidden task
   chat panel reachable by Tab; the shared `[hidden]` display rule fixes it.
+  Sources of truth are `packages/ui-kit/src/useFocusTrap.ts`,
+  `packages/ui-kit/src/styles.css`, `packages/ui-kit/src/Dialog.tsx` and
+  `packages/ui-foundation/src/components/PopupFrame.tsx`.
 - Navigation: App provides “К содержимому”, a focusable named main landmark,
   existing named navigation and sidebar landmarks, and document titles derived
   from section/project. Embedded ChatColumn and personalization content use
@@ -2356,7 +2359,9 @@ boundaries; the screen designs are retained.
 - Announcements: individual toasts own status/alert roles, with no live parent.
   Chat's reply announcer owns start/end events; the preparing bubble is silent.
   PreparationRunSteps announces names/statuses separately from its growing logs.
-  Board movement retains its dedicated atomic kanban-live region.
+  Board movement retains its dedicated atomic kanban-live region. Toast ownership
+  is defined in `packages/ui-kit/src/Toast.tsx`; the provider container itself is
+  deliberately not live, so a toast is announced exactly once.
 - Contrast: `--control-border` is separate from decorative `--border` and
   `--border-soft`. Input/select/search/secondary-button boundaries and inactive
   switches use it. CONTRAST_PAIRS gates UI pairs at 3:1 and text at 4.5:1 in
@@ -2421,7 +2426,10 @@ SessionsPanel refresh (60 s). Initial loads remain separate from periodic refres
 Local elapsed-time clocks and toast expiry are not server polls. Make's presence
 heartbeat renews editing ownership; it is not a read-only status poll, and pausing
 it would let another editor acquire an actively edited file. Its iframe scroll
-sampling is also local, not a server request.
+sampling is also local, not a server request. The shared behavior and the
+`refreshOnVisible` escape hatch are defined in `packages/ui-kit/src/usePolling.ts`;
+`packages/sessions-app/src/SessionsPanel.tsx` disables the hook's immediate
+visible refresh only when the host already owns that request.
 
 ## Ленивые чанки главного бандла
 
