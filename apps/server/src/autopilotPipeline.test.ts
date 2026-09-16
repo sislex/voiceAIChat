@@ -158,6 +158,29 @@ describe('автопроход: ручное QA и независимость к
     expect((await db.tasks.getTaskDetail('admin', projectId, taskId))!.autoPilotFixCycles).toBe(0)
   })
 
+  // Infrastructure failures never reach the fix-cycle counter, so the streak of
+  // failed stage runs is the only thing that stops the autopilot. In production
+  // three tasks each queued five 30-minute Automated QA runs in a row on
+  // «Лимит времени Automated QA исчерпан» and nobody was ever told.
+  it('останавливает этап после лимита подряд упавших ранов, а не запускает новый', async () => {
+    const { projectId, taskId, columns } = await taskInBacklog()
+    const machine = await db.machines.createAgent('admin', 'QA')
+    await db.machines.linkMachine('admin', projectId, machine.id)
+    vi.spyOn(AgentRegistry.prototype, 'isOnline').mockReturnValue(true)
+    for (const semantic of ['preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa']) {
+      await db.tasks.moveTask('admin', projectId, taskId, { columnId: columns.find((column) => column.semanticType === semantic)!.id })
+    }
+    await db.ready
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    for (const attempt of [1, 2, 3]) {
+      raw.prepare(`INSERT INTO qa_stage_runs (id,project_id,task_id,stage,status,attempt,triggered_by,current_step,error,created_at,started_at,finished_at) VALUES (?,?,?,'automated_qa','failed',?,'admin','blocked','Лимит времени Automated QA исчерпан',?,?,?)`)
+        .run(`qa-${attempt}`, projectId, taskId, attempt, attempt, attempt, attempt + 1)
+    }
+    await enableAutoPilot(projectId, taskId)
+    await eventually(() => semanticOf(projectId, taskId), (stage) => stage === 'decision_required')
+    expect(await db.qa.listQaStageRuns('admin', projectId, taskId, 'automated_qa')).toHaveLength(3)
+  })
+
   async function manualQaTask() {
     const fixture = await taskInBacklog()
     for (const semantic of ['preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa']) {

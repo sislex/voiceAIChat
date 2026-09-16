@@ -327,12 +327,38 @@ export function openWebReaderWorkspace(): void {
   window.open(url.toString(), '_blank', 'noopener,noreferrer')
 }
 
+export function buildDocumentTitle(...parts: Array<string | null | undefined>): string {
+  const seen = new Set<string>()
+  return parts
+    .map(part => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .filter(part => {
+      const key = part.toLocaleLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join(' — ')
+}
+
 
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
  * спросить подтверждение или показать ошибку может любой экран на любой глубине.
  * avoidSelector — композер: на телефоне стек тостов стоит над ним, а не поверх.
  */
+export function machineCommandNoticePolicy(
+  event: { error: string | null; timedOut: boolean; exitCode: number | null },
+  settings: Pick<Settings, 'machineCommandNotices' | 'machineCommandNoticeSeconds'>
+): { failed: boolean; shouldShow: boolean; duration: number } {
+  const failed = Boolean(event.error || event.timedOut || event.exitCode !== 0)
+  return {
+    failed,
+    shouldShow: settings.machineCommandNotices === 'all' || (settings.machineCommandNotices === 'failures' && failed),
+    duration: settings.machineCommandNoticeSeconds * 1000
+  }
+}
+
 export default function App(props: AppProps = {}): JSX.Element {
   return (
     <UiProviders avoidSelector=".voicebar">
@@ -706,7 +732,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const pageProject = projects.projects.find(project => project.id === titleProjectId)?.name
     ?? (projects.projectDetail && projects.projectDetail.id === titleProjectId ? projects.projectDetail.name : null)
   useEffect(() => {
-    document.title = [inReader ? readerPageTitle : null, pageSection, pageProject, 'ChatAI'].filter(Boolean).join(' — ')
+    document.title = buildDocumentTitle(inReader ? readerPageTitle : null, pageSection, pageProject, 'ChatAI')
   }, [inReader, readerPageTitle, pageSection, pageProject])
 
   const [dividerActive, setDividerActive] = useState(false)
@@ -968,13 +994,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       const action = event.logPath
         ? { label: 'Открыть лог', onClick: () => operationsActions.openUtility('explorer', event.machineId, event.logPath) }
         : { label: 'Журнал', onClick: () => navigate('/machines') }
-      if (event.error || (event.exitCode !== null && event.exitCode !== 0)) toast.error(text, { action, duration: 0 })
-      else toast.success(text, { action, duration: 8000 })
-      if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+      const policy = machineCommandNoticePolicy(event, settingsState.settings)
+      addNotification(shellUserId, {
+        id: `machine:${event.machineId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+        text, kind: policy.failed ? 'error' : 'success', source: 'machine', time: Date.now(), read: false
+      })
+      if (!policy.shouldShow) return
+      if (policy.failed) toast.error(text, { action, duration: policy.duration })
+      else toast.success(text, { action, duration: policy.duration })
+      if (settingsState.settings.machineCommandSystemNotifications && typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
         try { new Notification('Команда на машине завершилась', { body: text }) } catch { /* без системных уведомлений */ }
       }
     })
-  }, [toast, navigate, operationsActions])
+  }, [toast, navigate, operationsActions, shellUserId, settingsState.settings.machineCommandNotices, settingsState.settings.machineCommandNoticeSeconds, settingsState.settings.machineCommandSystemNotifications])
   // Ролевые правила команд (п.10) — читаются при открытии админки.
   const [roleCommandPolicies, setRoleCommandPolicies] = useState<RoleCommandPolicies | null>(null)
   useEffect(() => {

@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-09-16
-checked: 10474aad
+checked: d67c25c6
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -255,7 +255,16 @@ Unknown/partial deletion remains pending; already absent directories free zero
 reported bytes. Unknown sizes/freed bytes are null, never estimated.
 
 All service instances must share the data directory. A filesystem lock covers
-checks, deletion, registration and acquisition of persistent task consumers.
+the final evidence re-check, deletion, registration and acquisition of persistent
+task consumers. A sweep inspects candidates **without** the lock and retakes the
+decision under it, because every task-scoped mutation registers a consumer under
+that same lock: holding it across remote inspection of all resources made
+`POST /api/projects/:id/tasks/:taskId/chat`, CI `retry`/`discard-and-retry` and
+preview mutations wait out the whole sweep (~100 s observed in production) and
+then fail with `cleanup_or_consumer_busy`. The registry is rewritten and fsynced
+in full on every change, so the attempt journal keeps only the last 100 attempts
+per task — exactly what the snapshot API shows. A busy registry answers HTTP 503
+with `retry-after`, not 500.
 CI restart/console, merge execution, preview operations and task/run mutation HTTP
 handlers participate. A dead local lock/consumer is recoverable only after the OS
 proves its PID absent; foreign hosts, PID reuse and interrupted lock recovery are
