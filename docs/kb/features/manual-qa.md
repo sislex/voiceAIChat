@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
-updated: 2026-09-15
-checked: 911e2eb0
+updated: 2026-09-16
+checked: d486b032
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -111,6 +111,12 @@ trim-нутых стадий, некорректный JSON с ведущей `[
 и явно падает. Фолбэк `npm run test:storybook` существует в корневом
 `package.json` как алиас `npm run build:storybook` (смоук-сборка Storybook —
 единственная проверка, которая ловит сломанный рендер сториз).
+
+Браузерный регрессионный набор панелей в
+`packages/ui/src/components/qa/qaPanels.browser.test.ts` даёт запуску Storybook
+и Playwright в `beforeAll` 120 секунд. `afterAll`, который закрывает браузер и
+посылает SIGTERM группе Storybook, в текущем коде тоже имеет явный лимит 120
+секунд; отдельный лимит каждого viewport-теста — 30 секунд.
 
 Стадии исполняет `createComponentQaRunner`
 (`apps/server/src/ci/componentQa.ts`, собирается в `server.ts`) последовательно
