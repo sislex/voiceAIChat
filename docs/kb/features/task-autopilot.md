@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
 updated: 2026-09-16
-checked: 63808e3c
+checked: a92960ef
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/kanban/module.ts
@@ -15,6 +15,8 @@ areas:
   - apps/server/src/ci/integrationTests.ts
   - apps/server/src/ci/runManager.ts
   - apps/server/src/ci/modelHooks.ts
+  - apps/server/src/ci/autopilotResume.ts
+  - apps/server/src/ci/runAdmission.ts
   - packages/ui/src/components/kanban/TaskCard.tsx
   - packages/ui/src/components/kanban/TaskModal.tsx
   - packages/ui/src/components/ci/RunFeed.tsx
@@ -128,18 +130,22 @@ code failure сохраняется новый fix-run, а инфраструк�
 доступному workflow переходит в `decision_required` с `autopilot.stopped`.
 Успешный ран обнуляет последовательность отказов.
 
-Общая проверяемая матрица причин находится в
-`apps/server/src/ci/runAdmission.ts`. Она одинаково описывает development,
+Общая детерминированная матрица причин и API допуска находятся в
+`apps/server/src/ci/runAdmission.ts`. Политики одинаково моделируют development,
 Component QA, Integration Tests, Automated QA и merge: инфраструктурные причины
-(`offline`, отсутствующий toolchain, недоступный origin, ENOSPC) допускают
-продолжение с упавшего шага после восстановления; dirty workspace и незавершённый
-merge сохраняют работу и требуют решения человека; исчерпанный общий бюджет,
-неверная привязка и неизвестная причина fail-closed. `admitPipelineRun`
-проверяет абсолютный workspace, владельца и версию привязки, активную попытку,
-решение, budget и `nextRetryAt`; первый запуск разрешён при нулевом retry-limit.
-`AdmissionReservations` не допускает две одновременные резервации одного
-снимка задачи, а после асинхронного preflight версия привязки должна совпасть с
-проверенной до её атомарной активации.
+(`offline`, отсутствующий toolchain, недоступный origin, ENOSPC) повторяемы и
+предпочитают продолжение с упавшего шага; dirty workspace и незавершённый merge
+сохраняют работу и требуют решения человека; исчерпанный бюджет, неверная
+привязка и неизвестная причина закрывают допуск. `admitPipelineRun` принимает
+сериализуемый snapshot и проверяет абсолютный workspace, владельца и версию
+привязки, активную попытку, блокирующее решение, сохранённые budget и
+`nextRetryAt`; первый запуск разрешён при нулевом retry-limit.
+`AdmissionReservations` предоставляет процессную дедупликацию одновременных
+резерваций. На текущем срезе production-пути ещё не вызывают `admitPipelineRun`
+и не используют `AdmissionReservations`: матрица закреплена unit-тестами, а из
+рабочего кода к ней подключён только `isDirtyWorkspaceFailure` через
+`classifyPipelineFailure`. Поэтому проверка версии привязки до её атомарной
+активации пока является контрактом API, а не сквозной гарантией всех запусков.
 
 Регрессия в `apps/server/src/autopilotPipeline.test.ts` воспроизводит
 `ready → development → failed/timeout dirty → ready`, конкурентные board-события
