@@ -197,6 +197,25 @@ describe('работа модели: диагностика автоматиче
 describe('работа модели: браузерная проверка задачи', () => {
   const PREVIEW_MCP = 'http://voicechat:8787/mcp/preview?k=secret'
 
+  it.each(['continue', 'block'] as const)('handles unavailable preview with %s without preventing code work', async (failurePolicy) => {
+    const { task, ctx } = await setup()
+    await db.ci.setTaskDevelopmentPreview(task.id, { enabled: true })
+    await db.ci.setTaskBrowserCheck(task.id, { mode:'chromium', failurePolicy })
+    const rec = recorder()
+    const result = await hooksWith(rec.client).modelWork(ctx)
+    expect(rec.last()?.prompt).toContain('feature_disabled')
+    expect(result.ok).toBe(failurePolicy === 'continue')
+  })
+
+  it.each(['continue', 'block'] as const)('enforces browser-only %s after bounded unavailable checks', async (failurePolicy) => {
+    const { task, ctx } = await setup()
+    await db.ci.setTaskBrowserCheck(task.id, { mode:'chromium', failurePolicy })
+    const rec = recorder(), verifyBrowserOnly = vi.fn(async () => false)
+    const result = await hooksWith(rec.client, { verifyBrowserOnly }).modelWork(ctx)
+    expect(verifyBrowserOnly).toHaveBeenCalledTimes(2)
+    expect(result.ok).toBe(failurePolicy === 'continue')
+  })
+
   it('без режима проверки инструментов браузера у хода нет', async () => {
     const { ctx } = await setup()
     const rec = recorder()

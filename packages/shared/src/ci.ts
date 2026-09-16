@@ -79,39 +79,6 @@ export function normalizeCiProcessStages(value: unknown): CiProcessStage[] {
  * действие в relay некому выполнить, поэтому режим выбирается заранее, а не
  * угадывается по наличию клиента.
  */
-export const CI_BROWSER_VIEWPORTS = [1440, 1024, 390, 320] as const
-export const CI_BROWSER_ACTIONS = ['open', 'read', 'find', 'click', 'type', 'set', 'press', 'viewport', 'a11y', 'accessibility', 'styles', 'evaluate', 'errors', 'console', 'network', 'screenshot', 'audit'] as const
-export type CiBrowserAction = typeof CI_BROWSER_ACTIONS[number]
-export interface CiBrowserEvidenceEvent {
-  action: CiBrowserAction; ok: boolean; target: boolean; requestedTarget?: boolean; infrastructureError?: boolean; width?: number
-}
-export interface CiBrowserEvidence {
-  status: 'passed' | 'blocked' | 'infrastructure_error'; viewports: number[]; missing: string[]
-  failedActions: number; observationCount: number; observations: CiBrowserEvidenceEvent[]
-}
-export function evaluateCiBrowserEvidence(events: CiBrowserEvidenceEvent[]): CiBrowserEvidence {
-  const missing: string[] = []; let opened = false; let width = 0
-  const seen = new Map<number, Set<string>>(); let keyboard = false; let interaction = false
-  for (const event of events) {
-    if (!event.ok) continue
-    if (event.action === 'open' && event.requestedTarget) opened = true
-    if (event.width) width = event.width
-    if (!opened || !event.target) continue
-    const actions = seen.get(width) ?? new Set<string>(); actions.add(event.action); seen.set(width, actions)
-    if (event.action === 'press') keyboard = true
-    if (['click', 'type', 'set'].includes(event.action)) interaction = true
-  }
-  if (!opened) missing.push('open:exact_target')
-  for (const viewport of CI_BROWSER_VIEWPORTS) for (const action of ['read', 'a11y', 'styles', 'evaluate', 'errors', 'console', 'network', 'screenshot']) if (!seen.get(viewport)?.has(action)) missing.push(`${viewport}:${action}`)
-  if (!keyboard) missing.push('keyboard')
-  if (!interaction) missing.push('interaction')
-  return {
-    status: !missing.length ? 'passed' : events.some(event => event.infrastructureError) ? 'infrastructure_error' : 'blocked',
-    viewports: CI_BROWSER_VIEWPORTS.filter(viewport => seen.has(viewport)), missing,
-    failedActions: events.filter(event => !event.ok).length, observationCount: events.length, observations: events.slice(-256)
-  }
-}
-
 export type CiBrowserCheckMode = 'off' | 'chromium' | 'user_panel'
 export const CI_BROWSER_CHECK_MODES: CiBrowserCheckMode[] = ['off', 'chromium', 'user_panel']
 export const CI_BROWSER_CHECK_MODE_LABELS: Record<CiBrowserCheckMode, string> = {
@@ -120,64 +87,13 @@ export const CI_BROWSER_CHECK_MODE_LABELS: Record<CiBrowserCheckMode, string> = 
   user_panel: 'Панель Web Reader'
 }
 
-export type CiFailurePolicy = 'continue' | 'block'
-
 export interface CiBrowserCheck {
+  failurePolicy?: import('./developmentPreview').BrowserFailurePolicy
   mode: CiBrowserCheckMode
   /** Порт dev-сервера на выбранной машине: страница живёт на её loopback. */
   devServerPort: number
   /** Путь первой страницы вместе с query — от корня, без схемы и хоста. */
   startPath: string
-  /** Инфраструктурный сбой по умолчанию не отменяет остальные проверки development run. */
-  failurePolicy: CiFailurePolicy
-}
-
-export interface DevelopmentPreviewSettings {
-  enabled: boolean
-  runtime: 'docker'
-  application: string
-  startCommand: string
-  containerPort: number
-  healthPath: string
-  startupTimeoutMs: number
-  database: { mode: 'isolated-test' | 'none'; migrateCommand: string; seedCommand: string }
-  cli: { enabled: boolean; allowedOperations: Array<'claude' | 'codex'>; tokenTtlMs: number }
-}
-
-export type PreviewLifecycleState = 'off' | 'prepare' | 'starting' | 'ready' | 'checking' | 'passed' | 'warning' | 'skipped' | 'blocked' | 'failed' | 'stopped' | 'expired' | 'cleanup' | 'configuration_error'
-export type PreviewDiagnosticCode = 'docker_unavailable' | 'image_build' | 'health_timeout' | 'database_migration' | 'database_seed' | 'production_resource_denied' | 'gateway_unavailable' | 'token_expired' | 'browser_infrastructure' | 'browser_evidence_incomplete' | 'resource_exhausted' | 'configuration_error'
-
-export interface PreviewStatus {
-  id: string
-  projectId: string
-  taskId: string
-  runId: string
-  worktree: string
-  sha: string
-  state: PreviewLifecycleState
-  diagnosticCode: PreviewDiagnosticCode | null
-  warning: string | null
-  attempt: number
-  url: string | null
-  testDatabase: { id: string; ready: boolean } | null
-  createdAt: number
-  expiresAt: number
-  stoppedAt: number | null
-  artifacts: Array<{ kind: 'log' | 'screenshot'; name: string }>
-}
-
-export interface BrowserCheckResult {
-  status: 'passed' | 'warning' | 'skipped' | 'blocked'
-  failurePolicy: CiFailurePolicy
-  diagnosticCode: PreviewDiagnosticCode | null
-  evidence: CiBrowserEvidence | null
-}
-
-export const DEFAULT_DEVELOPMENT_PREVIEW: DevelopmentPreviewSettings = {
-  enabled: false, runtime: 'docker', application: 'auto', startCommand: '', containerPort: 5173,
-  healthPath: '/', startupTimeoutMs: 120_000,
-  database: { mode: 'isolated-test', migrateCommand: '', seedCommand: '' },
-  cli: { enabled: false, allowedOperations: [], tokenTtlMs: 15 * 60_000 }
 }
 
 /** Порт по умолчанию — Vite: им поднимается клиент этого монорепо. */
@@ -195,26 +111,7 @@ export function normalizeCiBrowserCheck(value: unknown): CiBrowserCheck {
   const port = typeof raw.devServerPort === 'number' && Number.isInteger(raw.devServerPort) && raw.devServerPort >= 1 && raw.devServerPort <= 65535
     ? raw.devServerPort
     : DEFAULT_CI_BROWSER_CHECK.devServerPort
-  const failurePolicy: CiFailurePolicy = raw.failurePolicy === 'block' ? 'block' : 'continue'
-  return { mode, devServerPort: port, startPath: normalizeCiBrowserStartPath(raw.startPath), failurePolicy }
-}
-
-export function normalizeDevelopmentPreview(value: unknown): DevelopmentPreviewSettings {
-  const raw = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
-  const database = typeof raw.database === 'object' && raw.database !== null ? raw.database as Record<string, unknown> : {}
-  const cli = typeof raw.cli === 'object' && raw.cli !== null ? raw.cli as Record<string, unknown> : {}
-  const text = (v: unknown, fallback: string, max = 500): string => typeof v === 'string' && v.trim().length <= max ? v.trim() : fallback
-  const port = typeof raw.containerPort === 'number' && Number.isInteger(raw.containerPort) && raw.containerPort > 0 && raw.containerPort <= 65535 ? raw.containerPort : DEFAULT_DEVELOPMENT_PREVIEW.containerPort
-  const timeout = typeof raw.startupTimeoutMs === 'number' && Number.isInteger(raw.startupTimeoutMs) && raw.startupTimeoutMs >= 5_000 && raw.startupTimeoutMs <= 900_000 ? raw.startupTimeoutMs : DEFAULT_DEVELOPMENT_PREVIEW.startupTimeoutMs
-  const ttl = typeof cli.tokenTtlMs === 'number' && Number.isInteger(cli.tokenTtlMs) && cli.tokenTtlMs >= 10_000 && cli.tokenTtlMs <= 3_600_000 ? cli.tokenTtlMs : DEFAULT_DEVELOPMENT_PREVIEW.cli.tokenTtlMs
-  const operations = Array.isArray(cli.allowedOperations) ? cli.allowedOperations.filter((v): v is 'claude' | 'codex' => v === 'claude' || v === 'codex') : []
-  return {
-    enabled: raw.enabled === true, runtime: 'docker', application: text(raw.application, 'auto', 80),
-    startCommand: text(raw.startCommand, ''), containerPort: port,
-    healthPath: normalizeCiBrowserStartPath(raw.healthPath), startupTimeoutMs: timeout,
-    database: { mode: database.mode === 'none' ? 'none' : 'isolated-test', migrateCommand: text(database.migrateCommand, ''), seedCommand: text(database.seedCommand, '') },
-    cli: { enabled: cli.enabled === true, allowedOperations: [...new Set(operations)], tokenTtlMs: ttl }
-  }
+  return { mode, devServerPort: port, startPath: normalizeCiBrowserStartPath(raw.startPath), failurePolicy: raw.failurePolicy === 'block' ? 'block' : 'continue' }
 }
 
 /** Путь стартовой страницы: чужой хост и схему сюда не пускаем — адрес машины собирает сервер. */

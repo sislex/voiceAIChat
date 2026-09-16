@@ -7,6 +7,23 @@ import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 describe('CiTaskSettings', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
+  it('defaults to continue and saves preview independently of browser mode', async () => {
+    const ci = createFakeCi()
+    const save = vi.spyOn(ci, 'putTaskCi')
+    window.ci = ci
+    render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    await waitFor(() => expect(screen.queryByText('Загрузка этапов…')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Продолжить при недоступности')).toBeChecked()
+    expect(screen.getByLabelText('Поднимать тестовое Docker-окружение')).not.toBeChecked()
+    fireEvent.click(screen.getByLabelText('Поднимать тестовое Docker-окружение'))
+    fireEvent.click(screen.getByLabelText('Продолжить при недоступности'))
+    fireEvent.click(screen.getByRole('button', {name:'Сохранить проверку'}))
+    await waitFor(() => expect(save).toHaveBeenCalledWith('p1','t1',expect.objectContaining({
+      developmentPreview:expect.objectContaining({enabled:true,database:{mode:'isolated-test',seed:'default'}}),
+      browserCheck:expect.objectContaining({mode:'off',failurePolicy:'block'})
+    })))
+  })
+
   // Секции карточки настроек были `span`-ами, а в заголовке стояло английское
   // «InProgress» посреди русского интерфейса.
   it('называет секции по-русски и делает их заголовками', async () => {
@@ -68,21 +85,14 @@ describe('CiTaskSettings', () => {
     expect(screen.getByRole('checkbox', { name: 'Подготовка' })).toBeChecked()
   })
 
-  // @testCase TC-UI-01
-  it('preview и browser-check включаются независимо, continue выбран по умолчанию и настройки сохраняются', async () => {
+  it('проверка в браузере: режим выключен, порт и страница появляются вместе с режимом и сохраняются', async () => {
     const { unmount } = render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
-    const preview = await screen.findByRole('checkbox', { name: 'Включить Docker preview' })
-    const mode = screen.getByRole('combobox', { name: 'Режим' })
-    expect(preview).not.toBeChecked()
+    const mode = await screen.findByRole('combobox', { name: 'Режим' })
     expect(mode).toHaveValue('off')
-    fireEvent.click(preview)
-    expect(screen.getByRole('textbox', { name: 'Приложение preview' })).toHaveValue('auto')
-    expect(screen.getByRole('combobox', { name: 'Тестовая БД preview' })).toHaveValue('isolated-test')
     // Без режима порт и страница не нужны: спрашивать их «на всякий случай» незачем.
     expect(screen.queryByRole('spinbutton', { name: 'Порт dev-сервера' })).not.toBeInTheDocument()
 
     fireEvent.change(mode, { target: { value: 'chromium' } })
-    expect(screen.getByRole('combobox', { name: 'Политика browser-check' })).toHaveValue('continue')
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Порт dev-сервера' }), { target: { value: '8799' } })
     fireEvent.change(screen.getByRole('textbox', { name: 'Стартовая страница' }), { target: { value: '/board' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить проверку' }))
@@ -91,7 +101,6 @@ describe('CiTaskSettings', () => {
     unmount()
     render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
     expect(await screen.findByRole('combobox', { name: 'Режим' })).toHaveValue('chromium')
-    expect(screen.getByRole('checkbox', { name: 'Включить Docker preview' })).toBeChecked()
     expect(screen.getByRole('spinbutton', { name: 'Порт dev-сервера' })).toHaveValue(8799)
     expect(screen.getByRole('textbox', { name: 'Стартовая страница' })).toHaveValue('/board')
   })

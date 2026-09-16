@@ -161,6 +161,15 @@ describe.skipIf(ON_POSTGRES)('ci: браузерная проверка зада
     expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board', failurePolicy: 'continue' })
   })
 
+  it('persists preview independently of browser mode and preserves it on browser updates', async () => {
+    const { task } = await project()
+    expect((await db.ci.getTaskDevelopmentPreview(task.id)).enabled).toBe(false)
+    await db.ci.setTaskDevelopmentPreview(task.id, { enabled: true })
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'off', failurePolicy: 'block' })
+    expect((await db.ci.getTaskDevelopmentPreview(task.id)).enabled).toBe(true)
+    expect((await db.ci.getTaskBrowserCheck(task.id)).failurePolicy).toBe('block')
+  })
+
   it('битая строка в БД не мешает запустить ран', async () => {
     const { task } = await project()
     await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium' })
