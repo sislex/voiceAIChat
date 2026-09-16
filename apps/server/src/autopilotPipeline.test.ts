@@ -328,23 +328,27 @@ describe('автопроход: общий development-предохраните�
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown; get(...values: unknown[]): unknown; all(...values: unknown[]): unknown[] } } }).db
     raw.prepare(`INSERT INTO ci_runs (id,project_id,task_id,status,triggered_by,mode,error,terminal_column_id,created_at,finished_at) VALUES (?,?,?,?,'admin','development',?,?,1,2)`)
       .run('dirty-run', projectId, taskId, status, error, columns.find(column => column.semanticType === 'ready')!.id)
+    // Dirty workspace must win even when the same run is also classified as an
+    // infrastructure failure eligible for retryFromFailed.
+    await db.ci.addCiEvent({ projectId, runId: 'dirty-run', type: 'run.infra_error', actorType: 'system', payload: { kind: 'agent_offline' } })
     return { projectId, taskId, raw }
   }
 
   // @testCase TC-1
-  // @testCase TC-10
+  // @testCase TC-2
   it.each(['failed', 'timeout'] as const)('blocks the full dirty-workspace rollback cycle in ready (%s)', async (status) => {
     const fixture = await failedDevelopmentInReady('Рабочая копия содержит локальные изменения: /repo/CHAT-477', status)
     await enableAutoPilot(fixture.projectId, fixture.taskId)
     await eventually(async () => fixture.raw.prepare(`SELECT * FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).all(fixture.taskId).length, count => count === 1)
     await new Promise(resolve => setTimeout(resolve, 30))
-    expect(fixture.raw.prepare('SELECT * FROM ci_runs WHERE task_id=?').all(fixture.taskId)).toHaveLength(1)
+    const persistedRuns = fixture.raw.prepare('SELECT status FROM ci_runs WHERE task_id=?').all(fixture.taskId) as Array<{ status: string }>
+    expect(persistedRuns).toEqual([{ status }])
     expect(await semanticOf(fixture.projectId, fixture.taskId)).toBe('ready')
     const audit = fixture.raw.prepare(`SELECT payload_json FROM qa_audit WHERE task_id=? AND action='autopilot.stopped'`).get(fixture.taskId) as { payload_json: string }
     expect(JSON.parse(audit.payload_json)).toMatchObject({ runId: 'dirty-run', blockedBy: 'dirty_workspace' })
   })
 
-  // @testCase TC-2
+  // @testCase TC-3
   it('deduplicates concurrent and pending board updates for the persisted dirty blocker', async () => {
     const fixture = await failedDevelopmentInReady('Рабочая копия содержит локальные изменения')
     await Promise.all(Array.from({ length: 8 }, (_, index) =>
