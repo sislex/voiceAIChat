@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
 updated: 2026-09-16
-checked: d76642f9
+checked: 63808e3c
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/kanban/module.ts
@@ -66,6 +66,16 @@ their successors. A QA run created as `blocked` reaches the failure handler even
 when its executor never starts. Retrying failed or blocked QA respects the shared
 delay using persisted `finishedAt`, preventing immediate infrastructure retry
 loops. A zero retry limit still permits the first preparation and merge attempts.
+
+The delay alone was not a limit: an infrastructure failure deliberately skips the
+fix-cycle counter, so a QA stage whose environment is broken restarted after every
+backoff forever — in production three tasks each queued five 30-minute Automated QA
+runs on «Лимит времени Automated QA исчерпан» and nobody was told. The tick now
+counts the streak of failed stage runs (`trailingQaStageFailures` in
+`ci/autopilotResume.ts`, newest first over `runs` of the stage; `cancelled` breaks
+the streak) and at `autoPilotFixLimit` records `autopilot.stopped` and moves the
+task to `decision_required` — the safeguard merge already had. Regression:
+`autopilotPipeline.test.ts › останавливает этап после лимита подряд упавших ранов`.
 
 Начало конвейера покрыто тем же координатором. Из `backlog` и `preparation`
 карточка сама уходит в подготовку (`launchTaskPreparation` идемпотентен и
