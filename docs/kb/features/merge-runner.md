@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
 updated: 2026-09-16
-checked: 8005c179
+checked: 029aba73
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -50,50 +50,56 @@ diff и отсутствие конфликтных маркеров. Прове
 актуализации БЗ. Начало и итог каждой команды пишутся в лог рана с
 длительностью — иначе полчаса тишины в ленте не отличить от зависшего рана.
 
-## Queued machine reassignment
+## Смена машины рана в очереди
 
-CHAT-475 adds `POST /api/merge/runs/:runId/machine` with
-`{agentId, expectedAssignmentVersion}`. The shared renderer method is
-`changeMergeMachine`; web and desktop both use the same REST/WS bridge.
-Success returns `{ok:true,run}`. HTTP 409 returns `not_queued` or
-`assignment_changed` with the current snapshot only after membership checks;
-403/404 never include a run. Readiness failures use 422 and the existing
-readiness code/message. An up-to-date same-machine request is a no-op; a
-lost-response replay with the old version conflicts without another audit.
+Для существующего рана со статусом `queued` обе merge-поверхности показывают
+общий `QueuedMergeMachine`: селектор перечисляет проектные машины вместе с
+результатом проверки готовности, недоступные варианты блокирует, а повторную
+отправку не допускает. Клиент вызывает `POST /api/merge/runs/:runId/machine`
+через общий renderer-метод `changeMergeMachine`, передавая `agentId` и
+ожидаемую ревизию назначения. Контракт запроса, результата и фильтра устаревших
+снимков находится в `packages/shared/src/merge.ts`, маршрут — в
+`apps/server/src/routes/projects.ts`.
 
-The existing row keeps its id, createdAt, SHA pins, stages, log and task
-placement. Only agent_id, machine_name and assignment_version change. Version
-zero migrates legacy rows; incrementing it prevents ABA overwrites. A transaction
-rechecks access, project machine, online/policy state and the preflight input
-snapshot (machine configuration, origin and pushed workspace), then conditionally
-updates the queued row and writes `qa_audit: merge.machine_changed`. Audit
-payload includes runId, oldAgentId, newAgentId, actor, time, reason and version.
-An audit failure rolls back the assignment.
+Сервер разрешает операцию участнику проекта с правом `task:merge` только для
+доступной ему машины этого проекта. До записи `MergeRunManager` проверяет
+готовность машины; внутри транзакции повторно проверяются доступ, принадлежность,
+online/policy и неизменность входов preflight — конфигурации машины, Git origin и
+последнего pushed workspace. CAS по `status='queued'` и
+`assignment_version` меняет в существующей строке только `agent_id`,
+`machine_name` и монотонную ревизию. Вместе с назначением транзакционно
+создаётся audit-событие `merge.machine_changed`; ошибка аудита откатывает
+назначение. Реализация сосредоточена в
+`apps/server/src/db/repos/ci.ts` и `apps/server/src/merge/runManager.ts`.
 
-Merge scheduling uses the manager's process-wide active slot and delayed
-callback, independently of the development CI FIFO. Before executing any
-command, a callback scheduled for a queued run atomically claims
-`queued → checking` and uses the assignment returned by that transaction.
-Queued cancellation also checks the assignment version. Reconcile reads the
-persisted row after restart. Autopilot's `startMergeRun` reuses the same active
-row; reassignment never frees that row or changes task/default machine,
-autoPilot, manual-QA policy or position. MergeRunStatus has execution stages
-such as checking/fetching, not a general running value.
+Идентификатор и время создания рана, pinned source/target SHA, стадии, лог,
+semantic merge, положение карточки и настройки автопилота не меняются.
+Актуальный повтор выбора той же машины — no-op. Устаревшая ревизия даёт
+`assignment_changed`, а уже начавшийся ран — `not_queued`; только после
+проверки членства конфликт содержит свежий разрешённый пользователю snapshot.
+Ответы 403/404 snapshot не раскрывают, а провал готовности возвращается как 422
+с существующим кодом и сообщением readiness.
 
-After commit, merge.snapshot goes to active project members and boardChanged
-invalidates the board. Both MergePanel and NewTaskMergePanel use
-QueuedMergeMachine; responses apply immediately, and reconnect reloads history
-and readiness. Assignment versions prevent delayed queued snapshots from
-replacing newer assignments or already-claimed runs.
+Очередь merge не является FIFO development CI: `MergeRunManager` держит один
+процесс-глобальный слот и запускает отложенный callback. Перед первой командой
+callback атомарно переводит строку `queued → checking` через
+`claimQueuedMergeRun` и исполняет назначение из возвращённой зафиксированной
+строки, поэтому ранее захваченный объект рана не может запустить старую машину.
+Отмена queued-рана также сверяет ревизию; reconcile после рестарта читает
+сохранённое назначение, а автопилот повторно использует тот же активный run id.
 
-Automated coverage lives in `merge/changeMachine.test.ts`, the common bridge
-test and `QueuedMergeMachine.dom.test.tsx`. Storybook stories are
-`ci-mergepanel--queued` and `kanban-newtaskmergepanel--queued`.
-`e2e/accessibility.e2e.test.ts` covers both surfaces at 320×700, 390×844,
-768×1024, 1280×720 and 1440×900 in light/dark themes, 44px controls, overflow,
-focus, touch and keyboard submission. Headless macOS native popup selection
-uses Playwright selectOption; the OS keyboard is represented by a reduced
-viewport, not an actual keyboard. Screenshots go to .generated_images.
+После успешной фиксации `merge.snapshot` отправляется всем активным участникам
+проекта, а `boardChanged` инвалидирует доску. Web и desktop используют один
+REST/realtime-мост; reconnect перечитывает историю и готовность машин.
+`acceptMergeSnapshot` не даёт запоздалому HTTP/realtime-ответу откатить более
+новую ревизию или вернуть уже claimed-ран в `queued`. Получателей определяет
+`activeProjectMemberNames`; заблокированные пользователи исключаются.
+
+Гонки с claim, отменой, автопилотом, сменой прав и конфигурации, потерей realtime
+и рестартом покрыты `apps/server/src/merge/changeMachine.test.ts`.
+Обе UI-поверхности и защита от запоздалых снимков покрыты
+`packages/ui/src/components/ci/QueuedMergeMachine.dom.test.tsx`; доступность,
+темы и размеры экранов — `e2e/accessibility.e2e.test.ts`.
 
 ## Граница подсистемы
 
