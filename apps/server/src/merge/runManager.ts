@@ -3,6 +3,8 @@ import {
   managedMergeClonePaths,
   normalizeProjectMachineDirectory,
   validateProjectMachineDirectories,
+  type ChangeMergeMachineRequest,
+  type ChangeMergeMachineResult,
   type MergeCheck,
   type MergeMachineReadiness,
   type MergeRun,
@@ -69,17 +71,60 @@ export class MergeRunManager {
   start(run:MergeRun):void {
     if(this.active.has(run.id)||terminal.has(run.status)||this.active.size>0)return
     const ctl=new AbortController(); this.active.set(run.id,ctl)
-    setTimeout(()=>{ void this.execute(run.id,ctl).catch(()=>{}).finally(async ()=>{ this.active.delete(run.id); try { const next=(await this.deps.db.ci.listActiveMergeRuns()).find(item=>item.status==='queued'); if(next)this.start(next) } catch { /* server/database already closed */ } }) },25)
+    setTimeout(()=>{ void this.execute(run.id,ctl,run.status==='queued').catch(()=>{}).finally(async ()=>{ this.active.delete(run.id); try { const next=(await this.deps.db.ci.listActiveMergeRuns()).find(item=>item.status==='queued'); if(next)this.start(next) } catch { /* server/database already closed */ } }) },25)
   }
   async reconcile():Promise<void> { for(const run of await this.deps.db.ci.listActiveMergeRuns()) this.start(run) }
+  async changeMachine(id: string, userId: string, input: ChangeMergeMachineRequest): Promise<ChangeMergeMachineResult> {
+    const denied = await this.deps.db.ci.mergeMachineAccess(userId, id, input.agentId)
+    if (denied) return denied
+    const run = await this.deps.db.ci.getMergeRun(userId, id)
+    if (!run) return { ok: false, code: 'not_found', error: 'Merge-ран недоступен' }
+    const conflict = (): ChangeMergeMachineResult | null => {
+      if (run.status !== 'queued') return { ok: false, code: 'not_queued', error: 'Ран больше не находится в очереди', run }
+      if ((run.assignmentVersion ?? 0) !== input.expectedAssignmentVersion) return { ok: false, code: 'assignment_changed', error: 'Назначение уже изменено другим запросом', run }
+      return null
+    }
+    const stale = conflict()
+    if (stale) return stale
+    const machine = await this.deps.db.ci.mergeMachinePreflightSnapshot(userId, run, input.agentId)
+    const policy = JSON.stringify(this.deps.policyOf?.(input.agentId))
+    if (input.agentId !== run.agentId) {
+      const readiness = await this.checkReadiness(userId, run.projectId, run.taskId, input.agentId)
+      // Even a failed preflight must not mask a concurrent start or reassignment.
+      const latest = await this.deps.db.ci.getMergeRun(userId, id)
+      if (!latest) return { ok: false, code: 'not_found', error: 'Merge-ран недоступен' }
+      if (latest.status !== 'queued') return { ok: false, code: 'not_queued', error: 'Ран больше не находится в очереди', run: latest }
+      if ((latest.assignmentVersion ?? 0) !== input.expectedAssignmentVersion) return { ok: false, code: 'assignment_changed', error: 'Назначение уже изменено другим запросом', run: latest }
+      if (!readiness.ready) return { ok: false, code: 'readiness_failed', error: readiness.message, readiness }
+    }
+    const result = await this.deps.db.ci.changeQueuedMergeMachine(userId, id, input, machine, () => this.deps.isOnline(input.agentId) && JSON.stringify(this.deps.policyOf?.(input.agentId)) === policy)
+    if (result.ok && result.run.assignmentVersion !== run.assignmentVersion) {
+      await this.emit(id)
+      this.deps.boardChanged(run.projectId)
+    }
+    return result
+  }
   async cancel(id:string,userId:string):Promise<MergeRun|null> {
     const run=await this.deps.db.ci.getMergeRun(userId,id); if(!run)return null
     if(run.pushStartedAt)throw new Error('push уже начался; требуется reconcile')
+    if(run.status==='queued'){
+      const cancelled=await this.deps.db.ci.cancelQueuedMergeRun(userId,id,run.assignmentVersion??0)
+      if(!cancelled)throw new Error('Merge-ран изменился; обновите состояние')
+      this.active.get(id)?.abort()
+      await this.emit(id); this.deps.boardChanged(run.projectId)
+      return cancelled
+    }
+    if(terminal.has(run.status))return run
     this.active.get(id)?.abort()
     await this.finish(id,'cancelled','Отменено пользователем','Можно безопасно повторить merge.','merge')
     return await this.deps.db.ci.getMergeRun(userId,id)
   }
-  private async emit(id:string):Promise<void> { const run=await this.deps.db.ci.getMergeRunRaw(id); if(run)this.deps.broadcast({t:'merge.snapshot',runId:id,run},run.triggeredBy) }
+  private async emit(id:string):Promise<void> {
+    const run=await this.deps.db.ci.getMergeRunRaw(id)
+    if(!run)return
+    const recipients=await this.deps.db.projects.activeProjectMemberNames(run.projectId)
+    for(const userId of recipients)this.deps.broadcast({t:'merge.snapshot',runId:id,run},userId)
+  }
   private async log(id:string,text:string):Promise<void> {
     const safe=text.replace(/(authorization|token|password)\s*[:=]\s*\S+/gi,'$1=***')
     const line=`[${new Date(this.now()).toISOString()}] ${safe}\n`
@@ -221,12 +266,15 @@ git add -- ${q}`,repo,30000)
     const inspected=await this.deps.executor.run({agentId,script:`set -e
 p=${shellQuote(parent)}
 while [ "$p" != "/" ] && [ "$p" != "." ]; do [ ! -L "$p" ] || exit 73; p="$(dirname "$p")"; done
+[ ! -L ${shellQuote(repo)} ] || exit 73
 if [ -e ${shellQuote(repo)} ] && [ ! -d ${shellQuote(`${repo}/.git`)} ]; then exit 74; fi
 if [ -d ${shellQuote(`${repo}/.git`)} ]; then git -C ${shellQuote(repo)} remote get-url origin; fi
 git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/heads/${shellQuote(ws.branch??'')}`,workdir,env:{},timeoutMs:30000,secrets:[]},async chunk=>{inspectionOutput+=chunk})
     if(inspected.exitCode===73)return this.blocked('storage_symlink','Компонент пути merge-клона является симлинком',mode)
     if(inspected.exitCode===74)return this.blocked('clone_invalid','Каталог merge-клона существует, но не является Git-репозиторием',mode)
     if(inspected.exitCode||inspected.timedOut)return this.blocked('git_unavailable','Git origin или обязательные ветки недоступны',mode)
+    const refs = inspectionOutput.split(/\r?\n/).map(line => line.trim().split(/\s+/)).filter(parts => validSha.test(parts[0] ?? '')).map(parts => parts[1])
+    if (!refs.includes('refs/heads/main') || !refs.includes(`refs/heads/${ws.branch}`)) return this.blocked('git_unavailable','Git origin или обязательные ветки недоступны',mode)
     const actual=inspectionOutput.split(/\r?\n/).map(v=>v.trim()).find(v=>v&&!/^[0-9a-f]{40}\s/.test(v))
     if(actual&&canonicalGitUrl(actual)!==canonicalGitUrl(project.gitUrl))return this.blocked('clone_invalid','Origin существующего merge-клона не соответствует проекту',mode)
     return {ready:true,selectable:true,mode,code:'ready',message:mode==='managed'?'Managed MachineStorage готово':'Готово через legacy reposRoot',clonePath:repo}
@@ -240,8 +288,12 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
     const managed=readiness.mode==='managed'
     return {repo,parent,workdir:managed?(machine?.storageRoot??parent):(ws.agentId===run.agentId?parent:this.workspaceParent(parent)),cacheDir:managed?`${parent}/npm-cache`:`${parent}/.merge-npm-cache`}
   }
-  private async execute(id:string,ctl:AbortController):Promise<void> {
-    let run=await this.deps.db.ci.getMergeRunRaw(id); if(!run)return
+  private async execute(id:string,ctl:AbortController,claimQueued:boolean):Promise<void> {
+    let run=await this.deps.db.ci.getMergeRunRaw(id); if(!run||ctl.signal.aborted||terminal.has(run.status))return
+    if(claimQueued){
+      run=await this.deps.db.ci.claimQueuedMergeRun(id)
+      if(!run||ctl.signal.aborted)return
+    }
     const temporaryWorktrees:string[]=[]
     let worktreeRepo:string|null=null
     const cleanupWorktrees=async():Promise<void>=>{
@@ -529,7 +581,7 @@ exit 0`,repo,30000)
       if(latest.toLowerCase()!==target.toLowerCase()){
         await this.log(id,`origin/main изменился с ${target.slice(0,8)} до ${latest.slice(0,8)}; старые результаты не переиспользуются`)
         await cleanupWorktrees()
-        return await this.execute(id,ctl)
+        return await this.execute(id,ctl,false)
       }
       if(!latestSource||latestSource.toLowerCase()!==source.toLowerCase())throw new Error('stale source: ветка изменилась перед push')
       await this.deps.db.ci.updateMergeRun(id,{pushStartedAt:this.now()})

@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-09-04
-checked: 65b84e5f
+updated: 2026-09-16
+checked: 8005c179
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -49,6 +49,51 @@ diff и отсутствие конфликтных маркеров. Прове
 проекта» упёрлись в лимит на 34-й минуте, пока параллельно шёл модельный шаг
 актуализации БЗ. Начало и итог каждой команды пишутся в лог рана с
 длительностью — иначе полчаса тишины в ленте не отличить от зависшего рана.
+
+## Queued machine reassignment
+
+CHAT-475 adds `POST /api/merge/runs/:runId/machine` with
+`{agentId, expectedAssignmentVersion}`. The shared renderer method is
+`changeMergeMachine`; web and desktop both use the same REST/WS bridge.
+Success returns `{ok:true,run}`. HTTP 409 returns `not_queued` or
+`assignment_changed` with the current snapshot only after membership checks;
+403/404 never include a run. Readiness failures use 422 and the existing
+readiness code/message. An up-to-date same-machine request is a no-op; a
+lost-response replay with the old version conflicts without another audit.
+
+The existing row keeps its id, createdAt, SHA pins, stages, log and task
+placement. Only agent_id, machine_name and assignment_version change. Version
+zero migrates legacy rows; incrementing it prevents ABA overwrites. A transaction
+rechecks access, project machine, online/policy state and the preflight input
+snapshot (machine configuration, origin and pushed workspace), then conditionally
+updates the queued row and writes `qa_audit: merge.machine_changed`. Audit
+payload includes runId, oldAgentId, newAgentId, actor, time, reason and version.
+An audit failure rolls back the assignment.
+
+Merge scheduling uses the manager's process-wide active slot and delayed
+callback, independently of the development CI FIFO. Before executing any
+command, a callback scheduled for a queued run atomically claims
+`queued → checking` and uses the assignment returned by that transaction.
+Queued cancellation also checks the assignment version. Reconcile reads the
+persisted row after restart. Autopilot's `startMergeRun` reuses the same active
+row; reassignment never frees that row or changes task/default machine,
+autoPilot, manual-QA policy or position. MergeRunStatus has execution stages
+such as checking/fetching, not a general running value.
+
+After commit, merge.snapshot goes to active project members and boardChanged
+invalidates the board. Both MergePanel and NewTaskMergePanel use
+QueuedMergeMachine; responses apply immediately, and reconnect reloads history
+and readiness. Assignment versions prevent delayed queued snapshots from
+replacing newer assignments or already-claimed runs.
+
+Automated coverage lives in `merge/changeMachine.test.ts`, the common bridge
+test and `QueuedMergeMachine.dom.test.tsx`. Storybook stories are
+`ci-mergepanel--queued` and `kanban-newtaskmergepanel--queued`.
+`e2e/accessibility.e2e.test.ts` covers both surfaces at 320×700, 390×844,
+768×1024, 1280×720 and 1440×900 in light/dark themes, 44px controls, overflow,
+focus, touch and keyboard submission. Headless macOS native popup selection
+uses Playwright selectOption; the OS keyboard is represented by a reduced
+viewport, not an actual keyboard. Screenshots go to .generated_images.
 
 ## Граница подсистемы
 

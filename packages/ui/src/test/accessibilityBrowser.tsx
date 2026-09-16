@@ -18,6 +18,8 @@ const screens = {
     await api['conversations:create']({ title: 'Keyboard audit conversation' })
     return { default: () => <App api={api} /> }
   }),
+  queuedMerge: lazy(async () => ({ default: composeStories(await import('../components/ci/MergePanel.stories')).Queued })),
+  queuedMergeCard: lazy(async () => ({ default: composeStories(await import('../components/kanban/NewTaskMergePanel.stories')).Queued })),
   chat: lazy(async () => ({ default: composeStories(await import('../components/ChatColumn.stories')).MobileViewport })),
   board: lazy(async () => ({ default: composeStories(await import('../components/kanban/KanbanBoard.stories')).LongTitles })),
   task: lazy(async () => ({ default: composeStories(await import('../components/kanban/TaskModal.stories')).Desktop })),

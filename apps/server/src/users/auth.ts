@@ -207,7 +207,7 @@ export function projectPermissionForRequest(method: string, url: string): Projec
   // Компоненты проекта в Make: правка файла идёт теми же git-маршрутами, а здесь
   // остаются запуск Storybook на машине и тикет с веткой — та же цена ошибки.
   if (/^\/api\/projects\/[^/]+\/components(?:\/|$)/.test(url)) return 'repository:write'
-  if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/retry$/.test(url)) return 'task:merge'
+  if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/(retry|machine)$/.test(url)) return 'task:merge'
   if (/\/ci\/run(?:-on-machine)?$/.test(url) || /^\/api\/ci\/runs\/[^/]+\/(?:retry|retry-from-step|discard-and-retry)$/.test(url)) return 'workflow:start'
   if (method === 'POST' && /^\/api\/projects\/[^/]+\/tasks$/.test(url)) return 'task:create'
   if (method === 'PATCH' && /^\/api\/projects\/[^/]+\/tasks\/[^/]+$/.test(url)) return 'task:update'

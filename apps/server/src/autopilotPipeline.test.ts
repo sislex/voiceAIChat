@@ -13,6 +13,7 @@ import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
 import { AgentRegistry } from './agents/registry.js'
+import { MergeRunManager } from './merge/runManager.js'
 import type { Board, LlmClient, LlmHandle, LlmRequest, ProjectDetail, Task, TaskPreparationRun } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
@@ -79,6 +80,45 @@ const enableAutoPilot = (projectId: string, taskId: string) =>
   inj({ method: 'PATCH', url: `/api/projects/${projectId}/tasks/${taskId}`, payload: { autoPilot: true } })
 
 describe('автопроход: ручное QA и независимость карточек', () => {
+  // @testCase TC-INT-01
+  it('keeps one queued merge and task placement when reassignment overlaps an autopilot tick', async () => {
+    const { projectId, columns } = await taskInBacklog()
+    const task = (await db.tasks.createTask('admin', projectId, { title: 'Merge race', columnId: columns.find(column => column.semanticType === 'merge')!.id }))!
+    const machines = []
+    for (const name of ['A', 'B']) {
+      const machine = await db.machines.createAgent('admin', name)
+      await db.machines.linkMachine('admin', projectId, machine.id)
+      await db.machines.setProjectMachineReposRoot('admin', projectId, machine.id, '/repos')
+      machines.push(machine)
+    }
+    await db.ready
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,1,'released',3)`)
+      .run('ws-merge-race', projectId, task.id, machines[0].id, '/repos/project/task', 'CHAT-475', 'a'.repeat(40))
+    const run = await db.ci.startMergeRun('admin', projectId, task.id)
+    vi.spyOn(AgentRegistry.prototype, 'isOnline').mockReturnValue(true)
+    vi.spyOn(MergeRunManager.prototype, 'start').mockImplementation(() => {})
+    let entered!: () => void, resume!: () => void
+    const waiting = new Promise<void>(resolve => { entered = resolve })
+    const barrier = new Promise<void>(resolve => { resume = resolve })
+    vi.spyOn(MergeRunManager.prototype, 'checkReadiness').mockImplementation(async () => {
+      entered(); await barrier
+      return { ready: true, selectable: true, mode: 'legacy', code: 'ready', message: 'Ready' }
+    })
+    const changing = inj({ method: 'POST', url: `/api/merge/runs/${run.id}/machine`, payload: { agentId: machines[1].id, expectedAssignmentVersion: 0 } })
+    const pending = changing.then(response => response)
+    await waiting
+    const snapshots = vi.spyOn(db.tasks, 'autoPilotSnapshot')
+    await enableAutoPilot(projectId, task.id)
+    await eventually(async () => snapshots.mock.calls.length, count => count > 0)
+    const before = (await db.tasks.getTaskDetail('admin', projectId, task.id))!
+    resume()
+    expect((await pending).statusCode).toBe(200)
+    const after = (await db.tasks.getTaskDetail('admin', projectId, task.id))!
+    expect(after).toMatchObject({ columnId: before.columnId, position: before.position, autoPilot: true, autoPilotRequiresManualQa: false })
+    expect(await db.ci.listMergeRuns('admin', projectId, task.id)).toMatchObject([{ id: run.id, agentId: machines[1].id, status: 'queued' }])
+  })
+
   it('пропуски двух QA-этапов сразу приводят к Automated QA и очереди merge', async () => {
     const { projectId, taskId, columns } = await taskInBacklog()
     const machine = await db.machines.createAgent('admin', 'QA')

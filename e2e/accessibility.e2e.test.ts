@@ -42,6 +42,49 @@ beforeAll(async () => {
 })
 afterAll(async () => { await browser?.close(); await server?.close() })
 
+// @testCase TC-UI-02
+// @testCase TC-UI-01
+it.each(['queuedMerge', 'queuedMergeCard'])('%s supports the complete theme/viewport matrix and keyboard reassignment', async screen => {
+  for (const theme of ['light', 'dark']) for (const [width, height] of [[320,700],[390,844],[768,1024],[1280,720],[1440,900]]) {
+    const page = await browser.newPage({ viewport: { width, height }, hasTouch: true, reducedMotion: 'reduce' })
+    try {
+      await page.goto(base + '?screen=' + screen)
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme }, theme)
+      const select = page.getByRole('combobox', { name: 'Новая машина merge-рана' })
+      await select.waitFor()
+      await expect.poll(() => select.isEnabled()).toBe(true)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      const section = page.getByRole('region', { name: 'Смена машины merge-рана' })
+      const targets = await section.locator('select, button').evaluateAll(nodes => nodes.map(node => {
+        const rect = node.getBoundingClientRect()
+        return { width: rect.width, height: rect.height }
+      }))
+      expect(targets.every(rect => rect.width >= 44 && rect.height >= 44), JSON.stringify(targets)).toBe(true)
+      await select.focus()
+      // Native popup keyboard selection is platform-owned in headless macOS;
+      // selectOption drives its change event, then Tab/Enter verify submission.
+      await select.selectOption('machine-b')
+      const button = page.getByRole('button', { name: 'Сменить машину', exact: true })
+      await expect.poll(() => button.isEnabled()).toBe(true)
+      await page.keyboard.press('Tab')
+      expect(await button.evaluate(node => document.activeElement === node)).toBe(true)
+      expect(await button.evaluate(node => getComputedStyle(node).outlineStyle)).toBe('solid')
+      await page.keyboard.press('Enter')
+      await expect.poll(() => select.inputValue()).toBe('machine-b')
+      await expect.poll(() => select.evaluate(node => document.activeElement === node)).toBe(true)
+      expect(await section.getByRole('status').textContent()).toContain('Машина изменена')
+      // Chromium cannot open an OS keyboard in headless mode; constrain the
+      // viewport to verify the same reduced-height scrolling and focus path.
+      await page.setViewportSize({ width, height: Math.max(320, height - 300) })
+      await select.tap()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await page.keyboard.press('Escape')
+      await page.screenshot({ path: resolve(__dirname, `../.generated_images/CHAT-475-${screen}-${theme}-${width}.png`), fullPage: true })
+    } finally { await page.close() }
+  }
+})
+
+
 it.each(['shell', 'chat', 'board', 'task', 'releases', 'settings', 'projectSettings', 'admin'])('%s fits 390px and exposes visible keyboard focus', async screen => {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
   const errors: string[] = []

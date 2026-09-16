@@ -1036,6 +1036,8 @@ CREATE TABLE IF NOT EXISTS merge_runs (
   requested_llm_provider TEXT,
   requested_llm_model TEXT,
   llm_fallback_reason TEXT,
+  assignment_version INTEGER NOT NULL DEFAULT 0,
+  machine_name TEXT,
   stage TEXT NOT NULL DEFAULT 'queued',
   conflicts_json TEXT NOT NULL DEFAULT '[]',
   deploy_id TEXT,

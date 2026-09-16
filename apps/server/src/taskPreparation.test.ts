@@ -32,6 +32,31 @@ it('keeps the documented complete-response rule executable', () => {
   }
 })
 
+// @testCase TC-BRIEF-01
+// @testCase TC-BRIEF-02
+it('preserves a canonical brief through the complete preparation pipeline and states the normalization boundary', async () => {
+  const { project, task } = await taskInBacklog()
+  const original = JSON.parse(compatibleReadiness())
+  original.decisions = [{ id: 'D1', text: 'Keep the queued run id', rationale: 'Preserve identity', questionId: null }]
+  claudeAnswer = () => ({ text: JSON.stringify(original) })
+  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+  const expected = structuredClone(original)
+  delete expected.decisions[0].questionId
+  expect(run.readiness).toMatchObject(expected)
+  expect(preparationJsonObject(JSON.stringify(expected))).toEqual(expected)
+  expect(claudeCalls[0].prompt).toContain('Не отправляй промежуточные сообщения')
+  expect(claudeCalls[0].prompt).toContain('Нормализация не исправляет формат ответа')
+})
+
+// @testCase TC-BRIEF-03
+it.each(['Подготовка завершена.\n', 'Исправленный Development Brief:\n'])('rejects external prose without changing the extracted fixture requirements: %s', prefix => {
+  const object = JSON.parse(compatibleReadiness())
+  object.businessRules = ['Keep run id', 'Keep autoPilot=true', 'Keep source and target SHA']
+  const json = JSON.stringify(object)
+  expect(() => preparationJsonObject(prefix + json)).toThrow()
+  expect(preparationJsonObject(json)).toEqual(object)
+})
+
 const SECRET = 'test-secret'
 
 // @testCase TC9
@@ -703,6 +728,8 @@ describe('подготовка к разработке: диагностика �
     expect(brief).toEqual(JSON.parse(input))
   })
 
+  // @testCase TC-BRIEF-01
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NEG-1
   // @testCase TC-NORM-1
   it.each(['question', 'missing-ui-test', 'empty-exclusion', 'boolean', 'version', 'object-list'])(
@@ -785,6 +812,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-12
   // @testCase T10
   // @testCase TC12
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
     const { project, task } = await taskInBacklog()
@@ -968,6 +996,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-SCHEMA-NORMALIZATION
   // @testCase TC-12
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase T8
   it('нормализует однозначный список coverage без потери проверок', async () => {
@@ -1007,6 +1036,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC-12
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
     const { project, task } = await taskInBacklog()
@@ -1025,6 +1055,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC6
   // @testCase TC-BRIEF-1
+  // @testCase TC-BRIEF-01
   it('rejects an unknown test type with a precise schema diagnostic', async () => {
     const { project, task } = await taskInBacklog()
     const invalid = JSON.parse(compatibleReadiness())
@@ -1037,6 +1068,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC7
   // @testCase TC-12
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   it('не подменяет неоднозначный статус источника на available', async () => {
     const { project, task } = await taskInBacklog()
@@ -1124,6 +1156,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(3)
   })
 
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC7
   // @testCase TC-NORM-1
@@ -1159,6 +1192,7 @@ describe('подготовка к разработке: диагностика �
     }
   })
 
+  // @testCase TC-BRIEF-02
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC7
   it('normalizes an absent decision link without changing requirements and is idempotent', async () => {

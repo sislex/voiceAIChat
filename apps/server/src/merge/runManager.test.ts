@@ -17,11 +17,13 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
   const db={
     ci: {
       getMergeRunRaw:()=>run,
+      claimQueuedMergeRun:()=>run.status==='queued'?(run={...run,status:'checking',stage:'checking'}):null,
+      cancelQueuedMergeRun:()=>run.status==='queued'?(run={...run,status:'cancelled',stage:'cancelled'}):null,
       getMergeRun:()=>run,
       listActiveMergeRuns:()=>[run],
       updateMergeRun:(_id:string,fields:Partial<MergeRun>)=>(run={...run,...fields}),
       appendMergeLog:(_id:string,chunk:string)=>(run={...run,log:run.log+chunk}),
-      findLatestPushedCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1'})
+      findLatestPushedCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1',branch:run.sourceBranch})
     },
     tasks: {
       moveMergeTask:(_p:string,_t:string,column:string)=>moves.push(column),
@@ -30,7 +32,8 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
       listActiveTaskRepositories:()=>repositories.filter(r=>r.state==='active').map(r=>({taskId:'t1',agentId:r.agentId,path:r.path}))
     },
     projects: {
-      getProject:()=>({gitUrl,testCommand})
+      getProject:()=>({gitUrl,testCommand}),
+      activeProjectMemberNames:()=>['admin']
     },
     machines: {
       getProjectMachine:(_p:string,agentId:string)=>agentId==='a1'?{agentId,path:'/repo',reposRoot:'/legacy-repos',storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:agentId==='a2'?{agentId,path:'/other/project',reposRoot:'/other-repos',storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:agentId==='a3'?{agentId,path:'/missing-root/project',reposRoot:null,storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:null
@@ -79,7 +82,7 @@ describe('MergeRunManager',()=>{
     const s=setup([])
     s.manager.start(s.run)
     expect((await s.manager.cancel(s.run.id,'admin'))?.status).toBe('cancelled')
-    expect(s.moves).toEqual(['merge'])
+    expect(s.moves).toEqual([])
   })
   it('merges from a temporary clone when the released CI workspace no longer exists',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''])
