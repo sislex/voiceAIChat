@@ -435,9 +435,10 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
   ]
   const ops = makeMachineOps()
 
-  it('рендерит консоль внутри ai-сообщения при наличии machineOps', () => {
+  // @testCase TC-REGRESSION
+  it('рендерит консоль внутри ai-сообщения при наличии machineOps', async () => {
     renderCol({ messages: toolMsg, machineOps: ops, agents: [] })
-    expect(screen.getByTestId('console-embed')).toBeInTheDocument()
+    expect(await screen.findByTestId('console-embed')).toBeInTheDocument()
   })
 
   it('встроенный проводник переключается на консоль своей машины в текущей папке', async () => {

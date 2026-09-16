@@ -8,7 +8,8 @@ import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
 import type { ServerFileInfo, TurnTarget } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
-import { MachineUtility } from './MachineUtility'
+import { lazyScreen } from '../runtime/lazyScreen'
+const MachineUtility = lazyScreen(() => import('./MachineUtility').then(module => ({ default: module.MachineUtility })))
 import { MessageImage } from './MessageImage'
 import type { ConsoleHistoryStore, MachineOps, SwitchUtility } from '@voicechat/ui-foundation/components/machine'
 import {
