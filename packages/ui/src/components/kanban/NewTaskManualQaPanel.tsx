@@ -104,24 +104,24 @@ function ManualResult({ result, disabled, save, onDirty }: {
   result: QaCriterionResult; disabled: boolean; onDirty: (value: boolean) => void
   save: (status: QaResultStatus, fields: Record<string, unknown>) => Promise<void>
 }): JSX.Element {
-  const [status, setStatus] = useState(result.status)
-  const [comment, setComment] = useState(result.comment)
-  const [dirty, setDirty] = useState(false)
+  // Derive pristine fields from the snapshot; an effect must never overwrite a new edit.
+  const [draft, setDraft] = useState<{ status: QaResultStatus; comment: string } | null>(null)
+  const { status, comment } = draft ?? result
+  const dirty = draft !== null
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => { if (!dirty) { setStatus(result.status); setComment(result.comment) } }, [result.revision, dirty])
   return <form onSubmit={event => {
     event.preventDefault()
     if (busy || disabled) return
     setBusy(true); setError('')
     const fields = status === 'failed' ? { comment, actualResult: comment, classification: 'implementation_defect', severity: 'major', frequency: 'unknown', reproduction: comment }
       : status === 'blocked' ? { comment, blockerReason: comment, blockerType: 'other', blockerOwner: 'Не назначен' } : { comment }
-    void save(status, fields).then(() => { setDirty(false); onDirty(false) }).catch(cause => setError(String(cause))).finally(() => setBusy(false))
+    void save(status, fields).then(() => { setDraft(null); onDirty(false) }).catch(cause => setError(String(cause))).finally(() => setBusy(false))
   }}>
-    <label>Результат<select aria-label="Результат проверки" value={status} disabled={disabled || busy} onChange={event => { setStatus(event.target.value as QaResultStatus); setDirty(true); onDirty(true) }}>
+    <label>Результат<select aria-label="Результат проверки" value={status} disabled={disabled || busy} onChange={event => { setDraft({ status: event.target.value as QaResultStatus, comment }); onDirty(true) }}>
       <option value="not_tested">Не проверено</option><option value="passed">Работает</option><option value="failed">Не работает</option><option value="blocked">Нет возможности проверить</option>
     </select></label>
-    <label>Комментарий<textarea value={comment} disabled={disabled || busy} onChange={event => { setComment(event.target.value); setDirty(true); onDirty(true) }} /></label>
+    <label>Комментарий<textarea value={comment} disabled={disabled || busy} onChange={event => { setDraft({ status, comment: event.target.value }); onDirty(true) }} /></label>
     {error && <ErrorState compact message="Результат не сохранён" detail={error} />}
     {!disabled && <Button type="submit" loading={busy} disabled={!dirty || (['failed', 'blocked'].includes(status) && !comment.trim())}>Сохранить результат</Button>}
   </form>

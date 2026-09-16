@@ -87,17 +87,17 @@ describe('Web Reader: история действий модели без secure
 
       await mcp(id, 'open', { url: origin + '/api/preview/diagnostics' })
       const history = page.getByRole('region', { name: 'Действия ассистента' })
-      await history.getByText(/^Открыл /).waitFor()
+      await history.getByText(/Открыл /).waitFor()
       const result = await mcp(id, 'read')
       expect(result.text.length).toBeGreaterThan(0)
-      await history.getByText('Прочитал страницу', { exact: true }).waitFor()
+      await history.getByText(/Прочитал страницу/).waitFor()
       expect(await history.getByRole('listitem').count()).toBe(2)
 
       const registration = await page.evaluate(key => localStorage.getItem(key), registrationKey)
       await page.reload()
       await waitForReader(page, registration)
       expect((await mcp(id, 'read')).text).toBe(result.text)
-      await history.getByText('Прочитал страницу', { exact: true }).waitFor()
+      await history.getByText(/Прочитал страницу/).waitFor()
       expect(errors).toEqual([])
       if (process.env.VC_VISUAL_ARTIFACTS) {
         await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })

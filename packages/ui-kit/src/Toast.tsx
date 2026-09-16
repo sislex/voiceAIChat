@@ -98,7 +98,7 @@ function ToastMessage({ item, dismiss }: { item: ToastItem; dismiss: (id: string
       lang={lang}
       className={`vc-toast vc-toast--${item.kind}`}
       data-testid={`toast-${item.kind}`}
-      {...(item.kind === 'error' ? { role: 'alert', 'aria-live': 'assertive' as const } : { role: 'status' })}
+      role={item.kind === 'error' ? 'alert' : 'status'}
       // Handle Escape locally so a notification does not intercept dialog or application shortcuts.
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return
@@ -271,8 +271,7 @@ export function ToastProvider({ children, avoidSelector }: ToastProviderProps): 
       // композера нет.
       style={phone ? { bottom: `calc(${avoidHeight}px + 12px + var(--vc-shell-bottom, 0px))` } : undefined}
       data-testid="toasts"
-      aria-live="polite"
-      aria-atomic="false"
+      // Each toast owns its announcement; a live parent would announce it twice.
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)}

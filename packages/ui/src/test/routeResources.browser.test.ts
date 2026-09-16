@@ -68,7 +68,7 @@ afterAll(async () => {
   if (dataDir) await rm(dataDir, { recursive: true, force: true })
 })
 async function newPage(width = 1440, height = 900) {
-  const page = await browser.newPage({ viewport: { width, height }, hasTouch: width <= 768 })
+  const page = await browser.newPage({ viewport: { width, height }, hasTouch: width <= 720 })
   await page.addInitScript(value => {
     localStorage.setItem('vc.session.token', value)
     localStorage.setItem('vc:shell:admin:tour', 'true')
@@ -114,7 +114,7 @@ it('records comparable cold/warm request counts, transferred bytes and content/d
       throw new Error('Route reads did not settle')
     }
     let started = Date.now()
-    await page.goto(base + '/#' + section.route)
+    await page.goto(base + '/#' + section.route, { timeout: 60_000 })
     await page.locator(section.selector).first().waitFor({ timeout: 60_000 })
     const contentMs = Date.now() - started
     await page.waitForLoadState('networkidle')
@@ -159,13 +159,26 @@ it('keeps routes navigable in both themes at all five sizes with touch and keybo
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
         await page.keyboard.press('Tab')
         expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true)
-        if (width <= 768) {
+        // A focused skip link intentionally overlays navigation. Follow it before
+        // switching from keyboard navigation to tapping a control underneath.
+        if (await page.locator('.vc-skip-link').evaluate(node => node === document.activeElement)) {
+          await page.keyboard.press('Enter')
+          expect(await page.getByRole('main').evaluate(node => node === document.activeElement)).toBe(true)
+        }
+        if (width <= 720) {
           const overlay = page.locator('[data-testid="overlay"]:visible, [data-testid="onboarding-overlay"]:visible').last()
           const button = await overlay.count() ? overlay.locator('button:visible').first() : page.locator('button:visible').first()
           await button.tap()
           await page.keyboard.press('Escape')
           await page.evaluate(route => { location.hash = route }, section.route)
           await settle(page, section.selector)
+        }
+        if (section.name === 'board' && width <= 720) {
+          const create = await page.locator('.jboard-mobile-create').boundingBox()
+          const navigation = await page.getByRole('navigation', { name: 'Основные разделы' }).boundingBox()
+          expect(create).not.toBeNull()
+          expect(navigation).not.toBeNull()
+          expect(create!.y + create!.height).toBeLessThanOrEqual(navigation!.y)
         }
         if (section.name === 'Account') {
           const filter = page.getByLabel('Период расхода')

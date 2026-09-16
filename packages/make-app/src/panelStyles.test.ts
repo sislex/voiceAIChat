@@ -20,13 +20,13 @@ it('ограничивает MakePane split-контейнером и остав
 })
 
 it('панель адаптирует минимум ширины на телефоне', () => {
-  expect(atRuleBodies('@media (max-width: 768px)').join('\n')).toMatch(
+  expect(atRuleBodies('@media (max-width: 720px)').join('\n')).toMatch(
     /\.make-pane\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s
   )
 })
 
 it('mobile скрывает неактивную панель', () => {
-  expect(atRuleBodies('@media (max-width: 768px)').join('\n')).toMatch(
+  expect(atRuleBodies('@media (max-width: 720px)').join('\n')).toMatch(
     /\.chat-split--chat \.make-pane\s*\{[^}]*display:\s*none/s
   )
 })

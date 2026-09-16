@@ -51,7 +51,7 @@ async function renderApp(): Promise<FakeApi> {
 function setChatViewport(mobile: boolean): () => void {
   const original = window.matchMedia
   window.matchMedia = ((query: string) => ({
-    matches: query === '(max-width: 768px)' ? mobile : false,
+    matches: query === '(max-width: 720px)' ? mobile : false,
     media: query,
     onchange: null,
     addEventListener: () => undefined,
@@ -65,6 +65,18 @@ function setChatViewport(mobile: boolean): () => void {
 
 /** Открыть настройки и перейти в раздел меню (Агент — по умолчанию). */
 describe('App — версия релиза', () => {
+  it('offers a keyboard skip link, one main landmark and a route title', async () => {
+    await renderApp()
+    const skip = screen.getByRole('link', { name: 'К содержимому' })
+    skip.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByRole('main')).toHaveFocus()
+    expect(document.title).toContain('Чат')
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    await screen.findByRole('dialog', { name: 'Настройки' })
+    expect(document.title).toContain('Настройки')
+  })
+
   it('сохраняет номер версии и показывает коммит с задачей в подсказке', async () => {
     await renderApp()
 
@@ -122,7 +134,8 @@ describe('App — StrictMode (dev double-effect)', () => {
 })
 
 describe('App — онбординг первого запуска', () => {
-  it('показывается при onboarded=false и скрывается после «Начать»', async () => {
+  // @testCase TC-DEGRADED-1
+  it('показывается при onboarded=false и закрывается без обязательной настройки', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: false })
     render(<App api={api} delays={SLOW} />)
@@ -130,7 +143,7 @@ describe('App — онбординг первого запуска', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Добро пожаловать' })
     expect(dialog).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /Начать/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Продолжить в чате' }))
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Добро пожаловать' })).not.toBeInTheDocument()
     )
@@ -699,7 +712,7 @@ describe('App — мобильное меню', () => {
   const desktopMatchMedia = window.matchMedia
   beforeEach(() => {
     window.matchMedia = ((query: string) => ({
-      matches: query === '(max-width: 768px)',
+      matches: query === '(max-width: 720px)',
       media: query,
       onchange: null,
       addEventListener: () => {},
@@ -1124,7 +1137,7 @@ describe('App — Sidebar в рабочих split-режимах', () => {
     '%s использует закрываемый мобильный overlay',
     async (mode) => {
       window.matchMedia = ((query: string) => ({
-        matches: query === '(max-width: 768px)',
+        matches: query === '(max-width: 720px)',
         media: query,
         onchange: null,
         addEventListener: () => undefined,
@@ -1234,7 +1247,7 @@ describe('App — Sidebar в рабочих split-режимах', () => {
 
   it('console-reader switches mounted chat and PTY panes with accessible mobile tabs', async () => {
     window.matchMedia = ((query: string) => ({
-      matches: query === '(max-width: 768px)', media: query, onchange: null,
+      matches: query === '(max-width: 720px)', media: query, onchange: null,
       addEventListener: () => undefined, removeEventListener: () => undefined,
       addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => true
     })) as typeof window.matchMedia

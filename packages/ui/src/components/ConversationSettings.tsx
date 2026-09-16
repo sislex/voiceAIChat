@@ -332,7 +332,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         onTabChange={selectTab}
         tabs={[{ id: 'general', label: 'Общие' }, { id: 'context', label: 'Контекст'}]}
       />
-      <main className={`convsettings-body convsettings-tab-${activeTab}`}>
+      <section className={`convsettings-body convsettings-tab-${activeTab}`}>
         {activeTab === 'context' && <ContextInspector
           conversationId={conversation.id}
           provider={llmProvider}
@@ -505,7 +505,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         </>}
         {error && <p className="convsettings-error" role="alert">{error}</p>}
         </>}
-      </main>
+      </section>
       <footer className="convsettings-footer"><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={saving} onClick={() => void save()}>{saving ? 'Сохранение…' : 'Сохранить'}</Button></footer>
     </>
   )

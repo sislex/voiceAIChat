@@ -75,6 +75,14 @@ function setup(overrides: Record<string, unknown> = {}) {
   return { ...props, ...rendered }
 }
 
+it('pages large conversation lists and keeps the selected row reachable', async () => {
+  setup({ conversations: Array.from({ length: 250 }, (_, i) => conv('large-' + i, 'Conversation ' + i)), activeId: 'large-249' })
+  expect(screen.getByRole('button', { name: 'Conversation 249' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Conversation 150' })).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: /Показать ещё беседы/ }))
+  expect(screen.getByRole('button', { name: 'Conversation 150' })).toBeInTheDocument()
+})
+
 describe('Sidebar — фильтр «чаты завершённых задач»', () => {
   it('иконка-фильтр над списком переключает флаг и показывает нажатое состояние', async () => {
     const onShowDoneTaskChatsChange = vi.fn()

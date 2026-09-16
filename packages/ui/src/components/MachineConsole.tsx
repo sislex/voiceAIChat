@@ -89,6 +89,7 @@ export function MachineConsole({
   useEffect(() => { if (initialAgentId) setAgentId(initialAgentId) }, [initialAgentId])
   const [cmd, setCmd] = useState('')
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [historyLimit, setHistoryLimit] = useState(100)
   /** Команда, которая идёт прямо сейчас; null — простой (её же ждёт «Стоп»). */
   const [running, setRunning] = useState<string | null>(null)
   /** Набранные команды по машине, когда historyStore не передали. */
@@ -106,6 +107,7 @@ export function MachineConsole({
   useEffect(() => {
     setCmd('')
     setHistory([])
+    setHistoryLimit(100)
     setRunning(null)
     setSearch(null)
     setCompletions([])
@@ -292,6 +294,7 @@ export function MachineConsole({
           setSearch(null)
           setCompletions([])
           setHistory([])
+          setHistoryLimit(100)
           resetNav()
         }}
         kind="console"
@@ -323,8 +326,9 @@ export function MachineConsole({
             description="Наберите команду в поле ниже — вывод и код возврата появятся здесь."
           />
         )}
-        {history.map((h, i) => (
-          <div className="conshist" key={i}>
+        {history.length > historyLimit && <Button onClick={() => setHistoryLimit(limit => limit + 100)}>Показать предыдущие команды ({history.length - historyLimit})</Button>}
+        {history.slice(-historyLimit).map((h, i) => (
+          <div className="conshist" key={Math.max(0, history.length - historyLimit) + i}>
             <button
               type="button"
               className="conscmd"

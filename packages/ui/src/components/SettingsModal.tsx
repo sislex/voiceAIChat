@@ -38,8 +38,8 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-import type { SettingsSection } from './settingsContract'
-export { SETTINGS_SECTIONS, type SettingsSection } from './settingsContract'
+import type { SettingsSection } from '../lib/settingsSections'
+export { SETTINGS_SECTIONS, type SettingsSection } from '../lib/settingsSections'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
@@ -123,6 +123,7 @@ export interface SettingsModalProps {
   /** Роль текущего пользователя — ограничивает список моделей Claude. */
   role: UserRole
   llmAccess?: UserLlmAccess[]
+  onOpenOnboarding?: () => void
   onClose: () => void
   /** Глобальная доступность голосового ввода. */
   voiceInputEnabled?: boolean
@@ -162,6 +163,7 @@ export function SettingsModal({
   role: _role,
   llmAccess = [],
   onClose,
+  onOpenOnboarding,
   voiceInputEnabled = true,
   initialSection,
   section: controlledSection,
@@ -189,6 +191,7 @@ export function SettingsModal({
 
   return (
     <Dialog title="Настройки" size="md" testId="overlay" onClose={onClose}>
+        {onOpenOnboarding && <Button onClick={onOpenOnboarding}>Мастер первого запуска</Button>}
         {!settingsLoaded && (
           <ErrorState
             compact

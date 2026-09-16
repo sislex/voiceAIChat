@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { CiConsole, isDangerousConsoleCommand } from './CiConsole'
 import { CiSlotEditor, previewCommand } from './CiSlotEditor'
 import { makeCommands } from '../../test/fixtures/index'
-import { BrowserLogArtifact, RunFeed, type RunFeedCache } from './RunFeed'
+import { BrowserLogArtifact, PreparationRunSteps, RunFeed, type RunFeedCache } from './RunFeed'
 import { listCommands, resetCommands } from '@voicechat/ui-foundation/runtime'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { KbRunUsageReport } from '@shared/kb'
@@ -30,6 +30,27 @@ function baseProps(cache: RunFeedCache | undefined) {
     now: () => NOW
   }
 }
+
+describe('preparation announcements', () => {
+  it('announces step transitions without replaying growing output', () => {
+    const step = {
+      id: 'research', name: 'Research', ordinal: 0, status: 'running' as const,
+      startedAt: NOW, finishedAt: null, durationMs: null, error: null, log: []
+    }
+    const view = render(<PreparationRunSteps steps={[step]} fallback="Waiting" />)
+    const announcement = screen.getByRole('status')
+    expect(announcement).toHaveTextContent('Research: running')
+    view.rerender(<PreparationRunSteps steps={[{ ...step, log: [{
+      eventId: 'event-1', attemptId: 'attempt-1', sequence: 1, timestamp: NOW,
+      type: 'output', phase: 'code_research', text: 'growing output'
+    }] }]} fallback="Waiting" />)
+    expect(screen.getByRole('status')).toBe(announcement)
+    expect(announcement).toHaveTextContent('Research: running')
+    expect(screen.getByText('growing output').closest('[aria-live], [role=status], [role=alert]')).toBeNull()
+    view.rerender(<PreparationRunSteps steps={[{ ...step, status: 'success' }]} fallback="Waiting" />)
+    expect(announcement).toHaveTextContent('Research: success')
+  })
+})
 
 describe('browser artifacts in the run feed', () => {
   it('loads an authenticated screenshot on demand and opens the image as a link', async () => {

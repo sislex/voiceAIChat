@@ -216,9 +216,13 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     }),
   ),
   definition("web", "Веб-оболочка", "apps/web", {
-    e2eFiles: ["e2e/applicationReleases.e2e.test.ts", "e2e/machine-vpn.e2e.test.ts", "e2e/universalSearch.e2e.test.ts"],
+    e2eFiles: ["e2e/applicationReleases.e2e.test.ts", "e2e/accessibility.e2e.test.ts", "e2e/machine-vpn.e2e.test.ts", "e2e/universalSearch.e2e.test.ts"],
     browserPaths: [
       "packages/ui/src/runtime",
+      "packages/ui/src/App.tsx",
+      "packages/ui/src/styles",
+      "e2e/accessibility.e2e.test.ts",
+      "packages/ui/src/test/accessibilityBrowser.tsx",
       "packages/ui/src/components/releases/ApplicationReleaseCenter.tsx",
       "packages/ui/src/components/MachineVpn.tsx",
       "packages/ui/src/components/MachineVpn.css",

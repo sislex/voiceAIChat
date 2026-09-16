@@ -129,6 +129,8 @@ export interface HealthResponse {
 
 /** Пути REST (единый источник для сервера и клиентов). */
 export const REST = {
+  uiPerformance: '/api/ui-performance',
+  uiPerformanceReport: '/api/ui-performance/report',
   health: '/api/health',
   kbStatus: '/api/kb/status',
   kbTopics: '/api/kb/topics',

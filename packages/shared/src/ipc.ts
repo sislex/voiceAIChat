@@ -432,6 +432,8 @@ export interface IpcInvokeMap {
   /** Обновить агента на машине любого пользователя (machines-roadmap п.16). */
   'admin:updateMachine': { arg: { id: string }; result: { ok: true; os: string } }
   /** Метрики машин для дашборда админа (п.5). */
+  'uiPerformance:send': { arg: import('./uiPerformance').UiPerformanceBatch; result: void }
+  'uiPerformance:report': { arg: import('./uiPerformance').UiPerformanceQuery; result: import('./uiPerformance').UiPerformanceReport }
   'admin:machineStats': { arg: void; result: import('./admin').AdminMachineStats }
   'admin:revokeMachineToken': { arg: { id: string }; result: { ok: true } }
   /** Ролевые правила команд (п.10). */
@@ -879,6 +881,17 @@ export const IPC_SEND_CHANNELS: IpcSendChannel[] = [
  * Мост потокового аудио, доступный в renderer как `window.audio`.
  * Отдельно от `window.api` (invoke), т.к. это односторонний поток без ответа.
  */
+/** A private connection prevents diagnostic audio from reaching chat listeners. */
+export interface RendererOnboardingBridge {
+  open(): {
+    audio: RendererAudioBridge
+    stt: RendererSttBridge
+    tts: RendererTtsBridge
+    claude: RendererClaudeBridge
+    close(): void
+  }
+}
+
 export interface RendererAudioBridge {
   audioStart(payload: IpcSendPayload<'audio:start'>): void
   audioChunk(payload: AudioChunkMessage): void
@@ -1445,6 +1458,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:setSignupConfig',
   'admin:makeStats',
   'admin:updateMachine',
+  'uiPerformance:send',
+  'uiPerformance:report',
   'admin:machineStats',
   'admin:revokeMachineToken',
   'admin:commandPolicy',

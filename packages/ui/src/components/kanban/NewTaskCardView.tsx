@@ -435,7 +435,7 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
           </Button>
         )}
       </nav>
-      <main className="new-task-body" ref={bodyRef}>
+      <section className="new-task-body" ref={bodyRef}>
         {props.reworkError && !props.reworkOpen && <ErrorState compact message={props.reworkError} onRetry={callbacks.onRetryHistory} />}
         {model.loadState === 'loading' && <div role="status" aria-label="Карточка загружается"><Skeleton height={120} /><Skeleton height={200} /></div>}
         {model.loadState === 'error' && <ErrorState message="Не удалось загрузить карточку" detail={model.error ?? 'Повторите попытку позже.'} onRetry={callbacks.onRetryHistory} />}
@@ -443,7 +443,7 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         {model.loadState === 'ready' && activeTab === 'overview' && overview}
         {model.loadState === 'ready' && activeTab === 'reworks' && reworks}
         {model.loadState === 'ready' && activeTab !== 'overview' && activeTab !== 'reworks' && (props.renderPanel?.(activeTab) ?? null)}
-      </main>
+      </section>
     </div>
     {props.reworkOpen && <div className="new-task-rework" role="dialog" aria-modal="true" aria-label="Новый цикл доработки">
       <header><h3>{props.reworkDraft.editingId ? 'Правка доработки' : 'Новая доработка'}</h3><Button size="sm" variant="ghost" onClick={callbacks.onCancelRework}>Закрыть</Button></header>

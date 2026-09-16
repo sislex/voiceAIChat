@@ -17,6 +17,8 @@ export {
   type ToastProviderProps
 } from './Toast'
 export { UiProviders } from './UiProviders'
+export { usePolling, type PollingOptions } from './usePolling'
+export { useFocusTrap } from './useFocusTrap'
 export {
   Skeleton,
   RefreshIndicator,

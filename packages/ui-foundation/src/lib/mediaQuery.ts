@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 export const MOBILE_QUERY = '(max-width: 720px)'
 
 /** Компактная колонка чата: совпадает с мобильными правилами VoiceBar в app.css. */
-export const CHAT_COMPOSER_QUERY = '(max-width: 768px)'
+export const CHAT_COMPOSER_QUERY = '(max-width: 720px)'
 
 function read(query: string): boolean {
   // jsdom не реализует matchMedia: без него считаем, что условие не выполнено,

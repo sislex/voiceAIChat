@@ -49,8 +49,9 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
   { fg: '--ci-success', bg: '--ci-success-bg', usage: 'лозенг «успех»' },
   { fg: '--ci-removed', bg: '--ci-removed-bg', usage: 'лозенг «ошибка» / «отменён»' },
   { fg: '--ci-success', bg: '--bg', usage: 'зелёная рамка выполненной карточки', kind: 'ui' },
-  { fg: '--border', bg: '--bg', usage: 'рамка панели на полотне', kind: 'ui' },
-  { fg: '--border', bg: '--surface', usage: 'рамка поля ввода в карточке', kind: 'ui' },
+  { fg: '--border', bg: '--bg', usage: 'decorative panel divider', kind: 'decor' },
+  ...['--bg', '--surface', '--panel', '--surface-hover', '--surface-selected'].map(bg => ({ fg: '--control-border', bg, usage: 'control boundary', kind: 'ui' as const })),
+  ...['--bg', '--surface', '--panel'].map(bg => ({ fg: '--accent', bg, usage: 'keyboard focus ring', kind: 'ui' as const })),
   { fg: '--border-soft', bg: '--surface', usage: 'разделитель строк в таблицах — декоративный', kind: 'decor' }
 ]
 

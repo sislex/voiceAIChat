@@ -38,6 +38,7 @@ export function InvitesPanel({
   const [inviteEmail, setInviteEmail] = useState('')
   const [invitesOpen, setInvitesOpen] = useState(false)
   const [copyResult, setCopyResult] = useState<{ token: string; status: 'copied' | 'error' } | null>(null)
+  const [inviteLimit, setInviteLimit] = useState(100)
   const copyAttempt = useRef(0)
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -92,9 +93,10 @@ export function InvitesPanel({
             <input className="login-input" aria-label="Заметка к инвайту" placeholder="для кого (необязательно)" value={inviteNote} onChange={(e) => setInviteNote(e.target.value)} />
             <Button size="sm" variant="primary" type="submit">Создать ссылку</Button>
           </form>
+          {invites && invites.length > inviteLimit && <Button onClick={() => setInviteLimit(limit => limit + 100)}>Показать ещё приглашения ({invites.length - inviteLimit})</Button>}
           {invites && invites.length > 0 && (
             <ul className="sessions-list" role="list">
-              {invites.map((inv) => {
+              {invites.slice(0, inviteLimit).map((inv) => {
                 const url = `${inviteBaseUrl}#/invite/${encodeURIComponent(inv.token)}`
                 const dead = inv.expiresAt < Date.now() || inv.uses >= inv.maxUses
                 return (

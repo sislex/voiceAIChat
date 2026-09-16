@@ -1,3 +1,4 @@
+export * from './uiPerformance'
 export * from './previewAccessibility'
 export * from './browserEvaluation'
 export * from './previewAudit'

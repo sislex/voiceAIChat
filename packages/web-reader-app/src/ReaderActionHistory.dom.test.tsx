@@ -51,7 +51,7 @@ it('resets local history controls when the conversation key changes', () => {
 })
 it('starts collapsed on a narrow screen and shows the event time', () => {
   const original = window.matchMedia
-  window.matchMedia = ((query: string) => ({ matches: query.includes('max-width: 560px'), media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia
+  window.matchMedia = ((query: string) => ({ matches: query.includes('max-width: 720px'), media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia
   try {
     render(<ReaderActionHistory actions={[{ ...actions[1], at: new Date(2026, 8, 14, 9, 5).getTime() }]} />)
     expect(screen.getByRole('button', { name: 'Действия ассистента' })).toHaveAttribute('aria-expanded', 'false')

@@ -1,0 +1,127 @@
+
+> @voicechat/server@0.1.0 test
+> vitest run --silent src/taskPreparation.test.ts src/ci/componentQa.test.ts
+
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/apps/server
+
+10:44:05 PM [vite] warning: This case clause will never be evaluated because it duplicates an earlier case clause
+1152|          (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+1153|          (value.clear === undefined || typeof value.clear === 'boolean')
+1154|      case 'note':
+   |           ^
+1155|        return bounded(value.text, 500) && value.text.trim().length > 0
+1156|      case 'media':
+
+  Plugin: vite:esbuild
+  File: /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/shared/src/previewActions.ts
+ ✓ src/ci/componentQa.test.ts (27 tests) 1274ms
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+To /var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-dirty-HZIjvG/origin.git
+ * [new branch]      main -> main
+Cloning into '/var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-dirty-HZIjvG/checkout'...
+done.
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+To /var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-branch-VOL7oq/origin.git
+ * [new branch]      main -> main
+Cloning into '/var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-branch-VOL7oq/checkout'...
+done.
+Switched to a new branch 'CHAT-407'
+HEAD is now at 99be714 first
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+To /var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-unstashable-tDGQmN/origin.git
+ * [new branch]      main -> main
+Cloning into '/var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-unstashable-tDGQmN/checkout'...
+done.
+Switched to a new branch 'aside'
+To /var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-unstashable-tDGQmN/origin.git
+ * [new branch]      aside -> aside
+From /var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-unstashable-tDGQmN/origin
+ * branch            aside      -> FETCH_HEAD
+ * [new branch]      aside      -> origin/aside
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+To /var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-sync-0L9oS6/origin.git
+ * [new branch]      main -> main
+Cloning into '/var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-sync-0L9oS6/checkout'...
+done.
+To /var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-sync-0L9oS6/origin.git
+   0b3f6be..4add36b  main -> main
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+To /var/folders/ll/9h3pq9tn7rv05bvj_c85r6d40000gn/T/vc-main-bootstrap-0VPMXk/origin.git
+ * [new branch]      main -> main
+Switched to branch 'aside'
+Preparing worktree (checking out 'main')
+ ✓ src/taskPreparation.test.ts (91 tests) 20536ms
+   ✓ keeps the documented complete-response rule executable 307ms
+   ✓ rejects ambiguous or damaged input: {} {} 301ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > грязную копию лечит автоматически: правки уезжают в stash, синхронизация продолжается 634ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > копию, оставленную на ветке задачи или в detached HEAD, возвращает на базовую ветку 695ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > когда спрятать изменения нельзя, останавливается и называет мешающие файлы 630ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > обновляет реальную локальную main из origin/main без склеенной ссылки 595ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > пустой или отсутствующий projectWorkdir клонирует по gitUrl, непустой чужой каталог отвергает 867ms
+
+ Test Files  2 passed (2)
+      Tests  118 passed (118)
+   Start at  22:44:04
+   Duration  23.98s (transform 1.76s, setup 0ms, collect 3.63s, tests 21.81s, environment 0ms, prepare 124ms)
+

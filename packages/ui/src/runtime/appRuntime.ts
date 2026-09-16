@@ -6,6 +6,7 @@
 // универсального `setState` он не предоставляет: любые изменения идут через
 // публичные actions владельца.
 
+import { uiPerformance } from '../lib/uiPerformance'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { CcItem } from '@shared/cc'
 import type { CxItem } from '@shared/codexSessions'
@@ -171,7 +172,18 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     onMicsChanged: () => void settings.actions.refreshMics()
   }), 'ChatAI Voice', 'voice')
 
+  let performanceGenerationDone = false
+  const finishPerformance = () => {
+    if (performanceGenerationDone && voice.getState().voice === 'idle' && typeof window !== 'undefined') {
+      uiPerformance().finish('message', 'chat'); performanceGenerationDone = false
+    }
+  }
+  const unsubscribePerformance = voice.subscribe(finishPerformance)
   const chat: ChatStore = diagnostics.attach(createChatStore({
+    performance: {
+      accepted: (queued, operationId) => { if (!queued) performanceGenerationDone = false; if (typeof window !== 'undefined') uiPerformance().beginMessage(queued, operationId) },
+      cancelled: (operationId) => { if (!operationId) performanceGenerationDone = false; if (typeof window !== 'undefined') uiPerformance().cancelMessage(operationId) }
+    },
     chat: clients.chat,
     prefs: clients.prefs,
     draftStorageKey: CHAT_DRAFTS_KEY,
@@ -268,16 +280,34 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     },
     modelDownloadError: (message) => settings.actions.applyDownloadError(message),
     turnToken: (delta, conversationId) => chat.actions.applyClaudeToken(delta, conversationId),
-    turnDone: (text, meta, engine, message, conversationId) =>
-      void chat.actions.applyClaudeDone(text, meta, engine, message, conversationId),
+    turnDone: (text, meta, engine, message, conversationId) => {
+      const active = !conversationId || conversationId === chat.getState().activeId
+      const generation = typeof window !== 'undefined' ? uiPerformance().messageGeneration() : null
+      void chat.actions.applyClaudeDone(text, meta, engine, message, conversationId).then(() => {
+        if (active && (typeof window === 'undefined' || generation === uiPerformance().messageGeneration())) {
+          if (meta?.interrupted && typeof window !== 'undefined') uiPerformance().cancel('message')
+          performanceGenerationDone = true
+          if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(finishPerformance))
+          else finishPerformance()
+        }
+      })
+    },
     turnError: (message, conversationId, fix) => {
+      if ((!conversationId || conversationId === chat.getState().activeId) && typeof window !== 'undefined') uiPerformance().cancel('message')
       chat.actions.applyClaudeError(message, conversationId)
       // Предложение исправления живёт рядом с баннером ошибки оболочки: сам
       // текст ошибки уже показал chatStore через порт setError.
       shell.actions.setErrorFix(fix ?? null)
     },
     turnActive: (turns) => chat.actions.applyClaudeActive(turns),
-    turnStart: (target, conversationId) => chat.actions.applyClaudeStart(target, conversationId),
+    turnStart: (target, conversationId) => {
+      if (conversationId === chat.getState().activeId && typeof window !== 'undefined') {
+        if (performanceGenerationDone) uiPerformance().finish('message', 'chat')
+        performanceGenerationDone = false
+        uiPerformance().activateMessage()
+      }
+      chat.actions.applyClaudeStart(target, conversationId)
+    },
     turnQueue: (conversationId, items, paused, published, removedMessageIds) =>
       chat.actions.applyClaudeQueue(conversationId, items, paused, published, removedMessageIds),
     turnUsage: (usage, conversationId) => chat.actions.applyClaudeUsage(usage, conversationId),
@@ -475,6 +505,8 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       chat.actions.setKbUsagePanelOpen(false)
     },
     dispose() {
+      unsubscribePerformance()
+      if (typeof window !== 'undefined') uiPerformance().cancel('message')
       disposed = true
       clients.reads?.clear()
       disconnect?.()

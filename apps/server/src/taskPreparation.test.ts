@@ -18,9 +18,24 @@ import { DEFAULT_CODEX_MODEL, DEFAULT_SETTINGS, type Board, type LlmClient, type
 
 import { preparationJsonObject } from './kanban/preparation.js'
 
+// @testCase TC-BRIEF-KB-1
+it('keeps the documented complete-response rule executable', () => {
+  const documentation = readFileSync(join(process.cwd(), '../../docs/kb/features/task-preparation.md'), 'utf8')
+  expect(documentation).toContain('preparationJsonObject')
+  expect(documentation).toContain('schemaVersion=2')
+  expect(documentation).toContain('questionId')
+  const original = { schemaVersion: 2, scope: ['Preserve every requirement'], decisions: [{ questionId: null, text: 'No change' }] }
+  const normalized = preparationJsonObject(JSON.stringify(original))
+  expect(normalized).toEqual({ ...original, decisions: [{ text: 'No change' }] })
+  for (const prefix of ['Подготовка завершена.\n', 'Исправленный Development Brief:\n']) {
+    expect(() => preparationJsonObject(prefix + JSON.stringify(original))).toThrow()
+  }
+})
+
 const SECRET = 'test-secret'
 
 // @testCase TC9
+// @testCase TC-BRIEF-03
 it('keeps the existing preparation KB section linked to verified strict-response regressions', () => {
   const article = readFileSync(new URL('../../../docs/kb/features/task-preparation.md', import.meta.url), 'utf8')
   expect(article).toContain('## DevelopmentReadiness и readiness-гейт')
@@ -58,8 +73,10 @@ it('preserves repeated names in independent objects and punctuation inside strin
 // @testCase TC-BRIEF-02
 // @testCase T12
 // @testCase T9
+// @testCase TC-BRIEF-2
 it('normalizes only absent decision references and preserves compatible nulls and requirements', () => {
   const original = JSON.parse(READINESS)
+  original.scope = ['Keep columnId as status', 'Keep onMoveTask(taskId, columnId, afterId, beforeId)', 'Keep autoPilot=true and autoPilotRequiresManualQa=false']
   original.decisions = [{ id: 'D1', text: 'Preserve {braces} and "quotes"', rationale: 'No scope changes', questionId: null }]
   original.openQuestions = [{ questionId: 'Q1', text: 'Resolved later', material: false, answer: null }]
   original.affectedComponents = [{ id: 'C1', name: 'Card', reusable: true, storybookStoryId: null, exclusionReason: 'DOM coverage', alternativeVerification: 'DOM test', coverage: { required: ['TC1'] } }]
@@ -82,8 +99,11 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
 // @testCase TC-BRIEF-03
 // @testCase T13
 // @testCase TC-11
+// @testCase TC-BRIEF-1
 // @testCase TC6
 // @testCase TC-BRIEF
+// @testCase T9
+// @testCase TC-BRIEF-01
 it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('normalizes a known content-free prefix and validates the entire brief: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
@@ -128,6 +148,7 @@ function compatibleReadiness(): string {
   })
 }
 
+// @testCase T8
 // @testCase TC13
 it('normalizes all four diagnostic decisions without changing any other data', () => {
   const original = JSON.parse(compatibleReadiness())
@@ -683,6 +704,53 @@ describe('подготовка к разработке: движок из нас
 })
 
 describe('подготовка к разработке: диагностика и контракт', () => {
+  // @testCase TC-BRIEF-1
+  it('requires a complete brief without contradictory output instructions', async () => {
+    const { project, task } = await taskInBacklog()
+    const input = compatibleReadiness()
+    claudeAnswer = () => ({ text: input })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(1)
+    const prompt = claudeCalls[0].prompt
+    expect(prompt).toContain('ровно один JSON-объект schemaVersion=2')
+    expect(prompt).toContain('Отдельный блок kb-gaps вне JSON запрещён')
+    expect(prompt).not.toContain('в финальном блоке kb-gaps')
+    expect(prompt).toContain('не завершает подготовку и не заменяет DevelopmentReadiness')
+    expect(prompt).toContain('sources[].summary')
+    const { confirmation, ...brief } = run.readiness!
+    expect(confirmation?.confirmed).toBe(true)
+    expect(brief).toEqual(JSON.parse(input))
+  })
+
+  // @testCase TC-BRIEF-NEG-1
+  // @testCase TC-NORM-1
+  it.each(['question', 'missing-ui-test', 'empty-exclusion', 'boolean', 'version', 'object-list'])(
+    'rejects incompatible recovery content without inventing data: %s', async variant => {
+      const { project, task } = await taskInBacklog()
+      const input = JSON.parse(compatibleReadiness())
+      input.uiImpact = 'existing_components'
+      input.affectedComponents = [{
+        id: 'onboarding', name: 'OnboardingModal', reusable: true, storybookStoryId: null,
+        exclusionReason: 'No Storybook story', alternativeVerification: 'DOM regression tests',
+        coverage: { required: ['TC-UI-1'] }
+      }]
+      if (variant === 'missing-ui-test') input.testCases = input.testCases.filter((test: { testType: string }) => test.testType !== 'ui')
+      if (variant === 'empty-exclusion') input.affectedComponents[0].exclusionReason = ''
+      if (variant === 'boolean') input.testCases[0].required = 'yes'
+      if (variant === 'version') input.schemaVersion = '2'
+      if (variant === 'object-list') input.scope = [{ id: 'S1', text: 'Preserve requirement' }]
+      const recovery = variant === 'question' ? JSON.stringify({ question: 'Which machine?', material: true }) : JSON.stringify(input)
+      claudeAnswer = attempt => ({ text: attempt < 3 ? 'Invalid response' : recovery })
+      const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+      expect(run.status).toBe('blocked')
+      expect(run.readiness).toBeNull()
+      expect(claudeCalls).toHaveLength(3)
+      expect(run.questions ?? []).toHaveLength(0)
+      expect(claudeCalls[2].prompt).toContain('Объект вопроса не является DevelopmentReadiness')
+      expect(claudeCalls[2].prompt).toContain('неоднозначные значения нельзя исправлять догадками')
+    })
+
   it('ошибка авторизации CLI называет движок и профиль пользователя', async () => {
     const { project, task } = await taskInBacklog()
     await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
@@ -763,6 +831,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-BRIEF-FORMAT
   // @testCase TC-BRIEF-CONTRACT
   // @testCase TC-BRIEF
+  // @testCase TC-BRIEF-NEG-1
   it.each(['prefix', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()
@@ -795,6 +864,9 @@ describe('подготовка к разработке: диагностика �
   // @testCase T11
   // @testCase T9
   // @testCase TC6
+  // @testCase T7
+  // @testCase TC-BRIEF-1
+  // @testCase TC-BRIEF-01
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })
@@ -898,6 +970,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-BRIEF-SCHEMA
   // @testCase T10
   // @testCase TC8
+  // @testCase T7
   it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -917,6 +990,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-SCHEMA-NORMALIZATION
   // @testCase TC-12
   // @testCase TC-BRIEF-NORMALIZATION
+  // @testCase T8
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -971,6 +1045,7 @@ describe('подготовка к разработке: диагностика �
   })
 
   // @testCase TC6
+  // @testCase TC-BRIEF-1
   it('rejects an unknown test type with a precise schema diagnostic', async () => {
     const { project, task } = await taskInBacklog()
     const invalid = JSON.parse(compatibleReadiness())
@@ -1072,6 +1147,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase TC7
+  // @testCase TC-NORM-1
   it('preserves the whole brief through every compatible conversion and a second preparation', async () => {
     const input = JSON.parse(compatibleReadiness())
     input.scope = 'Keep direct DNS blocked'

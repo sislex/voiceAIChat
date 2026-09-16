@@ -50,7 +50,7 @@ export function PersonalizationPage({ user, value, onSave, onCancel }: { user: S
   }
   const years = useMemo(() => Array.from({ length: new Date().getFullYear() - 1899 }, (_, i) => new Date().getFullYear() - i), [])
   const number = (raw: string): number | null => raw ? Number(raw) : null
-  return <main className="personalization-page">
+  return <section className="personalization-page">
     <header><h1>Персонализация — {titleName}</h1><p>Настройте обычный язык, объём и тон ответов. Явная просьба в сообщении всегда важнее этих предпочтений.</p></header>
     <section><h2>Как обращаться</h2><label>Имя или обращение<input maxLength={80} value={draft.preferredName ?? ''} onChange={(e) => setDraft({ ...draft, preferredName: e.target.value.replace(/\s+/g, ' ').trimStart() || null })} /></label><label className="personal-check"><input type="checkbox" checked={draft.preferredName === null} onChange={(e) => setDraft({ ...draft, preferredName: e.target.checked ? null : user.name })} /> Без обращения</label></section>
     <section><h2>Дата рождения</h2><p className="field-hint">Используется только для адаптации формулировок и сложности ответа; модели передаётся вычисленный возраст, а не дата.</p><div className="personal-date">
@@ -63,5 +63,5 @@ export function PersonalizationPage({ user, value, onSave, onCancel }: { user: S
     <section><h2>Стиль ответа</h2><label>Объём<select value={draft.responseStyle} onChange={(e) => setDraft({ ...draft, responseStyle: e.target.value as UserPersonalization['responseStyle'] })}><option value="brief">Кратко</option><option value="normal">Обычно</option><option value="detailed">Подробно</option><option value="step-by-step">Пошагово</option></select></label></section>
     <section><h2>Тон общения</h2><label>Тон<select value={draft.tone} onChange={(e) => setDraft({ ...draft, tone: e.target.value as UserPersonalization['tone'] })}><option value="neutral">Нейтральный</option><option value="friendly">Дружелюбный</option><option value="business">Деловой</option><option value="plain">Простой, без сложных терминов</option></select></label></section>
     <div className="personal-actions"><Button variant="primary" loading={saving} disabled={!dirty || !valid} onClick={() => { setSaving(true); void onSave({ ...draft, preferredName: draft.preferredName?.trim().replace(/\s+/g, ' ') || null }).finally(() => setSaving(false)) }}>Сохранить</Button><Button variant="secondary" onClick={() => void leave()}>Отменить изменения</Button><Button variant="ghost" onClick={() => setDraft(DEFAULT_PERSONALIZATION)}>Вернуть настройки по умолчанию</Button></div>
-  </main>
+  </section>
 }
