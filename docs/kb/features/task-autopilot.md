@@ -118,6 +118,19 @@ code failure сохраняется новый fix-run, а инфраструк�
 доступному workflow переходит в `decision_required` с `autopilot.stopped`.
 Успешный ран обнуляет последовательность отказов.
 
+Общая проверяемая матрица причин находится в
+`apps/server/src/ci/runAdmission.ts`. Она одинаково описывает development,
+Component QA, Integration Tests, Automated QA и merge: инфраструктурные причины
+(`offline`, отсутствующий toolchain, недоступный origin, ENOSPC) допускают
+продолжение с упавшего шага после восстановления; dirty workspace и незавершённый
+merge сохраняют работу и требуют решения человека; исчерпанный общий бюджет,
+неверная привязка и неизвестная причина fail-closed. `admitPipelineRun`
+проверяет абсолютный workspace, владельца и версию привязки, активную попытку,
+решение, budget и `nextRetryAt`; первый запуск разрешён при нулевом retry-limit.
+`AdmissionReservations` не допускает две одновременные резервации одного
+снимка задачи, а после асинхронного preflight версия привязки должна совпасть с
+проверенной до её атомарной активации.
+
 Регрессия в `apps/server/src/autopilotPipeline.test.ts` воспроизводит
 `ready → development → failed/timeout dirty → ready`, конкурентные board-события
 и отсутствие новых ранов/повторных stop-событий. Границы cooldown и

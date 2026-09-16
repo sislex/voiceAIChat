@@ -1,3 +1,5 @@
+import { classifyPipelineFailure } from './runAdmission.js'
+
 // Правило: когда автопроход возобновляет упавший ран, а когда заводит новый.
 // Вынесено из `server.ts` отдельной функцией, потому что это решение о судьбе
 // уже сделанной работы модели — его нужно видеть в тестах целиком, без реестра
@@ -36,10 +38,8 @@ export const AUTOPILOT_RETRY_BACKOFF_MS = 120_000
  * работа модели осталась незакоммиченной после сна ноутбука). Решение здесь
  * человеческое: сохранить работу повтором с шага коммита или сбросить копию.
  */
-const DIRTY_WORKSPACE = /Рабочая копия содержит локальные изменения/i
-
 export function isDirtyWorkspaceFailure(error: string | null | undefined): boolean {
-  return Boolean(error && DIRTY_WORKSPACE.test(error))
+  return Boolean(error && classifyPipelineFailure(error).code === 'workspace_dirty')
 }
 
 export interface AutopilotRetryInput {
