@@ -18,7 +18,7 @@ export const QA_STAGE_NAME: Record<QaRunStage, string> = {
 const PASS_LABEL: Partial<Record<StageStatus, string>> = { success: 'Завершено', idle: 'Ожидает' }
 
 /** Attempt of any QA stage, normalized for the rail. */
-export interface QaPassAttempt { id: string; attempt: number; status: StageStatus; createdAt: number }
+export interface QaPassAttempt { id: string; attempt: number; status: StageStatus; createdAt: number; error?: string | null | undefined }
 
 export interface NewTaskQaStagesPanelProps {
   projectId: string
@@ -32,15 +32,17 @@ export interface NewTaskQaStagesPanelProps {
 }
 
 export function NewTaskQaStagesPanel(props: NewTaskQaStagesPanelProps): JSX.Element {
+  const [retryActions, setRetryActions] = useState<Record<string, () => void>>({})
+  const onRetryActions = useCallback((actions: Record<string, () => void>) => setRetryActions(actions), [])
   const [attempts, setAttempts] = useState<QaPassAttempt[]>([])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const onComponentState = useCallback((state: ComponentQaTaskState) => {
-    setAttempts(state.runs.map((run) => ({ id: run.id, attempt: run.attempt, status: qaRunStageStatus(run.status), createdAt: run.createdAt })))
+    setAttempts(state.runs.map((run) => ({ id: run.id, attempt: run.attempt, status: qaRunStageStatus(run.status), createdAt: run.createdAt, error: run.summary || run.blockerReasons.join('\n') })))
   }, [])
-  const onRunsChange = useCallback((runs: Array<{ id: string; attempt: number; status: string; createdAt: number }>) => {
+  const onRunsChange = useCallback((runs: Array<{ id: string; attempt: number; status: string; createdAt: number; error?: string | null; failureReason?: string | null; summary?: string }>) => {
     setAttempts(runs.map((run) => ({
-      id: run.id, attempt: run.attempt, createdAt: run.createdAt,
+      id: run.id, attempt: run.attempt, createdAt: run.createdAt, error: run.error || run.failureReason || run.summary,
       // Integration runs use the component vocabulary, automated QA — stage runs.
       status: props.stage === 'integration_tests' ? qaRunStageStatus(run.status as 'passed') : qaStageRunStatus(run.status as 'success')
     })))
@@ -50,8 +52,8 @@ export function NewTaskQaStagesPanel(props: NewTaskQaStagesPanelProps): JSX.Elem
   const selectedAttempt = selected.items.find((run) => run.id === selectedRunId) ?? selected.items[selected.items.length - 1] ?? null
   const name = QA_STAGE_NAME[props.stage]
   const panel = props.stage === 'component_qa'
-    ? <ComponentQaPanel projectId={props.projectId} taskId={props.taskId} active={props.runActive} runId={selectedAttempt?.id ?? null} onStateChange={onComponentState} hideHistory {...(props.onFixStarted ? { onFixStarted: props.onFixStarted } : {})} />
-    : <QaStageRunPanel projectId={props.projectId} taskId={props.taskId} stage={props.stage} runId={selectedAttempt?.id ?? null} onRunsChange={onRunsChange} hideHistory />
+    ? <ComponentQaPanel projectId={props.projectId} taskId={props.taskId} onRetryActions={onRetryActions} active={props.runActive} runId={selectedAttempt?.id ?? null} onStateChange={onComponentState} hideHistory {...(props.onFixStarted ? { onFixStarted: props.onFixStarted } : {})} />
+    : <QaStageRunPanel projectId={props.projectId} taskId={props.taskId} onRetryActions={onRetryActions} stage={props.stage} runId={selectedAttempt?.id ?? null} onRunsChange={onRunsChange} hideHistory />
 
   return <div className="new-task-process" data-testid={`new-task-qa-${props.stage}`}>
     <StageHeading
@@ -60,7 +62,7 @@ export function NewTaskQaStagesPanel(props: NewTaskQaStagesPanelProps): JSX.Elem
       description="Отдельный проход для каждого development-цикла и набора доработок."
       badge={<Badge>{pluralRu(stages.length, 'проход', 'прохода', 'проходов')}</Badge>}
     />
-    <StageRail testId={`new-task-qa-rail-${props.stage}`}>
+    <StageRail testId={`new-task-qa-rail-${props.stage}`} panel={panel}>
       {stages.map((stage, index) => {
         const status = stageStatusOf(stage, (run) => run.status)
         const isSelected = stage.key === selected.key
@@ -69,6 +71,8 @@ export function NewTaskQaStagesPanel(props: NewTaskQaStagesPanelProps): JSX.Elem
           key={stage.key}
           number={stage.number}
           status={status}
+          error={latest?.error}
+          onRetry={latest ? retryActions[latest.id] : undefined}
           statusLabel={PASS_LABEL[status] ?? undefined}
           eyebrow={`Проход ${stage.number}`}
           title={stageTitle(name, stage)}
@@ -92,7 +96,7 @@ export function NewTaskQaStagesPanel(props: NewTaskQaStagesPanelProps): JSX.Elem
               onSelect={setSelectedRunId}
               attempts={stage.items.map((run) => ({ id: run.id, label: `Попытка ${run.attempt}`, status: run.status, at: run.createdAt }))}
             />
-            <div className="new-task-stage-panel">{panel}</div>
+
           </>}
         </StageCard>
       })}

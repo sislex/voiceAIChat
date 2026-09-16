@@ -28,6 +28,8 @@ export interface NewTaskPreparationPanelProps {
 const runStatus = (run: TaskPreparationRun): StageStatus => preparationStageStatus(run.status)
 
 export function NewTaskPreparationPanel(props: NewTaskPreparationPanelProps): JSX.Element {
+  const [retryActions, setRetryActions] = useState<Record<string, () => void>>({})
+  const onRetryActions = useCallback((actions: Record<string, () => void>) => setRetryActions(actions), [])
   const [runs, setRuns] = useState<TaskPreparationRun[]>([])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const onRunsChange = useCallback((next: TaskPreparationRun[]) => setRuns(next), [])
@@ -59,7 +61,7 @@ export function NewTaskPreparationPanel(props: NewTaskPreparationPanelProps): JS
       description="Каждый новый набор доработок готовится отдельно, не перезаписывая исходный Development Brief."
       badge={<Badge>{pluralRu(stages.length, 'этап', 'этапа', 'этапов')}</Badge>}
     />
-    <StageRail testId="new-task-preparation-rail">
+    <StageRail testId="new-task-preparation-rail" panel={<PreparationStageBody stage={selected} status={stageStatusOf(selected, runStatus)} preparation={{ ...props.preparation, onRetryActions }} runFilter={runFilter} onRunsChange={onRunsChange} />}>
       {stages.map((stage, index) => {
         const status = stageStatusOf(stage, runStatus)
         const isSelected = stage.key === selected.key
@@ -67,6 +69,8 @@ export function NewTaskPreparationPanel(props: NewTaskPreparationPanelProps): JS
           key={stage.key}
           number={stage.number}
           status={status}
+          error={stage.items[stage.items.length - 1]?.error}
+          onRetry={retryActions[stage.items[stage.items.length - 1]?.id ?? '']}
           statusLabel={PREPARATION_LABEL[status] ?? undefined}
           eyebrow={`Этап ${stage.number}`}
           title={stage.cycle ? `Подготовка к разработке доработки ${stage.cycle.sequence}` : 'Подготовка задачи по первоначальному описанию'}
@@ -79,9 +83,7 @@ export function NewTaskPreparationPanel(props: NewTaskPreparationPanelProps): JS
           connector={index < stages.length - 1}
           testId={`new-task-preparation-stage-${stage.number}`}
         >
-          {isSelected
-            ? <PreparationStageBody stage={stage} status={status} preparation={props.preparation} runFilter={runFilter} onRunsChange={onRunsChange} />
-            : <StageSummary stage={stage} />}
+          <StageSummary stage={stage} />
         </StageCard>
       })}
     </StageRail>
@@ -107,12 +109,9 @@ function PreparationStageBody({ stage, status, preparation, runFilter, onRunsCha
   const panel = <TaskPreparationTab {...preparation} runFilter={runFilter} onRunsChange={onRunsChange} hideHistory />
   // A finished stage collapses into "Development Brief и результат"; anything
   // still moving or needing a decision stays open like in the Make mock.
-  if (status === 'success' && stage.items.length > 0) {
-    return <details className="new-task-stage-details" open={false}>
-      <summary>Development Brief и результат</summary>
-      <AttemptList ariaLabel="Попытки подготовки" attempts={stage.items.map((run) => ({ id: run.id, label: `Попытка ${run.attempt}`, status: runStatus(run), at: run.createdAt }))} />
-      {panel}
-    </details>
-  }
-  return <div className={'new-task-stage-panel' + (isLiveStageStatus(status) ? ' new-task-stage-live' : '')}>{panel}</div>
+  return <details className={'new-task-stage-details' + (isLiveStageStatus(status) ? ' new-task-stage-live' : '')} open={status !== 'success' || stage.items.length === 0}>
+    <summary>Development Brief и результат</summary>
+    <AttemptList ariaLabel="Попытки подготовки" attempts={stage.items.map((run) => ({ id: run.id, label: `Попытка ${run.attempt}`, status: runStatus(run), at: run.createdAt }))} />
+    {panel}
+  </details>
 }

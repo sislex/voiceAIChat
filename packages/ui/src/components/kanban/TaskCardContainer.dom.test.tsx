@@ -34,6 +34,67 @@ beforeEach(() => {
 })
 
 describe('TaskCardContainer — новая карточка', () => {
+  // @testCase TC3
+  it('passes inline statement changes to the existing task update callback', async () => {
+    const p = props()
+    render(<TaskCardContainer {...p} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Изменить' }))
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'New statement' } })
+    fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'New criteria' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(p.onUpdate).toHaveBeenCalledWith(p.task.id, { description: 'New statement', acceptanceCriteria: 'New criteria' }))
+  })
+
+  // @testCase TC4
+  it('opens and saves the existing draft with unavailable Make paths and attachments intact', async () => {
+    const p = props()
+    const input = { description: 'Existing draft', criteria: ['Criterion'], makeSources: [{ conversationId: 'design', mode: 'files' as const, paths: ['missing.tsx'] }], uploadIds: [] }
+    const raw = await api['tasks:createReworkDraft']({ projectId: p.task.projectId, taskId: p.task.id, input })
+    const cycle = { ...raw, makeSources: [{ ...input.makeSources[0]!, id: 'design', title: 'Design', paths: [{ path: 'missing.tsx', available: false }] }], attachments: [{ id: 'attachment-id', taskId: p.task.id, scope: 'rework_draft' as const, checksum: 'checksum', createdBy: 'alex', createdAt: 1, name: 'brief.pdf', size: 12, mimeType: 'application/pdf', status: 'ready' as const }] }
+    const save = vi.spyOn(api, 'tasks:updateReworkDraft')
+    const files = vi.spyOn(api, 'tasks:reworkMakeFiles').mockResolvedValue([])
+    vi.spyOn(api, 'projects:designSources').mockResolvedValue([{ conversationId: 'design', title: 'Design', owner: 'me', own: true, updatedAt: 1 }])
+    render(<TaskCardContainer {...p} reworkCycles={[cycle]} loadReworkCycles={async () => [{ ...raw, attachments: cycle.attachments }]} />)
+    fireEvent.click(await screen.findByRole('tab', { name: /Доработки/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Изменить' }))
+    expect(screen.getByLabelText('Описание доработки')).toHaveValue('Existing draft')
+    expect(await screen.findByLabelText('missing.tsx')).toBeChecked()
+    expect(screen.getByText('brief.pdf')).toBeInTheDocument()
+    expect(files).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ cycleId: cycle.id, input: { ...input, uploadIds: ['attachment-id'] } })))
+  })
+
+  // @testCase TC5
+  it('opens the feed and announces cancellation only after the confirmed request resolves', async () => {
+    const p = props({ ciSummary: { id: 'active', taskId: 'task-1', status: 'running', error: null, slotProgress: { phase: 'model', done: 0, total: 1 }, durationMs: null, modelActive: true, awaitingInput: false } })
+    let resolve!: () => void
+    const cancel = vi.spyOn(window.ci!, 'cancelRun').mockImplementation(() => new Promise<{ ok: boolean }>((done) => { resolve = () => done({ ok: true }) }))
+    render(<TaskCardContainer {...p} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть ленту' }))
+    expect(screen.getByRole('tab', { name: /Лента рана/ })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Остановить ран' })[0]!)
+    fireEvent.click(await screen.findByRole('button', { name: 'Отмена' }))
+    expect(cancel).not.toHaveBeenCalled()
+    expect(screen.queryByText('Ран остановлен')).toBeNull()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Остановить ран' })[0]!)
+    fireEvent.click(await screen.findByRole('button', { name: 'Остановить' }))
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith('active'))
+    expect(screen.queryByText('Ран остановлен')).toBeNull()
+    resolve()
+    expect(await screen.findByText('Ран остановлен')).toBeInTheDocument()
+  })
+
+  // @testCase TC6
+  it('does not announce a rejected cancellation as success', async () => {
+    vi.spyOn(window.ci!, 'cancelRun').mockRejectedValue(new Error('Cancel failed'))
+    render(<TaskCardContainer {...props({ ciSummary: { id: 'active', taskId: 'task-1', status: 'running', error: null, slotProgress: { phase: 'model', done: 0, total: 1 }, durationMs: null, modelActive: true, awaitingInput: false } })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Остановить ран' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Остановить' }))
+    await waitFor(() => expect(window.ci!.cancelRun).toHaveBeenCalledOnce())
+    expect(screen.queryByText('Ран остановлен')).toBeNull()
+  })
+
   it('вкладки отдают панели старой карточки', async () => {
     render(<TaskCardContainer {...props()} />)
     fireEvent.click(await screen.findByRole('tab', { name: /Настройки/ }))

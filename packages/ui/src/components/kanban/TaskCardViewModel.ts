@@ -60,6 +60,7 @@ export interface TaskCardWorkflowStepViewModel {
    * the model stays a plain snapshot and the timer survives re-renders.
    */
   startedAt?: number | null
+  finishedAt?: number | null
 }
 
 /** Link (or replacement) of a Make design collected by the inline editor. */
@@ -150,6 +151,7 @@ export interface TaskReworkDraft {
 }
 
 export interface TaskCardCallbacks {
+  onUpdate?(fields: { description: string; acceptanceCriteria: string }): void | Promise<void>
   onClose(): void
   onChangeTab(tab: TaskCardTab): void
   onOpenRun(runId: string): void

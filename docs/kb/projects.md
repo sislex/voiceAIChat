@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-12
-checked: d4776edc
+updated: 2026-09-13
+checked: d9864647
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1834,8 +1834,31 @@ merge) идут через тот же код, второй копии логи�
 подготовки `preparationRunId` цикла пересиливает время. Словарь статусов один на все
 вкладки (`StageStatus` + `STAGE_STATUS_LABEL`, конвертеры `ciStageStatus`,
 `qaRunStageStatus`, `qaStageRunStatus`, `mergeStageStatus`, `qaSessionStageStatus`,
-`preparationStageStatus`); тон бейджа — `stageStatusTone`. Панель одна на вкладку и
-стоит в выбранном этапе; остальные этапы показывают сводку и кнопку «Показать».
+`preparationStageStatus`); тон бейджа — `stageStatusTone`. Each open tab owns one
+panel through a stable `StageRail` portal. Its DOM host moves to the selected
+`StageCard` slot; the React portal and panel instance stay in the same place in
+the React tree. Changing a stage may load another attempt, but does not reload
+the panel's shared state. Other stages retain summaries and the “Показать” action.
+The preparation panel also keeps the same details wrapper across status changes.
+
+**CHAT-449 (2026-09-12).** The current statement edits inline through the existing
+`onUpdate` callback; both textareas use `useAutoGrow`, cancellation discards local
+changes, and rejected saves retain the text. Draft editing reuses the existing
+sidebar and update bridge, including attachment IDs and unavailable Make paths.
+Drafts sort newest first or by ascending sequence; the tab shows the selected
+draft count. Workflow renders valid start/end timestamps with `time` and `title`;
+on mobile it follows the main column inside a closed “Workflow и задача” details.
+The progress overview maps actual `TaskTimeline.stages` durations to available tabs.
+Stage errors use the latest attempt of that cycle; retry actions are supplied by
+the functional panels and retain their availability checks. The title expands
+on click, copying the key reports success only after Clipboard resolves, and
+the active banner opens the run-feed tab. Cancellation retains confirmation and
+reports success only after the bridge succeeds. Empty drafts and absent runs
+offer an available next action. Regression coverage lives beside the components
+with TC1–TC8 markers; the three new stories are StatementEditing, StageWithError,
+and MobileRail. The browser check is
+`node packages/ui/src/components/kanban/NewTaskCardView.browser.mjs` after
+`npm run build:storybook`; it checks axe and layout at 1280px and 390px.
 
 По вкладкам: «Подготовка» — этапы подготовки с формой запуска прямо в этапе без
 попыток (фильтр `runFilter` по диапазону времени цикла, а не по id — новый ран

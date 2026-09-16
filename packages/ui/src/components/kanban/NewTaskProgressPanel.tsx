@@ -14,9 +14,11 @@ import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { formatDateTime } from '../../lib/dateFormat'
 import { TaskTimeline } from './TaskTimeline'
 import { AttemptList, MetricTiles, StageCard, StageHeading, StageRail } from './NewTaskStages'
-import type { TaskReworkCycleViewModel } from './TaskCardViewModel'
+import type { TaskTimeline as TaskTimelineData } from '@shared/timeline'
+import type { TaskCardTab, TaskReworkCycleViewModel } from './TaskCardViewModel'
 import { assignToCycles, ciStageStatus, pluralRu, stageStatusOf, type CycleStage, type StageStatus } from './taskCycles'
 
+type EmptyAction = { actionLabel?: string; onAction?: () => void }
 type ProgressSection = 'overview' | 'model' | 'checks' | 'kb' | 'resources' | 'timeline'
 const SECTIONS: Array<{ id: ProgressSection; label: string }> = [
   { id: 'overview', label: 'Обзор' },
@@ -40,6 +42,9 @@ export interface NewTaskProgressPanelProps {
   /** Queue a development run — the card offers it when nothing is running. */
   onStartCi?: () => void | Promise<void>
   canStart?: boolean
+  timeline?: TaskTimelineData | null
+  tabs?: TaskCardTab[]
+  onChangeTab?: (tab: TaskCardTab) => void
 }
 
 const runStatus = (run: CiRunReport): StageStatus => ciStageStatus(run.status)
@@ -85,6 +90,12 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
     try { await props.onStartCi() } finally { setLaunching(false) }
   }
 
+  const emptyAction: EmptyAction = canStart
+    ? { actionLabel: 'Начать разработку', onAction: () => void launch() }
+    : props.tabs?.includes('preparation') && props.onChangeTab
+      ? { actionLabel: 'Открыть подготовку', onAction: () => props.onChangeTab?.('preparation') }
+      : {}
+
   if (loading && !report) return <div className="new-task-process" data-testid="new-task-progress">
     <span className="vc-sr-only" aria-live="polite">Загрузка хода выполнения…</span>
     <Skeleton variant="list" count={3} item="block" height={96} gap={10} />
@@ -94,6 +105,7 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
   return <div className="new-task-process" data-testid="new-task-progress">
     <SubTabs items={SECTIONS} value={section} onChange={setSection} ariaLabel="Разделы хода выполнения" className="new-task-subtabs" />
     {section === 'overview' && <>
+      <MiniTimeline timeline={props.timeline ?? null} tabs={props.tabs ?? []} onChangeTab={props.onChangeTab} />
       <StageHeading
         eyebrow="Development-циклы"
         title="Этапы выполнения"
@@ -104,7 +116,10 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
         </div>}
       />
       {error && <ErrorState compact message="Не удалось обновить ход выполнения" detail={error} onRetry={() => void load()} />}
-      <StageRail testId="new-task-progress-rail">
+      <StageRail testId="new-task-progress-rail" panel={<details className="new-task-stage-details" open={selectedRun?.status === 'running'}>
+        <summary>Лента и результаты этапа</summary>
+        {selectedRun && <DevelopmentRunFeed runId={selectedRun.runId} onDone={() => void load()} />}
+      </details>}>
         {stages.map((stage, index) => {
           const status = stageStatusOf(stage, runStatus)
           const isSelected = stage.key === selected.key
@@ -114,6 +129,8 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
             key={stage.key}
             number={stage.number}
             status={status}
+            error={props.timeline?.stages.flatMap((item) => item.attempts).find((attempt) => attempt.runs.some((run) => run.id === latest?.runId))?.reason?.message}
+            onRetry={canStart ? () => void launch() : undefined}
             statusLabel={DEVELOPMENT_LABEL[status] ?? undefined}
             eyebrow={`Этап ${stage.number}`}
             title={stage.cycle ? `Разработка доработки ${stage.cycle.sequence}` : 'Разработка первоначальной постановки'}
@@ -125,10 +142,7 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
             onSelect={() => { setSelectedKey(stage.key); setSelectedRunId(null) }}
             connector={index < stages.length - 1}
             testId={`new-task-progress-stage-${stage.number}`}
-            {...(isSelected && shown ? {
-              detailsSummary: 'Лента и результаты этапа',
-              details: <DevelopmentRunFeed runId={shown.runId} onDone={() => void load()} />
-            } : {})}
+
           >
             {stage.cycle && <div className="new-task-sent-reworks new-task-sent-reworks--title"><b>Реализуемые доработки</b></div>}
             {shown
@@ -138,7 +152,7 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
                 { label: 'Проверки', value: checkSteps(shown).length ? `${checkSteps(shown).filter((step) => step.status === 'success').length}/${checkSteps(shown).length}` : '—' },
                 { label: 'Время', value: fmtDuration(shown.durationMs) }
               ]} />
-              : <p className="new-task-stage-summary">Development-ран этого этапа ещё не запускался.</p>}
+              : <EmptyState compact title="Development-ран этого этапа ещё не запускался." description="Начните следующий доступный шаг задачи." {...emptyAction} />}
             {isSelected && <AttemptList
               ariaLabel="Раны этапа"
               selectedId={shown?.runId ?? null}
@@ -151,16 +165,35 @@ export function NewTaskProgressPanel(props: NewTaskProgressPanelProps): JSX.Elem
     </>}
     {section === 'model' && (selectedRun
       ? <DevelopmentRunFeed runId={selectedRun.runId} onDone={() => void load()} />
-      : <EmptyState compact icon="⏱" title="Запусков ещё нет" description="Лента модели появится после первого development-рана." />)}
-    {section === 'checks' && <ChecksSection stages={stages} />}
+      : <EmptyState compact icon="⏱" title="Запусков ещё нет" description="Лента модели появится после первого development-рана." {...emptyAction} />)}
+    {section === 'checks' && <ChecksSection stages={stages} emptyAction={emptyAction} />}
     {section === 'kb' && <KbSection projectId={props.projectId} taskId={props.taskId} />}
-    {section === 'resources' && <ResourcesSection report={report} />}
+    {section === 'resources' && <ResourcesSection report={report} emptyAction={emptyAction} />}
     {section === 'timeline' && <TaskTimeline projectId={props.projectId} taskId={props.taskId} />}
   </div>
 }
 
+export function MiniTimeline({ timeline, tabs, onChangeTab }: { timeline: TaskTimelineData | null; tabs: TaskCardTab[]; onChangeTab: NewTaskProgressPanelProps['onChangeTab'] }): JSX.Element {
+  const target: Record<string, TaskCardTab> = { task_preparation: 'preparation', development: 'progress', component_qa: 'component_qa', integration_tests: 'integration_tests', automated_qa: 'automated_qa', manual_qa: 'manual_qa', merge: 'merge' }
+  const stages = timeline?.stages ?? []
+  if (!stages.length) return <EmptyState compact title="Таймлайн пока пуст" description="Длительности появятся после начала этапов." />
+  return <nav className="new-task-mini-timeline" aria-label="Длительности этапов">
+    {stages.map((stage) => {
+      const tab = target[stage.type]
+      const duration = stage.calendarDuration ?? stage.activeDuration
+      const known = duration != null && Number.isFinite(duration) && duration >= 0
+      return <Button key={stage.id} size="sm" title={stage.title + (known ? ' · ' + fmtDuration(duration) : '')}
+        style={{ flexGrow: known ? duration : 0, flexBasis: '70px' }}
+        disabled={!tab || !tabs.includes(tab) || !onChangeTab} aria-current={stage.status === 'running' ? 'step' : undefined}
+        onClick={() => { if (tab && tabs.includes(tab)) onChangeTab?.(tab) }}>
+        {stage.title}{known ? ' · ' + fmtDuration(duration) : ''}
+      </Button>
+    })}
+  </nav>
+}
+
 /** Every command step of every run: what the pipeline checked and how it ended. */
-function ChecksSection({ stages }: { stages: CycleStage<CiRunReport>[] }): JSX.Element {
+function ChecksSection({ stages, emptyAction }: { stages: CycleStage<CiRunReport>[]; emptyAction: EmptyAction }): JSX.Element {
   const rows = stages.flatMap((stage) => stage.items.flatMap((run) => checkSteps(run).map((step) => ({
     id: `${run.runId}-${step.id}`,
     name: step.title,
@@ -168,7 +201,7 @@ function ChecksSection({ stages }: { stages: CycleStage<CiRunReport>[] }): JSX.E
     tone: TABLE_TONE[ciTone(step.status)],
     detail: `Этап ${stage.number} · ${formatDateTime(run.createdAt)}${step.durationMs != null ? ` · ${fmtDuration(step.durationMs)}` : ''}${step.exitCode != null ? ` · exit ${step.exitCode}` : ''}`
   }))))
-  if (!rows.length) return <EmptyState compact icon="✓" title="Проверок пока не было" description="Команды воркфлоу появятся здесь после первого рана." />
+  if (!rows.length) return <EmptyState compact icon="✓" title="Проверок пока не было" description="Команды воркфлоу появятся здесь после первого рана." {...emptyAction} />
   return <ResultTable caption="Проверки ранов" resultLabel="Итог" rows={rows} />
 }
 
@@ -189,8 +222,8 @@ function KbSection({ projectId, taskId }: { projectId: string; taskId: string })
   return <KbUsageBrief title="База знаний в ранах задачи" totals={usage.totals} sections={usage.sections} recent={usage.recent} note={`по ${pluralRu(usage.runs, 'рану', 'ранам', 'ранам')} задачи`} />
 }
 
-function ResourcesSection({ report }: { report: CiTaskReport | null }): JSX.Element {
-  if (!report || !report.runs.length) return <EmptyState compact icon="∑" title="Расхода пока нет" description="Ходы модели и время появятся после первого рана." />
+function ResourcesSection({ report, emptyAction }: { report: CiTaskReport | null; emptyAction: EmptyAction }): JSX.Element {
+  if (!report || !report.runs.length) return <EmptyState compact icon="∑" title="Расхода пока нет" description="Ходы модели и время появятся после первого рана." {...emptyAction} />
   const cost = report.totals.costUsd == null ? '—' : `${report.totals.costEstimated ? '≈ ' : ''}$${report.totals.costUsd.toFixed(2)}`
   return <div className="new-task-resources">
     <MetricGrid items={[
