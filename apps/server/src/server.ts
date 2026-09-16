@@ -349,7 +349,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const sessionSecret =
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
-  await db.identity.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
+  // Preview may request migrations without the default test account.
+  if (!(process.env.VC_DEVELOPMENT_PREVIEW === 'true' && process.env.VC_PREVIEW_SEED === 'none')) {
+    await db.identity.ensureAdmin(opts.config.adminPassword)
+  }
   // Мейлер один на приложение: им пользуются и подтверждение регистрации, и
   // приглашения в проект. Без VC_SMTP_URL это «консольный» мейлер — письмо
   // уходит в лог, и оба потока остаются проверяемыми на стенде.

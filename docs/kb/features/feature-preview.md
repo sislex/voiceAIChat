@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
-updated: 2026-09-10
-checked: 8c54ade4
+updated: 2026-09-12
+checked: d9864647
 areas:
   - packages/shared/src/preview.ts
   - packages/shared/src/projects.ts
@@ -22,6 +22,10 @@ areas:
 ---
 
 # Feature-preview окружения задач
+
+## Development-run preview
+
+The opt-in development preview in `ci/developmentPreview*.ts` is separate from `FeaturePreviewManager`. It snapshots current tracked and non-ignored worktree files, records HEAD and a source/configuration digest, and creates disposable resources keyed by project/task/run. It never uses the committed preview checkout, existing preview volumes or production Compose configuration. Restart recreates its source snapshot, test volume and scoped grant. See [CI runner](ci-runner.md#development-preview-chat-447) and [deployment](../deploy.md#development-preview-operation) for configuration and limitations.
 
 ## Назначение и запуск
 

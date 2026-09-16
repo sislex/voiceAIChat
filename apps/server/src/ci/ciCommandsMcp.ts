@@ -4,6 +4,7 @@
 // Каждый вызов = вложенный шаг ленты рана (создаётся раннером через runCommandById).
 
 import { z } from 'zod'
+import { PREVIEW_OPERATIONS, type DevelopmentPreviewOperation } from '@voicechat/shared'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -12,6 +13,7 @@ export const CI_COMMANDS_MCP_PATH = '/mcp/ci-commands'
 
 /** Что раннер публикует модели на время шага «работа модели». */
 export interface CiToolEntry {
+  preview?(operation: DevelopmentPreviewOperation): Promise<unknown>
   list(): Array<{ name: string; description: string }>
   invoke(name: string): Promise<{ output: string; exitCode: number | null; message?: string }>
   /** Доступен только во время fix-loop; реализация проверяет, что команда точечная. */
@@ -75,6 +77,12 @@ export function registerCiCommandsMcp(app: FastifyInstance, secret: string): voi
         return { content: [{ type: 'text', text: `${r.output}\n${tail}`.trim() }], isError: r.exitCode !== 0 }
       }
     )
+
+    if (entry?.preview) for (const operation of PREVIEW_OPERATIONS) {
+      server.registerTool('preview_' + operation, { description: 'Managed isolated development preview: ' + operation + '. Results include readiness, exact URL and failure policy.', inputSchema: {} }, async () => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(await entry.preview!(operation)) }]
+      }))
+    }
 
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     reply.hijack()

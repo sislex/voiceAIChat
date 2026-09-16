@@ -7,6 +7,23 @@ import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 describe('CiTaskSettings', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
+  it('defaults to continue and saves preview independently of browser mode', async () => {
+    const ci = createFakeCi()
+    const save = vi.spyOn(ci, 'putTaskCi')
+    window.ci = ci
+    render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    await waitFor(() => expect(screen.queryByText('Загрузка этапов…')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Продолжить при недоступности')).toBeChecked()
+    expect(screen.getByLabelText('Поднимать тестовое Docker-окружение')).not.toBeChecked()
+    fireEvent.click(screen.getByLabelText('Поднимать тестовое Docker-окружение'))
+    fireEvent.click(screen.getByLabelText('Продолжить при недоступности'))
+    fireEvent.click(screen.getByRole('button', {name:'Сохранить проверку'}))
+    await waitFor(() => expect(save).toHaveBeenCalledWith('p1','t1',expect.objectContaining({
+      developmentPreview:expect.objectContaining({enabled:true,database:{mode:'isolated-test',seed:'default'}}),
+      browserCheck:expect.objectContaining({mode:'off',failurePolicy:'block'})
+    })))
+  })
+
   // Секции карточки настроек были `span`-ами, а в заголовке стояло английское
   // «InProgress» посреди русского интерфейса.
   it('называет секции по-русски и делает их заголовками', async () => {
