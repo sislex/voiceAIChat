@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-09
-checked: c8fcb5e8
+updated: 2026-09-12
+checked: d9864647
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -77,6 +77,18 @@ packages:
 ---
 
 # CI-раннер канбана
+
+## Development preview (CHAT-447)
+
+Development preview is independent of the committed feature-preview lifecycle. Settings live in shared `developmentPreview.ts`; task GET/PUT CI returns `developmentPreview` alongside `browserCheck`. Legacy rows keep preview disabled and normalize the browser failure policy to `continue`. Both settings are stored in the existing `ci_task_browser_checks.check_json` document.
+
+`DevelopmentPreviewManager` registers the active model-work identity, publishes lifecycle snapshots into the persisted realtime system log, and exposes `preview_start/status/logs/restart/stop` through the run-scoped CI MCP broker. Model-work receives the selected application, startup route, readiness, exact URL when available, and failure policy. Failed preview/browser checks receive a bounded repair turn; `continue` accepts model-work with warning, while `block` rejects successful completion. The model's final text cannot supply passing evidence. Finishing model-work stops the environment and revokes its grant.
+
+The manager persists handles without credentials in `development-previews.json`, serializes mutations, aborts startup before stop, reconciles active entries on restart, and retries cleanup through a 30-second collector. TTL is capped at two hours. This collector manages known persisted entries; it does not scan unrelated Docker resources.
+
+Default core previews build `@voicechat/web` from the sanitized source snapshot in a separate network-disabled build service, then serve `apps/web/dist` through `VC_WEB_DIR`. Browser-only checks also enforce the selected continue/block policy through the trusted browser adapter after bounded repair turns.
+
+Current limits: scoped generation supports Claude only; Codex is deliberately rejected until a verified tool-free invocation exists. Browser verification still requires the model to open the exact task URL first. The runtime uses an operator-pinned dependency image; dependency changes requiring a new image are not rebuilt automatically.
 
 Выполнение переиспользуемых серверных команд вокруг работы модели обычным действием
 «В очередь» на карточке задачи: команды слота **до** → работа модели → команды

@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-11
-checked: 06b025e0
+updated: 2026-09-12
+checked: d9864647
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -12,6 +12,14 @@ areas:
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## Development preview data isolation
+
+The development runtime constructs its own environment allowlist and a new `test-data` volume for each incarnation. It never accepts an external DSN, database host or existing volume through task configuration. Source snapshots exclude dotenv files, CLI/SSH directories, credential documents, database/backup files and symbolic links. They reject pre-existing snapshot roots. No production data directory is mounted.
+
+Core preview initializes its normal SQLite schema in `/preview-data`. The default seed creates the normal admin account using a per-incarnation random password; `VC_DEVELOPMENT_PREVIEW=true` together with `VC_PREVIEW_SEED=none` suppresses that account. Credentials are not returned in preview status or evidence. Other applications remain responsible for their migration/seed startup code inside the isolated volume.
+
+Task preview settings reuse the CI browser-settings JSON record; no schema migration or production database copy is performed. Browser settings updates preserve the preview configuration.
 
 ## Схема
 

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-10
-checked: 8c54ade4
+updated: 2026-09-12
+checked: d9864647
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -17,6 +17,14 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Development preview contracts
+
+Shared `developmentPreview.ts` defines settings, lifecycle/result states, diagnostics, evidence and preview operations. Task CI GET/PUT exposes `developmentPreview` separately from `browserCheck.failurePolicy`. Unknown preview environment/DSN/volume fields are rejected with HTTP 400 before settings changes.
+
+`GET /api/ci/runs/:runId/development-preview` returns the authorized run's state. POST accepts only `restart` or `stop`, checks the run initiator and requires an active run. The optional renderer CI bridge method uses these routes. Lifecycle JSON is persisted and broadcast through existing `ci.log` system events, and RunFeed renders its status, diagnostics, preview/screenshot links and actions.
+
+The CI MCP broker publishes `preview_start`, `preview_status`, `preview_logs`, `preview_restart`, `preview_stop` only for a registered development preview. These tools accept no caller-provided paths, tokens or Compose configuration.
 
 ## Коды ошибок и текст для человека
 

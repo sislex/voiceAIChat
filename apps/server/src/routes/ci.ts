@@ -5,7 +5,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision, CiUsageKind, CiStageLlmSelection, CiTaskMachines } from '@voicechat/shared'
-import { CI_USAGE_KINDS } from '@voicechat/shared'
+import { CI_USAGE_KINDS, developmentPreviewValidationError } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import { requireProjectPermission, uid } from '../users/auth.js'
@@ -230,17 +230,23 @@ export function registerCiRoutes(
       overridden: await db.ci.hasCiSlotConfig('task', req.params.taskId),
       projectDefault: await db.ci.getCiSlotConfig('project', req.params.id),
       enabledStages: await db.ci.getTaskProcessStages(req.params.taskId),
-      browserCheck: await db.ci.getTaskBrowserCheck(req.params.taskId)
+      browserCheck: await db.ci.getTaskBrowserCheck(req.params.taskId),
+      developmentPreview: await db.ci.getTaskDevelopmentPreview(req.params.taskId)
     }
   })
-  app.put<{ Params: { id: string; taskId: string }; Body: { beforeModel?: string[]; afterModel?: string[]; enabledStages?: unknown; browserCheck?: unknown } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
+  app.put<{ Params: { id: string; taskId: string }; Body: { beforeModel?: string[]; afterModel?: string[]; enabledStages?: unknown; browserCheck?: unknown; developmentPreview?: unknown } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
     if (!await db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     const b = req.body ?? {}
+    if (b.developmentPreview !== undefined) {
+      const error = developmentPreviewValidationError(b.developmentPreview)
+      if (error) return reply.code(400).send({ error })
+    }
     const slots: Array<[CiSlot, string[] | undefined]> = [['before_model', b.beforeModel], ['after_model', b.afterModel]]
     for (const [slot, ids] of slots) if (ids) await db.ci.setCiSlotCommands('task', req.params.taskId, slot, ids)
     const enabledStages = b.enabledStages === undefined ? await db.ci.getTaskProcessStages(req.params.taskId) : await db.ci.setTaskProcessStages(req.params.taskId, b.enabledStages)
     const browserCheck = b.browserCheck === undefined ? await db.ci.getTaskBrowserCheck(req.params.taskId) : await db.ci.setTaskBrowserCheck(req.params.taskId, b.browserCheck)
-    return { ...await db.ci.resolveTaskSlots(req.params.id, req.params.taskId), enabledStages, browserCheck }
+    const developmentPreview = b.developmentPreview === undefined ? await db.ci.getTaskDevelopmentPreview(req.params.taskId) : await db.ci.setTaskDevelopmentPreview(req.params.taskId, b.developmentPreview)
+    return { ...await db.ci.resolveTaskSlots(req.params.id, req.params.taskId), enabledStages, browserCheck, developmentPreview }
   })
 
   // --- Запуск / отмена / повтор рана ---
