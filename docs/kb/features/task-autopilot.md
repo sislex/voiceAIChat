@@ -1,11 +1,12 @@
 ---
 title: Автопроход задачи по QA-конвейеру
-updated: 2026-09-11
-checked: 55104903
+updated: 2026-09-16
+checked: d76642f9
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/kanban/module.ts
   - apps/server/src/db/repos/tasks.ts
+  - apps/server/src/db/repos/qa.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/routes/projects.ts
@@ -16,6 +17,7 @@ areas:
   - apps/server/src/ci/modelHooks.ts
   - packages/ui/src/components/kanban/TaskCard.tsx
   - packages/ui/src/components/kanban/TaskModal.tsx
+  - packages/ui/src/components/ci/RunFeed.tsx
   - packages/ui/src/components/ProjectSettings.tsx
 ---
 
