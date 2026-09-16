@@ -9,11 +9,13 @@ const input = (over: Partial<Parameters<typeof shouldResumeAfterInfraFailure>[0]
   ({ status: 'failed', infraErrors: 1, resumes: 0, limit: 3, ...over })
 
 describe('возобновление рана после сбоя машины', () => {
+  // @testCase TC-4
   it('упавший по вине машины ран продолжается с того же шага', () => {
     expect(shouldResumeAfterInfraFailure(input())).toBe(true)
     expect(shouldResumeAfterInfraFailure(input({ status: 'timeout' }))).toBe(true)
   })
 
+  // @testCase TC-4
   it('дефект кода возобновлением не лечится: этим занимается fix-loop', () => {
     expect(shouldResumeAfterInfraFailure(input({ infraErrors: 0 }))).toBe(false)
   })
@@ -39,6 +41,7 @@ describe('перезапуск development-рана', () => {
     expect(isDirtyWorkspaceFailure(null)).toBe(false)
   })
 
+  // @testCase TC-3
   it('между перезапусками выдерживается пауза', () => {
     const now = 1_000_000
     expect(retryAllowedNow({ finishedAt: now - AUTOPILOT_RETRY_BACKOFF_MS, now })).toBe(true)

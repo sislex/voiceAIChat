@@ -128,6 +128,20 @@ describe('CI console and slots', () => {
 
 describe('RunFeed navigation', () => {
   afterEach(() => { window.history.replaceState(null, '', window.location.pathname); sessionStorage.clear() })
+
+  // @testCase TC-5
+  it('shows a dirty-workspace stop with the run and safe manual actions', () => {
+    const cache: RunFeedCache = {
+      detail: { run: mkRun({ id: 'dirty-run', status: 'failed', error: 'Рабочая копия содержит локальные изменения: /repo' }), steps: [], fixAttempts: [], interactions: [] },
+      log: [], conclusion: null
+    }
+    render(<RunFeed {...baseProps(cache)} />)
+    const stop = screen.getByRole('alert', { name: 'Автопроход остановлен' })
+    expect(stop).toHaveTextContent('несохранённые изменения')
+    expect(stop).toHaveTextContent('dirty-run')
+    expect(stop).toHaveTextContent('вручную продолжите подходящий шаг')
+    expect(stop).toHaveTextContent('только после явного подтверждения')
+  })
   const navigationCache = (): RunFeedCache => ({
     detail: { run: mkRun({ status: 'failed' }), steps: [
       mkStep({ id: 'ok', title: 'Install', status: 'success', kind: 'command', position: 0 }),
