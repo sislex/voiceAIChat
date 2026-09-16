@@ -113,6 +113,7 @@ it('normalizes only absent decision references and preserves compatible nulls an
   expect(original.decisions[0].questionId).toBeNull()
 })
 
+// @testCase TC-8
 // @testCase T12
 // @testCase T13
 // @testCase TC-BRIEF-02
@@ -120,6 +121,8 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
   expect(() => preparationJsonObject(input)).toThrow()
 })
 
+// @testCase TC-6
+// @testCase TC-7
 // @testCase TC-BRIEF-REGRESSION
 // @testCase TC-BRIEF-03
 // @testCase T13
