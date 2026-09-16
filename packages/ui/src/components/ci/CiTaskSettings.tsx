@@ -1,7 +1,8 @@
 // CI-настройки задачи: команды и наследуемый движок/модель.
+import { DEFAULT_DEVELOPMENT_PREVIEW, type DevelopmentPreviewSettings } from '@shared/developmentPreview'
 import { useEffect, useState, type JSX } from 'react'
-import type { CiBrowserCheck, CiBrowserCheckMode, CiCommand, CiClarifyLevel, CiLlmConfig, CiProcessStage, CiRunMode, CiSlotConfig, CiTaskMachine, DevelopmentPreviewSettings } from '@shared/ci'
-import { CI_BROWSER_CHECK_MODES, CI_BROWSER_CHECK_MODE_LABELS, CI_CLARIFY_MAX_LIMIT, CI_PROCESS_STAGES, CI_PROCESS_STAGE_LABELS, DEFAULT_CI_BROWSER_CHECK, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG, DEFAULT_DEVELOPMENT_PREVIEW } from '@shared/ci'
+import type { CiBrowserCheck, CiBrowserCheckMode, CiCommand, CiClarifyLevel, CiLlmConfig, CiProcessStage, CiRunMode, CiSlotConfig, CiTaskMachine } from '@shared/ci'
+import { CI_BROWSER_CHECK_MODES, CI_BROWSER_CHECK_MODE_LABELS, CI_CLARIFY_MAX_LIMIT, CI_PROCESS_STAGES, CI_PROCESS_STAGE_LABELS, DEFAULT_CI_BROWSER_CHECK, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -39,7 +40,8 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [machinesKey, setMachinesKey] = useState<string | null>(null)
   const [enabledStages, setEnabledStages] = useState<CiProcessStage[]>([...CI_PROCESS_STAGES])
   const [browserCheck, setBrowserCheck] = useState<CiBrowserCheck>({ ...DEFAULT_CI_BROWSER_CHECK })
-  const [developmentPreview, setDevelopmentPreview] = useState<DevelopmentPreviewSettings>(structuredClone(DEFAULT_DEVELOPMENT_PREVIEW))
+  const [developmentPreview, setDevelopmentPreview] = useState<DevelopmentPreviewSettings>({ ...DEFAULT_DEVELOPMENT_PREVIEW })
+  const changePreview = (patch: Partial<DevelopmentPreviewSettings>): void => { setDevelopmentPreview((old) => ({ ...old, ...patch })); setBrowserSaved(false); setBrowserError(null) }
   const [browserSaved, setBrowserSaved] = useState(true)
   const [browserError, setBrowserError] = useState<string | null>(null)
   const [stagesLoading, setStagesLoading] = useState(true)
@@ -64,7 +66,8 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
         if (cancelled) return
         setBefore(r.config.beforeModel); setAfter(r.config.afterModel); setOverridden(r.overridden)
         setEnabledStages(r.enabledStages); setStagesLoading(false); setStagesError(null)
-        setBrowserCheck(r.browserCheck); setDevelopmentPreview(r.developmentPreview); setBrowserSaved(true); setBrowserError(null)
+        setDevelopmentPreview(r.developmentPreview ?? { ...DEFAULT_DEVELOPMENT_PREVIEW })
+        setBrowserCheck(r.browserCheck); setBrowserSaved(true); setBrowserError(null)
       }).catch((error: unknown) => {
         if (!cancelled) { setStagesLoading(false); setStagesError(error instanceof Error ? error.message : String(error)) }
       })
@@ -126,7 +129,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const saveBrowserCheck = (): void => {
     setBrowserError(null)
     void window.ci?.putTaskCi(props.projectId, props.taskId, { browserCheck, developmentPreview })
-      .then((result) => { setBrowserCheck(result.browserCheck); setDevelopmentPreview(result.developmentPreview); setBrowserSaved(true) })
+      .then((result) => { setBrowserCheck(result.browserCheck); setBrowserSaved(true) })
       .catch((error: unknown) => setBrowserError(error instanceof Error ? error.message : String(error)))
   }
   const access = props.llmAccess ?? []
@@ -159,33 +162,23 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     </div>}
     {!stagesSaved && <Button variant="primary" className="ci-task-save" onClick={saveStages}>Сохранить этапы</Button>}
     {stagesError && <div className="ci-warn" role="alert">Не удалось сохранить этапы: {stagesError}</div>}
-    <div className="ci-task-head"><h3 className="ci-task-title">Docker preview</h3></div>
-    <p className="ci-task-hint">Изолированное окружение создаётся отдельно для каждого development run. Старые задачи остаются без preview.</p>
-    <div className="ci-task-browser">
-      <label><input type="checkbox" checked={developmentPreview.enabled} onChange={(event) => {
-        setDevelopmentPreview({ ...developmentPreview, enabled: event.target.checked }); setBrowserSaved(false)
-      }} />Включить Docker preview</label>
-      {developmentPreview.enabled && <>
-        <label>Приложение<input aria-label="Приложение preview" value={developmentPreview.application} onChange={(event) => {
-          setDevelopmentPreview({ ...developmentPreview, application: event.target.value }); setBrowserSaved(false)
-        }} /></label>
-        <label>Команда запуска<input aria-label="Команда запуска preview" value={developmentPreview.startCommand} placeholder="из каталога приложений" onChange={(event) => {
-          setDevelopmentPreview({ ...developmentPreview, startCommand: event.target.value }); setBrowserSaved(false)
-        }} /></label>
-        <label>Порт контейнера<input aria-label="Порт контейнера preview" type="number" min={1} max={65535} value={developmentPreview.containerPort} onChange={(event) => {
-          setDevelopmentPreview({ ...developmentPreview, containerPort: Number(event.target.value) }); setBrowserSaved(false)
-        }} /></label>
-        <label>Health path<input aria-label="Health path preview" value={developmentPreview.healthPath} onChange={(event) => {
-          setDevelopmentPreview({ ...developmentPreview, healthPath: event.target.value }); setBrowserSaved(false)
-        }} /></label>
-        <label>Тестовая БД<select aria-label="Тестовая БД preview" value={developmentPreview.database.mode} onChange={(event) => {
-          setDevelopmentPreview({ ...developmentPreview, database: { ...developmentPreview.database, mode: event.target.value as 'isolated-test' | 'none' } }); setBrowserSaved(false)
-        }}><option value="isolated-test">Изолированная test DB</option><option value="none">Не нужна</option></select></label>
-      </>}
-    </div>
+    <div className="ci-task-head"><h3 className="ci-task-title">Тестовое окружение разработки</h3></div>
+    <label><input type="checkbox" checked={developmentPreview.enabled} onChange={(event) => changePreview({ enabled: event.target.checked })} />Поднимать тестовое Docker-окружение</label>
+    {developmentPreview.enabled && <div className="ci-task-browser">
+      <label>Приложение<input value={developmentPreview.application} placeholder="auto" onChange={(event) => changePreview({ application: event.target.value })} /></label>
+      <label>Команда запуска<input value={developmentPreview.startCommand} placeholder="auto" onChange={(event) => changePreview({ startCommand: event.target.value })} /></label>
+      <label>Порт контейнера<input type="number" min={1024} max={65535} value={developmentPreview.containerPort} onChange={(event) => changePreview({ containerPort: Number(event.target.value) })} /></label>
+      <label>Health path<input value={developmentPreview.healthPath} onChange={(event) => changePreview({ healthPath: event.target.value })} /></label>
+      <label>Таймаут запуска, мс<input type="number" min={1000} max={300000} value={developmentPreview.startupTimeoutMs} onChange={(event) => changePreview({ startupTimeoutMs: Number(event.target.value) })} /></label>
+      <label>Подготовка тестовой БД<select value={developmentPreview.database.seed} onChange={(event) => changePreview({ database: { mode: 'isolated-test', seed: event.target.value === 'none' ? 'none' : 'default' } })}><option value="default">Миграции и тестовые данные</option><option value="none">Только миграции</option></select></label>
+      <p className="ci-task-hint">Для каждого запуска создаётся отдельная временная БД. Доступность окружения зависит от конфигурации машины.</p>
+    </div>}
     <div className="ci-task-head"><h3 className="ci-task-title">Проверка в браузере</h3></div>
+    <label><input type="checkbox" checked={browserCheck.failurePolicy !== 'block'} onChange={(event) => { setBrowserCheck({ ...browserCheck, failurePolicy: event.target.checked ? 'continue' : 'block' }); setBrowserSaved(false) }} />Продолжить при недоступности</label>
+    <p className="ci-task-hint">{browserCheck.failurePolicy === 'block' ? 'Обязательная проверка: после исчерпания попыток отсутствие результата блокирует успешное завершение.' : 'После ограниченного числа попыток недоступная проверка отмечается предупреждением или пропуском. Разработка и остальные проверки продолжаются.'}</p>
     <p className="ci-task-hint">
-      Browser-check включается независимо от Docker preview. При недоступности инфраструктуры политика «Продолжить» сохраняет warning/skipped и не отменяет typecheck и tests.
+      Где модель проверяет результат: в изолированном Chromium сервера или в открытой панели Web Reader.
+      Страница берётся с dev-сервера выбранной машины задачи.
     </p>
     <div className="ci-task-browser">
       <label>Режим
@@ -197,11 +190,6 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
         </select>
       </label>
       {browserCheck.mode !== 'off' && <>
-        <label>При ошибке
-          <select aria-label="Политика browser-check" value={browserCheck.failurePolicy} onChange={(event) => {
-            setBrowserCheck({ ...browserCheck, failurePolicy: event.target.value as 'continue' | 'block' }); setBrowserSaved(false); setBrowserError(null)
-          }}><option value="continue">Продолжить (warning)</option><option value="block">Блокировать успешное завершение</option></select>
-        </label>
         <label>Порт dev-сервера
           <input
             type="number" min={1} max={65535} value={browserCheck.devServerPort}
