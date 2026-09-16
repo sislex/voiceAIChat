@@ -272,6 +272,7 @@ export const REST = {
   browserSessionStart: (id: string) => `/api/browser/${encodeURIComponent(id)}/start`,
   browserSessionCommand: (id: string) => `/api/browser/${encodeURIComponent(id)}/command`,
   browserSessionScreenshot: (id: string) => `/api/browser/${encodeURIComponent(id)}/screenshot`,
+  browserSessionFrames: (id: string) => `/api/browser/${encodeURIComponent(id)}/frames`,
   browserSession: (id: string) => `/api/browser/${encodeURIComponent(id)}`,
   settings: '/api/settings',
   llmAccess: '/api/llm-access',

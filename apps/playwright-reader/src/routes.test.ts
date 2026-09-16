@@ -6,7 +6,7 @@ import fastify from 'fastify'
 import type { Conversation } from '@voicechat/shared'
 import { registerBrowserRoutes } from './routes.js'
 import { BrowserRunnerError, type BrowserRunnerClient } from '@voicechat/browser-contracts/client'
-const meta = { id: 'c1', conversationId: 'c1', incarnation: 'inc', state: 'ready' as const, activeTabId: 't', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: 'https://a.b', title: null }
+const meta = { id: 'c1', conversationId: 'c1', incarnation: 'inc', state: 'ready' as const, activeTabId: 't', tabs: [{ id: 't', url: 'https://a.b', title: 'A', active: true }], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: 'https://a.b', title: null }
 
 function conversation(overrides: Partial<Conversation> = {}): Conversation {
   return { id: 'c1', title: 'Playwright Reader 1', assistantKind: 'playwright-reader', createdAt: 0, updatedAt: 0, ...overrides } as Conversation
@@ -97,6 +97,20 @@ describe('registerBrowserRoutes', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json().dataUrl).toBe('data:image/jpeg;base64,' + Buffer.from([1, 2, 3]).toString('base64'))
     await app.close()
+  })
+
+  it('стримит кадры как NDJSON с возрастающим sequence и правильным MIME', async () => {
+    const app = await makeApp({ runner: makeRunner() })
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const controller = new AbortController()
+    try {
+      const response = await fetch(`${address}/api/browser/c1/frames?incarnation=inc`, { signal: controller.signal })
+      expect(response.headers.get('content-type')).toContain('application/x-ndjson')
+      const reader = response.body!.getReader()
+      const first = await reader.read()
+      const frame = JSON.parse(new TextDecoder().decode(first.value).trim())
+      expect(frame).toMatchObject({ seq: 1, dataUrl: 'data:image/jpeg;base64,' + Buffer.from([1, 2, 3]).toString('base64') })
+    } finally { controller.abort(); await app.close() }
   })
 
   it('REST сохраняет область, масштаб и ограничение ожидания снимка', async () => {
