@@ -19,7 +19,12 @@ export function useNewTaskResource<T>(key: string, fetcher: () => Promise<T>) {
     } finally { if (request === generation.current) setLoading(false) }
   }, [key])
   useEffect(() => { setError(''); void refresh(); return () => { generation.current++ } }, [refresh])
-  return { data: snapshot?.key === key ? snapshot.data : null, loading, error, refresh }
+  const update = useCallback((transform: (data: T) => T) => {
+    generation.current++
+    setSnapshot(previous => previous?.key === key ? { key, data: transform(previous.data) } : previous)
+    setLoading(false)
+  }, [key])
+  return { data: snapshot?.key === key ? snapshot.data : null, loading, error, refresh, update }
 }
 /** A synchronous lock also prevents duplicate clicks within the same render. */
 export function useNewTaskAction(refresh: () => Promise<void>) {

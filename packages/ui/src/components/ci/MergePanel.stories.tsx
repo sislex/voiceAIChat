@@ -4,6 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import type { MergeRun, TaskRepository } from '@shared/merge'
 import { MergePanel } from './MergePanel'
+import { queuedMergeCi } from '../../test/fixtures/queuedMerge'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 
 const stagesDone = [
@@ -56,6 +57,12 @@ export const TemporaryResourceReview: Story = {
     window.ci = { ...createFakeCi(), getTemporaryResources: async () => ({ candidates: [{ resource, eligible: false, reasons: ['machine_offline', 'git_changes'], retainUntil: null, bytes: null, sizeReason: 'machine_offline' }], attempts: [{ id: 'attempt-1', resource, at: Date.now(), reason: 'machine_offline', outcome: 'deferred', freedBytes: null, error: null }] }) }
     return <Story />
   }]
+}
+
+/** Shared fixtures exercise the queued action in DOM, Storybook and Chromium. */
+export const Queued: Story = {
+  args: { runId: 'queued-475' },
+  decorators: [Story => { window.ci = queuedMergeCi(); return <Story /> }]
 }
 
 /** Ран в работе: стадия testing выполняется, лог открыт, доступна отмена. */

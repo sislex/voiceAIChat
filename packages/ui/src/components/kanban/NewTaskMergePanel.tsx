@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Badge, Button, EmptyState, ErrorState, FeedLog, Skeleton, useConfirm } from '@voicechat/ui-kit'
-import type { MergeRun } from '@shared/merge'
+import { QueuedMergeMachine } from '../ci/QueuedMergeMachine'
+import { acceptMergeSnapshot, type MergeRun } from '@shared/merge'
 import { AttemptList, CheckList, MetricTiles, StageCard, StageHeading, StageRail } from './NewTaskStages'
 import { useNewTaskAction, useNewTaskResource } from './useNewTaskResource'
 import type { TaskReworkCycleViewModel } from './TaskCardViewModel'
@@ -71,6 +72,8 @@ export function NewTaskMergePanel(props: NewTaskMergePanelProps): JSX.Element {
               {props.canStart && props.onStartMerge && <Button variant="primary" loading={busy} disabled={!readiness?.selectable || Boolean(props.activeRunId)} onClick={() => void act(async () => { await props.onStartMerge!(chosen) })}>Мерж в main</Button>}
               {run?.canRetry && <Button loading={busy} disabled={!readiness?.selectable || Boolean(props.activeRunId)} onClick={() => void act(async () => { const next = await window.ci!.retryMerge(run.id, chosen); setSelectedId(next.id) })}>Повторить</Button>}
             </section>}
+            {current && run && run.id === props.activeRunId && <QueuedMergeMachine key={run.id} run={run}
+              onRunChanged={next => history.update(items => items.map(item => item.id === next.id && acceptMergeSnapshot(item, next) ? next : item))} />}
             {run ? <>
               <NewMergeRunDetails run={run} />
               {run.canCancel && <Button variant="danger" loading={busy} onClick={() => void act(async () => {

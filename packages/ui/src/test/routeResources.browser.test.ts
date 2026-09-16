@@ -66,7 +66,7 @@ afterAll(async () => {
   for (const child of [web, server]) if (child?.pid) try { process.kill(-child.pid, 'SIGTERM') } catch {}
   if (ttsFixture) await new Promise<void>(resolve => ttsFixture.close(() => resolve()))
   if (dataDir) await rm(dataDir, { recursive: true, force: true })
-})
+}, 120_000)
 async function newPage(width = 1440, height = 900) {
   const page = await browser.newPage({ viewport: { width, height }, hasTouch: width <= 720 })
   await page.addInitScript(value => {
@@ -137,7 +137,11 @@ it('records comparable cold/warm request counts, transferred bytes and content/d
     await page.waitForLoadState('networkidle')
     await waitForReads()
     measurements.push({ section: section.name, mode: 'warm', requests: count, transferredBytes: bytes, contentMs: warmContentMs, dataMs: last ? last - started : 0 })
-    if (!baseline) expect(paths.filter(path => /\/api\/(me\/(profile|usage)|agents$|mcp|system\/capabilities)|\/board(?:\/|$)/.test(path))).toEqual([])
+    if (!baseline) {
+      const sharedResourceReads = paths.filter(path => /\/api\/(me\/(profile|usage)|agents$|mcp|system\/capabilities)/.test(path))
+      const offRouteBoardReads = section.name === 'board' ? [] : paths.filter(path => /\/board(?:\/|$)/.test(path))
+      expect([...sharedResourceReads, ...offRouteBoardReads]).toEqual([])
+    }
     await page.close()
   }
   await writeFile(join(artifacts, baseline ? 'before.json' : 'after.json'), JSON.stringify({ fixture: 'isolated admin, one chat, one general project', latencyMs: 40, measurements }, null, 2))

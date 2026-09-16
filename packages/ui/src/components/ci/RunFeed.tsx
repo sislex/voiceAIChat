@@ -79,6 +79,10 @@ export interface RunFeedProps {
 /** Слово-подтверждение для необратимого отката рабочего репозитория. */
 const DISCARD_CONFIRM_WORD = 'откатить'
 
+export function isDirtyWorkspaceFailureMessage(error: string | null | undefined): boolean {
+  return Boolean(error && /Рабочая копия содержит локальные изменения/i.test(error))
+}
+
 function defaultDownload(filename: string, text: string): void {
   try {
     const blob = new Blob([text], { type: 'text/plain' })
@@ -472,6 +476,14 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
           <Button onClick={() => setConsoleOpen(true)}>Консоль</Button>
         </div>
       </div>
+
+      {run && isDirtyWorkspaceFailureMessage(run.error) && (
+        <section className="ci-retry-preview" role="alert" aria-label="Автопроход остановлен">
+          <strong>Автопроход остановлен: рабочая копия содержит несохранённые изменения.</strong>
+          <p>Ран {run.id}. Сохраните изменения или вручную продолжите подходящий шаг этого рана.</p>
+          <p>Сброс рабочей копии может удалить изменения и выполняется только после явного подтверждения.</p>
+        </section>
+      )}
 
       {detail?.queue && <section className="ci-queue" aria-label="Очередь проекта">
         <h3>Очередь</h3>

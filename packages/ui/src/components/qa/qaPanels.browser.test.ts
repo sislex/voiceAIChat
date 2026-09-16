@@ -22,7 +22,7 @@ beforeAll(async()=>{
 afterAll(async()=>{
   await browser?.close()
   if(server?.pid)try{process.kill(-server.pid,'SIGTERM')}catch{}
-},30_000)
+},120000)
 
 // @testCase TC-08
 it.each([

@@ -447,7 +447,7 @@ ${preparationDesignNote(task?.designs ?? [], preparationMakeSources)}
 ${task ? taskReworkContext(task, await db.tasks.taskReworkCycles(userId, projectId, taskId) ?? [], await db.tasks.taskAttachments(userId, projectId, taskId, 'source') ?? []) : ''}`
     const basePrompt = `${researchDirective}
 
-Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект schemaVersion=2. Даже «Подготовка завершена» и «Исправленный Development Brief» вне объекта запрещены. Первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Это отдельный промежуточный запрос уточнения, а не Development Brief: он не завершает подготовку и не заменяет DevelopmentReadiness schemaVersion=2. Если решения не ссылаются на вопрос, опусти decisions[].questionId; не передавай null или выдуманную ссылку вместо необязательной строки. Не добавляй сообщение об успешной подготовке перед объектом или после него. Все требования и пробелы БЗ помещай только в предусмотренные поля объекта; содержательный текст вне JSON не может быть безопасно нормализован. Перед отправкой проверь весь ответ как JSON, а не найденный в нём фрагмент: один корневой объект, schemaVersion числом 2, обязательные поля и условные UI-требования сохранены. Обработчик отклоняет любые обёртки, включая известные префиксы и Markdown: они не нормализуются и не удаляются. Имена полей внутри каждого объекта должны быть уникальны: повторяющиеся ключи отклоняются, а не заменяют ранее заданные требования или сведения об источниках. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 (версия — число 2, не строка) со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. testType принимает только ui|api|integration|negative|regression|manual. Если uiImpact не равен none, среди testCases обязателен хотя бы один с required=true и testType=ui — по нему запускается этап Component QA, и без него задача встанет после разработки. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект schemaVersion=2. Даже «Подготовка завершена» и «Исправленный Development Brief» вне объекта запрещены. Первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Это отдельный промежуточный запрос уточнения, а не Development Brief: он не завершает подготовку и не заменяет DevelopmentReadiness schemaVersion=2. Если решения не ссылаются на вопрос, опусти decisions[].questionId; не передавай null или выдуманную ссылку вместо необязательной строки. Не добавляй сообщение об успешной подготовке перед объектом или после него. Не отправляй промежуточные сообщения о прогрессе подготовки. Все требования и пробелы БЗ помещай только в предусмотренные поля объекта; содержательный текст вне JSON не может быть безопасно нормализован. Нормализация не исправляет формат ответа: однозначные совместимые значения полей проверяются только после разбора всего единственного JSON-объекта, без догадок, удаления обёрток или заполнения пропущенных требований. Перед отправкой проверь весь ответ как JSON, а не найденный в нём фрагмент: один корневой объект, schemaVersion числом 2, обязательные поля и условные UI-требования сохранены. Обработчик отклоняет любые обёртки, включая известные префиксы и Markdown: они не нормализуются и не удаляются. Имена полей внутри каждого объекта должны быть уникальны: повторяющиеся ключи отклоняются, а не заменяют ранее заданные требования или сведения об источниках. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 (версия — число 2, не строка) со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. testType принимает только ui|api|integration|negative|regression|manual. Если uiImpact не равен none, среди testCases обязателен хотя бы один с required=true и testType=ui — по нему запускается этап Component QA, и без него задача встанет после разработки. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
     const ordinaryResponses: string[] = []
     const terminalValidationFailure = async (message: string, text: string, recoveryDetail?: string): Promise<void> => {
       const terminalMessage = recoveryDetail ? `Recovery Development Brief завершился ошибкой: ${recoveryDetail}; исходная диагностика: ${message}` : message
@@ -906,49 +906,77 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     return true
   }
   /**
-   * Карточка в development с упавшим раном и без активного — тупик: fix-loop уже
-   * отработал внутри рана, а следующий ран без человека не появлялся. Сначала
-   * пробуем продолжить брошенный ран, иначе ставим новый — но только пока подряд
-   * упавших ранов меньше лимита доработок: бесконечно долбиться в сломанную
-   * задачу автопроход не должен, для этого есть `decision_required`.
+   * One persisted guard owns every automatic development start, regardless of
+   * whether rollback left the card in ready or development. Column movement is
+   * presentation state; failed-run history, cooldown and limits remain authoritative.
    */
-  const autoPilotDevelopmentStuck = async (userId: string, projectId: string, task: import('@voicechat/shared').Task): Promise<void> => {
-    if (await autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+  const autoPilotDevelopment = async (
+    userId: string,
+    projectId: string,
+    task: import('@voicechat/shared').Task,
+    stage: 'ready' | 'development'
+  ): Promise<void> => {
     const last = await db.ci.latestCiRunSummary(task.id)
-    if (!last || (last.status !== 'failed' && last.status !== 'timeout')) return
-    // Незакоммиченная работа модели в копии задачи: перезапуск падает мгновенно и
-    // только жжёт попытки, а сброс копии уничтожил бы саму работу.
-    if (isDirtyWorkspaceFailure(last.error)) {
-      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Рабочая копия задачи содержит несохранённые изменения', runId: last.id })
+    const terminalFailure = last && (last.status === 'failed' || last.status === 'timeout')
+    let failures = 0
+    let limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
+
+    if (terminalFailure) {
+      // Dirty work has priority over infra classification: retry-from-step can
+      // otherwise repeat the same exit 66 and an automatic reset would lose work.
+      if (isDirtyWorkspaceFailure(last.error)) {
+        if (!await db.qa.hasAutoPilotStopForRun(task.id, last.id)) {
+          await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', {
+            stage: 'development',
+            runId: last.id,
+            blockedBy: 'dirty_workspace',
+            reason: 'Рабочая копия задачи содержит несохранённые изменения',
+            manualAction: 'Сохраните изменения или вручную продолжите подходящий шаг существующего рана; сброс требует явного подтверждения.'
+          })
+        }
+        return
+      }
+
+      if (!retryAllowedNow({ finishedAt: await db.ci.lastCiRunFinishedAt(task.id), now: Date.now() })) return
+      failures = await db.ci.countTrailingFailedCiRuns(task.id)
+      if (failures > 0 && failures >= limit) {
+        if (!await db.qa.hasAutoPilotStopForRun(task.id, last.id)) {
+          await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', {
+            stage: 'development', runId: last.id, reason: 'Подряд упавшие development-раны', failures, limit
+          })
+        }
+        try {
+          await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.development_limit_exhausted')
+          emitBoard(projectId)
+        } catch { /* ready may intentionally remain in place when no transition exists */ }
+        return
+      }
+
+      // Infrastructure retry keeps the run id and its own resume limit, but only
+      // after the shared dirty/cooldown/failure-limit checks above.
+      if (await autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+    }
+
+    if (stage === 'ready') {
+      const result = await ciRunManager.startForDevelopmentTransition(userId, projectId, task.id, true)
+      if ('error' in result) {
+        await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage, reason: result.error })
+        return
+      }
+      if (!result.existing) emitBoard(projectId)
       return
     }
-    if (!retryAllowedNow({ finishedAt: await db.ci.lastCiRunFinishedAt(task.id), now: Date.now() })) return
-    const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
-    const failures = await db.ci.countTrailingFailedCiRuns(task.id)
-    if (failures > 0 && failures >= limit) {
-      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Подряд упавшие development-раны', failures, limit })
-      try { await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.development_limit_exhausted') }
-      catch { /* переход недоступен из текущей колонки */ }
-      emitBoard(projectId)
-      return
-    }
+
+    // In development only a terminal failure needs a replacement run. An active
+    // or successful run is already handled by its normal completion path.
+    if (!terminalFailure) return
     const started = await ciRunManager.start(userId, projectId, task.id, { mode: 'development' })
     if ('error' in started) {
-      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: started.error, failures, limit })
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage, reason: started.error, failures, limit })
       return
     }
     await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.development_retry', { runId: started.run.id, failures, limit })
     emitBoard(projectId)
-  }
-  /** Готовая к разработке карточка сама встаёт в очередь development-рана. */
-  const autoPilotDevelopment = async (userId: string, projectId: string, task: import('@voicechat/shared').Task): Promise<void> => {
-    if (await autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
-    const result = await ciRunManager.startForDevelopmentTransition(userId, projectId, task.id, true)
-    if ('error' in result) {
-      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'ready', reason: result.error })
-      return
-    }
-    if (!result.existing) emitBoard(projectId)
   }
   /**
    * Этап не запускается на спящей машине. Раньше упавший по «Машина отключилась
@@ -1014,8 +1042,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
                 && !retryAllowedNow({ finishedAt: latest.finishedAt, now: Date.now() })) continue
             }
             if (stage === 'backlog' || stage === 'preparation') await autoPilotPreparation(userId, projectId, task)
-            else if (stage === 'ready') await autoPilotDevelopment(userId, projectId, task)
-            else if (stage === 'development') await autoPilotDevelopmentStuck(userId, projectId, task)
+            else if (stage === 'ready' || stage === 'development') await autoPilotDevelopment(userId, projectId, task, stage)
             else if (stage === 'component_qa') {
               const run = await db.ci.startComponentQaRun(userId, projectId, task.id)
               if (run.status === 'queued') await componentQaRunner.launch(run.id, userId)
