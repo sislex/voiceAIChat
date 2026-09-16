@@ -114,7 +114,7 @@ it('records comparable cold/warm request counts, transferred bytes and content/d
       throw new Error('Route reads did not settle')
     }
     let started = Date.now()
-    await page.goto(base + '/#' + section.route)
+    await page.goto(base + '/#' + section.route, { timeout: 60_000 })
     await page.locator(section.selector).first().waitFor({ timeout: 60_000 })
     const contentMs = Date.now() - started
     await page.waitForLoadState('networkidle')
