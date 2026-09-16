@@ -159,6 +159,7 @@ export interface RendererCiRest {
     projectId: string,
     taskId: string
   ): Promise<TaskRepository[]>
+  getTemporaryResources?(projectId: string, taskId: string): Promise<import('./temporaryResources').CleanupSnapshot>
   /** Подтверждённый обход очереди на указанной машине; ран из очереди продвигается, а не отменяется. */
   forceStartRun(
     projectId: string,

@@ -833,6 +833,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     startRun: (projectId, taskId, options) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(options ?? {}) }),
     getMergeMachines: (projectId, taskId) => req<import('@shared/merge').MergeMachinesResponse>(REST.taskMergeMachines(projectId, taskId)),
     startMerge: (projectId, taskId, agentId) => req<import('@shared/merge').MergeRun>(REST.taskMergeStart(projectId, taskId), { method: 'POST', body: JSON.stringify(agentId ? { agentId } : {}) }),
+    getTemporaryResources: (projectId, taskId) => req<import('@shared/temporaryResources').CleanupSnapshot>(REST.taskTemporaryResources(projectId, taskId)),
     getTaskRepositories: (projectId, taskId) => req<import('@shared/merge').TaskRepository[]>(REST.taskRepositories(projectId, taskId)),
     getMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`),
     cancelMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),

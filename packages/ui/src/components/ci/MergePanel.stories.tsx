@@ -49,6 +49,15 @@ type Story = StoryObj<typeof MergePanel>
 /** Успешный ран: зелёный бейдж, все стадии пройдены, деплой ещё не запускался. */
 export const Success: Story = { decorators: [withCi(baseRun)] }
 
+/** Open the resource panel to review offline, unknown-size and retained-work states. */
+export const TemporaryResourceReview: Story = {
+  decorators: [(Story) => {
+    const resource = { id: 'temporary-1', projectId: 'p1', taskId: 't1', runId: 'run-1', userId: 'admin', machineId: 'm1', machineName: 'MacBook', path: '/managed/merge-run-tests', root: '/managed', category: 'merge-worktree' as const, generation: 'g1', identity: '1:2', gitCommonDir: null, gitRegistration: null, createdAt: 1, state: 'registered' as const }
+    window.ci = { ...createFakeCi(), getTemporaryResources: async () => ({ candidates: [{ resource, eligible: false, reasons: ['machine_offline', 'git_changes'], retainUntil: null, bytes: null, sizeReason: 'machine_offline' }], attempts: [{ id: 'attempt-1', resource, at: Date.now(), reason: 'machine_offline', outcome: 'deferred', freedBytes: null, error: null }] }) }
+    return <Story />
+  }]
+}
+
 /** Ран в работе: стадия testing выполняется, лог открыт, доступна отмена. */
 export const Running: Story = {
   decorators: [withCi({ ...baseRun, id: 'run-2', status: 'testing', stage: 'testing', mergeSha: null, finishedAt: null, canCancel: true, stages: stagesDone.slice(0, 3).concat([{ ...stagesDone[3], status: 'running', finishedAt: null, durationMs: null, message: 'Запускаю обязательные проверки до push' }]) }, [{ ...baseRun, id: 'run-2', status: 'testing' }])],

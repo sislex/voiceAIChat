@@ -104,31 +104,28 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
 // @testCase TC-BRIEF
 // @testCase T9
 // @testCase TC-BRIEF-01
-it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('normalizes a known content-free prefix and validates the entire brief: %s', async prefix => {
+it.each(['Подготовка завершена.', 'Исправленный Development Brief:'])('rejects familiar prefixes before validating the entire brief: %s', async prefix => {
   const { project, task } = await taskInBacklog()
   const original = JSON.parse(compatibleReadiness())
   original.decisions = [{ id: 'D1', text: 'Keep requirements', rationale: 'Confirmed scope', questionId: null }]
   claudeAnswer = () => ({ text: prefix + '\n' + JSON.stringify(original) })
   const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
-  expect(run.status).toBe('success')
-  expect(claudeCalls).toHaveLength(1)
-  expect(run.readiness?.functionalRequirements).toBe(original.functionalRequirements)
-  expect(run.readiness?.scope).toEqual(original.scope)
-  expect(run.readiness?.decisions).toEqual([{ id: 'D1', text: 'Keep requirements', rationale: 'Confirmed scope' }])
+  expect(run.status).toBe('blocked')
+  expect(run.readiness).toBeNull()
   expect(claudeCalls[0].prompt).toContain('ровно один JSON-объект')
 })
 
 
-// @testCase TC-BRIEF
-it('validates an unwrapped JSON fence and rejects an incomplete fenced brief', async () => {
+// @testCase TC-11
+it('rejects fenced responses even when the enclosed brief is complete', async () => {
   const fence = String.fromCharCode(96).repeat(3)
   const wrap = (text: string): string => fence + 'json\n' + text + '\n' + fence
   const validTask = await taskInBacklog()
   const input = compatibleReadiness()
   claudeAnswer = () => ({ text: wrap(input) })
   const valid = await settled(adminTok, (await launch(adminTok, validTask.project.id, validTask.task.id)).id)
-  expect(valid.status).toBe('success')
-  expect(valid.readiness?.scope).toEqual(JSON.parse(input).scope)
+  expect(valid.status).toBe('blocked')
+  expect(valid.readiness).toBeNull()
   const invalidTask = await taskInBacklog()
   claudeAnswer = () => ({ text: wrap('{"schemaVersion":2}') })
   const invalid = await settled(adminTok, (await launch(adminTok, invalidTask.project.id, invalidTask.task.id)).id)
@@ -704,6 +701,7 @@ describe('подготовка к разработке: движок из нас
 })
 
 describe('подготовка к разработке: диагностика и контракт', () => {
+  // @testCase TC-09
   // @testCase TC-BRIEF-1
   it('requires a complete brief without contradictory output instructions', async () => {
     const { project, task } = await taskInBacklog()
@@ -725,7 +723,8 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-BRIEF-NEG-1
   // @testCase TC-NORM-1
-  it.each(['question', 'missing-ui-test', 'empty-exclusion', 'boolean', 'version', 'object-list'])(
+  // @testCase TC-09
+  it.each(['question', 'missing-ui-test', 'empty-exclusion', 'empty-coverage', 'boolean', 'version', 'object-list'])(
     'rejects incompatible recovery content without inventing data: %s', async variant => {
       const { project, task } = await taskInBacklog()
       const input = JSON.parse(compatibleReadiness())
@@ -737,6 +736,7 @@ describe('подготовка к разработке: диагностика �
       }]
       if (variant === 'missing-ui-test') input.testCases = input.testCases.filter((test: { testType: string }) => test.testType !== 'ui')
       if (variant === 'empty-exclusion') input.affectedComponents[0].exclusionReason = ''
+      if (variant === 'empty-coverage') input.affectedComponents[0].coverage = {}
       if (variant === 'boolean') input.testCases[0].required = 'yes'
       if (variant === 'version') input.schemaVersion = '2'
       if (variant === 'object-list') input.scope = [{ id: 'S1', text: 'Preserve requirement' }]
@@ -806,6 +806,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase T10
   // @testCase TC12
   // @testCase TC-BRIEF-NORMALIZATION
+  // @testCase TC-10
   it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -832,7 +833,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-BRIEF-CONTRACT
   // @testCase TC-BRIEF
   // @testCase TC-BRIEF-NEG-1
-  it.each(['prefix', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
+  it.each(['prefix', 'fence', 'suffix', 'multiple', 'type', 'link'])('rejects invalid Brief format: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const valid = compatibleReadiness()
     const input = JSON.parse(valid)
@@ -850,6 +851,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase T11
   // @testCase TC-13
+  // @testCase TC-09
   it('rejects unknown test-type enumerations without repairing requirements', async () => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -971,6 +973,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase T10
   // @testCase TC8
   // @testCase T7
+  // @testCase TC-09
   it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
     const { project, task } = await taskInBacklog()
     const input = JSON.parse(compatibleReadiness())
@@ -991,6 +994,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC-12
   // @testCase TC-BRIEF-NORMALIZATION
   // @testCase T8
+  // @testCase TC-10
   it('нормализует однозначный список coverage без потери проверок', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -1029,6 +1033,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase TC-12
   // @testCase TC-BRIEF-NORMALIZATION
+  // @testCase TC-10
   it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
@@ -1059,6 +1064,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase TC7
   // @testCase TC-12
   // @testCase TC-BRIEF-NORMALIZATION
+  // @testCase TC-10
   it('не подменяет неоднозначный статус источника на available', async () => {
     const { project, task } = await taskInBacklog()
     const malformed = JSON.parse(compatibleReadiness())

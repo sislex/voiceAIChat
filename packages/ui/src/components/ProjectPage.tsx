@@ -133,7 +133,7 @@ export function ProjectPage({ projectName, section, features, typeLabel, onSecti
  * Проектов нет вообще. Формы создания на странице нет — проект создаётся в
  * сайдбаре, поэтому подсказка ведёт туда.
  */
-export function ProjectsEmptyPage({ invitationCount = 0, onCreateProject, onToggleSidebar, sidebarExpanded = true }: { invitationCount?: number; onCreateProject?: () => void; onToggleSidebar?: () => void; sidebarExpanded?: boolean } = {}): JSX.Element {
+export function ProjectsEmptyPage({ invitationCount = 0, onCreateProject, onToggleSidebar, sidebarExpanded = true }: { invitationCount?: number; onCreateProject?: () => void; onToggleSidebar?: () => void; sidebarExpanded?: boolean }): JSX.Element {
   // Если есть приглашение, «создайте первый проект» — неверный следующий шаг:
   // человека уже позвали, ему надо принять, а не заводить своё.
   const invited = invitationCount > 0

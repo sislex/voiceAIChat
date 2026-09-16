@@ -13,6 +13,7 @@ import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { createCiRunManager } from './runManager.js'
+import type { TemporaryCleanup } from '../cleanup/service.js'
 import type { BrowserRunnerClient } from '../browser/runnerClient.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
@@ -166,6 +167,24 @@ async function setup() {
   const task = (await db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' }))!
   return { project, task, agent, readyColId: ready.id }
 }
+
+// @testCase TC-06
+it('finishes the actual CI run when ownership registration fails before bootstrap', async () => {
+  const { project, task } = await setup()
+  const modelWork = vi.fn(async () => ({ ok: true }))
+  const cleanup = {
+    consume: async <T>(_taskId: string, work: () => Promise<T>) => work(),
+    register: vi.fn(async () => { throw new Error('machine_inspection_unavailable') }),
+    cycle: vi.fn(async () => {})
+  } as unknown as TemporaryCleanup
+  const manager = createCiRunManager({ db, executor: ciExecutor, boardChanged: () => {}, modelWork, cleanup })
+  const started = await manager.start('admin', project.id, task.id)
+  expect('run' in started).toBe(true)
+  if (!('run' in started)) return
+  await vi.waitFor(async () => expect((await db.ci.getCiRunRaw(started.run.id))?.status).toBe('failed'))
+  expect((await db.ci.getCiRunRaw(started.run.id))?.error).toContain('machine_inspection_unavailable')
+  expect(modelWork).not.toHaveBeenCalled()
+})
 
 it('автоматическая доработка сохраняет диагностику до первого вызова модели', async () => {
   const { project, task } = await setup()
@@ -426,7 +445,8 @@ describe('ci run manager', () => {
     expect(scripts.some((script) => script.includes('/node_modules'))).toBe(false)
   })
 
-  it('у закрытой задачи удаляет только node_modules и сохраняет задачный npm-кэш', async () => {
+  // @testCase TC-04
+  it('retains closed-task dependencies when no cleanup ownership service is configured', async () => {
     const { project, task, agent } = await setup()
     await db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
     // Карточку закрывает merge-ран уже после development-рана, поэтому здесь
@@ -437,13 +457,9 @@ describe('ci run manager', () => {
     try {
       const runId = await run(project.id, task.id)
       expect((await waitRun(runId)).run.status).toBe('success')
-      for (let i = 0; i < 100 && !scripts.some((script) => script.includes('/node_modules')); i++) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-
-      const cleanup = scripts.find((script) => script.includes('/node_modules'))
-      expect(cleanup).toContain(`'/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository/P-1/node_modules'`)
-      expect(cleanup).not.toContain('.npm-cache')
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(scripts.some(script => script.includes('rm -rf') && script.includes('/node_modules'))).toBe(false)
+      expect(scripts.some(script => script.includes('-mtime'))).toBe(false)
     } finally {
       db.sync.tasks.isTaskClosed = isTaskClosed
     }

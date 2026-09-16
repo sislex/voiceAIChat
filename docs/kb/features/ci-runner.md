@@ -2,14 +2,19 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-13
-checked: 5d1e1a59
+updated: 2026-09-16
+checked: 10474aad
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - apps/server/src/ci
+  - apps/server/src/cleanup
+  - apps/agent/src/connection.ts
+  - apps/agent/src/exec.ts
+  - packages/shared/src/temporaryResources.ts
+  - packages/ui/src/components/ci/TemporaryResources.tsx
   - apps/server/src/automationClient.ts
   - apps/automation-runner/src
   - packages/shared/src/automation.ts
@@ -217,19 +222,72 @@ viewport, сборщик запрашивает состояние довере�
 инъектируется как `minRunFreeDiskKb` для тестов; рабочая политика и порядок проверки
 заданы в `apps/server/src/ci/runManager.ts`.
 
-После любого терминального исхода (`success`, `failed` или `cancelled`) раннер
-best-effort удаляет только корневой `node_modules` checkout — **но лишь у закрытой
-задачи** (`VoiceChatDb.isTaskClosed`: колонка `done`/`cancelled` либо задачи уже
-нет). Пока задача жива, зависимости остаются: в этом же checkout следом идут
-Component QA и интеграционные тесты, и снос сразу после development-рана ронял их
-первой же стадией с npm-бинарём (`sh: tsc: command not found`, код 127). Ошибка
-уборки не меняет уже сохранённый статус рана. Сам Git-репозиторий остаётся для
-выбранной стратегии переиспользования, а задачный npm-кэш лежит рядом с рабочей
-копией, передаётся npm через `npm_config_cache`, пишется в `ci_workspaces.npm_cache_dir`
-и сохраняется между ранами; неиспользованные каталоги кэша старше 14 дней удаляются
-при подготовке нового запуска. Закрытие задачи убирает копию целиком — это делает
-`MergeRunManager.releaseTaskRepositories`. Источник поведения и путей —
-`apps/server/src/ci/runManager.ts`.
+Temporary cleanup is implemented by `apps/server/src/cleanup/{store,service,remote,module}.ts`.
+It belongs to the kanban cluster and uses its `KanbanMachines` port; the architecture
+boundary test includes cleanup sources in the same dependency checks.
+It registers three categories before application creation: process/test temporary
+directories (passed as TMPDIR/TMP/TEMP), merge worktrees, and task environments.
+The server-side `temporary-resources.json` stores machine, canonical root/path,
+owner, resource generation and inode identity, Git registration, consumers, state
+and attempts outside the removable tree. Creation intent is persisted first;
+existing paths or interrupted ownership confirmation are retained, not adopted by name.
+
+A successful owner's resource is eligible only after actual executor settlement,
+saved run results, no active CI/merge/QA/preview consumers, and fresh machine checks.
+A task environment additionally requires an existing closed task. Missing tasks,
+decision-required merge owners and unknown process state are not completion proof.
+Run logs/reports stay in the database. Before removal the helper copies top-level
+`test-results`, `playwright-report`, `coverage`, `artifacts`, `logs`, `reports`,
+`*.log` and `*.junit.xml` into
+`<registered-root>/.voicechat-cleanup-results/<resource-id>`, verifies hashes and
+refuses conflicting or unsupported archive entries. The journal retains that
+archive path. A failed archive leaves the resource intact; Git untracked files
+still block deletion even when their name resembles an artifact.
+
+`VC_TEMP_DIAGNOSTIC_RETENTION_MS` defaults to 604800000 (7 days), accepts a
+nonnegative safe integer, and expires at `finishedAt + retention <= now`.
+Failed, cancelled and interrupted owners use this period. Success needs no delay;
+expiry never overrides activity, ownership or Git checks.
+`VC_TEMP_CLEANUP_INTERVAL_MS` defaults to 60000, accepts an integer >=1000.
+Invalid settings fail startup. The same cycle runs after executor settlement,
+at startup and periodically, so offline resources are retried after reconnect.
+Unknown/partial deletion remains pending; already absent directories free zero
+reported bytes. Unknown sizes/freed bytes are null, never estimated.
+
+All service instances must share the data directory. A filesystem lock covers
+checks, deletion, registration and acquisition of persistent task consumers.
+CI restart/console, merge execution, preview operations and task/run mutation HTTP
+handlers participate. A dead local lock/consumer is recoverable only after the OS
+proves its PID absent; foreign hosts, PID reuse and interrupted lock recovery are
+conservative barriers requiring inspection. The lock is not stolen on timeout.
+The agent additionally excludes other exec/PTY and filesystem operations while an
+admitted removal runs; old agents cannot satisfy the deletion handshake.
+Machine checks require Python 3, lsof and descriptor-relative no-follow operations;
+unsupported platforms/tools defer cleanup. Current machine path policy is checked.
+
+Dirty/staged/untracked Git work, ignored files outside node_modules or the verified
+artifact archive set, unpublished commits (including refs and recoverable reflogs),
+unknown origin publication, explicit Git worktree locks,
+nested repositories/mounts, hardlinks, special files, SQLite/database files,
+`.voicechat-permanent` and `.generated_images` block recursive removal.
+Permanent shared merge clones, chat workspaces and unrelated /tmp files are excluded.
+Legacy task repository records are shown as unconfirmed and retained.
+Age-only npm-cache deletion and terminal-status node_modules removal are disabled;
+shared npm caches remain reusable.
+
+`GET /api/projects/:projectId/tasks/:taskId/temporary-resources` applies existing
+task access checks and returns candidates plus recent attempts. It only inspects;
+there is no API accepting a path to delete. MergePanel's temporary-resource view
+shows loading, errors/retry, empty results, machine/path/owner/category, size or
+measurement reason, retention, blockers and the journal; repository events and
+reconnect refresh it. Attempts include time, reason, outcome, error and measured
+freed bytes (subtracting newly archived data); run history remains accessible.
+
+Tests in `cleanup/*.test.ts`, `agent/src/cleanupAdmission.test.ts` and
+`TemporaryResources.dom.test.tsx` cover TC-01–TC-08; the MergePanel story
+`TemporaryResourceReview` covers offline/unknown-size/journal presentation.
+Development Brief regressions TC-09–TC-11 are documented in the existing
+[task preparation section](task-preparation.md#developmentreadiness-и-readiness-гейт).
 
 ## Восстановление рабочей копии после отмены
 
