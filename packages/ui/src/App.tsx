@@ -327,6 +327,20 @@ export function openWebReaderWorkspace(): void {
   window.open(url.toString(), '_blank', 'noopener,noreferrer')
 }
 
+export function buildDocumentTitle(...parts: Array<string | null | undefined>): string {
+  const seen = new Set<string>()
+  return parts
+    .map(part => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .filter(part => {
+      const key = part.toLocaleLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join(' — ')
+}
+
 
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
@@ -706,7 +720,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const pageProject = projects.projects.find(project => project.id === titleProjectId)?.name
     ?? (projects.projectDetail && projects.projectDetail.id === titleProjectId ? projects.projectDetail.name : null)
   useEffect(() => {
-    document.title = [inReader ? readerPageTitle : null, pageSection, pageProject, 'ChatAI'].filter(Boolean).join(' — ')
+    document.title = buildDocumentTitle(inReader ? readerPageTitle : null, pageSection, pageProject, 'ChatAI')
   }, [inReader, readerPageTitle, pageSection, pageProject])
 
   const [dividerActive, setDividerActive] = useState(false)
