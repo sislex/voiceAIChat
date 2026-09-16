@@ -270,6 +270,43 @@ describe('createAutomatedQaRunner', () => {
     expect(completed).toHaveBeenCalledWith('run', 'owner', true, 'Автотесты успешно пройдены', expect.objectContaining({ classification: null }))
   })
 
+  // @testCase TC-QA-1
+  it.each([0, 1])('uses the final command exit code despite a successful test prefix: %s', async exitCode => {
+    const complete = vi.fn()
+    const update = vi.fn()
+    const completed = vi.fn()
+    const log: Array<[string, string]> = []
+    const chunks = ['Test Files 31 passed\nTests 483 passed\n', 'Final workspace check\n', exitCode === 0 ? 'All checks passed\n' : 'FAIL final workspace\n']
+    const execute = vi.fn(async (_request: CommandExecRequest, onChunk: (chunk: string) => void | Promise<void>) => {
+      for (const chunk of chunks) await onChunk(chunk)
+      return { exitCode, timedOut: false }
+    })
+    const runner = createAutomatedQaRunner({
+      db: { qa: {
+        automatedQaExecutionContext: async () => context(),
+        getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+        markAutomatedQaRunning: vi.fn(),
+        appendAutomatedQaLog: async (_id, stream, text) => { log.push([stream, text]) },
+        completeQaStageRun: complete, updateQaStageRun: update
+      } },
+      executor: { run: execute }, completed
+    })
+    await runner.launch('run', 'owner')
+    await vi.waitFor(() => expect(completed).toHaveBeenCalled())
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ script: 'npm test', agentId: 'agent', workdir: '/workspace', env: { CI: '1' } }),
+      expect.any(Function), expect.any(AbortSignal)
+    )
+    expect(log[0]).toEqual(['system', '$ npm test\n'])
+    expect(log.filter(([stream]) => stream === 'out').map(([, text]) => text).join('')).toBe(chunks.join(''))
+    expect(completed.mock.calls[0][4]).toMatchObject({ command: 'npm test', exitCode, passed: exitCode === 0, gatePassed: exitCode === 0 })
+    if (exitCode === 0) expect(complete).toHaveBeenCalledTimes(1)
+    else {
+      expect(complete).not.toHaveBeenCalled()
+      expect(update).toHaveBeenCalledWith('run', expect.objectContaining({ status: 'failed' }))
+    }
+  })
+
   it('провал команды сохраняет вердикт с хвостом лога и виной реализации', async () => {
     const update = vi.fn()
     const completed = vi.fn()

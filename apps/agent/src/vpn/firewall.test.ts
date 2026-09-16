@@ -22,6 +22,18 @@ describe('system firewall policy', () => {
     expect(() => nftVpnRules({ ...config, control: { ...config.control, port: 853 } }, allowLan)).toThrow()
   })
 
+  // @testCase TC-LINUX-SERVICES
+  it.each([false, true])('restricts an IPv6 management endpoint without adding an inbound hook with LAN=%s', allowLan => {
+    const rules = nftVpnRules({ ...config, control: { ...config.control, ip: '2001:db8::7', port: 8443 } }, allowLan)
+    const control = 'ip6 daddr 2001:db8::7 tcp dport 8443 accept'
+    expect(rules).toContain(control)
+    expect(rules).not.toContain('ip daddr 2001:db8::7')
+    expect(rules).not.toMatch(/hook (input|forward|prerouting)/)
+    expect(rules).toContain('hook output priority -300; policy drop')
+    expect(rules).not.toContain('flush ruleset')
+    expect(rules.indexOf('tcp dport { 53, 853 } drop')).toBeLessThan(rules.indexOf(control))
+    expect(rules.includes('oifname "eth0" ip daddr 192.168.1.0/24 accept')).toBe(allowLan)
+  })
   // @testCase TC-STATE
   it('drops both address families and blocks direct DNS before any LAN exemption on Linux', () => {
     const rules = nftVpnRules(config, true)
