@@ -10,6 +10,7 @@ import {
   type MergeStageRecord,
   type ServerMessage
 } from '@voicechat/shared'
+import type { TemporaryCleanup } from '../cleanup/service.js'
 import { randomUUID } from 'node:crypto'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
@@ -45,7 +46,7 @@ export interface MergeTestFixContext {
   signal: AbortSignal
   log(chunk: string): void
 }
-export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; testFix?(ctx:MergeTestFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; repositoriesChanged?(projectId:string,taskId:string):void; now?:()=>number }
+export interface MergeRunManagerDeps { cleanup?: TemporaryCleanup; db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; testFix?(ctx:MergeTestFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; repositoriesChanged?(projectId:string,taskId:string):void; now?:()=>number }
 const terminal = new Set(['success','failed','cancelled','decision_required'])
 
 /**
@@ -65,6 +66,7 @@ function canonicalGitUrl(value:string):string {
 export class MergeRunManager {
   private active = new Map<string,AbortController>()
   private now:()=>number
+  private temporary = new Map<string,string>()
   constructor(private deps:MergeRunManagerDeps){ this.now=deps.now??Date.now }
   start(run:MergeRun):void {
     if(this.active.has(run.id)||terminal.has(run.status)||this.active.size>0)return
@@ -98,7 +100,7 @@ export class MergeRunManager {
     await this.deps.db.ci.updateMergeRun(id,{status:stage,stage,stages,...(run.startedAt?{}:{startedAt:at})}); await this.log(id,message)
   }
   private async cmd(run:MergeRun,script:string,workdir:string,timeoutMs=300000):Promise<{exitCode:number|null;timedOut:boolean;output:string}> {
-    let output=''; const result=await this.deps.executor.run({agentId:run.agentId,script,workdir,env:{},timeoutMs,secrets:[]},async chunk=>{output+=chunk;await this.log(run.id,chunk.trimEnd())},this.active.get(run.id)?.signal)
+    let output=''; const result=await this.deps.executor.run({agentId:run.agentId,script,workdir,env:this.temporary.has(run.id)?{TMPDIR:this.temporary.get(run.id)!,TMP:this.temporary.get(run.id)!,TEMP:this.temporary.get(run.id)!}:{},timeoutMs,secrets:[]},async chunk=>{output+=chunk;await this.log(run.id,chunk.trimEnd())},this.active.get(run.id)?.signal)
     return {...result,output}
   }
   private async autoResolveTextConflict(run:MergeRun,repo:string,path:string):Promise<boolean> {
@@ -241,20 +243,15 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
     return {repo,parent,workdir:managed?(machine?.storageRoot??parent):(ws.agentId===run.agentId?parent:this.workspaceParent(parent)),cacheDir:managed?`${parent}/npm-cache`:`${parent}/.merge-npm-cache`}
   }
   private async execute(id:string,ctl:AbortController):Promise<void> {
+    const run=await this.deps.db.ci.getMergeRunRaw(id); if(!run)return
+    const work=()=>this.executeOwned(id,ctl)
+    try { await (this.deps.cleanup ? this.deps.cleanup.consume(run.taskId,work) : work()) }
+    finally { this.temporary.delete(id); void this.deps.cleanup?.cycle(run.taskId).catch(()=>{}) }
+  }
+  private async executeOwned(id:string,ctl:AbortController):Promise<void> {
     let run=await this.deps.db.ci.getMergeRunRaw(id); if(!run)return
-    const temporaryWorktrees:string[]=[]
-    let worktreeRepo:string|null=null
-    const cleanupWorktrees=async():Promise<void>=>{
-      if(!worktreeRepo||temporaryWorktrees.length===0)return
-      const paths=[...temporaryWorktrees].reverse()
-      temporaryWorktrees.length=0
-      for(const path of paths){
-        try {
-          await this.deps.executor.run({agentId:run.agentId,script:`git worktree remove --force ${shellQuote(path)}`,workdir:worktreeRepo,env:{},timeoutMs:60000,secrets:[]},async ()=>{})
-        } catch { /* best effort; prune ниже убирает служебную запись Git */ }
-      }
-      try { await this.deps.executor.run({agentId:run.agentId,script:'git worktree prune',workdir:worktreeRepo,env:{},timeoutMs:30000,secrets:[]},async ()=>{}) } catch { /* машина могла отключиться */ }
-    }
+    // Rechecking a changed main gets distinct directories; previous attempts retain their work.
+    const executionGeneration=randomUUID()
     try {
       if(run.pushStartedAt&&run.mergeSha){
         const project=await this.deps.db.projects.getProject(run.triggeredBy,run.projectId), ws=await this.deps.db.ci.findLatestPushedCiWorkspace(run.projectId,run.taskId)
@@ -281,6 +278,11 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
       if(preflight.exitCode||preflightRefs.length!==2)throw new Error('origin недоступен либо main/feature-ветка не существует')
       const cloned=await this.cmd(run,`mkdir -p ${shellQuote(parent)}\nif [ -d ${shellQuote(`${repo}/.git`)} ]; then echo "постоянный merge-клон уже создан"; else git clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}; fi`,workdir)
       if(cloned.exitCode)throw new Error('Не удалось подготовить постоянный merge-клон')
+      if(this.deps.cleanup){
+        const path=`${parent}/.merge-process-${run.id}`
+        const resource=await this.deps.cleanup.register({projectId:run.projectId,taskId:run.taskId,runId:run.id,userId:run.triggeredBy,machineId:run.agentId,machineName:run.machineName??run.agentId,path,root:parent,category:'process'})
+        if(resource.identity)this.temporary.set(run.id,path)
+      }
       if(ws.agentId){
         await this.deps.db.tasks.upsertTaskRepository(run.projectId,run.taskId,ws.agentId,ws.path,'dev-workspace')
         this.deps.repositoriesChanged?.(run.projectId,run.taskId)
@@ -414,7 +416,6 @@ exit 0`,repo,30000)
       await this.deps.db.ci.updateMergeRun(id,{mergeSha:checkedSha}); await this.stage(id,'merging','passed',`Проверяемый SHA ${checkedSha.slice(0,8)} (feature + main)`)
 
       if (!this.deps.kbUpdate) throw new Error('Обязательный обработчик актуализации базы знаний не подключён')
-      worktreeRepo=repo
       const commands=testStages(project.testCommand??'',['npm run affected-check'])
       const runGate=async(workdir:string,gateCommands:string[],name:string):Promise<MergeCheck>=>{
         const began=this.now()
@@ -450,12 +451,15 @@ exit 0`,repo,30000)
       let kbRepo=''
       for(;;){
         attempt+=1
-        const worktreeRoot=`${parent}/.merge-run-${id.replace(/[^A-Za-z0-9_-]/g,'_')}${attempt>1?`-fix${attempt-1}`:''}`
+        const worktreeRoot=`${parent}/.merge-run-${id.replace(/[^A-Za-z0-9_-]/g,'_')}-${executionGeneration}${attempt>1?`-fix${attempt-1}`:''}`
         const testsRepo=`${worktreeRoot}-tests`
         kbRepo=`${worktreeRoot}-kb`
+        if(this.deps.cleanup) for(const path of [testsRepo,kbRepo]) {
+          await this.deps.cleanup.register({projectId:run.projectId,taskId:run.taskId,runId:run.id,userId:run.triggeredBy,machineId:run.agentId,machineName:run.machineName??run.agentId,path,root:parent,category:'merge-worktree'})
+        }
         const prepared=await this.cmd(run,`git worktree add --detach ${shellQuote(testsRepo)} ${shellQuote(attemptSha)}\ngit worktree add --detach ${shellQuote(kbRepo)} ${shellQuote(attemptSha)}`,repo,300000)
         if(prepared.exitCode||prepared.timedOut)throw new Error('Не удалось создать изолированные worktree для проверок и БЗ')
-        temporaryWorktrees.push(testsRepo,kbRepo)
+        if(this.deps.cleanup) for(const path of [testsRepo,kbRepo]) await this.deps.cleanup.bindWorktree(run.agentId,path)
 
         const parallelStarted=this.now()
         await this.stage(id,'testing','running',`Параллельно запускаю проверки SHA ${attemptSha.slice(0,8)} в изолированном worktree`)
@@ -528,7 +532,6 @@ exit 0`,repo,30000)
       if(!latest)throw new Error('Не удалось повторно прочитать origin/main')
       if(latest.toLowerCase()!==target.toLowerCase()){
         await this.log(id,`origin/main изменился с ${target.slice(0,8)} до ${latest.slice(0,8)}; старые результаты не переиспользуются`)
-        await cleanupWorktrees()
         return await this.execute(id,ctl)
       }
       if(!latestSource||latestSource.toLowerCase()!==source.toLowerCase())throw new Error('stale source: ветка изменилась перед push')
@@ -540,7 +543,6 @@ exit 0`,repo,30000)
       const verified=await this.cmd(run,'git ls-remote origin refs/heads/main',repo,30000)
       if(!verified.output.toLowerCase().startsWith(finalSha.toLowerCase()))throw new Error('Неопределённый результат push; требуется reconcile')
       await this.stage(id,'pushing','passed',`В main отправлен итоговый feature SHA ${finalSha}`);await this.finish(id,'success',null,null,'done')
-      await cleanupWorktrees()
       await this.releaseTaskRepositories(run)
     } catch(error) {
       if(ctl.signal.aborted)return
@@ -548,7 +550,6 @@ exit 0`,repo,30000)
       await this.log(id,`Остановка merge: ${message}`)
       await this.finish(id,decision?'decision_required':'failed',message,decision?'Обновите ветку или main и повторите merge.':'Исправьте причину и повторите merge.',decision?'decision_required':'merge')
     } finally {
-      await cleanupWorktrees()
       const current=await this.deps.db.ci.getMergeRunRaw(id)
       if(current?.startedAt&&current.finishedAt)await this.log(id,`Общая длительность merge: ${current.finishedAt-current.startedAt} мс`)
     }
@@ -618,14 +619,7 @@ exit 0`,repo,30000)
    *  Постоянный merge-клон проекта в учёте задач не значится и не трогается.
    *  Публичный: вызывается и при ручном переносе карточки в Done. */
   async releaseTaskRepositories(run:{projectId:string;taskId:string}):Promise<void> {
-    let changed=false
-    for(const repo of await this.deps.db.tasks.listActiveTaskRepositories(run.taskId)){
-      if(!this.deps.isOnline(repo.agentId))continue
-      try {
-        const result=await this.deps.executor.run({agentId:repo.agentId,script:`rm -rf -- ${shellQuote(repo.path)}`,workdir:this.workspaceParent(repo.path),env:{},timeoutMs:60000,secrets:[]},async ()=>{})
-        if(!result.exitCode){ await this.deps.db.tasks.markTaskRepositoryDeleted(repo.taskId,repo.agentId,repo.path); changed=true }
-      } catch { /* машина отвалилась в момент очистки — запись остаётся */ }
-    }
-    if(changed)this.deps.repositoriesChanged?.(run.projectId,run.taskId)
+    // Missing ownership evidence is a retention decision, never a fallback to rm.
+    void this.deps.cleanup?.cycle(run.taskId).catch(()=>{})
   }
 }

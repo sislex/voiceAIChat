@@ -316,7 +316,8 @@ describe('отмена рана в фазе модели', () => {
 })
 
 describe('изолированный кэш npm', () => {
-  it('шаг получает свой npm_config_cache рядом с рабочими копиями', async () => {
+  // @testCase TC-04
+  it('шаг получает свой npm_config_cache рядом с рабочими копиями без удаления по возрасту', async () => {
     const { projectId, taskIds } = await setup()
     const cmd = await db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'npm ci', script: 'npm ci' })
     await db.ci.setCiSlotCommands('project', projectId, 'before_model', [cmd.id])
@@ -335,7 +336,8 @@ describe('изолированный кэш npm', () => {
     // Подготовка создаёт каталог кэша и подчищает старые.
     const prep = execs[0].script
     expect(prep).toContain(`'/repos/.npm-cache/p-1'`)
-    expect(prep).toContain(`find '/repos/.npm-cache'`)
+    expect(prep).not.toContain(`find '/repos/.npm-cache'`)
+    expect(prep).not.toContain('-mtime')
   })
 })
 

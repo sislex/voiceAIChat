@@ -14,6 +14,7 @@ import { extractImprovementFiles, isActiveCiStatus, isTerminalCiStatus, clampMod
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_NAME } from '../db/database.js'
+import type { TemporaryCleanup } from '../cleanup/service.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
 import { CI_INFRA_LABEL, classifyCiInfraFailure, classifyLlmTransportFailure, formatCiInfraFailure } from './infraErrors.js'
@@ -30,6 +31,7 @@ const CANCEL_GRACE_MS = 15_000
 const MIN_RUN_FREE_DISK_KB = 1024 * 1024
 
 export interface CiRunManagerDeps {
+  cleanup?: TemporaryCleanup
   db: VoiceChatDb
   executor: CommandExecutor
   /** Дёрнуть обновление доски (сводка рана на карточке). */
@@ -644,33 +646,6 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * в любом случае — даже если после отмены `execute` завис на процессе модели:
    * иначе слот и мьютекс держатся до перезапуска сервера.
    */
-  async function cleanupTaskNodeModules(runId: string): Promise<void> {
-    const current = active.get(runId)
-    if (!current?.workspacePath) return
-    try {
-      const row = await deps.db.ci.getCiRunRaw(runId)
-      if (!row?.agentId || !isTerminalCiStatus(row.status)) return
-      // Пока задача жива, `node_modules` — не мусор: следом за development-раном
-      // в этом же checkout идут Component QA и интеграционные тесты. Снос сразу
-      // после рана ронял их первой же стадией с npm-бинарём (`tsc: command not
-      // found`, код 127), и падение уходило в fix-loop как дефект реализации
-      // (CHAT-411, три круга подряд). Закрытая задача убирает копию целиком —
-      // `releaseTaskRepositories` в merge-ране.
-      if (!await deps.db.tasks.isTaskClosed(row.taskId)) return
-      const nodeModules = `${current.workspacePath}/node_modules`
-      await deps.executor.run({
-        agentId: row.agentId,
-        script: `if [ -d ${shq(nodeModules)} ]; then rm -rf -- ${shq(nodeModules)}; fi`,
-        workdir: current.workspacePath,
-        env: { WORKSPACE: current.workspacePath, BRANCH: current.branch ?? '' },
-        timeoutMs: 120_000,
-        secrets: []
-      }, async () => {})
-    } catch {
-      // Cleanup best-effort: исход рана уже сохранён и не должен меняться из-за уборки.
-    }
-  }
-
   function enqueue(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint, bypassQueue = false): void {
     const slot: RunSlot = { runId, held: false, abandoned: false, bypass: bypassQueue }
     runSlots.set(runId, slot)
@@ -681,12 +656,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       })
       .catch(() => {})
       .finally(async () => {
-        // Сначала дожидаемся остановки исполнителя и восстанавливаем отменённый
-        // checkout. Затем удаляем тяжёлые регенерируемые зависимости для любого
-        // терминального исхода. До конца обеих операций active сохраняет путь и
-        // держит новый ран этой задачи на барьере рабочей директории.
+        // Cleanup requires the persistent lifecycle service and actual executor settlement.
+        // A terminal status or cancellation watchdog never authorizes deletion.
         await resetCancelledWorkspace(runId, userId)
-        await cleanupTaskNodeModules(runId)
         // Зависший execute может позже дойти до своей паузы или до своего
         // release — `abandoned` и идемпотентный release не дают ему занять
         // слот/мьютекс, которые мы уже отпустили за него.
@@ -1532,6 +1504,20 @@ fi`
   }
 
   async function execute(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
+    const row = await deps.db.ci.getCiRunRaw(runId)
+    if (!row) return
+    const work = () => executeOwned(runId, userId, ctl, resume)
+    try { await (deps.cleanup ? deps.cleanup.consume(row.taskId, work) : work()) }
+    catch (error) {
+      const current = await deps.db.ci.getCiRunRaw(runId)
+      if (current && !isTerminalCiStatus(current.status)) {
+        await finalize(runId, userId, ctl.signal.aborted ? 'cancelled' : 'failed', `Temporary resource preparation failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    finally { void deps.cleanup?.cycle(row.taskId).catch(() => {}) }
+  }
+
+  async function executeOwned(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
     const runRow = await deps.db.ci.getCiRunRaw(runId)
     if (!runRow) return
     // Ран отменили, пока он стоял в очереди проекта: не начинаем вовсе, иначе
@@ -1609,6 +1595,14 @@ fi`
       NPM_CACHE_DIR: npmCacheDir,
       npm_config_cache: npmCacheDir
     }
+    if (deps.cleanup && (managedStorage?.rootPath || legacyRepoRoot)) {
+      const common = { projectId: runRow.projectId, taskId: runRow.taskId, userId, machineId: agentId, machineName: machine?.name ?? agentId, root: managedStorage?.rootPath ?? legacyRepoRoot }
+      // Existing, unregistered trees remain usable but are never adopted for deletion.
+      await deps.cleanup.register({ ...common, runId: null, path: workspacePath, category: 'task-environment' }).catch(() => undefined)
+      const temporary = `${repoRoot}/.process-${runId}`
+      const owned = await deps.cleanup.register({ ...common, runId, path: temporary, category: 'process' })
+      if (owned.identity) { env.TMPDIR = temporary; env.TMP = temporary; env.TEMP = temporary }
+    }
     const signal = ctl.signal
 
     // Инвариант параллельных ранов: своя рабочая директория и своя ветка.
@@ -1663,14 +1657,12 @@ fi`
 
     // Рабочая директория: подготовка по стратегии повтора + запись workspace.
     const strategy = project.ciReuseStrategy || 'fail'
-    // Кэши старых задач копятся на диске — чистим те, к которым две недели не
-    // ходили. `touch` отмечает «использован сейчас»: без него давно живущая
-    // задача теряла бы кэш на своём же ране (mtime каталога не растёт сам).
+    // Cache age alone is not ownership evidence; shared caches are retained.
     const ensureManaged = managedStorage
       ? `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)} || { echo "MachineStorage недоступен для записи: ${managedStorage.rootPath}" >&2; exit 73; }`
       : `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)}`
     const freeDiskCheck = `available_kb="$(df -Pk . | awk 'NR == 2 { print $4 }')" || exit 74; case "$available_kb" in ''|*[!0-9]*) echo "Не удалось определить свободное место перед запуском рана" >&2; exit 74;; esac; if [ "$available_kb" -lt ${minRunFreeDiskKb} ]; then echo "Недостаточно места для запуска рана: свободно $((available_kb / 1024)) МБ, нужно не меньше ${Math.ceil(minRunFreeDiskKb / 1024)} МБ. Освободите диск и повторите запуск." >&2; exit 74; fi`
-    const cachePrep = `${freeDiskCheck}\n${ensureManaged}; touch ${shq(npmCacheDir)} 2>/dev/null || true; find ${shq(npmCacheRoot)} -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} + 2>/dev/null || true`
+    const cachePrep = `${freeDiskCheck}\n${ensureManaged}; touch ${shq(npmCacheDir)} 2>/dev/null || true`
     const repoPath = workspacePath
     // Связанный чат задачи должен выполнять команды там же, где модель CI: внутри
     // клонированного репозитория, а не в каталоге-контейнере workspace.
@@ -2512,7 +2504,20 @@ fi`
     }
   }
 
-  return { start, startForDevelopmentTransition, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, commandContext, queueSummary, reconcile, activeRunIds, consoleExec, answerInteraction }
+  const admitTask = <T>(taskId: string, work: () => Promise<T>): Promise<T> => deps.cleanup ? deps.cleanup.consume(taskId, work) : work()
+  const admitRun = async <T>(userId: string, runId: string, work: () => Promise<T>): Promise<T> => {
+    const detail = await deps.db.ci.getCiRun(userId, runId)
+    return detail ? admitTask(detail.run.taskId, work) : work()
+  }
+  return {
+    start: (...args) => admitTask(args[2], () => start(...args)),
+    startForDevelopmentTransition: (...args) => admitTask(args[2], () => startForDevelopmentTransition(...args)),
+    forceStartOnMachine: (...args) => admitTask(args[2], () => forceStartOnMachine(...args)),
+    retryFromFailed: (...args) => admitRun(args[0], args[1], () => retryFromFailed(...args)),
+    discardChangesAndRetry: (...args) => admitRun(args[0], args[1], () => discardChangesAndRetry(...args)),
+    consoleExec: (...args) => admitRun(args[0], args[1], () => consoleExec(...args)),
+    cancel, dequeue, subscribe, publish, snapshot, commandContext, queueSummary, reconcile, activeRunIds, answerInteraction
+  }
 }
 
 /**

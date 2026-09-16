@@ -77,8 +77,8 @@ export function runCommand(
     emit({ t: 'exec.chunk', execId, stream: 'stderr', data: d.toString() })
   )
   child.on('error', (err) => {
-    clearTimeout(timer)
-    running.delete(execId)
+    // A failed signal is not process termination. Keep the consumer until close.
+    if (!child.pid) { clearTimeout(timer); running.delete(execId) }
     emit({ t: 'exec.error', execId, message: err.message })
   })
   child.on('close', (code) => {

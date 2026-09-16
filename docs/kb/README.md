@@ -15,15 +15,15 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ код изменён 2026-09-15, сверка 2026-09-11 (по датам: правки того же дня не видны — поставь checked) |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 28 коммит(ов) в areas после сверки: c4484671 Merge main into CHAT-470 (task f80faf20-6aa4-4f11-a0fb-4858b415b9ac) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 25 коммит(ов) в areas после сверки: 0311b57e Merge main into CHAT-469 (task eb81b464-e00f-4771-8f4b-0897afee36cc) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-13 | ⚠ 31 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-16 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 4 коммит(ов) в areas после сверки: 2a2e6825 fix(db): run the Codex usage backfill one reply at a time … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 193 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 353 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 8 коммит(ов) в areas после сверки: 7d27213d feat: measure UI performance and guard regressions (CHAT-469) … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-15 | ⚠ 2 коммит(ов) в areas после сверки: a8a6b22b feat(ui): improve accessibility and performance (CHAT-461) … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 131 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 7 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1520 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1521 коммит(ов) в areas после сверки: 10474aad docs(kb): update after merge c67caab0-e425-4ca9-906a-2fd2e65f4d88 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 24 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 51 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-11 | ⚠ 45 коммит(ов) в areas после сверки: bc13d08d Merge main into CHAT-473 (task c67caab0-e425-4ca9-906a-2fd2e65f4d88) … |
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 860. Последние:
+Всего записей: 861. Последние:
 
+- [2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md](log/2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md) — temporary-resource-lifecycle
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md) — vpn-marker-discovery-kb
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-473-route-budgets-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-chat-473-route-budgets-kb.md) — chat-473-route-budgets-kb
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-accessibility-performance-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-accessibility-performance-kb.md) — accessibility-performance-kb
@@ -85,7 +86,6 @@
 - [2026-09-15-germany-4-8-60-chat468-route-cache-kb.md](log/2026-09-15-germany-4-8-60-chat468-route-cache-kb.md) — chat468-route-cache-kb
 - [2026-09-15-germany-4-8-60-chat-473-route-budgets.md](log/2026-09-15-germany-4-8-60-chat-473-route-budgets.md) — chat-473-route-budgets
 - [2026-09-15-germany-4-8-60-chat-469-ui-performance.md](log/2026-09-15-germany-4-8-60-chat-469-ui-performance.md) — chat-469-ui-performance
-- [2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-20.md](log/2026-09-15-alexeys-macbook-air-tailae39a6-ts-net-web-reader-user-like-cycle-20.md) — web-reader-user-like-cycle-20
 
 ## Исторические планы
 

@@ -16,8 +16,8 @@ import {
   type ServerToAgent
 } from '@voicechat/shared'
 import type { AgentConfig } from './config.js'
-import { runCommand, cancelCommand } from './exec.js'
-import { startPty, writePty, resizePty, killPty } from './pty.js'
+import { runCommand, cancelCommand, runningCount } from './exec.js'
+import { startPty, writePty, resizePty, killPty, ptyCount } from './pty.js'
 import { fsDelete, fsDeleteFileSafe, fsTrash, fsList, fsMkdir, fsRead, fsReadPrefix, fsRename, fsWrite } from './fileOps.js'
 import { createTelemetryCollector } from './telemetry.js'
 import { resolveShellInfo } from './platform.js'
@@ -93,6 +93,7 @@ export function consoleHandlers(): AgentHandlers {
 export function startConnection(config: AgentConfig, handlers: AgentHandlers = {}): AgentConnection {
   let backoff = BACKOFF_START_MS
   let stopped = false
+  let cleanupExclusive = false
   let socket: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let policy: AgentPolicy = DEFAULT_AGENT_POLICY
@@ -224,7 +225,12 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           handlers.onUpdateAvailable?.(msg.version)
           break
         case 'exec.start': {
-          const command = msg.command
+          let command = msg.command
+          const cleanupNonce = /^# voicechat-cleanup-v1 ([a-f0-9-]{36})\n/.exec(command)?.[1]
+          if (cleanupExclusive || (cleanupNonce && (runningCount() > 0 || ptyCount() > 0))) {
+            send({ t: 'exec.error', execId: msg.execId, message: 'cleanup_or_consumer_busy' })
+            break
+          }
           // Локальная проверка политики — жёсткая граница на клиенте (второй барьер).
           const verdict = evaluateAgentCommand(policy, command)
           if (!verdict.allowed) {
@@ -236,7 +242,12 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           }
           handlers.onExec?.(command)
           const started = Date.now()
+          if (cleanupNonce) {
+            cleanupExclusive = true
+            command = 'export VC_CLEANUP_ADMISSION=' + cleanupNonce + '\n' + command
+          }
           runCommand(msg.execId, command, msg.timeoutMs, (out) => {
+            if (cleanupNonce && (out.t === 'exec.done' || (out.t === 'exec.error' && runningCount() === 0))) cleanupExclusive = false
             if (out.t === 'exec.done') {
               handlers.onExecDone?.(command, out.exitCode, out.timedOut === true, Date.now() - started)
             }
@@ -253,6 +264,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           send({ t: 'git.access.result', requestId: msg.requestId, result: handleGitAccess(msg.request) })
           break
         case 'pty.start':
+          if (cleanupExclusive) { send({ t: 'pty.error', ptyId: msg.ptyId, message: 'cleanup_or_consumer_busy' }); break }
           // Живой терминал: доверенный shell без per-command гейта (см. docs/plans/PTY_CONSOLE.md).
           handlers.onLog?.(`терминал открыт (${msg.ptyId})`)
           startPty(msg.ptyId, msg.cols, msg.rows, msg.cwd || config.rootDir, send)
@@ -327,6 +339,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         case 'fs.mkdir': {
           const root = config.rootDir
           try {
+            if (cleanupExclusive) throw new Error('cleanup_or_consumer_busy')
             let result
             switch (msg.t) {
               case 'fs.list':

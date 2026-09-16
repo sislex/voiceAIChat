@@ -1793,6 +1793,10 @@ export class TasksRepo extends BaseRepo {
     await this.sql.run(`UPDATE task_repositories SET state='deleted', deleted_at=? WHERE task_id=? AND agent_id=? AND path=? AND state='active'`, [this.now(), taskId, agentId, path])
   }
 
+  async listCleanupRepositoryCandidates(): Promise<TaskRepository[]> {
+    return ((await this.sql.all(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.state='active' ORDER BY r.created_at`)) as Record<string, unknown>[]).map(mapTaskRepository)
+  }
+
   async listActiveTaskRepositories(taskId: string): Promise<TaskRepository[]> {
     return ((await this.sql.all(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=? AND r.state='active' ORDER BY r.created_at`, [taskId])) as Record<string, unknown>[]).map(mapTaskRepository)
   }

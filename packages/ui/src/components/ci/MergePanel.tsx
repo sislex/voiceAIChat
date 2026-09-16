@@ -4,6 +4,7 @@ import type { MergeMachineReadiness, MergeRun, TaskRepository } from '@shared/me
 import type { CiTaskMachine } from '@shared/ci'
 import { Button, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
+import { TemporaryResources } from './TemporaryResources'
 import { MERGE_STATUS_LABEL, MergeRunFeed, mergeStatusTone } from './MergeRunFeed'
 import { StatusPill, type StatusTone } from '@voicechat/ui-kit'
 
@@ -45,6 +46,7 @@ export function MergePanel(props: {
   const [machinesReload, setMachinesReload] = useState(0)
   const [repos, setRepos] = useState<TaskRepository[]>([])
   const [showDeleted, setShowDeleted] = useState(false)
+  const [showCleanup, setShowCleanup] = useState(false)
   const [runs, setRuns] = useState<MergeRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [runsLoaded, setRunsLoaded] = useState(false)
@@ -223,6 +225,8 @@ export function MergePanel(props: {
           </ul>
         </section>
       )}
+      {window.ci?.getTemporaryResources && <Button size="sm" variant="ghost" onClick={() => setShowCleanup(value => !value)}>Временные ресурсы и журнал</Button>}
+      {showCleanup && <TemporaryResources projectId={props.projectId} taskId={props.taskId} />}
       {repos.length > 0 && (
         <section className="merge-repos" data-testid="task-repositories">
           <div className="merge-repos-head">

@@ -2,18 +2,9 @@
 // (`kanban/module.ts`) и её тестов. Вынесены из `server.ts` вместе с канбан-кластером.
 import { DEFAULT_CODEX_MODEL, type AcceptanceCriterionSnapshot, type LlmProvider } from '@voicechat/shared'
 
-/**
- * Only known, content-free envelopes may be removed. Arbitrary prose can contain
- * additional requirements, so do not search for a convenient JSON substring.
- * The caller must apply the complete DevelopmentReadiness schema after this step.
- */
+/** Preserve the complete response: even familiar prose can hide requirements. */
 export function preparationEnvelope(text: string): string {
-  let raw = text.trim()
-  const prefix = /^(?:Подготовка завершена\.|Исправленный Development Brief:)\s*\n/.exec(raw)
-  if (prefix) raw = raw.slice(prefix[0].length).trim()
-  const fence = /^\x60\x60\x60(?:json)?\s*\n([\s\S]*)\n\x60\x60\x60$/i.exec(raw)
-  if (fence) raw = fence[1]!.trim()
-  return raw
+  return text.trim()
 }
 
 /** Parse the entire response before normalizing compatible field values. */
