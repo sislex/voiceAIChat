@@ -126,3 +126,61 @@ it.each(['shell', 'chat', 'board', 'task', 'releases', 'settings', 'projectSetti
     expect(errors).toEqual([])
   } finally { await page.close() }
 })
+
+// @testCase TC-03
+it('project settings keep the document fixed and expose deletion through one desktop scroll surface', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 520 }, reducedMotion: 'reduce' })
+  try {
+    await page.goto(base + '?screen=projectSettings')
+    await page.waitForSelector('body[data-ready=true]')
+    const scroll = page.getByTestId('project-settings-scroll')
+    await expect.poll(() => scroll.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= document.documentElement.clientHeight)).toBe(true)
+    expect(await page.locator('[data-testid="project-settings-scroll"]').evaluateAll(nodes => nodes.filter(node => {
+      const style = getComputedStyle(node)
+      return style.overflowY === 'auto' && node.scrollHeight > node.clientHeight
+    }).length)).toBe(1)
+    await scroll.hover()
+    await page.mouse.wheel(0, 2000)
+    await expect.poll(() => scroll.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+    await scroll.focus()
+    await page.keyboard.press('End')
+    await expect.poll(() => page.getByRole('button', { name: 'Удалить проект' }).isVisible()).toBe(true)
+    await page.getByRole('button', { name: 'Удалить проект' }).scrollIntoViewIfNeeded()
+    expect(await page.getByRole('button', { name: 'Удалить проект' }).evaluate(node => {
+      const rect = node.getBoundingClientRect()
+      return rect.bottom <= innerHeight && rect.top >= 0
+    })).toBe(true)
+  } finally { await page.close() }
+})
+
+// @testCase TC-04
+it('project settings tabs remain discoverable and active at 375px without document overflow', async () => {
+  const page = await browser.newPage({ viewport: { width: 375, height: 600 }, hasTouch: true, reducedMotion: 'reduce' })
+  try {
+    await page.goto(base + '?screen=projectSettings')
+    await page.waitForSelector('body[data-ready=true]')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+    const tabs = page.getByRole('tab')
+    expect(await tabs.count()).toBe(6)
+    await page.getByRole('tab', { name: 'Машины' }).tap()
+    const active = page.getByRole('tab', { name: 'Машины' })
+    await expect.poll(() => active.getAttribute('aria-selected')).toBe('true')
+    await expect.poll(() => active.evaluate(node => {
+      const rect = node.getBoundingClientRect()
+      const parent = node.parentElement!
+      const parentRect = parent.getBoundingClientRect()
+      return parent.scrollLeft > 0 && rect.right > parentRect.left && rect.left < parentRect.right
+    })).toBe(true)
+    await active.focus()
+    await page.keyboard.press('Home')
+    await expect.poll(() => page.getByRole('tab', { name: 'Общее' }).getAttribute('aria-selected')).toBe('true')
+    await page.keyboard.press('End')
+    await expect.poll(() => page.getByRole('tab', { name: 'Машины' }).getAttribute('aria-selected')).toBe('true')
+    await page.getByRole('tab', { name: 'Общее' }).tap()
+    const scroll = page.getByTestId('project-settings-scroll')
+    await scroll.evaluate(node => node.scrollTo({ top: node.scrollHeight }))
+    await page.getByRole('button', { name: 'Удалить проект' }).scrollIntoViewIfNeeded()
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= document.documentElement.clientHeight)).toBe(true)
+  } finally { await page.close() }
+})

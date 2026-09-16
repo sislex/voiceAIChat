@@ -20,7 +20,7 @@ const meta: Meta<typeof ProjectSettings> = {
   },
   render: args => {
     const [detail, setDetail] = useState(args.detail)
-    return <div style={{ padding: 16 }}><ProjectSettings {...args} detail={detail} onUpdate={(_id, fields) => setDetail(current => ({ ...current, ...fields, defaultSkills: { ...current.defaultSkills, ...fields.defaultSkills } }))} /></div>
+    return <div className="project-settings-story-host"><ProjectSettings {...args} detail={detail} onUpdate={(_id, fields) => setDetail(current => ({ ...current, ...fields, defaultSkills: { ...current.defaultSkills, ...fields.defaultSkills } }))} /></div>
   }
 }
 export default meta

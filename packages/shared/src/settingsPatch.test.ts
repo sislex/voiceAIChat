@@ -34,6 +34,30 @@ it('recovers interrupted checks without replay and keeps independent successes o
 })
 
 describe('sanitizeSettingsPatch', () => {
+  // @testCase TC-CONTRACT-1
+  it('принимает настройки уведомлений команд и задаёт безопасные дефолты', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({
+      machineCommandNotices: 'failures', machineCommandNoticeSeconds: 8, machineCommandSystemNotifications: true
+    })
+    expect(sanitizeSettingsPatch({
+      machineCommandNotices: 'all', machineCommandNoticeSeconds: 15, machineCommandSystemNotifications: false
+    })).toEqual({ machineCommandNotices: 'all', machineCommandNoticeSeconds: 15, machineCommandSystemNotifications: false })
+  })
+
+  // @testCase TC-CONTRACT-2
+  it('отбрасывает неизвестный режим и не-булево системное уведомление', () => {
+    expect(sanitizeSettingsPatch({ machineCommandNotices: 'sometimes', machineCommandSystemNotifications: 'yes' })).toEqual({})
+  })
+
+  // @testCase TC-CONTRACT-3
+  it('клампит длительность уведомления команд и отбрасывает неверный тип', () => {
+    expect(sanitizeSettingsPatch({ machineCommandNoticeSeconds: -1 })).toEqual({ machineCommandNoticeSeconds: 0 })
+    expect(sanitizeSettingsPatch({ machineCommandNoticeSeconds: 0 })).toEqual({ machineCommandNoticeSeconds: 0 })
+    expect(sanitizeSettingsPatch({ machineCommandNoticeSeconds: 120 })).toEqual({ machineCommandNoticeSeconds: 120 })
+    expect(sanitizeSettingsPatch({ machineCommandNoticeSeconds: 121 })).toEqual({ machineCommandNoticeSeconds: 120 })
+    expect(sanitizeSettingsPatch({ machineCommandNoticeSeconds: '8' })).toEqual({})
+  })
+
   it('пропускает известные поля и приводит модель Claude к алиасу', () => {
     expect(sanitizeSettingsPatch({ theme: 'dark', autoSpeak: true, model: 'claude-sonnet-4-5' }))
       .toEqual({ theme: 'dark', autoSpeak: true, model: 'sonnet' })
