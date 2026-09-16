@@ -36,9 +36,9 @@ test('new task stories are accessible and fit desktop and 390px viewports', asyn
         await page.goto(url + '/iframe.html?id=kanban-newtaskcard--' + story + '&viewMode=story')
         await page.getByRole('dialog', { name: /Задача CHAT/ }).waitFor().catch(async (error) => { console.log(story, await page.locator('body').innerText(), pageErrors); throw error })
         if (story === 'statement-editing') {
-          const edit = page.getByLabel('Описание', { exact: true })
-          await edit.waitFor()
-          await page.waitForFunction(() => document.querySelector('.new-task-statement textarea')?.value === 'Уточнённая постановка')
+          const statement = page.getByRole('heading', { name: 'Актуальная постановка', exact: true }).locator('..').locator('..')
+          await statement.getByRole('button', { name: 'Изменить', exact: true }).click()
+          const edit = statement.locator('textarea').first()
           await edit.fill('Длинная строка '.repeat(80))
           assert.ok(await edit.evaluate((element) => element.offsetHeight > 80))
           await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
@@ -66,7 +66,7 @@ test('new task stories are accessible and fit desktop and 390px viewports', asyn
         await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') })
         const violations = await page.evaluate(async () => (await axe.run(document.body, { rules: { region: { enabled: false } } })).violations.map((item) => ({ id: item.id, impact: item.impact, targets: item.nodes.map((node) => node.target) })))
         assert.deepEqual(violations, [], story + ' axe at ' + width)
-        const overflow = await page.evaluate(() => [...document.querySelectorAll('.new-task-dialog, .new-task-body, .new-task-grid, .new-task-stage-rail')].filter((element) => element.scrollWidth > element.clientWidth + 1).map((element) => element.className))
+        const overflow = await page.evaluate(() => [document.documentElement, document.body, ...document.querySelectorAll('.new-task-body, .new-task-grid, .new-task-stage-rail')].filter((element) => element.scrollWidth > element.clientWidth + 1).map((element) => element.className || element.tagName))
         assert.deepEqual(overflow, [], story + ' overflow at ' + width)
         assert.deepEqual(pageErrors, [], story + ' browser errors')
       }

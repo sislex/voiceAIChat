@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import userEvent from '@testing-library/user-event'
-import { within } from '@testing-library/dom'
-import { StageCard, StageRail } from './NewTaskStages'
+import { StageCard, StageHeading, StageRail } from './NewTaskStages'
 import type { NewTaskCardViewProps } from './NewTaskCardView'
 import type { Meta, StoryObj } from '@storybook/react'
 import { NewTaskCardView } from './NewTaskCardView'
@@ -51,22 +49,15 @@ function InteractiveCard(args: NewTaskCardViewProps): JSX.Element {
 
 function ErrorRail(): JSX.Element {
   const [failed, setFailed] = useState(true)
-  return <StageRail><StageCard number={1} status={failed ? 'failed' : 'queued'}
+  return <><StageHeading eyebrow="Component QA" title="Проверка компонентов" /><StageRail><StageCard number={1} status={failed ? 'failed' : 'queued'}
     eyebrow="Этап 1" title="Проверка компонентов" error={'Не удалось открыть страницу\nПодробности в ленте'}
-    onRetry={() => setFailed(false)}><p>Результат последнего рана этого этапа.</p></StageCard></StageRail>
+    onRetry={() => setFailed(false)}><p>Результат последнего рана этого этапа.</p></StageCard></StageRail></>
 }
 
 // @testCase TC1
 export const StatementEditing: Story = {
   name: 'Редактирование постановки',
-  render: (args) => <InteractiveCard {...args} />,
-  play: async () => {
-    const canvas = within(document.body)
-    await userEvent.click(canvas.getByRole('button', { name: 'Изменить' }))
-    await userEvent.clear(canvas.getByLabelText('Описание'))
-    await userEvent.type(canvas.getByLabelText('Описание'), 'Уточнённая постановка')
-    if (canvas.getByRole<HTMLButtonElement>('button', { name: 'Сохранить' }).disabled) throw new globalThis.Error('Statement cannot be saved')
-  }
+  render: (args) => <InteractiveCard {...args} />
 }
 
 // @testCase TC1
