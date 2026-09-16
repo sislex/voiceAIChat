@@ -45,6 +45,7 @@ export function EnginesPage({
   const [engineDraft, setEngineDraft] = useState<AdminLlmEngineInput>(EMPTY_ENGINE)
   const [editingEngineId, setEditingEngineId] = useState<string | null>(null)
   const [confirmEngineDelete, setConfirmEngineDelete] = useState<string | null>(null)
+  const [engineLimit, setEngineLimit] = useState(100)
   const enginesView = loadView(enginesStatus, engines.length > 0)
 
   const resetEngineForm = (): void => {
@@ -67,12 +68,13 @@ export function EnginesPage({
 
   return (
     <section className="uadmin-sec" data-testid="llm-engines-section">
-            {enginesView.state === 'skeleton' && <Skeleton variant="list" count={2} height={66} lines={3} />}
+      {engines.length > engineLimit && <Button onClick={() => setEngineLimit(limit => limit + 100)}>Показать ещё исполнителей ({engines.length - engineLimit})</Button>}
+      {enginesView.state === 'skeleton' && <Skeleton variant="list" count={2} height={66} lines={3} />}
       {enginesView.state === 'error' && <ErrorState compact message="Не удалось загрузить исполнителей" detail={enginesError} {...(onRetryEngines ? { onRetry: onRetryEngines } : {})} />}
       {enginesView.staleError && <ErrorState compact message="Реестр исполнителей мог устареть" detail={enginesError} {...(onRetryEngines ? { onRetry: onRetryEngines } : {})} />}
       {enginesView.refreshing && <RefreshIndicator label="Обновляем исполнителей…" />}
       {engines.length === 0 && enginesView.state !== 'skeleton' && <EmptyState compact icon="🤖" title="Исполнителей пока нет" description="Добавьте URL и токен runner'а: каждая запись обслуживает один kind." />}
-      {engines.map((engine) => {
+      {engines.slice(0, engineLimit).map((engine) => {
         const health = engineHealth[engine.id]
         return (
           <div key={engine.id} className="cc-item" data-testid="llm-engine-item">

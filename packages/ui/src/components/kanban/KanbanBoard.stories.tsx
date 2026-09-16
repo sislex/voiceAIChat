@@ -259,7 +259,8 @@ const mobileScrollBoard = (): Board => {
   }))
   return makeBoard(columns, columns.flatMap((column, index) =>
     Array.from({ length: index === 0 ? 15 : 3 }, (_, position) => makeTask({
-      id: `mobile-task-${index}-${position}`, columnId: column.id, title: `Задача ${index + 1}.${position + 1}`,
+      id: `mobile-task-${index}-${position}`, columnId: column.id,
+      title: `Задача ${index + 1}.${position + 1}${index === 0 && position === 14 ? ' — ' + 'LongUnbrokenTitle'.repeat(12) : ''}`,
       position: (position + 1) * 1024, labels: ['mobile', 'design', 'accessibility'], storyPoints: 5, assignee: 'admin'
     }))))
 }

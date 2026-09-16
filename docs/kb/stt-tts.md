@@ -1,7 +1,7 @@
 ---
 title: Речь: Whisper (STT) и Piper/say (TTS)
-updated: 2026-08-26
-checked: 1de46edc
+updated: 2026-09-15
+checked: 911e2eb0
 areas:
   - apps/stt-runner
   - apps/server/src/stt
@@ -46,6 +46,44 @@ STT-пути принадлежат конфигу `apps/stt-runner/src/config.t
 Каталог, файлы и операции моделей Whisper находятся в `apps/stt-runner/src/models`; серверные `/api/stt/*` являются прокси и не вычисляют пути к моделям.
 
 Физический каталог голосов Piper принадлежит TTS Runner. Сервер проксирует список и удаление через `TtsClient`; старые серверные каталог разрешённых загрузок и downloader удалены, поэтому публичный каталог показывает только установленные голоса и не предлагает скачивание.
+
+## Неблокирующий мастер первого запуска
+
+Возобновляемый мастер хранит прогресс в версионированном `Settings.onboarding`; контракт, начальное состояние, переходы и проверка входящего settings patch находятся в `packages/shared/src/types.ts`. Пять независимых шагов проверяют microphone/Whisper, TTS, Claude/Codex, выбранную машину и полный голосовой запрос. У каждого шага один из статусов `idle`, `checking`, `success`, `warning`, `error` или `skipped`, фиксированная безопасная диагностика и явные действия повтора и пропуска. Закрытие мастера не блокирует чат, из настроек его можно открыть снова, а отдельный reset заменяет только onboarding-прогресс.
+
+При восстановлении сохранённый `checking` становится `warning`, поэтому reload или restart не создаёт вечную проверку, ложный успех и автоматический повтор записи либо запроса. Отпечатки относящихся к шагу настроек переводят только затронутый результат в предупреждение; переход любого шага сбрасывает зависимый итоговый voice-тест, но не независимые успехи. Ошибка сохранения остаётся видимой и предлагает явный повтор.
+
+`installRemoteBridges`, shared by web and Electron, exposes a lazy
+`RendererOnboardingBridge`. Each check opens a private WebSocket so STT/TTS
+events are separate from chat. Recording starts only on a click; closing, reset
+and timeout release that capture. TTS success requires decoded audio and playback
+completion through its own AudioContext. Model/voice presence is not success.
+The LLM check reads both providers' access and login states, then probes a
+permitted provider in a separate test conversation. Voice transcripts and replies
+are ordinary test-chat messages, not onboarding-state fields. The progress
+stores only fixed diagnostics and configuration identifiers. Each active stage has
+a 120-second timeout; a slow earlier stage does not consume the next stage's budget.
+
+`e2e/settings.e2e.test.ts` covers the renderer in Chromium and Electron, server
+restart and isolated reset, both themes at 1440×900, 1280×720, 768×1024, 390×844
+and 320×700, touch, keyboard focus, overflow and CDP safe-area insets. Reduced
+viewport checks emulate keyboard occlusion; they do not claim a physical mobile
+keyboard test. Screenshots are written to `artifacts/onboarding`. Existing
+`SettingsModal.stories.tsx` covers settings loading and missing voices; wizard
+states are covered by component tests and the integrated browser matrix. A page
+`ToolFrame` without close/Escape actions does not register a dialog layer: the
+empty chat page can mount after the wizard and must not steal its Escape key.
+
+The real voice E2E requires built web assets, Electron dependencies/Xvfb and
+reachable authorized speech/LLM runners. It accepts `VC_QA_STT_URL/TOKEN`,
+`VC_QA_TTS_URL/TOKEN` and `VC_QA_LLM_URL/TOKEN`; the production queue can discover
+local runner containers without printing their credentials. `VC_QA_LLM_SERVICE`
+selects the local LLM container (default `runner-work`). Its temporary server uses
+an isolated data directory. Full Chromium (`channel: 'chromium'`) supplies a
+controlled WAV microphone through its fake-device switches; Whisper, the selected
+CLI and TTS remain real services. The test records boundary timestamps and waits
+for actual AudioContext playback completion. Missing prerequisites fail the test
+instead of skipping required coverage.
 
 ## Доступность функций
 

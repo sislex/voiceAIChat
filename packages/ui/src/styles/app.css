@@ -15,6 +15,7 @@
   --text-dim: #656358;
   --border: #e3e1d9;
   --border-soft: #eeede7;
+  --control-border: #777469;
   --accent: #3d64c8;
   /* Лозенги статуса — текст 11px на своей подложке: тоже 4.5:1, поэтому серый и
      оранжевый темнее «естественного» (было 4.05:1 и 3.71:1). */
@@ -106,6 +107,7 @@
   --text-dim: #4f604f;
   --border: #cbdac9;
   --border-soft: #dfe9dd;
+  --control-border: #667c63;
   --accent: #276b3a;
   --ci-neutral: #566356;
   --ci-neutral-bg: #e5ebe4;
@@ -137,6 +139,7 @@
   --text-dim: #9d9a8e;
   --border: #34332b;
   --border-soft: #2a2a23;
+  --control-border: #858276;
   --accent: #8aa8ec;
   --ci-neutral: #9d9a8e;
   --ci-neutral-bg: #2c2c25;
@@ -209,6 +212,7 @@
   .release-version { display: none; }
   .app .toolhead { min-height: 40px; padding: 6px 10px; }
 }
+.app-content { min-width:0;min-height:0;height:100%;display:flex;flex-direction:column;position:relative }
 .app {
   box-sizing: border-box;
   padding-top: 44px;
@@ -1517,7 +1521,7 @@
   gap: 8px;
   min-width: 0;
 }
-@media (min-width: 769px) {
+@media (min-width: 721px) {
   .voicebar:not(.voicebar--expanded) .vrow {
     align-items: center;
   }
@@ -1998,6 +2002,13 @@
   border-radius: 0;
   box-shadow: none;
   padding-bottom: env(safe-area-inset-bottom);
+}
+/* Onboarding owns bottom safe-area spacing in its persistent actions. */
+.ob-dialog.vc-dialog--phone {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: 0;
+  padding-left: env(safe-area-inset-left);
 }
 .vc-dialog-overlay--phone {
   align-items: stretch;
@@ -2537,7 +2548,7 @@
 .uusage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .uusage-grid > div { min-width: 0; overflow-x: auto; }
 .uusage-grid h4 { margin: 0 0 7px; font-size: 12px; color: var(--text-dim); }
-@media (max-width: 800px) {
+@media (max-width: 720px) {
   .uusage-stats { grid-template-columns: repeat(2, minmax(90px, 1fr)); }
   .uusage-grid { grid-template-columns: 1fr; }
   .uusage-filters { width: 100%; flex-direction: column; }
@@ -3398,7 +3409,7 @@ button.conscmd:hover {
 }
 
 /* ==== Мобильная вёрстка ==== */
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .app,
   .app--console {
     grid-template-columns: 1fr;
@@ -3581,7 +3592,7 @@ button.conscmd:hover {
 
 /* ==== Мобильные панели тулов — на весь экран ====
    Окна Dialog переключает сам компонент по MOBILE_QUERY (720px), см. .vc-dialog--phone. */
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .ovl {
     align-items: stretch;
     justify-content: stretch;
@@ -4640,7 +4651,7 @@ button.conscmd:hover {
 .proj-field-label { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
   color: #626f86; margin: 10px 0 4px; opacity: 1; }
 [data-theme='dark'] .proj-field-label { color: #96a0b5; }
-.proj-hint { font-size: 12px; color: #626f86; margin: 2px 0 8px; line-height: 1.5; max-width: 640px; }
+.proj-hint { font-size: 12px; color: #626f86; margin: 2px 0 8px; line-height: 1.5; max-width: 720px; }
 /* Тестовые пользователи окружений: строка = логин/пароль/роль/заметка/удалить. */
 .proj-test-users { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
 .proj-test-users li { display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr auto; gap: 6px; align-items: center; }
@@ -4720,7 +4731,7 @@ button.conscmd:hover {
 .kbeditor-actions { display:flex; gap:8px; }
 .kbskel { padding:4px; }
 .kbrefresh { margin:0; padding:6px 8px; }
-@media (max-width: 760px) { .kbtool { width:100vw; height:100vh; }.kbbar { align-items:stretch; flex-direction:column; }.kbstatus { white-space:normal; }.kblayout { grid-template-columns:1fr; overflow:auto; }.kbfilters { display:flex; gap:4px; border-right:0; border-bottom:1px solid var(--line); overflow:auto; }.kbfilters button { width:auto; white-space:nowrap; }.kbresults { border-right:0; border-bottom:1px solid var(--line); max-height:38vh; }.kbdoc { min-height:45vh; padding:18px; } }
+@media (max-width: 720px) { .kbtool { width:100vw; height:100vh; }.kbbar { align-items:stretch; flex-direction:column; }.kbstatus { white-space:normal; }.kblayout { grid-template-columns:1fr; overflow:auto; }.kbfilters { display:flex; gap:4px; border-right:0; border-bottom:1px solid var(--line); overflow:auto; }.kbfilters button { width:auto; white-space:nowrap; }.kbresults { border-right:0; border-bottom:1px solid var(--line); max-height:38vh; }.kbdoc { min-height:45vh; padding:18px; } }
 
 /* ---- Сворачивание сайдбара + компактный футер ---- */
 /* Шапка сайдбара: «+ Новый» + кнопка сворачивания рядом. */
@@ -4785,7 +4796,7 @@ button.conscmd:hover {
 [data-theme='dark'] .side-collapse:hover { background: var(--surface-hover); }
 
 /* Свёрнутый сайдбар — только десктоп; на мобильном действует выдвижной drawer. */
-@media (min-width: 769px) {
+@media (min-width: 721px) {
   .app--sidebar-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
   .app--sidebar-collapsed.app--console { grid-template-columns: 0 1fr auto; }
   .app--sidebar-collapsed .side { transform: translateX(-100%); overflow: hidden; }
@@ -4796,7 +4807,7 @@ button.conscmd:hover {
 .feature-link, .feature-start, .work-children-toggle { border: 0; background: transparent; color: var(--accent); cursor: pointer; padding: 4px 0; text-align: left; font-size: 12px; }
 .work-children ul, .agent-task-list { margin: 4px 0; padding-left: 18px; }
 .work-children li, .agent-task-list li { margin: 3px 0; }
-.feature-detail { display: grid; gap: 12px; max-width: 820px; padding: 12px; }
+.feature-detail { display: grid; gap: 12px; max-width: 720px; padding: 12px; }
 .feature-automation, .feature-actions, .agent-task-add, .feature-policy { display: flex; flex-wrap: wrap; gap: 10px; }
 .feature-policy label { display: grid; gap: 4px; flex: 1 1 220px; }
 .feature-error { color: var(--danger, #dc2626); }
@@ -5091,7 +5102,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jautomation-dialog-body p, .jautomation-dialog-body ol { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .jautomation-dialog-body ol { padding-left: 22px; }
 .jautomation-dialog-body li + li { margin-top: 5px; }
-@media (max-width: 520px) {
+@media (max-width: 720px) {
   .jautomation-backdrop { place-items: end stretch; padding: 0; }
   .jautomation-dialog { width: 100%; max-height: min(88dvh, 760px); border-radius: 14px 14px 0 0; }
   .jautomation-dialog-head { padding: 14px 16px 10px; }
@@ -5232,7 +5243,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jboard-shortcuts-list kbd { min-width: 28px; padding: 3px 7px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; background: var(--surface-raised); color: var(--text); font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
 .jboard-shortcuts-note { margin: 16px 0 0; color: var(--text-dim); font-size: 12px; }
 
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .jboard-shortcuts-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); padding: 14px; }
   .jboard-shortcuts-list { grid-template-columns: 1fr; gap: 5px; }
   .jboard-shortcuts-list dt { justify-content: flex-start; margin-top: 7px; }
@@ -5494,7 +5505,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 .side-resize::after { content: ''; position: absolute; inset: 0 4px; background: transparent; transition: background 120ms ease; }
 .side-resize:hover::after, .side-resize:focus-visible::after { background: var(--accent); }
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .side-resize { display: none; }
 }
 .projlist { padding-top: 8px; }
@@ -5514,7 +5525,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .pb-item button,.pb-preview button,.pb-editor button,.pb-add-prompt{margin-left:6px}.pb-icon{width:36px;height:36px}.pb-builder{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);min-height:0;height:min(690px,75vh)}.pb-column,.pb-settings{padding:18px;overflow:auto;min-width:0}.pb-generation{border-right:1px solid var(--border,#d9deea)}.pb-label,.pb-editor label{display:grid;gap:7px;font-weight:600}.pb-label textarea,.pb-editor textarea,.pb-editor input{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--border,#cbd2df);border-radius:9px;background:var(--panel,#fff);color:inherit}.pb-prompt-wrap{position:relative;display:block}.pb-prompt-wrap textarea{padding-right:52px}.pb-generate{position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:9px}.pb-generate svg{width:18px;height:18px}.pb-preview{margin:14px 0;padding:12px;border:1px solid #7b61ff;border-radius:10px;white-space:pre-wrap}.pb-row{display:flex;justify-content:space-between;gap:10px;align-items:center}.pb-list{display:grid;gap:10px}.pb-item{border:1px solid var(--border,#d9deea);border-radius:10px;padding:11px;background:color-mix(in srgb,var(--panel,#fff) 94%,#7b61ff)}.pb-item p{margin:0 0 9px;white-space:pre-wrap;overflow-wrap:anywhere}.pb-item>div:last-child{text-align:right}.pb-status{min-height:28px;padding:5px 0}.pb-blocks{display:flex;flex-direction:column}.pb-blocks h3{margin-top:0}.pb-blocks>.pb-list{flex:1}.pb-apply{margin-top:14px;padding:11px}.pb-settings{min-height:480px}.pb-modifier{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}.pb-ellipsis{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis}.pb-editor{margin-top:14px;padding:14px;border:1px solid var(--border,#d9deea);border-radius:10px;display:grid;gap:12px}.pb-editor [role=alert]{color:#b42318}.pb-switch input{width:20px;height:20px}.pb-add-prompt{margin-top:14px}.ai-assist-wrap{position:relative}.ai-assist-trigger{position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:2}.ai-assist-wrap>input[data-ai-assist],.ai-assist-wrap>textarea[data-ai-assist]{padding-right:48px!important}
 /* Граница та же, что у полноэкранного окна на телефоне (MOBILE_QUERY, 720px). */
 @media(max-width:720px){.pb-builder{grid-template-columns:1fr;height:auto;overflow:auto}.pb-column{overflow:visible}.pb-generation{border-right:0;border-bottom:1px solid var(--border,#d9deea)}.pb-modifier{grid-template-columns:auto 1fr}.pb-modifier>div:last-child{grid-column:1/-1}}
-.ai-default-prompts{display:grid;gap:10px}.ai-default-row{display:grid;grid-template-columns:auto minmax(110px,.5fr) minmax(180px,1fr) repeat(3,auto);gap:7px;align-items:center}.ai-default-row textarea{min-height:58px;resize:vertical}@media(max-width:760px){.ai-default-row{grid-template-columns:auto 1fr auto auto auto}.ai-default-row textarea{grid-column:2/-1}.ai-default-row input.sel{grid-column:2/-1}}
+.ai-default-prompts{display:grid;gap:10px}.ai-default-row{display:grid;grid-template-columns:auto minmax(110px,.5fr) minmax(180px,1fr) repeat(3,auto);gap:7px;align-items:center}.ai-default-row textarea{min-height:58px;resize:vertical}@media(max-width:720px){.ai-default-row{grid-template-columns:auto 1fr auto auto auto}.ai-default-row textarea{grid-column:2/-1}.ai-default-row input.sel{grid-column:2/-1}}
 
 /* ---- CI-раннер (страница «Команды», лента рана, консоль) ---- */
 .ci-page { padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 20px; }
@@ -6563,7 +6574,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcol-empty--filtered .jcol-empty-badge { background: var(--surface); color: var(--accent); }
 .jcol-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
 .jcol-empty-actions:empty { display: none; }
-@media (max-width: 560px) {
+@media (max-width: 720px) {
   .jcol-empty--empty,
   .jcol-empty--filtered { padding: 12px 8px; }
   .jcol-empty-actions { width: 100%; }
@@ -6881,7 +6892,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .kbu-ev--error { background: var(--ci-removed-bg); }
 .kbu-ev__time, .kbu-ev__src, .kbu-ev__nums, .kbu-ev__chat { color: var(--text-dim); }
 .kbu-ev__q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-@media (max-width: 760px) {
+@media (max-width: 720px) {
   .kbutool { width: 100vw; height: 100vh; }
   .kbu-ev { grid-template-columns: 1fr; }
   .kbu-table td { white-space: normal; }
@@ -6925,7 +6936,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .kbu-run-events li { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; }
 .kbu-run-error { display: flex; align-items: center; gap: 8px; }
 .kbu-run-errors li { padding: 8px; border-radius: 8px; background: var(--danger-soft); overflow-wrap: anywhere; }
-@media (max-width: 700px) {
+@media (max-width: 720px) {
   .kbu-brief__toggle { align-items: flex-start; min-height: 44px; }
   .kbu-brief__line { flex-direction: row; }
   .kbu-run-summary { grid-template-columns: 1fr 1fr; }
@@ -6993,7 +7004,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .playwright-site-dialog input { box-sizing: border-box; width: 100%; padding: 8px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
 .playwright-site-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .playwright-site-dialog-note { font-size: 12px; color: var(--text-dim); }
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .chat-split-chat { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
   .chat-split--preview .chat-split-chat { display: none; }
 }
@@ -7007,7 +7018,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-split-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 360px; min-height: 0; }
 .chat-split-chat > .web-recorder-selector { flex: none; }
 /* Phone header of the Reader: three controls do not fit one 390px row — the engine select takes its own line. */
-@media (max-width: 480px) {
+@media (max-width: 720px) {
   .web-recorder-selector { flex-wrap: wrap; }
   .web-recorder-selector .web-reader-engine { flex: 1 1 100%; }
   .web-recorder-selector .web-reader-engine select { width: 100%; }
@@ -7029,12 +7040,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-split--site-only > .chat-split-chat { display: none; }
 .chat-split--site-only > .chat-split-divider { cursor: default; flex-basis: 24px; background: var(--panel); }
 .chat-split--site-only .webpreview { flex: 1 1 auto; }
-@media (max-width: 768px) { .chat-split-collapse { display: none; } .chat-split--site-only > .chat-split-chat { display: flex; } .chat-split--site-only.chat-split--preview > .chat-split-chat { display: none; } }
+@media (max-width: 720px) { .chat-split-collapse { display: none; } .chat-split--site-only > .chat-split-chat { display: flex; } .chat-split--site-only.chat-split--preview > .chat-split-chat { display: none; } }
 /* Phone tab bar: the page title says where the site pane is; the live line shows what the assistant is doing behind the chat tab. */
 .chat-split-tabs button { display: inline-flex; align-items: center; justify-content: center; min-width: 0; }
 .chat-split-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-split-live { display: none; border: 0; background: transparent; font: inherit; cursor: pointer; text-align: left; }
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .chat-split-tabs { grid-template-columns: 1fr 1fr; grid-auto-rows: auto; }
   .chat-split-tabs button { min-height: 44px; }
   .chat-split-live { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 2px 8px 4px; color: var(--text-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -7167,7 +7178,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .webpreview-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--text-dim); text-align: center; }
 .chat-split-tabs { display: none; }
 .chat-split-tabs > div { display: contents; }
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .app--console-reader, .app--make, .app--image-studio { grid-template-columns: minmax(0, 1fr); }
   .chat-page { grid-column: 1; height: 100dvh; }
   /* Stay inside the shell's space after its toolbar and bottom navigation. */
@@ -7310,7 +7321,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .ka-inserts { width: min(760px, 100%); display: grid; gap: 10px; }
 .ka-inserts:empty { display: none; }
 .ka-empty .ka-inserts:not(:empty) { margin-bottom: 20px; }
-.ka-welcome { max-width: 640px; text-align: center; }
+.ka-welcome { max-width: 720px; text-align: center; }
 .ka-welcome__icon { width: 36px; height: 36px; margin: 0 auto 12px; border-radius: 12px; display: grid; place-items: center; background: var(--assistant-primary-soft); color: var(--assistant-primary); font-size: 20px; }
 .ka-welcome h2 { margin: 0; font-size: clamp(24px, 4cqw, 38px); letter-spacing: -.04em; }
 .ka-welcome p { max-width: 590px; margin: 12px auto 0; color: var(--assistant-muted); font-size: 15px; line-height: 1.55; }
@@ -7411,7 +7422,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .ka-bubble { max-width: 88%; }
   .ka-dock { padding: 6px 10px 10px; }
 }
-@media (max-width: 820px) {
+@media (max-width: 720px) {
   .widget-assistant { flex-direction: column; }
   .widget-assistant-tabs { display: block; flex: none; padding: 6px; border-bottom: 1px solid var(--border); background: var(--panel); }
   .widget-assistant-tabs > div { display: grid; grid-template-columns: 1fr 1fr; }
@@ -7463,7 +7474,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @keyframes feature-preview-spin { to { transform: rotate(360deg); } }
 @keyframes feature-preview-indeterminate { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
 @media (prefers-reduced-motion: reduce) { .feature-preview__loader, .feature-preview__bar--indeterminate::after { animation: none; } .feature-preview__bar > span { transition: none; } }
-@media (max-width: 520px) { .feature-preview__meta { grid-template-columns: minmax(0, 1fr); } .feature-preview__actions > * { max-width: 100%; } .feature-preview__progress { grid-template-columns: auto minmax(0, 1fr); } .feature-preview__progress .vc-btn { grid-column: 1 / -1; width: 100%; } }
+@media (max-width: 720px) { .feature-preview__meta { grid-template-columns: minmax(0, 1fr); } .feature-preview__actions > * { max-width: 100%; } .feature-preview__progress { grid-template-columns: auto minmax(0, 1fr); } .feature-preview__progress .vc-btn { grid-column: 1 / -1; width: 100%; } }
 
 /* QA owns responsive presentation; other ResultTable consumers keep their layout. */
 :is(.component-qa-panel,.qa-stage-panel,.manual-qa) { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
@@ -7474,7 +7485,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .qa-stage-actions fieldset { min-width: 0; max-width: 100%; }
 .qa-stage-actions fieldset label { display: block; overflow-wrap: anywhere; }
 .qa-image { display: inline-block; max-width: 100%; }
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   :is(.component-qa-panel,.qa-stage-panel) .vc-results { display: block; width: 100%; }
   :is(.component-qa-panel,.qa-stage-panel) .vc-results caption { display: block; width: 100%; box-sizing: border-box; }
   :is(.component-qa-panel,.qa-stage-panel) .vc-results thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -7519,7 +7530,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .manual-qa-save-state { color: var(--text-dim); font-size: 12px; }
 .manual-qa-actions, .manual-qa-final-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .manual-qa-final-actions { justify-content: flex-end; }
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .manual-qa-card__head { align-items: flex-start; flex-direction: column; }
   .manual-qa-card__details dl { grid-template-columns: 1fr; }
   .manual-qa-actions > *, .manual-qa-final-actions > * { flex: 1 1 100%; min-width: 0; white-space: normal; }
@@ -7578,7 +7589,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-model-work__detail pre { overflow-x: auto; white-space: pre; }
 @keyframes task-model-work-progress { from { transform: translateX(-55%); } to { transform: translateX(135%); } }
 @media (prefers-reduced-motion: reduce) { .task-model-work__bar--indeterminate::after { animation: none; } }
-@media (max-width: 700px) {
+@media (max-width: 720px) {
   .task-model-work__toggle { align-items: center; }
   .task-model-work__title { flex: 1 1 calc(100% - 120px); }
   .task-model-work__toggle .vc-feed-caret { order: 1; }
@@ -7808,7 +7819,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media(max-width:720px){.automation-progress__head,.automation-progress__meta,.automation-progress__times{align-items:flex-start;flex-direction:column}.automation-progress__bar{max-width:100%}.automation-progress__steps li{flex-wrap:wrap}}
 .turn-queue{margin:4px 0;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);min-width:0}
 .turn-queue__header{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:22px}.turn-queue__paused{color:var(--warning);font-size:12px}.turn-queue__list{margin:3px 0 0;padding-left:22px}.turn-queue__list--expanded{max-height:min(42vh,360px);overflow:auto;overscroll-behavior:contain}.turn-queue__list>li{min-width:0;min-height:28px;padding:2px 0;border-top:1px solid var(--border-soft)}.turn-queue__row{display:flex;align-items:center;gap:6px;min-width:0}.turn-queue__text{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.turn-queue__failed{flex:none;color:var(--danger);font-size:11px}.turn-queue__attachment-count{flex:none;color:var(--text-dim);font-size:11px;white-space:nowrap}.turn-queue__actions{display:flex;flex:none;align-items:center;gap:2px;flex-wrap:nowrap}.turn-queue__actions .vc-btn{width:26px;height:26px;min-height:26px;padding:0;color:var(--text-dim)}.turn-queue__actions .vc-btn:hover{color:var(--text)}.turn-queue__edit label{display:block}.turn-queue__edit textarea{box-sizing:border-box;width:100%;min-height:64px;resize:vertical;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--panel);color:var(--text);font:inherit}.turn-queue__edit-actions{display:flex;gap:10px}.turn-queue__edit-actions button,.turn-queue__toggle{border:0;background:transparent;color:var(--accent);padding:3px 0;cursor:pointer;font:inherit;font-size:12px}.turn-queue__edit-actions button:focus-visible,.turn-queue__toggle:focus-visible,.turn-queue__edit textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.turn-queue__toggle{margin-top:3px;font-weight:650}.reply-preparing{display:flex;align-items:center;gap:7px;min-height:26px;color:var(--text-dim);font-size:13px}
-@media(max-width:700px){.turn-queue{padding:6px}.turn-queue__actions{gap:1px}.turn-queue__actions .vc-btn{width:24px;height:26px;min-height:26px}.turn-queue__list--expanded{max-height:34vh}}
+@media(max-width:720px){.turn-queue{padding:6px}.turn-queue__actions{gap:1px}.turn-queue__actions .vc-btn{width:24px;height:26px;min-height:26px}.turn-queue__list--expanded{max-height:34vh}}
 @media(prefers-reduced-motion:reduce){.turn-queue__list--expanded{scroll-behavior:auto}}
 .personalization-page{box-sizing:border-box;width:min(760px,100%);max-width:100%;margin:0 auto;padding:clamp(20px,4vw,48px);overflow-x:hidden}
 .personalization-page header{margin-bottom:28px}.personalization-page h1{margin:0 0 8px;font-size:clamp(24px,4vw,34px)}.personalization-page header p,.personalization-page .field-hint{color:var(--text-dim);line-height:1.5}
@@ -7953,7 +7964,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Read-only шаринг Make (п.33) */
 
 /* Мобильный редактор Make (п.34): ≤600px — список файлов вместо дерева, textarea вместо Monaco */
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   /* 16px — иначе iOS Safari приближает страницу при фокусе в поле. */
 }
 
@@ -8333,11 +8344,32 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jboard-mobile-filter-meta { display: inline-flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; color: var(--text-dim); font-size: 10px; font-weight: 500; }
 .jboard-mobile-filter-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Mobile columns own their vertical viewport; desktop keeps the shared viewport. */
-@media (max-width: 720px) {
-  .jboard { scroll-snap-type: x mandatory; scroll-padding-inline: 12px; overflow-y: hidden; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px) + var(--vc-toast-inset, 0px)); }
-  .jboard[data-dragging="pointer"] { scroll-snap-type: none; }
-  .jboard .jcol[data-column-id] { scroll-snap-align: start; flex-basis: calc(100vw - 48px); width: calc(100vw - 48px); min-height: 0; }
+/* The board measures its available width, including a tablet sidebar. */
+.jboard-wrap[data-narrow] { container-type: inline-size; container-name: kanban; }
+.jboard-mobile-filters { animation: jboard-filter-enter 180ms ease-out; }
+.jboard-mobile-filters .jboard-filters { position: static; display: flex; flex-direction: column; align-items: stretch; }
+.jboard-mobile-selection { display: flex; flex-direction: column; min-width: 0; flex: 1; text-align: center; }
+.jboard-mobile-selection select { width: 100%; min-width: 0; min-height: 44px; color: var(--text); background: var(--panel); }
+.jboard-mobile-create[hidden],
+body:has([role="dialog"]) .jboard-mobile-create,
+body:has([role="menu"]) .jboard-mobile-create { visibility: hidden; pointer-events: none; }
+@container kanban (max-width: 720px) {
+  .jboard { overflow-x: hidden; overflow-y: hidden; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px) + var(--vc-toast-inset, 0px)); }
+  .jboard .jcol[data-column-id] { flex-basis: 100%; width: 100%; min-height: 0; }
+  .jboard .jcol--improvements, .jboard .jcol--add { display: none; }
+  .jboard .jlane-heads, .jboard .jlane-cols { min-width: 0; width: 100%; }
+  .jboard .jcard-title { overflow-wrap: anywhere; }
+  .jboard .jcol-head h2 { overflow-wrap: anywhere; min-width: 0; }
+  .jboard .jcol-head:not(.jcol-head--collapsed) { flex-wrap: wrap; }
+  .jboard .jcol-head:not(.jcol-head--collapsed) .jcol-name { flex: 1 1 calc(100% - 52px); }
+  .jboard .jcol-name-text { overflow-wrap: anywhere; }
+  .jcolumn-collapse-actions { flex-wrap: wrap; }
+  .jcolumn-collapse-actions .vc-btn, .jboard-mobile-navigation .vc-btn { min-height: 44px; min-width: 44px; }
+  .jboard .jcard-top { min-width: 0; }
+  .jboard .jcard { max-width: 100%; }
+  .jboard .jcard-menu { position: fixed; inset: auto 12px 12px; max-height: 60%; min-width: 0; z-index: 60; }
+  .jboard .jcard-menu > button { min-height: 44px; overflow-wrap: anywhere; }
+  .jboard { touch-action: pan-y pinch-zoom; }
   .jboard:not(.jboard--lanes) > .jcol { height: 100%; }
   .jboard .jcol-content:not([hidden]) { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; }
   .jboard .jcol-head { position: sticky; top: 0; z-index: 3; background: var(--panel); }
@@ -8347,7 +8379,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .jboard-wrap > .jpriority-overview,
   .jboard-wrap > .jactive-filters { display: none; }
   .jboard-mobile-navigation { display: flex; align-items: center; justify-content: space-between; flex: none; padding-inline: 12px; }
-  .jboard-mobile-create { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px) + var(--vc-toast-inset, 0px)); z-index: 46; box-shadow: var(--shadow-md); }
+  .jboard-mobile-create { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px) + var(--vc-shell-bottom, 0px) + var(--vc-toast-inset, 0px)); z-index: 46; box-shadow: var(--shadow-md); }
   .jboard-filters-shell { display: flex; align-items: center; gap: 8px; padding: 4px 12px; flex: none; }
   .jboard-mobile-filters { animation: jboard-filter-enter 180ms ease-out; }
   .jboard-mobile-filters .jboard-filters { position: static; display: flex; flex-direction: column; align-items: stretch; }
@@ -8497,7 +8529,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .console-pane-machine select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 .console-browser-viewport { flex: 1 1 auto; min-height: 0; overflow: hidden; background: #0b0e14; }
 .console-browser-viewport .term-wrap, .console-browser-viewport .term-host { height: 100%; }
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .console-browser-pane { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
   .chat-split--chat .console-browser-pane { display: none; }
 }
@@ -8527,7 +8559,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .qa-verdict__facts dd { margin: 0; overflow-wrap: anywhere; }
 /* На телефоне длинная подпись («Стартовый адрес») съедает колонку и значение
    встаёт вплотную — на узком экране пара разворачивается в две строки. */
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .qa-verdict__facts { grid-template-columns: 1fr; gap: 0; }
   .qa-verdict__facts dd { margin-bottom: var(--space-100); }
 }
@@ -8583,7 +8615,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* `.login-input` несёт свою минимальную ширину; во флекс-строке она распирала
    шаг, и кнопка удаления вылезала за рамку. */
 .qa-scenario input.login-input, .qa-scenario select.sel { min-width: 0; width: 100%; box-sizing: border-box; }
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .qa-scenario__row > label { flex-basis: 100%; }
   /* На телефоне кнопки шага уходят под поле: втроём в одну строку с полем они
      не помещаются, а сжимать поле нельзя — по нему шаг и узнают. */
@@ -8868,7 +8900,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 .machine-connect-feedback--error { color: var(--danger); }
 
-@media (max-width: 700px) {
+@media (max-width: 720px) {
   .machine-connect-dialog .vc-dialog-head { min-height: 72px; padding-inline: 18px; }
   .machine-connect-dialog .vc-dialog-body { padding: 28px 18px 20px; }
   .machine-connect-content > p:first-child { font-size: 18px; }
@@ -9063,7 +9095,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .new-task-live-dot--live { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: new-task-pulse 1.6s ease-in-out infinite; }
 .new-task-preview-summary p { margin: 0; overflow-wrap: anywhere; }
 .new-task-preview-summary a { color: var(--accent); font-weight: 700; text-decoration: none; }
-.new-task-settings { display: grid; gap: 12px; max-width: 800px; }
+.new-task-settings { display: grid; gap: 12px; max-width: 720px; }
 .new-task-settings .new-task-section { padding: 15px 15px 6px; }
 /* Workflow with timings: duration of a passed stage, live counter of the current one. */
 .new-task-workflow-time { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: var(--text-dim); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -9118,7 +9150,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .new-task-chips span { padding: 3px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-dim); font-size: 11px; }
 .new-task-lock { font-size: 14px; }
 .new-task-note { padding: 11px; border-radius: var(--radius-medium); background: var(--accent-soft); color: var(--text); font-size: 11px; line-height: 1.5; }
-@media (max-width: 1000px) {
+@media (max-width: 720px) {
   .new-task-grid { grid-template-columns: 1fr; }
   .new-task-body { max-height: none; }
 }
@@ -9143,7 +9175,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Режим «Проект» в Make: компоненты рабочей копии, Storybook на машине, правка файла.
    Раскладка повторяет «Компоненты»: список слева, кадр или редактор справа. */
 
-@media (max-width: 768px) {
+@media (max-width: 720px) {
 }
 
 /* Таблица версий должна оставаться читаемой и на узком окне desktop. */

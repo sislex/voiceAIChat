@@ -72,6 +72,24 @@ describe('machine VPN flow', () => {
     expect(screen.getByText('Внешний IP: неизвестен')).toBeInTheDocument()
     expect(change).not.toHaveBeenCalled()
   })
+  // @testCase TC-UI
+  it('cancels a role change without dispatching and requires confirmation again', async () => {
+    const bridge = vpnFixtureBridge(makeVpnView())
+    const change = vi.spyOn(bridge, 'change')
+    render(<MachineVpn agent={makeAgent()} bridge={bridge} clock={() => VPN_TIME} />)
+    await screen.findByText('Сеть: test.ts.net')
+    fireEvent.change(screen.getByLabelText('Режим VPN'), { target: { value: 'server' } })
+    fireEvent.click(screen.getByText('Применить режим'))
+    fireEvent.click(screen.getByText('Отмена'))
+    expect(screen.queryByText('Подтвердить изменение VPN')).not.toBeInTheDocument()
+    expect(change).not.toHaveBeenCalled()
+    expect(screen.getByText('Запрошено: Выключен')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Применить режим'))
+    expect(change).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('Подтвердить изменение VPN'))
+    await waitFor(() => expect(change).toHaveBeenCalledTimes(1))
+    expect(change.mock.calls[0][1]).toMatchObject({ mode: 'server', gatewayId: null, expectedRevision: 0 })
+  })
   // @testCase TC-REGRESSION
   it('opens VPN inside the fleet without changing existing machine permissions', async () => {
     const setPolicy = vi.fn()

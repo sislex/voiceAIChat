@@ -4,6 +4,16 @@ import userEvent from '@testing-library/user-event'
 import { ToolFrame } from './ToolFrame'
 
 describe('ToolFrame (общая рамка тулов)', () => {
+  // @testCase TC-UI-1
+  it('keeps Escape on the wizard when the empty chat page mounts underneath it', async () => {
+    const close = vi.fn()
+    const wizard = <ToolFrame title="Wizard" onClose={close}><p>Setup</p></ToolFrame>
+    const view = render(<>{wizard}</>)
+    view.rerender(<>{wizard}<ToolFrame title="Chats" variant="page"><p>No chats yet</p></ToolFrame></>)
+    await userEvent.keyboard('{Escape}')
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+
   it('embedded: разворот на весь экран и обратно', async () => {
     const { container } = render(
       <ToolFrame title="Консоль машины" variant="embedded" testId="tool-embed">

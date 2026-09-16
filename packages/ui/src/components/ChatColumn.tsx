@@ -37,6 +37,7 @@ import {
 } from './MessageTimeline'
 import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
+import { uiPerformance } from '../lib/uiPerformance'
 import { useDismissibleMenu } from '../lib/useDismissibleMenu'
 import { ChatSearchContext, HighlightText } from './Markdown'
 import { useHotkeys } from '../lib/useHotkeys'
@@ -120,6 +121,7 @@ export interface ChatColumnProps {
   state: VoiceState
   messages: Message[]
   /** Идёт загрузка сообщений разговора — показываем лоадер вместо ленты. */
+  performanceReady?: boolean
   loadingMessages?: boolean
   /**
    * Сообщение, к которому надо прокрутить ленту и подсветить его (переход из
@@ -235,6 +237,7 @@ export function ChatColumn({
   canExecutePlan = true,
   state,
   messages,
+  performanceReady = false,
   loadingMessages = false,
   highlightMessageId = null,
   onHighlightDone,
@@ -278,6 +281,23 @@ export function ChatColumn({
   onOpenMachines,
   onOpenKbDocument
 }: ChatColumnProps): JSX.Element {
+  const previousAi = useRef(messages.filter(m => m.role === 'ai').at(-1)?.id)
+  useEffect(() => {
+    const last = messages.filter(m => m.role === 'ai').at(-1)
+    const newAi = last && last.id !== previousAi.current && last.text.trim()
+    previousAi.current = last?.id
+    const generation = uiPerformance().messageGeneration()
+    const frame = requestAnimationFrame(() => {
+      const p = uiPerformance()
+      if (performanceReady && !loadingMessages) { p.mark('route', 'chat_ready'); p.finish('route', 'chat') }
+      const response = streamingReply.trim()
+        ? rootRef.current?.querySelector('[data-testid="streaming"] .md')
+        : newAi ? Array.from(rootRef.current?.querySelectorAll('.msg.ai[data-mid] .md') ?? []).at(-1) : null
+      const rendered = Array.from(response?.querySelectorAll('p,code,li,h1,h2,h3,blockquote,td') ?? []).some(node => node.textContent?.trim())
+      if (rendered && generation === p.messageGeneration()) p.mark('message', 'message_first_token')
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [performanceReady, loadingMessages, streamingReply, messages, conversationId])
   const rootRef = useRef<HTMLElement>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -549,8 +569,9 @@ export function ChatColumn({
   const [replyAnnounce, setReplyAnnounce] = useState('')
   useEffect(() => {
     if (hasStream) setReplyAnnounce(`${aiLabel} отвечает…`)
-    else setReplyAnnounce((prev) => (prev === '' ? '' : 'Ответ получен'))
-  }, [hasStream, aiLabel])
+    else if (showPreparingReply) setReplyAnnounce('Готовим ответ…')
+    else setReplyAnnounce(prev => prev === '' ? '' : prev === 'Готовим ответ…' ? 'Подготовка ответа завершена' : 'Ответ получен')
+  }, [hasStream, showPreparingReply, aiLabel])
   useEffect(() => {
     if (!hasStream) { streamStartRef.current = null; return }
     if (streamStartRef.current === null) streamStartRef.current = Date.now()
@@ -566,7 +587,7 @@ export function ChatColumn({
 
   return (
     <ChatSearchContext.Provider value={searchOpen ? query : ''}>
-    <main ref={rootRef} className={`${messages.length === 0 ? 'main main--empty' : 'main main--conversation'}${compact ? ' main--compact' : ''}`} data-chat-layout={composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')}>
+    <section aria-label="Чат" ref={rootRef} className={`${messages.length === 0 ? 'main main--empty' : 'main main--conversation'}${compact ? ' main--compact' : ''}`} data-chat-layout={composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')}>
       <header className="mhead">
         {onToggleSidebar && (
           <SidebarToggle className="burger" expanded={sidebarExpanded} onToggle={onToggleSidebar} />
@@ -1060,7 +1081,7 @@ export function ChatColumn({
                     <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(prepStart)}`}>{clockTime(prepStart)}</span>
                   </span>
                 </div>
-                <div className="bub" role="status" aria-live="polite">
+                <div className="bub">
                   <span className="reply-preparing" data-testid="reply-preparing-inner">
                     <Dots />
                     <span>Готовим ответ…</span>
@@ -1172,7 +1193,7 @@ export function ChatColumn({
       <div className={(composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')) === 'centered' ? 'chat-composer chat-composer--centered' : 'chat-composer chat-composer--docked'}>
         {voiceBar}
       </div>
-    </main>
+    </section>
     </ChatSearchContext.Provider>
   )
 }

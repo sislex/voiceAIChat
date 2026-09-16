@@ -13,6 +13,7 @@
   --text-dim: #656358;
   --border: #e3e1d9;
   --border-soft: #eeede7;
+  --control-border: #777469;
   --accent: #3d64c8;
   --accent-fg: #fff;
   --accent-soft: #eef1fb;
@@ -55,6 +56,7 @@
   --text-dim: #4f604f;
   --border: #cbdac9;
   --border-soft: #dfe9dd;
+  --control-border: #667c63;
   --accent: #276b3a;
   --accent-fg: #ffffff;
   --accent-soft: #d9eadb;
@@ -84,6 +86,7 @@
   --text-dim: #9d9a8e;
   --border: #34332b;
   --border-soft: #2a2a23;
+  --control-border: #858276;
   --accent: #8aa8ec;
   --accent-fg: #191916;
   --accent-soft: #2b2f44;
@@ -102,6 +105,8 @@
   color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
+/* Component display rules must not expose inactive tab panels to Tab. */
+[hidden]:not([hidden='until-found']) { display:none !important }
 body, button, input, textarea, select { font-family: 'Manrope', system-ui, sans-serif; }
 body { color: var(--text); -webkit-font-smoothing: antialiased; }
 
@@ -113,7 +118,7 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
    секция приложения по отдельности (.jcard, .ptypes-actions, .side, …), поэтому
    каждая новая забывала: во флекс-строке иконка сжимается до 19x22. Место
    правилу — у самой кнопки. */
-@media (max-width: 640px) { .vc-btn--icon { min-width:40px;min-height:40px } }
+@media (max-width: 720px) { .vc-btn--icon { min-width:40px;min-height:40px } }
 .vc-btn--block { display:flex;width:100% }
 .vc-btn:focus-visible,.vc-btn.is-focus,.vc-toast-action:focus-visible,.vc-toast-close:focus-visible,.vc-confirm-field input:focus-visible { outline:2px solid var(--accent);outline-offset:2px }
 .vc-btn:disabled { opacity:.45;cursor:not-allowed;filter:none }
@@ -213,7 +218,7 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-spark__area{fill:var(--accent-soft)}
 .vc-spark__labels{display:flex;justify-content:space-between;margin-top:4px;color:var(--text-dim);font-size:10px}
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   /* Палец не попадает в 22px-тумблер и в 34px-вкладку: порог тот же, что
      сторожит scripts/mobile-shots.mts. */
   .vc-switch { min-width:44px;min-height:40px;padding:9px 3px }
@@ -271,7 +276,7 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 /* Шапка целой страницы: тот же компонент, но заголовок крупнее и выравнивание по низу. */
 .vc-panel-head--page { align-items:flex-end }
 .vc-panel-head--page .vc-panel-head__title { font-size:26px;letter-spacing:-.03em }
-@media (max-width: 480px) { .vc-panel-head--page .vc-panel-head__title { font-size:22px } }
+@media (max-width: 720px) { .vc-panel-head--page .vc-panel-head__title { font-size:22px } }
 .vc-panel-head__text { min-width:0 }
 .vc-panel-head__kicker { display:block;color:var(--accent);font-size:11px;font-weight:750;letter-spacing:.07em;text-transform:uppercase }
 .vc-panel-head__title { margin:3px 0 5px;font-size:18px;letter-spacing:-.02em;overflow-wrap:anywhere }
@@ -408,7 +413,7 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-attempts__at { flex:none;margin-left:auto;color:var(--text-dim);font-size:11px }
 
 /* Телефон: колонка вместо ряда и палец вместо курсора. */
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .vc-metrics { grid-template-columns:1fr }
   .vc-panel-head { flex-wrap:wrap }
   .vc-subtab { min-height:40px }
@@ -430,4 +435,19 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
   .vc-attempts__row { flex-wrap:wrap;min-height:44px }
   .vc-attempts__at { margin-left:0;flex-basis:100% }
 }
-@media (prefers-reduced-motion: reduce) { .vc-feed-caret, .vc-track__fill { transition:none } }
+/* A single keyboard ring also covers native controls and hosted panels. */
+:focus-visible { outline:2px solid var(--accent) !important;outline-offset:2px }
+.vc-skip-link { position:fixed;top:8px;left:8px;z-index:3000;padding:12px 16px;background:var(--surface);color:var(--text);border:2px solid var(--accent);border-radius:var(--radius-medium);transform:translateY(-160%) }
+.vc-skip-link:focus { transform:none }
+:where(input:not([type=range]):not([type=checkbox]):not([type=radio]), textarea, select), .vc-btn--secondary, .vc-search, .vc-chips__input, .vc-confirm-field input { border-color:var(--control-border) !important }
+.vc-switch:not(.vc-switch--on) { background:var(--control-border) }
+@media (max-width: 720px) {
+  button, select, input:not([type=checkbox]):not([type=radio]):not([type=hidden]), summary, [role=button] { min-height:40px !important;min-width:40px !important }
+  .vc-btn, .vc-toast-action, .vc-toast-close, .vc-chip__remove { min-height:40px !important;min-width:40px !important }
+  .vc-actionbar { flex-wrap:wrap }
+}
+/* Disable motion on hosted screens and pseudo-elements, including new animations.
+   Static state (expanded panels, progress values) still remains visible. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation:none !important;transition:none !important;scroll-behavior:auto !important }
+}

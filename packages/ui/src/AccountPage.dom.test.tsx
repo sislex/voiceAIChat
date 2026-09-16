@@ -8,6 +8,20 @@ import { UiProviders } from '@voicechat/ui-kit'
 import type { RendererApi } from '@shared/ipc'
 import type { UsageReport, UserProfileInfo } from '@shared/admin'
 
+import { uiPerformance } from './lib/uiPerformance'
+// @testCase T1
+it('waits for the selected account tab data before measuring readiness', async () => {
+  const p=uiPerformance(),mark=vi.spyOn(p,'mark')
+  let complete!: (value:UsageReport)=>void
+  const api=fakeApi({'usage:report':()=>new Promise<UsageReport>(r=>{complete=r})})
+  p.begin('route');renderPage(api,'usage')
+  await screen.findByTestId('account-page')
+  await act(async()=>{await new Promise(r=>setTimeout(r,40))})
+  expect(mark).not.toHaveBeenCalledWith('route','account_ready')
+  await act(async()=>{complete(report)})
+  await waitFor(()=>expect(mark).toHaveBeenCalledWith('route','account_ready'))
+  p.hidden();mark.mockRestore()
+})
 const NOW = Date.UTC(2026, 7, 31, 12, 0, 0)
 
 const profile: UserProfileInfo = {

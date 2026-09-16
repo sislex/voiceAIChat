@@ -29,6 +29,7 @@ import type { RendererQaBridge } from './remote/qaBridge'
 
 declare global {
   interface Window {
+    onboarding?: import('@shared/ipc').RendererOnboardingBridge
     api: RendererApi
     /** Минимальный host-мост единого Electron-приложения; в browser отсутствует. */
     desktopHost?: {

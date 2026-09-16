@@ -33,6 +33,22 @@ describe('Tailscale system observation', () => {
     expect(ip).not.toHaveBeenCalled()
     expect(guard.release).not.toHaveBeenCalled()
   })
+  // @testCase TC-NETWORK
+  it.each(['linux', 'darwin'] as const)('does not probe a direct IP when the protection helper fails on %s', async platform => {
+    const run = vi.fn(async (args: string[]) => JSON.stringify(args[0] === 'status'
+      ? { Version: '1.88.0', BackendState: 'Running', Self: { ID: 'node1', TailscaleIPs: ['100.64.0.1'] },
+        CurrentTailnet: { Name: 'test.ts.net' }, ExitNodeStatus: { ID: 'node2', Online: true } }
+      : { ExitNodeID: 'node2' }))
+    const guard = { status: vi.fn().mockRejectedValue(new Error('helper unavailable')), arm: vi.fn(), release: vi.fn() }
+    const ip = vi.fn(async () => '203.0.113.1')
+    const observed = await new TailscaleSystem(run, guard, platform, ip).inspect()
+    expect(observed).toMatchObject({ mode: 'client', gatewayOnline: true, error: 'guard',
+      protected: false, recoveryReady: false, externalIp: null })
+    expect(ip).not.toHaveBeenCalled()
+    expect(guard.arm).not.toHaveBeenCalled()
+    expect(guard.release).not.toHaveBeenCalled()
+    expect(run.mock.calls.map(([args]) => args)).toEqual([['status', '--json'], ['debug', 'prefs']])
+  })
   // @testCase TC-STATE
   it('gives a concrete preparation state for missing CLI, missing permission and unsupported OS', async () => {
     const run = vi.fn().mockRejectedValue({ code: 'ENOENT' })

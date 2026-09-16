@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { usePolling } from '@voicechat/ui-kit'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResult, QaResultStatus, QaSession, QaTaskState } from '@shared/qa'
 import { canCompleteQa, qaProgress } from '@shared/qa'
 import { QaMetadata, QaRefresh, QaImage, useQaRefresh, downloadQaReport, md, reportLink } from './ComponentQaPanel'
@@ -46,11 +47,7 @@ export function ManualQaPanel(props: {
   useQaStageUpdates({projectId:props.projectId,taskId:props.taskId,stage:'manual_qa',onUpdate:()=>void load(),active:!!state?.activeSession})
   useEffect(() => { setAdditionalIssues(state?.activeSession?.additionalIssues ?? '') }, [state?.activeSession?.id])
   useEffect(() => { if (state?.preparation?.status === 'success') setPreparationOpen(false); else if (state?.preparation) setPreparationOpen(true) }, [state?.preparation?.status, state?.preparation?.id])
-  useEffect(() => {
-    if (state?.preparation?.status !== 'running') return
-    const timer = window.setInterval(() => { void load() }, 2_000)
-    return () => window.clearInterval(timer)
-  }, [state?.preparation?.status, state?.preparation?.attempt])
+  usePolling(() => { void load() }, { enabled: state?.preparation?.status === 'running', intervalMs: 2_000 })
   const session = state?.activeSession ?? state?.sessions[0] ?? null
   const progress = useMemo(() => session ? qaProgress(session) : null, [session])
 

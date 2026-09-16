@@ -13,7 +13,7 @@ function revealSelector(action: PreviewAction): { selector?: string; text?: stri
 }
 /** На телефоне лента раскрытой по умолчанию отнимает у страницы половину экрана. */
 function defaultExpanded(): boolean {
-  try { return !(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 560px)').matches) } catch { return true }
+  try { return !(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 720px)').matches) } catch { return true }
 }
 function timeLabel(at: number | undefined): string {
   if (!at) return ''

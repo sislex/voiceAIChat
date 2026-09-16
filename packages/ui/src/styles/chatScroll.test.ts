@@ -16,7 +16,7 @@
 
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { decl, mediaBody } from './cssRules'
+import { decl, atRuleBodies } from './cssRules'
 
 describe('app.css — колонка чата не выдавливает композер', () => {
   it('колонка чата ровно в экран', () => {
@@ -50,7 +50,7 @@ describe('app.css — колонка чата не выдавливает ком
 
   it('на телефоне шапке задачи достаётся меньше, а ленте сообщений — больше', () => {
     // Отступы .scroll — её фактический минимум: колонка сжимает ленту первой.
-    const phone = mediaBody('(max-width: 768px)')
+    const phone = atRuleBodies('@media (max-width: 720px)').join('\n')
     expect(phone).toMatch(/\.taskchat\s*\{[^}]*max-height:\s*40%/)
     expect(phone).toMatch(/\.scroll\s*\{[^}]*padding:\s*14px 0/)
   })

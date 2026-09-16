@@ -3,5 +3,6 @@ export type { AdminActions, AdminState, AdminStore, AdminDeps } from './store/ad
 export type * from './contracts'
 export { parseAdminRoute, buildAdminRoute, createAdminNavigationModel } from './routes'
 export type { AdminRoute } from './routes'
+export { PerformanceDashboard } from './PerformanceDashboard'
 export { UsersAdmin } from './UsersAdmin'
 export type { UsersAdminProps } from './UsersAdmin'

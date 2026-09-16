@@ -1,14 +1,239 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 
 // @testCase tc-regression-global-llm
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
-import { screen, within } from '@testing-library/react'
+import { screen, within, waitFor } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { SettingsModal, type SettingsModalProps } from './SettingsModal'
 import { PersonalizationPage, isValidPersonalizationDate } from './SettingsPage'
 import { DEFAULT_SETTINGS, type UserRole } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
+
+import { OnboardingModal } from './OnboardingModal'
+import { initialOnboarding, ONBOARDING_STATUSES, type OnboardingState } from '@shared/types'
+import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
+import type { RendererOnboardingBridge, SttUpdate, IpcEventPayload } from '@shared/ipc'
+import { createBrowserAudioController } from '../audio/browserAudio'
+import { AudioCapture } from '../audio/audioCapture'
+
+vi.mock('../audio/browserAudio', () => ({ createBrowserAudioController: vi.fn() }))
+
+function onboardingFixture() {
+  const api = createFakeApi()
+  const save = vi.fn(async (onboarding: OnboardingState) => { await api['settings:save']({ onboarding }) })
+  const done = vi.fn()
+  const props = {
+    api, settings: { ...DEFAULT_SETTINGS }, onSave: save, onDone: done,
+    modelPresent: true, modelLabel: 'base', downloading: false, downloadPercent: 0,
+    onDownloadModel: vi.fn(), hasVoice: true
+  }
+  return { api, save, done, props }
+}
+
+describe('resumable onboarding', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks() })
+
+  // @testCase TC-NEG-1
+  it('releases a microphone grant that arrives after recording was cancelled', async () => {
+    let grant!: (stream: MediaStream) => void
+    const getUserMedia = vi.fn(() => new Promise<MediaStream>(resolve => { grant = resolve }))
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } })
+    const capture = new AudioCapture({ workletUrl: '/pcm.js', onChunk: vi.fn() })
+    expect(getUserMedia).not.toHaveBeenCalled()
+    const started = capture.start()
+    const cancelled = expect(started).rejects.toThrow('Запись отменена')
+    await capture.stop()
+    const stop = vi.fn()
+    grant({ getTracks: () => [{ stop }] } as unknown as MediaStream)
+    await cancelled
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  // @testCase TC-UI-1
+  it.each(ONBOARDING_STATUSES)('renders accessible diagnostics and an exit for %s', async status => {
+    const f = onboardingFixture()
+    const onboarding = initialOnboarding()
+    onboarding.results.microphone = { status, diagnostic: 'Long diagnostic '.repeat(30) }
+    render(<OnboardingModal {...f.props} settings={{ ...DEFAULT_SETTINGS, onboarding }} />)
+    expect(screen.getByRole('button', { name: 'Продолжить в чате' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Пропустить шаг' })).toBeTruthy()
+    await expectNoViolations()
+    const user = userEvent.setup()
+    const exit = screen.getByRole('button', { name: 'Продолжить в чате' })
+    for (let i = 0; i < 20 && document.activeElement !== exit; i++) await user.tab()
+    expect(document.activeElement).toBe(exit)
+    expect(exit.hasAttribute('disabled')).toBe(false)
+    await user.keyboard('{Enter}')
+    expect(f.done).toHaveBeenCalledTimes(1)
+  })
+
+  // @testCase TC-STATE-1
+  it('invalidates a changed voice without discarding microphone and machine successes', async () => {
+    const f = onboardingFixture()
+    const onboarding = initialOnboarding()
+    for (const step of ['microphone', 'tts', 'machine'] as const) onboarding.results[step] = { status: 'success', diagnostic: 'Verified' }
+    const view = render(<OnboardingModal {...f.props} settings={{ ...DEFAULT_SETTINGS, onboarding }} />)
+    await waitFor(() => expect(f.save).toHaveBeenCalled())
+    view.rerender(<OnboardingModal {...f.props} settings={{ ...DEFAULT_SETTINGS, onboarding, voice: 'changed' }} />)
+    await waitFor(() => expect(f.api._state.settings.onboarding?.results.tts.status).toBe('warning'))
+    expect(f.api._state.settings.onboarding?.results.microphone.status).toBe('success')
+    expect(f.api._state.settings.onboarding?.results.machine.status).toBe('success')
+  })
+
+  // @testCase TC-STATE-1
+  it('keeps the saved step selected when another resource becomes unavailable', async () => {
+    const f = onboardingFixture()
+    const onboarding = initialOnboarding()
+    onboarding.current = 'machine'
+    onboarding.results.tts = { status: 'success', diagnostic: 'Played' }
+    render(<OnboardingModal {...f.props} settings={{ ...DEFAULT_SETTINGS, onboarding }} unavailableSteps={['tts']} />)
+    await waitFor(() => expect(f.api._state.settings.onboarding?.results.tts.status).toBe('warning'))
+    expect(f.api._state.settings.onboarding?.current).toBe('machine')
+    expect(screen.getByRole('heading', { name: 'Машина' })).toBeTruthy()
+  })
+
+  // @testCase TC-NEG-1
+  it('does not request permission, open a diagnostic connection or send a test on mount and recovery', async () => {
+    const f = onboardingFixture()
+    const progress = initialOnboarding()
+    progress.results.microphone.status = 'checking'
+    progress.results.tts = { status: 'success', diagnostic: 'Played' }
+    const open = vi.fn()
+    render(<OnboardingModal {...f.props} settings={{ ...DEFAULT_SETTINGS, onboarding: progress }} bridge={{ open }} />)
+    expect(screen.getByText(/Проверка прервана/)).toBeTruthy()
+    expect(open).not.toHaveBeenCalled()
+    expect(createBrowserAudioController).not.toHaveBeenCalled()
+    await waitFor(() => expect(f.save).toHaveBeenCalled())
+    expect(f.api._state.settings.onboarding?.results.tts.status).toBe('success')
+    expect(f.api._state.settings.onboarding?.results.microphone.status).toBe('warning')
+    expect(open).not.toHaveBeenCalled()
+    expect(createBrowserAudioController).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Продолжить в чате' }))
+    expect(f.done).toHaveBeenCalledTimes(1)
+  })
+
+  // @testCase TC-STATE-1
+  it('keeps unsaved results visible, retries persistence and resets only onboarding', async () => {
+    const f = onboardingFixture()
+    f.save.mockRejectedValueOnce(new Error('Storage unavailable'))
+    render(<OnboardingModal {...f.props} />)
+    await screen.findByRole('alert')
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить сохранение' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Пропустить шаг' }))
+    await waitFor(() => expect(f.api._state.settings.onboarding?.results.microphone.status).toBe('skipped'))
+    await userEvent.click(screen.getByRole('button', { name: 'Сбросить только прогресс' }))
+    await waitFor(() => expect(f.api._state.settings.onboarding?.results.microphone.status).toBe('idle'))
+    expect(f.api._state.settings.theme).toBe(DEFAULT_SETTINGS.theme)
+    expect(f.api._state.settings.voice).toBe(DEFAULT_SETTINGS.voice)
+    expect(f.api._state.conversations).toEqual([])
+  })
+
+  // @testCase TC-DEGRADED-1
+  // @testCase TC-UI-1
+  it('keeps chat exit available after a service error without claiming a working LLM', async () => {
+    const f = onboardingFixture()
+    f.api['system:capabilities'] = vi.fn().mockRejectedValue(new Error('offline'))
+    render(<OnboardingModal {...f.props} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить / повторить' }))
+    await screen.findByText(/Ошибка: Проверка не завершилась/)
+    expect(f.api._state.settings.onboarding?.results.llm.status).not.toBe('success')
+    await userEvent.click(screen.getByRole('button', { name: 'Продолжить в чате' }))
+    expect(f.done).toHaveBeenCalled()
+  })
+
+  // @testCase TC-NEG-1
+  it('ignores a late check result after reset', async () => {
+    const f = onboardingFixture()
+    let resolve!: (value: Awaited<ReturnType<typeof f.api['agents:list']>>) => void
+    f.api['agents:list'] = vi.fn(() => new Promise<Awaited<ReturnType<typeof f.api['agents:list']>>>(r => { resolve = r }))
+    render(<OnboardingModal {...f.props} />)
+    await userEvent.click(screen.getByRole('button', { name: /4\. Машина/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить / повторить' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сбросить только прогресс' }))
+    resolve([])
+    await waitFor(() => expect(f.api._state.settings.onboarding?.results.machine.status).toBe('idle'))
+  })
+
+  // @testCase TC-VOICE-1
+  // @testCase TC-NEG-1
+  it.each([
+    { provider: 'claude' as const, failure: '' },
+    { provider: 'codex' as const, failure: '' },
+    ...['permission', 'recognition', 'llm', 'tts', 'autoplay'].map(failure => ({ provider: 'codex' as const, failure }))
+  ])('checks the complete voice chain through $provider with failure=$failure', async ({ provider, failure }) => {
+    const f = onboardingFixture()
+    f.props.settings.llmProvider = provider
+    let final: (value: SttUpdate) => void = () => {}
+    let answer: (value: IpcEventPayload<'claude:done'>) => void = () => {}
+    let audio: (value: { audio: ArrayBuffer }) => void = () => {}
+    const noop = () => () => {}
+    const conn: ReturnType<RendererOnboardingBridge['open']> = {
+      audio: { audioStart: vi.fn(), audioChunk: vi.fn(), audioStop: vi.fn() },
+      stt: { onFinal: cb => { final = cb; return () => { final = () => {} } }, onPartial: noop, onError: noop,
+        download: vi.fn(), onDownloadProgress: noop, onDownloadDone: noop, onDownloadError: noop },
+      tts: { onAudio: cb => { audio = cb; return () => { audio = () => {} } }, onError: noop,
+        speak: vi.fn(() => queueMicrotask(() => audio({ audio: new ArrayBuffer(8) }))), cancel: vi.fn(),
+        downloadVoice: vi.fn(), onVoiceProgress: noop, onVoiceDone: noop, onVoiceError: noop },
+      claude: { onDone: cb => { answer = cb; return () => { answer = () => {} } }, onToken: noop, onError: noop, onLog: noop,
+        send: vi.fn(payload => queueMicrotask(() => answer({ conversationId: payload.conversationId, text: 'Ответ', engine: provider }))),
+        cancel: vi.fn() },
+      close: vi.fn()
+    }
+    const start = vi.fn(async () => {
+      if (failure === 'permission') throw new DOMException('Denied', 'NotAllowedError')
+    })
+    const stop = vi.fn(async () => { final({ text: failure === 'recognition' ? '' : 'Проверка', segments: [{ speakerId: 1, text: 'Проверка' }] }) })
+    vi.mocked(createBrowserAudioController).mockReturnValue({ start, stop })
+    f.api['auth:status'] = vi.fn(async () => ({
+      claude: { provider: 'claude' as const, loggedIn: provider === 'claude' },
+      codex: { provider: 'codex' as const, loggedIn: provider === 'codex' && failure !== 'llm' }
+    }))
+    f.api['system:capabilities'] = vi.fn(async () => ({
+      stt: { available: true, reason: '' }, tts: { available: true, reason: '' }, memoryLimitBytes: 1e10, cpuCount: 4
+    }))
+    f.api['stt:status'] = vi.fn(async () => ({ present: true, model: DEFAULT_SETTINGS.whisperModel }))
+    f.api['tts:voices'] = vi.fn().mockResolvedValue([{ id: 'voice' }])
+    let ended: (() => void) | null = null
+    vi.stubGlobal('AudioContext', class {
+      state = 'running'
+      destination = {}
+      resume = async () => { if (failure === 'autoplay') throw new DOMException('Blocked', 'NotAllowedError') }
+      close = async () => {}
+      decodeAudioData = async () => { if (failure === 'tts') throw new Error('Invalid audio'); return {} }
+      createBufferSource() {
+        return { buffer: null, connect() {}, start() {}, stop() {},
+          set onended(cb: (() => void) | null) { ended = cb } }
+      }
+    })
+    render(<OnboardingModal {...f.props} bridge={{ open: () => conn }} />)
+    await userEvent.click(screen.getByRole('button', { name: /5\. Голосовой запрос/ }))
+    expect(start).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить / повторить' }))
+    if (failure !== 'permission') await userEvent.click(await screen.findByRole('button', { name: 'Завершить запись' }))
+    if (failure) {
+      await waitFor(() => expect(f.api._state.settings.onboarding?.results.voice.status).toBe('error'))
+      const failedStep = ['permission', 'recognition'].includes(failure) ? 'microphone' : failure === 'llm' ? 'llm' : 'tts'
+      expect(f.api._state.settings.onboarding?.results[failedStep].status).toBe('error')
+      if (failedStep !== 'microphone') expect(f.api._state.settings.onboarding?.results.microphone.status).toBe('success')
+      if (failedStep === 'tts') expect(f.api._state.settings.onboarding?.results.llm.status).toBe('success')
+      expect(f.api._state.settings.onboarding?.results.tts.status).not.toBe('success')
+      if (failure === 'autoplay') expect(f.api._state.settings.onboarding?.results.tts.diagnostic).toContain('Воспроизведение запрещено')
+      await userEvent.click(screen.getByRole('button', { name: 'Продолжить в чате' }))
+      expect(f.done).toHaveBeenCalledTimes(1)
+      expect(conn.close).toHaveBeenCalledTimes(1)
+      return
+    }
+    await waitFor(() => expect(ended).not.toBeNull())
+    expect(f.api._state.settings.onboarding?.results.voice.status).toBe('checking')
+    ;(ended as (() => void) | null)?.()
+    await waitFor(() => expect(f.api._state.settings.onboarding?.results.voice.status).toBe('success'))
+    expect(conn.claude.send).toHaveBeenCalledTimes(1)
+    expect(conn.tts.speak).toHaveBeenCalledWith(expect.objectContaining({ text: 'Ответ' }))
+    expect(conn.close).toHaveBeenCalledTimes(1)
+  })
+})
 
 /** Минимальные пропы модалки: всё пустое/no-op, кроме роли и переопределений. */
 function renderModal(role: UserRole, overrides: Partial<SettingsModalProps> = {}): void {

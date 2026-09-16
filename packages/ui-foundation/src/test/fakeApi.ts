@@ -953,6 +953,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'admin:revokeUserSessions': async ({ name, exceptCurrent }) => { for (let i = adminSessions.length - 1; i >= 0; i--) if (adminSessions[i]!.user === name && !(exceptCurrent && adminSessions[i]!.current)) adminSessions.splice(i, 1); return { ok: true as const } },
     'admin:revokeSession': async ({ sid }) => { const i = adminSessions.findIndex((s) => s.sid === sid); if (i >= 0) adminSessions.splice(i, 1); return { ok: true as const } },
     'admin:updateMachine': async () => ({ ok: true as const, os: 'linux' }),
+    'uiPerformance:send': async () => {},
+    'uiPerformance:report': async (q) => ({ from: q.from, to: q.to, minSamples: 20, metrics: [], trend: [] }),
     'admin:machineStats': async () => ({ generatedAt: 1, machines: [], totals: { machines: 0, online: 0, commands24h: 0, errors24h: 0 } }),
     'admin:makeStats': async () => ({ projects: 2, bytes: 3 * 1048576, filesBytes: 1048576, snapshotsBytes: 2 * 1048576, shotsBytes: 0, published: 1, shared: 0, views: 12, limitBytes: 64 * 1048576, userLimitBytes: 512 * 1048576, byUser: [{ user: 'admin', projects: 2, bytes: 3 * 1048576, published: 1, views: 12 }], top: [{ conversationId: 'make-1', owner: 'admin', filesCount: 5, bytes: 2 * 1048576, snapshots: 3, published: true, shared: false, views: 12, updatedAt: 1 }] }),
     'admin:usageSummary': async () => adminUsers.map((u) => ({ name: u.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 }, byModel: [] })),

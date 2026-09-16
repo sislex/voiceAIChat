@@ -407,6 +407,40 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board!.tasks.map((t) => t.title)).toContain('Задача A')
   })
 
+  // @testCase TC-INT-01
+  it.each(['unchanged', 'live', 'project'] as const)('rejects a move without replacing newer data: %s', async scenario => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const projectId = store.getState().projectDetail!.id
+    await store.actions.openBoard(projectId)
+    const [todo, doing] = store.getState().board!.columns
+    await store.actions.createTask(todo.id, { title: 'Original' })
+    const original = store.getState().board!.tasks[0]
+    const pending = deferred<Awaited<ReturnType<typeof api['tasks:move']>>>()
+    vi.spyOn(api, 'tasks:move').mockReturnValueOnce(pending.promise)
+    const move = store.actions.moveTask(original.id, doing.id)
+    expect(store.getState().board!.tasks[0].columnId).toBe(doing.id)
+    if (scenario === 'live') {
+      await api['tasks:update']({ projectId, taskId: original.id, title: 'New live title' })
+      await store.actions.openBoard(projectId)
+    } else if (scenario === 'project') {
+      await store.actions.createProject({ name: 'P2' })
+      await store.actions.openBoard(store.getState().projectDetail!.id)
+    }
+    pending.reject(new Error('Move rejected'))
+    expect(await move).toBe(false)
+    const current = store.getState().board!
+    if (scenario === 'project') {
+      expect(store.getState().activeProjectId).not.toBe(projectId)
+      expect(current.tasks.some(task => task.id === original.id)).toBe(false)
+    } else {
+      expect(current.tasks).toHaveLength(1)
+      expect(current.tasks[0].columnId).toBe(todo.id)
+      expect(current.tasks[0].title).toBe(scenario === 'live' ? 'New live title' : 'Original')
+    }
+  })
+
+  // @testCase TC-INT-01
   it('moveTask оптимистично меняет колонку и зовёт tasks:move', async () => {
     const { store, api } = makeStore()
     const spy = vi.spyOn(api, 'tasks:move')

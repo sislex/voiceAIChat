@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { usePolling } from '@voicechat/ui-kit'
 import './MachineVpn.css'
 import { Button, EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -37,9 +38,9 @@ export function MachineVpn({ agent, bridge, clock = Date.now }: { agent: AgentIn
   }
   useEffect(() => {
     if (supported) void refresh()
-    const timer = setInterval(() => { setNow(clock()); if (supported) void refresh() }, 30_000)
-    return () => { ++generation.current; clearInterval(timer) }
+    return () => { ++generation.current }
   }, [agent.id, bridge, supported])
+  usePolling(() => { setNow(clock()); if (supported) void refresh() }, { enabled: true, intervalMs: 30_000 })
   const observed = agent.telemetry?.vpn && (!view?.state.observed || agent.telemetry.vpn.observedAt > view.state.observed.observedAt)
     ? agent.telemetry.vpn : view?.state.observed ?? null
   const stale = !agent.online || !isVpnFresh(observed, now)

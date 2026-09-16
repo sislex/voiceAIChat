@@ -18,6 +18,7 @@ import type { RendererKbBridge } from '../../../../packages/ui/src/remote/kbBrid
 
 declare global {
   interface Window {
+    onboarding?: import('@shared/ipc').RendererOnboardingBridge
     api: RendererApi
     audio: RendererAudioBridge
     stt: RendererSttBridge

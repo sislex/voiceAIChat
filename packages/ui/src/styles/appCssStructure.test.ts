@@ -36,10 +36,12 @@ function topLevelSelectors(): string[] {
 
 describe('структура app.css', () => {
   // @testCase TC5
-  it('scopes mobile snap, independent scrolling and floating creation to the inclusive 720px breakpoint', () => {
+  // @testCase TC-REG-01
+  it('scopes one-column scrolling and floating creation to the available 720px board width', () => {
     const rules = cssRules(css)
-    const mobile = rules.atRuleBodies('@media (max-width: 720px)').join('\n')
-    expect(mobile).toContain('scroll-snap-type: x mandatory')
+    const mobile = rules.atRuleBodies('@container kanban (max-width: 720px)').join('\n')
+    expect(mobile).toContain('flex-basis: 100%; width: 100%')
+    expect(mobile).toContain('overflow-x: hidden')
     expect(mobile).toContain('.jboard .jcol-content:not([hidden])')
     expect(mobile).toContain('.jboard-mobile-create')
     const desktop = new Set(topLevelSelectors())

@@ -87,8 +87,12 @@ beforeAll(async () => {
   browser = await chromium.launch({ args: ['--no-sandbox'] })
   page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', hasTouch: true })
   await page.addInitScript(value => {
-    localStorage.setItem('vc.session.token', value)
-    localStorage.setItem('vc:shell:admin:tour', 'true')
+    // Seed once: re-injecting a migrated legacy token races cookie/CSRF refresh on reload.
+    if (!sessionStorage.getItem('qa-palette-auth-seeded')) {
+      localStorage.setItem('vc.session.token', value)
+      localStorage.setItem('vc:shell:admin:tour', 'true')
+      sessionStorage.setItem('qa-palette-auth-seeded', 'true')
+    }
   }, token)
   await page.goto(base + '/#/chat/' + chatId)
   await page.locator('.cmdk-open').waitFor()
@@ -126,8 +130,6 @@ it('keeps keyboard, touch, focus and geometry usable at all five sizes in both t
       // Mobile opens the existing sidebar before the same touch control.
       if (width! <= 720) {
         await page.getByRole('button', { name: 'Ещё', exact: true }).click()
-      } else if (width! <= 768) {
-        await page.getByRole('button', { name: 'Открыть боковую панель', exact: true }).first().click()
       }
       const button = page.locator('.cmdk-open')
       await button.waitFor({ state: 'visible' })
