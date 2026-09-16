@@ -1,7 +1,7 @@
 // Домен «ci»: таблицы ci_commands, ci_slot_commands, ci_command_suggestions, ci_events, ci_fix_attempts, ci_gate_results, ci_interactions, ci_llm_configs, ci_stage_llm_configs, ci_run_kb_gaps, ci_run_kb_metrics, ci_run_logs, ci_run_steps, ci_run_tool_calls, ci_run_tool_responses, ci_run_usage, ci_runs, ci_settings, ci_stage_runs, ci_task_browser_checks, ci_task_process_stages, ci_test_events, ci_test_fix_cycles, ci_test_fix_decisions, ci_test_fix_targeted_runs, ci_test_fix_task_state, ci_test_group_configs, ci_test_group_runs, ci_test_runs, ci_test_targeted_runs, ci_workspaces, merge_runs, integration_test_runs, component_qa_runs.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import { DEFAULT_CODEX_MODEL, isProviderAllowed, firstAllowedProvider, clampModel, type LlmProvider, type KbContextMode, type CiCommand, type CiCommandInput, type CiCommandScope, type CiSlot, type CiSlotConfig, type CiBrowserCheck, type CiProcessStage, CI_PROCESS_STAGES, DEFAULT_CI_BROWSER_CHECK, normalizeCiBrowserCheck, normalizeCiProcessStages, type CiLlmConfig, DEFAULT_CI_CLAUDE_MODEL, CI_KB_UPDATE_COMMAND_ID, CI_KB_UPDATE_COMMAND_NAME, DEFAULT_CI_LLM_CONFIG, type CiRunMode, type CiClarifyLevel, type CiInteraction, type CiInteractionKind, type CiInteractionStatus, type CiPlanDecision, type QuestionSpec, type CiGlobalSettings, DEFAULT_CI_GLOBAL_SETTINGS, type CiRun, type MergeRun, ACTIVE_MERGE_STATUSES, type CiRunDetail, type CiExecutionLlmSnapshot, type CiStageRun, type CiRunStep, type CiStatus, type CiStepKind, type CiInitiatedBy, type CiSlotProgress, type CiLogLine, type CiFixAttempt, type CiFixDiagnosticContext, type CiTargetedTestRun, type CiTestFailure, type CiWorkspace, type CiWorkspaceReportItem, type CiCommandSuggestion, type CiRunSummary, type CiCommandMetric, type CiModelWorkMetric, type CiEventActor, type CiRunUsage, type CiUsageKind, CI_USAGE_KINDS, type CiStageLlmSelection, type CiStageLlmSnapshot, resolveCiStageLlm, type CiInputSemantics, type CiToolCalls, type CiToolChars, type CiToolKind, type CiRunToolResponse, type CiRunReport, type CiRunReportStep, type CiTaskReport, type KbGapNote, CI_TOOL_KINDS, CI_TOOL_RESPONSES_KEEP, CI_TOOL_RESPONSES_SHOWN, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS, ciTaskTotals, ciUsageStages, ciUsageTotals, normCiStageModels, buildCiAutomationProgress, isVerificationCommand, componentQaLaunchReasons, componentQaSemanticVersion, canTransitionWorkflow, type DevelopmentReadiness, type ComponentQaRun, type ComponentQaScenarioSnapshot, type ComponentQaCommandResult, type ComponentQaArtifact, type IntegrationTestRun, type IntegrationTestTaskState, type IntegrationTestCommandResult, integrationTestSemanticVersion, integrationTestGate } from '@voicechat/shared'
+import { DEFAULT_CODEX_MODEL, isProviderAllowed, firstAllowedProvider, clampModel, type LlmProvider, type KbContextMode, type CiCommand, type CiCommandInput, type CiCommandScope, type CiSlot, type CiSlotConfig, type CiBrowserCheck, type DevelopmentPreviewSettings, type CiProcessStage, CI_PROCESS_STAGES, DEFAULT_CI_BROWSER_CHECK, DEFAULT_DEVELOPMENT_PREVIEW, normalizeCiBrowserCheck, normalizeDevelopmentPreview, normalizeCiProcessStages, type CiLlmConfig, DEFAULT_CI_CLAUDE_MODEL, CI_KB_UPDATE_COMMAND_ID, CI_KB_UPDATE_COMMAND_NAME, DEFAULT_CI_LLM_CONFIG, type CiRunMode, type CiClarifyLevel, type CiInteraction, type CiInteractionKind, type CiInteractionStatus, type CiPlanDecision, type QuestionSpec, type CiGlobalSettings, DEFAULT_CI_GLOBAL_SETTINGS, type CiRun, type MergeRun, ACTIVE_MERGE_STATUSES, type CiRunDetail, type CiExecutionLlmSnapshot, type CiStageRun, type CiRunStep, type CiStatus, type CiStepKind, type CiInitiatedBy, type CiSlotProgress, type CiLogLine, type CiFixAttempt, type CiFixDiagnosticContext, type CiTargetedTestRun, type CiTestFailure, type CiWorkspace, type CiWorkspaceReportItem, type CiCommandSuggestion, type CiRunSummary, type CiCommandMetric, type CiModelWorkMetric, type CiEventActor, type CiRunUsage, type CiUsageKind, CI_USAGE_KINDS, type CiStageLlmSelection, type CiStageLlmSnapshot, resolveCiStageLlm, type CiInputSemantics, type CiToolCalls, type CiToolChars, type CiToolKind, type CiRunToolResponse, type CiRunReport, type CiRunReportStep, type CiTaskReport, type KbGapNote, CI_TOOL_KINDS, CI_TOOL_RESPONSES_KEEP, CI_TOOL_RESPONSES_SHOWN, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS, ciTaskTotals, ciUsageStages, ciUsageTotals, normCiStageModels, buildCiAutomationProgress, isVerificationCommand, componentQaLaunchReasons, componentQaSemanticVersion, canTransitionWorkflow, type DevelopmentReadiness, type ComponentQaRun, type ComponentQaScenarioSnapshot, type ComponentQaCommandResult, type ComponentQaArtifact, type IntegrationTestRun, type IntegrationTestTaskState, type IntegrationTestCommandResult, integrationTestSemanticVersion, integrationTestGate } from '@voicechat/shared'
 import { calculateKbHit, filesReadFromCiLog } from '../../ci/kbHit.js'
 import { testStages } from '../../ci/testStages.js'
 import { trimHistoricalRunLogs } from '../../ci/qaStateLogs.js'
@@ -432,16 +432,43 @@ export class CiRepo extends BaseRepo {
     return normalized
   }
 
-  /** Браузерная проверка задачи; нет строки — режим «без браузера». */
-  async getTaskBrowserCheck(taskId: string): Promise<CiBrowserCheck> {
+  private async getTaskPreviewJson(taskId: string): Promise<Record<string, unknown>> {
     const row = (await this.sql.get(`SELECT check_json FROM ci_task_browser_checks WHERE task_id = ?`, [taskId])) as { check_json: string } | undefined
-    if (!row) return { ...DEFAULT_CI_BROWSER_CHECK }
-    try { return normalizeCiBrowserCheck(JSON.parse(row.check_json)) } catch { return { ...DEFAULT_CI_BROWSER_CHECK } }
+    if (!row) return {}
+    try {
+      const raw = JSON.parse(row.check_json) as unknown
+      if (!raw || typeof raw !== 'object') return {}
+      const record = raw as Record<string, unknown>
+      return 'browserCheck' in record || 'developmentPreview' in record ? record : { browserCheck: record }
+    } catch { return {} }
+  }
+
+  private async setTaskPreviewJson(taskId: string, value: Record<string, unknown>): Promise<void> {
+    await this.sql.run(`INSERT INTO ci_task_browser_checks (task_id, check_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET check_json=excluded.check_json`, [taskId, JSON.stringify(value)])
+  }
+
+  /** Браузерная проверка задачи; legacy JSON читается без миграционного простоя. */
+  async getTaskBrowserCheck(taskId: string): Promise<CiBrowserCheck> {
+    const raw = await this.getTaskPreviewJson(taskId)
+    return raw.browserCheck === undefined ? { ...DEFAULT_CI_BROWSER_CHECK } : normalizeCiBrowserCheck(raw.browserCheck)
   }
 
   async setTaskBrowserCheck(taskId: string, value: unknown): Promise<CiBrowserCheck> {
     const normalized = normalizeCiBrowserCheck(value)
-    await this.sql.run(`INSERT INTO ci_task_browser_checks (task_id, check_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET check_json=excluded.check_json`, [taskId, JSON.stringify(normalized)])
+    const raw = await this.getTaskPreviewJson(taskId)
+    await this.setTaskPreviewJson(taskId, { ...raw, browserCheck: normalized })
+    return normalized
+  }
+
+  async getTaskDevelopmentPreview(taskId: string): Promise<DevelopmentPreviewSettings> {
+    const raw = await this.getTaskPreviewJson(taskId)
+    return raw.developmentPreview === undefined ? structuredClone(DEFAULT_DEVELOPMENT_PREVIEW) : normalizeDevelopmentPreview(raw.developmentPreview)
+  }
+
+  async setTaskDevelopmentPreview(taskId: string, value: unknown): Promise<DevelopmentPreviewSettings> {
+    const normalized = normalizeDevelopmentPreview(value)
+    const raw = await this.getTaskPreviewJson(taskId)
+    await this.setTaskPreviewJson(taskId, { ...raw, developmentPreview: normalized })
     return normalized
   }
 

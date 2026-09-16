@@ -155,10 +155,10 @@ describe('ci: выбор этапов процесса', () => {
 describe.skipIf(ON_POSTGRES)('ci: браузерная проверка задачи', () => {
   it('по умолчанию выключена, сохраняется и нормализуется при чтении', async () => {
     const { task } = await project()
-    expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/' })
+    expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/', failurePolicy: 'continue' })
     expect(await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 8799, startPath: 'board' }))
-      .toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board' })
-    expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board' })
+      .toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board', failurePolicy: 'continue' })
+    expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board', failurePolicy: 'continue' })
   })
 
   it('битая строка в БД не мешает запустить ран', async () => {
@@ -166,7 +166,7 @@ describe.skipIf(ON_POSTGRES)('ci: браузерная проверка зада
     await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium' })
     ;(db as unknown as { db: Database.Database }).db
       .prepare('UPDATE ci_task_browser_checks SET check_json = ? WHERE task_id = ?').run('{не json', task.id)
-    expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/' })
+    expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/', failurePolicy: 'continue' })
   })
 })
 

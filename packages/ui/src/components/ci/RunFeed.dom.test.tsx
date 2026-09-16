@@ -67,6 +67,25 @@ describe('RunFeed', () => {
     expect(screen.queryByText('Шагов пока нет')).not.toBeInTheDocument()
   })
 
+  // @testCase TC-UI-02
+  it('run feed distinguishes preview lifecycle, diagnostics, test DB and expired links', () => {
+    const preview = {
+      id: 'preview-1', projectId: 'p1', taskId: 't1', runId: 'run-1', worktree: '/work', sha: 'abcdef1',
+      state: 'warning' as const, diagnosticCode: 'browser_infrastructure' as const, warning: 'Chromium недоступен, workflow продолжен',
+      attempt: 2, url: 'http://preview.internal/', testDatabase: { id: 'db-1', ready: true },
+      createdAt: 1, expiresAt: 2, stoppedAt: null, artifacts: [{ kind: 'screenshot' as const, name: 'check.png' }]
+    }
+    const detail = { run: mkRun(), steps: [], fixAttempts: [], interactions: [] }
+    const view = render(<RunFeed {...baseProps({ detail, log: [], conclusion: null, preview })} />)
+    expect(screen.getByTestId('ci-preview-status')).toHaveTextContent('warning')
+    expect(screen.getByTestId('ci-preview-status')).toHaveTextContent('test DB: готова')
+    expect(screen.getByRole('link', { name: 'Открыть preview' })).toBeInTheDocument()
+    view.rerender(<RunFeed {...baseProps({ detail, log: [], conclusion: null, preview: { ...preview, state: 'expired', url: null } })} />)
+    expect(screen.getByTestId('ci-preview-status')).toHaveTextContent('expired')
+    expect(screen.queryByRole('link', { name: 'Открыть preview' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('ci-preview-status')).toHaveTextContent('check.png')
+  })
+
   it('показывает фактическую модель стадии отдельно от базовой модели рана', () => {
     const run = mkRun({ llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
     const executionLlm = {

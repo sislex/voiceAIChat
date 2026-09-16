@@ -6,7 +6,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 import { createPortal } from 'react-dom'
-import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer } from '@shared/ci'
+import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer, PreviewStatus } from '@shared/ci'
 import { DEFAULT_CI_CLAUDE_MODEL, isTerminalCiStatus } from '@shared/ci'
 import type { LlmEngineOption } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -49,6 +49,8 @@ export interface RunFeedCache {
   error?: string | null
   /** Идёт REST-подгрузка ленты: до первых шагов — скелетон, дальше — индикатор. */
   loading?: boolean
+  /** Durable Docker preview snapshot; screenshots remain after its URL expires. */
+  preview?: PreviewStatus | null
 }
 
 export interface RunFeedProps {
@@ -388,6 +390,17 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
           <Button onClick={() => setConsoleOpen(true)}>Консоль</Button>
         </div>
       </div>
+
+      {cache?.preview && (
+        <section className="ci-run-preview" data-testid="ci-preview-status" aria-label="Docker preview">
+          <strong>Docker preview: {cache.preview.state}</strong>
+          <span> · попытка {cache.preview.attempt}</span>
+          {cache.preview.testDatabase && <span> · test DB: {cache.preview.testDatabase.ready ? 'готова' : 'готовится'}</span>}
+          {cache.preview.warning && <div role="status">{cache.preview.warning}</div>}
+          {cache.preview.url && !['expired', 'stopped'].includes(cache.preview.state) && <a href={cache.preview.url}>Открыть preview</a>}
+          {cache.preview.artifacts.map((artifact) => <span key={artifact.name}> · {artifact.kind}: {artifact.name}</span>)}
+        </section>
+      )}
 
       {run && executionLlm && (
         <section className="ci-run-llm" data-testid="ci-execution-llm" aria-label="Фактическая модель выполнения">

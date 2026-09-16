@@ -68,14 +68,21 @@ describe('CiTaskSettings', () => {
     expect(screen.getByRole('checkbox', { name: 'Подготовка' })).toBeChecked()
   })
 
-  it('проверка в браузере: режим выключен, порт и страница появляются вместе с режимом и сохраняются', async () => {
+  // @testCase TC-UI-01
+  it('preview и browser-check включаются независимо, continue выбран по умолчанию и настройки сохраняются', async () => {
     const { unmount } = render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
-    const mode = await screen.findByRole('combobox', { name: 'Режим' })
+    const preview = await screen.findByRole('checkbox', { name: 'Включить Docker preview' })
+    const mode = screen.getByRole('combobox', { name: 'Режим' })
+    expect(preview).not.toBeChecked()
     expect(mode).toHaveValue('off')
+    fireEvent.click(preview)
+    expect(screen.getByRole('textbox', { name: 'Приложение preview' })).toHaveValue('auto')
+    expect(screen.getByRole('combobox', { name: 'Тестовая БД preview' })).toHaveValue('isolated-test')
     // Без режима порт и страница не нужны: спрашивать их «на всякий случай» незачем.
     expect(screen.queryByRole('spinbutton', { name: 'Порт dev-сервера' })).not.toBeInTheDocument()
 
     fireEvent.change(mode, { target: { value: 'chromium' } })
+    expect(screen.getByRole('combobox', { name: 'Политика browser-check' })).toHaveValue('continue')
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Порт dev-сервера' }), { target: { value: '8799' } })
     fireEvent.change(screen.getByRole('textbox', { name: 'Стартовая страница' }), { target: { value: '/board' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить проверку' }))
@@ -84,6 +91,7 @@ describe('CiTaskSettings', () => {
     unmount()
     render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
     expect(await screen.findByRole('combobox', { name: 'Режим' })).toHaveValue('chromium')
+    expect(screen.getByRole('checkbox', { name: 'Включить Docker preview' })).toBeChecked()
     expect(screen.getByRole('spinbutton', { name: 'Порт dev-сервера' })).toHaveValue(8799)
     expect(screen.getByRole('textbox', { name: 'Стартовая страница' })).toHaveValue('/board')
   })

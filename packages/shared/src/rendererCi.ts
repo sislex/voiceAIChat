@@ -64,6 +64,7 @@ export interface CiTaskConfig {
   projectDefault: CiSlotConfig
   enabledStages: import('./ci').CiProcessStage[]
   browserCheck: import('./ci').CiBrowserCheck
+  developmentPreview: import('./ci').DevelopmentPreviewSettings
 }
 
 /** Ответ GET метрик проекта. */
@@ -113,11 +114,13 @@ export interface RendererCiRest {
     config: Partial<CiSlotConfig> & {
       enabledStages?: import('./ci').CiProcessStage[]
       browserCheck?: import('./ci').CiBrowserCheck
+      developmentPreview?: import('./ci').DevelopmentPreviewSettings
     }
   ): Promise<
     CiSlotConfig & {
       enabledStages: import('./ci').CiProcessStage[]
       browserCheck: import('./ci').CiBrowserCheck
+      developmentPreview: import('./ci').DevelopmentPreviewSettings
     }
   >
   startRun(
