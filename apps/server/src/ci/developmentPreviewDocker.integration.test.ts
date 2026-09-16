@@ -13,6 +13,8 @@ const enabled = process.env.VC_TEST_DEVELOPMENT_DOCKER === '1'
 const temp: string[]=[]
 afterEach(()=>{for(const path of temp.splice(0))rmSync(path,{recursive:true,force:true})})
 describe.skipIf(!enabled)('real development Docker isolation',()=>{
+  // @testCase TC-INT-01
+  // @testCase TC-E2E-01
   it.each(['explicit','auto'] as const)('uses changed %s worktree code, creates an independent SQLite database, restricts egress and removes resources',async(mode)=>{
     const workspace=mkdtempSync(join(tmpdir(),'chat447-preview-'));temp.push(workspace)
     execFileSync('git',['init','-q'],{cwd:workspace})

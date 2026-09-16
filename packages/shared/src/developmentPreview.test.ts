@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_DEVELOPMENT_PREVIEW, normalizeDevelopmentPreview, developmentPreviewValidationError, browserEvidenceComplete, type DevelopmentBrowserEvidence } from './developmentPreview'
 import { DEFAULT_CI_BROWSER_CHECK, normalizeCiBrowserCheck } from './ci'
 describe('development preview contract', () => {
+  // @testCase TC-API-01
   it('keeps old tasks off and defaults failures to continue', () => {
     expect(normalizeDevelopmentPreview(undefined)).toEqual(DEFAULT_DEVELOPMENT_PREVIEW)
     expect(normalizeCiBrowserCheck(undefined)).toEqual(DEFAULT_CI_BROWSER_CHECK)
@@ -19,6 +20,7 @@ describe('development preview contract', () => {
     expect(normalizeDevelopmentPreview({enabled:true}).enabled).toBe(true)
     expect(normalizeCiBrowserCheck({}).mode).toBe('off')
   })
+  // @testCase TC-NEG-02
   it('requires target identity, screenshots and successful mandatory browser calls', () => {
     const e: DevelopmentBrowserEvidence = {url:'http://a/',sha:'sha',configDigest:'digest',viewport:{width:800,height:600},
       calls:['open','read','screenshot','errors','network','a11y','styles'].map(tool=>({tool,at:1,ok:true})),
