@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-17
-checked: 5b48daf9
+checked: 8f820f9c
 
 areas:
   - packages/shared/src/projects.ts
