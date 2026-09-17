@@ -110,6 +110,7 @@ async function createProject(): Promise<ProjectDetail> {
 }
 
 describe('WS: живое обновление доски', () => {
+  // @testCase TC-API-01
   it('участник получает board.changed без снапшота после мутации через REST', async () => {
     const p = await createProject()
     const auth = { authorization: `Bearer ${adminTok}` }
@@ -164,6 +165,7 @@ describe('WS: живое обновление доски', () => {
     expect(response.json().scenarios).toEqual(scenarios)
     expect(response.json().id).not.toBe(source.id)
   })
+  // @testCase TC-REG-03
   it('обновляет нормализованный результат при недоступном workspace Automated QA', async () => {
     const p = await createProject()
     const auth = { authorization: `Bearer ${adminTok}` }
@@ -212,6 +214,7 @@ describe('WS: живое обновление доски', () => {
     bob.close()
   })
 
+  // @testCase TC-NEG-01
   it('не-участник не получает board.changed по подписке', async () => {
     const p = await createProject()
     const ws = await connect(bobTok)

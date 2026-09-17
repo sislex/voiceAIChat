@@ -3,14 +3,38 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createTestStore, type TestStore } from '../test/appHarness'
+import { createProjectsClient } from '../projects/createProjectsClient'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
+import type { RendererBoardBridge } from '@shared/ipc'
 import type { Message } from '@shared/types'
 
-function makeStore(): { store: TestStore; api: FakeApi } {
+function makeStore(options: { board?: RendererBoardBridge } = {}): { store: TestStore; api: FakeApi } {
   const api = createFakeApi()
-  const store = createTestStore({ api, now: () => 1_700_000_000_000 })
+  const store = createTestStore({ api, board: options.board, now: () => 1_700_000_000_000 })
   return { store, api }
+}
+
+function fakeBoardBridge() {
+  let changed: ((event: { projectId: string }) => void) | null = null
+  let connected: (() => void) | null = null
+  const bridge: RendererBoardBridge = {
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    onChanged: vi.fn((listener) => { changed = listener; return () => { changed = null } }),
+    onConnected: vi.fn((listener) => { connected = listener; return () => { connected = null } }),
+    onPreparationRunUpdated: vi.fn(() => () => {}),
+    onTaskRepositoriesUpdated: vi.fn(() => () => {}),
+    onQaStageUpdated: vi.fn(() => () => {}),
+    onImprovementsUpdated: vi.fn(() => () => {}),
+    onReconnect: vi.fn(() => () => {})
+  }
+  return {
+    bridge,
+    changed: (projectId: string) => changed?.({ projectId }),
+    connected: () => connected?.(),
+    listeners: () => ({ changed, connected })
+  }
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
@@ -480,43 +504,150 @@ describe('voiceStore — проекты и доска', () => {
       .toEqual([first!.id, second!.id])
   })
 
-  it('applyBoardChanged refetch-ит только активный проект', async () => {
+  it('не теряет board.changed, пришедший во время первоначального HTTP-снимка', async () => {
+    const live = fakeBoardBridge()
+    const { store, api } = makeStore({ board: live.bridge })
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    const initial = await api['board:get']({ id, includeCompleted: false })
+    const column = initial.columns[0]!
+    const first = deferred<typeof initial>()
+    const realGet = api['board:get']
+    vi.spyOn(api, 'board:get').mockImplementationOnce(() => first.promise)
+
+    const opening = store.actions.openBoard(id)
+    await vi.waitFor(() => expect(store.getState().boardLoading).toBe(true))
+    await api['tasks:create']({ projectId: id, columnId: column.id, title: 'Пришла во время загрузки' })
+    live.changed(id)
+    first.resolve(initial)
+    await opening
+
+    await vi.waitFor(() => expect(store.getState().board?.tasks.map((task) => task.title)).toContain('Пришла во время загрузки'))
+    expect(realGet).toBeTypeOf('function')
+  })
+
+  // @testCase TC-UI-01
+  it('обновляет открытую доску после board.changed, сохраняя снимок во время фонового запроса', async () => {
     vi.useFakeTimers()
     try {
-      const { store, api } = makeStore()
+      const live = fakeBoardBridge()
+      const { store, api } = makeStore({ board: live.bridge })
       await store.actions.createProject({ name: 'P1' })
       const id = store.getState().projectDetail!.id
       await store.actions.openBoard(id)
       const column = store.getState().board!.columns[0]!
-      await store.actions.createTask(column.id, { title: 'До action' })
+      await store.actions.createTask(column.id, { title: 'До события' })
       const task = store.getState().board!.tasks[0]!
-      await api['tasks:update']({ projectId: id, taskId: task.id, title: 'После action' })
+      await api['tasks:update']({ projectId: id, taskId: task.id, title: 'После события' })
 
-      store.actions.applyBoardChanged('other')
+      const fresh = await api['board:get']({ id, includeCompleted: false })
+      const refresh = deferred<Awaited<ReturnType<typeof api['board:get']>>>()
+      vi.spyOn(api, 'board:get').mockReturnValueOnce(refresh.promise)
+      live.changed('other')
       await vi.advanceTimersByTimeAsync(450)
-      expect(store.getState().board!.tasks[0]?.title).toBe('До action')
+      expect(store.getState().board!.tasks[0]?.title).toBe('До события')
 
-      store.actions.applyBoardChanged(id)
+      live.changed(id)
       await vi.advanceTimersByTimeAsync(450)
-      expect(store.getState().board!.tasks[0]?.title).toBe('После action')
+      expect(store.getState().board!.tasks[0]?.title).toBe('До события')
+      refresh.resolve(fresh)
+      await vi.waitFor(() => expect(store.getState().board!.tasks[0]?.title).toBe('После события'))
     } finally {
       vi.useRealTimers()
     }
   })
 
+  // @testCase TC-INT-01
+  it('переводит подписку между проектами, игнорирует старый ответ и очищает bridge при dispose', async () => {
+    vi.useFakeTimers()
+    try {
+      const live = fakeBoardBridge()
+      const { store, api } = makeStore({ board: live.bridge })
+      await store.actions.createProject({ name: 'P1' })
+      const first = store.getState().projectDetail!.id
+      await store.actions.openBoard(first)
+      const staleFirst = store.getState().board!
+      const oldResponse = deferred<typeof staleFirst>()
+      vi.spyOn(api, 'board:get').mockImplementationOnce(() => oldResponse.promise)
+      live.changed(first)
+      await vi.advanceTimersByTimeAsync(450)
+
+      await store.actions.createProject({ name: 'P2' })
+      const second = store.getState().projectDetail!.id
+      await store.actions.openBoard(second)
+      oldResponse.resolve(staleFirst)
+      await Promise.resolve()
+
+      expect(live.bridge.subscribe).toHaveBeenLastCalledWith(second)
+      expect(live.bridge.unsubscribe).toHaveBeenCalled()
+      expect(store.getState().activeProjectId).toBe(second)
+      expect(store.getState().board?.columns[0]?.projectId).toBe(second)
+
+      store.actions.closeBoard()
+      expect(store.getState().activeProjectId).toBeNull()
+      store.actions.dispose()
+      expect(live.listeners()).toEqual({ changed: null, connected: null })
+      expect(api['board:get']).toBeTypeOf('function')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // @testCase TC-INT-02
+  it('переподключение повторяет подписку и сверяет пропущенное состояние', async () => {
+    vi.useFakeTimers()
+    try {
+      const live = fakeBoardBridge()
+      const { store, api } = makeStore({ board: live.bridge })
+      await store.actions.createProject({ name: 'P1' })
+      const id = store.getState().projectDetail!.id
+      await store.actions.openBoard(id)
+      const column = store.getState().board!.columns[0]!
+      await store.actions.createTask(column.id, { title: 'До разрыва' })
+      const task = store.getState().board!.tasks[0]!
+      await api['tasks:update']({ projectId: id, taskId: task.id, title: 'Во время разрыва' })
+
+      live.connected()
+      expect(live.bridge.subscribe).toHaveBeenLastCalledWith(id)
+      await vi.advanceTimersByTimeAsync(450)
+      expect(store.getState().board!.tasks[0]?.title).toBe('Во время разрыва')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // @testCase TC-REG-01
+  it('не опрашивает открытую доску периодически без WebSocket-событий', async () => {
+    vi.useFakeTimers()
+    try {
+      const live = fakeBoardBridge()
+      const { store, api } = makeStore({ board: live.bridge })
+      await store.actions.createProject({ name: 'P1' })
+      await store.actions.openBoard(store.getState().projectDetail!.id)
+      const get = vi.spyOn(api, 'board:get')
+      const statuses = vi.spyOn(api, 'board:getStatuses')
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(get).not.toHaveBeenCalled()
+      expect(statuses).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // @testCase TC-REG-02
   it('поток board.changed не превращается в поток запросов доски, но и не замирает', async () => {
     vi.useFakeTimers()
     try {
-      const { store, api } = makeStore()
+      const live = fakeBoardBridge()
+      const { store, api } = makeStore({ board: live.bridge })
       await store.actions.createProject({ name: 'P1' })
       const id = store.getState().projectDetail!.id
       await store.actions.openBoard(id)
       const get = vi.spyOn(api, 'board:get')
 
-      // Активный ран шлёт событие каждые 400 мс: раньше это давало запрос почти на
-      // каждое, теперь их склеивает дебаунс, а потолок ожидания не даёт доске замереть.
       for (let i = 0; i < 15; i++) {
-        store.actions.applyBoardChanged(id)
+        live.changed(id)
         await vi.advanceTimersByTimeAsync(400)
       }
       await vi.advanceTimersByTimeAsync(500)
@@ -537,6 +668,27 @@ describe('voiceStore — проекты и доска', () => {
     expect(s.activeProjectId).toBeNull()
     expect(s.board).toBeNull()
     expect(s.projectDetail).toBeNull()
+  })
+})
+
+describe('createProjectsClient board transport', () => {
+  // @testCase TC-INT-02
+  it('повторяет подписку после reconnect и полностью очищает обработчики', () => {
+    const live = fakeBoardBridge()
+    const listener = vi.fn()
+    const client = createProjectsClient(createFakeApi(), live.bridge)
+
+    const stop = client.subscribeBoard!('p1', listener)
+    expect(live.bridge.subscribe).toHaveBeenCalledWith('p1')
+    live.connected()
+    expect(live.bridge.subscribe).toHaveBeenCalledTimes(2)
+    expect(listener).toHaveBeenCalledWith({ projectId: 'p1', reason: 'reconnected' })
+
+    live.changed('p1')
+    expect(listener).toHaveBeenLastCalledWith({ projectId: 'p1' })
+    stop()
+    expect(live.bridge.unsubscribe).toHaveBeenCalledOnce()
+    expect(live.listeners()).toEqual({ changed: null, connected: null })
   })
 })
 
