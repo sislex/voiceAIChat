@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-09-17
-checked: 8e2b9b69
+checked: afbca61a
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -311,6 +311,14 @@ Tests in `cleanup/*.test.ts`, `agent/src/cleanupAdmission.test.ts` and
 `TemporaryResourceReview` covers offline/unknown-size/journal presentation.
 Development Brief regressions TC-09–TC-11 are documented in the existing
 [task preparation section](task-preparation.md#developmentreadiness-и-readiness-гейт).
+
+The QA panels browser suite must also finish its asynchronous teardown before
+Vitest exits. Its `afterAll` has an explicit 120-second timeout and settles both
+browser shutdown and Storybook process-group termination even when either cleanup
+fails; after all cleanup attempts settle, a real failure is rethrown. Regression
+coverage in `qaPanels.browser.test.ts` verifies both complete waiting and failure
+propagation. The acceptance check is the full `npm run gate:fast` exit code, not
+only the preceding count of passed assertions.
 
 ## Восстановление рабочей копии после отмены
 

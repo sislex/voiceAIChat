@@ -38,12 +38,16 @@ describe('App — командная палитра', () => {
     localStorage.clear()
   })
 
-  it('⌘K открывает палитру, Esc закрывает', async () => {
+  // @testCase TC-UI-01
+  // @testCase TC-UI-02
+  // @testCase TC-REG-02
+  it('⌘K открывает палитру, передаёт фокус поиску, Esc закрывает', async () => {
     await renderApp()
     pressPalette()
     const palette = await screen.findByTestId('command-palette')
     expect(palette).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /Поиск команды/ })).toHaveFocus()
+    const search = screen.getByRole('combobox', { name: /Поиск команды/ })
+    await waitFor(() => expect(search).toHaveFocus())
 
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('command-palette')).toBeNull())
