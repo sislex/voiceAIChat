@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
 updated: 2026-09-17
-checked: 55652032
+checked: 938f8b9b
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -12,6 +12,8 @@ areas:
   - apps/server/src/server.ts
   - apps/server/src/ci/runManager.ts
   - apps/server/src/ci/componentQa.ts
+  - apps/server/src/ci/workspaceDeps.ts
+  - apps/server/src/ci/infraErrors.ts
   - apps/server/src/ci/integrationTests.ts
   - apps/server/src/ci/testStages.ts
   - apps/server/src/ci/modelHooks.ts
@@ -141,6 +143,18 @@ Storybook по отрицательному PID; у `afterAll` есть собс
 `failInterruptedComponentQaRuns` закрывает все `queued|running` как `blocked`
 + `infrastructure` + `server_restarted`, поэтому статус задачи не меняется, а
 повтор разрешён.
+
+Перед проектными стадиями Component QA сам ставит зависимости в checkout. Для
+каждого рана `workspaceInstallEnvironment` создаёт отдельные
+`.component-qa/<runId>/home` и `.component-qa/<runId>/npm-cache` внутри рабочей
+копии (не используя сохранённый development-кэш или пользовательский `~/.npm`) и
+запускает `npm ci` с явными `HOME` и `npm_config_cache`; фактические пути заранее
+пишутся в лог строкой `[dependency_setup]`. Ошибки доступа и распаковки окружения
+npm (`EACCES`, `permission denied`, `TAR_ENTRY_ERROR`) классифицируются как
+`blocked`/`infrastructure` с причиной `npm_environment`, поэтому не запускают
+fix-loop как дефект компонента. Источники поведения —
+`apps/server/src/ci/workspaceDeps.ts`, `apps/server/src/ci/componentQa.ts` и
+`apps/server/src/ci/infraErrors.ts`.
 
 `canCompleteComponentQa` (чистая функция в `qa.ts`) допускает переход только
 при статусе `passed`/`skipped` без `staleReason`, совпадении SHA и версии
