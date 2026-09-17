@@ -768,8 +768,9 @@ keys automatically brings the active tab into view, including at 390 px. The pag
 has one H1, validation relationships follow the rendered alerts, and App title
 segments are deduplicated before the single `ChatAI` suffix. Storybook exposes
 separate desktop and 390×844 mobile states for all six tabs; the browser regression
-checks document/form/panel widths, the visible selected tab and labelled mobile
-machine rows. DOM tests cover cyclic ArrowLeft/ArrowRight/Home/End navigation,
+first waits for the cold ProjectSettings story module, then checks document/form/panel
+widths, the visible selected tab and labelled mobile machine rows. DOM tests cover
+cyclic ArrowLeft/ArrowRight/Home/End navigation,
 controlled routing, feature fallback and draft retention. Story accessibility
 shards analyze `document.body` through the shared serialized axe queue, whose
 failure path releases the queue; serious and critical violations remain forbidden.

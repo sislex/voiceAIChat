@@ -18,6 +18,15 @@ beforeAll(async()=>{
     await new Promise(resolve=>setTimeout(resolve,500))
   }
   browser=await chromium.launch()
+  // Прогреваем самый тяжёлый lazy-модуль до старта таймера параметризованных
+  // проверок. Готовность Storybook shell не означает, что story module уже
+  // скомпилирован Vite; именно холодная компиляция делала первый tab случайным.
+  const warmup=await browser.newPage({viewport:{width:390,height:844}})
+  try{
+    const response=await warmup.goto(base+'/iframe.html?id=projects-projectsettings--general-mobile&viewMode=story',{waitUntil:'domcontentloaded',timeout:30000})
+    if(!response?.ok())throw new Error(`ProjectSettings warmup failed: HTTP ${response?.status()??'no response'}`)
+    await warmup.getByTestId('project-settings').waitFor({state:'visible',timeout:30000})
+  }finally{await warmup.close()}
 },120000)
 afterAll(async()=>{
   await browser?.close()
