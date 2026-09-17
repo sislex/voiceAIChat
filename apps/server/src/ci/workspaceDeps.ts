@@ -10,11 +10,30 @@ import { shellQuote } from './executor.js'
 /** Сколько ждём установку зависимостей монорепо: холодный кэш качает всё. */
 export const WORKSPACE_INSTALL_TIMEOUT_MS = 15 * 60_000
 
+export interface WorkspaceInstallEnvironment {
+  command: string
+  homeDir: string
+  npmCacheDir: string
+}
+
 /**
- * Команда установки для стадии. Кэш задачи передаётся явно: общий `~/.npm`
- * ломается, когда два `npm ci` на машине идут одновременно. Пустой `cacheDir`
- * (старые записи рабочих директорий) оставляет npm его кэш по умолчанию.
+ * Подготовка зависимостей для конкретного QA-рана. HOME и npm cache намеренно
+ * находятся внутри checkout рана: сохранённый development-кэш мог принадлежать
+ * другому пользователю машины, а общий cache повреждается параллельными npm ci.
+ * npm ci сам атомарно пересоздаёт node_modules — отдельного фонового удаления нет.
  */
+export function workspaceInstallEnvironment(workdir: string, runId: string): WorkspaceInstallEnvironment {
+  const root = `${workdir.replace(/[\\/]+$/, '')}/.component-qa/${runId.replace(/[^A-Za-z0-9._-]/g, '_')}`
+  const homeDir = `${root}/home`
+  const npmCacheDir = `${root}/npm-cache`
+  const command = [
+    `mkdir -p ${shellQuote(homeDir)} ${shellQuote(npmCacheDir)}`,
+    `env HOME=${shellQuote(homeDir)} npm_config_cache=${shellQuote(npmCacheDir)} npm ci --no-audit --no-fund`
+  ].join(' && ')
+  return { command, homeDir, npmCacheDir }
+}
+
+/** Legacy helper for integration-test runs; their isolation is handled separately. */
 export function workspaceInstallCommand(cacheDir: string | null): string {
   const install = 'npm ci --no-audit --no-fund'
   return cacheDir ? `npm_config_cache=${shellQuote(cacheDir)} ${install}` : install

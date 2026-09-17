@@ -1147,6 +1147,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     setClarificationNavigatingId(notification.questionId)
     setClarificationErrors((errors) => { const next = { ...errors }; delete next[notification.questionId]; return next })
     try {
+      if(notification.kind==='release'&&notification.releaseId){navigate(`/projects/${notification.projectId}/releases/${notification.releaseId}`);return}
       // Проверка перехода не применяет снимок до успеха: если вопрос исчез во
       // время клика, карточка уведомления остаётся видимой вместе с ошибкой.
       const snapshot = await api['tasks:listPreparationNotifications']()

@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { buildSessionReport } from './sessionReport'
+import { SessionHistory } from './sessionHistory'
 
 const base = {
   url: 'https://a.b/cart',
@@ -18,11 +19,14 @@ describe('отчёт о проверке', () => {
   it('без замечаний сообщает итог и число действий', () => {
     const report = buildSessionReport({
       ...base,
-      history: [{ at: 1, actor: 'assistant', title: 'клик: #save', kind: 'click', ok: true }]
+      history: [{ at: 1, actor: 'assistant', title: 'клик: #save', kind: 'click', selector: '#save', ok: true, result: 'Выполнено', durationMs: 42, pageErrors: ['TypeError after click'] }]
     })
     expect(report.passed).toBe(true)
     expect(report.actions).toBe(1)
     expect(report.markdown).toContain('замечаний нет')
+    expect(report.markdown).toContain('selector: `#save`')
+    expect(report.markdown).toContain('Выполнено · 42 мс')
+    expect(report.markdown).toContain('Ошибка страницы: TypeError after click')
   })
 
   it('неудачные шаги идут отдельным разделом: по ним человек перепроверяет руками', () => {
@@ -79,5 +83,15 @@ describe('отчёт о проверке', () => {
     expect(report.truncated).toBe(true)
     expect(report.markdown.length).toBeLessThan(1_100)
     expect(report.markdown).toContain('отчёт обрезан')
+  })
+
+  it('не отдаёт снимки модели и удерживает их только у последних двадцати шагов', () => {
+    const history = new SessionHistory()
+    for (let index = 0; index < 25; index++) history.record({ at: index, actor: 'assistant', title: `шаг ${index}`, kind: 'click', ok: true, beforeImage: `before-${index}`, afterImage: `after-${index}` })
+    expect(history.list({ limit: 25 }).entries.every(entry => !entry.beforeImage && !entry.afterImage)).toBe(true)
+    const evidence = history.list({ limit: 25, includeImages: true }).entries
+    expect(evidence.filter(entry => entry.beforeImage)).toHaveLength(20)
+    expect(evidence[0]?.beforeImage).toBeUndefined()
+    expect(evidence.at(-1)?.afterImage).toBe('after-24')
   })
 })

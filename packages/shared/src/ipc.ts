@@ -520,8 +520,9 @@ export interface IpcInvokeMap {
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
   'releases:machines': { arg: { projectId: string }; result: import('./release').ReleaseMachineCatalog }
   'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string }; result: import('./release').ProjectRelease }
-  'releases:list': { arg: { projectId: string }; result: import('./release').ProjectReleaseSummary[] }
+  'releases:list': { arg: { projectId: string; includeArchived?: boolean }; result: import('./release').ProjectReleaseSummary[] }
   'releases:get': { arg: { projectId: string; releaseId: string }; result: import('./release').ProjectRelease | null }
+  'releases:changes': { arg: { projectId: string; releaseId: string; from?: string }; result: import('./release').ReleaseChangesResult }
   'releases:deploy': { arg: { projectId: string; branch: string }; result: import('./release').ProjectRelease }
   'releases:managedPreflight': { arg: { projectId: string }; result: import('./release').ManagedPreflightConfirmation }
   'releases:managedConfirm': { arg: { projectId: string; confirmationToken: string }; result: ProjectDetail }
@@ -1123,8 +1124,10 @@ export interface RendererBrowserBridge {
    * показать ошибки страницы, не соврав компилятору.
    */
   command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult>
-  /** Кадр текущей вкладки как data-URL (поллинг для screencast). */
+  /** Разовый кадр; используется как fallback, если поток недоступен. */
   screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string; page?: { url: string; title: string }; control?: 'shared' | 'user'; queuedCommands?: number }>
+  /** Непрерывный NDJSON-поток кадров. Мост сам восстанавливает соединение. */
+  subscribeFrames?(conversationId: string, req: RendererBrowserScreenshotOptions, onFrame: (frame: { seq: number; dataUrl?: string; page?: { url: string; title: string }; status?: BrowserSessionMetadata }) => void, onError?: (error: Error) => void): () => void
   /** Закрывает Chromium-сессию разговора. */
   stop(conversationId: string): Promise<void>
 }
@@ -1505,6 +1508,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'releases:createBranch',
   'releases:list',
   'releases:get',
+  'releases:changes',
   'releases:deploy',
   'releases:managedPreflight',
   'releases:managedConfirm',

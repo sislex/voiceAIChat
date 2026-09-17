@@ -25,6 +25,8 @@ function callbacks(over: Partial<TaskCardCallbacks> = {}): TaskCardCallbacks {
 }
 
 describe('NewTaskCardView', () => {
+  // @testCase TC-UI-CARD-01
+  // @testCase TC-REG-CARD-01
   // @testCase TC3
   it('saves inline fields, cancels local changes and expands/copies the header', async () => {
     const update = vi.fn().mockResolvedValue(undefined)
@@ -184,6 +186,7 @@ describe('NewTaskCardView', () => {
     expect(submit).toHaveBeenCalledOnce()
   })
 
+  // @testCase TC-UI-CARD-02
   it('вкладка доработок показывает черновики с действиями, а отправленные — без них', () => {
     const cb = callbacks({ onSubmitDraft: vi.fn(), onDeleteDraft: vi.fn(), onEditDraft: vi.fn() })
     const withReworks = {
@@ -307,6 +310,7 @@ describe('NewTaskCardView', () => {
     expect(cb.onChangeTab).toHaveBeenCalledWith('progress')
   })
 
+  // @testCase TC-REG-CARD-01
   it('workflow показывает длительность пройденного этапа и живой счётчик текущего', () => {
     const timed = { ...model, workflow: [
       { id: 'development', semanticType: 'development' as const, label: 'Разработка', state: 'passed' as const, durationMs: 125_000 },
