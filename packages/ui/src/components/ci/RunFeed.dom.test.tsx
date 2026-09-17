@@ -137,6 +137,7 @@ describe('RunFeed navigation', () => {
     }
     render(<RunFeed {...baseProps(cache)} />)
     const stop = screen.getByRole('alert', { name: 'Автопроход остановлен' })
+    expect(stop).toHaveAccessibleName('Автопроход остановлен')
     expect(stop).toHaveTextContent('несохранённые изменения')
     expect(stop).toHaveTextContent('dirty-run')
     expect(stop).toHaveTextContent('вручную продолжите подходящий шаг')

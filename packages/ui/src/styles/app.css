@@ -4661,8 +4661,9 @@ button.conscmd:hover {
 .project-settings-form > fieldset { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
 .project-settings-form .proj-detail { flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .project-settings-title { flex: none; margin: 0; font-size: 20px; line-height: 1.3; }
-.project-settings-content { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px calc(var(--space-4) + env(safe-area-inset-bottom)) 0; }
-.project-settings-form .proj-settings-tabs { flex: none; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-width: 100%; scrollbar-width: thin; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
+.project-settings-content { flex: 1 1 auto; min-width: 0; min-height: 0; max-width: 100%; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere; overscroll-behavior: contain; padding: 2px 4px calc(var(--space-4) + env(safe-area-inset-bottom)) 0; box-sizing: border-box; }
+.project-settings-content > * { min-width: 0; max-width: 100%; }
+.project-settings-form .proj-settings-tabs { flex: none; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-width: 100%; scrollbar-width: thin; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; box-sizing: border-box; }
 .project-settings-form .proj-settings-tabs button { flex-shrink: 0; white-space: nowrap; }
 .project-settings-form .proj-muted { opacity: 1; color: var(--text-dim); }
 .project-settings-form .vc-actionbar { position: sticky; left: auto; right: auto; bottom: 0; max-width: 100%; transform: none; flex-wrap: wrap; box-sizing: border-box; padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom)); }
@@ -4676,7 +4677,11 @@ button.conscmd:hover {
   .project-settings-form { padding: 12px; }
   .project-settings-form .proj-meta-edit, .project-settings-form .feature-policy { display: flex; flex-direction: column; min-width: 0; }
   .project-settings-form input, .project-settings-form select, .project-settings-form textarea { min-width: 0; max-width: 100%; box-sizing: border-box; }
-  .project-settings-form .proj-machines-table { width: 100% !important; min-width: 0 !important; }
+  .project-settings-form .proj-section, .project-settings-form .proj-members li, .project-settings-form .proj-invite { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .project-settings-form .proj-members li, .project-settings-form .proj-add-member, .project-settings-form .proj-invite { flex-wrap: wrap; }
+  .project-settings-form .vc-actionbar { align-items: stretch; }
+  .project-settings-form .vc-actionbar > * { min-width: 0; }
+  .project-settings-form .proj-machines-table { width: 100% !important; min-width: 0 !important; table-layout: fixed; }
   .project-settings-form .proj-machines-table thead, .project-settings-form .proj-machines-table colgroup { display: none; }
   .project-settings-form .proj-machines-table tr, .project-settings-form .proj-machines-table td { display: block; width: 100%; }
   .project-settings-form .proj-machines-table tr { margin-bottom: var(--space-4); }
@@ -9021,7 +9026,22 @@ body:has([role="menu"]) .jboard-mobile-create { visibility: hidden; pointer-even
 
 /* Новая карточка: рейка этапов, бейджи статусов, снимки workflow и очередь
    доработок по Make-проекту «Проект 19». Токены общие с остальной карточкой. */
-.new-task-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.new-task-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; text-align: left; font: inherit; padding: 0; min-width: 0; }
+.new-task-title--expanded { white-space: normal; overflow-wrap: anywhere; max-height: 25vh; overflow-y: auto; }
+.new-task-side-summary { display: none; cursor: pointer; }
+.new-task-statement { display: grid; gap: 10px; }
+.new-task-statement label { display: grid; gap: 6px; min-width: 0; }
+.new-task-statement textarea { width: 100%; min-width: 0; line-height: 1.5; }
+.new-task-workflow-dates { display: grid; gap: 3px; font-size: 11px; overflow-wrap: anywhere; }
+.new-task-workflow-step { flex-wrap: wrap; }
+.new-task-mini-timeline { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.new-task-mini-timeline .vc-btn { min-width: 0; white-space: normal; overflow-wrap: anywhere; border-bottom: 4px solid var(--accent); }
+.new-task-stage-error { color: var(--danger); overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .new-task-side-summary { display: list-item; padding: 10px; }
+  .new-task-side:not([open]) > :not(summary) { display: none; }
+  .new-task-stage-content, .new-task-column { min-width: 0; overflow-wrap: anywhere; }
+}
 .new-task-eyebrow { display: block; margin-bottom: 4px; color: var(--text-dim); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .new-task-process { display: grid; gap: 14px; min-width: 0; }
 .new-task-process label, .new-task-settings label { display: grid; gap: 6px; min-width: 0; font-size: 12px; }

@@ -249,7 +249,7 @@ if [ ! -d "$repo" ] || [ -z "$(ls -A "$repo" 2>/dev/null)" ]; then
   git clone --no-tags --origin origin --branch "$base" -- "$url" "$repo" || { echo "Не удалось клонировать $url (ветка $base) в $repo" >&2; exit 69; }
 fi
 toplevel="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
-test -n "$toplevel" && test "$toplevel" = "$(cd "$repo" && pwd -P)" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
+test -n "$toplevel" && test "$toplevel" -ef "$repo" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
 worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
 notice=''
 if [ -n "$worktree_status" ]; then
