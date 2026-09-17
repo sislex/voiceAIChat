@@ -79,11 +79,8 @@ describe('App — командная палитра', () => {
     await screen.findByTestId('command-palette')
     const input = screen.getByRole('combobox', { name: /Поиск команды/ })
     fireEvent.change(input, { target: { value: 'подарка' } })
-    const option = (await screen.findAllByRole('option')).find((node) =>
-      node.textContent?.includes('Идеи для подарка')
-    )
-    expect(option, 'authorized search result is missing').toBeDefined()
-    fireEvent.click(option!)
+    const option = await screen.findByRole('option', { name: /Идеи для подарка/ })
+    fireEvent.click(option)
     await waitFor(() => expect(api['search:universal']).toHaveBeenCalledWith({ query: '', recent: ['chats:' + 'a'.repeat(64)] }))
     await waitFor(() => expect(window.location.hash).toContain('/chat/'))
     await waitFor(() => expect(screen.queryByTestId('command-palette')).toBeNull())
