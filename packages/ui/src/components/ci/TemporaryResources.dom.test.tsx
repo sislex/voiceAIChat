@@ -12,6 +12,7 @@ const snapshot:CleanupSnapshot={
   candidates:[{resource,eligible:false,reasons:['machine_offline','git_changes'],retainUntil:2000,bytes:null,sizeReason:'machine_offline'}],
   attempts:[{id:'a',resource,at:1000,outcome:'partial',reason:'permission_denied',error:'Access denied',freedBytes:null}]
 }
+// @testCase TC-04
 // @testCase TC-08
 it('opens read-only preview inside MergePanel with reasons, unknown sizes, owner and journal',async()=>{
   window.ci={...createFakeCi(),getTemporaryResources:vi.fn(async()=>snapshot)}
@@ -27,6 +28,7 @@ it('opens read-only preview inside MergePanel with reasons, unknown sizes, owner
   expect(window.ci.getTemporaryResources).toHaveBeenCalledOnce()
   expect(window.ci.getTemporaryResources).toHaveBeenCalledWith('p','t')
 })
+// @testCase TC-04
 // @testCase TC-08
 it('distinguishes loading, empty, failure and retry, and refreshes after reconnect',async()=>{
   let resolve!:(value:CleanupSnapshot)=>void

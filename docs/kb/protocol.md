@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-17
-checked: a5b4718d
+checked: a782dc51
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -58,6 +58,12 @@ The CI MCP broker publishes `preview_start`, `preview_status`, `preview_logs`, `
 `packages/shared/src/agentProtocol.ts` (сервер↔машина).
 Протокол сервер↔исполнитель LLM живёт отдельно — `packages/shared/src/llm.ts`,
 описание в [features/llm-runners.md](features/llm-runners.md).
+
+## Состав релиза
+
+`GET /api/projects/:id/releases/:releaseId/changes?from=<sha>` возвращает `ReleaseChangesResult`: `toSha`, `fromSha` и `changes` (`ReleaseChange[]`). Без `from` сервер сравнивает с текущим production SHA; если production отсутствует, `fromSha` и `changes` равны `null`, что намеренно отличается от пустого diff. Параметр `from` всегда означает явное сравнение двух релизов. Web-мост — `releases:changes`, URL строится только через `REST.projectReleaseChanges`. SHA валидируются до удалённого выполнения, а результат пары `from`/`to` кэшируется на минуту на уровне `ReleaseManager`.
+
+Список `GET /api/projects/:id/releases` по умолчанию не возвращает записи с `archived_at`; query `archived=1` включает их. Мост `releases:list` передаёт это как `includeArchived`, сохраняя прежнее поведение для клиентов без нового аргумента.
 
 ## Правило добавления чего угодно в контракт
 

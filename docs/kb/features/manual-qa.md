@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
 updated: 2026-09-17
-checked: 938f8b9b
+checked: afbca61a
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -117,10 +117,14 @@ trim-нутых стадий, некорректный JSON с ведущей `[
 Браузерный регрессионный набор панелей в
 `packages/ui/src/components/qa/qaPanels.browser.test.ts` сохраняет пять мобильных
 сценариев на viewport 390×844 и даёт каждому из них 30 секунд. Подготовка
-Storybook и Playwright в `beforeAll` имеет лимит 120 секунд. Teardown сначала
-закрывает Playwright browser, затем посылает `SIGTERM` всей detached-группе
-Storybook по отрицательному PID; у `afterAll` есть собственный явный лимит 120
-секунд, чтобы очистка успевала завершиться на загруженной CI-машине.
+Storybook и Playwright в `beforeAll` имеет лимит 120 секунд. `afterAll` с тем же
+явным лимитом дожидается завершения и закрытия Playwright browser, и остановки
+всей detached-группы Storybook по отрицательному PID. Обе операции очистки
+всегда доводятся до settled-состояния: сбой одной не отменяет ожидание второй,
+после завершения всех попыток одиночная ошибка пробрасывается как есть, а
+несколько ошибок объединяются в `AggregateError`. Поэтому успешные assertions
+не маскируют реальный сбой teardown, а полный `npm run gate:fast` возвращает 0
+только при успешном завершении тестов и очистки.
 
 Стадии исполняет `createComponentQaRunner`
 (`apps/server/src/ci/componentQa.ts`, собирается в `server.ts`) последовательно

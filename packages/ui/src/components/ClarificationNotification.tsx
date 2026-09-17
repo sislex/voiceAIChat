@@ -17,7 +17,7 @@ export function ClarificationNotification({ notification, state = 'active', navi
   return (
     <article className={`clarification-notification${stale ? ' clarification-notification--stale' : ''}`} aria-labelledby={`clarification-title-${notification.questionId}`}>
       <div className="clarification-notification__body">
-        <h2 id={`clarification-title-${notification.questionId}`}>Требуется уточнение ТЗ</h2>
+        <h2 id={`clarification-title-${notification.questionId}`}>{notification.kind==='release'?(notification.title??'Релиз завершён'):'Требуется уточнение ТЗ'}</h2>
         <p className="clarification-notification__context">
           <strong>{notification.taskTitle}</strong>
           {notification.projectName ? <span>Проект: {notification.projectName}</span> : null}
@@ -27,7 +27,7 @@ export function ClarificationNotification({ notification, state = 'active', navi
         {error && <p className="clarification-notification__error" role="alert">{error}</p>}
       </div>
       <div className="clarification-notification__actions">
-        <Button size="sm" variant="primary" loading={navigating} disabled={stale} onClick={() => onOpen(notification)}>Перейти к задаче</Button>
+        <Button size="sm" variant="primary" loading={navigating} disabled={stale} onClick={() => onOpen(notification)}>{notification.actionLabel??'Перейти к задаче'}</Button>
         <Button size="sm" variant="ghost" onClick={() => onDismiss(notification)}>Закрыть</Button>
       </div>
     </article>

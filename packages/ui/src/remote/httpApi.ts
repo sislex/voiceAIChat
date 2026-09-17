@@ -562,8 +562,9 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'releases:machines': ({ projectId }) => req(REST.projectReleaseMachines(projectId)),
     'releases:createBranch': ({ projectId, branch, baseBranch, agentId }) =>
       req(REST.projectReleaseBranches(projectId), { method: 'POST', body: JSON.stringify({ branch, baseBranch, agentId }) }),
-    'releases:list': ({ projectId }) => req(REST.projectReleases(projectId)),
+    'releases:list': ({ projectId, includeArchived }) => req(REST.projectReleases(projectId) + (includeArchived ? '?archived=1' : '')),
     'releases:get': ({ projectId, releaseId }) => req(REST.projectRelease(projectId, releaseId)),
+    'releases:changes': ({ projectId, releaseId, from }) => req(REST.projectReleaseChanges(projectId, releaseId, from)),
     'releases:deploy': ({ projectId, ...body }) =>
       req(REST.projectReleaseDeploy(projectId), { method: 'POST', body: JSON.stringify(body) }),
     'releases:managedPreflight': ({ projectId }) =>

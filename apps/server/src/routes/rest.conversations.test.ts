@@ -8,6 +8,8 @@ import type { FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
 import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness } from './restHarness.js'
+import { skillNameForContextId, toolNameForContextId } from '@voicechat/shared'
+import { enabledContextSkills } from '../turns.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -1407,47 +1409,109 @@ describe('REST: conversations/messages/settings', () => {
     ])
   })
 
+  type ToggleItem = {
+    id: string
+    toggleable: boolean
+    enabled: boolean
+    available: boolean
+    includedInNextTurn: boolean
+    effect?: 'prompt-block' | 'tool' | 'skill' | null
+  }
+  type ToggleSnapshot = { items: ToggleItem[]; blocks: string[]; disallowed: string[] }
+
+  const assertDeclaredToggleEffect = (
+    item: ToggleItem,
+    before: ToggleSnapshot,
+    after: ToggleSnapshot,
+    selectedSkills: string[],
+    disabledIds: Iterable<string>
+  ): void => {
+    expect(item.effect, `тумблер «${item.id}» не объявил effect`).toBeTruthy()
+    if (item.effect === 'tool') {
+      const tool = toolNameForContextId(item.id)
+      if (tool) {
+        expect(after.disallowed, `тумблер «${item.id}» не запретил инструмент ${tool}`).toContain(tool)
+        return
+      }
+      const beforeKb = before.items.filter((entry) => entry.id.startsWith('mcp-kb-') && entry.includedInNextTurn)
+      const afterIds = new Set(after.items.filter((entry) => entry.includedInNextTurn).map((entry) => entry.id))
+      expect(beforeKb.length > 0 && beforeKb.every((entry) => !afterIds.has(entry.id)), `тумблер «${item.id}» не отключил инструменты БЗ`).toBe(true)
+      return
+    }
+    if (item.effect === 'skill') {
+      const skill = skillNameForContextId(item.id)
+      expect(skill, `тумблер «${item.id}» не содержит имя навыка`).toBeTruthy()
+      expect(enabledContextSkills(selectedSkills, disabledIds), `тумблер «${item.id}» не исключил навык ${skill}`).not.toContain(skill)
+      return
+    }
+    if (item.effect === 'prompt-block' && before.blocks.includes(item.id)) {
+      // Настроенный пункт может не дать блока из-за пустых пользовательских
+      // данных. Но если блок был, после выключения именно этого id его быть не должно.
+      expect(after.blocks.includes(item.id), `тумблер «${item.id}» не убрал блок промпта`).toBe(false)
+    }
+  }
+
+  // @testCase TC-2
+  it('инвариант тумблеров называет id пункта с ложным эффектом', () => {
+    const item: ToggleItem = { id: 'broken-item', toggleable: true, enabled: true, available: true, includedInNextTurn: true, effect: 'prompt-block' }
+    const snapshot: ToggleSnapshot = { items: [item], blocks: ['broken-item'], disallowed: [] }
+    expect(() => assertDeclaredToggleEffect(item, snapshot, snapshot, [], [])).toThrow('broken-item')
+  })
+
+  // @testCase TC-1
+  // @testCase TC-3
   it('каждый тумблер снимка делает ровно то, что объявил', async () => {
-    // Инвариант против «фальшивых тумблеров»: пункт объявлен выключаемым, а его
-    // выключение ни на что не влияет, потому что ход про этот id не знает.
-    // Ровно так однажды появился тумблер у автопилота ассистента: проверять
-    // `includedInNextTurn` бесполезно — он пересчитывается для любого пункта.
-    const project = await db.projects.createProject(U, { name: 'Проект инварианта' })
+    // Инвариант против «фальшивых тумблеров»: проверяем не служебный
+    // includedInNextTurn, а реальную поверхность каждого объявленного эффекта.
+    const selectedSkills = ['typescript']
+    const project = await db.projects.createProject(U, { name: 'Проект инварианта', skills: selectedSkills })
+    const agent = await db.machines.createAgent(U, 'Машина инварианта')
+    await db.machines.setAgentPolicy(U, agent.id, {
+      allowedDirs: ['/repo'],
+      allowNetwork: true,
+      allowWrite: true,
+      denyPatterns: [],
+      allowPatterns: [],
+      skills: [{ name: selectedSkills[0], command: 'npm test' }]
+    })
+    await db.machines.linkMachine(U, project.id, agent.id)
+    await db.machines.setProjectMachinePath(U, project.id, agent.id, '/repo')
+    vi.spyOn(agentRegistry, 'isOnline').mockReturnValue(true)
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Все тумблеры', projectId: project.id } })).json()
-    const snapshotOf = async (): Promise<{ items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; includedInNextTurn: boolean; effect?: string | null }>; blocks: string[]; disallowed: string[] }> => {
+    const snapshotOf = async (): Promise<ToggleSnapshot> => {
       const value = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
       return {
-        items: value.groups.flatMap((group: { items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; includedInNextTurn: boolean; effect?: string | null }> }) => group.items),
-        blocks: (value.promptPreview.blocks as Array<{ title: string; itemIds: string[] }>).flatMap((block) => block.itemIds),
+        items: value.groups.flatMap((group: { items: ToggleItem[] }) => group.items),
+        blocks: (value.promptPreview.blocks as Array<{ itemIds: string[] }>).flatMap((block) => block.itemIds),
         disallowed: value.disallowedTools as string[]
       }
     }
     const before = await snapshotOf()
     const toggleable = before.items.filter((item) => item.toggleable && item.enabled)
     expect(toggleable.length).toBeGreaterThan(3)
-    // Выключаемый пункт обязан объявить свой эффект — иначе непонятно, что
-    // вообще проверять, и фальшивый тумблер снова пройдёт незамеченным.
-    expect(toggleable.every((item) => item.effect)).toBe(true)
+    expect(toggleable.some((item) => item.effect === 'prompt-block')).toBe(true)
+    expect(toggleable.some((item) => item.effect === 'tool')).toBe(true)
+    expect(toggleable.some((item) => item.effect === 'skill')).toBe(true)
 
+    // knowledge-mode проверяем отдельно: массовое выключение mcp-kb-* иначе
+    // могло бы замаскировать его собственный эффект.
+    const knowledge = toggleable.find((item) => item.id === 'knowledge-mode')
+    expect(knowledge).toBeDefined()
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
+    const withoutKnowledge = await snapshotOf()
+    assertDeclaredToggleEffect(knowledge!, before, withoutKnowledge, selectedSkills, ['knowledge-mode'])
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: true } })
+
+    // POST остаются последовательными: один разговор не должен получать гонку
+    // disabledContext. Полный дорогой снимок после каждого POST больше не нужен.
     for (const item of toggleable) {
-      await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${item.id}`, payload: { enabled: false } })
-      const after = await snapshotOf()
-      if (item.effect === 'tool') {
-        // Инструмент отнимается двумя способами: явным запретом
-        // (`--disallowedTools` у инструментов машины) или неподключением
-        // сервера вовсе (так работает выключенная база знаний). Инвариант
-        // принимает оба — важно, что модель его больше не получит.
-        const forbidden = after.disallowed.length > before.disallowed.length
-        const wasIncluded = before.items.filter((entry) => entry.effect === 'tool' && entry.includedInNextTurn).map((entry) => entry.id)
-        const nowIncluded = new Set(after.items.filter((entry) => entry.includedInNextTurn).map((entry) => entry.id))
-        const lost = wasIncluded.some((id) => !nowIncluded.has(id))
-        expect(forbidden || lost, `тумблер «${item.id}» не отнял инструмент ни запретом, ни отключением`).toBe(true)
-      } else if (item.effect === 'prompt-block' && before.blocks.includes(item.id)) {
-        // Пункт может быть настроен, но пуст (персонализация без полей): тогда
-        // блока нет и выключать нечего. Если блок есть — он обязан исчезнуть.
-        expect(after.blocks.includes(item.id), `тумблер «${item.id}» не убрал блок промпта`).toBe(false)
-      }
-      await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${item.id}`, payload: { enabled: true } })
+      const response = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${item.id}`, payload: { enabled: false } })
+      expect(response.statusCode, `не удалось выключить тумблер «${item.id}»`).toBe(200)
+    }
+    const after = await snapshotOf()
+    const disabledIds = toggleable.map((item) => item.id)
+    for (const item of toggleable) {
+      if (item.id !== 'knowledge-mode') assertDeclaredToggleEffect(item, before, after, selectedSkills, disabledIds)
     }
   })
 

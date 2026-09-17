@@ -4,6 +4,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import type { TemporaryCleanup } from './service.js'
 import { registerCleanupRoutes } from './module.js'
 
+// @testCase TC-05
 // @testCase TC-07
 it('authorizes the actual read-only route by both project and task and exposes no path deletion API', async () => {
   const app=Fastify()

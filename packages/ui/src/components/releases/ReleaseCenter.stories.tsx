@@ -80,6 +80,7 @@ function fakeApi(over: { releases?: ProjectRelease[]; fail?: boolean } = {}): Re
   api['releases:branches'] = async () => all.filter((item) => !item.previousReleaseId && item.sha).map((item) => ({ branch: item.branch, version: item.version, sha: item.sha }))
   api['releases:list'] = async () => { if (over.fail) throw new Error('release service unavailable'); return all.map((item) => summary(item, item.status === 'checking' ? null : 240_000)) }
   api['releases:get'] = async ({ releaseId }) => all.find((item) => item.id === releaseId) ?? null
+  api['releases:changes'] = async ({ releaseId, from }) => ({ fromSha: from ?? deployed301.sha, toSha: all.find(item=>item.id===releaseId)?.sha??'', changes: [{ sha: '1'.repeat(40), author: 'Alex', at: T0-60_000, subject: 'feat(releases): состав релиза' }, { sha: '2'.repeat(40), author: 'Mira', at: T0-120_000, subject: 'fix(ui): мобильная панель' }] })
   api['releases:createBranch'] = async ({ branch }) => release({ branch, id: 'new', status: 'preparing', sha: '', steps: [] })
   api['releases:deploy'] = async ({ branch }) => ({ ...deployed301, id: 'deploy-new', branch, status: 'queued', steps: deployed301.steps.map((item) => ({ ...item, status: 'queued', startedAt: null, finishedAt: null })) })
   api['projects:update'] = async () => ({}) as never
@@ -123,6 +124,14 @@ export const Applications: Story = {
   play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Приложения' })) }
 }
 export const ApplicationsMobile: Story = { ...Applications, parameters: { viewport: { defaultViewport: 'mobile1' } } }
+export const ChangesAgainstProduction: Story = {
+  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByText('release/0.1.300')) }
+}
+export const ReleaseComparison: Story = {
+  play: async ({ canvasElement }) => { const canvas=within(canvasElement);const boxes=await canvas.findAllByRole('checkbox',{name:/Сравнить release/});await userEvent.click(boxes[0]!);await userEvent.click(boxes[1]!) }
+}
+export const MobileActionBar: Story = { parameters: { viewport: { defaultViewport: 'mobile1' } } }
+export const Archived: Story = { args: { api: fakeApi({ releases: [{...failed299,archivedAt:T0}] }) } }
 export const ProductionNotConfigured: Story = {
   args: { production: { ready: false, mode: 'legacy', missing: ['production-машина', 'команда деплоя'] } },
   play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('tab', { name: 'Деплой' })) }
