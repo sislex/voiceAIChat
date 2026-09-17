@@ -144,6 +144,7 @@ describe('Project settings draft', () => {
     expect(onUpdate).toHaveBeenCalledWith('p1', { name: 'Saved', gitUrl: 'git@example.com:team/repo.git' })
   })
 
+  // @testCase TC-REG-05
   it('keeps the draft after a failed save and across server updates', async () => {
     const p = props({ onUpdate: vi.fn().mockRejectedValue(new Error('Save failed')) })
     const view = render(<ProjectSettings {...p} />)
@@ -201,6 +202,28 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(screen.queryByLabelText('Название проекта')).not.toBeInTheDocument()
     view.rerender(<ProjectSettings {...props({ detail: detail({ name: 'Обновлённый проект' }) })} />)
     expect(screen.getByRole('tab', { name: 'LLM' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  // @testCase TC-UI-02
+  it('supports cyclic Arrow, Home and End navigation with a single roving tab stop', async () => {
+    render(<ProjectSettings {...props()} />)
+    const general = screen.getByRole('tab', { name: 'Общее' })
+    general.focus()
+
+    await userEvent.keyboard('{ArrowRight}')
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'LLM' })).toHaveFocus())
+    await userEvent.keyboard('{End}')
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Машины' })).toHaveFocus())
+    await userEvent.keyboard('{ArrowRight}')
+    await waitFor(() => expect(general).toHaveFocus())
+    await userEvent.keyboard('{ArrowLeft}')
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Машины' })).toHaveFocus())
+    await userEvent.keyboard('{Home}')
+    await waitFor(() => expect(general).toHaveFocus())
+
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.filter(tab => tab.getAttribute('aria-selected') === 'true')).toEqual([general])
+    expect(tabs.filter(tab => tab.tabIndex === 0)).toEqual([general])
   })
 
   it('передаёт персональные права в выбор движка LLM проекта', async () => {
@@ -434,6 +457,7 @@ describe('ProjectSettings — тип проекта', () => {
 describe('ProjectSettings — вкладка из адреса', () => {
   const generalChain = builtinProjectTypeChain(BUILTIN_PROJECT_TYPE_IDS.general)
 
+  // @testCase TC-REG-05
   it('открывает вкладку, пришедшую от хоста, и не переключает её сама', async () => {
     const onTabChange = vi.fn()
     render(<ProjectSettings {...props({ activeTab: 'members', onTabChange })} />)

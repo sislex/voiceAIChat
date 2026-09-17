@@ -478,6 +478,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         </div>
       </div>
 
+      <DevelopmentPreviewSummary runId={runId} lines={cache?.log ?? []} />
       {run && isDirtyWorkspaceFailureMessage(run.error) && (
         <section className="ci-retry-preview" role="alert" aria-label="Автопроход остановлен">
           <strong>Автопроход остановлен: рабочая копия содержит несохранённые изменения.</strong>
@@ -556,7 +557,6 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         }}>{allOpen ? 'Свернуть всё' : 'Развернуть всё'}</Button>
       </div>
 
-      <DevelopmentPreviewSummary runId={runId} lines={cache?.log ?? []} />
       {run && executionLlm && (
         <section className="ci-run-llm" data-testid="ci-execution-llm" aria-label="Фактическая модель выполнения">
           {executionLlm.source === 'stage' ? (

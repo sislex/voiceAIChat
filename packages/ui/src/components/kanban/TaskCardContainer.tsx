@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button, useConfirm } from '@voicechat/ui-kit'
+import { Button, useConfirm, useToast } from '@voicechat/ui-kit'
+
 import { TASK_CARD_VERSION_KEY } from '@voicechat/ui-foundation/persistence'
 import { issueKey, QA_WORKFLOW, type KanbanColumnSemanticType, type TaskDesignLink, type TaskReworkCycle } from '@shared/projects'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
@@ -113,15 +114,21 @@ export function buildTaskCardViewModel(props: TaskCardContainerProps, cycles: Ta
   }] : []
   const submitted = cycles.filter((cycle) => cycle.status !== 'draft')
   const drafts = cycles.filter((cycle) => cycle.status === 'draft')
-  const stageTiming = (step: KanbanColumnSemanticType, state: 'passed' | 'current' | 'upcoming'): { durationMs?: number; startedAt?: number | null } => {
+  const stageTiming = (step: KanbanColumnSemanticType, state: 'passed' | 'current' | 'upcoming'): { durationMs?: number; startedAt?: number | null; finishedAt?: number | null } => {
     const type = TIMELINE_TYPE[step]
     const stage = type ? timeline?.stages.find((item) => item.type === type) : undefined
     if (!stage) return {}
+    const startedAt = stage.startedAt ? Date.parse(stage.startedAt) : Number.NaN
+    const finishedAt = stage.finishedAt ? Date.parse(stage.finishedAt) : Number.NaN
+    const dates = {
+      ...(Number.isFinite(startedAt) ? { startedAt } : {}),
+      ...(Number.isFinite(finishedAt) ? { finishedAt } : {})
+    }
     if (state === 'passed' || stage.finishedAt || !['running', 'awaiting_input'].includes(stage.status)) {
       const duration = stage.calendarDuration ?? stage.activeDuration
-      return duration == null ? {} : { durationMs: duration }
+      return { ...dates, ...(duration != null && Number.isFinite(duration) ? { durationMs: duration } : {}) }
     }
-    if (state === 'current' && stage.startedAt) return { startedAt: Date.parse(stage.startedAt) }
+    if (state === 'current') return dates
     return {}
   }
   return {
@@ -235,6 +242,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   const [version, setVersionState] = useState<TaskCardVersion>(() => props.initialVersion ?? storedVersion() ?? 'legacy')
   const setVersion = (next: TaskCardVersion): void => { rememberVersion(next); setVersionState(next) }
   const confirm = useConfirm()
+  const toast = useToast()
   const [activeTab, setActiveTab] = useState<TaskCardTab>(props.initialTab === 'chat' ? 'chat' : 'overview')
   useEffect(() => {
     if (props.initialTab === 'chat') setActiveTab('chat')
@@ -327,6 +335,9 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
     if (tab === 'settings') return <NewTaskSettingsPanel {...shared} llmAccess={props.llmAccess} mergeMachineBound={props.task.mergeMachineBound} />
     if (tab === 'progress') return <NewTaskProgressPanel
       {...stageShared}
+      timeline={timeline}
+      tabs={model.tabs.map((item) => item.id)}
+      onChangeTab={setActiveTab}
       ciSummary={props.ciSummary ?? null}
       canStart={semanticType !== 'done' && semanticType !== 'backlog' && semanticType !== 'preparation' && semanticType !== 'cancelled'}
       {...(props.onStartCi ? { onStartCi: () => props.onStartCi?.(props.task.id) } : {})}
@@ -356,9 +367,16 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
     const ok = await confirm({ title: 'Остановить активный ран?', message: 'Модель прервёт работу, незавершённые шаги будут отменены.', variant: 'danger', confirmLabel: 'Остановить' })
     if (!ok) return
     try {
-      if (development) await window.ci?.cancelRun(development)
-      else if (merge) await window.ci?.cancelMerge(merge)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось остановить ран.') }
+      if (!window.ci) throw new Error('CI недоступен')
+      if (development) {
+        const result = await window.ci.cancelRun(development)
+        if (!result.ok) throw new Error('Не удалось остановить ран.')
+      } else if (merge) await window.ci.cancelMerge(merge)
+      toast.success('Ран остановлен')
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Не удалось остановить ран.'
+      setError(message); toast.error(message)
+    }
   }
 
   const linkMake = async (draft: TaskCardMakeLinkDraft, replaceLinkId: string | null): Promise<void> => {
@@ -408,6 +426,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
     callbacks={{
       onClose: props.onClose,
       onOpenPreparationCycle: (cycleId) => { setPreparationCycle(cycleId); setActiveTab('preparation') },
+      onUpdate: async (fields) => { await props.onUpdate(props.task.id, fields) },
       onChangeTab: (tab) => {
         setActiveTab(tab)
         props.onTabChange?.(tab === 'overview' || tab === 'reworks' || tab === 'manual_qa' ? 'general' : tab)
