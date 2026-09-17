@@ -3,6 +3,10 @@
 // мутации — только при allowWrite. Best-effort (не полноценная песочница).
 
 import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -14,7 +18,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { basename, dirname, posix, resolve, sep, win32 } from 'node:path'
-import type { AgentPolicy, FsResult } from '@voicechat/shared'
+import { FS_PREVIEW_BYTES, type AgentPolicy, type FsResult } from '@voicechat/shared'
 import { isWindows } from './platform.js'
 
 /** Лимит на чтение/запись одного файла (base64 раздувает ~на треть). */
@@ -106,6 +110,28 @@ export function fsRead(root: string, policy: AgentPolicy, path: string): FsResul
   if (st.isDirectory()) throw new Error('это каталог, а не файл')
   if (st.size > FS_MAX_BYTES) throw new Error('файл слишком большой для скачивания')
   return { root, cwd: dirname(abs), dataBase64: readFileSync(abs).toString('base64'), name: basename(abs) }
+}
+
+/** Read only the prefix, even when the file exceeds the full-read limit. */
+export function fsReadPrefix(root: string, policy: AgentPolicy, path: string): FsResult {
+  const abs = absPath(root, path)
+  assertAllowed(policy, abs, false)
+  const fd = openSync(abs, 'r')
+  try {
+    const st = fstatSync(fd)
+    if (!st.isFile()) throw new Error('это не обычный файл')
+    const buffer = Buffer.alloc(Math.min(st.size, FS_PREVIEW_BYTES))
+    let bytesRead = 0
+    while (bytesRead < buffer.length) {
+      const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, bytesRead)
+      if (count === 0) break
+      bytesRead += count
+    }
+    const fileSize = fstatSync(fd).size
+    return { root, cwd: dirname(abs), name: basename(abs), dataBase64: buffer.subarray(0, bytesRead).toString('base64'), bytesRead, fileSize, truncated: fileSize > bytesRead }
+  } finally {
+    closeSync(fd)
+  }
 }
 
 export function fsWrite(root: string, policy: AgentPolicy, path: string, dataBase64: string): FsResult {

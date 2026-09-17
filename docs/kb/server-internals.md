@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-12
-checked: e1ce913f
+updated: 2026-09-15
+checked: 68124e0f
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -619,6 +619,57 @@ LLM и ретушь обычного чата остаются у ядра.
 
 ### Image Studio selections, version graph, and MCP (2026-09-12)
 
+**Gallery API extensions (CHAT-455).** `POST /api/image-studio/:id/tasks`
+returns a task snapshot with HTTP 202. The process owns task execution and the
+existing REST active-run slot; queued work starts when that slot is released.
+`GET .../tasks` restores state after a client returns, and
+`DELETE .../tasks/:taskId` explicitly cancels queued/running work. Saving is the
+commit boundary and cannot be cancelled through the task endpoint. Tasks expose
+queued/running/saving/completed/cancelled/failed states, actual errors, and
+result metadata. There are at most 50 unfinished tasks per conversation and a
+bounded recent completed history. Process shutdown cancels pending/running
+work; process-restart recovery is not provided. Supported generation settings
+are translated into prompt instructions before invoking the existing core
+generator, including the HTTP core adapter.
+
+Queue admission in `apps/image-studio/src/routes.ts` checks the current
+unfinished-task count only after asynchronous source-file validation, then
+inserts the task without another await. Concurrent edit submissions therefore
+reserve capacity against the latest state and cannot collectively exceed the
+50-task per-conversation limit; shutdown is rechecked at the same boundary.
+The task endpoint rejects non-object parameter values (including null and
+arrays), unknown keys, non-string style/negative/size values, and non-boolean
+`noText` values with HTTP 400 before creating a task. Valid booleans are not
+coerced: `false` remains in saved metadata and adds no no-text instruction,
+while `true` adds the instruction. Regression coverage in
+`apps/image-studio/src/routes.test.ts` synchronizes 51 source checks and
+asserts exactly 50 admissions, and separately checks malformed values plus both
+boolean meanings.
+
+`POST .../archive` validates explicit selected paths and issues a one-use,
+60-second download ticket. `GET /g/archive/:ticket` rechecks gallery ownership
+and streams a stored UTF-8 ZIP using per-file buffers and a central directory;
+the panel does not assemble the archive. Closing the response destroys its
+stream, and errors during streaming abort the response instead of writing a
+successful ZIP footer.
+
+`POST .../tags` preserves existing metadata while saving normalized unique
+tags (up to 30, each at most 80 characters). Optional `tags` and `parameters`
+fields remain compatible with old sidecars. `POST .../file` with `source`
+records `operation: transform`, so canvas results use the existing version
+graph rather than a separate revision system.
+
+Publication settings persist an ordered list of paths/captions and a text
+watermark (up to 120 characters and four corner positions). Public HTML escapes
+captions, exposes only selected files, and public file requests enforce that
+selection too. Sharp rasterizes a separate watermarked PNG for public delivery;
+the original private bytes remain unchanged. ETags are computed from the
+delivered bytes. `POST .../preview` creates an owner-checked five-minute capability
+for draft settings, sharing the public HTML/image renderer without persisting a
+publication or incrementing views. Republishing preserves daily view counters
+and previous settings unless new settings are supplied.
+
+
 Localized image operations live in `apps/image-studio/src/selection.ts`. Sharp
 validates the source raster with a 64-megapixel ceiling, converts rectangle,
 lasso, or monochrome mask selections into a bounded crop, and composites model
@@ -726,3 +777,12 @@ UI Make остаётся в `packages/ui` и собирается общим web
 `writePublishRaw` для этого мало: он спасает от рваного чтения, но не от
 lost-update. Регрессионный тест — «переопубликация не воскрешает старый токен»
 в `workspace.test.ts` (красная проверка: без лока падает сразу).
+
+## Account profile query path
+
+`GET /api/me/profile` runs its independent reads concurrently. Conversation
+count uses `ChatRepo.conversationCount(userId)` and session activity uses
+`IdentityRepo.sessionActivityForUser(userId)`, so opening one account does not
+build global maps for every user. The response includes machine counts only;
+the existing `/api/agents` route remains the source for versions and telemetry
+when the Machines tab opens.

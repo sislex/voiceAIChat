@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { createPreviewTurnTokens } from './turnToken.js'
 
 describe('подписанные токены ходов превью', () => {
+  it('binds CI evidence to the signed run, step and exact target across processes', () => {
+    const entry = { userId: 'ann', conversationId: 'c1', ciCheck: { runId: 'r1', stepId: 's1', url: 'http://agent.machine.internal:5173/#/releases' } }
+    const token = createPreviewTurnTokens('s').issue(entry)
+    expect(createPreviewTurnTokens('s').verify(token)).toEqual(entry)
+    const [, signature] = token.split('.')
+    const forged = Buffer.from(JSON.stringify({ u: 'ann', c: 'c1', e: Date.now() + 10000, check: { ...entry.ciCheck, stepId: 's2' } })).toString('base64url')
+    expect(createPreviewTurnTokens('s').verify(`${forged}.${signature}`)).toBeUndefined()
+  })
+
   it('выданный токен проверяется в другом экземпляре с тем же секретом (другой процесс)', () => {
     const a = createPreviewTurnTokens('s')
     const b = createPreviewTurnTokens('s')

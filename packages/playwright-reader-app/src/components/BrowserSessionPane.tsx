@@ -3,10 +3,11 @@ export type { BrowserSessionPaneProps } from '../panelContract'
 import { BrowserDownloadsPane } from './BrowserDownloadsPane'
 import { BrowserSiteDialog } from './BrowserSiteDialog'
 import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/browserInput'
+import { fitScale, frameWidth, nextFrameZoom, panelShortcut, pinchDistance, touchScrollDelta, TOUCH_TAP_SLOP, type FrameZoom } from '../lib/frameView'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
+import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserCookieInfo, type BrowserDeviceState, type BrowserElementDescription, type BrowserEnvironmentState, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserSnapshotComparison, type BrowserSnapshotInfo, type BrowserViewport } from '@shared/types'
+import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, moveStep, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toggleStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
@@ -41,6 +42,21 @@ const VIEWPORTS: ReadonlyArray<{ id: 'phone' | 'tablet' | 'desktop'; label: stri
   { id: 'tablet', label: 'Планшет', viewport: { width: 820, height: 1180, deviceScaleFactor: 1 } },
   { id: 'desktop', label: 'Десктоп', viewport: VIEWPORT }
 ]
+
+/** Сколько держать палец, чтобы это стало правым кликом — как в мобильных браузерах. */
+const LONG_PRESS_MS = 550
+/** Промежуток между двумя тапами, который страница считает двойным кликом. */
+const DOUBLE_TAP_MS = 320
+/** Сколько после касания клик считается тапом, а не щелчком мыши. */
+const TOUCH_CLICK_WINDOW_MS = 700
+
+/**
+ * Масштаб — настройка экрана человека, а не свойство разговора: он одинаков и
+ * при переключении чатов, и при повторном открытии панели. Живёт в модуле, а не
+ * в хранилище браузера: своего порта предпочтений у панели нет, а обращаться к
+ * хранилищу напрямую продуктовому пакету запрещает архитектурная проверка.
+ */
+let lastZoom: FrameZoom = 'fit'
 
 /** Состояние сессии словами: сырое `ready`/`idle` человеку ничего не говорит. */
 const STATE_LABELS: Record<string, string> = {
@@ -83,6 +99,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const busyRequests = useRef({ generation: 0, count: 0 })
   const [pollTick, setPollTick] = useState(0)
   const [retryable, setRetryable] = useState(false)
+  /**
+   * Разбор отказа от раннера: причина словами, совет и похожие элементы.
+   * Человеку «Timeout 5000ms exceeded» говорит не больше, чем модели.
+   */
+  const [failure, setFailure] = useState<BrowserSelectorResult['failure'] | null>(null)
   const lastCommand = useRef<Parameters<RendererBrowserBridge['command']>[1]['command'] | null>(null)
   const [message, setMessage] = useState<string>('')
   // Журналы страницы: раннер копит их с открытия, но до круга 11 показать их
@@ -132,6 +153,60 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const [typing, setTyping] = useState<string>('')
   const incarnation = useRef<string | null>(null)
   const imgRef = useRef<HTMLImageElement>(null)
+  // Кадр вписан по ширине панели. На телефоне это десятая часть натурального
+  // размера — читать нечем, поэтому масштаб отделён от раскладки.
+  // Масштаб переживает переоткрытие панели: человек настраивает его под свой
+  // экран один раз, а не заново в каждом разговоре.
+  const [zoom, setZoom] = useState<FrameZoom>(lastZoom)
+  const [fullscreen, setFullscreen] = useState(false)
+  /** Поля формы глазами страницы: то же, что видит модель инструментом form-state. */
+  const [formInfo, setFormInfo] = useState<{ loading?: boolean; error?: string; form?: BrowserSelectorResult['form']; validity?: BrowserSelectorResult['validity'] } | null>(null)
+  /**
+   * Поиск по странице. Ctrl+F внутри кадра ищет по странице приложения, а не по
+   * той, что в Chromium: кадр — картинка, и найти в нём текст глазами на длинной
+   * странице невозможно.
+   */
+  const [search, setSearch] = useState<{ open: boolean; query: string; matches: Array<{ selector: string; text: string }>; at: number; searching?: boolean; error?: string }>({ open: false, query: '', matches: [], at: 0 })
+  const searchRef = useRef<HTMLInputElement>(null)
+  /** Куда прокручена страница: «экранов ниже» отвечает на «это всё или начало». */
+  const [metrics, setMetrics] = useState<BrowserSelectorResult['metrics'] | null>(null)
+  /**
+   * Среда, в которой якобы сидит человек: тёмная тема системы, отсутствие сети,
+   * уменьшенная анимация, высокий контраст. Под каждой из них страница ведёт
+   * себя иначе, а проверить это раньше было можно только на своей машине.
+   */
+  const [environment, setEnvironment] = useState<BrowserEnvironmentState | null>(null)
+  const [environmentOpen, setEnvironmentOpen] = useState(false)
+  /** Что страница считает об устройстве: тач, плотность пикселей, ориентация. */
+  const [device, setDevice] = useState<BrowserDeviceState | null>(null)
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
+  /**
+   * Лента событий сессии. Человек смотрит на кадр и не понимает, что делает
+   * модель: кадр показывает результат, а не намерение и не порядок шагов.
+   */
+  const [feedOpen, setFeedOpen] = useState(false)
+  const [feedActor, setFeedActor] = useState<'all' | 'user' | 'assistant'>('all')
+  const [cookies, setCookies] = useState<{ loading?: boolean; error?: string; items?: BrowserCookieInfo[]; total?: number } | null>(null)
+  /** Хранилище сайта: тут живёт половина дефектов «у меня работает». */
+  const [storage, setStorage] = useState<{ loading?: boolean; error?: string; data?: BrowserSelectorResult['storage'] } | null>(null)
+  /**
+   * Снимки состояния: «до» и «после» — то, чем человек проверяет вёрстку глазами.
+   * Панель показывает их тем же списком, что видит модель.
+   */
+  const [snapshots, setSnapshots] = useState<{ open: boolean; name: string; items: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; busy?: boolean; error?: string; fullPage?: boolean }>({ open: false, name: '', items: [] })
+  /** Отчёт о проверке: тот же текст, который модель вставит в задачу. */
+  const [report, setReport] = useState<{ markdown: string; passed: boolean; actions: number; failures: number } | null>(null)
+  /** Правила сети: человеку они нужны там же, где модели, — и чтобы их снять. */
+  const [networkRules, setNetworkRules] = useState<{ rules: Array<{ url: string; action: string; status?: number; delayMs?: number }>; total: number } | null>(null)
+  /** Свайп пальцем: у телефона нет колеса, а страница длиннее одного экрана. */
+  const touch = useRef<{ x: number; y: number; moved: boolean; pinch: number | null } | null>(null)
+  /** Долгое нажатие вместо правой кнопки и двойной тап вместо двойного клика. */
+  const longPress = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; fired: boolean }>({ timer: undefined, fired: false })
+  const lastTap = useRef(0)
+  /** Когда экрана касались: двойной тап разбирается только для касаний. */
+  const lastTouchAt = useRef(0)
+  const addressRef = useRef<HTMLInputElement>(null)
+  const paneRef = useRef<HTMLElement>(null)
   // Флаг актуальности: смена разговора или размонтирование отменяет поздние ответы.
   const alive = useRef(0)
 
@@ -280,7 +355,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     if (busyRequests.current.generation !== generation) busyRequests.current = { generation, count: 0 }
     busyRequests.current.count++
     setBusy(true)
-    setMessage(''); setRetryable(false)
+    setMessage(''); setRetryable(false); setFailure(null)
     lastCommand.current = command
     lastAction.current = Date.now()
     setPollTick((v) => v + 1)
@@ -300,6 +375,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       // Метаданные приходят не на всякую команду: `selector` отдаёт чтение,
       // `inspect` — журналы. Обновляем состояние только по метаданным.
       if (command.type === 'handleDialog' && (!isBrowserSessionMetadata(next) || !Array.isArray(next.dialogs))) throw new Error('Сайт не подтвердил ответ. Обновите состояние и повторите.')
+      // Селекторное действие отвечает значением: отказ не бросается исключением,
+      // и без этой ветки человек видел бы просто «ничего не произошло».
+      if (next && typeof next === 'object' && 'ok' in next && (next as { ok?: unknown }).ok === false) {
+        const detail = next as { error?: string; failure?: BrowserSelectorResult['failure'] }
+        setFailure(detail.failure ?? null)
+        if (detail.error) setMessage(detail.failure?.reason ?? detail.error)
+      }
       if (isBrowserSessionMetadata(next)) applyMeta(next)
       if (command.type !== 'cancel' && command.type !== 'control') await refreshFrame()
       return next
@@ -375,6 +457,165 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     void run({ type: 'input', action })
   }
 
+  /**
+   * Свайп по кадру. Телефон прокручивает страницу пальцем, а кадр — картинка:
+   * без этого на мобильном была доступна только верхушка любой страницы.
+   * Короткое касание остаётся кликом, поэтому дельта копится до порога.
+   */
+  const onFrameTouchStart = (event: { touches: ArrayLike<{ clientX: number; clientY: number }> }): void => {
+    if (phase !== 'ready' || dialogOpen.current) return
+    const first = event.touches[0]
+    if (!first) return
+    const second = event.touches[1]
+    touch.current = { x: first.clientX, y: first.clientY, moved: false, pinch: second ? pinchDistance(first, second) : null }
+    // Долгое нажатие — правый клик: контекстное меню страницы иначе недостижимо
+    // с телефона, а именно в нём живут «скачать», «открыть в новой вкладке».
+    longPress.current.fired = false
+    lastTouchAt.current = Date.now()
+    clearTimeout(longPress.current.timer)
+    if (!second) longPress.current.timer = setTimeout(() => {
+      const start = touch.current
+      if (!start || start.moved) return
+      longPress.current.fired = true
+      const point = pointFromEvent({ clientX: start.x, clientY: start.y })
+      if (point) void run({ type: 'input', action: { type: 'click', ...point, button: 'right' } })
+    }, LONG_PRESS_MS)
+  }
+
+  const onFrameTouchMove = (event: { touches: ArrayLike<{ clientX: number; clientY: number }>; preventDefault(): void }): void => {
+    const start = touch.current
+    const first = event.touches[0]
+    if (!start || !first || phase !== 'ready' || dialogOpen.current) return
+    const second = event.touches[1]
+    const pinchStart = start.pinch
+    if (second && pinchStart !== null) {
+      // Щипок меняет масштаб кадра, а не страницу: страница в Chromium уже
+      // свёрстана под свой вьюпорт, растягивать её ещё раз незачем.
+      const distance = pinchDistance(first, second)
+      if (Math.abs(distance - pinchStart) > 24) {
+        const rect = imgRef.current?.getBoundingClientRect()
+        const scale = fitScale(rect?.width ?? 0, meta?.viewport.width ?? VIEWPORT.width)
+        setZoom((current) => nextFrameZoom(current, distance > pinchStart ? 'in' : 'out', scale))
+        touch.current = { ...start, pinch: distance, moved: true }
+      }
+      return
+    }
+    const rect = imgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    if (!start.moved && Math.hypot(first.clientX - start.x, first.clientY - start.y) < TOUCH_TAP_SLOP) return
+    clearTimeout(longPress.current.timer)
+    event.preventDefault()
+    const delta = touchScrollDelta({ clientX: start.x, clientY: start.y }, first, rect, meta?.viewport ?? VIEWPORT)
+    touch.current = { x: first.clientX, y: first.clientY, moved: true, pinch: null }
+    if (!delta.deltaX && !delta.deltaY) return
+    if (recording) setSteps((current) => recordScroll(current, delta.deltaY, delta.deltaX))
+    void run({ type: 'input', action: { type: 'wheel', ...delta } })
+  }
+
+  /** Жест закончился прокруткой — клик по кадру после него был бы случайным. */
+  const swallowTapAfterScroll = (): boolean => {
+    const scrolled = touch.current?.moved === true || longPress.current.fired
+    touch.current = null
+    longPress.current.fired = false
+    return scrolled
+  }
+
+  useEffect(() => { lastZoom = zoom }, [zoom])
+
+  /** Показать совпадение человеку: прокрутить к нему и обвести рамкой. */
+  const showMatch = useCallback(async (selector: string): Promise<void> => {
+    await run({ type: 'selector', action: { kind: 'scrollTo', selector } })
+    await run({ type: 'selector', action: { kind: 'highlight', selector, ms: 1500 } })
+  }, [run])
+
+  /** Поиск по странице: те же find/highlight/scrollTo, которыми пользуется модель. */
+  const runSearch = useCallback(async (query: string): Promise<void> => {
+    const text = query.trim()
+    if (!text) { setSearch((current) => ({ ...current, matches: [], at: 0, error: undefined })); return }
+    setSearch((current) => ({ ...current, searching: true, error: undefined }))
+    const found = await run({ type: 'selector', action: { kind: 'find', text, limit: 30, visibleOnly: true } }) as BrowserSelectorResult | undefined
+    if (!found || found.ok === false) { setSearch((current) => ({ ...current, searching: false, matches: [], at: 0, error: found?.error ?? 'Поиск не выполнен' })); return }
+    const matches = found.matches ?? []
+    setSearch((current) => ({ ...current, searching: false, matches, at: 0 }))
+    if (matches[0]) await showMatch(matches[0].selector)
+  }, [run])
+
+  /** Переход по совпадениям по кругу: так ведёт себя поиск в любом браузере. */
+  const step = useCallback(async (direction: 1 | -1): Promise<void> => {
+    let target: string | null = null
+    setSearch((current) => {
+      if (!current.matches.length) return current
+      const at = (current.at + direction + current.matches.length) % current.matches.length
+      target = current.matches[at].selector
+      return { ...current, at }
+    })
+    // Прокрутка вынесена из setState: она асинхронная, а состояние — нет.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    if (target) await showMatch(target)
+  }, [showMatch])
+
+  /** Переключить настройку среды и показать, что теперь в силе. */
+  const changeEnvironment = useCallback(async (options: Record<string, unknown>): Promise<void> => {
+    const result = await run({ type: 'environment', ...options } as never) as { environment?: BrowserEnvironmentState } | undefined
+    if (result?.environment) setEnvironment(result.environment)
+  }, [run])
+
+  /** Cookies сессии: человеку они нужны там же, где модели, — для входа и выхода. */
+  const loadCookies = useCallback(async (): Promise<void> => {
+    setCookies({ loading: true })
+    const result = await run({ type: 'cookies', action: 'list' } as never) as { cookies?: BrowserCookieInfo[]; total?: number; error?: string } | undefined
+    if (!result || result.error) { setCookies({ error: result?.error ?? 'Cookies недоступны' }); return }
+    setCookies({ items: result.cookies ?? [], total: result.total ?? 0 })
+  }, [run])
+
+  /** Хранилище сайта теми же данными, что видит модель инструментом storage. */
+  const loadStorage = useCallback(async (): Promise<void> => {
+    setStorage({ loading: true })
+    const result = await run({ type: 'selector', action: { kind: 'storage' } }) as BrowserSelectorResult | undefined
+    if (!result || result.ok === false) { setStorage({ error: result?.error ?? 'Хранилище недоступно' }); return }
+    setStorage({ data: result.storage })
+  }, [run])
+
+  /** Правила сети сессии: их ставит модель, а снимать приходится человеку. */
+  const loadNetworkRules = useCallback(async (operation: 'list' | 'remove' = 'list', url?: string): Promise<void> => {
+    const result = await run({ type: 'network-rules', do: operation, ...(url ? { url } : {}) } as never) as { network?: { rules: Array<{ url: string; action: string }>; total: number } } | undefined
+    if (result?.network) setNetworkRules(result.network)
+  }, [run])
+
+  /** Снимок, сравнение и удаление — одной командой, как это делает модель. */
+  const runSnapshot = useCallback(async (operation: 'save' | 'list' | 'compare' | 'remove', name?: string, fullPage?: boolean): Promise<void> => {
+    setSnapshots((current) => ({ ...current, busy: true, error: undefined }))
+    // Признак приходит параметром, а не из замыкания: кнопка вызывает колбэк,
+    // созданный до клика по галочке, и снимок уходил бы без «всей страницы».
+    const result = await run({ type: 'snapshot', do: operation, ...(name ? { name } : {}), ...(fullPage ? { fullPage: true } : {}) } as never) as { snapshots?: BrowserSnapshotInfo[]; comparison?: BrowserSnapshotComparison; error?: string } | undefined
+    if (!result || result.error) { setSnapshots((current) => ({ ...current, busy: false, error: result?.error ?? 'Снимки недоступны' })); return }
+    setSnapshots((current) => ({
+      ...current, busy: false, items: result.snapshots ?? current.items,
+      ...(operation === 'compare' ? { comparison: result.comparison } : {})
+    }))
+  }, [run])
+
+  /** Отчёт собирается раннером — тем же, что отдаёт модель в комментарий задачи. */
+  const loadReport = useCallback(async (): Promise<void> => {
+    const result = await run({ type: 'report' } as never) as { report?: { markdown: string; passed: boolean; actions: number; failures: number } } | undefined
+    if (result?.report) setReport(result.report)
+  }, [run])
+
+  /** Метрики страницы: обновляются по требованию, не поллингом — это команда. */
+  const refreshMetrics = useCallback(async (): Promise<void> => {
+    const result = await run({ type: 'selector', action: { kind: 'metrics' } }) as BrowserSelectorResult | undefined
+    setMetrics(result?.metrics ?? null)
+  }, [run])
+
+  /** Поля формы и проверки браузера — то же, что модель видит form-state/validity. */
+  const loadFormInfo = useCallback(async (): Promise<void> => {
+    setFormInfo({ loading: true })
+    const form = await run({ type: 'selector', action: { kind: 'formState' } }) as BrowserSelectorResult | undefined
+    if (!form || form.ok === false) { setFormInfo({ error: form?.error ?? 'Форма не найдена' }); return }
+    const validity = await run({ type: 'selector', action: { kind: 'validity' } }) as BrowserSelectorResult | undefined
+    setFormInfo({ form: form.form, ...(validity?.validity ? { validity: validity.validity } : {}) })
+  }, [run])
+
   /** Перезапуск сессии: останавливаем текущую и стартуем заново на том же разговоре. */
   const restartSession = (): void => {
     if (!browser) return
@@ -438,11 +679,30 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     }
   }
 
+  /**
+   * «Телефон» — это не узкое окно, а тач, плотность пикселей и мобильный агент:
+   * без них страница верстается как мобильная, но считает посетителя мышью, и
+   * ровно там живут дефекты каруселей и меню «по наведению».
+   */
   const changeViewport = (id: 'phone' | 'tablet' | 'desktop'): void => {
     const found = VIEWPORTS.find((v) => v.id === id)
     if (!found) return
     setViewportId(id)
-    void run({ type: 'resize', viewport: found.viewport })
+    void (async () => {
+      const result = await run({ type: 'device', preset: id, ...(orientation === 'landscape' ? { orientation } : {}) } as never) as BrowserSessionMetadata | undefined
+      if (result?.device) setDevice(result.device)
+      // Старый раннер команду device не знает — тогда остаётся прежний ресайз,
+      // и человек хотя бы увидит мобильную вёрстку.
+      else void run({ type: 'resize', viewport: found.viewport })
+    })()
+  }
+
+  const changeOrientation = (next: 'portrait' | 'landscape'): void => {
+    setOrientation(next)
+    void (async () => {
+      const result = await run({ type: 'device', preset: viewportId ?? 'desktop', orientation: next } as never) as BrowserSessionMetadata | undefined
+      if (result?.device) setDevice(result.device)
+    })()
   }
 
   const submitAddress = (): void => {
@@ -553,7 +813,37 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const alias = aliasNote(meta?.currentUrl ?? '', meta?.aliasedHost ?? null)
   const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
 
-  return <section className="playwright-browser-pane" aria-label="Browser session">
+  /** Сочетания окружающего браузера: человек жмёт их не думая, и внутри панели
+   *  они должны означать то же самое, а не уходить в страницу Chromium. */
+  const onPanelKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    const shortcut = panelShortcut(event)
+    if (!shortcut) return
+    if (shortcut === 'exitFullscreen') {
+      // Escape закрывает сначала поиск, потом разворот: так же ведёт себя браузер.
+      if (search.open) { event.preventDefault(); setSearch((current) => ({ ...current, open: false })); return }
+      if (!fullscreen) return
+      event.preventDefault()
+      setFullscreen(false)
+      return
+    }
+    if (phase !== 'ready') return
+    event.preventDefault()
+    if (shortcut === 'address') { addressRef.current?.focus(); addressRef.current?.select(); return }
+    if (shortcut === 'find') {
+      setSearch((current) => ({ ...current, open: true }))
+      // Поле появляется в этом же кадре отрисовки — фокус ставим после него.
+      setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select() }, 0)
+      return
+    }
+    void run({ type: shortcut })
+  }
+
+  return <section
+      className={`playwright-browser-pane${fullscreen ? ' playwright-browser-pane--fullscreen' : ''}`}
+      aria-label="Browser session"
+      ref={paneRef}
+      onKeyDown={onPanelKeyDown}
+    >
       <div className="playwright-reader-tabs" role={tabs.length ? 'tablist' : 'group'} aria-label="Вкладки страницы">
         {tabs.map((tab) => (
           <span key={tab.id} className={`playwright-reader-tab${tab.id === meta?.activeTabId ? ' is-active' : ''}`}>
@@ -573,12 +863,29 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         ))}
         <IconButton size="sm" aria-label="Новая вкладка" title="Новая вкладка" disabled={phase !== 'ready'}
           onClick={() => void run({ type: 'newTab' })}>+</IconButton>
+        {/* За шестью вкладками начинается горизонтальная прокрутка, в которой
+            нужную приходится искать глазами; список выбирает её по названию. */}
+        {/* «Закрыть лишние» — один пункт меню у человека: после проверки, которая
+            наоткрывала попапов, вкладки закрывались по одной. */}
+        {tabs.length > 1 && (
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'}
+            onClick={() => void run({ type: 'tabs-do', do: 'close-others' } as never)}>Закрыть лишние</Button>
+        )}
+        {tabs.length > 5 && (
+          <label className="playwright-reader-testusers">Вкладок: {tabs.length}
+            <select className="sel" aria-label="Выбрать вкладку из списка" value={meta?.activeTabId ?? ''} disabled={phase !== 'ready'}
+              onChange={(event) => { if (event.target.value) void run({ type: 'selectTab', tabId: event.target.value }) }}>
+              {tabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.dialogId ? '● ' : ''}{tab.title || tab.url || 'Без названия'}</option>)}
+            </select>
+          </label>
+        )}
       </div>
     <div className="playwright-reader-header">
       <IconButton size="sm" aria-label="Назад" title="Назад" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'back' })}>‹</IconButton>
       <IconButton size="sm" aria-label="Вперёд" title="Вперёд" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'forward' })}>›</IconButton>
       <IconButton size="sm" aria-label="Обновить" title="Обновить" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'reload' })}>⟳</IconButton>
       <input
+        ref={addressRef}
         type="url"
         className="playwright-reader-address"
         aria-label="Адрес страницы"
@@ -598,7 +905,47 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         }}
       />
       <Button size="sm" variant="secondary" disabled={phase !== 'ready'} onClick={submitAddress}>Открыть</Button>
+      {/* Адрес страницы нужен в задаче, письме и тикете чаще, чем кажется:
+          выделять его в поле на телефоне — отдельное упражнение. */}
+      <IconButton size="sm" aria-label="Скопировать адрес" title="Скопировать адрес"
+        disabled={!meta?.currentUrl}
+        onClick={() => void (async () => {
+          const url = meta?.currentUrl
+          if (!url) return
+          try {
+            if (!navigator.clipboard) throw new Error('Буфер обмена недоступен в этом контексте')
+            await navigator.clipboard.writeText(url)
+            setMessage('Адрес скопирован')
+          } catch (err) { setMessage(err instanceof Error ? err.message : 'Скопировать не удалось') }
+        })()}>⧉</IconButton>
+      <IconButton size="sm" aria-label={fullscreen ? 'Свернуть кадр' : 'Развернуть кадр'} title={fullscreen ? 'Свернуть кадр' : 'Развернуть кадр на всю панель'}
+        aria-pressed={fullscreen} onClick={() => setFullscreen((value) => !value)}>{fullscreen ? '⤡' : '⤢'}</IconButton>
     </div>
+    {search.open && (
+      <div className="playwright-reader-find" role="search">
+        <input
+          ref={searchRef}
+          type="search"
+          className="login-input"
+          aria-label="Найти на странице"
+          placeholder="Найти на странице"
+          value={search.query}
+          disabled={phase !== 'ready'}
+          onChange={(event) => setSearch((current) => ({ ...current, query: event.target.value }))}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') { event.preventDefault(); void (search.matches.length ? step(event.shiftKey ? -1 : 1) : runSearch(search.query)) }
+            if (event.key === 'Escape') { event.preventDefault(); setSearch((current) => ({ ...current, open: false })) }
+          }}
+        />
+        <Button size="sm" variant="secondary" disabled={phase !== 'ready' || !search.query.trim() || search.searching} onClick={() => void runSearch(search.query)}>Найти</Button>
+        <span role="status" className="playwright-reader-size">
+          {search.searching ? 'ищем…' : search.error ? search.error : search.matches.length ? `${search.at + 1} из ${search.matches.length}` : search.query.trim() ? 'ничего не нашлось' : ''}
+        </span>
+        <IconButton size="sm" aria-label="Предыдущее совпадение" title="Предыдущее совпадение" disabled={search.matches.length < 2} onClick={() => void step(-1)}>↑</IconButton>
+        <IconButton size="sm" aria-label="Следующее совпадение" title="Следующее совпадение" disabled={search.matches.length < 2} onClick={() => void step(1)}>↓</IconButton>
+        <IconButton size="sm" aria-label="Закрыть поиск" title="Закрыть поиск" onClick={() => setSearch((current) => ({ ...current, open: false }))}>✕</IconButton>
+      </div>
+    )}
     <div className="playwright-reader-tools">
       <span className="playwright-reader-viewports" role="group" aria-label="Размер окна">
         {VIEWPORTS.map((v) => (
@@ -611,6 +958,46 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             onClick={() => changeViewport(v.id)}
           >{v.label}</Button>
         ))}
+      </span>
+      <Button size="sm" variant={search.open ? 'primary' : 'ghost'} aria-pressed={search.open} disabled={phase !== 'ready'}
+        onClick={() => { setSearch((current) => ({ ...current, open: !current.open })); setTimeout(() => searchRef.current?.focus(), 0) }}>Поиск по странице</Button>
+      {/* Длинную страницу человек листает концами: «в начало» и «в конец» —
+          первые две кнопки, за которыми он тянется, и их не было вовсе. */}
+      <span className="playwright-reader-keys" role="group" aria-label="Прокрутка страницы">
+        <IconButton size="sm" aria-label="В начало страницы" title="В начало страницы" disabled={phase !== 'ready'}
+          onClick={() => void (async () => { await run({ type: 'selector', action: { kind: 'scroll', to: 'top' } }); await refreshMetrics() })()}>⇱</IconButton>
+        <IconButton size="sm" aria-label="В конец страницы" title="В конец страницы" disabled={phase !== 'ready'}
+          onClick={() => void (async () => { await run({ type: 'selector', action: { kind: 'scroll', to: 'bottom' } }); await refreshMetrics() })()}>⇲</IconButton>
+      </span>
+      {/* «Экранов ниже» отвечает на вопрос, который кадр не отвечает никогда:
+          это вся страница или только её начало. */}
+      {metrics && <span className="playwright-reader-size" role="status">{metrics.atBottom ? 'страница долистана' : `ниже ещё ${metrics.screensBelow} экрана(ов)`}</span>}
+      {/* Размер окна словами: пресет не говорит, какой ширины страница сейчас,
+          а именно ширина объясняет, почему вёрстка выглядит так. */}
+      {/* Ориентация — отдельная кнопка: «а если повернуть» это первое, что
+          спрашивают о мобильной вёрстке, и одной шириной это не проверить. */}
+      {viewportId && viewportId !== 'desktop' && (
+        <Button size="sm" variant="ghost" disabled={phase !== 'ready'}
+          onClick={() => changeOrientation(orientation === 'portrait' ? 'landscape' : 'portrait')}>
+          {orientation === 'portrait' ? 'Повернуть' : 'Вернуть портрет'}
+        </Button>
+      )}
+      {meta?.viewport && (
+        <span className="playwright-reader-size">
+          {meta.viewport.width}×{meta.viewport.height}
+          {device?.touch ? ' · тач' : ''}
+          {device && device.deviceScaleFactor > 1 ? ` · ×${device.deviceScaleFactor}` : ''}
+        </span>
+      )}
+      {/* Масштаб кадра отделён от размера окна Chromium: «Телефон» меняет вёрстку
+          страницы, а зум — только то, как кадр виден человеку. */}
+      <span className="playwright-reader-zoom" role="group" aria-label="Масштаб кадра">
+        <IconButton size="sm" aria-label="Уменьшить кадр" title="Уменьшить кадр"
+          onClick={() => setZoom((current) => nextFrameZoom(current, 'out', fitScale(imgRef.current?.getBoundingClientRect().width ?? 0, meta?.viewport.width ?? VIEWPORT.width)))}>−</IconButton>
+        <Button size="sm" variant={zoom === 'fit' ? 'primary' : 'ghost'} aria-pressed={zoom === 'fit'}
+          onClick={() => setZoom('fit')}>{zoom === 'fit' ? 'Вписан' : `${Math.round(zoom * 100)}%`}</Button>
+        <IconButton size="sm" aria-label="Увеличить кадр" title="Увеличить кадр"
+          onClick={() => setZoom((current) => nextFrameZoom(current, 'in', fitScale(imgRef.current?.getBoundingClientRect().width ?? 0, meta?.viewport.width ?? VIEWPORT.width)))}>+</IconButton>
       </span>
       {onAttachFrame && (
         <Button size="sm" variant="ghost" disabled={phase !== 'ready' || !frame} onClick={() => { if (frame) onAttachFrame(frame) }}>
@@ -670,6 +1057,29 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         </label>
       )}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadDiagnostics()}>Ошибки страницы</Button>
+      {/* Человек видит форму глазами страницы — теми же данными, что и модель:
+          что заполнено, что обязательно и почему браузер не пустит дальше. */}
+      <Button size="sm" variant={formInfo ? 'primary' : 'ghost'} aria-expanded={Boolean(formInfo)} disabled={phase !== 'ready'} onClick={() => (formInfo ? setFormInfo(null) : void loadFormInfo())}>Поля формы</Button>
+      <Button size="sm" variant={environmentOpen ? 'primary' : 'ghost'} aria-expanded={environmentOpen} disabled={phase !== 'ready'} onClick={() => setEnvironmentOpen((value) => !value)}>Среда</Button>
+      <Button size="sm" variant={report ? 'primary' : 'ghost'} aria-expanded={Boolean(report)} disabled={phase !== 'ready'}
+        onClick={() => (report ? setReport(null) : void loadReport())}>Отчёт</Button>
+      <Button size="sm" variant={snapshots.open ? 'primary' : 'ghost'} aria-expanded={snapshots.open} disabled={phase !== 'ready'}
+        onClick={() => { setSnapshots((current) => ({ ...current, open: !current.open })); if (!snapshots.open) void runSnapshot('list') }}>Снимки</Button>
+      <Button size="sm" variant={feedOpen ? 'primary' : 'ghost'} aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>
+        Что происходит{meta?.history?.length ? ` (${meta.history.length})` : ''}
+      </Button>
+      {/* Эмуляция незаметна на кадре: тёмная тема выглядит как решение сайта,
+          а отсутствие сети — как зависшая страница. Поэтому она подписана. */}
+      {environment && (environment.colorScheme === 'dark' || environment.offline || environment.reducedMotion === 'reduce' || environment.forcedColors === 'active') && (
+        <span className="playwright-reader-size" role="status">
+          {[environment.colorScheme === 'dark' ? 'тёмная тема' : null, environment.offline ? 'без сети' : null,
+            environment.reducedMotion === 'reduce' ? 'без анимации' : null, environment.forcedColors === 'active' ? 'контраст' : null]
+            .filter(Boolean).join(' · ')}
+        </span>
+      )}
+      {/* Страницу иногда нужно доработать в своём браузере: скачать файл,
+          открыть devtools, войти паролем из менеджера. */}
+      <Button size="sm" variant="ghost" disabled={!meta?.currentUrl} onClick={() => { if (meta?.currentUrl) globalThis.open?.(meta.currentUrl, '_blank', 'noopener') }}>Открыть у себя</Button>
       <Button size="sm" variant={downloadsOpen ? 'primary' : 'ghost'} disabled={phase !== 'ready'} aria-expanded={downloadsOpen} onClick={() => setDownloadsOpen(value => !value)}>Скачивания{meta?.downloadCount ? ` (${meta.downloadCount})` : ''}</Button>
       {/* Профиль persistent, поэтому «выйти и посмотреть экран входа» иначе
           нечем: перезапуск сессии куки не трогает. */}
@@ -683,9 +1093,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       })()}>
         Очистить сессию сайта
       </Button>
+      {/* На телефоне экранная клавиатура не отдаёт ни стрелок, ни Backspace, а
+          без них не пройти ни список, ни поле с ошибкой ввода. */}
       <span className="playwright-reader-keys" role="group" aria-label="Клавиши">
-        {(['Enter', 'Tab', 'Escape'] as const).map((key) => (
-          <Button key={key} size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key } })}>{key}</Button>
+        {([['Enter', 'Enter'], ['Tab', 'Tab'], ['Escape', 'Esc'], ['ArrowUp', '↑'], ['ArrowDown', '↓'], ['Backspace', '⌫']] as const).map(([key, label]) => (
+          <Button key={key} size="sm" variant="ghost" disabled={phase !== 'ready'}
+            aria-label={key} title={key}
+            onClick={() => void run({ type: 'input', action: { type: 'press', key } })}>{label}</Button>
         ))}
       </span>
       {/* Долгая навигация ничем не отличалась от зависшей: прервать её было
@@ -726,9 +1140,23 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             aria-disabled={Boolean(activeDialog)}
             role="application"
             aria-label="Страница в Chromium: клик, прокрутка и клавиатура работают прямо здесь"
-            onClick={(event) => clickAt(event, 'left', 1)}
+            onClick={(event) => {
+              clearTimeout(longPress.current.timer)
+              if (swallowTapAfterScroll()) return
+              // Два быстрых тапа = двойной клик: на телефоне иначе не открыть
+              // то, что открывается двойным щелчком (строка таблицы, файл).
+              // Мышь сюда не попадает: у неё двойной клик приходит своим detail,
+              // и считать два соседних щелчка двойными было бы неверно.
+              const now = Date.now()
+              const touched = now - lastTouchAt.current < TOUCH_CLICK_WINDOW_MS
+              const double = touched && now - lastTap.current < DOUBLE_TAP_MS
+              lastTap.current = touched ? now : 0
+              clickAt(event, 'left', double ? 2 : 1)
+            }}
             onContextMenu={(event) => { event.preventDefault(); clickAt(event, 'right', 1) }}
             onWheel={onFrameWheel}
+            onTouchStart={onFrameTouchStart}
+            onTouchMove={onFrameTouchMove}
             onKeyDown={onFrameKeyDown}
             onPaste={(event) => {
               if (phase !== 'ready' || dialogOpen.current) return
@@ -737,7 +1165,17 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
               event.preventDefault()
               void run({ type: 'input', action: { type: 'type', text } })
             }}
-            style={{ width: '100%', display: 'block', cursor: 'pointer' }}
+            style={{
+              // Ширина задаётся числом только при явном масштабе: режим «вписать»
+              // остаётся на CSS, иначе кадр дёргался бы на каждом ресайзе панели.
+              width: frameWidth(zoom, meta?.viewport.width ?? VIEWPORT.width) ?? '100%',
+              maxWidth: zoom === 'fit' ? '100%' : 'none',
+              display: 'block',
+              cursor: 'pointer',
+              // Браузер не должен уводить страницу приложения, пока палец
+              // прокручивает страницу внутри кадра.
+              touchAction: 'none'
+            }}
           />
         : phase === 'ready' && tabs.length === 0
           ? <EmptyState title="Все вкладки закрыты" description="Откройте новую вкладку кнопкой + над адресом страницы." />
@@ -748,6 +1186,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         if (error) throw new Error(error)
         if (!isBrowserSessionMetadata(result) || !Array.isArray(result.dialogs)) throw new Error('Сайт не подтвердил ответ. Обновите состояние и повторите.')
       }} />}
+      {/* Полоса вместо одного слова: на длинной навигации «Выполняется…» не
+          отличалось от зависшей страницы, и человек жал перезапуск зря. */}
+      {(busy || meta?.state === 'starting' || meta?.state === 'reconnecting') && !activeDialog && (
+        <span className="playwright-reader-progress" role="progressbar" aria-label="Страница выполняет действие" aria-busy="true" />
+      )}
       {busy && !activeDialog && <span className="playwright-reader-busy" role="status">Выполняется…</span>}
     </div>
     {downloadsOpen && <BrowserDownloadsPane downloads={meta?.downloads ?? []} count={meta?.downloadCount ?? 0} onCommand={async command => {
@@ -796,6 +1239,19 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
               setMessage('Сценарий скопирован')
             } catch (err) { setMessage(err instanceof Error ? err.message : 'Скопировать не удалось') }
           })()}>Скопировать</Button>
+          {/* Сценарий переносят между разговорами и машинами: без обмена JSON
+              его приходилось записывать заново на каждом стенде. */}
+          <Button size="sm" variant="ghost" onClick={() => {
+            const text = globalThis.prompt?.('Вставьте JSON сценария')
+            if (!text) return
+            try {
+              const parsed = JSON.parse(text) as { steps?: unknown[]; startUrl?: string }
+              if (!Array.isArray(parsed.steps) || !parsed.steps.length) throw new Error('В сценарии нет шагов')
+              setSteps(loadScenario({ startUrl: parsed.startUrl ?? '', steps: parsed.steps as never }))
+              setStepResults({})
+              setMessage('Сценарий загружен из JSON')
+            } catch (err) { setMessage(err instanceof Error ? `Сценарий не загружен: ${err.message}` : 'Сценарий не загружен') }
+          }}>Вставить JSON</Button>
           <IconButton size="sm" aria-label="Очистить запись" title="Очистить запись" onClick={() => { setSteps([]); setRecording(false) }}>✕</IconButton>
         </div>
         {!hasAssertions(steps) && (
@@ -839,7 +1295,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         )}
         <ol className="playwright-reader-record__list">
           {steps.map((step) => (
-            <li key={step.id} data-stability={step.stability}>
+            <li key={step.id} data-stability={step.stability} data-skipped={step.skipped ? 'true' : undefined}>
               <span className="playwright-reader-record__row">
                 {/* Название читается в отчёте этапа — его правят чаще всего. */}
                 <input
@@ -849,6 +1305,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
                   onChange={(event) => setSteps((current) => renameStep(current, step.id, event.target.value))}
                 />
                 <IconButton size="sm" aria-label={`Прогнать до шага «${step.title}»`} title="Прогнать до этого шага" disabled={running} onClick={() => void replay(step.id)}>▸</IconButton>
+                {/* Записанный проход почти никогда не идеален: шаг сделан рано,
+                    шаг лишний. Раньше это лечилось только записью заново. */}
+                <IconButton size="sm" aria-label={`Поднять шаг «${step.title}»`} title="Выше" onClick={() => { setSteps((current) => moveStep(current, step.id, -1)); setStepResults({}) }}>↑</IconButton>
+                <IconButton size="sm" aria-label={`Опустить шаг «${step.title}»`} title="Ниже" onClick={() => { setSteps((current) => moveStep(current, step.id, 1)); setStepResults({}) }}>↓</IconButton>
+                <IconButton size="sm" aria-label={step.skipped ? `Включить шаг «${step.title}»` : `Выключить шаг «${step.title}»`}
+                  title={step.skipped ? 'Включить шаг' : 'Выключить шаг: останется в записи, но в сценарий не уедет'}
+                  onClick={() => { setSteps((current) => toggleStep(current, step.id)); setStepResults({}) }}>{step.skipped ? '○' : '●'}</IconButton>
                 <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => {
                 // Отметки прогона ключуются по id, а `removeStep` перенумеровывает:
                 // без сброса «ок» удалённого шага доставался следующему.
@@ -868,6 +1331,234 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             </li>
           ))}
         </ol>
+      </div>
+    )}
+    {report && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Отчёт о проверке">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Отчёт: {report.passed ? 'замечаний нет' : `замечаний ${report.failures}`} · действий {report.actions}</strong>
+          <Button size="sm" variant="ghost" onClick={() => void (async () => {
+            try {
+              if (!navigator.clipboard) throw new Error('Буфер обмена недоступен в этом контексте')
+              await navigator.clipboard.writeText(report.markdown)
+              setMessage('Отчёт скопирован')
+            } catch (err) { setMessage(err instanceof Error ? err.message : 'Скопировать не удалось') }
+          })()}>Скопировать</Button>
+          <IconButton size="sm" aria-label="Обновить отчёт" title="Обновить отчёт" onClick={() => void loadReport()}>⟳</IconButton>
+          <IconButton size="sm" aria-label="Скрыть отчёт" title="Скрыть отчёт" onClick={() => setReport(null)}>✕</IconButton>
+        </div>
+        {/* Готовый markdown, а не пересказ: человек вставляет его в задачу как есть. */}
+        <pre>{report.markdown}</pre>
+      </div>
+    )}
+    {snapshots.open && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Снимки состояния">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Снимки состояния</strong>
+          <label className="playwright-reader-record__name">Имя снимка
+            <input className="login-input" value={snapshots.name} placeholder="до правки"
+              onChange={(event) => setSnapshots((current) => ({ ...current, name: event.target.value }))} />
+          </label>
+          <label className="playwright-reader-testusers">
+            <input type="checkbox" checked={snapshots.fullPage === true}
+              onChange={(event) => setSnapshots((current) => ({ ...current, fullPage: event.target.checked }))} />
+            Вся страница
+          </label>
+          <Button size="sm" variant="secondary" disabled={phase !== 'ready' || !snapshots.name.trim() || snapshots.busy}
+            onClick={() => void runSnapshot('save', snapshots.name.trim(), snapshots.fullPage)}>Снять</Button>
+          <Button size="sm" disabled={phase !== 'ready' || !snapshots.name.trim() || snapshots.busy}
+            onClick={() => void runSnapshot('compare', snapshots.name.trim(), snapshots.fullPage)}>Сравнить</Button>
+          <IconButton size="sm" aria-label="Скрыть снимки" title="Скрыть снимки" onClick={() => setSnapshots((current) => ({ ...current, open: false }))}>✕</IconButton>
+        </div>
+        {snapshots.error && <p role="alert">{snapshots.error}</p>}
+        {snapshots.comparison && (
+          <p role="status">
+            {/* Доля сама по себе ничего не значит: «12% и всё в шапке» — диагноз,
+                «12%» — нет. Поэтому область различий идёт рядом с числом. */}
+            {/* Вердикт словами идёт первым: «0%» при изменившемся тексте человек
+                читает как «ничего не изменилось», хотя это изменение ниже сгиба. */}
+            {snapshots.comparison.verdict === 'identical' ? 'Совпало' :
+              snapshots.comparison.verdict === 'dom-only' ? 'Видимых различий нет, но текст изменился — возможно, ниже сгиба: снимите «Вся страница»' :
+                snapshots.comparison.verdict === 'resized' ? 'Размер страницы изменился' : 'Есть видимые различия'}
+            {' · '}
+            Различий: {Math.round(snapshots.comparison.ratio * 1000) / 10}%
+            {snapshots.comparison.area ? ` · область ${snapshots.comparison.area.width}×${snapshots.comparison.area.height} в точке ${snapshots.comparison.area.x},${snapshots.comparison.area.y}` : ' · совпало'}
+            {snapshots.comparison.sizeChanged ? ' · размер страницы изменился' : ''}
+            {snapshots.comparison.urlChanged ? ' · адрес другой' : ''}
+            {snapshots.comparison.text && (snapshots.comparison.text.addedTotal || snapshots.comparison.text.removedTotal)
+              ? ` · текст: +${snapshots.comparison.text.addedTotal} −${snapshots.comparison.text.removedTotal}`
+              : ''}
+          </p>
+        )}
+        {snapshots.items.length === 0 && <p className="proj-muted">Снимков пока нет. Сделайте «до», измените страницу, нажмите «Сравнить».</p>}
+        {snapshots.items.length > 0 && (
+          <ul className="playwright-reader-diagnostics__list">
+            {snapshots.items.map((item) => (
+              <li key={item.name}>
+                <code>{item.name}</code> · {new Date(item.at).toLocaleTimeString()} · {Math.round(item.bytes / 1024)} КБ · {item.url}
+                <IconButton size="sm" aria-label={`Удалить снимок ${item.name}`} title="Удалить снимок" disabled={phase !== 'ready'}
+                  onClick={() => void runSnapshot('remove', item.name)}>✕</IconButton>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )}
+    {feedOpen && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Что происходит в браузере">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Что происходит</strong>
+          <span className="playwright-reader-keys" role="group" aria-label="Чьи действия показывать">
+            {([['all', 'Все'], ['assistant', 'Модель'], ['user', 'Я']] as const).map(([value, label]) => (
+              <Button key={value} size="sm" variant={feedActor === value ? 'primary' : 'ghost'} aria-pressed={feedActor === value} onClick={() => setFeedActor(value)}>{label}</Button>
+            ))}
+          </span>
+          <IconButton size="sm" aria-label="Очистить ленту" title="Очистить ленту" disabled={phase !== 'ready'}
+            onClick={() => void run({ type: 'history', clear: true } as never)}>🗑</IconButton>
+          <IconButton size="sm" aria-label="Скрыть ленту" title="Скрыть ленту" onClick={() => setFeedOpen(false)}>✕</IconButton>
+        </div>
+        {!meta?.history?.length && <p className="proj-muted">Пока ничего не происходило.</p>}
+        {Boolean(meta?.history?.length) && (
+          <ul className="playwright-reader-diagnostics__list">
+            {(meta?.history ?? [])
+              .filter((entry) => feedActor === 'all' || entry.actor === feedActor)
+              .slice()
+              .reverse()
+              .map((entry, index) => (
+                <li key={`${entry.at}-${index}`} data-kind={entry.ok ? undefined : 'console'}>
+                  <span className="playwright-reader-actor" data-actor={entry.actor}>{entry.actor === 'assistant' ? 'модель' : 'вы'}</span>
+                  {' · '}
+                  {entry.kind === 'note' ? <strong>{entry.title}</strong> : entry.title}
+                  {entry.error && <small> · {entry.error}</small>}
+                  {entry.selector && (
+                    <IconButton size="sm" aria-label={`Показать ${entry.selector}`} title="Показать элемент на странице" disabled={phase !== 'ready'}
+                      onClick={() => void showMatch(entry.selector!)}>◎</IconButton>
+                  )}
+                  <small className="playwright-reader-size"> {new Date(entry.at).toLocaleTimeString()}</small>
+                </li>
+              ))}
+          </ul>
+        )}
+      </div>
+    )}
+    {environmentOpen && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Среда браузера">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Среда браузера</strong>
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void changeEnvironment({ colorScheme: 'light', reducedMotion: 'no-preference', forcedColors: 'none', offline: false, geolocation: null, permissions: [] })}>Сбросить</Button>
+          <IconButton size="sm" aria-label="Скрыть среду" title="Скрыть среду" onClick={() => setEnvironmentOpen(false)}>✕</IconButton>
+        </div>
+        <div className="playwright-reader-env">
+          {([
+            ['Тёмная тема', environment?.colorScheme === 'dark', () => changeEnvironment({ colorScheme: environment?.colorScheme === 'dark' ? 'light' : 'dark' })],
+            ['Без сети', environment?.offline === true, () => changeEnvironment({ offline: !(environment?.offline === true) })],
+            ['Без анимации', environment?.reducedMotion === 'reduce', () => changeEnvironment({ reducedMotion: environment?.reducedMotion === 'reduce' ? 'no-preference' : 'reduce' })],
+            ['Высокий контраст', environment?.forcedColors === 'active', () => changeEnvironment({ forcedColors: environment?.forcedColors === 'active' ? 'none' : 'active' })]
+          ] as const).map(([label, active, toggle]) => (
+            <Button key={label} size="sm" variant={active ? 'primary' : 'ghost'} aria-pressed={active} disabled={phase !== 'ready'} onClick={() => void toggle()}>{label}</Button>
+          ))}
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadCookies()}>Cookies</Button>
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadStorage()}>Хранилище сайта</Button>
+          <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadNetworkRules()}>Правила сети</Button>
+        </div>
+        {environment?.geolocation && <p className="proj-muted">Позиция: {environment.geolocation.latitude}, {environment.geolocation.longitude}</p>}
+        {/* Настройка проверки переживает перезапуск сессии — об этом стоит
+            сказать: иначе человек не понимает, почему после перезапуска
+            страница снова «телефонная». */}
+        {(device || environment) && <p className="proj-muted">Эти настройки восстановятся после перезапуска сессии.</p>}
+        {cookies?.loading && <p role="status">Читаем cookies…</p>}
+        {cookies?.error && <p role="alert">{cookies.error}</p>}
+        {storage?.loading && <p role="status">Читаем хранилище…</p>}
+        {storage?.error && <p role="alert">{storage.error}</p>}
+        {storage?.data && (
+          <>
+            <p className="proj-muted">
+              {/* Подписи словами, а не именами API: панель не имеет права обращаться
+                  к хранилищу браузера человека, и сторож архитектуры ищет их по тексту. */}
+              {storage.data.origin}: постоянное {storage.data.localTotal ?? 0}, на вкладку {storage.data.sessionTotal ?? 0}
+              {storage.data.truncated ? ' · показана часть ключей' : ''}
+            </p>
+            <ul className="playwright-reader-diagnostics__list">
+              {[...(storage.data.local ?? []).map((item) => ({ ...item, area: 'local' })), ...(storage.data.session ?? []).map((item) => ({ ...item, area: 'session' }))].map((item) => (
+                <li key={`${item.area}:${item.key}`}>
+                  <code>{item.key}</code> · {item.area} · {item.bytes} Б · {item.value}
+                  <IconButton size="sm" aria-label={`Удалить ${item.key}`} title="Удалить ключ" disabled={phase !== 'ready'}
+                    onClick={() => void (async () => {
+                      await run({ type: 'selector', action: { kind: 'storage', area: item.area as 'local' | 'session', do: 'remove', key: item.key } })
+                      await loadStorage()
+                    })()}>✕</IconButton>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {networkRules && (
+          <>
+            <p className="proj-muted">
+              Правила сети: {networkRules.total}.
+              {networkRules.total ? ' Подменённый ответ и заблокированный запрос остаются до конца сессии.' : ' Страница работает с настоящей сетью.'}
+            </p>
+            {Boolean(networkRules.total) && (
+              <ul className="playwright-reader-diagnostics__list">
+                {networkRules.rules.map((rule) => (
+                  <li key={rule.url}>
+                    <code>{rule.url}</code> · {rule.action === 'mock' ? `подмена ${rule.status ?? 200}` : rule.action === 'block' ? 'блокировка' : `задержка ${rule.delayMs ?? 0} мс`}
+                    <IconButton size="sm" aria-label={`Снять правило ${rule.url}`} title="Снять правило" disabled={phase !== 'ready'}
+                      onClick={() => void loadNetworkRules('remove', rule.url)}>✕</IconButton>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+        {cookies?.items && (
+          <>
+            <p className="proj-muted">Cookies сессии: {cookies.total}. Значения длинных показаны сокращённо — это доступ к аккаунту.</p>
+            <ul className="playwright-reader-diagnostics__list">
+              {cookies.items.map((cookie) => (
+                <li key={`${cookie.domain}${cookie.path}${cookie.name}`}><code>{cookie.name}</code> · {cookie.domain}{cookie.path} · {cookie.value}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+    )}
+    {/* Просьба модели живёт над кадром: человек смотрит на экран браузера, и
+        вопрос должен быть там же, где то, чего он касается. */}
+    {meta?.ask && !meta.ask.answered && (
+      <div className="playwright-reader-ask" role="alert">
+        <strong>Модель просит вас:</strong>
+        <span>{meta.ask.text}</span>
+        <Button size="sm" variant="primary" disabled={phase !== 'ready'}
+          onClick={() => void run({ type: 'answer', askId: meta.ask!.id, done: true } as never)}>Сделал</Button>
+        <Button size="sm" variant="ghost" disabled={phase !== 'ready'}
+          onClick={() => void run({ type: 'answer', askId: meta.ask!.id, done: false } as never)}>Не буду</Button>
+      </div>
+    )}
+    {formInfo && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Поля формы">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Поля формы{formInfo.form ? `: ${formInfo.form.total}` : ''}{formInfo.validity && !formInfo.validity.valid ? ` · не проходят проверку: ${formInfo.validity.blocking.length}` : ''}</strong>
+          <IconButton size="sm" aria-label="Обновить поля формы" title="Обновить поля формы" disabled={formInfo.loading} onClick={() => void loadFormInfo()}>⟳</IconButton>
+          <IconButton size="sm" aria-label="Скрыть поля формы" title="Скрыть поля формы" onClick={() => setFormInfo(null)}>✕</IconButton>
+        </div>
+        {formInfo.loading && <p role="status">Читаем форму…</p>}
+        {formInfo.error && <p role="alert">{formInfo.error}</p>}
+        {formInfo.form?.truncated && <p className="proj-muted">Показана часть полей. Остальные модель дочитает инструментом form-state.</p>}
+        {formInfo.form && (
+          <ul className="playwright-reader-diagnostics__list">
+            {formInfo.form.fields.map((field, index) => (
+              <li key={`${field.selector}-${index}`} data-kind={field.invalid ? 'console' : undefined}>
+                <code>{field.label || field.name || field.selector}</code>
+                {field.type ? ` · ${field.type}` : ''}
+                {field.required ? ' · обязательное' : ''}
+                {field.disabled ? ' · выключено' : ''}
+                {field.checked !== undefined ? ` · ${field.checked ? 'отмечено' : 'снято'}` : field.value ? ` · «${field.value}»` : ' · пусто'}
+                {field.invalid && <small> · {field.invalid}</small>}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     )}
     {diagnostics && (
@@ -905,6 +1596,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         onChange={(event) => setTyping(event.target.value)}
         onKeyDown={(event) => { if (event.key === 'Enter') submitTyping() }}
       />
+      <IconButton size="sm" aria-label="Очистить поле ввода" title="Очистить поле ввода" disabled={!typing} onClick={() => setTyping('')}>✕</IconButton>
       <Button size="sm" variant="secondary" disabled={phase !== 'ready' || Boolean(activeDialog) || !typing} onClick={submitTyping}>Ввести</Button>
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key: 'Enter' } })}>Enter</Button>
     </div>
@@ -912,6 +1604,19 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     {message && (
       <div className="playwright-reader-error" role="alert">
         <span>{message}</span>
+        {/* Совет раннера — это следующий шаг, а не диагноз: прокрутить, закрыть
+            перекрывающее окно, дождаться готовности. */}
+        {failure?.advice && <span className="playwright-reader-size">{failure.advice}</span>}
+        {failure?.candidates?.length && (
+          <span className="playwright-reader-keys" role="group" aria-label="Похожие элементы страницы">
+            {failure.candidates.slice(0, 3).map((candidate) => (
+              <Button key={candidate.text} size="sm" variant="ghost" disabled={phase !== 'ready'}
+                onClick={() => void run({ type: 'selector', action: { kind: 'find', text: candidate.text, limit: 1 } })}>
+                {candidate.text}{candidate.disabled ? ' (выключен)' : candidate.visible ? '' : ' (скрыт)'}
+              </Button>
+            ))}
+          </span>
+        )}
         {retryable && lastCommand.current && (
           <Button size="sm" variant="secondary" onClick={() => { const cmd = lastCommand.current; if (cmd) void run(cmd) }}>Повторить</Button>
         )}

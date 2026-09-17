@@ -1,19 +1,20 @@
 // Использование: сколько потрачено, сколько токенов и как расход шёл по дням.
 
-import { EmptyState, MetricGrid, Sparkline } from '@voicechat/ui-kit'
+import { EmptyState, MetricGrid, Sparkline, Skeleton } from '@voicechat/ui-kit'
 import type { ProfilePeriod, ProfileUsage } from '../contracts'
 import { PERIOD_LABEL } from '../format'
 import { formatTokens, formatUsd, spendPoints, spendTrend } from '../model'
 
 export interface UsageTabProps {
   usage: ProfileUsage | null
+  loading?: boolean
   period: ProfilePeriod
   onSelectPeriod?: (period: ProfilePeriod) => void
 }
 
 const PERIODS: readonly ProfilePeriod[] = ['month', '7d', '30d', 'all']
 
-export function UsageTab({ usage, period, onSelectPeriod }: UsageTabProps): JSX.Element {
+export function UsageTab({ usage, period, onSelectPeriod, loading = false }: UsageTabProps): JSX.Element {
   const points = usage ? spendPoints(usage) : []
   return (
     <section className="vcp-usage" data-testid="usage-tab">
@@ -26,7 +27,7 @@ export function UsageTab({ usage, period, onSelectPeriod }: UsageTabProps): JSX.
         )}
       </div>
 
-      {!usage ? (
+      {loading ? <Skeleton variant="list" count={2} height={96} lines={3} testId="profile-usage-skeleton" /> : !usage ? (
         <EmptyState icon="📊" title="Данных за период нет" description="Появятся после первого ответа модели." />
       ) : (
         <>
@@ -78,10 +79,10 @@ export function UsageTab({ usage, period, onSelectPeriod }: UsageTabProps): JSX.
               <tbody>
                 {usage.byModel.map((item) => (
                   <tr key={item.model}>
-                    <td>{item.model}</td>
-                    <td>{formatTokens(item.inputTokens)}</td>
-                    <td>{formatTokens(item.outputTokens)}</td>
-                    <td>{formatUsd(item.spendUsd, item.incomplete)}</td>
+                    <td data-label="Модель">{item.model}</td>
+                    <td data-label="Вход">{formatTokens(item.inputTokens)}</td>
+                    <td data-label="Выход">{formatTokens(item.outputTokens)}</td>
+                    <td data-label="Расход">{formatUsd(item.spendUsd, item.incomplete)}</td>
                   </tr>
                 ))}
               </tbody>

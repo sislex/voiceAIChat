@@ -8,7 +8,9 @@ import {
   type LlmRunBody,
   type LlmRunnerHealth
 } from '@voicechat/shared'
-import { registerRunnerAuth } from './auth.js'
+import { registerRunnerAuth, bearerToken, tokenMatches } from './auth.js'
+import { PreviewCliGrants } from './previewGrants.js'
+import { PREVIEW_CLI_GRANTS_PATH, type PreviewCliGrantScope } from '@voicechat/shared'
 import { ensureCliProfile } from './cli/cliProfiles.js'
 import type { RunnerConfig } from './config.js'
 import { RunManager, type RunSink } from './run/rawRun.js'
@@ -104,7 +106,19 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
   if (!config.token) throw new Error('исполнитель без VC_RUNNER_TOKEN не поднимается')
 
   const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 })
-  registerRunnerAuth(app, config.token)
+  const previewGrants = new PreviewCliGrants((id) => runs.cancel(id))
+  registerRunnerAuth(app, config.token, (token) => previewGrants.accepts(token))
+  const grantGc = setInterval(() => previewGrants.sweep(), 1000)
+  grantGc.unref()
+  app.addHook('onClose', async () => { clearInterval(grantGc); previewGrants.close() })
+  app.post<{ Body: PreviewCliGrantScope }>(PREVIEW_CLI_GRANTS_PATH, async (req, reply) => {
+    try { return previewGrants.issue(req.body) }
+    catch { return reply.code(400).send({ error: 'invalid_preview_scope' }) }
+  })
+  app.delete<{ Params: { id: string } }>(PREVIEW_CLI_GRANTS_PATH + '/:id', async (req) => {
+    previewGrants.revoke(req.params.id)
+    return { revoked: true }
+  })
 
   const runs =
     opts.runs ??
@@ -129,6 +143,14 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
     ensureCliProfile(config.dataDir, userId, config.home, { sharedCodexAuth: config.sharedCodexAuth === true, sharedCodexAuthUser: config.sharedCodexAuthUser })
 
   app.post<{ Body: LlmRunBody }>(LLM_RUNNER.run, async (req, reply) => {
+    const scoped = !tokenMatches(config.token, bearerToken(req))
+    if (scoped) {
+      const body = previewGrants.prepare(bearerToken(req), req.body)
+      if (!body) return reply.code(403).send({ error: 'preview_scope_denied' })
+      req.body = body
+      const id = body.runId!
+      reply.raw.once('close', () => previewGrants.finish(bearerToken(req), id))
+    }
     const problem = badRequest(req.body)
     if (problem) return reply.code(400).send({ error: 'bad_request', message: problem })
 

@@ -31,6 +31,7 @@ export default defineConfig({
     },
     plugins: [react()],
     build: {
+      minify: 'esbuild',
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
@@ -40,6 +41,7 @@ export default defineConfig({
         },
         output: {
           manualChunks(id) {
+            if (id.includes('commonjsHelpers') || id.includes('vite/preload-helper')) return 'react'
             if (id.includes('node_modules/@xterm')) return 'terminal'
             if (
               id.includes('node_modules/react-markdown') ||

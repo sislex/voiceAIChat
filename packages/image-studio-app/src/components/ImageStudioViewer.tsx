@@ -31,6 +31,7 @@ interface Props {
   onView: (path: string) => void
   onStep: (delta: number) => void
   onUsePrompt: (prompt: string) => void
+  onTagsChange?: (path: string, tags: string[]) => Promise<void>
   /** Закрыть вьюер и выбрать файл для правки (фокус уйдёт в промпт). */
   onPickForEdit: (path: string) => void
   onVariate: (path: string) => void
@@ -102,7 +103,7 @@ const GUIDE_MODES = ['thirds', 'center', 'golden', 'none'] as const
 type GuideMode = (typeof GUIDE_MODES)[number]
 const GUIDE_LABELS: Record<GuideMode, string> = { thirds: 'трети', center: 'центр', golden: 'золотое сечение', none: 'выключены' }
 
-export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onRetouch, onExtract, onPlace, onRestoreVersion, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onChannels, starred, onToggleStar, status, onCycleStatus, sets, versions, onFacts, onLocate, autoSlideshow, onAutoSlideshowUsed, autoProps, onAutoPropsUsed, onDelete, onClose, position }: Props): JSX.Element {
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onTagsChange, onPickForEdit, onVariate, onRetouch, onExtract, onPlace, onRestoreVersion, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onChannels, starred, onToggleStar, status, onCycleStatus, sets, versions, onFacts, onLocate, autoSlideshow, onAutoSlideshowUsed, autoProps, onAutoPropsUsed, onDelete, onClose, position }: Props): JSX.Element {
   /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
   const [wipe, setWipe] = useState(50)
   /**
@@ -131,6 +132,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const panStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
   /** Начальная точка свайпа (телефон). */
   const touchX = useRef<number | null>(null)
+  const touchY = useRef(0)
+  const pinch = useRef<{ distance: number; scale: number } | null>(null)
   /** Подложка под картинкой: у прозрачного PNG края видно только на контрасте. */
   const [background, setBackground] = useState<ViewerBackground>(() => {
     try {
@@ -202,6 +205,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   useEffect(() => setMore(false), [viewing])
   /** Раскрытая панель свойств: полная мета и заметка одним списком. */
   const [propsOpen, setPropsOpen] = useState(false)
+  const [tagError, setTagError] = useState<string | null>(null)
   /** Полный экран: браузерный fullscreen на теле лайтбокса. */
   const [fullscreen, setFullscreen] = useState(false)
   const frameRef = useRef<HTMLDivElement | null>(null)
@@ -409,15 +413,41 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
     </>}>
     <div ref={frameRef} className={`imgbody image-studio-bg--${background}${fullscreen ? ' imgbody--fullscreen' : ''}`} tabIndex={-1}
       onKeyDown={(event) => {
-        if (event.key === 'ArrowLeft') onStep(-1)
-        if (event.key === 'ArrowRight') onStep(1)
+        if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault()
+          event.stopPropagation()
+          onStep(event.key === 'ArrowLeft' ? -1 : 1)
+        }
       }}
-      onTouchStart={(event) => { touchX.current = event.touches[0]?.clientX ?? null }}
-      onTouchEnd={(event) => {
-        if (touchX.current === null) return
-        const delta = (event.changedTouches[0]?.clientX ?? touchX.current) - touchX.current
+      onTouchStart={(event) => {
+        if (cropping || annotating || selectionOpen || compare) return
+        const [first, second] = Array.from(event.touches)
+        if (!first) return
+        if (second) {
+          touchX.current = null
+          pinch.current = { distance: Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY), scale: zoom.scale }
+        } else if (zoom.scale === 1) {
+          touchX.current = first.clientX
+          touchY.current = first.clientY
+        }
+      }}
+      onTouchMove={(event) => {
+        const [first, second] = Array.from(event.touches)
+        if (!pinch.current || !first || !second || !pinch.current.distance) return
         touchX.current = null
-        if (Math.abs(delta) > 48) { onCompareChange(false); onStep(delta > 0 ? -1 : 1) }
+        const scale = Math.max(1, Math.min(8, pinch.current.scale * Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY) / pinch.current.distance))
+        setZoom((previous) => scale === 1 ? { scale: 1, x: 0, y: 0 } : { ...previous, scale })
+      }}
+      onTouchCancel={() => { touchX.current = null; pinch.current = null }}
+      onTouchEnd={(event) => {
+        if (pinch.current) { pinch.current = null; touchX.current = null; return }
+        if (touchX.current === null || zoom.scale !== 1) return
+        const end = event.changedTouches[0]
+        const delta = (end?.clientX ?? touchX.current) - touchX.current
+        const vertical = (end?.clientY ?? touchY.current) - touchY.current
+        touchX.current = null
+        if (canStep && Math.abs(delta) > 48 && Math.abs(delta) > Math.abs(vertical)) { onCompareChange(false); onStep(delta > 0 ? -1 : 1) }
       }}>
       {(() => {
         if (selectionOpen && previews[viewing]) return <ImageStudioSelectionEditor
@@ -597,22 +627,34 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         return <div className="image-studio-crop-stage"
           onPointerDown={(event) => {
             const box = event.currentTarget.getBoundingClientRect()
-            dragStart.current = { x: event.clientX - box.left, y: event.clientY - box.top }
+            const img = imgRef.current
+            const left = img?.offsetLeft ?? 0
+            const top = img?.offsetTop ?? 0
+            dragStart.current = {
+              x: Math.max(left, Math.min(left + (img?.clientWidth || Infinity), event.clientX - box.left)),
+              y: Math.max(top, Math.min(top + (img?.clientHeight || Infinity), event.clientY - box.top))
+            }
             setCropBox(null)
             event.currentTarget.setPointerCapture(event.pointerId)
           }}
           onPointerMove={(event) => {
             if (!dragStart.current) return
             const box = event.currentTarget.getBoundingClientRect()
-            const x = event.clientX - box.left
-            const y = event.clientY - box.top
-            const w = Math.abs(x - dragStart.current.x)
-            // Фиксированное соотношение: высота следует за шириной.
-            const h = cropRatio > 0 ? w / cropRatio : Math.abs(y - dragStart.current.y)
-            const top = cropRatio > 0
-              ? (y >= dragStart.current.y ? dragStart.current.y : dragStart.current.y - h)
-              : Math.min(y, dragStart.current.y)
-            setCropBox({ x: Math.min(x, dragStart.current.x), y: top, w, h })
+            const img = imgRef.current
+            const left = img?.offsetLeft ?? 0
+            const top = img?.offsetTop ?? 0
+            const width = img?.clientWidth || Infinity
+            const height = img?.clientHeight || Infinity
+            const x = Math.max(left, Math.min(left + width, event.clientX - box.left))
+            const y = Math.max(top, Math.min(top + height, event.clientY - box.top))
+            const start = dragStart.current
+            const ratio = cropRatio && img?.naturalWidth && img.naturalHeight && Number.isFinite(width) && Number.isFinite(height)
+              ? cropRatio * width * img.naturalHeight / (height * img.naturalWidth) : cropRatio
+            // Bound both dimensions together; clipping only the saved crop breaks its aspect ratio.
+            const availableHeight = y >= start.y ? top + height - start.y : start.y - top
+            const w = ratio > 0 ? Math.min(Math.abs(x - start.x), availableHeight * ratio) : Math.abs(x - start.x)
+            const h = ratio > 0 ? w / ratio : Math.abs(y - start.y)
+            setCropBox({ x: x >= start.x ? start.x : start.x - w, y: y >= start.y ? start.y : start.y - h, w, h })
           }}
           onPointerUp={() => { dragStart.current = null }}>
           <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false} />
@@ -661,7 +703,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         }}>Сохранить разметку</button>
       </p>}
       {cropping && <p className="image-studio-origin">
-        {[{ r: 0, label: 'Свободно' }, { r: 1, label: '1:1' }, { r: 16 / 9, label: '16:9' }, { r: 4 / 3, label: '4:3' }, { r: 9 / 16, label: '9:16' }, { r: 1200 / 630, label: 'OG' }].map((item) => (
+        {[{ r: 0, label: 'Свободно' }, { r: 1, label: '1:1' }, { r: 4 / 5, label: '4:5' }, { r: 16 / 9, label: '16:9' }, { r: 4 / 3, label: '4:3' }, { r: 9 / 16, label: '9:16' }, { r: 1200 / 630, label: 'OG' }].map((item) => (
           <button key={item.label} type="button" className="image-studio-cancel" aria-pressed={cropRatio === item.r} style={cropRatio === item.r ? { fontWeight: 700 } : undefined} onClick={() => { setCropRatio(item.r); setCropBox(null) }}>{item.label}</button>
         ))}
         {' '}
@@ -707,6 +749,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           {meta.tookMs !== undefined && <><dt>Ран</dt><dd>{Math.round(meta.tookMs / 1000)} с</dd></>}
           {meta.source && <><dt>Исходник</dt><dd>{meta.source}</dd></>}
           {meta.prompt && <><dt>Промпт</dt><dd>{meta.prompt}</dd></>}
+          {meta.parameters && <><dt>Параметры запроса</dt><dd>{[meta.parameters.style, meta.parameters.size, meta.parameters.negative, meta.parameters.noText ? 'Без текста' : ''].filter(Boolean).join(' · ')}</dd></>}
+          {meta.tags?.length ? <><dt>Теги</dt><dd>{meta.tags.join(', ')}</dd></> : null}
         </dl>
         <button type="button" className="image-studio-cancel" onClick={() => {
           // Сводку удобно вставить в задачу: она объясняет, что это за файл.
@@ -720,6 +764,15 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           ].filter(Boolean)
           void navigator.clipboard?.writeText(lines.join('\n')).catch(() => undefined)
         }}>Скопировать сводку</button>
+        {onTagsChange && <div>
+          <label>Теги через запятую <input key={viewing + (meta.tags ?? []).join(',')} defaultValue={(meta.tags ?? []).join(', ')} onBlur={event => {
+            void onTagsChange(viewing, [...new Set(event.target.value.split(',').map(tag => tag.trim()).filter(Boolean))]).then(() => setTagError(null)).catch(error => setTagError(String(error)))
+          }} /></label>
+          {[...new Set((meta.prompt ?? '').match(/[\p{L}\p{N}]{4,}/gu) ?? [])].slice(0, 6).filter(tag => !meta.tags?.includes(tag)).map(tag => <button key={tag} type="button" onClick={() => {
+            void onTagsChange(viewing, [...(meta.tags ?? []), tag]).then(() => setTagError(null)).catch(error => setTagError(String(error)))
+          }}>+ {tag}</button>)}
+          {tagError && <span role="alert">{tagError}</span>}
+        </div>}
         {sets && sets.length > 0 && <span className="image-studio-dim">В наборах: {sets.join(', ')}</span>}
         {versions && versions.length > 1 && <span className="image-studio-versions" role="group" aria-label="Дерево версий">
           {versions.map((node) => <span key={node.path} className="image-studio-dim" style={{ paddingLeft: node.depth * 12 }}>

@@ -2,7 +2,7 @@ import './test/applicationPanels'
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import App from './App'
+import App, { buildDocumentTitle } from './App'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
@@ -24,6 +24,12 @@ async function renderApp(): Promise<FakeApi> {
   render(<App api={api} delays={SLOW} />)
   return api
 }
+
+// @testCase TC-05
+it('builds a title with one application suffix', () => {
+  expect(buildDocumentTitle('Настройки проекта', 'Проект', 'ChatAI')).toBe('Настройки проекта — Проект — ChatAI')
+  expect(buildDocumentTitle('Настройки проекта', 'ChatAI', 'ChatAI')).toBe('Настройки проекта — ChatAI')
+})
 
 describe('App — утилиты как страницы по URL', () => {
   // @testCase tc-ui-settings-routes

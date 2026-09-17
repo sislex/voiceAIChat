@@ -2,6 +2,39 @@
 // (`kanban/module.ts`) и её тестов. Вынесены из `server.ts` вместе с канбан-кластером.
 import { DEFAULT_CODEX_MODEL, type AcceptanceCriterionSnapshot, type LlmProvider } from '@voicechat/shared'
 
+/** Preserve the complete response: even familiar prose can hide requirements. */
+export function preparationEnvelope(text: string): string {
+  return text.trim()
+}
+
+/** Parse the entire response before normalizing compatible field values. */
+export function preparationJsonObject(text: string): Record<string, unknown> {
+  const raw = text.trim()
+  if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')
+  const value = JSON.parse(raw) as Record<string, unknown>
+  // JSON.parse silently keeps the last duplicate key. Reject that ambiguity
+  // before normalization can hide a requirement or a source status.
+  const scopes: Array<Set<string> | null> = []
+  const tokens = /"(?:\\[\s\S]|[^"\\])*"|[{}\[\]]/g
+  for (const token of raw.matchAll(tokens)) {
+    const text = token[0]
+    if (text === '{') scopes.push(new Set())
+    else if (text === '[') scopes.push(null)
+    else if (text === '}' || text === ']') scopes.pop()
+    else if (/^\s*:/.test(raw.slice(token.index! + text.length))) {
+      const key = JSON.parse(text) as string
+      const keys = scopes[scopes.length - 1]
+      if (keys?.has(key)) throw new Error('Неоднозначный JSON: повторяющееся имя поля')
+      keys?.add(key)
+    }
+  }
+  // Null means no reference only for this optional field; other nulls survive.
+  if (Array.isArray(value.decisions)) for (const decision of value.decisions) {
+    if (decision && typeof decision === 'object' && !Array.isArray(decision) && decision.questionId === null) delete decision.questionId
+  }
+  return value
+}
+
 export function parseQaPreparationResponse(text: string): AcceptanceCriterionSnapshot[] {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
   const start = text.indexOf('['), end = text.lastIndexOf(']')

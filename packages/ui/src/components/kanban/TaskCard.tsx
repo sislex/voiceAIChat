@@ -8,7 +8,7 @@
 // «⠿» (единственное место с touch-action: none — палец там не скроллит) или
 // удержанием самой карточки; с клавиатуры карточка фокусируется (tabIndex).
 
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
@@ -16,13 +16,16 @@ import { canStartCiRun, canStartParallelCiRun, ciCardPulse, ciSummaryForTask, ty
 import type { TaskModalTab } from './TaskModal'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PRIORITY_LABEL, PriorityIcon, TYPE_LABEL, TypeIcon, duePresentation, epicColor, issueKey } from './kanbanMeta'
-import { Button } from '@voicechat/ui-kit'
+import { Button, Dialog } from '@voicechat/ui-kit'
+import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { ChatIcon, DotsIcon, FlagIcon, GripIcon } from '../icons'
 
 export interface TaskCardProps {
+  /** Reuse the complete card inside its mobile details dialog. */
+  detailsView?: boolean
   task: Task
   projectName: string
   /** Все задачи доски — для чипа эпика и прогресса подзадач. */
@@ -33,6 +36,8 @@ export interface TaskCardProps {
   onOpen: (taskId: string, tab?: TaskModalTab, initialChatDraft?: string) => void
   onUpdate: (taskId: string, fields: { flagged?: boolean; autoPilot?: boolean }) => void
   onDelete: (taskId: string) => void
+  onHide?: (taskId: string) => void
+  narrow?: boolean
   onMoveTop: (taskId: string) => void
   onMoveBottom: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке). */
@@ -135,6 +140,9 @@ export function epicOf(task: Task, all: Task[]): Task | null {
 }
 
 export function TaskCard(props: TaskCardProps): JSX.Element {
+  const viewportMobile = useMediaQuery(MOBILE_QUERY)
+  const mobile = (props.narrow ?? viewportMobile) && !props.detailsView
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [launching, setLaunching] = useState<'queue' | 'parallel' | null>(null)
   const [movingStage, setMovingStage] = useState(false)
   const movingStageRef = useRef(false)
@@ -173,8 +181,11 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
 
   const openMenu = (): void => {
     setMenuOpen(true)
-    requestAnimationFrame(() => menuPanelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
   }
+
+  useEffect(() => {
+    if (menuOpen) menuPanelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+  }, [menuOpen])
 
   const closeMenuAndRestoreFocus = (): void => {
     setMenuOpen(false)
@@ -254,7 +265,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   return (
     <div
       ref={cardRef}
-      className={`jcard jcard--stage-${props.columnSemanticType ?? 'custom'}${done ? ' jcard--compact' : ''}${task.flagged ? ' jcard--flagged' : ''}${developmentStage && task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed && !done ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
+      className={`jcard${mobile ? ' jcard--mobile' : ''} jcard--stage-${props.columnSemanticType ?? 'custom'}${done ? ' jcard--compact' : ''}${task.flagged ? ' jcard--flagged' : ''}${developmentStage && task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed && !done ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
       data-task-id={task.id}
       role="article"
@@ -262,7 +273,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       aria-describedby={`${menuId}-shortcuts`}
       aria-keyshortcuts="Enter Space Shift+F10"
       tabIndex={0}
-      onClick={() => props.onOpen(task.id)}
+      onClick={(event) => { if (!(event.target as HTMLElement).closest('.vc-dialog-overlay')) props.onOpen(task.id) }}
       onContextMenu={(event) => {
         if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return
         event.preventDefault()
@@ -332,7 +343,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               onClick={(e) => e.stopPropagation()}
               onKeyDown={navigateMenu}
             >
+              {mobile && <button role="menuitem" onClick={() => { setMenuOpen(false); setDetailsOpen(true) }}>Все данные карточки</button>}
               <button role="menuitem" onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
+              {props.onHide && <button role="menuitem" onClick={() => { setMenuOpen(false); props.onHide?.(task.id) }}>Скрыть карточку</button>}
               {props.onCopyLink && (
                 <button role="menuitem" onClick={() => { setMenuOpen(false); void props.onCopyLink?.(task.id) }}>
                   Копировать ссылку
@@ -625,6 +638,27 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       {/* Клавиатурный перенос иначе не найти: подсказка видна только скринридеру. */}
       <span className="vc-sr-only">Пробел — взять задачу для переноса</span>
 
+      {mobile && <span className="jcard-mobile-status">{visibleCiSummary ? ciStatusLabel(visibleCiSummary.status)
+        : task.taskPreparationStatus === 'running' ? 'Подготовка выполняется'
+          : task.latestRunResult ? (task.latestRunResult.outcome === 'success' ? 'Пройдено' : task.latestRunResult.outcome === 'active' ? 'Выполняется' : 'Не пройдено')
+            : props.moveColumns?.find((column) => column.id === task.columnId)?.name ?? props.columnSemanticType ?? 'Задача'}</span>}
+      {detailsOpen && <Dialog title={`Все данные: ${key}`} size="full" padded onClose={() => {
+        setDetailsOpen(false)
+        cardRef.current?.querySelector<HTMLButtonElement>('.jcard-reveal')?.focus()
+      }}>
+        <div onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+          <TaskCard {...props} detailsView onGrab={undefined} onCardKeys={undefined} onCardBlur={undefined} grabbed={false} dragging={false} />
+          <dl>
+            <dt>Метки</dt><dd>{task.labels.join(', ') || 'Нет меток'}</dd>
+            <dt>Тип</dt><dd>{TYPE_LABEL[task.type]}</dd>
+            <dt>Приоритет</dt><dd>{PRIORITY_LABEL[task.priority]}</dd>
+            <dt>Навыки</dt><dd>{task.skills.join(', ') || 'Нет навыков'}</dd>
+            <dt>Эпик</dt><dd>{epic?.title ?? 'Нет эпика'}</dd>
+            <dt>Флаг</dt><dd>{task.flagged ? 'Да' : 'Нет'}</dd>
+            <dt>Автопроход</dt><dd>{task.autoPilot ? 'Да' : 'Нет'}</dd>
+          </dl>
+        </div>
+      </Dialog>}
       <div className="jcard-foot">
         <span className="jcard-foot-left">
           <TypeIcon type={task.type} />

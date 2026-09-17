@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { ProjectBoard, type ProjectBoardProps } from './ProjectBoard'
@@ -44,6 +44,18 @@ function renderBoard(props: Partial<ProjectBoardProps> = {}): ProjectBoardProps 
   return full
 }
 
+import { uiPerformance } from '../lib/uiPerformance'
+// @testCase T1
+it('marks board readiness after loading ends with actual controls and data', async () => {
+  const p=uiPerformance(),mark=vi.spyOn(p,'mark')
+  p.begin('route');renderBoard({loading:true})
+  await new Promise(r=>setTimeout(r,40))
+  expect(mark).not.toHaveBeenCalledWith('route','board_ready')
+  cleanup();renderBoard()
+  await waitFor(()=>expect(mark).toHaveBeenCalledWith('route','board_ready'))
+  expect(screen.getAllByTestId('task-card')).toHaveLength(2)
+  p.hidden();mark.mockRestore()
+})
 describe('ProjectBoard', () => {
   it('рендерит колонки и карточки с ключами Jira', () => {
     renderBoard()

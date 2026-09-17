@@ -13,6 +13,7 @@ import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
 import { registerAdminRoutes } from './routes/admin.js'
+import { registerUiPerformanceRoutes } from './routes/uiPerformance.js'
 
 
 
@@ -125,6 +126,7 @@ import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
 import { FileKnowledgeBaseService } from './kb/service.js'
 import { registerKbRoutes, registerKbResearchRoutes } from './kb/routes.js'
+import { registerUniversalSearch } from './routes/universalSearch.js'
 import { ScopedKnowledgeBase } from './kb/scoped.js'
 import { kbViewOf } from './kb/access.js'
 import { KbResearchManager } from './kb/research.js'
@@ -247,7 +249,7 @@ if [ ! -d "$repo" ] || [ -z "$(ls -A "$repo" 2>/dev/null)" ]; then
   git clone --no-tags --origin origin --branch "$base" -- "$url" "$repo" || { echo "Не удалось клонировать $url (ветка $base) в $repo" >&2; exit 69; }
 fi
 toplevel="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
-test -n "$toplevel" && test "$toplevel" = "$(cd "$repo" && pwd -P)" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
+test -n "$toplevel" && test "$toplevel" -ef "$repo" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
 worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
 notice=''
 if [ -n "$worktree_status" ]; then
@@ -349,7 +351,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const sessionSecret =
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
-  await db.identity.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
+  // Preview may request migrations without the default test account.
+  if (!(process.env.VC_DEVELOPMENT_PREVIEW === 'true' && process.env.VC_PREVIEW_SEED === 'none')) {
+    await db.identity.ensureAdmin(opts.config.adminPassword)
+  }
   // Мейлер один на приложение: им пользуются и подтверждение регистрации, и
   // приглашения в проект. Без VC_SMTP_URL это «консольный» мейлер — письмо
   // уходит в лог, и оба потока остаются проверяемыми на стенде.
@@ -507,6 +512,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Телеметрия обращений к БЗ: одна на процесс (как реестр ходов) — её события
   // рассылаются всем соединениям пользователя, а строки живут в БД.
   const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
+  registerUiPerformanceRoutes(app)
   registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled })
 
   // Помощник формулировки — одноразовый вызов выбранного пользователем CLI.
@@ -607,6 +613,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (kanbanRemote && !opts.config.dbUrl && !opts.db) throw new Error('VC_KANBAN_MODE=remote требует общую базу VC_DB_URL (Postgres)')
   // Снимок «что открыто» у виджета и мост в браузер: состояние ядра, которое mcp__kanban__* читает через
   // порт `KanbanCore.widgets`; сам MCP канбана регистрирует кластер.
+  registerUniversalSearch(app, db, kb, make.service)
   const widgetContexts = new WidgetContextStore()
   const widgetUiRelay = new WidgetUiRelay()
   const imageStudioCore = new LocalImageStudioCore({

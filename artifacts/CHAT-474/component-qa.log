@@ -1,0 +1,26 @@
+
+> voicechat-monorepo@0.1.0 e2e:settings
+> vitest run --config e2e/vitest.config.ts e2e/settings.e2e.test.ts -t keeps onboarding navigation and actions reachable across themes, touch and keyboard
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474
+
+10:46:08 PM [vite] warning: This case clause will never be evaluated because it duplicates an earlier case clause
+1152|          (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 1 && value.limit <= 200)) &&
+1153|          (value.clear === undefined || typeof value.clear === 'boolean')
+1154|      case 'note':
+   |           ^
+1155|        return bounded(value.text, 500) && value.text.trim().length > 0
+1156|      case 'media':
+
+  Plugin: vite:esbuild
+  File: /Users/alexeyrozhnov/chatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/32be96ad-8d18-4615-ba34-23552469bb0e/environments/test/temporary/repository/CHAT-474/packages/shared/src/previewActions.ts
+ ✓ e2e/settings.e2e.test.ts (6 tests | 5 skipped) 20199ms
+   ✓ Настройки E2E: релиз не сбрасывает выбор > keeps onboarding navigation and actions reachable across themes, touch and keyboard 17670ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 5 skipped (6)
+   Start at  22:46:08
+   Duration  20.94s (transform 320ms, setup 0ms, collect 621ms, tests 20.20s, environment 0ms, prepare 27ms)
+

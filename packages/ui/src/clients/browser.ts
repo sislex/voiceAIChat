@@ -10,6 +10,7 @@ import { listMicrophones } from '../audio/microphones'
 import { enqueueTtsAudio, stopTts } from '../lib/ttsPlayer'
 import { VOICE_INPUT_ENABLED } from '../lib/featureFlags'
 import { withApi } from './types'
+import { readResources } from './readResources'
 import type {
   AppClients,
   AdminClient,
@@ -78,13 +79,14 @@ function saveBlob(filename: string, blob: Blob): void {
 
 export function createAdminClient(api: RendererApi): AdminClient {
   return {
-      listUsers: () => api['admin:users'](),
+      listUsers: (input) => api['admin:users'](input),
       usageSummary: (range) => api['admin:usageSummary'](range),
       userSessions: ({ name }) => api['admin:userSessions']({ name }).then((r) => r.sessions),
+      revokeUserSessions: (input) => api['admin:revokeUserSessions'](input).then(() => undefined),
       revokeSession: ({ sid }) => api['admin:revokeSession']({ sid }).then(() => undefined),
       securityEvents: (input) => api['admin:securityEvents'](input).then((r) => r.events),
       listInvites: () => api['admin:invites']().then((r) => r.invites),
-      resetCode: ({ name }) => api['admin:resetCode']({ name }),
+      resetCode: (input) => api['admin:resetCode'](input),
       setUserLlmLimit: (input) => api['admin:setUserLlmLimit'](input),
       signupConfig: () => api['admin:signupConfig'](),
       setSignupConfig: (input) => api['admin:setSignupConfig'](input),
@@ -125,7 +127,9 @@ export interface BrowserClientOverrides extends Partial<AppClients> {
  * клиент домена — тесты подставляют фейки, не трогая остальные домены.
  */
 export function createBrowserClients(overrides: BrowserClientOverrides = {}): AppClients {
-  const api = overrides.api ?? (typeof window !== 'undefined' ? window.api : undefined as unknown as RendererApi)
+  const sourceApi = overrides.api ?? (typeof window !== 'undefined' ? window.api : undefined as unknown as RendererApi)
+  const reads = sourceApi ? readResources(sourceApi) : undefined
+  const api = reads?.api ?? sourceApi
   const claude = bridge('claude')
   const stt = bridge('stt')
   const tts = bridge('tts')
@@ -133,6 +137,7 @@ export function createBrowserClients(overrides: BrowserClientOverrides = {}): Ap
   const codex = bridge('codex')
 
   const clients: AppClients = {
+    reads,
     ...(overrides.session ?? bridge('session') ? { session: overrides.session ?? bridge('session') } : {}),
     settings: overrides.settings ?? withApi<SettingsClient>(api, {
       ...(stt ? { sttStatus: () => api['stt:status'](), startModelDownload: () => stt.download() } : {}),
@@ -166,6 +171,7 @@ export function createBrowserClients(overrides: BrowserClientOverrides = {}): Ap
       }
     }),
     operations: overrides.operations ?? withApi<OperationsClient>(api, {
+      cachedAgents: () => reads?.peek('agents:list'),
       ...(bridge('fs') ? { fs: bridge('fs') } : {}),
       ...(bridge('files') ? { files: bridge('files') } : {}),
       ...(cc ? { ccTailStart: (slug: string, id: string) => cc.tailStart({ slug, id }), ccTailStop: () => cc.tailStop() } : {}),
@@ -173,6 +179,10 @@ export function createBrowserClients(overrides: BrowserClientOverrides = {}): Ap
     }),
     admin: overrides.admin ?? createAdminClient(api),
     projects: overrides.projects ?? withApi<ProjectsClient>(api, {
+      invalidateProjectReads: reads?.invalidateProject,
+      boardReadFresh: (id: string, includeCompleted: boolean) => reads?.fresh('board:get', { id, includeCompleted }) ?? false,
+      cachedBoard: (id: string, includeCompleted = false) => reads?.peek('board:get', { id, includeCompleted }),
+      cachedProject: (id: string) => reads?.fresh('projects:get', { id }) ? reads.peek('projects:get', { id }) : undefined,
       ...(bridge('board') ? { board: bridge('board') } : {}),
       ...(bridge('ci') ? { ci: bridge('ci') } : {})
     }),

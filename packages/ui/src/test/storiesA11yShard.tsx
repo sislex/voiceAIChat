@@ -49,6 +49,7 @@ export function describeStoryShard(
       expect(stories.length).toBeGreaterThan(minimum)
     })
 
+    // @testCase TC1
     it.each(stories)('%s — без serious/critical нарушений', async (_name, Story) => {
       render(<Story />)
       // Проверяем документ целиком: окна (Dialog, PromptBuilder) уходят порталом

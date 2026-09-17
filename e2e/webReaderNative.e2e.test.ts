@@ -54,6 +54,8 @@ describe('Web Reader: единый разговор в полном Chromium', (
     const created = await api('/api/conversations', 'POST', { title: 'Native Reader QA', assistantKind: 'web-recorder' }); id = created.id ?? created.conversation.id
     browserFailures = []
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(12_000)
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     page.on('pageerror', error => browserFailures.push(error.message))
     page.on('response', response => { if (response.url().includes('/api/browser/') && response.status() >= 400) void response.text().then(text => browserFailures.push(response.status() + ' ' + new URL(response.url()).pathname + ' ' + text)).catch(() => {}) })
     // Сессия как после входа: initScript возвращал удалённый legacy-токен при

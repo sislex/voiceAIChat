@@ -1,0 +1,770 @@
+[
+  {
+    "route": "web/chat/cold",
+    "metric": "js.raw",
+    "baseline": 5031595,
+    "actual": 1209801,
+    "delta": -3821794,
+    "percent": -75.96
+  },
+  {
+    "route": "web/chat/cold",
+    "metric": "js.gzip",
+    "baseline": 1349629,
+    "actual": 363241,
+    "delta": -986388,
+    "percent": -73.09
+  },
+  {
+    "route": "web/chat/cold",
+    "metric": "js.brotli",
+    "baseline": 1060012,
+    "actual": 296037,
+    "delta": -763975,
+    "percent": -72.07
+  },
+  {
+    "route": "web/chat/cold",
+    "metric": "css.raw",
+    "baseline": 496739,
+    "actual": 377447,
+    "delta": -119292,
+    "percent": -24.02
+  },
+  {
+    "route": "web/chat/cold",
+    "metric": "css.gzip",
+    "baseline": 85126,
+    "actual": 65547,
+    "delta": -19579,
+    "percent": -23
+  },
+  {
+    "route": "web/chat/cold",
+    "metric": "css.brotli",
+    "baseline": 69486,
+    "actual": 52770,
+    "delta": -16716,
+    "percent": -24.06
+  },
+  {
+    "route": "web/chat/warm",
+    "metric": "js.raw",
+    "baseline": 5031595,
+    "actual": 1209801,
+    "delta": -3821794,
+    "percent": -75.96
+  },
+  {
+    "route": "web/chat/warm",
+    "metric": "js.gzip",
+    "baseline": 1349629,
+    "actual": 363241,
+    "delta": -986388,
+    "percent": -73.09
+  },
+  {
+    "route": "web/chat/warm",
+    "metric": "js.brotli",
+    "baseline": 1060012,
+    "actual": 296037,
+    "delta": -763975,
+    "percent": -72.07
+  },
+  {
+    "route": "web/chat/warm",
+    "metric": "css.raw",
+    "baseline": 496739,
+    "actual": 377447,
+    "delta": -119292,
+    "percent": -24.02
+  },
+  {
+    "route": "web/chat/warm",
+    "metric": "css.gzip",
+    "baseline": 85126,
+    "actual": 65547,
+    "delta": -19579,
+    "percent": -23
+  },
+  {
+    "route": "web/chat/warm",
+    "metric": "css.brotli",
+    "baseline": 69486,
+    "actual": 52770,
+    "delta": -16716,
+    "percent": -24.06
+  },
+  {
+    "route": "web/account/cold",
+    "metric": "js.raw",
+    "baseline": 5038510,
+    "actual": 1228027,
+    "delta": -3810483,
+    "percent": -75.63
+  },
+  {
+    "route": "web/account/cold",
+    "metric": "js.gzip",
+    "baseline": 1352393,
+    "actual": 369258,
+    "delta": -983135,
+    "percent": -72.7
+  },
+  {
+    "route": "web/account/cold",
+    "metric": "js.brotli",
+    "baseline": 1062442,
+    "actual": 301104,
+    "delta": -761338,
+    "percent": -71.66
+  },
+  {
+    "route": "web/account/cold",
+    "metric": "css.raw",
+    "baseline": 496739,
+    "actual": 377447,
+    "delta": -119292,
+    "percent": -24.02
+  },
+  {
+    "route": "web/account/cold",
+    "metric": "css.gzip",
+    "baseline": 85126,
+    "actual": 65547,
+    "delta": -19579,
+    "percent": -23
+  },
+  {
+    "route": "web/account/cold",
+    "metric": "css.brotli",
+    "baseline": 69486,
+    "actual": 52770,
+    "delta": -16716,
+    "percent": -24.06
+  },
+  {
+    "route": "web/account/warm",
+    "metric": "js.raw",
+    "baseline": 5038510,
+    "actual": 1228027,
+    "delta": -3810483,
+    "percent": -75.63
+  },
+  {
+    "route": "web/account/warm",
+    "metric": "js.gzip",
+    "baseline": 1352393,
+    "actual": 369258,
+    "delta": -983135,
+    "percent": -72.7
+  },
+  {
+    "route": "web/account/warm",
+    "metric": "js.brotli",
+    "baseline": 1062442,
+    "actual": 301104,
+    "delta": -761338,
+    "percent": -71.66
+  },
+  {
+    "route": "web/account/warm",
+    "metric": "css.raw",
+    "baseline": 496739,
+    "actual": 377447,
+    "delta": -119292,
+    "percent": -24.02
+  },
+  {
+    "route": "web/account/warm",
+    "metric": "css.gzip",
+    "baseline": 85126,
+    "actual": 65547,
+    "delta": -19579,
+    "percent": -23
+  },
+  {
+    "route": "web/account/warm",
+    "metric": "css.brotli",
+    "baseline": 69486,
+    "actual": 52770,
+    "delta": -16716,
+    "percent": -24.06
+  },
+  {
+    "route": "web/settings/cold",
+    "metric": "js.raw",
+    "baseline": 5031595,
+    "actual": 1245917,
+    "delta": -3785678,
+    "percent": -75.24
+  },
+  {
+    "route": "web/settings/cold",
+    "metric": "js.gzip",
+    "baseline": 1349629,
+    "actual": 374215,
+    "delta": -975414,
+    "percent": -72.27
+  },
+  {
+    "route": "web/settings/cold",
+    "metric": "js.brotli",
+    "baseline": 1060012,
+    "actual": 305447,
+    "delta": -754565,
+    "percent": -71.18
+  },
+  {
+    "route": "web/settings/cold",
+    "metric": "css.raw",
+    "baseline": 496739,
+    "actual": 377447,
+    "delta": -119292,
+    "percent": -24.02
+  },
+  {
+    "route": "web/settings/cold",
+    "metric": "css.gzip",
+    "baseline": 85126,
+    "actual": 65547,
+    "delta": -19579,
+    "percent": -23
+  },
+  {
+    "route": "web/settings/cold",
+    "metric": "css.brotli",
+    "baseline": 69486,
+    "actual": 52770,
+    "delta": -16716,
+    "percent": -24.06
+  },
+  {
+    "route": "web/settings/warm",
+    "metric": "js.raw",
+    "baseline": 5031595,
+    "actual": 1245917,
+    "delta": -3785678,
+    "percent": -75.24
+  },
+  {
+    "route": "web/settings/warm",
+    "metric": "js.gzip",
+    "baseline": 1349629,
+    "actual": 374215,
+    "delta": -975414,
+    "percent": -72.27
+  },
+  {
+    "route": "web/settings/warm",
+    "metric": "js.brotli",
+    "baseline": 1060012,
+    "actual": 305447,
+    "delta": -754565,
+    "percent": -71.18
+  },
+  {
+    "route": "web/settings/warm",
+    "metric": "css.raw",
+    "baseline": 496739,
+    "actual": 377447,
+    "delta": -119292,
+    "percent": -24.02
+  },
+  {
+    "route": "web/settings/warm",
+    "metric": "css.gzip",
+    "baseline": 85126,
+    "actual": 65547,
+    "delta": -19579,
+    "percent": -23
+  },
+  {
+    "route": "web/settings/warm",
+    "metric": "css.brotli",
+    "baseline": 69486,
+    "actual": 52770,
+    "delta": -16716,
+    "percent": -24.06
+  },
+  {
+    "route": "web/account/navigation",
+    "metric": "js.raw",
+    "baseline": 5038510,
+    "actual": 1228027,
+    "delta": -3810483,
+    "percent": -75.63
+  },
+  {
+    "route": "web/account/navigation",
+    "metric": "js.gzip",
+    "baseline": 1352393,
+    "actual": 369258,
+    "delta": -983135,
+    "percent": -72.7
+  },
+  {
+    "route": "web/account/navigation",
+    "metric": "js.brotli",
+    "baseline": 1062442,
+    "actual": 301104,
+    "delta": -761338,
+    "percent": -71.66
+  },
+  {
+    "route": "web/account/navigation",
+    "metric": "css.raw",
+    "baseline": 496739,
+    "actual": 377447,
+    "delta": -119292,
+    "percent": -24.02
+  },
+  {
+    "route": "web/account/navigation",
+    "metric": "css.gzip",
+    "baseline": 85126,
+    "actual": 65547,
+    "delta": -19579,
+    "percent": -23
+  },
+  {
+    "route": "web/account/navigation",
+    "metric": "css.brotli",
+    "baseline": 69486,
+    "actual": 52770,
+    "delta": -16716,
+    "percent": -24.06
+  },
+  {
+    "route": "web/settings/navigation",
+    "metric": "js.raw",
+    "baseline": 5031595,
+    "actual": 1245917,
+    "delta": -3785678,
+    "percent": -75.24
+  },
+  {
+    "route": "web/settings/navigation",
+    "metric": "js.gzip",
+    "baseline": 1349629,
+    "actual": 374215,
+    "delta": -975414,
+    "percent": -72.27
+  },
+  {
+    "route": "web/settings/navigation",
+    "metric": "js.brotli",
+    "baseline": 1060012,
+    "actual": 305447,
+    "delta": -754565,
+    "percent": -71.18
+  },
+  {
+    "route": "web/settings/navigation",
+    "metric": "css.raw",
+    "baseline": 496739,
+    "actual": 377447,
+    "delta": -119292,
+    "percent": -24.02
+  },
+  {
+    "route": "web/settings/navigation",
+    "metric": "css.gzip",
+    "baseline": 85126,
+    "actual": 65547,
+    "delta": -19579,
+    "percent": -23
+  },
+  {
+    "route": "web/settings/navigation",
+    "metric": "css.brotli",
+    "baseline": 69486,
+    "actual": 52770,
+    "delta": -16716,
+    "percent": -24.06
+  },
+  {
+    "route": "electron/chat/cold",
+    "metric": "js.raw",
+    "baseline": 3313613,
+    "actual": 1194933,
+    "delta": -2118680,
+    "percent": -63.94
+  },
+  {
+    "route": "electron/chat/cold",
+    "metric": "js.gzip",
+    "baseline": 710004,
+    "actual": 358523,
+    "delta": -351481,
+    "percent": -49.5
+  },
+  {
+    "route": "electron/chat/cold",
+    "metric": "js.brotli",
+    "baseline": 537731,
+    "actual": 292366,
+    "delta": -245365,
+    "percent": -45.63
+  },
+  {
+    "route": "electron/chat/cold",
+    "metric": "css.raw",
+    "baseline": 620585,
+    "actual": 375620,
+    "delta": -244965,
+    "percent": -39.47
+  },
+  {
+    "route": "electron/chat/cold",
+    "metric": "css.gzip",
+    "baseline": 135284,
+    "actual": 65226,
+    "delta": -70058,
+    "percent": -51.79
+  },
+  {
+    "route": "electron/chat/cold",
+    "metric": "css.brotli",
+    "baseline": 91107,
+    "actual": 52554,
+    "delta": -38553,
+    "percent": -42.32
+  },
+  {
+    "route": "electron/chat/warm",
+    "metric": "js.raw",
+    "baseline": 3313613,
+    "actual": 1194933,
+    "delta": -2118680,
+    "percent": -63.94
+  },
+  {
+    "route": "electron/chat/warm",
+    "metric": "js.gzip",
+    "baseline": 710004,
+    "actual": 358523,
+    "delta": -351481,
+    "percent": -49.5
+  },
+  {
+    "route": "electron/chat/warm",
+    "metric": "js.brotli",
+    "baseline": 537731,
+    "actual": 292366,
+    "delta": -245365,
+    "percent": -45.63
+  },
+  {
+    "route": "electron/chat/warm",
+    "metric": "css.raw",
+    "baseline": 620585,
+    "actual": 375620,
+    "delta": -244965,
+    "percent": -39.47
+  },
+  {
+    "route": "electron/chat/warm",
+    "metric": "css.gzip",
+    "baseline": 135284,
+    "actual": 65226,
+    "delta": -70058,
+    "percent": -51.79
+  },
+  {
+    "route": "electron/chat/warm",
+    "metric": "css.brotli",
+    "baseline": 91107,
+    "actual": 52554,
+    "delta": -38553,
+    "percent": -42.32
+  },
+  {
+    "route": "electron/account/cold",
+    "metric": "js.raw",
+    "baseline": 3328265,
+    "actual": 1213119,
+    "delta": -2115146,
+    "percent": -63.55
+  },
+  {
+    "route": "electron/account/cold",
+    "metric": "js.gzip",
+    "baseline": 713631,
+    "actual": 364511,
+    "delta": -349120,
+    "percent": -48.92
+  },
+  {
+    "route": "electron/account/cold",
+    "metric": "js.brotli",
+    "baseline": 540807,
+    "actual": 297406,
+    "delta": -243401,
+    "percent": -45.01
+  },
+  {
+    "route": "electron/account/cold",
+    "metric": "css.raw",
+    "baseline": 620585,
+    "actual": 375620,
+    "delta": -244965,
+    "percent": -39.47
+  },
+  {
+    "route": "electron/account/cold",
+    "metric": "css.gzip",
+    "baseline": 135284,
+    "actual": 65226,
+    "delta": -70058,
+    "percent": -51.79
+  },
+  {
+    "route": "electron/account/cold",
+    "metric": "css.brotli",
+    "baseline": 91107,
+    "actual": 52554,
+    "delta": -38553,
+    "percent": -42.32
+  },
+  {
+    "route": "electron/account/warm",
+    "metric": "js.raw",
+    "baseline": 3328265,
+    "actual": 1213119,
+    "delta": -2115146,
+    "percent": -63.55
+  },
+  {
+    "route": "electron/account/warm",
+    "metric": "js.gzip",
+    "baseline": 713631,
+    "actual": 364511,
+    "delta": -349120,
+    "percent": -48.92
+  },
+  {
+    "route": "electron/account/warm",
+    "metric": "js.brotli",
+    "baseline": 540807,
+    "actual": 297406,
+    "delta": -243401,
+    "percent": -45.01
+  },
+  {
+    "route": "electron/account/warm",
+    "metric": "css.raw",
+    "baseline": 620585,
+    "actual": 375620,
+    "delta": -244965,
+    "percent": -39.47
+  },
+  {
+    "route": "electron/account/warm",
+    "metric": "css.gzip",
+    "baseline": 135284,
+    "actual": 65226,
+    "delta": -70058,
+    "percent": -51.79
+  },
+  {
+    "route": "electron/account/warm",
+    "metric": "css.brotli",
+    "baseline": 91107,
+    "actual": 52554,
+    "delta": -38553,
+    "percent": -42.32
+  },
+  {
+    "route": "electron/settings/cold",
+    "metric": "js.raw",
+    "baseline": 3313613,
+    "actual": 1230762,
+    "delta": -2082851,
+    "percent": -62.86
+  },
+  {
+    "route": "electron/settings/cold",
+    "metric": "js.gzip",
+    "baseline": 710004,
+    "actual": 369406,
+    "delta": -340598,
+    "percent": -47.97
+  },
+  {
+    "route": "electron/settings/cold",
+    "metric": "js.brotli",
+    "baseline": 537731,
+    "actual": 301707,
+    "delta": -236024,
+    "percent": -43.89
+  },
+  {
+    "route": "electron/settings/cold",
+    "metric": "css.raw",
+    "baseline": 620585,
+    "actual": 375620,
+    "delta": -244965,
+    "percent": -39.47
+  },
+  {
+    "route": "electron/settings/cold",
+    "metric": "css.gzip",
+    "baseline": 135284,
+    "actual": 65226,
+    "delta": -70058,
+    "percent": -51.79
+  },
+  {
+    "route": "electron/settings/cold",
+    "metric": "css.brotli",
+    "baseline": 91107,
+    "actual": 52554,
+    "delta": -38553,
+    "percent": -42.32
+  },
+  {
+    "route": "electron/settings/warm",
+    "metric": "js.raw",
+    "baseline": 3313613,
+    "actual": 1230762,
+    "delta": -2082851,
+    "percent": -62.86
+  },
+  {
+    "route": "electron/settings/warm",
+    "metric": "js.gzip",
+    "baseline": 710004,
+    "actual": 369406,
+    "delta": -340598,
+    "percent": -47.97
+  },
+  {
+    "route": "electron/settings/warm",
+    "metric": "js.brotli",
+    "baseline": 537731,
+    "actual": 301707,
+    "delta": -236024,
+    "percent": -43.89
+  },
+  {
+    "route": "electron/settings/warm",
+    "metric": "css.raw",
+    "baseline": 620585,
+    "actual": 375620,
+    "delta": -244965,
+    "percent": -39.47
+  },
+  {
+    "route": "electron/settings/warm",
+    "metric": "css.gzip",
+    "baseline": 135284,
+    "actual": 65226,
+    "delta": -70058,
+    "percent": -51.79
+  },
+  {
+    "route": "electron/settings/warm",
+    "metric": "css.brotli",
+    "baseline": 91107,
+    "actual": 52554,
+    "delta": -38553,
+    "percent": -42.32
+  },
+  {
+    "route": "electron/account/navigation",
+    "metric": "js.raw",
+    "baseline": 3328265,
+    "actual": 1213119,
+    "delta": -2115146,
+    "percent": -63.55
+  },
+  {
+    "route": "electron/account/navigation",
+    "metric": "js.gzip",
+    "baseline": 713631,
+    "actual": 364511,
+    "delta": -349120,
+    "percent": -48.92
+  },
+  {
+    "route": "electron/account/navigation",
+    "metric": "js.brotli",
+    "baseline": 540807,
+    "actual": 297406,
+    "delta": -243401,
+    "percent": -45.01
+  },
+  {
+    "route": "electron/account/navigation",
+    "metric": "css.raw",
+    "baseline": 620585,
+    "actual": 375620,
+    "delta": -244965,
+    "percent": -39.47
+  },
+  {
+    "route": "electron/account/navigation",
+    "metric": "css.gzip",
+    "baseline": 135284,
+    "actual": 65226,
+    "delta": -70058,
+    "percent": -51.79
+  },
+  {
+    "route": "electron/account/navigation",
+    "metric": "css.brotli",
+    "baseline": 91107,
+    "actual": 52554,
+    "delta": -38553,
+    "percent": -42.32
+  },
+  {
+    "route": "electron/settings/navigation",
+    "metric": "js.raw",
+    "baseline": 3313613,
+    "actual": 1230762,
+    "delta": -2082851,
+    "percent": -62.86
+  },
+  {
+    "route": "electron/settings/navigation",
+    "metric": "js.gzip",
+    "baseline": 710004,
+    "actual": 369406,
+    "delta": -340598,
+    "percent": -47.97
+  },
+  {
+    "route": "electron/settings/navigation",
+    "metric": "js.brotli",
+    "baseline": 537731,
+    "actual": 301707,
+    "delta": -236024,
+    "percent": -43.89
+  },
+  {
+    "route": "electron/settings/navigation",
+    "metric": "css.raw",
+    "baseline": 620585,
+    "actual": 375620,
+    "delta": -244965,
+    "percent": -39.47
+  },
+  {
+    "route": "electron/settings/navigation",
+    "metric": "css.gzip",
+    "baseline": 135284,
+    "actual": 65226,
+    "delta": -70058,
+    "percent": -51.79
+  },
+  {
+    "route": "electron/settings/navigation",
+    "metric": "css.brotli",
+    "baseline": 91107,
+    "actual": 52554,
+    "delta": -38553,
+    "percent": -42.32
+  }
+]

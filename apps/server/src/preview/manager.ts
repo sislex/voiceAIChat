@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import type { TemporaryCleanup } from '../cleanup/service.js'
 import { randomUUID } from 'node:crypto'
 import type { PreviewConfig, PreviewEnvironment, PreviewErrorType, PreviewOperation, PreviewRun, PreviewRunStep } from '@voicechat/shared'
 import { isMachineStoragePathAllowed, isPreviewBusy, managedPreviewEnvironmentPaths, managedRunManifestPaths, parseEnvironmentManifest, parseRunManifest, parseRunReportManifest, safePreviewResourceName, type EnvironmentManifest, type RunManifest, type RunReportManifest } from '@voicechat/shared'
@@ -26,6 +27,7 @@ export const DEFAULT_PREVIEW_CONFIG: PreviewConfig = {
 
 interface Stored { environments: PreviewEnvironment[]; idempotency: Record<string, string> }
 interface Deps {
+  cleanup?: TemporaryCleanup
   db: VoiceChatDb
   executor: CommandExecutor
   storePath: string
@@ -192,6 +194,10 @@ export class FeaturePreviewManager {
     await this.deps.fsDelete!(env.agentId, paths.previewRoot)
   }
   async operate(userId: string, projectId: string, taskId: string, operation: PreviewOperation, args: { idempotencyKey?: string; scenario?: string; agentId?: string } = {}): Promise<PreviewEnvironment> {
+    const work = () => this.operateOwned(userId, projectId, taskId, operation, args)
+    return this.deps.cleanup ? this.deps.cleanup.consume(taskId, work) : work()
+  }
+  private async operateOwned(userId: string, projectId: string, taskId: string, operation: PreviewOperation, args: { idempotencyKey?: string; scenario?: string; agentId?: string }): Promise<PreviewEnvironment> {
     const project = await this.deps.db.projects.getProject(userId, projectId)
     if (!project) throw new Error('Проект не найден или нет доступа')
     const board = await this.deps.db.tasks.getBoard(userId, projectId)

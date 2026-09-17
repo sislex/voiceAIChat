@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
 import { WebReaderFrame, type WebReaderFramePlatform } from './WebReaderFrame'
@@ -29,6 +29,118 @@ function emit(data: object, overrides: { origin?: string; source?: MessageEventS
 afterEach(() => cleanup())
 
 describe('WebReaderFrame', () => {
+  it('показывает неудачу действия ассистента с кнопкой повтора и секунды долгого действия', () => {
+    vi.useFakeTimers()
+    try {
+      const onSave = vi.fn(async () => undefined), onRetryAction = vi.fn()
+      const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-fail" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} actionError={{ action: { kind: 'click', text: 'Купить' }, error: 'Элемент не найден' }} onRetryAction={onRetryAction} />)
+      expect(screen.getByText(/Ассистент не смог: нажимает Купить — Элемент не найден/)).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+      expect(onRetryAction).toHaveBeenCalledWith({ kind: 'click', text: 'Купить' })
+      rerender(<WebReaderFrame platform={platform} conversationId="conv-fail" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pendingAction={{ kind: 'read' }} />)
+      act(() => { vi.advanceTimersByTime(3500) })
+      expect(screen.getByRole('status').textContent).toContain('3 с')
+    } finally { vi.useRealTimers() }
+  })
+  it('живая строка показывает шаг последовательности', async () => {
+    let registration: ReaderHostRegistration | null = null
+    const onSave = vi.fn(async () => undefined)
+    render(<WebReaderFrame platform={platform} conversationId="conv-seq" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} onRegisterHost={(r) => { registration = r }} pendingAction={{ kind: 'sequence', steps: [{ kind: 'click', text: 'Войти' }, { kind: 'read' }] }} />)
+    const post = vi.spyOn(frameEl().contentWindow as Window, 'postMessage')
+    emit(readyMessage)
+    await waitFor(() => expect(registration).toBeTruthy())
+    emit({ type, conversationId: 'conv-seq', registrationId: registration!.registrationId, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    void registration!.run({ kind: 'sequence', steps: [{ kind: 'click', text: 'Войти' }, { kind: 'read' }] })
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('шаг 1 из 2: нажимает Войти'))
+    expect(post).toHaveBeenCalled()
+  })
+  it('закладки сеанса видны человеку: «Запомнить страницу» кладёт, крестик убирает (круг 18)', async () => {
+    let registration: ReaderHostRegistration | null = null
+    const onSave = vi.fn(async () => undefined)
+    render(<WebReaderFrame platform={platform} conversationId="conv-marks" conversationUrl="https://docs.example/guide" projectUrl={null} onSave={onSave} onPageTitle={() => undefined} onRegisterHost={(r) => { registration = r }} />)
+    emit(readyMessage)
+    await waitFor(() => expect(registration).toBeTruthy())
+    emit({ type, conversationId: 'conv-marks', registrationId: registration!.registrationId, kind: 'page-status', status: 'ready', url: 'https://docs.example/guide', title: 'Руководство' })
+    fireEvent.click(screen.getByRole('button', { name: 'Запомнить страницу' }))
+    const marks = await screen.findByRole('navigation', { name: 'Закладки страницы' })
+    expect(marks.textContent).toContain('Руководство')
+    fireEvent.click(screen.getByRole('button', { name: 'Убрать закладку Руководство' }))
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Закладки страницы' })).toBeNull())
+  })
+  it('вопрос ассистента отвечается кнопкой, полем и Escape; передача шага ждёт «Готово» (круг 19)', async () => {
+    let registration: ReaderHostRegistration | null = null
+    const onSave = vi.fn(async () => undefined)
+    render(<WebReaderFrame platform={platform} conversationId="conv-ask" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} onRegisterHost={(r) => { registration = r }} />)
+    emit(readyMessage)
+    await waitFor(() => expect(registration).toBeTruthy())
+    const quick = registration!.run({ kind: 'question', question: 'Какой размер брать?', options: ['M', 'L'] })
+    const card = await screen.findByRole('group', { name: 'Вопрос ассистента' })
+    expect(card.textContent).toContain('Какой размер брать?')
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Ответ ассистенту' }))
+    fireEvent.click(screen.getByRole('button', { name: 'L' }))
+    await expect(quick).resolves.toMatchObject({ ok: true, result: { answer: 'L', answered: true } })
+    const typed = registration!.run({ kind: 'question', question: 'Адрес доставки?' })
+    await screen.findByRole('group', { name: 'Вопрос ассистента' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ответ ассистенту' }), { target: { value: 'Ленина 1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ответить' }))
+    await expect(typed).resolves.toMatchObject({ ok: true, result: { answer: 'Ленина 1' } })
+    const skipped = registration!.run({ kind: 'question', question: 'Продолжаем?' })
+    await screen.findByRole('group', { name: 'Вопрос ассистента' })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Ответ ассистенту' }), { key: 'Escape' })
+    await expect(skipped).resolves.toMatchObject({ ok: true, result: { answered: false } })
+    const handed = registration!.run({ kind: 'handover', reason: 'войдите в аккаунт' })
+    expect((await screen.findByText(/Ассистент ждёт вас/)).textContent).toContain('войдите в аккаунт')
+    expect(screen.queryByText(/ждёт \d+ с/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Готово, продолжай' }))
+    await expect(handed).resolves.toMatchObject({ ok: true, result: { returned: true } })
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Вопрос ассистента' })).toBeNull())
+  })
+  it('заметки ассистента видны человеку, а отчёт собирается текстом и копируется (круг 20)', async () => {
+    let registration: ReaderHostRegistration | null = null
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const onSave = vi.fn(async () => undefined), onAsk = vi.fn()
+    render(<WebReaderFrame platform={platform} conversationId="conv-note" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} onAsk={onAsk} onRegisterHost={(r) => { registration = r }} actions={[{ id: 'a', action: { kind: 'read' }, address: 'https://shop.example/', title: 'Магазин' }]} />)
+    emit(readyMessage)
+    await waitFor(() => expect(registration).toBeTruthy())
+    emit({ type, conversationId: 'conv-note', registrationId: registration!.registrationId, kind: 'page-status', status: 'ready', url: 'https://shop.example/', title: 'Магазин' })
+    await registration!.run({ kind: 'note', text: 'Цена без доставки' })
+    const notes = await screen.findByRole('region', { name: 'Заметки ассистента' })
+    expect(notes.textContent).toContain('Цена без доставки')
+    fireEvent.click(screen.getByRole('button', { name: 'Скопировать отчёт' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Сеанс Web Reader')))
+    expect((await screen.findByLabelText('Текст отчёта')).textContent).toContain('Заметка: Цена без доставки')
+    fireEvent.click(screen.getByRole('button', { name: 'Отчёт в чат' }))
+    await waitFor(() => expect(onAsk).toHaveBeenCalledWith(expect.stringContaining('Сеанс Web Reader')))
+    fireEvent.click(screen.getByRole('button', { name: 'Скрыть отчёт' }))
+    expect(screen.queryByLabelText('Текст отчёта')).toBeNull()
+  })
+  it('показывает запрос подтверждения опасного действия с кнопками разрешить и отказать', () => {
+    const onSave = vi.fn(async () => undefined), onConfirmAction = vi.fn(), onDenyAction = vi.fn()
+    render(<WebReaderFrame platform={platform} conversationId="conv-confirm" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} confirmRequest={{ action: { kind: 'click', text: 'Оплатить' }, reason: 'оплата или перевод', target: 'Оплатить' }} onConfirmAction={onConfirmAction} onDenyAction={onDenyAction} />)
+    expect(screen.getByRole('alertdialog').textContent).toContain('нажимает Оплатить')
+    fireEvent.click(screen.getByRole('button', { name: 'Разрешить' }))
+    expect(onConfirmAction).toHaveBeenCalledWith({ kind: 'click', text: 'Оплатить', confirm: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Отказать' }))
+    expect(onDenyAction).toHaveBeenCalled()
+  })
+  it('ошибку страницы можно скрыть; новая ошибка появляется снова', () => {
+    const onSave = vi.fn(async () => undefined)
+    const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-err" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pageError="TypeError: boom" />)
+    expect(screen.getByRole('alert').textContent).toContain('boom')
+    fireEvent.click(screen.getByRole('button', { name: 'Скрыть ошибку страницы' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    rerender(<WebReaderFrame platform={platform} conversationId="conv-err" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pageError="ReferenceError: other" />)
+    expect(screen.getByRole('alert').textContent).toContain('other')
+  })
+  it('показывает живой статус выполняемого действия ассистента', () => {
+    const onSave = vi.fn(async () => undefined)
+    const { rerender } = render(<WebReaderFrame platform={platform} conversationId="conv-live" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pendingAction={{ kind: 'click', text: 'Купить' }} />)
+    expect(screen.getByRole('status', { name: '' }).textContent).toContain('Ассистент нажимает Купить')
+    rerender(<WebReaderFrame platform={platform} conversationId="conv-live" conversationUrl="https://shop.example/" projectUrl={null} onSave={onSave} pendingAction={null} />)
+    expect(screen.queryByText(/Ассистент нажимает/)).toBeNull()
+  })
+
   // @testCase TC3
   it('восстанавливает сохранённый публичный URL беседы с hash, не подменяя его адресом проекта', async () => {
     const saved = 'http://89.125.68.35:8787/#/chat/81caab96-6d29-4054-a5bd-8da334caaf79'

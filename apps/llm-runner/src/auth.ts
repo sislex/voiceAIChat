@@ -24,10 +24,11 @@ export function tokenMatches(expected: string, given: string | undefined): boole
 }
 
 /** Закрывает весь `/v1/*` токеном: без верного Bearer — 401. */
-export function registerRunnerAuth(app: FastifyInstance, token: string): void {
+export function registerRunnerAuth(app: FastifyInstance, token: string, previewAccepts?: (token: string | undefined) => boolean): void {
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/v1/')) return
     if (tokenMatches(token, bearerToken(req))) return
+    if (req.method === 'POST' && req.url === '/v1/run' && previewAccepts?.(bearerToken(req))) return
     await reply.code(401).send({ error: 'unauthorized' })
     return reply
   })

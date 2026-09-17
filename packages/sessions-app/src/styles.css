@@ -154,7 +154,7 @@
   align-items: center;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .vcs-item {
     flex-wrap: wrap;
   }
@@ -265,7 +265,7 @@
   color: var(--ci-removed);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   /* На узком экране колонка действий занимает всю ширину под текстом: доля от
      ширины карточки там оставляет кнопкам полосу в пару сантиметров. */
   .vcs-actions {

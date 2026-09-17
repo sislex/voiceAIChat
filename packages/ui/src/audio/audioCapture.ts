@@ -35,6 +35,7 @@ export class AudioCapture {
   private readonly chunker: PcmChunker
   private readonly targetRate: number
   private running = false
+  private generation = 0
 
   constructor(private readonly opts: AudioCaptureOptions) {
     this.targetRate = opts.targetSampleRate ?? TARGET_SAMPLE_RATE
@@ -51,7 +52,8 @@ export class AudioCapture {
       throw new Error('getUserMedia недоступен в этом окружении')
     }
 
-    this.stream = await navigator.mediaDevices.getUserMedia({
+    const generation = ++this.generation
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: this.opts.deviceId ? { exact: this.opts.deviceId } : undefined,
         channelCount: 1,
@@ -61,18 +63,29 @@ export class AudioCapture {
       }
     })
 
-    // Просим контекст сразу на целевой частоте — тогда ресемпл фактически no-op.
-    this.ctx = new AudioContext({ sampleRate: this.targetRate })
-    await this.ctx.audioWorklet.addModule(this.opts.workletUrl)
+    if (generation !== this.generation) {
+      stream.getTracks().forEach(track => track.stop())
+      throw new Error('Запись отменена')
+    }
+    this.stream = stream
+    try {
+      // Use the target sample rate to avoid unnecessary resampling.
+      this.ctx = new AudioContext({ sampleRate: this.targetRate })
+      await this.ctx.audioWorklet.addModule(this.opts.workletUrl)
 
-    this.source = this.ctx.createMediaStreamSource(this.stream)
-    this.node = new AudioWorkletNode(this.ctx, 'pcm-forward')
-    this.node.port.onmessage = (e: MessageEvent<Float32Array>) => this.handleFrame(e.data)
+      if (generation !== this.generation) throw new Error('Запись отменена')
+      this.source = this.ctx.createMediaStreamSource(this.stream)
+      this.node = new AudioWorkletNode(this.ctx, 'pcm-forward')
+      this.node.port.onmessage = (e: MessageEvent<Float32Array>) => this.handleFrame(e.data)
 
-    this.source.connect(this.node)
-    // Узел ничего не пишет в выход (тишина), но подключение к destination «протягивает» граф.
-    this.node.connect(this.ctx.destination)
-    this.running = true
+      this.source.connect(this.node)
+      // The silent output keeps the audio graph processing.
+      this.node.connect(this.ctx.destination)
+      this.running = true
+    } catch (error) {
+      await this.stop()
+      throw error
+    }
   }
 
   private handleFrame(frame: Float32Array): void {
@@ -85,7 +98,7 @@ export class AudioCapture {
   }
 
   async stop(): Promise<void> {
-    if (!this.running) return
+    ++this.generation
     this.running = false
 
     // Отдаём накопленный хвост перед закрытием.

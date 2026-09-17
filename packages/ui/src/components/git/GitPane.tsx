@@ -200,6 +200,15 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
     }
   }, [api, projectId, workspaceId])
 
+  // QA links select a real file in the explicitly addressed workspace.
+  useEffect(()=>{
+    const expected=`/projects/${encodeURIComponent(projectId)}/code/${encodeURIComponent(workspaceId)}`
+    const path=new URLSearchParams(window.location.search).get('file')
+    if(window.location.hash.slice(1)===expected&&path&&!path.startsWith('/')&&!path.split('/').includes('..')){
+      setSide('files');void openFromTree(path)
+    }
+  },[projectId,workspaceId,openFromTree])
+
   const loadTreeDirCached = useCallback(async (dir: string) => {
     const listing = await api['projects:gitTree']({ id: projectId, workspace: workspaceId, dir })
     // Пути прочитанных уровней — материал для поиска по имени: он работает без сети.

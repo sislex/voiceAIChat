@@ -1,6 +1,6 @@
 // Обзор: последняя активность, на что уходят деньги и опасная зона.
 
-import { Badge, Button, EmptyState, ProgressTrack } from '@voicechat/ui-kit'
+import { Badge, Button, EmptyState, ProgressTrack, Skeleton } from '@voicechat/ui-kit'
 import type { ProfileCapabilities, ProfileConversation, ProfileSecurityEvent, ProfileUsage, ProfileUser } from '../contracts'
 import { activityFeed, formatUsd, modelShares } from '../model'
 import { formatAgo } from '../format'
@@ -8,7 +8,9 @@ import { formatAgo } from '../format'
 export interface OverviewTabProps {
   user: ProfileUser
   usage: ProfileUsage | null
-  events: readonly ProfileSecurityEvent[]
+  events: readonly ProfileSecurityEvent[] | null
+  eventsLoading?: boolean
+  usageLoading?: boolean
   conversations: readonly ProfileConversation[]
   capabilities: ProfileCapabilities
   now: number
@@ -17,8 +19,8 @@ export interface OverviewTabProps {
   onBlock?: () => void
 }
 
-export function OverviewTab({ user, usage, events, conversations, capabilities, now, periodLabel, onOpenHistory, onBlock }: OverviewTabProps): JSX.Element {
-  const feed = activityFeed(events, conversations, 5)
+export function OverviewTab({ user, usage, events, eventsLoading = false, usageLoading = false, conversations, capabilities, now, periodLabel, onOpenHistory, onBlock }: OverviewTabProps): JSX.Element {
+  const feed = activityFeed(events ?? [], conversations, 5)
   const shares = usage ? modelShares(usage) : []
   return (
     <div className="vcp-overview">
@@ -28,7 +30,9 @@ export function OverviewTab({ user, usage, events, conversations, capabilities, 
             <div><h3>Активность</h3><p>Последние события и разговоры</p></div>
             {onOpenHistory && <Button size="sm" variant="ghost" onClick={onOpenHistory}>Вся история →</Button>}
           </div>
-          {feed.length === 0
+          {eventsLoading
+            ? <Skeleton variant="list" count={3} height={46} lines={2} testId="profile-overview-events-skeleton" />
+            : feed.length === 0
             ? <EmptyState compact icon="✦" title="Событий пока нет" description="Здесь появятся входы, изменения учётки и разговоры." />
             : (
               <ul className="vcp-feed" role="list">
@@ -50,7 +54,9 @@ export function OverviewTab({ user, usage, events, conversations, capabilities, 
             <div><h3>Расход по моделям</h3><p>{periodLabel}</p></div>
             <b>{usage ? formatUsd(usage.spendUsd, usage.spendIncomplete) : '—'}</b>
           </div>
-          {shares.length === 0
+          {usageLoading
+            ? <Skeleton variant="list" count={3} height={42} lines={2} testId="profile-overview-usage-skeleton" />
+            : shares.length === 0
             ? <EmptyState compact icon="📊" title="Расхода пока нет" description="Появится после первых ответов модели за выбранный период." />
             : (
               <ul className="vcp-bars" role="list">

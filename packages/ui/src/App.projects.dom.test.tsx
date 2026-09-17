@@ -1,5 +1,6 @@
 import './test/applicationPanels'
-import { describe, it, expect, afterEach } from 'vitest'
+import { readResources } from './clients/readResources'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App, { appendWidgetAction } from './App'
@@ -134,7 +135,7 @@ describe('App — страница проекта по URL', () => {
   it('на мобильной ширине открывает drawer, закрывает по Esc и backdrop и возвращает фокус', async () => {
     const original = window.matchMedia
     window.matchMedia = ((query: string) => ({
-      matches: query === '(max-width: 768px)',
+      matches: query === '(max-width: 720px)',
       media: query,
       onchange: null,
       addEventListener: () => {},
@@ -177,6 +178,7 @@ describe('App — страница проекта по URL', () => {
     await waitFor(() => expect(window.location.hash).toBe(`#/projects/${projectId}/settings`))
     expect(await screen.findByTestId('project-settings')).toBeInTheDocument()
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
+    expect(document.title).toBe('Настройки проекта — Мой проект — ChatAI')
     // Шапка та же: страница не перерисовалась заново, имя и вкладки на месте.
     expect(screen.getByTestId('project-page')).toBe(page)
     expect(within(page).getByRole('heading', { name: 'Мой проект' })).toBeInTheDocument()
@@ -186,6 +188,7 @@ describe('App — страница проекта по URL', () => {
     await waitFor(() => expect(window.location.hash).toBe(`#/projects/${projectId}`))
     expect(await screen.findByTestId('kanban-board')).toBeInTheDocument()
     expect(screen.queryByTestId('project-settings')).not.toBeInTheDocument()
+    expect(document.title).toBe('Канбан — Мой проект — ChatAI')
   })
 
   it('#/projects/:id/settings открывается по прямой ссылке — с той же шапкой', async () => {
@@ -260,6 +263,7 @@ describe('App — завершённые задачи скрыты с доски
     const getBoard = api['board:get']
     await userEvent.click(screen.getByRole('checkbox', { name: /Показать завершённые/ }))
     expect(await screen.findByText('Завершённая')).toBeInTheDocument()
+    readResources(api).invalidate('board:get')
     const request = deferred<Board>()
     api['board:get'] = async ({ includeCompleted }) => {
       expect(includeCompleted).toBe(false)
@@ -277,6 +281,21 @@ describe('App — завершённые задачи скрыты с доски
     await screen.findByTestId('kanban-board')
     expect(screen.queryByTestId('kanban-skeleton')).not.toBeInTheDocument()
     expect(screen.queryByText('Завершённая')).not.toBeInTheDocument()
+  })
+
+  // @testCase TC1
+  it('returns to a fresh completed-filter snapshot without another request or skeleton', async () => {
+    const { api, projectId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}`
+    await screen.findByTestId('kanban-board')
+    await userEvent.click(screen.getByRole('checkbox', { name: /Показать завершённые/ }))
+    expect(await screen.findByText('Завершённая')).toBeInTheDocument()
+    const get = vi.spyOn(api, 'board:get')
+    await userEvent.click(screen.getByRole('checkbox', { name: /Показать завершённые/ }))
+    expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
+    expect(screen.queryByText('Завершённая')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-skeleton')).not.toBeInTheDocument()
+    expect(get).not.toHaveBeenCalled()
   })
 
   it('ошибка смены фильтра завершает лоадер, а штатный повтор снова его показывает', async () => {
@@ -315,6 +334,20 @@ describe('App — завершённые задачи скрыты с доски
     expect(screen.getByRole('checkbox', { name: /Показать завершённые/ })).toBeChecked()
   })
 
+  it('protects an unsaved settings draft during hash navigation', async () => {
+    const { projectId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}/settings`
+    const input = await screen.findByLabelText('Название проекта')
+    await userEvent.type(input, ' draft')
+    window.location.hash = '#/projects'
+    await userEvent.click(await screen.findByRole('button', { name: 'Отмена' }))
+    expect((screen.getByLabelText('Название проекта') as HTMLInputElement).value).toContain('draft')
+    expect(window.location.hash).toContain('/settings')
+    window.location.hash = '#/projects'
+    await userEvent.click(await screen.findByRole('button', { name: 'Уйти' }))
+    await waitFor(() => expect(screen.queryByLabelText('Название проекта')).not.toBeInTheDocument())
+  })
+
   it('порог скрытия правится в настройках проекта', async () => {
     const { api, projectId } = await withCompleted()
     window.location.hash = `#/projects/${projectId}/settings`
@@ -324,6 +357,7 @@ describe('App — завершённые задачи скрыты с доски
     await userEvent.clear(input)
     await userEvent.type(input, '30')
     await userEvent.tab()
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await waitFor(async () => expect((await api['projects:get']({ id: projectId }))!.doneRetentionDays).toBe(30))
   })
 })

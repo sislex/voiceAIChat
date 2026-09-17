@@ -205,9 +205,9 @@ Host API версии `APPLICATION_HOST_API_VERSION` предоставляет 
   кнопке. Иконкой считаются `.vc-btn__ico`, `svg`, всё `aria-hidden` и текст без
   букв и цифр (`✕`, `⋯`). Сам страж проверен на выдуманной разметке в
   `src/test/a11y.dom.test.tsx` — убери любой из двух атрибутов, и он упадёт.
-- **Контраст токенов** — `src/styles/contrast.test.ts`: считает пары
-  `CONTRAST_PAIRS` (`stories/foundations/tokens.ts`) по тексту `app.css` и не
-  пускает текстовую пару ниже AA (4.5:1) ни в светлой, ни в тёмной теме. Список
+- **Token contrast** — `src/styles/contrast.test.ts` reads `CONTRAST_PAIRS`
+  (`stories/foundations/tokens.ts`) and the tokens in `app.css`. It enforces AA
+  for text (4.5:1) and control/focus pairs (3:1) in light, dark and green themes. Список
   пар общий с витриной Foundations, поэтому цифра в витрине и вердикт гейта
   сходятся по построению. Приглушённый текст (`--text-dim`) обязан брать 4.5:1
   на всех подложках, где он встречается, включая выбранную беседу
@@ -255,12 +255,13 @@ jsdom стилей нет, а `getBoundingClientRect` возвращает ну�
 - **Скринридер** (VoiceOver ⌘F5 / NVDA): начало и конец ответа модели, статус
   записи, перенос задачи, появление тоста и ошибки — всё ли объявляется и не
   захлёбывается ли читалка на длинном ответе.
-- **Контраст в живом интерфейсе**: Foundations → Colors → «Контраст пар»; там же
-  видно, что пары `ui`/`decor` (`--border`, `--border-soft`) до 3:1 не дотянуты —
-  это осознанный долг: наши хайрлайны декоративны, а границы элементов
-  управления мы обозначаем заливкой и подписью. Тянуть их — отдельная задача со
-  сменой визуального языка, гейт их не проверяет.
-- Масштаб 200% и `prefers-reduced-motion` — глазами.
+- **Control contrast**: Foundations → Colors → «Контраст пар». Use
+  `--control-border` for control boundaries (3:1, enforced by CONTRAST_PAIRS).
+  `--border` and `--border-soft` remain decorative separators; do not use them
+  as the only visible boundary of an input or secondary button.
+- Zoom at 200% still needs device review. Reduced motion is covered by
+  `styles/accessibility.test.ts` and `e2e/accessibility.e2e.test.ts`; inspect new
+  motion in Foundations → “Фокус и движение”.
 
 Storybook: сториз примитивов — `src/components/ui/{Button,Dialog,Toast,ConfirmDialog,Skeleton,EmptyState,ErrorState}.stories.tsx`,
 палитры и шпаргалки — `src/components/{CommandPalette,HotkeysCheatSheet}.stories.tsx`

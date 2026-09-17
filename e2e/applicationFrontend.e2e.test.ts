@@ -223,6 +223,7 @@ it('Desktop file:// загружает HTTP-панель и её workers чер�
   }
   expect(errors).toEqual([])
 })
+// @testCase TC-CONTRACT
 it('смена версии панели не меняет host bundle, повреждённый артефакт не исполняется', async () => {
   const app = selected[0]!
   const hostBefore = await (

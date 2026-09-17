@@ -7,6 +7,7 @@ import { formatAgo } from './format'
 const ROLES: readonly ProfileRole[] = ['admin', 'developer', 'tester', 'observer']
 
 export interface ProfileHeadProps {
+  roleHelp?: Partial<Record<ProfileRole, string>>
   user: ProfileUser
   capabilities: ProfileCapabilities
   now: number
@@ -17,7 +18,7 @@ export interface ProfileHeadProps {
   onIssueResetCode?: () => void
 }
 
-export function ProfileHead({ user, capabilities, now, activeWindowMs, onChangeRole, onBlock, onDelete, onIssueResetCode }: ProfileHeadProps): JSX.Element {
+export function ProfileHead({ roleHelp, user, capabilities, now, activeWindowMs, onChangeRole, onBlock, onDelete, onIssueResetCode }: ProfileHeadProps): JSX.Element {
   const active = user.lastSeenAt != null && now - user.lastSeenAt <= activeWindowMs
   return (
     <header className="vcp-head" data-testid="profile-head">
@@ -42,9 +43,10 @@ export function ProfileHead({ user, capabilities, now, activeWindowMs, onChangeR
       {capabilities.canChangeRole && onChangeRole && (
         <label className="vcp-head__role">
           <span className="vcp-visually-hidden">Роль пользователя</span>
-          <select aria-label="Роль пользователя" value={user.role} onChange={(event) => onChangeRole(event.target.value as ProfileRole)}>
+          <select title={roleHelp?.[user.role]} aria-label="Роль пользователя" value={user.role} onChange={(event) => onChangeRole(event.target.value as ProfileRole)}>
             {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
           </select>
+          {roleHelp && <details><summary>Что даёт роль</summary>{ROLES.map((role) => <p key={role}>{roleHelp[role]}</p>)}</details>}
         </label>
       )}
       <div className="vcp-head__actions">

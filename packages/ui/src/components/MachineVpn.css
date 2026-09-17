@@ -1,0 +1,31 @@
+.machine-vpn {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 48rem;
+}
+.machine-vpn > h3,
+.machine-vpn > p {
+  margin: 0;
+}
+.machine-vpn > select {
+  width: 100%;
+  min-width: 0;
+}
+.machine-vpn > label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.machine-vpn > button {
+  justify-self: start;
+}
+.machine-vpn details label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.machine-vpn details input {
+  min-width: 0;
+  width: 100%;
+}

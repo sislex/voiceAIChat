@@ -199,7 +199,9 @@ describe('VoiceChatDb — разговоры', () => {
       model: 'claude-opus', inputTokens: 1_000, cacheReadTokens: 200,
       cacheCreationTokens: 100, outputTokens: 100
     })
-    expect(await db.chat.getConversation(U, conversation.id)).toMatchObject({ costUsd: 0.0152, costStatus: 'known' })
+    // 1000 input × $10 + 200 cached × $1 + 100 written × $20 + 100 output × $50:
+    // meta.inputTokens is already the input without the cached part.
+    expect(await db.chat.getConversation(U, conversation.id)).toMatchObject({ costUsd: 0.0172, costStatus: 'known' })
 
     // Старый ответ без usage делает итог неполным; известную часть не показываем как полную.
     await db.chat.addMessage(U, conversation.id, 'ai', 'Старый ответ', '10:01', 'claude')
@@ -247,6 +249,53 @@ describe('VoiceChatDb — разговоры', () => {
     await db.chat.addMessage(U, conversation.id, 'ai', 'Claude', '10:00', 'claude', { inputTokens: 1_000, outputTokens: 0 })
     await db.chat.addMessage(U, conversation.id, 'ai', 'Codex', '10:01', 'codex', { model: 'same-model', inputTokens: 1_000, outputTokens: 0 })
     expect(await db.chat.getConversation(U, conversation.id)).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
+  })
+
+  it('migrateCodexThreadUsage: legacy cumulative Codex totals become per-reply spend, once', async () => {
+    const conversation = await db.chat.createConversation(U, 'Codex thread')
+    await db.llm.upsertModelPrice({
+      provider: 'codex', model: 'gpt-x', inputPerMillion: 10,
+      cachedInputPerMillion: 1, cacheWritePerMillion: 0, outputPerMillion: 50,
+      sourceUrl: 'test', effectiveAt: 1
+    })
+    // Three replies of one thread, stored the old way: `turn.completed` totals
+    // of the whole thread as if they were the spend of each reply.
+    const first = await db.chat.addMessage(U, conversation.id, 'ai', '1', '10:00', 'codex', { model: 'gpt-x', inputTokens: 1_000, cacheReadTokens: 800, outputTokens: 10 })
+    await db.chat.addMessage(U, conversation.id, 'ai', 'interrupted', '10:01', 'codex', { model: 'gpt-x', interrupted: true })
+    const second = await db.chat.addMessage(U, conversation.id, 'ai', '2', '10:02', 'codex', { model: 'gpt-x', inputTokens: 2_500, cacheReadTokens: 2_000, outputTokens: 30 })
+    // A shrinking counter: Codex started a fresh thread for this reply.
+    const fresh = await db.chat.addMessage(U, conversation.id, 'ai', '3', '10:03', 'codex', { model: 'gpt-x', inputTokens: 600, cacheReadTokens: 100, outputTokens: 5 })
+    // Claude replies are not touched.
+    const claude = await db.chat.addMessage(U, conversation.id, 'ai', 'c', '10:04', 'claude', { model: 'claude-opus', inputTokens: 5, cacheReadTokens: 50, outputTokens: 1 })
+
+    expect(await db.chat.migrateCodexThreadUsage()).toBe(3)
+    const byId = new Map((await db.chat.listMessages(U, conversation.id)).map((m) => [m.id, m.meta]))
+    expect(byId.get(first.id)).toMatchObject({
+      inputTokens: 200, cacheReadTokens: 800, outputTokens: 10, cacheCreationTokens: 0,
+      codexThreadUsage: { inputTokens: 1_000, cacheReadTokens: 800, outputTokens: 10, cacheCreationTokens: 0 }
+    })
+    expect(byId.get(second.id)).toMatchObject({
+      inputTokens: 300, cacheReadTokens: 1_200, outputTokens: 20,
+      codexThreadUsage: { inputTokens: 2_500, cacheReadTokens: 2_000, outputTokens: 30 }
+    })
+    expect(byId.get(fresh.id)).toMatchObject({ inputTokens: 500, cacheReadTokens: 100, outputTokens: 5 })
+    expect(byId.get(claude.id)).toEqual({ model: 'claude-opus', inputTokens: 5, cacheReadTokens: 50, outputTokens: 1 })
+    expect(byId.get(claude.id)).not.toHaveProperty('codexThreadUsage')
+
+    // Idempotent: a second pass finds nothing to rewrite and changes no numbers.
+    expect(await db.chat.migrateCodexThreadUsage()).toBe(0)
+    expect((await db.chat.listMessages(U, conversation.id)).find((m) => m.id === second.id)?.meta).toMatchObject({ inputTokens: 300 })
+
+    // The baseline for the next turn is the latest priced reply of the thread.
+    expect(await db.chat.lastCodexThreadUsage(conversation.id)).toEqual({ inputTokens: 600, cacheReadTokens: 100, outputTokens: 5, cacheCreationTokens: 0 })
+    expect(await db.chat.lastCodexThreadUsage('missing')).toBeNull()
+
+    // The estimate sums the per-reply spend, not the thread totals:
+    // (200+300+500) × $10 + (800+1200+100) × $1 + (10+20+5) × $50 = $0.01385.
+    // The interrupted reply has no usage, so the conversation total stays partial.
+    expect((await db.chat.listConversations(U))[0]).toMatchObject({ costStatus: 'partial' })
+    const report = await db.chat.usageReport(U, 'day', undefined, undefined, conversation.id)
+    expect(report.totals.costFromPrices).toBeCloseTo(0.01385, 6)
   })
 
   it.skipIf(ON_POSTGRES)('восстанавливает агрегат после открытия БД и изолирует повреждённый meta', async () => {
@@ -652,6 +701,9 @@ describe('VoiceChatDb — настройки', () => {
       showConsole: true,
       theme: 'dark',
       onboarded: true,
+      machineCommandNotices: 'failures',
+      machineCommandNoticeSeconds: 8,
+      machineCommandSystemNotifications: true,
       permissionMode: 'plan',
       workdir: '/tmp/proj',
       bargeIn: true,
@@ -823,8 +875,11 @@ describe('VoiceChatDb — пользователи и админ-данные', 
     await db.chat.createConversation('bob', 'Первый')
     await db.chat.createConversation('bob', 'Второй')
     expect((await db.chat.conversationCounts()).get('bob')).toBe(2)
+    expect(await db.chat.conversationCount('bob')).toBe(2)
+    expect(await db.chat.conversationCount('missing')).toBe(0)
     // Без живых сессий пользователя в карте активности нет — «активен сейчас» ложным не станет.
     expect((await db.identity.sessionActivity()).get('bob')).toBeUndefined()
+    expect(await db.identity.sessionActivityForUser('bob')).toBeNull()
   })
 
   it('usageReport суммирует токены ai-сообщений по моделям', async () => {
@@ -855,8 +910,10 @@ describe('VoiceChatDb — пользователи и админ-данные', 
   it('usageReport фильтрует разговор и оценивает Codex по таблице цен БД', async () => {
     const priced = await db.chat.createConversation('bob', 'Codex')
     const other = await db.chat.createConversation('bob', 'Другой чат')
+    // meta.inputTokens is the input without the cached part (Codex replies are
+    // normalized by the TurnManager before they are saved).
     await db.chat.addMessage('bob', priced.id, 'ai', 'ответ', '10:01', 'codex', {
-      model: 'gpt-5.4', inputTokens: 1_000_000, cacheReadTokens: 200_000, outputTokens: 100_000
+      model: 'gpt-5.4', inputTokens: 800_000, cacheReadTokens: 200_000, outputTokens: 100_000
     })
     await db.chat.addMessage('bob', other.id, 'ai', 'ответ', '10:02', 'codex', {
       model: 'unknown-codex', inputTokens: 9_000_000, outputTokens: 9_000_000

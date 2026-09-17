@@ -113,6 +113,23 @@ describe('Tabs', () => {
     render(<Tabs items={[...items, { id: 'secret', label: 'Скрытая', hidden: true }]} activeId="overview" onChange={() => {}} label="Разделы" />)
     expect(screen.queryByRole('tab', { name: /Скрытая/ })).toBeNull()
   })
+
+  it('прокручивает активную маршрутную вкладку в видимую область', () => {
+    const scrollTo = vi.fn()
+    const rect = (left: number, right: number): DOMRect => ({
+      left, right, top: 0, bottom: 40, width: right - left, height: 40, x: left, y: 0,
+      toJSON: () => ({})
+    } as DOMRect)
+    const view = render(<Tabs items={items} activeId="machines" onChange={() => {}} label="Разделы" />)
+    const list = screen.getByRole('tablist')
+    const active = screen.getByRole('tab', { name: /Машины/ })
+    list.scrollTo = scrollTo
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(rect(0, 200))
+    vi.spyOn(active, 'getBoundingClientRect').mockReturnValue(rect(220, 300))
+    view.rerender(<Tabs items={items} activeId="overview" onChange={() => {}} label="Разделы" />)
+    view.rerender(<Tabs items={items} activeId="machines" onChange={() => {}} label="Разделы" />)
+    expect(scrollTo).toHaveBeenCalledWith({ left: expect.any(Number), behavior: 'smooth' })
+  })
 })
 
 describe('SearchField', () => {

@@ -44,7 +44,7 @@ export const SECURITY_LABEL: Record<string, string> = {
  * по ним фильтрует и сервер, а две копии одного разбиения разошлись бы при
  * первом же новом типе события. Здесь — только подписи для человека.
  */
-export type SecurityGroup = 'all' | 'auth' | 'account' | 'machines'
+export type SecurityGroup = 'all' | 'auth' | 'account' | 'machines' | 'login'
 
 /** Подпись типа события; незнакомый тип показываем как есть, а не прячем. */
 export function securityLabel(type: string): string {

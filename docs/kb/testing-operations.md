@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-12
-checked: 4fd080ff
+updated: 2026-09-16
+checked: bc13d08d
 areas:
   - package.json
   - scripts
@@ -42,6 +42,13 @@ areas:
 ## Установка зависимостей
 
 Корневой `npm install` обслуживает `packages/shared`, `packages/ui`, `apps/llm-runner`, `apps/server`, `apps/web`, `apps/agent`. `apps/desktop` и `apps/agent-tray` устанавливаются отдельно из-за Electron/native ABI и собственных lockfiles.
+
+`apps/login-application` also has its own `package-lock.json` and is outside
+root workspaces (`applicationCatalog.ts` lists an empty `workspaces` array for
+this application). Install it with `npm ci --prefix apps/login-application`.
+A shared-protocol diff selects all three Electron applications in `gate:fast`;
+missing their separate dependencies produces TS2307 for `electron` and
+`electron-vite` even after a successful root install.
 
 Не переносить Electron-пакеты в workspaces без отдельного решения миграции: корневой hoisting способен подменить native module сборкой под другой runtime.
 
@@ -136,6 +143,19 @@ Server запускает исходники через tsx. Основной We
 | web | `npm run -w @voicechat/web typecheck` | package test при наличии | `npm run -w @voicechat/web build` |
 | desktop | `npm run typecheck:desktop` | `npm run test:desktop` | electron-vite build; native rebuild |
 | agent tray | `npm run typecheck:agent-tray` | `npm run test:agent-tray` | electron-vite build/dist |
+
+Desktop has its own lockfile and is excluded from the root npm workspaces.
+Before a gate that selects desktop, run `npm ci --prefix apps/desktop` in a
+fresh checkout. Root `npm ci` alone does not install `electron` or
+`electron-vite`; missing-module errors in desktop typecheck can therefore be
+an environment setup failure. See `apps/desktop/package.json` and the root
+workspace list. Desktop tests run their existing Node native-module rebuild. Agent tray and
+login-application are also excluded from root workspaces and keep separate
+lockfiles (`apps/agent-tray/package-lock.json` and
+`apps/login-application/package-lock.json`): use `npm ci --prefix apps/agent-tray`
+and `npm ci --prefix apps/login-application` when those consumers are selected.
+The corresponding dependency manifests are each app's `package.json`; the root
+workspace list in `package.json` intentionally omits all three Electron apps.
 
 `npm run verify` выполняет полный набор. Для локального шага предпочтителен узкий гейт затронутых пакетов, затем полный verify перед релизом/крупным merge.
 
@@ -553,6 +573,8 @@ positive tests». `terminate()` безопасен в любом состоян�
 
 ## Диагностика по слоям
 
+Фикстура Browser Runner в `apps/browser-runner/src/sessionDiagnostics.test.ts` запускает `/broken`, `/bad` (HTTP 503) и `/slow` независимо. Сокетная ошибка `/broken` и HTTP-ответ 503 приходят в диагностику без гарантированного порядка, поэтому появление одной записи `state: failed` ещё не означает, что `/bad` уже зарегистрирован. Регрессия `failedOnly` сначала через `expect.poll` дожидается обеих записей и только затем проверяет их статусы; предположение о порядке событий делало прежний тест плавающим.
+
 1. `/api/health` — процесс и HTTP доступны.
 2. `/api/session/me` — bearer token и пользователь.
 3. `/api/system/capabilities` — сервер видит CPU/RAM и разрешает STT/TTS.
@@ -688,6 +710,10 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 `scripts/frontend-quality.mjs` проверяет workspace dependency graph и циклы, запрет deep imports и product/host/platform/transport leaks, существование root/styles package exports, обязательную Storybook-матрицу пяти модулей, CSS imports/keyframes/unscoped selectors и dynamic imports всех product modules с role-gated Admin. Негативные fixtures и redaction отчёта покрыты `scripts/frontend-quality.test.mjs`. Безопасный машинный отчёт сохраняется в `artifacts/frontend-quality/report.json`; token, Bearer credentials и credential-bearing URLs редактируются.
 
 Bundle gate сравнивает minified JS chunks Web build с измеренным baseline `frontend-quality/bundle-baseline.json`; превышение сообщает chunk, limit, actual, delta и **список файлов группы**, React обязан находиться в одном chunk. Baseline меняется только явной правкой файла.
+
+Route measurements are implemented in `scripts/measure-routes.mjs` and checked by `scripts/route-budgets.mjs`. Complete initial cost is the deduplicated set of observed JS/CSS requests plus the full static-import closure of those resources; shared dependencies and automatically initiated loads therefore count once, while unobserved or missing closure members make the measurement invalid. The versioned report records each unique JS/CSS resource, SHA-256, raw bytes, gzip level 9, Brotli quality 11, static/dynamic chunk edges and a CDP network waterfall. External font CSS is measured too; unavailable required styles fail the run. Uninventoried JS/CSS requests fail closed, including HTTP resources requested by the file-origin Electron renderer. Electron uses a real process and file-origin production renderer; compressed sizes are calculated sizes, while transport bytes are recorded separately. The fixture server uses temporary data and a seeded Markdown/code conversation, not production accounts. Cold runs clear the browser cache; warm runs reload in the same context. Requested bounds and actual per-client renderer viewports/device scale factors are recorded separately, and comparison requires identical recorded conditions. Direct Chat, Account and Settings routes and navigation from Chat are separate scenarios. Optional editor-worker activation runs after route measurements in a controlled host-API fixture.
+
+`npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a before/after diff, and runs shared-boundary browser QA and the independent-panel artifact/integrity browser suite. The three marked E2E files run sequentially, including the real Web/Electron route-measurement test. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. The optional `VC_MEASURE_REUSE_INVENTORY=1` switch is for remeasuring explicitly retained immutable artifacts; CI does not set it. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after building Web and Desktop.
 
 Группы бюджета сопоставляются по **префиксу** имени файла, и у входного чанка это однажды сработало наоборот замыслу: пакет с точкой входа `index.ts`, вынесенный в **ленивый** чанк, получил имя `index-XXX.js`, попал в группу `index-` — и разгрузка главного чанка (−185 КБ) прочиталась как его рост на 32 КБ. Поэтому группа `index-` теперь меряется по **одному** файлу, на который ссылается `apps/web/dist/index.html`; остальные группы остаются суммой по префиксу (`markdown-` бывает не одним чанком). Оба правила закреплены тестами в `scripts/frontend-quality.test.mjs`. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
 

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-10
-checked: 8c54ade4
+updated: 2026-09-15
+checked: 68124e0f
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -17,6 +17,14 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Development preview contracts
+
+Shared `developmentPreview.ts` defines settings, lifecycle/result states, diagnostics, evidence and preview operations. Task CI GET/PUT exposes `developmentPreview` separately from `browserCheck.failurePolicy`. Unknown preview environment/DSN/volume fields are rejected with HTTP 400 before settings changes.
+
+`GET /api/ci/runs/:runId/development-preview` returns the authorized run's state. POST accepts only `restart` or `stop`, checks the run initiator and requires an active run. The optional renderer CI bridge method uses these routes. Lifecycle JSON is persisted and broadcast through existing `ci.log` system events, and RunFeed renders its status, diagnostics, preview/screenshot links and actions.
+
+The CI MCP broker publishes `preview_start`, `preview_status`, `preview_logs`, `preview_restart`, `preview_stop` only for a registered development preview. These tools accept no caller-provided paths, tokens or Compose configuration.
 
 ## Коды ошибок и текст для человека
 
@@ -367,8 +375,8 @@ csrf», а `POST …/qa/integration/runs` — 403. Регрессия закре
 
 | Роут | Отдаёт | Где реализован |
 |---|---|---|
-| `GET /api/me/profile` | `UserProfileInfo`: роль, email, даты, лимит, живые сессии, свои машины с online/версией/телеметрией | `apps/server/src/routes/rest.ts` |
-| `GET /api/me/security?limit=` | свой журнал безопасности (`SecurityEvent[]`, максимум 500) | там же |
+| `GET /api/me/profile` | `UserProfileInfo`: role, email, dates, limit, live sessions, and machine online/total counts; full machine records are omitted | `apps/server/src/routes/rest.ts` |
+| `GET /api/me/security?limit=&group=` | own security log (`SecurityEvent[]`, maximum 500); optional `group=auth|account|machines` filters it server-side | same file |
 | `GET /api/me/usage`, `GET /api/usage` | свой отчёт по расходу | там же (`usageForMe`) |
 | `GET /api/me/llm-access` | свои запреты моделей | там же |
 
@@ -377,6 +385,12 @@ csrf», а `POST …/qa/integration/runs` — 403. Регрессия закре
 роли, блокировка, удаление и лимит остаются под `requireAdmin`. Права на группу
 проверяет `auth.permissions.test.ts` (`/api/me/*` → `null`, то есть любая
 аутентифицированная роль), изоляцию данных — `rest.test.ts`.
+
+The account UI treats these routes as independent resources. `me:profile` is
+the only request that gates the profile shell. Model access, usage, security
+events, and full machine telemetry load for the tabs that consume them and are
+cached for the lifetime of the page. The `me:security` renderer bridge accepts
+the same optional `group` as HTTP.
 
 Что изменилось в админских ответах вместе с этим: `AdminUserInfo` расширяет
 `UserProfileInfo` и содержит `lastSeenAt`/`liveSessions` (агрегат

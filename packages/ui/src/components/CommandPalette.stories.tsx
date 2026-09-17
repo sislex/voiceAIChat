@@ -7,6 +7,8 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { userEvent, within } from '@storybook/test'
 import { CommandPalette } from './CommandPalette'
 import { Button } from '@voicechat/ui-kit'
+import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
+import { SEARCH_SOURCES, SEARCH_LABELS } from '@shared/universalSearch'
 import { rememberCommand, type Command, type CommandSection } from '@voicechat/ui-foundation/runtime'
 
 function cmd(id: string, title: string, section: CommandSection, extra: Partial<Command> = {}): Command {
@@ -51,6 +53,34 @@ type Story = StoryObj<typeof CommandPalette>
 /** Пустой запрос: разделы целиком. */
 export const Sections: Story = {}
 
+function searchApi(state: 'ready' | 'partial' | 'error' | 'loading') {
+  const api = createFakeApi()
+  api['search:universal'] = async () => {
+    if (state === 'loading') return new Promise(() => {})
+    if (state === 'error') throw new Error('Unavailable')
+    return {
+      groups: SEARCH_SOURCES.map(source => ({
+        source,
+        status: state === 'partial' && source === 'kb' ? 'unavailable' as const : 'ok' as const,
+        hits: state === 'partial' && source === 'kb' ? [] : [{
+          id: source + ':' + 'a'.repeat(64), source,
+          title: SEARCH_LABELS[source] + ' · Универсальный поиск',
+          snippet: 'Безопасный текст результата',
+          target: { source: 'projects' as const, projectId: 'demo' },
+          href: '#/projects/demo'
+        }]
+      })),
+      nextCursor: null
+    }
+  }
+  return api
+}
+export const UniversalResults: Story = { args: { api: searchApi('ready'), userId: 'story-search' } }
+export const PartialResults: Story = { args: { api: searchApi('partial'), userId: 'story-search' } }
+export const SearchUnavailable: Story = { args: { api: searchApi('error'), userId: 'story-search' } }
+export const SearchLoading: Story = { args: { api: searchApi('loading'), userId: 'story-search' } }
+
+
 /** Набранный запрос: подсветка совпавших букв в разных разделах. */
 export const Search: Story = {
   play: async ({ canvasElement }) => {
@@ -77,11 +107,11 @@ export const NothingFound: Story = {
 
 /** «Недавние» сверху: они читаются из localStorage. */
 export const Recent: Story = {
+  args: { userId: 'storybook-recent' },
   render: (args) => {
     const [ready, setReady] = useState(false)
     useEffect(() => {
-      rememberCommand('app.settings')
-      rememberCommand('task:1')
+      for (const id of ['app.settings', 'task:1', 'chat:1', 'project:1', 'machine:1']) rememberCommand(id, 'storybook-recent')
       setReady(true)
     }, [])
     return ready ? <CommandPalette {...args} /> : <p style={{ padding: 20 }}>Готовим историю…</p>

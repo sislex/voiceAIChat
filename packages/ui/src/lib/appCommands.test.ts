@@ -195,6 +195,7 @@ describe('buildHotkeyBindings', () => {
     expect(sheet?.inInput).toBeUndefined()
   })
 
+  // @testCase TC-UI
   it('во время записи голоса ⌘K и «?» игнорируются', () => {
     for (const binding of bindings({ voice: 'listening' })) {
       expect(binding.enabled?.(), binding.combo).toBe(false)

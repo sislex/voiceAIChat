@@ -984,7 +984,8 @@ describe('REST: свои данные (/api/me/*)', () => {
     const bobTok = signToken({ name: 'bob', role: 'observer' }, SECRET)
     const res = await app.inject({ method: 'GET', url: '/api/me/profile', headers: { authorization: `Bearer ${bobTok}` } })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toMatchObject({ name: 'bob', role: 'observer', blocked: false })
+    expect(res.json()).toMatchObject({ name: 'bob', role: 'observer', blocked: false, machinesTotal: 0, machinesOnline: 0 })
+    expect(res.json().agents).toBeUndefined()
     // Чужого имени в роуте нет физически — подставить некуда.
     expect((await app.inject({ method: 'GET', url: '/api/admin/users', headers: { authorization: `Bearer ${bobTok}` } })).statusCode).toBe(403)
   })
@@ -1001,6 +1002,9 @@ describe('REST: свои данные (/api/me/*)', () => {
     expect(events.length).toBeGreaterThan(0)
     expect(events.every((event) => event.user === 'bob')).toBe(true)
     expect(events.some((event) => event.details === 'чужое')).toBe(false)
+    const machines = await app.inject({ method: 'GET', url: '/api/me/security?group=machines', headers: { authorization: `Bearer ${bobTok}` } })
+    expect(machines.statusCode).toBe(200)
+    expect(machines.json()).toEqual([])
   })
 
   it('без сессии оба роута — 401', async () => {

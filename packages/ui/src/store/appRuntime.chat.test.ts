@@ -21,6 +21,104 @@ function makeStore(seed: string[] = []): { store: TestStore; api: FakeApi } {
   return { store, api }
 }
 
+// @testCase TC-RECOVERY
+// @testCase T1
+it('keeps drafts per conversation through remount and does not clear newer text on acknowledgement', async () => {
+  localStorage.clear()
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  store.actions.setDraft('draft A')
+  await store.actions.selectConversation(b)
+  store.actions.setDraft('draft B')
+  await store.actions.selectConversation(a)
+  expect(store.getState().draft).toBe('draft A')
+  const add = api['messages:add'].bind(api)
+  let finish!: () => void
+  vi.spyOn(api, 'messages:add').mockImplementationOnce((input) => new Promise((resolve) => { finish = () => { void add(input).then(resolve) } }))
+  const sending = store.actions.submitText()
+  store.actions.setDraft('new A')
+  await store.actions.selectConversation(b)
+  finish()
+  await sending
+  expect(store.getState().draft).toBe('draft B')
+  await store.actions.selectConversation(a)
+  expect(store.getState().draft).toBe('new A')
+  store.runtime.dispose()
+  const next = createTestStore({ api })
+  await next.actions.init(a)
+  expect(next.getState().draft).toBe('new A')
+  next.runtime.dispose()
+  localStorage.clear()
+})
+
+// @testCase T1
+it('removes acknowledged stored drafts and tolerates malformed or unavailable storage', async () => {
+  localStorage.setItem('vc.chat.drafts.v1', '{broken')
+  const { store } = makeStore(['A'])
+  await store.actions.init()
+  store.actions.setDraft('send')
+  await store.actions.submitText()
+  expect(JSON.parse(localStorage.getItem('vc.chat.drafts.v1')!)).toEqual({})
+  store.runtime.dispose()
+  const api = createFakeApi(['A'])
+  const unavailable = createTestStore({ api, prefs: {
+    get: () => null, set: () => { throw new Error('Quota') }, remove: () => {}
+  } })
+  await unavailable.actions.init()
+  expect(() => unavailable.actions.setDraft('still editable')).not.toThrow()
+  expect(unavailable.getState().draft).toBe('still editable')
+  unavailable.runtime.dispose()
+  localStorage.clear()
+})
+
+// @testCase T2
+it('captures an upload recipient before encoding and never restores a removed attachment', async () => {
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  let finish!: (value: ArrayBuffer) => void
+  const file = new File(['data'], 'context.txt', { type: 'text/plain' })
+  Object.defineProperty(file, 'arrayBuffer', { value: () => new Promise<ArrayBuffer>((resolve) => { finish = resolve }) })
+  const uploadSpy = vi.spyOn(api, 'uploads:add')
+  const uploading = store.actions.addAttachment(file)
+  store.actions.removeAttachment(store.getState().attachments[0].localId)
+  await store.actions.selectConversation(b)
+  finish(new Uint8Array([1]).buffer)
+  await uploading
+  expect(uploadSpy).toHaveBeenCalledWith(expect.objectContaining({ conversationId: a }))
+  expect(store.getState().attachments).toEqual([])
+  store.runtime.dispose()
+})
+
+// @testCase T4
+it('retries a failed submission to its captured recipient and rejects parallel retries', async () => {
+  localStorage.clear()
+  const { store, api } = makeStore(['A', 'B'])
+  await store.actions.init()
+  const a = store.getState().activeId!
+  const b = store.getState().conversations.find((item) => item.id !== a)!.id
+  store.actions.setDraft('retry me')
+  const file = new File(['data'], 'context.txt', { type: 'text/plain' })
+  Object.defineProperty(file, 'arrayBuffer', { value: async () => new Uint8Array([1, 2]).buffer })
+  await store.actions.addAttachment(file)
+  vi.spyOn(api, 'messages:add').mockRejectedValueOnce(new Error('Offline'))
+  await expect(store.actions.submitText()).rejects.toThrow('Offline')
+  const failed = Object.values(store.getState().failedSubmits)[0]!
+  await store.actions.selectConversation(b)
+  store.actions.setDraft('keep B')
+  const retried = store.actions.retryFailedSubmit(failed.operationId)
+  expect(await store.actions.retryFailedSubmit(failed.operationId)).toBe(false)
+  expect(await retried).toBe(true)
+  expect(api['messages:add']).toHaveBeenLastCalledWith(expect.objectContaining({ conversationId: a, text: failed.messageText, messageId: failed.messageId, attachments: [expect.objectContaining({ uploadId: failed.attachmentIds[0], name: 'context.txt' })] }))
+  expect(store.getState().draft).toBe('keep B')
+  expect(store.getState().failedSubmits).toEqual({})
+  store.runtime.dispose()
+  localStorage.clear()
+})
+
 describe('voiceStore — интеграция стора с api-моком и машиной состояний', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
@@ -717,13 +815,16 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().agents.some((a) => a.id === created!.id)).toBe(true)
   })
 
-  it('init грузит список MCP-серверов', async () => {
+  // @testCase TC1
+  it('LLM Settings loads MCP on demand', async () => {
     const api = createFakeApi([])
     vi.spyOn(api, 'mcp:list').mockResolvedValue([
       { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
     ])
     const store = createTestStore({ api, now: () => 1, delays: DELAYS })
     await store.actions.init()
+    expect(api['mcp:list']).not.toHaveBeenCalled()
+    await store.actions.loadCatalogs('llm')
     expect(store.getState().mcpServers).toEqual([
       { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
     ])
@@ -797,13 +898,16 @@ describe('voiceStore — интеграция с аудиозахватом (Ш�
     vi.useRealTimers()
   })
 
-  it('init загружает список микрофонов из listMics', async () => {
+  // @testCase TC1
+  it('STT Settings loads microphones on demand', async () => {
     const api = createFakeApi([])
     const listMics = vi.fn().mockResolvedValue([{ deviceId: 'mic-a', label: 'Микрофон A' }])
     const store = createTestStore({ api, delays: DELAYS, listMics })
 
     await store.actions.init()
 
+    expect(listMics).not.toHaveBeenCalled()
+    await store.actions.loadCatalogs('stt')
     expect(listMics).toHaveBeenCalled()
     expect(store.getState().mics).toEqual([{ deviceId: 'mic-a', label: 'Микрофон A' }])
   })
@@ -1274,11 +1378,14 @@ describe('voiceStore — режим консоли (activity log)', () => {
 })
 
 describe('voiceStore — статус и скачивание модели (Шаг 9)', () => {
-  it('init выставляет modelPresent из getSttStatus', async () => {
+  // @testCase TC1
+  it('STT Settings checks model availability on demand', async () => {
     const api = createFakeApi([])
     const getSttStatus = vi.fn().mockResolvedValue({ present: false, model: 'large-v3-turbo' })
     const store = createTestStore({ api, getSttStatus })
     await store.actions.init()
+    expect(getSttStatus).not.toHaveBeenCalled()
+    await store.actions.loadCatalogs('stt')
     expect(getSttStatus).toHaveBeenCalled()
     expect(store.getState().modelPresent).toBe(false)
   })
@@ -1320,10 +1427,13 @@ describe('voiceStore — статус и скачивание модели (Ша
     expect(store.getState().error).toBe('сеть недоступна')
   })
 
-  it('init грузит каталог голосов', async () => {
+  // @testCase TC1
+  it('TTS Settings loads the download catalog on demand', async () => {
     const api = createFakeApi([])
     const store = createTestStore({ api })
     await store.actions.init()
+    expect(store.getState().voiceCatalog).toEqual([])
+    await store.actions.loadCatalogs('tts')
     expect(store.getState().voicesDownloadable).toBe(true)
     expect(store.getState().voiceCatalog.length).toBeGreaterThan(0)
   })
@@ -1703,9 +1813,12 @@ describe('voiceStore — управление моделями/голосами'
     vi.useRealTimers()
   })
 
-  it('init грузит список моделей Whisper', async () => {
+  // @testCase TC1
+  it('STT Settings loads Whisper models on demand', async () => {
     const { store } = makeStore()
     await store.actions.init()
+    expect(store.getState().whisperModels).toEqual([])
+    await store.actions.loadCatalogs('stt')
     expect(store.getState().whisperModels.length).toBeGreaterThan(0)
     expect(store.getState().whisperModels.some((m) => m.present)).toBe(true)
   })
@@ -2244,6 +2357,7 @@ describe('voiceStore — машинные утилиты', () => {
     expect(fs.exec).toHaveBeenLastCalledWith('m1', 'sleep 1', ctrl.signal)
   })
 
+  // @testCase T1
   it('история команд консоли: по машине, без подряд идущих дублей, с капом', () => {
     const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     store.actions.pushConsoleCommand('m1', 'ls')
@@ -2254,11 +2368,11 @@ describe('voiceStore — машинные утилиты', () => {
     expect(store.getState().consoleHistory.m1).toEqual(['ls', 'pwd'])
     expect(store.getState().consoleHistory.m2).toEqual(['git status'])
 
-    for (let i = 0; i < 120; i += 1) store.actions.pushConsoleCommand('m3', `cmd${i}`)
+    for (let i = 0; i < 220; i += 1) store.actions.pushConsoleCommand('m3', `cmd${i}`)
     const m3 = store.getState().consoleHistory.m3 ?? []
-    expect(m3).toHaveLength(100)
+    expect(m3).toHaveLength(200)
     expect(m3[0]).toBe('cmd20')
-    expect(m3.at(-1)).toBe('cmd119')
+    expect(m3.at(-1)).toBe('cmd219')
   })
 
   it('openUtility предпочитает машину активного разговора', async () => {

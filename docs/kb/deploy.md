@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-12
-checked: 5a464d55
+checked: d9864647
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -22,6 +22,20 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Development preview operation
+
+Development preview is disabled unless the kanban process has `VC_DEVELOPMENT_PREVIEW_ENABLED=true`. Configure `VC_DEVELOPMENT_PREVIEW_IMAGE` to a trusted image containing matching Linux `/app/node_modules`, and `VC_DEVELOPMENT_PREVIEW_GUARD_IMAGE` to the network guard built from `apps/server/docker/development-guard.Dockerfile`. Both accept immutable `sha256:<id>` or repository digest references, never mutable tags. The selected production Runner must expose scoped grants and be reachable from the gateway container.
+
+Each run gets a hash-derived Compose project, an internal application network, an egress gateway, private dependency/test-data volumes, resource limits, a read-only source snapshot and dropped application capabilities. A privileged-capability guard (NET_ADMIN only) owns the application's network namespace and permits outgoing HTTP only to the fixed gateway. The gateway publishes a dynamically allocated loopback application port and forwards only text-generation requests to the selected Runner. Its egress network has explicit gateway priority; Docker Desktop can otherwise return an unpublished port for a multi-network service.
+
+Build the guard with `docker build -f apps/server/docker/development-guard.Dockerfile -t development-preview-guard apps/server/docker`, inspect its immutable ID, then configure the kanban process. A cached compatible base can be selected with the build argument `BASE_IMAGE`.
+
+Use the run's preview status/logs tools for diagnosis. `feature_disabled`, `isolation_rejected`, `gateway_unavailable`, `docker_missing`, `docker_unavailable`, `network_unavailable` and `health_timeout` identify distinct startup failures. Application logs are bounded and redact current scoped/test secrets. After process restart, raw container logs are not exposed without the in-memory redaction values.
+
+Stop through the run API/MCP first; it revokes the Runner grant, closes Chromium, runs `docker compose down --volumes --remove-orphans` against that run's generated Compose file, and deletes only its disposable snapshot directory. The collector retries known failed cleanup on machine reconnect. Inspect candidate orphan containers with `docker ps -a --filter label=com.docker.compose.project=<exact-vc-dev-name>`; do not run global volume prune. Lost persisted metadata requires operator reconciliation rather than guessing paths.
+
+An opt-in real integration test is available with `VC_TEST_DEVELOPMENT_DOCKER=1 npm run -w @voicechat/server test -- src/ci/developmentPreviewDocker.integration.test.ts`. It uses a cached runtime image (override `VC_TEST_PREVIEW_IMAGE`) and a local `chat447-network-guard` image, a synthetic gateway and SQLite seed, then checks restart, blocked egress, source exclusions and cleanup. It does not invoke production CLI.
 
 Пошаговый рантайм-гайд — `docs/docker.md`. Здесь то, что важно понимать до правок.
 

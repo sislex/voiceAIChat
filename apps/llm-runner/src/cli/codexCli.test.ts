@@ -250,7 +250,7 @@ describe('CodexCli', () => {
     expect(args.some((a) => a.startsWith('mcp_servers.browser.url=') && a.includes('turn=t1'))).toBe(true)
     await tick()
     expect(input).toContain('mcp__browser__')
-    expect(input).toContain('веб-превью')
+    expect(input).toContain('панель Web Reader')
   })
 
   it('remote + plan → без MCP и bypass, только read-only sandbox', async () => {
@@ -304,7 +304,12 @@ describe('CodexCli', () => {
     const order: string[] = []
     h.onUsage = (usage) => {
       order.push('usage')
-      expect(usage).toEqual({ inputTokens: 9, outputTokens: 2, cacheReadTokens: 7 })
+      // Raw thread totals of Codex: the runner passes them through untouched
+      // (with a copy in codexThreadUsage); the server prices the turn as a difference.
+      expect(usage).toEqual({
+        inputTokens: 9, outputTokens: 2, cacheReadTokens: 7,
+        codexThreadUsage: { inputTokens: 9, outputTokens: 2, cacheReadTokens: 7, cacheCreationTokens: 0 }
+      })
     }
     h.onDone = () => order.push('done')
     new CodexCli({ spawn }).send({ prompt: 'x', sessionId: null, model: '' }, h)

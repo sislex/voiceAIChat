@@ -1016,6 +1016,21 @@ export function registerProjectRoutes(
     }
   })
 
+  app.post<{ Params: { runId: string }; Body: import('@voicechat/shared').ChangeMergeMachineRequest }>(
+    '/api/merge/runs/:runId/machine', mergeGuard, async (req, reply) => {
+      const body = req.body
+      if (!body || typeof body.agentId !== 'string' || !body.agentId.trim() ||
+          !Number.isSafeInteger(body.expectedAssignmentVersion) || body.expectedAssignmentVersion < 0) {
+        return reply.code(400).send({ error: 'agentId and expectedAssignmentVersion are required' })
+      }
+      if (!merge) return reply.code(503).send({ error: 'Merge недоступен' })
+      const result = await merge.changeMachine(req.params.runId, uid(req), body)
+      const status = result.ok ? 200 : result.code === 'not_found' ? 404 : result.code === 'forbidden' ? 403 :
+        result.code === 'readiness_failed' ? 422 : 409
+      return reply.code(status).send(result)
+    }
+  )
+
   // История merge-попыток задачи (для вкладки Merge).
   app.get<{ Params: { id: string; taskId: string } }>(
     '/api/projects/:id/tasks/:taskId/merge/runs',

@@ -2,6 +2,7 @@
 // диалоге аккаунта, и в админской карточке пользователя: два разных списка
 // расходились бы в мелочах и сеяли сомнение, какой из них правдивый.
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { usePolling } from '@voicechat/ui-kit'
 import { Button, EmptyState, ErrorState } from '@voicechat/ui-kit'
 import { DeviceCard } from './DeviceCard'
 import { formatMoment } from './format'
@@ -43,16 +44,12 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
   const currentNow = now ?? tick
   // Список освежается сам: живые кадры доходят не всегда, а человек может
   // держать окно открытым и ждать, пока «чужая» сессия исчезнет.
-  useEffect(() => {
-    if (now !== undefined) return
-    const timer = setInterval(() => void store.actions.reload(), 60_000)
-    return () => clearInterval(timer)
-  }, [store, now])
+  usePolling(() => { void store.actions.reload() }, { enabled: now === undefined, intervalMs: 60_000, refreshOnVisible: !store.onVisible })
   useEffect(() => {
     void store.actions.load()
   }, [store])
-  // Возврат к экрану — момент, когда список читают. Сигнал даёт хост
-  // (SessionsHost.onVisible): сам модуль про document и window не знает.
+  // The host owns immediate refresh on return; usePolling only resumes its timer.
+  // Without a host subscription, usePolling handles the visibility refresh too.
   useEffect(() => store.onVisible?.(() => void store.actions.reload()), [store])
 
   const selected = state.selected

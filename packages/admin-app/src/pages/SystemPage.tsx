@@ -15,6 +15,7 @@ import { formatBytes as mb } from '@shared/machineHealth'
 
 export interface SystemPageProps {
   /** Массовое обновление агентов — состояние парка машин, а не свойство человека. */
+  performanceSlot?: React.ReactNode
   fleetSlot?: React.ReactNode
   machineStats?: AdminMachineStats | null
   makeStats?: AdminMakeStats | null
@@ -22,11 +23,12 @@ export interface SystemPageProps {
   onSaveRoleCommandPolicies?: (roles: RoleCommandPolicies) => Promise<void>
 }
 
-export function SystemPage({ fleetSlot, machineStats = null, makeStats = null, roleCommandPolicies = null, onSaveRoleCommandPolicies }: SystemPageProps): JSX.Element {
+export function SystemPage({ performanceSlot, fleetSlot, machineStats = null, makeStats = null, roleCommandPolicies = null, onSaveRoleCommandPolicies }: SystemPageProps): JSX.Element {
   const empty = !fleetSlot && !machineStats?.machines.length && !makeStats && !roleCommandPolicies
   return (
     <div data-testid="system-page">
       {empty && <EmptyState icon="⚙" title="Метрик пока нет" description="Появятся, когда подключатся машины или заработают проекты Make." />}
+      {performanceSlot}
       {fleetSlot}
       {machineStats && machineStats.machines.length > 0 && (
         <section className="uadmin-sec" data-testid="machine-stats">

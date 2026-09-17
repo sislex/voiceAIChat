@@ -22,7 +22,7 @@
 .chat-split-chat > .make-selector { flex: none; }
 .make-pane { flex: 0 1 var(--preview-width); width: var(--preview-width); max-width: 100%; min-width: 320px; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--panel); }
 .make-pane--fs { position: fixed; inset: 0; z-index: 60; min-width: 0; width: auto; }
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .make-pane { flex: 1 1 auto; width: 100%; min-width: 0; }
   .chat-split--chat .make-pane { display: none; }
 }
@@ -85,7 +85,7 @@
 .make-template-meta { display: grid; gap: 2px; }
 .make-template-meta small { color: var(--text-dim); }
 .make-head .vc-btn--icon { color: var(--text); font-size: 17px; line-height: 1; }
-@media (min-width: 641px) { .make-head .vc-btn--icon { min-width: 30px; } }
+@media (min-width: 721px) { .make-head .vc-btn--icon { min-width: 30px; } }
 .make-head .vc-btn--icon:disabled { opacity: .5; }
 .make-search { display: flex; align-items: center; gap: 6px; padding: 2px 4px 6px; }
 .make-search-input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text); }
@@ -100,7 +100,7 @@
 .make-stories { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(150px, 220px) 1fr; }
 .make-story-host { position: relative; min-height: 0; display: flex; flex-direction: column; background: repeating-conic-gradient(var(--surface-hover) 0 25%, transparent 0 50%) 0 0 / 20px 20px; }
 .make-story-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: transparent; }
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .make-code, .make-stories { grid-template-columns: 1fr; grid-template-rows: minmax(0, 38%) 1fr; }
   .make-tree { border-right: 0; border-bottom: 1px solid var(--border); }
   .make-head { gap: 4px; padding: 6px 8px; }
@@ -185,7 +185,7 @@
 .make-style-color input[type='color'] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; }
 .make-style-color code { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .make-style-actions { display: flex; gap: 6px; margin-top: 8px; }
-@media (max-width: 768px) { .make-style-grid { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .make-style-grid { grid-template-columns: 1fr; } }
 .make-control-range { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .make-control-range input[type='range'] { flex: 1 1 auto; min-width: 0; }
 .make-control-range output { font-size: 12px; color: var(--text-dim); min-width: 28px; text-align: right; }
@@ -221,7 +221,7 @@
 .make-network-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .make-network-row small { color: var(--text-dim); }
 .make-lang { border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; background: var(--surface); color: var(--text); max-width: 96px; }
-@media (max-width: 768px) { .make-lang { display: none; } }
+@media (max-width: 720px) { .make-lang { display: none; } }
 .make-a11y { border-top: 1px solid var(--border); background: var(--panel); padding: 6px 12px; font-size: 12.5px; max-height: 32vh; overflow: auto; }
 .make-a11y--bad { background: rgb(248 81 73 / .06); }
 .make-a11y-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -317,9 +317,16 @@
 .make-snap small { color: var(--text-dim); }
 .make-file-picker { display: flex; gap: var(--space-2); align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .make-file-picker select { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--surface); color: var(--text); }
-@media (max-width: 600px) {
-  .make-code--phone { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-  .make-code--phone .make-tree { display: none; }
+.make-mobile-panels { display: flex; flex: 0 0 auto; gap: 4px; padding: 6px; }
+.make-mobile-panels button { flex: 1; min-width: 0; }
+@media (max-width: 720px) {
+  .make-code--phone { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .make-code--phone[data-mobile-panel="editor"] .make-tree { display: none; }
+  .make-code--phone[data-mobile-panel="tree"] .make-editor { display: none; }
+  .make-code--phone[data-mobile-panel="tree"] .make-tree { display: block; width: 100%; }
+  .make-code--phone .make-tree-actions { display: inline-flex; opacity: 1; }
+  .make-code--phone .make-editor-tools { flex-wrap: wrap; }
+  .make-code--phone .make-tabs-bar { overflow-x: auto; }
   .make-code--phone .make-textarea, .make-code--phone .make-highlight { font-size: 16px; line-height: 1.45; }
   .make-code--phone .make-editor-head { flex-wrap: wrap; row-gap: 4px; }
 }
@@ -337,7 +344,8 @@
 .make-dialog .make-ask-field span { font-weight: 500; color: var(--text); }
 .make-comments-head { flex-wrap: wrap; }
 @media (max-width: 720px) {
-  .make-head .make-devices, .make-head .make-cost { display: none; }
+  .make-head .make-cost { display: none; }
+  .make-head .make-devices { display: inline-flex; }
   .make-head { gap: 4px; }
   .make-tab { padding: 4px 8px; font-size: 12.5px; }
 }
@@ -506,15 +514,15 @@
 .mpc-field > span { font-size: 12px; color: var(--text-dim); }
 .mpc-ticket-paths { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--text-dim); }
 
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .mpc-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 38%) 1fr; }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .mpc-list { border-right: 0; border-bottom: 1px solid var(--border); }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .mpc-ws select { max-width: 150px; }
 }
 /* The interface-language choice remains available in every Make mode. */
@@ -539,3 +547,12 @@
 /* A narrow desktop split needs the same space for translated editor controls as a phone. */
 .make-editor-head > code { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .make-editor-head label { flex: 0 0 auto; white-space: nowrap; }
+.make-tree-create { display: flex; flex-wrap: wrap; gap: 4px; }
+.make-tree [role='menu'] { display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; }
+.make-tree-dir { overflow-wrap: anywhere; }
+.make-history > section { flex: 0 1 auto; max-height: 50%; overflow: auto; padding: 8px; }
+.make-history > section select { max-width: 100%; }
+.make-history > section li { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.make-history > section code { overflow-wrap: anywhere; }
+.make-frame-host { justify-content: safe center; }
+.make-publish-link img { max-width: 100%; height: auto; }
