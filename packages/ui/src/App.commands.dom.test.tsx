@@ -38,12 +38,16 @@ describe('App — командная палитра', () => {
     localStorage.clear()
   })
 
-  it('⌘K открывает палитру, Esc закрывает', async () => {
+  // @testCase TC-UI-01
+  // @testCase TC-UI-02
+  // @testCase TC-REG-02
+  it('⌘K открывает палитру, передаёт фокус поиску, Esc закрывает', async () => {
     await renderApp()
     pressPalette()
     const palette = await screen.findByTestId('command-palette')
     expect(palette).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /Поиск команды/ })).toHaveFocus()
+    const search = screen.getByRole('combobox', { name: /Поиск команды/ })
+    await waitFor(() => expect(search).toHaveFocus())
 
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('command-palette')).toBeNull())
@@ -79,11 +83,8 @@ describe('App — командная палитра', () => {
     await screen.findByTestId('command-palette')
     const input = screen.getByRole('combobox', { name: /Поиск команды/ })
     fireEvent.change(input, { target: { value: 'подарка' } })
-    const option = (await screen.findAllByRole('option')).find((node) =>
-      node.textContent?.includes('Идеи для подарка')
-    )
-    expect(option, 'authorized search result is missing').toBeDefined()
-    fireEvent.click(option!)
+    const option = await screen.findByRole('option', { name: /Идеи для подарка/ })
+    fireEvent.click(option)
     await waitFor(() => expect(api['search:universal']).toHaveBeenCalledWith({ query: '', recent: ['chats:' + 'a'.repeat(64)] }))
     await waitFor(() => expect(window.location.hash).toContain('/chat/'))
     await waitFor(() => expect(screen.queryByTestId('command-palette')).toBeNull())

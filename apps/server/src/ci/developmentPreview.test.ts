@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { DEFAULT_DEVELOPMENT_PREVIEW, DEFAULT_CI_BROWSER_CHECK } from '@voicechat/shared'
 import { DevelopmentPreviewManager, DevelopmentPreviewError, previewResourceName, redactPreviewLog, type PreviewRuntimeInput, type DevelopmentPreviewRuntime } from './developmentPreview.js'
 import { previewCompose } from './developmentPreviewDocker.js'
@@ -12,8 +15,6 @@ const runtime = (): DevelopmentPreviewRuntime => ({
   stop:vi.fn(async()=>{}),logs:vi.fn(async()=>'')
 })
 describe('managed development preview',()=>{
-  // @testCase TC-INT-03
-  // @testCase TC-INT-04
   // @testCase TC-E2E-02
   it.each(['continue','block'] as const)('applies %s only after diagnosis while keeping tools available',async(policy)=>{
     const r=runtime(); r.prepare=vi.fn(async()=>{throw new DevelopmentPreviewError('docker_unavailable','Docker is down')})
@@ -37,18 +38,37 @@ describe('managed development preview',()=>{
     expect(r.stop).toHaveBeenCalled()
   })
   // @testCase TC-INT-05
-  it('does not pass an unopened browser and cleans up expired resources',async()=>{
-    let now=100
-    const r=runtime(),m=new DevelopmentPreviewManager(r,undefined,()=>now);m.register(input())
-    await m.invoke('run','start')
-    expect(await m.finalize('run',new AbortController().signal)).toBe(true)
-    expect(m.status('run')?.browserResult).toBe('warning')
-    now+=DEFAULT_DEVELOPMENT_PREVIEW.ttlMs
-    await m.sweep()
-    expect(m.status('run')?.state).toBe('expired')
-    expect(r.stop).toHaveBeenCalled()
+  it('publishes lifecycle, persists safe evidence and reconciles an active preview after restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'development-preview-state-'))
+    const store = join(dir, 'development-previews.json')
+    const states: string[] = []
+    const r = runtime()
+    r.check = vi.fn(async (_input, status) => ({
+      url: status.url!, sha: status.sha!, configDigest: status.configDigest!,
+      viewport: { width: 1280, height: 720 },
+      calls: ['open', 'read', 'screenshot', 'errors', 'network', 'a11y', 'styles'].map((tool) => ({ tool, at: 1, ok: true })),
+      screenshots: ['/api/ci/runs/run/artifacts/preview.png'],
+      findings: { console: [], runtime: [], network: [], a11y: [], styles: [] }
+    }))
+    try {
+      const first = new DevelopmentPreviewManager(r, store)
+      first.register(input(), async (status) => { states.push(status.state) })
+      await first.invoke('run', 'start')
+      expect(await first.finalize('run', new AbortController().signal)).toBe(true)
+      expect(states).toEqual(expect.arrayContaining(['starting', 'ready', 'checking']))
+      expect(readFileSync(store, 'utf8')).not.toMatch(/Bearer|password|scoped token/i)
+
+      const recovered = new DevelopmentPreviewManager(r, store)
+      expect(recovered.status('run')?.evidence?.screenshots).toEqual(['/api/ci/runs/run/artifacts/preview.png'])
+      await recovered.sweep(true)
+      expect(r.stop).toHaveBeenCalled()
+      expect(recovered.status('run')).toMatchObject({ state: 'stopped', url: null, database: 'removed' })
+      expect(recovered.status('run')?.evidence?.screenshots).toEqual(['/api/ci/runs/run/artifacts/preview.png'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
-  // @testCase TC-NEG-01
+  // @testCase TC-INT-02
   it('isolates names and rejects unpinned images',()=>{
     const i=input(),name=previewResourceName(i.projectId,i.taskId,i.runId),image='runtime@sha256:'+'a'.repeat(64)
     expect(name).not.toBe(previewResourceName(i.projectId,i.taskId,'other'))
@@ -65,6 +85,7 @@ describe('managed development preview',()=>{
     expect(c.services.gateway.ports[0]).toMatchObject({host_ip:'127.0.0.1',published:'0'})
     expect(JSON.stringify(c)).not.toContain('/var/run/docker.sock')
   })
+  // @testCase TC-NEG-02
   it('cancels an in-flight startup before cleanup and retries failed cleanup',async()=>{
     const r=runtime()
     r.prepare=vi.fn(async(_i,_h,signal)=>new Promise<never>((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('cancelled')),{once:true})))

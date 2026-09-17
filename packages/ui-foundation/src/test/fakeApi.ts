@@ -1058,6 +1058,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'projects:bootstrapProduction': async () => ({ ok: true, mode: 'managed' as const, defaultMachineSet: true, preflight: { ok: true, environment: 'production' as const, paths: { root: '/s/p1/environments/production', app: '/s/p1/environments/production/app', config: '/s/p1/environments/production/config', logs: '/s/p1/environments/production/logs', artifacts: '/s/p1/environments/production/artifacts', temporary: '/s/p1/environments/production/temporary', repository: '/s/p1/environments/production/temporary/repository', manifest: '/s/p1/environments/production/environment.json' }, checks: Object.fromEntries(['marker','manifest','origin','branch','write','freeSpace','deployCommand','healthCheckCommand'].map(name => [name, { ok: true, message: 'Проверка пройдена' }])) as never }, cliLoginHint: 'Войдите в CLI на машине.' }),
     'releases:list': async () => [],
     'releases:get': async () => null,
+    'releases:changes': async () => ({ fromSha: null, toSha: '', changes: null }),
     'releases:delete': async () => ({ deleted: true as const }),
     'releases:deploy': async ({ projectId, branch }) => ({ id: 'release-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'queued', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
     // Каталог типов: встроенное дерево + узлы, заведённые в тесте. Данные настоящие

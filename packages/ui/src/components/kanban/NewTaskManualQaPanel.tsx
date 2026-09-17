@@ -95,6 +95,7 @@ export function NewTaskManualQaPanel(props: NewTaskManualQaPanelProps): JSX.Elem
               </>}
             </section>}
           </>}
+
         </StageCard>
       })}
     </StageRail>

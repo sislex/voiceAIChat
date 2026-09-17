@@ -36,6 +36,7 @@ beforeEach(() => {
 describe('TaskCardContainer — новая карточка', () => {
   // @testCase TC-UI-01
   it('opens independent settings and progress views through the container', async () => {
+
     render(<TaskCardContainer {...props()} />)
     fireEvent.click(await screen.findByRole('tab', { name: /Настройки/ }))
     // Панель настроек — тот же CiTaskSettings, что и в старой карточке.

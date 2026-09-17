@@ -198,7 +198,7 @@ describe('browser-check completion enforcement', () => {
   it('rejects narrative success without actual browser observations', async () => {
     const { ctx, task } = await setup()
     ctx.agentId = 'agent-1'
-    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/#/projects/p/releases' })
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/#/projects/p/releases', failurePolicy: 'block' })
     const rec = recorder('All viewports and screenshots passed.')
     const result = await hooksWith(rec.client, { previewMcpBaseUrl: 'http://reader/mcp?k=s', previewTurns: previewTokens() }).modelWork(ctx)
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining('browser_check:blocked') })
@@ -209,10 +209,10 @@ describe('browser-check completion enforcement', () => {
     ctx.agentId = 'agent-1'
     ctx.run.mode = 'plan'
     ctx.askPlanApproval = async () => ({ decision: 'approved', comment: '' })
-    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', startPath: '/#/projects/p/releases', devServerPort: 5173 })
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', startPath: '/#/projects/p/releases', devServerPort: 5173, failurePolicy: 'block' })
     const rec = recorder('Plan ready')
     const result = await hooksWith(rec.client, { previewMcpBaseUrl: 'http://reader/mcp?k=s', previewTurns: previewTokens() }).modelWork(ctx)
-    expect(rec.all()).toHaveLength(2)
+    expect(rec.all()).toHaveLength(3)
     expect(rec.all()[0].previewMcpUrl).toBeUndefined()
     expect(rec.all()[0].prompt).not.toContain('Mandatory browser-check')
     expect(rec.all()[1].prompt).toContain('http://agent-1.machine.internal:5173/#/projects/p/releases')
@@ -228,10 +228,11 @@ describe('browser-check completion enforcement', () => {
     expect(await hooksWith(rec.client).modelWork(ctx)).toMatchObject({ ok: false, error: expect.stringContaining('infrastructure_error') })
     expect(rec.all()).toHaveLength(0)
   })
+  // @testCase TC-INT-04
   it('accepts durable observations only for the current stage', async () => {
     const { ctx, task } = await setup()
     ctx.agentId = 'agent-1'
-    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium' })
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', failurePolicy: 'block' })
     const { CI_BROWSER_VIEWPORTS } = await import('@voicechat/shared')
     const events = [
       { action: 'open', ok: true, target: true, requestedTarget: true },
@@ -250,6 +251,7 @@ describe('browser-check completion enforcement', () => {
 describe('работа модели: браузерная проверка задачи', () => {
   const PREVIEW_MCP = 'http://voicechat:8787/mcp/preview?k=secret'
 
+  // @testCase TC-E2E-02
   it.each(['continue', 'block'] as const)('handles unavailable preview with %s without preventing code work', async (failurePolicy) => {
     const { task, ctx } = await setup()
     await db.ci.setTaskDevelopmentPreview(task.id, { enabled: true })

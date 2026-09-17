@@ -304,7 +304,7 @@ describe('лента событий сессии (круг 5)', () => {
     start: vi.fn(async () => meta({
       history: [
         { at: 1_700_000_000_000, actor: 'assistant', title: 'проверяю форму входа', kind: 'note', ok: true, note: 'проверяю форму входа' },
-        { at: 1_700_000_001_000, actor: 'assistant', title: 'клик: #login', kind: 'click', selector: '#login', ok: true },
+        { at: 1_700_000_001_000, actor: 'assistant', title: 'клик: #login', kind: 'click', selector: '#login', ok: true, result: 'Выполнено', durationMs: 42, pageErrors: ['TypeError после клика'], beforeImage: 'data:image/jpeg;base64,before', afterImage: 'data:image/jpeg;base64,after' },
         { at: 1_700_000_002_000, actor: 'user', title: 'переход на https://a.b/', kind: 'navigate', ok: false, error: 'таймаут' }
       ]
     })) as unknown as RendererBrowserBridge['start']
@@ -316,6 +316,10 @@ describe('лента событий сессии (круг 5)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Что происходит/ }))
     await screen.findByText(/проверяю форму входа/)
     await screen.findByText(/клик: #login/)
+    await screen.findByText(/Выполнено · 42 мс/)
+    await screen.findByText(/Ошибка страницы: TypeError после клика/)
+    expect(screen.getByAltText('До действия')).toHaveAttribute('src', 'data:image/jpeg;base64,before')
+    expect(screen.getByAltText('После действия')).toHaveAttribute('src', 'data:image/jpeg;base64,after')
     await screen.findByText(/таймаут/)
   })
 
