@@ -50,6 +50,7 @@
   --space-2: 16px;
   --space-3: 24px;
   --space-4: 32px;
+  --space-5: 40px;
   --radius-small: 4px;
   --radius-medium: 6px;
   /* Крупные скругления карточек и панелей — см. ui-kit/styles.css. */
@@ -8147,7 +8148,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .mst-pin { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; opacity: 0.85; white-space: nowrap; }
 
 /* Политика команд проекта (machines-roadmap п.10) */
-.pset-cmdpolicy { display: grid; gap: 8px; border: 1px solid var(--border, #3a3a3a); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.pset-cmdpolicy { display: grid; min-width: 0; max-width: 100%; box-sizing: border-box; gap: 8px; border: 1px solid var(--border, #3a3a3a); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .pset-cmdpolicy legend { font-size: 13px; padding: 0 4px; }
 .pset-cmdpolicy textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
 .pset-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
