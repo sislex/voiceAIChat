@@ -22,6 +22,8 @@ function callbacks(over: Partial<TaskCardCallbacks> = {}): TaskCardCallbacks {
 }
 
 describe('NewTaskCardView', () => {
+  // @testCase TC-UI-CARD-01
+  // @testCase TC-REG-CARD-01
   it('работает только через view model и callbacks', () => {
     const cb = callbacks()
     render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
@@ -114,6 +116,7 @@ describe('NewTaskCardView', () => {
     expect(submit).toHaveBeenCalledOnce()
   })
 
+  // @testCase TC-UI-CARD-02
   it('вкладка доработок показывает черновики с действиями, а отправленные — без них', () => {
     const cb = callbacks({ onSubmitDraft: vi.fn(), onDeleteDraft: vi.fn(), onEditDraft: vi.fn() })
     const withReworks = {
@@ -232,6 +235,7 @@ describe('NewTaskCardView', () => {
     expect(cb.onChangeTab).toHaveBeenCalledWith('progress')
   })
 
+  // @testCase TC-REG-CARD-01
   it('workflow показывает длительность пройденного этапа и живой счётчик текущего', () => {
     const timed = { ...model, workflow: [
       { id: 'development', semanticType: 'development' as const, label: 'Разработка', state: 'passed' as const, durationMs: 125_000 },
