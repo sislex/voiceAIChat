@@ -34,6 +34,7 @@ afterEach(() => { delete (window as { ci?: unknown }).ci })
 
 describe('NewTaskProgressPanel', () => {
   // @testCase TC-INT-02
+
   it('строит этапы по циклам с метриками и лентой выбранного рана', async () => {
     render(<NewTaskProgressPanel projectId="p1" taskId="t1" cycles={[cycle]} workflow={['Разработка']} />)
     expect(await screen.findByText('2 этапа')).toBeTruthy()
@@ -49,6 +50,10 @@ describe('NewTaskProgressPanel', () => {
     expect(second).toHaveTextContent('В разработке')
     // Лента раскрыта у выбранного (живого) этапа.
     expect(second.querySelector('details')).toHaveAttribute('open')
+    const host = second.querySelector('[data-stage-panel-slot]')?.firstElementChild
+    for (let index = 0; index < 5; index++) fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
+    expect(first.querySelector('[data-stage-panel-slot]')?.firstElementChild).toBe(host)
+    expect(ci.getTaskReport).toHaveBeenCalledOnce()
   })
 
   it('разделы: проверки собирают команды всех ранов, ресурсы — итог отчёта', async () => {
@@ -70,6 +75,19 @@ describe('NewTaskProgressPanel', () => {
     await waitFor(() => expect(start).toHaveBeenCalledOnce())
     rerender(<NewTaskProgressPanel projectId="p1" taskId="t1" cycles={[]} workflow={[]} onStartCi={start} ciSummary={{ id: 'run-2', taskId: 't1', status: 'running', error: null, slotProgress: { phase: 'model', done: 1, total: 3 }, durationMs: null, modelActive: true, awaitingInput: false }} />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'В очередь на разработку' })).toBeDisabled())
+  })
+
+  // @testCase TC6
+  it('empty sections offer only the available next step', async () => {
+    ci.getTaskReport = vi.fn().mockResolvedValue({ runs: [], totals: EMPTY_CI_USAGE_TOTALS })
+    const change = vi.fn()
+    render(<NewTaskProgressPanel projectId="p1" taskId="t1" cycles={[]} workflow={[]} canStart={false} tabs={['preparation']} onChangeTab={change} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть подготовку' }))
+    expect(change).toHaveBeenCalledWith('preparation')
+    fireEvent.click(screen.getByRole('button', { name: 'Проверки' }))
+    expect(screen.getByText('Проверок пока не было')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Открыть подготовку' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Начать разработку' })).toBeNull()
   })
 
   it('ошибка отчёта показывает экран с повтором', async () => {
