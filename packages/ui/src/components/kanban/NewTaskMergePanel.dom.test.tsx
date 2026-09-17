@@ -28,6 +28,7 @@ beforeEach(() => {
 afterEach(() => { delete (window as { ci?: unknown }).ci })
 
 describe('NewTaskMergePanel', () => {
+  // @testCase TC2
   it('проходы merge по циклам с проверками актуальности и конфликтов', async () => {
     render(<NewTaskMergePanel projectId="p1" taskId="t1" cycles={[cycle]} workflow={['Merge']} activeRunId={null} canStart={false} />)
     expect(await screen.findByText('2 прохода')).toBeTruthy()
@@ -41,6 +42,7 @@ describe('NewTaskMergePanel', () => {
     // Панель merge стоит в выбранном (последнем) проходе.
     expect(second.querySelector('[data-testid="new-merge-run-details"]')).toBeTruthy()
     expect(first.querySelector('[data-testid="new-merge-run-details"]')).toBeNull()
+
   })
 
   // @testCase TC-INT-02

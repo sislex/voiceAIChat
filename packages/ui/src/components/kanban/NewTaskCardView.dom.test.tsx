@@ -1,4 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { render } from '../../test/uiRender'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
+import { MOBILE_QUERY } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { describe, expect, it, vi } from 'vitest'
 import { NewTaskCardView } from './NewTaskCardView'
 import type { TaskCardCallbacks, TaskCardViewModel, TaskReworkDraft } from './TaskCardViewModel'
@@ -24,6 +27,73 @@ function callbacks(over: Partial<TaskCardCallbacks> = {}): TaskCardCallbacks {
 describe('NewTaskCardView', () => {
   // @testCase TC-UI-CARD-01
   // @testCase TC-REG-CARD-01
+  // @testCase TC3
+  it('saves inline fields, cancels local changes and expands/copies the header', async () => {
+    const update = vi.fn().mockResolvedValue(undefined)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks({ onUpdate: update })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить' }))
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Updated description' } })
+    fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'Updated criteria' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ description: 'Updated description', acceptanceCriteria: 'Updated criteria' }))
+    await waitFor(() => expect(screen.queryByLabelText('Описание')).toBeNull())
+    fireEvent.doubleClick(screen.getByText(model.description))
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Discard me' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    expect(update).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: model.title }))
+    expect(screen.getByRole('button', { name: model.title })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Копировать ключ задачи' }))
+    expect(await screen.findByText('Скопировано')).toBeInTheDocument()
+    expect(writeText).toHaveBeenCalledWith(model.taskKey)
+  })
+
+  // @testCase TC6
+  it('keeps unsaved text on failure and reports rejected clipboard writes without success', async () => {
+    const update = vi.fn().mockRejectedValue(new Error('Save failed'))
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
+    render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks({ onUpdate: update })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить' }))
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Keep me' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Save failed')
+    expect(screen.getByLabelText('Описание')).toHaveValue('Keep me')
+    fireEvent.click(screen.getByRole('button', { name: 'Копировать ключ задачи' }))
+    expect(await screen.findByText('Не удалось скопировать ключ')).toBeInTheDocument()
+    expect(screen.queryByText('Скопировано')).toBeNull()
+  })
+
+  // @testCase TC1
+  // @testCase TC5
+  it('exposes actual dates and puts collapsed mobile workflow after the main content', async () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({ matches: query === MOBILE_QUERY, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+    try {
+      const timed = { ...model, workflow: [{ ...model.workflow[0]!, startedAt: 1000, finishedAt: 2000 }, { ...model.workflow[1]!, startedAt: 3000 }] }
+      render(<NewTaskCardView model={timed} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks()} />)
+      const details = screen.getByText('Workflow и задача').closest('details')!
+      expect(details).not.toHaveAttribute('open')
+      expect(details.previousElementSibling).toHaveTextContent('Актуальная постановка')
+      fireEvent.click(screen.getByText('Workflow и задача'))
+      const dates = details.querySelectorAll('time[datetime]')
+      expect(dates).toHaveLength(3)
+      expect(dates[0]).toHaveAttribute('datetime', new Date(1000).toISOString())
+      expect(dates[1]).toHaveAttribute('title', expect.stringContaining('Окончание'))
+      await expectNoViolations()
+    } finally { window.matchMedia = original }
+  })
+
+  // @testCase TC6
+  it('offers a permitted next action for empty drafts', () => {
+    const cb = callbacks()
+    render(<NewTaskCardView model={{ ...model, actions: { ...model.actions, canRework: false, hasActiveRun: true } }} activeTab="reworks" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить доработку' }))
+    expect(cb.onStartRework).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Отправить на доработку' })).toBeNull()
+  })
+
   it('работает только через view model и callbacks', () => {
     const cb = callbacks()
     render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
@@ -200,6 +270,7 @@ describe('NewTaskCardView', () => {
     expect(screen.queryByRole('button', { name: 'Связать дизайн' })).toBeNull()
   })
 
+  // @testCase TC4
   it('очередь доработок: выбор нескольких черновиков и отправка набором', () => {
     const submitMany = vi.fn()
     const cb = callbacks({ onSubmitDrafts: submitMany, onSubmitDraft: vi.fn() })
@@ -211,10 +282,14 @@ describe('NewTaskCardView', () => {
       ]
     }
     render(<NewTaskCardView model={withDrafts} activeTab="reworks" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    expect(document.querySelector('.new-task-rework-list article')?.textContent).toContain('Вторая правка')
+    fireEvent.change(screen.getByLabelText('Сортировка'), { target: { value: 'number' } })
+    expect(document.querySelector('.new-task-rework-list article')).toHaveTextContent('Первая правка')
     const bulk = screen.getByRole('button', { name: 'Отправить выбранные на доработку' })
     expect(bulk).toBeDisabled()
     fireEvent.click(screen.getByLabelText('Выбрать Первая правка'))
     expect(screen.getByText('Выбрано: 1')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /Доработки/ })).toHaveTextContent('выбрано 1')
     fireEvent.click(screen.getByLabelText('Выбрать все доступные'))
     expect(screen.getByText('Выбрано: 2')).toBeTruthy()
     fireEvent.click(bulk)

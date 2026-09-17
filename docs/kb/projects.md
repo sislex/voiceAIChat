@@ -1,7 +1,8 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-17
-checked: 5b48daf9
+checked: 3129e7d5
+
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -724,12 +725,15 @@ clients cannot persist truthy strings or numbers.
 Смена проектной пары сразу обновляет привязанные чаты; задачи получают её через
 `resolveTaskLlmConfig` по обычной цепочке наследования.
 
-The active settings tab comes from `/projects/:id/settings/:tab`; stories and
-standalone tests fall back to local state. Server detail refreshes preserve the tab
-and unsaved project-field patches. `ProjectSettingsDraft` batches `onUpdate`
-fields into one save and retains them on rejection. Its sticky Save/Cancel bar
-reports validation errors; browser unload and hash-router navigation warn before
-discarding a draft. Switching settings tabs keeps the draft.
+The active settings tab comes from `#/projects/:projectId/settings/:tab`; stories
+and standalone tests fall back to local state. `ProjectSettings` derives the visible
+tabs from the effective project-type features: Workflow requires `ci`, Machines
+requires `machines`, while General, LLM, Board and Members remain available. If a
+type change disables the current tab, routing replaces it with General. Server detail
+refreshes preserve the tab and unsaved project-field patches. `ProjectSettingsDraft`
+batches `onUpdate` fields into one save and retains them on rejection. Its sticky
+Save/Cancel bar reports validation errors; browser unload and hash-router navigation
+warn before discarding a draft. Switching settings tabs keeps the draft.
 
 Git URLs accept HTTPS, SSH URLs and SCP-style SSH syntax. CI branch names reject
 spaces and invalid Git ref syntax. Branch templates support `{task_number}` and
@@ -764,10 +768,16 @@ the H1 and tab list remain outside the sole vertical scroll surface,
 
 At phone widths, tabs form a horizontally scrollable, single-line tablist and forms
 use one column. Selecting a tab by pointer, touch, route change or the Home/End/arrow
-keys automatically brings the active tab into view, including at 375 px. The page
+keys automatically brings the active tab into view, including at 390 px. The page
 has one H1, validation relationships follow the rendered alerts, and App title
-segments are deduplicated before the single `ChatAI` suffix. Stories cover
-validation, unsaved changes, production results and the constrained mobile layout.
+segments are deduplicated before the single `ChatAI` suffix. Storybook exposes
+separate desktop and 390×844 mobile states for all six tabs; the browser regression
+first waits for the cold ProjectSettings story module, then checks document/form/panel
+widths, the visible selected tab and labelled mobile machine rows. DOM tests cover
+cyclic ArrowLeft/ArrowRight/Home/End navigation,
+controlled routing, feature fallback and draft retention. Story accessibility
+shards analyze `document.body` through the shared serialized axe queue, whose
+failure path releases the queue; serious and critical violations remain forbidden.
 
 ## Чаты завершённых задач скрыты из списка бесед
 
@@ -1895,8 +1905,31 @@ Make-проект проекта: `tasks:unlinkDesign` + `tasks:linkDesign`) и 
 подготовки `preparationRunId` цикла пересиливает время. Словарь статусов один на все
 вкладки (`StageStatus` + `STAGE_STATUS_LABEL`, конвертеры `ciStageStatus`,
 `qaRunStageStatus`, `qaStageRunStatus`, `mergeStageStatus`, `qaSessionStageStatus`,
-`preparationStageStatus`); тон бейджа — `stageStatusTone`. Панель одна на вкладку и
-стоит в выбранном этапе; остальные этапы показывают сводку и кнопку «Показать».
+`preparationStageStatus`); тон бейджа — `stageStatusTone`. Each open tab owns one
+panel through a stable `StageRail` portal. Its DOM host moves to the selected
+`StageCard` slot; the React portal and panel instance stay in the same place in
+the React tree. Changing a stage may load another attempt, but does not reload
+the panel's shared state. Other stages retain summaries and the “Показать” action.
+The preparation panel also keeps the same details wrapper across status changes.
+
+**CHAT-449 (2026-09-12).** The current statement edits inline through the existing
+`onUpdate` callback; both textareas use `useAutoGrow`, cancellation discards local
+changes, and rejected saves retain the text. Draft editing reuses the existing
+sidebar and update bridge, including attachment IDs and unavailable Make paths.
+Drafts sort newest first or by ascending sequence; the tab shows the selected
+draft count. Workflow renders valid start/end timestamps with `time` and `title`;
+on mobile it follows the main column inside a closed “Workflow и задача” details.
+The progress overview maps actual `TaskTimeline.stages` durations to available tabs.
+Stage errors use the latest attempt of that cycle; retry actions are supplied by
+the functional panels and retain their availability checks. The title expands
+on click, copying the key reports success only after Clipboard resolves, and
+the active banner opens the run-feed tab. Cancellation retains confirmation and
+reports success only after the bridge succeeds. Empty drafts and absent runs
+offer an available next action. Regression coverage lives beside the components
+with TC1–TC8 markers; the three new stories are StatementEditing, StageWithError,
+and MobileRail. The browser check is
+`node packages/ui/src/components/kanban/NewTaskCardView.browser.mjs` after
+`npm run build:storybook`; it checks axe and layout at 1280px and 390px.
 
 «Подготовка» владеет выбором машины и модели, попытками каждого цикла,
 вопросами и ответами, readiness-гейтами, Development Brief и шагами рана. Из

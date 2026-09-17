@@ -5,7 +5,7 @@ import { claudeArgs } from './cli/claudeCli.js'
 import { codexInvocation } from './cli/codexCli.js'
 const scope = {projectId:'project',taskId:'task',runId:'run',userId:'user',kind:'claude' as const,model:'sonnet',ttlMs:1000,operations:['generate'] as ['generate']}
 describe('scoped preview generation', () => {
-  // @testCase TC-INT-02
+  // @testCase TC-INT-03
   it('binds identity, model and operation and disables all CLI tools', () => {
     const grants = new PreviewCliGrants(vi.fn())
     const {token} = grants.issue(scope)

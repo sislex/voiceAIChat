@@ -80,10 +80,12 @@ const LABEL: Record<QaRunStage, string> = {
 
 /** Embedding props shared by the stage panels; see `ComponentQaPanelProps`. */
 export interface QaStageRunPanelProps {
+  onRetryActions?: (actions: Record<string, () => void>) => void
+
   projectId:string;taskId:string;stage:QaRunStage
   runId?:string|null
   /** Full attempt list for the new card's stage rail — reported on every load. */
-  onRunsChange?:(runs:Array<{id:string;attempt:number;status:string;createdAt:number}>)=>void
+  onRunsChange?:(runs:Array<{id:string;attempt:number;status:string;createdAt:number;error?:string|null;failureReason?:string|null;summary?:string;canRetry?:boolean}>)=>void
   hideHistory?:boolean
 }
 type EmbeddedProps=Omit<QaStageRunPanelProps,'stage'>
@@ -99,6 +101,11 @@ function IntegrationTestPanel(props:EmbeddedProps):JSX.Element {
   const load=useCallback(async()=>{if(!window.qa?.getIntegration)return;await refresh.request(()=>window.qa!.getIntegration!(props.projectId,props.taskId),next=>{setState(next);setError('')},cause=>setError(cause instanceof Error?cause.message:String(cause)))},[props.projectId,props.taskId,refresh.request])
   useEffect(()=>{setState(null);void load()},[load])
   useQaStageUpdates({ projectId: props.projectId, taskId: props.taskId, stage: 'integration_tests', onUpdate: () => void load(), active: Boolean(state?.activeRun) })
+  const act=useCallback(async(fn:()=>Promise<unknown>)=>{setBusy(true);try{await fn();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}},[load])
+  const retry = useCallback(() => { if (!busy && !state?.activeRun && window.qa?.startIntegration) void act(() => window.qa!.startIntegration!(props.projectId, props.taskId)) }, [act, busy, props.projectId, props.taskId, state?.activeRun])
+  useEffect(() => {
+    props.onRetryActions?.(Object.fromEntries((state?.runs ?? []).filter((item) => item.canRetry && !busy && !state?.activeRun && window.qa?.startIntegration).map((item) => [item.id, retry])))
+  }, [state, busy, retry, props.onRetryActions])
   if(!window.qa?.getIntegration)return <section>
     <EmptyState compact icon="🧪" title="Стадия недоступна" description="Мост QA не подключён в этой сборке." testId="integration-unavailable" />
   </section>
@@ -109,7 +116,6 @@ function IntegrationTestPanel(props:EmbeddedProps):JSX.Element {
   </section>
   const run=props.runId?state.runs.find(item=>item.id===props.runId)??null:state.latestRun
   const latest=run!=null&&run.id===state.latestRun?.id
-  const act=async(fn:()=>Promise<unknown>)=>{if(busy)return;setBusy(true);try{await fn();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}}
   return <section className="qa-stage-panel" aria-label="Интеграционные автотесты">
     <PanelHeading
       kicker={run?`Попытка ${run.attempt}`:'Интеграционные тесты'}
@@ -155,7 +161,7 @@ function IntegrationTestPanel(props:EmbeddedProps):JSX.Element {
       {run.summary&&<p className="ci-task-hint"><strong>Итог:</strong> {run.summary}</p>}</>}
     <div className="qa-stage-actions"><Button size="sm" disabled={busy||!state.canStart} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Запустить</Button>
       {state.activeRun&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.cancelIntegration!(props.projectId,props.taskId,state.activeRun!.id))}>Отменить</Button>}
-      {run?.canRetry&&<Button size="sm" disabled={busy||!!state.activeRun} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Повторить</Button>}
+      {run?.canRetry&&<Button size="sm" disabled={busy||!!state.activeRun} onClick={retry}>Повторить</Button>}
       {run&&latest&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.fixIntegration!(props.projectId,props.taskId,run.id))}>Отправить на доработку</Button>}
       {run&&latest&&<Button size="sm" disabled={busy||!state.canComplete} onClick={()=>void act(()=>window.qa!.completeIntegration!(props.projectId,props.taskId,run.id))}>Перейти к Automated QA</Button>}</div>
     {state.runs.length>0&&!props.hideHistory&&<AttemptHistory
@@ -199,6 +205,7 @@ function GenericQaStageRunPanel(props: QaStageRunPanelProps): JSX.Element {
     finally { setBusy(false) }
   }
   if(!window.qa?.listStageRuns)return <EmptyState compact title="Automated QA недоступен" description="Мост QA не подключён в этой сборке."/>
+
   return <div className="qa-stage-run qa-stage-panel" data-testid={`qa-stage-${props.stage}`}>
     {/* Раньше здесь печатался сырой `run.status` — «running» и «failed» в русской
         карточке читались как отладочный вывод. Статус — лозенга с подписью. */}
@@ -207,6 +214,7 @@ function GenericQaStageRunPanel(props: QaStageRunPanelProps): JSX.Element {
       title={LABEL[props.stage]}
       description={run ? run.currentStep || 'Ожидание' : 'Этап ещё не запускался.'}
       actions={run&&<StatusPill tone={stageRunTone(run.status)}>{QA_STAGE_RUN_STATUS_LABELS[run.status]}</StatusPill>}
+
     />
     <QaRefresh {...refresh} onRefresh={()=>void load()}/>
     {run&&<Button size="sm" onClick={()=>downloadQaReport(run.id,automatedQaReport(run))}>Скачать отчёт</Button>}
