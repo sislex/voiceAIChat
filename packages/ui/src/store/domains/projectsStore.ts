@@ -618,6 +618,12 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       const showCompleted = view?.showCompleted ?? wantsCompleted
       if (showCompleted) void actions.setBoardIncludeCompleted(true)
       else await syncBoardStatuses(id, includeCompleted, generation)
+      // An invalidation received while the initial snapshot was loading must not
+      // be lost: that response may already have been stale when it arrived.
+      if (generation === boardGeneration && boardPending) {
+        boardPending = false
+        void syncBoard()
+      }
     } catch (err) {
       if (generation !== boardGeneration || getState().activeProjectId !== id) return
       if (accessLost(err)) {
