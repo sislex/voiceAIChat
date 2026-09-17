@@ -23,6 +23,10 @@ areas:
 
 # Feature-preview окружения задач
 
+## Development-run preview
+
+The opt-in development preview in `ci/developmentPreview*.ts` is separate from `FeaturePreviewManager`. It snapshots current tracked and non-ignored worktree files, records HEAD and a source/configuration digest, and creates disposable resources keyed by project/task/run. It never uses the committed preview checkout, existing preview volumes or production Compose configuration. Restart recreates its source snapshot, test volume and scoped grant. See [CI runner](ci-runner.md#development-preview-chat-447) and [deployment](../deploy.md#development-preview-operation) for configuration and limitations.
+
 ## Назначение и запуск
 
 Feature-preview — отдельное управляемое окружение для workspace конкретной задачи. Оно не использует production deploy и не запускается при создании задачи, development-run, открытии карточки или завершении работы модели. Первый build начинается только после явной операции `start` из секции «Тестовое окружение» в карточке. Для нового preview пользователь выбирает машину проекта с настроенным MachineStorage; manager берёт зафиксированную и подтверждённую в origin feature-ветку/SHA из последнего CI-workspace и готовит отдельный checkout внутри managed-окружения, не переключая обычный checkout проекта.

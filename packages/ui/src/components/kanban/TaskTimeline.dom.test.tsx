@@ -5,6 +5,7 @@ import { render } from '../../test/uiRender'
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { TaskTimeline as Timeline } from '@shared/timeline'
+import { MiniTimeline } from './NewTaskProgressPanel'
 import { TaskTimeline, formatTimelineDate, formatTimelineDuration, timelineTone } from './TaskTimeline'
 
 const timeline: Timeline = {
@@ -35,6 +36,25 @@ const timeline: Timeline = {
 }
 
 describe('TaskTimeline', () => {
+  // @testCase TC5
+  // @testCase TC6
+  it('mini timeline uses actual durations, navigates to permitted tabs and handles zero or absent data', async () => {
+    const onChangeTab = vi.fn()
+    const { rerender } = render(<MiniTimeline timeline={timeline} tabs={['progress']} onChangeTab={onChangeTab} />)
+    const segment = screen.getByRole('button', { name: /Development/ })
+    expect(segment.style.flexGrow).toBe('3000')
+    await userEvent.click(segment)
+    expect(onChangeTab).toHaveBeenCalledWith('progress')
+    await expectNoViolations()
+    rerender(<MiniTimeline timeline={{ ...timeline, stages: [{ ...timeline.stages[0]!, activeDuration: 0 }] }} tabs={['progress']} onChangeTab={onChangeTab} />)
+    expect(screen.getByRole('button', { name: /Development/ }).style.flexGrow).toBe('0')
+    expect(screen.getByRole('button', { name: /Development/ })).not.toBeDisabled()
+    rerender(<MiniTimeline timeline={timeline} tabs={[]} onChangeTab={onChangeTab} />)
+    expect(screen.getByRole('button', { name: /Development/ })).toBeDisabled()
+    rerender(<MiniTimeline timeline={null} tabs={['progress']} onChangeTab={onChangeTab} />)
+    expect(screen.getByText('Таймлайн пока пуст')).toBeInTheDocument()
+  })
+
   beforeEach(() => {
     window.ci = { ...createFakeCi(), getTaskTimeline: vi.fn(async () => timeline) }
   })

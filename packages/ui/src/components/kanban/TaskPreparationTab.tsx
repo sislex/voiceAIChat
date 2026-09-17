@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import { formatDateTime } from '../../lib/dateFormat'
 
 export interface TaskPreparationTabProps {
+  onRetryActions?: (actions: Record<string, () => void>) => void
   projectId: string
   taskId: string
   liveRunId?: string | null
@@ -230,19 +231,23 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   const engineOptions = (props.llmEngines ?? []).filter((engine) => engine.kind === selection.provider)
   const selectionReady = Boolean(selectedMachine?.online && selectedMachine.canUse !== false && selection.model && isProviderAllowed(props.llmAccess ?? [], selection.provider))
 
-  const act = async (kind: 'retry' | 'cancel'): Promise<void> => {
-    if (!selected || pending) return
+  const act = useCallback(async (kind: 'retry' | 'cancel', target = selected): Promise<void> => {
+    if (!target || pending) return
     setPending(kind)
     try {
-      const next = await (kind === 'retry' ? props.onRetry?.(selected.id, selection) : props.onCancel?.(selected.id))
+      const next = await (kind === 'retry' ? props.onRetry?.(target.id, selection) : props.onCancel?.(target.id))
       if (next) {
         setRuns((previous) => [next, ...previous.filter((run) => run.id !== next.id)])
         setSelectedId(next.id)
       }
-    } finally {
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally {
       setPending(null)
     }
-  }
+  }, [selected, pending, selection, props.onRetry, props.onCancel])
+  useEffect(() => {
+    props.onRetryActions?.(Object.fromEntries(runs.filter((run) => run.canRetry && props.onRetry && !pending).map((run) => [run.id, () => void act('retry', run)])))
+  }, [runs, pending, act, props.onRetry, props.onRetryActions])
 
   const submitAnswer = async (questionId: string): Promise<void> => {
     if (!answer.trim() || pending || !props.onAnswer) return

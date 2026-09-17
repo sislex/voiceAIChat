@@ -18,6 +18,14 @@ areas:
 
 # Контракт клиент↔сервер (REST, WS, мосты)
 
+## Development preview contracts
+
+Shared `developmentPreview.ts` defines settings, lifecycle/result states, diagnostics, evidence and preview operations. Task CI GET/PUT exposes `developmentPreview` separately from `browserCheck.failurePolicy`. Unknown preview environment/DSN/volume fields are rejected with HTTP 400 before settings changes.
+
+`GET /api/ci/runs/:runId/development-preview` returns the authorized run's state. POST accepts only `restart` or `stop`, checks the run initiator and requires an active run. The optional renderer CI bridge method uses these routes. Lifecycle JSON is persisted and broadcast through existing `ci.log` system events, and RunFeed renders its status, diagnostics, preview/screenshot links and actions.
+
+The CI MCP broker publishes `preview_start`, `preview_status`, `preview_logs`, `preview_restart`, `preview_stop` only for a registered development preview. These tools accept no caller-provided paths, tokens or Compose configuration.
+
 ## Коды ошибок и текст для человека
 
 Сервер отвечает короткими кодами (`forbidden`, `csrf`, `machine_offline`,
