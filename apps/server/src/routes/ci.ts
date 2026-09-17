@@ -5,7 +5,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision, CiUsageKind, CiStageLlmSelection, CiTaskMachines } from '@voicechat/shared'
-import { CI_USAGE_KINDS } from '@voicechat/shared'
+import { CI_USAGE_KINDS, developmentPreviewValidationError } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import { requireProjectPermission, uid } from '../users/auth.js'
@@ -226,21 +226,28 @@ export function registerCiRoutes(
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
     if (!await db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     return {
+      commandContext: await ci.commandContext(uid(req), req.params.id, req.params.taskId),
       config: await db.ci.resolveTaskSlots(req.params.id, req.params.taskId),
       overridden: await db.ci.hasCiSlotConfig('task', req.params.taskId),
       projectDefault: await db.ci.getCiSlotConfig('project', req.params.id),
       enabledStages: await db.ci.getTaskProcessStages(req.params.taskId),
-      browserCheck: await db.ci.getTaskBrowserCheck(req.params.taskId)
+      browserCheck: await db.ci.getTaskBrowserCheck(req.params.taskId),
+      developmentPreview: await db.ci.getTaskDevelopmentPreview(req.params.taskId)
     }
   })
-  app.put<{ Params: { id: string; taskId: string }; Body: { beforeModel?: string[]; afterModel?: string[]; enabledStages?: unknown; browserCheck?: unknown } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
+  app.put<{ Params: { id: string; taskId: string }; Body: { beforeModel?: string[]; afterModel?: string[]; enabledStages?: unknown; browserCheck?: unknown; developmentPreview?: unknown } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
     if (!await db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     const b = req.body ?? {}
+    if (b.developmentPreview !== undefined) {
+      const error = developmentPreviewValidationError(b.developmentPreview)
+      if (error) return reply.code(400).send({ error })
+    }
     const slots: Array<[CiSlot, string[] | undefined]> = [['before_model', b.beforeModel], ['after_model', b.afterModel]]
     for (const [slot, ids] of slots) if (ids) await db.ci.setCiSlotCommands('task', req.params.taskId, slot, ids)
     const enabledStages = b.enabledStages === undefined ? await db.ci.getTaskProcessStages(req.params.taskId) : await db.ci.setTaskProcessStages(req.params.taskId, b.enabledStages)
     const browserCheck = b.browserCheck === undefined ? await db.ci.getTaskBrowserCheck(req.params.taskId) : await db.ci.setTaskBrowserCheck(req.params.taskId, b.browserCheck)
-    return { ...await db.ci.resolveTaskSlots(req.params.id, req.params.taskId), enabledStages, browserCheck }
+    const developmentPreview = b.developmentPreview === undefined ? await db.ci.getTaskDevelopmentPreview(req.params.taskId) : await db.ci.setTaskDevelopmentPreview(req.params.taskId, b.developmentPreview)
+    return { ...await db.ci.resolveTaskSlots(req.params.id, req.params.taskId), enabledStages, browserCheck, developmentPreview }
   })
 
   // --- Запуск / отмена / повтор рана ---
@@ -275,7 +282,11 @@ export function registerCiRoutes(
       return res.interaction
     }
   )
-  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => await db.ci.getCiRun(uid(req), req.params.runId) ?? nf(reply))
+  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => {
+    const detail = await db.ci.getCiRun(uid(req), req.params.runId)
+    if (!detail) return nf(reply)
+    return { ...detail, queue: await ci.queueSummary(uid(req), detail.run.projectId) }
+  })
   app.get<{ Params: { runId: string }; Querystring: { limit?: string } }>('/api/ci/runs/:runId/log', async (req, reply) => {
     if (!await db.ci.getCiRun(uid(req), req.params.runId)) return nf(reply)
     // Полный лог длинного рана не помещается в память процесса, поэтому отдаём
@@ -378,8 +389,9 @@ export function registerCiRoutes(
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)
   })
-  app.post<{ Params: { runId: string }; Body: { provider?: 'claude' | 'codex'; model?: string; llmEngineId?: string | null } }>('/api/ci/runs/:runId/retry-from-step', workflowGuard, async (req, reply) => {
-    const selection = req.body?.provider && req.body.model !== undefined ? { provider: req.body.provider, model: req.body.model, llmEngineId: req.body.llmEngineId ?? null } : undefined
+  app.post<{ Params: { runId: string }; Body: { provider?: 'claude' | 'codex'; model?: string; llmEngineId?: string | null; stepId?: string } }>('/api/ci/runs/:runId/retry-from-step', workflowGuard, async (req, reply) => {
+    if (req.body?.stepId !== undefined && (typeof req.body.stepId !== 'string' || !req.body.stepId.trim())) return bad(reply, new Error('Некорректный stepId'))
+    const selection = req.body?.provider && req.body.model !== undefined ? { provider: req.body.provider, model: req.body.model, llmEngineId: req.body.llmEngineId ?? null, stepId: req.body.stepId } : undefined
     const res = await ci.retryFromFailed(uid(req), req.params.runId, selection)
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)

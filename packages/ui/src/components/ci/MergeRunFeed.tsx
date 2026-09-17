@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { formatDateTime } from '../../lib/dateFormat'
-import type { MergeRun, MergeRunStatus } from '@shared/merge'
+import { acceptMergeSnapshot, type MergeRun, type MergeRunStatus } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
 import { Button } from '@voicechat/ui-kit'
 import { fmtDuration } from './ciFormat'
@@ -98,7 +98,7 @@ export function MergeRunFeed({ runId, initialRun, machines = [], onRunChanged }:
   useEffect(() => {
     let alive = true
     setRetryAgentId('')
-    const apply = (value: MergeRun): void => { if (alive) { setRun(value); setRetryAgentId((current) => current || value.agentId); setError('') } }
+    const apply = (value: MergeRun): void => { if (alive) { setRun(current => acceptMergeSnapshot(current ?? undefined, value) ? value : current); setRetryAgentId((current) => current || value.agentId); setError('') } }
     const load = (): Promise<void> | undefined => initialRun ? undefined : window.ci?.getMerge(runId).then(apply).catch((e) => { if (alive) setError(e instanceof Error ? e.message : String(e)) })
     if (initialRun) apply(initialRun); else void load()
     const off = window.ci?.onMerge(({ runId: id, run: value }) => { if (id === runId) apply(value) })

@@ -40,6 +40,17 @@ type Story = StoryObj<typeof VoiceBar>
 /** Простой: композер пуст, кнопка справа — микрофон. */
 export const Idle: Story = {}
 
+// @testCase T7
+export const RestoredDraft390: Story = {
+  args: { draft: 'Сохранённый черновик беседы. Длинный текст остаётся доступным для редактирования.' },
+  decorators: [(Story) => <div style={{ width: 390, maxWidth: '100%' }}><Story /></div>]
+}
+
+// @testCase T7
+export const PastedImage: Story = {
+  args: { attachments: [{ localId: 'pasted', name: 'clipboard.svg', status: 'ready', previewUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="60"%3E%3Crect width="80" height="60" fill="skyblue"/%3E%3C/svg%3E' }] }
+}
+
 /** Набранный черновик: микрофон сменился на «отправить». */
 export const WithDraft: Story = {
   args: { draft: 'Разберись, почему упал шаг npm test в последнем ране.' }

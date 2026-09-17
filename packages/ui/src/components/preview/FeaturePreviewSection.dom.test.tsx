@@ -41,7 +41,9 @@ describe('FeaturePreviewSection', () => {
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
     await screen.findByText('Не создано')
     expect(operate).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Запустить тестовый контейнер' }))
+    const button = screen.getByRole('button', { name: 'Запустить тестовый контейнер' })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
     await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'start', expect.objectContaining({ idempotencyKey: expect.any(String) })))
   })
 
@@ -50,7 +52,8 @@ describe('FeaturePreviewSection', () => {
     const operate = vi.fn(() => new Promise<PreviewEnvironment>((done) => { resolve = done }))
     window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
-    const button = await screen.findByRole('button', { name: 'Запустить тестовый контейнер' })
+    const button = screen.getByRole('button', { name: 'Запустить тестовый контейнер' })
+    await waitFor(() => expect(button).toBeEnabled())
     fireEvent.click(button)
     expect(screen.getByRole('button', { name: 'Запускаем тестовый контейнер…' })).toBeDisabled()
     expect(screen.getByRole('progressbar', { name: 'Прогресс запуска тестового контейнера' })).not.toHaveAttribute('aria-valuenow')
@@ -63,7 +66,9 @@ describe('FeaturePreviewSection', () => {
   it('turns a rejected launch request into a terminal visible error', async () => {
     window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate: vi.fn().mockRejectedValue(new Error('Машина недоступна')), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Запустить тестовый контейнер' }))
+    const button = screen.getByRole('button', { name: 'Запустить тестовый контейнер' })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
     expect(await screen.findByText('Машина недоступна')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Запустить тестовый контейнер' })).toBeEnabled()
   })
@@ -76,7 +81,9 @@ describe('FeaturePreviewSection', () => {
     const operate = vi.fn().mockResolvedValue(environment('building'))
     window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Запустить тестовый контейнер' }))
+    const button = screen.getByRole('button', { name: 'Запустить тестовый контейнер' })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
     await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'start', {
       idempotencyKey: '07070707-0707-4707-8707-070707070707',
       agentId: 'a1'

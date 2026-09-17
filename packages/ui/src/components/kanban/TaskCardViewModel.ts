@@ -154,6 +154,7 @@ export interface TaskCardCallbacks {
   onUpdate?(fields: { description: string; acceptanceCriteria: string }): void | Promise<void>
   onClose(): void
   onChangeTab(tab: TaskCardTab): void
+  onOpenPreparationCycle?(cycleId: string): void
   onOpenRun(runId: string): void
   onOpenMake(conversationId: string): void
   onStartRework(): void

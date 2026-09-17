@@ -2,11 +2,24 @@ import './test/applicationPanels'
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readResources } from './clients/readResources'
 import App, { openWebReaderWorkspace } from './App'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
 
+import { uiPerformance } from './lib/uiPerformance'
+// @testCase T1
+it('marks shell interactive after the application commits its main actions', async () => {
+  const p=uiPerformance(),mark=vi.spyOn(p,'mark')
+  p.begin('shell')
+  const {api,gifts}=await seededApi()
+  window.location.hash='#/chat/'+gifts
+  render(<App api={api} delays={SLOW}/>)
+  await waitFor(()=>expect(mark).toHaveBeenCalledWith('shell','shell_interactive'))
+  expect(await screen.findByText('Что подарить?')).toBeVisible()
+  p.hidden();mark.mockRestore()
+})
 const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_000 }
 
 // Адрес чата: любой переход к разговору идёт через #/chat/:id, поэтому ссылку
@@ -217,7 +230,7 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
 
   it('на мобильной ширине показывает centered-композер в пустом чате с id и после первой реплики переводит его в docked', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
-      matches: query === '(max-width: 768px)',
+      matches: query === '(max-width: 720px)',
       media: query,
       onchange: null,
       addListener: vi.fn(),
@@ -314,6 +327,7 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
     render(<App api={api} delays={SLOW} />)
     await screen.findByText('Погода в июле?')
     api['projects:list'] = vi.fn().mockRejectedValue(new Error('projects unavailable'))
+    readResources(api).invalidate('projects:list')
 
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     expect(await screen.findByText(/Не удалось загрузить проекты: projects unavailable/)).toHaveAttribute('role', 'alert')
@@ -536,6 +550,21 @@ describe('App — отдельная страница Web Reader', () => {
   })
 })
 
+// @testCase TC-RECOVERY
+it('blocks chunk refresh when the current chat draft is not persisted', async () => {
+  const { api, lisbon } = await seededApi()
+  window.location.hash = `#/chat/${lisbon}`
+  render(<App api={api} delays={SLOW} />)
+  const draft = await screen.findByLabelText('Поле ввода сообщения')
+  await userEvent.clear(draft)
+  await userEvent.type(draft, 'Keep this draft')
+  await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.chat.drafts.v1') ?? '{}')[lisbon]).toBe('Keep this draft'))
+  expect(window.dispatchEvent(new Event('vc:before-chunk-refresh', { cancelable: true }))).toBe(true)
+  localStorage.removeItem('vc.chat.drafts.v1')
+  expect(window.dispatchEvent(new Event('vc:before-chunk-refresh', { cancelable: true }))).toBe(false)
+  expect(screen.getByLabelText('Поле ввода сообщения')).toHaveValue('Keep this draft')
+})
+
 describe('App — настройки разговора привязаны к инициатору', () => {
   // @testCase TC-UI-1
   it('открывает настройки отменённого task-чата, отсутствующего в sidebar-индексе', async () => {
@@ -548,7 +577,7 @@ describe('App — настройки разговора привязаны к и
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки разговора' }))
 
     expect(await screen.findByRole('dialog', { name: 'Настройки разговора' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Название разговора')).toHaveValue('Настройки отменённой задачи')
+    expect(await screen.findByLabelText('Название разговора')).toHaveValue('Настройки отменённой задачи')
   })
 
   // @testCase tc-ui-loading

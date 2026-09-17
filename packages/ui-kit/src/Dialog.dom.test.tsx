@@ -159,6 +159,35 @@ describe('Dialog — закрытие', () => {
 })
 
 describe('Dialog — фокус', () => {
+  it('skips hidden controls and disabled fieldsets in both directions', async () => {
+    render(<Harness showClose={false}>
+      <div hidden><button>Hidden first</button></div>
+      <fieldset disabled><button>Disabled</button></fieldset>
+      <button>Visible first</button><button>Visible last</button>
+      <div style={{ display: 'none' }}><button>Hidden last</button></div>
+    </Harness>)
+    await userEvent.click(screen.getByText('Открыть'))
+    expect(screen.getByText('Visible first')).toHaveFocus()
+    await userEvent.tab({ shift: true })
+    expect(screen.getByText('Visible last')).toHaveFocus()
+    await userEvent.tab()
+    expect(screen.getByText('Visible first')).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByText('Открыть')).toHaveFocus()
+  })
+
+  it('keeps Tab inside an empty dialog and recovers after a focused control disappears', async () => {
+    const view = render(<Dialog title="Pending" showClose={false}><button>Temporary</button></Dialog>)
+    view.rerender(<Dialog title="Pending" showClose={false}><p>Loading</p></Dialog>)
+    await userEvent.tab()
+    expect(screen.getByRole('dialog')).toHaveFocus()
+    await userEvent.tab({ shift: true })
+    expect(screen.getByRole('dialog')).toHaveFocus()
+    view.rerender(<Dialog title="Pending" showClose={false}><button>Ready</button></Dialog>)
+    await userEvent.tab()
+    expect(screen.getByText('Ready')).toHaveFocus()
+  })
+
   it('фокус уходит на первый интерактивный элемент и возвращается на открывашку', async () => {
     render(<Harness />)
     const opener = screen.getByText('Открыть')

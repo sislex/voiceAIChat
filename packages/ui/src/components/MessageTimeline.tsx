@@ -103,12 +103,21 @@ export function MessageTimeline({
   voice = 'idle',
   endMs
 }: MessageTimelineProps): JSX.Element | null {
+  const [expanded, setExpanded] = useState(false)
   const [nowTick, setNowTick] = useState(() => Date.now())
   useEffect(() => {
     if (!(live && mode === 'brief')) return
     const id = setInterval(() => setNowTick(Date.now()), 1000)
     return () => clearInterval(id)
   }, [live, mode])
+
+  if (!live && activity.length > 5 && !expanded) {
+    return <>
+      {text && <Markdown>{text}</Markdown>}
+      <button type="button" aria-expanded={false} onClick={() => setExpanded(true)}>Показать все {activity.length} действий</button>
+    </>
+  }
+  if (live || expanded) mode = 'detailed'
 
   // Минимально — только текст. В живом виде без текста показываем строку статуса.
   if (mode === 'minimal') {

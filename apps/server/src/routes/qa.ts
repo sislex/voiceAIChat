@@ -14,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: KanbanUploads, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => Promise<boolean>, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string, qaStageChanged?: (projectId:string, taskId:string, stage: QaRunStage)=>void): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: KanbanUploads, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => Promise<boolean>, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string, qaStageChanged?: (projectId:string, taskId:string, stage: QaRunStage | 'manual_qa')=>void): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = await db.qa.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
@@ -131,7 +131,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     async (req, reply) => {
       try {
         const session = await db.qa.startQaSession(uid(req), { projectId: req.params.projectId, taskId: req.params.taskId, ...req.body })
-        if (session) boardChanged?.(req.params.projectId)
+        if (session) {boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'manual_qa')}
         return session ?? reply.code(404).send({ error: 'task not found' })
       } catch (error) { return qaError(reply, error) }
     }
@@ -140,7 +140,9 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     `${base}/results/:resultId`,
     async (req, reply) => {
       try {
-        return await db.qa.saveQaResult(uid(req), req.params.projectId, req.params.taskId, req.params.resultId, req.body.revision, req.body.patch)
+        const result=await db.qa.saveQaResult(uid(req), req.params.projectId, req.params.taskId, req.params.resultId, req.body.revision, req.body.patch)
+        qaStageChanged?.(req.params.projectId,req.params.taskId,'manual_qa')
+        return result
       } catch (error) { return qaError(reply, error) }
     }
   )
@@ -188,9 +190,11 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
         const extension = extname(upload.name).toLowerCase()
         const expectedExtension = detected === 'image/png' ? '.png' : detected === 'image/jpeg' ? ['.jpg', '.jpeg'].includes(extension) : extension === '.webp'
         if (!detected || detected !== upload.mimeType || !expectedExtension) return reply.code(400).send({ error: 'invalid screenshot format' })
-        return await db.qa.addQaAttachment(uid(req), req.params.projectId, req.params.taskId, req.params.resultId, {
+        const attachment=await db.qa.addQaAttachment(uid(req), req.params.projectId, req.params.taskId, req.params.resultId, {
           uploadId: upload.id, name: basename(upload.name), mimeType: detected, size: bytes.byteLength, caption: req.body.caption
         })
+        qaStageChanged?.(req.params.projectId,req.params.taskId,'manual_qa')
+        return attachment
       } catch (error) { return qaError(reply, error) }
     }
   )
@@ -237,10 +241,10 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     }
     catch (error) { return qaError(reply, error) }
   })
-  app.post<{ Params: { runId: string } }>('/api/qa/runs/:runId/retry', async (req, reply) => {
+  app.post<{ Params: { runId: string }; Body: { scenarioIds?: string[] } | undefined }>('/api/qa/runs/:runId/retry', async (req, reply) => {
     try {
       const userId = uid(req)
-      const run = await db.qa.retryQaStageRun(userId, req.params.runId)
+      const run = await db.qa.retryQaStageRun(userId, req.params.runId, req.body?.scenarioIds)
       if (run?.stage === 'automated_qa' && (run.status === 'queued' || run.status === 'running')) launchAutomatedQa?.(run.id, userId)
       if (run) { boardChanged?.(run.projectId); qaStageChanged?.(run.projectId, run.taskId, run.stage) }
       return run ? reply.code(202).send(run) : reply.code(404).send({ error: 'run not found' })

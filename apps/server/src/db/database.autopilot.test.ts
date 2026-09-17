@@ -145,6 +145,7 @@ describe('остановка на ручном QA для отдельной за
     }
   })
 
+  // @testCase TC-GATE-01
   it('наследуется при создании, затем сохраняется независимо от проекта', async () => {
     const project = await db.projects.createProject('alice', { name: 'P' })
     await db.projects.updateProject('alice', project.id, { autoPilotDefault: true, autoPilotRequiresManualQa: true })
@@ -155,6 +156,7 @@ describe('остановка на ручном QA для отдельной за
     expect((await db.tasks.autoPilotSnapshot(project.id))[0].requiresManualQa).toBe(true)
     await db.tasks.updateTask('alice', project.id, task.id, { autoPilotRequiresManualQa: false })
     expect((await db.tasks.autoPilotSnapshot(project.id))[0].requiresManualQa).toBe(false)
+    expect((await db.tasks.getTaskDetail('alice', project.id, task.id))!.autoPilot).toBe(true)
     expect((await db.tasks.getBoard('alice', project.id))!.tasks[0].autoPilotRequiresManualQa).toBe(false)
     await db.tasks.updateTask('alice', project.id, task.id, { autoPilotRequiresManualQa: true })
     expect((await db.tasks.getTaskDetail('alice', project.id, task.id))!.autoPilotRequiresManualQa).toBe(true)

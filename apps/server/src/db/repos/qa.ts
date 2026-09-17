@@ -2,7 +2,7 @@
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
 import type { AutomatedQaMode, AutomatedQaScenario } from '@voicechat/shared'
-import { parseAutomatedQaScenarios, type LlmProvider, type KanbanColumnSemanticType, QA_CRITERION_TEST_TYPES, canCompleteQa, canTransitionWorkflow, validateQaResult, QA_RESULT_STATUSES, type AcceptanceCriterion, type AcceptanceCriterionSnapshot, type AcceptanceCriterionVersion, type QaTaskState, type AnyQaStageRun, type QaRunStage, type QaStageRunStatus, QA_RUN_KIND, canCompleteAutomation, type QaSession, type QaCriterionResult, type QaAttachment, type QaIssue, type QaResultStatus, type QaIssueClassification, type QaSeverity, type QaFrequency } from '@voicechat/shared'
+import { failedQaScenarios, parseAutomatedQaScenarios, type LlmProvider, type KanbanColumnSemanticType, QA_CRITERION_TEST_TYPES, canCompleteQa, canTransitionWorkflow, validateQaResult, QA_RESULT_STATUSES, type AcceptanceCriterion, type AcceptanceCriterionSnapshot, type AcceptanceCriterionVersion, type QaTaskState, type AnyQaStageRun, type QaRunStage, type QaStageRunStatus, QA_RUN_KIND, canCompleteAutomation, type QaSession, type QaCriterionResult, type QaAttachment, type QaIssue, type QaResultStatus, type QaIssueClassification, type QaSeverity, type QaFrequency } from '@voicechat/shared'
 import { BaseRepo } from './base.js'
 import { normalizeAutomatedQaScenario, parseStringArray, parseJsonValue } from './support.js'
 
@@ -92,6 +92,15 @@ export class QaRepo extends BaseRepo {
     await this.sql.run(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`, [this.newId(), projectId, taskId, action, 'automation', JSON.stringify(payload), this.now()])
   }
 
+  /** Persisted guard: restarting the coordinator must not repeat the same stop event. */
+  async hasAutoPilotStopForRun(taskId: string, runId: string): Promise<boolean> {
+    const row = await this.sql.get(
+      `SELECT id FROM qa_audit WHERE task_id=? AND action='autopilot.stopped' AND payload_json LIKE ? LIMIT 1`,
+      [taskId, `%"runId":${JSON.stringify(runId)}%`]
+    )
+    return Boolean(row)
+  }
+
   /**
    * Новая попытка этапа. Для Playwright-режима фиксируется **снимок** сценария:
    * настройку проекта владелец правит, а ран обязан помнить, что прогонял
@@ -109,8 +118,8 @@ export class QaRepo extends BaseRepo {
     const attempt = Number(((await this.sql.get(`SELECT COALESCE(MAX(attempt),0)+1 AS n FROM qa_stage_runs WHERE task_id=? AND stage=?`, [taskId, stage])) as { n: number }).n)
     const id = this.newId(), now = this.now()
     const project = stage === 'automated_qa' ? (await this.sql.get(`SELECT automated_qa_mode,automated_qa_scenario_json FROM projects WHERE id=?`, [projectId])) as { automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined : undefined
-    const snapshot = stage === 'automated_qa' && project?.automated_qa_mode === 'playwright'
-      ? (scenarios ?? parseAutomatedQaScenarios(parseJsonValue<unknown>(project.automated_qa_scenario_json ?? '', []))).map(normalizeAutomatedQaScenario)
+    const snapshot = stage === 'automated_qa' && (scenarios != null || project?.automated_qa_mode === 'playwright')
+      ? (scenarios ?? parseAutomatedQaScenarios(parseJsonValue<unknown>(project?.automated_qa_scenario_json ?? '', []))).map(normalizeAutomatedQaScenario)
       : null
     await this.sql.run(`INSERT INTO qa_stage_runs
       (id,project_id,task_id,stage,status,attempt,triggered_by,branch,commit_sha,current_step,scenario_json,created_at,started_at)
@@ -123,7 +132,7 @@ export class QaRepo extends BaseRepo {
     if (!row?.agent_id || !row.path) return null
     return {
       agentId: row.agent_id, workdir: row.path, command: row.automated_qa_command?.trim() || 'npm test',
-      mode: row.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
+      mode: row.scenario_json || row.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
       // Снимок рана важнее настройки проекта: пока ран шёл, её могли поправить.
       // Фолбэк на проект — для ранов, заведённых до появления снимка.
       scenarios: parseAutomatedQaScenarios(parseJsonValue<unknown>(row.scenario_json || row.automated_qa_scenario_json || '', [])).map(normalizeAutomatedQaScenario)
@@ -190,13 +199,19 @@ export class QaRepo extends BaseRepo {
     return await this.getQaStageRun(userId, runId)
   }
 
-  async retryQaStageRun(userId: string, runId: string): Promise<AnyQaStageRun | null> {
+  async retryQaStageRun(userId: string, runId: string, scenarioIds?: string[]): Promise<AnyQaStageRun | null> {
     const run = await this.getQaStageRun(userId, runId)
     if (!run) return null
     if (!run.canRetry) throw new Error('Повтор этого рана недоступен')
     // Повтор воспроизводит упавший прогон: берётся снимок сценария того рана, а
     // не текущая настройка проекта. Иначе повторяется не то, что упало.
-    return await this.startQaStageRun(userId, run.projectId, run.taskId, run.stage, run.scenarios)
+    let scenarios = run.scenarios
+    if (scenarioIds !== undefined) {
+      const allowed = failedQaScenarios(run)
+      if (!Array.isArray(scenarioIds) || !scenarioIds.length || new Set(scenarioIds).size !== scenarioIds.length || scenarioIds.some(id => typeof id !== 'string' || !allowed.some(item => item.id === id))) throw new Error('Недопустимый выбор проваленных сценариев')
+      scenarios = allowed.filter(item => scenarioIds.includes(item.id)).map(item => run.scenarios![item.index])
+    }
+    return await this.startQaStageRun(userId, run.projectId, run.taskId, run.stage, scenarios)
   }
 
   async answerQaStageRun(userId: string, runId: string, answer: string): Promise<AnyQaStageRun | null> {

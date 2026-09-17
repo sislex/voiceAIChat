@@ -6,7 +6,7 @@
 // для fix-loop, а брокер здесь — двойник, который умеет показать живые токены.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars, type MergeRun } from '@voicechat/shared'
+import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars, type MergeRun, type TurnMeta } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { automationHint, createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
 import { kbTaskQuery } from '../kb/taskQuery.js'
@@ -194,8 +194,80 @@ describe('работа модели: диагностика автоматиче
   })
 })
 
+describe('browser-check completion enforcement', () => {
+  it('rejects narrative success without actual browser observations', async () => {
+    const { ctx, task } = await setup()
+    ctx.agentId = 'agent-1'
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/#/projects/p/releases' })
+    const rec = recorder('All viewports and screenshots passed.')
+    const result = await hooksWith(rec.client, { previewMcpBaseUrl: 'http://reader/mcp?k=s', previewTurns: previewTokens() }).modelWork(ctx)
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('browser_check:blocked') })
+    expect(rec.last()?.prompt).toContain('http://agent-1.machine.internal:5173/#/projects/p/releases')
+  })
+  it('adds the exact browser URL on the approved-plan transition, never to the read-only plan', async () => {
+    const { ctx, task } = await setup()
+    ctx.agentId = 'agent-1'
+    ctx.run.mode = 'plan'
+    ctx.askPlanApproval = async () => ({ decision: 'approved', comment: '' })
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', startPath: '/#/projects/p/releases', devServerPort: 5173 })
+    const rec = recorder('Plan ready')
+    const result = await hooksWith(rec.client, { previewMcpBaseUrl: 'http://reader/mcp?k=s', previewTurns: previewTokens() }).modelWork(ctx)
+    expect(rec.all()).toHaveLength(2)
+    expect(rec.all()[0].previewMcpUrl).toBeUndefined()
+    expect(rec.all()[0].prompt).not.toContain('Mandatory browser-check')
+    expect(rec.all()[1].prompt).toContain('http://agent-1.machine.internal:5173/#/projects/p/releases')
+    expect(rec.all()[1].previewSurface).toBe('chromium')
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('browser_check:blocked') })
+  })
+
+  it('fails closed before starting the model if Reader infrastructure is missing', async () => {
+    const { ctx, task } = await setup()
+    ctx.agentId = 'agent-1'
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium' })
+    const rec = recorder()
+    expect(await hooksWith(rec.client).modelWork(ctx)).toMatchObject({ ok: false, error: expect.stringContaining('infrastructure_error') })
+    expect(rec.all()).toHaveLength(0)
+  })
+  it('accepts durable observations only for the current stage', async () => {
+    const { ctx, task } = await setup()
+    ctx.agentId = 'agent-1'
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium' })
+    const { CI_BROWSER_VIEWPORTS } = await import('@voicechat/shared')
+    const events = [
+      { action: 'open', ok: true, target: true, requestedTarget: true },
+      ...CI_BROWSER_VIEWPORTS.flatMap(width => [
+        { action: 'viewport', ok: true, target: true, width },
+        ...['read', 'a11y', 'styles', 'evaluate', 'errors', 'console', 'network', 'screenshot', 'press', 'click'].map(action => ({ action, ok: true, target: true }))
+      ])
+    ]
+    for (const event of events) await db.ci.addCiEvent({ projectId: ctx.project.id, runId: ctx.run.id, type: 'browser.observed', actorType: 'system', payload: { stepId: ctx.parentStepId, event } })
+    expect(await hooksWith(recorder().client, { previewMcpBaseUrl: 'http://reader/mcp?k=s', previewTurns: previewTokens() }).modelWork(ctx)).toEqual({ ok: true })
+    ctx.parentStepId = 'retry-step'
+    expect(await hooksWith(recorder().client, { previewMcpBaseUrl: 'http://reader/mcp?k=s', previewTurns: previewTokens() }).modelWork(ctx)).toMatchObject({ ok: false })
+  })
+})
+
 describe('работа модели: браузерная проверка задачи', () => {
   const PREVIEW_MCP = 'http://voicechat:8787/mcp/preview?k=secret'
+
+  it.each(['continue', 'block'] as const)('handles unavailable preview with %s without preventing code work', async (failurePolicy) => {
+    const { task, ctx } = await setup()
+    await db.ci.setTaskDevelopmentPreview(task.id, { enabled: true })
+    await db.ci.setTaskBrowserCheck(task.id, { mode:'chromium', failurePolicy })
+    const rec = recorder()
+    const result = await hooksWith(rec.client).modelWork(ctx)
+    expect(rec.last()?.prompt).toContain('feature_disabled')
+    expect(result.ok).toBe(failurePolicy === 'continue')
+  })
+
+  it.each(['continue', 'block'] as const)('enforces browser-only %s after bounded unavailable checks', async (failurePolicy) => {
+    const { task, ctx } = await setup()
+    await db.ci.setTaskBrowserCheck(task.id, { mode:'chromium', failurePolicy })
+    const rec = recorder(), verifyBrowserOnly = vi.fn(async () => false)
+    const result = await hooksWith(rec.client, { verifyBrowserOnly }).modelWork(ctx)
+    expect(verifyBrowserOnly).toHaveBeenCalledTimes(2)
+    expect(result.ok).toBe(failurePolicy === 'continue')
+  })
 
   it('без режима проверки инструментов браузера у хода нет', async () => {
     const { ctx } = await setup()
@@ -207,6 +279,7 @@ describe('работа модели: браузерная проверка за�
 
   it('режим chromium даёт ходу инструменты и поверхность изолированного браузера', async () => {
     const { task, ctx } = await setup()
+    ctx.agentId = 'agent-1'
     await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
     const rec = recorder()
     const tokens = previewTokens()
@@ -214,11 +287,12 @@ describe('работа модели: браузерная проверка за�
     expect(rec.last()?.previewMcpUrl).toContain(`${PREVIEW_MCP}&turn=`)
     expect(rec.last()?.previewSurface).toBe('chromium')
     // Токен адресует ход рана: владелец рана и чат задачи.
-    expect(tokens.entries).toEqual([{ userId: U, conversationId: ctx.run.conversationId }])
+    expect(tokens.entries).toEqual([expect.objectContaining({ userId: U, conversationId: ctx.run.conversationId, ciCheck: { runId: ctx.run.id, stepId: ctx.parentStepId, url: 'http://agent-1.machine.internal:5173/' } })])
   })
 
   it('режим user_panel оставляет поверхностью панель пользователя', async () => {
     const { task, ctx } = await setup()
+    ctx.agentId = 'agent-1'
     await db.ci.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
     const rec = recorder()
     await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTurns: previewTokens() }).modelWork(ctx)
@@ -738,6 +812,37 @@ describe('расход хода: модель, время, семантика в
     expect(rows[0]).toMatchObject({ model: 'gpt-5.4', inputTokens: 200, cacheReadTokens: 800, inputSemantics: 'no_cache', numTurns: 1 })
     expect(rows[0].durationMs).toBeGreaterThan(0)
     expect(rows[0].costUsd).toBeNull() // настоящей стоимости CLI не дал — оценит отчёт
+  })
+
+  it('Codex thread totals across the turns of one run are recorded as per-turn spend', async () => {
+    const { run, ctx } = await codexRun('gpt-5.4')
+    // The same run resumes its thread: turn.completed grows with every turn.
+    const totals = [
+      { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 800, cacheCreationTokens: 0 },
+      { inputTokens: 2500, outputTokens: 80, cacheReadTokens: 2000, cacheCreationTokens: 0 }
+    ]
+    let call = 0
+    const client: LlmClient = {
+      send: (_req, handlers) => {
+        const t = totals[Math.min(call++, totals.length - 1)]
+        // The parser exposes the raw totals in the usage fields and repeats them
+        // in codexThreadUsage — the same shape the Codex sink hands over.
+        const usage: TurnMeta = { ...t, codexThreadUsage: { ...t } }
+        void handlers.onSession('thread-9')
+        handlers.onUsage?.(usage)
+        void handlers.onDelta?.('готово')
+        void handlers.onDone?.('готово', usage)
+        return { cancel: () => {} }
+      }
+    }
+    const hooks = hooksWith(client, { kb: undefined })
+    const resumable = { ...ctx, setModelSessionId: async () => {} } as unknown as CiModelContext
+    await hooks.modelWork(resumable)
+    await hooks.modelWork(resumable)
+    const rows = await db.ci.listCiRunUsage(run.id)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ inputTokens: 200, cacheReadTokens: 800, outputTokens: 50, inputSemantics: 'no_cache' })
+    expect(rows[1]).toMatchObject({ inputTokens: 300, cacheReadTokens: 1200, outputTokens: 30, inputSemantics: 'no_cache' })
   })
 
   it('модель, которую не назвал ни CLI, ни настройка рана, становится unknown', async () => {

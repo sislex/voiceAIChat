@@ -3,6 +3,7 @@ import type { BrowserEvaluateOptions, BrowserEvaluationSummary } from './browser
 import type { BrowserConsoleOptions, BrowserDiagnosticValue, BrowserLogContext, BrowserLogSummary, BrowserNetworkOptions, BrowserNetworkState } from './browserDiagnostics'
 import type { BrowserDownloadCommand, BrowserDownloadInfo } from './browserDownloads'
 import type { BrowserDialogAnswer, BrowserDialogInfo } from './browserDialogs'
+import type { CodexThreadUsage } from './codexUsage'
 import type { BrowserProfileMode, BrowserSiteDataResetOptions } from './browserProfile'
 // Общие типы, разделяемые между main, preload и renderer.
 
@@ -185,6 +186,12 @@ export interface BrowserSessionMetadata {
   /** Ручной режим запрещает модели менять страницу до возврата управления. */
   control?: 'shared' | 'user'
   queuedCommands?: number
+  /** Tail of the session log: the panel shows it as a live feed of both sides. */
+  history?: BrowserHistoryEntry[]
+  /** Emulated device, so the panel shows touch and pixel ratio, not just width. */
+  device?: BrowserDeviceState
+  /** Открытая просьба модели к человеку: панель показывает её и ждёт ответа. */
+  ask?: BrowserAskRequest
   /**
    * Внутренний адрес, с которого страница пришла на самом деле, если оператор
    * настроил алиас. Сам `currentUrl` при этом остаётся тем, который назвал
@@ -203,6 +210,57 @@ export interface BrowserFrameMetadata {
   timestamp: number
 }
 
+/**
+ * Emulated environment of the browser. Everything here is a context-level
+ * setting in Playwright, so it survives navigation and applies to every tab —
+ * which is exactly how a person's own machine behaves.
+ */
+export interface BrowserEnvironmentOptions {
+  colorScheme?: 'light' | 'dark' | 'no-preference'
+  reducedMotion?: 'reduce' | 'no-preference'
+  forcedColors?: 'active' | 'none'
+  offline?: boolean
+  /** Coordinates given to the page; `null` revokes the position. */
+  geolocation?: { latitude: number; longitude: number; accuracy?: number } | null
+  /** Permissions the site would otherwise have to ask the person for. */
+  permissions?: string[]
+}
+
+/** Current emulation, echoed back so the model can see what is in effect. */
+export interface BrowserEnvironmentState {
+  colorScheme: 'light' | 'dark' | 'no-preference'
+  reducedMotion: 'reduce' | 'no-preference'
+  forcedColors: 'active' | 'none'
+  offline: boolean
+  geolocation?: { latitude: number; longitude: number; accuracy?: number } | null
+  permissions: string[]
+}
+
+export interface BrowserCookieRequest {
+  /** `list` reads, `add` sets one, `clear` drops all or those named. */
+  action: 'list' | 'add' | 'clear'
+  name?: string
+  value?: string
+  url?: string
+  domain?: string
+  path?: string
+  expires?: number
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: 'Strict' | 'Lax' | 'None'
+}
+
+export interface BrowserCookieInfo {
+  name: string
+  value: string
+  domain: string
+  path: string
+  expires?: number
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: string
+}
+
 export type BrowserInputAction =
   | { type: 'mouseMove'; x: number; y: number }
   | { type: 'mouseDown'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
@@ -211,7 +269,13 @@ export type BrowserInputAction =
   | { type: 'wheel'; deltaX: number; deltaY: number; x?: number; y?: number }
   | { type: 'drag'; from: { x: number; y: number }; to: { x: number; y: number } }
   | { type: 'type'; text: string }
-  | { type: 'press'; key: string }
+  | { type: 'press'; key: string; repeat?: number }
+  /**
+   * Keyboard shortcut as the person types it: modifiers held down around one
+   * key. keyDown/keyUp could express it, but only as three round trips, and a
+   * dropped middle call left Control stuck down for every later keystroke.
+   */
+  | { type: 'hotkey'; key: string; modifiers: Array<'Shift' | 'Control' | 'Alt' | 'Meta' | 'ControlOrMeta'>; repeat?: number }
   | { type: 'keyDown'; key: string }
   | { type: 'keyUp'; key: string }
 
@@ -223,22 +287,38 @@ export type BrowserInputAction =
  */
 export type BrowserSelectorAction =
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }
-  | { kind: 'press'; selector: string; key: string }
-  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number }
-  | { kind: 'type'; selector: string; text: string; submit?: boolean }
+  | { kind: 'press'; selector: string; key: string; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta' | 'ControlOrMeta'>; repeat?: number }
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom' | 'element' | 'nextPage' | 'prevPage'; dx?: number; dy?: number }
+  | { kind: 'type'; selector?: string; field?: string; text: string; submit?: boolean; append?: boolean; delay?: number }
   | { kind: 'read'; selector?: string; limit?: number; offset?: number }
-  | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean }
+  | { kind: 'find'; text?: string; selector?: string; role?: string; limit?: number; visibleOnly?: boolean }
   | ({ kind: 'wait' } & BrowserWaitOptions)
   /** Наведение курсора: выпадающие меню и тултипы иначе не открыть. */
   | { kind: 'hover'; selector?: string; text?: string }
   /** Сложный контрол: select по значению или подписи, checkbox/radio, date/range. */
-  | { kind: 'set'; selector: string; value?: string; checked?: boolean }
+  | { kind: 'set'; selector: string; value?: string; values?: string[]; checked?: boolean }
+  /**
+   * Whole form in one call. A person fills a form as one act; doing it field by
+   * field costs the model a round trip each, and a form that re-renders between
+   * calls (React controlled inputs) loses the earlier fields entirely.
+   */
+  | { kind: 'fillForm'; selector?: string; fields: BrowserFormField[]; delay?: number }
+  /** Current state of a form: every field, its value and whether it is required. */
+  | { kind: 'formState'; selector?: string; limit?: number }
+  /** Browser validation as the person sees it: which fields block submit and why. */
+  | { kind: 'validity'; selector?: string }
+  /** Submit a form the way Enter does, running validation and the submit handler. */
+  | { kind: 'submit'; selector?: string }
+  /** Options a control offers: select, datalist, radio group. */
+  | { kind: 'options'; selector: string; limit?: number }
+  /** Drop files onto a zone — the upload path that has no input[type=file]. */
+  | { kind: 'dropFile'; selector: string; files: BrowserUploadFile[] }
   /** Перетаскивание от одного селектора к другому (перенос карточки на доске). */
   | { kind: 'drag'; from: string; to: string }
   /** Дерево доступности: роли и имена, как их видит скринридер. */
   | { kind: 'a11y'; selector?: string; limit?: number }
   /** Загрузка файла в input[type=file]: содержимое приходит base64 от модели. */
-  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string }
+  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string; files?: BrowserUploadFile[] }
   /**
    * Что за элемент в точке кадра. Нужен записи сценария: клик по кадру
    * координатный, а шаг сценария обязан быть селекторным — иначе запись
@@ -247,6 +327,57 @@ export type BrowserSelectorAction =
   | { kind: 'describe'; x: number; y: number }
   /** Прокрутить к элементу: вслепую колесом до него можно не добраться. */
   | { kind: 'scrollTo'; selector: string }
+  /**
+   * Keyboard-first work the way a person does it. Without a focus of its own the
+   * model had to click an element to reach it, and a click on a menu entry or a
+   * link is a different event than tabbing onto it — that difference is exactly
+   * what keyboard accessibility bugs live in. No selector reports the currently
+   * focused element instead of moving focus.
+   */
+  | { kind: 'focus'; selector?: string }
+  /** Empty a field the way Ctrl+A Delete does, with input/change events. */
+  | { kind: 'clear'; selector: string }
+  /** Select text of an element (or the whole document) as a drag would. */
+  | { kind: 'selectText'; selector?: string }
+  /** What is selected right now: the text a person would copy. */
+  | { kind: 'copy' }
+  /** Paste text into the focused field (or `selector`) with a paste event. */
+  | { kind: 'paste'; selector?: string; text: string }
+  /** Tab order of the page: what a keyboard user walks through, in order. */
+  | { kind: 'focusOrder'; selector?: string; limit?: number }
+  /** Scroll a feed until the target appears or the content ends. */
+  | { kind: 'scrollUntil'; selector?: string; text?: string; container?: string; maxScrolls?: number; step?: number }
+  /** How many nodes match — an assertion that does not pull their text along. */
+  | { kind: 'count'; selector?: string; text?: string; visibleOnly?: boolean }
+  /** A table as rows under headings, with paging. */
+  | { kind: 'table'; selector: string; offset?: number; limit?: number; columns?: string[] }
+  /** Repeating blocks (cards, feed items) as records with their own actions. */
+  | { kind: 'list'; selector: string; offset?: number; limit?: number }
+  /** Where the page is scrolled and how much is left below. */
+  | { kind: 'metrics' }
+  /** Geometry of one element: visible, covered, how far to scroll to it. */
+  | { kind: 'measure'; selector: string }
+  /** Draw a box around an element so the person sees what the model means. */
+  | { kind: 'highlight'; selector: string; ms?: number }
+  /** Video and audio of the page: state, and play/pause/seek/mute as a person does. */
+  | { kind: 'media'; selector?: string; do?: 'play' | 'pause' | 'mute' | 'unmute'; seconds?: number }
+  /**
+   * Web storage of the site: what the page keeps between reloads. Half of the
+   * "works for me" bugs live here — a stale flag in localStorage, a leftover
+   * draft, a feature toggle — and the model could only reach it through
+   * `evaluate`, which the project policy gates as dangerous code.
+   */
+  | { kind: 'storage'; area?: 'local' | 'session' | 'both'; do?: 'read' | 'set' | 'remove' | 'clear'; key?: string; value?: string; limit?: number }
+  /** Source of the page itself, in slices — the markup a person would view. */
+  | { kind: 'source'; selector?: string; offset?: number; limit?: number }
+  /** A table taken out as CSV: the shape a person pastes into a spreadsheet. */
+  | { kind: 'csv'; selector: string; offset?: number; limit?: number }
+  /**
+   * Several checks at once, answered as one verdict. A person looking at a page
+   * says "the total is 500, the error is gone, three rows" in one breath; the
+   * model had to read each of them separately and reason about raw text.
+   */
+  | { kind: 'expect'; checks: BrowserExpectation[] }
 
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
@@ -274,6 +405,56 @@ export interface BrowserSelectorResult {
   structureTruncated?: boolean
   /** Описание элемента под точкой (`describe`). */
   element?: BrowserElementDescription
+  /** Focused element after `focus`, or the current one when asked without a selector. */
+  focus?: BrowserFocusState
+  /** Selected text after `selectText`/`copy` — what Ctrl+C would put in the buffer. */
+  selection?: { text: string; truncated?: boolean }
+  /** Tab order: elements a keyboard reaches, in the order Tab reaches them. */
+  focusOrder?: Array<{ selector: string; tag: string; name: string; role?: string; tabIndex: number; visible: boolean; disabled?: boolean }>
+  /** Per-field outcome of `fillForm`: a partially filled form must not read as success. */
+  filled?: Array<{ selector: string; ok: boolean; error?: string }>
+  /** Form contents for `formState`: what the page would submit right now. */
+  form?: { selector: string; action?: string; method?: string; fields: BrowserFormFieldState[]; total: number; truncated?: boolean }
+  /** Validation as the browser reports it; `blocking` is what stops submit. */
+  validity?: { valid: boolean; blocking: Array<{ selector: string; message: string; reasons: string[] }>; checked: number }
+  /** Options of a control for `options`. */
+  options?: { selector: string; kind: 'select' | 'datalist' | 'radio'; multiple?: boolean; total: number; items: Array<{ value: string; label: string; selected?: boolean; disabled?: boolean }> }
+  /** Number of matches for `count` — `total` carries it, this says what was counted. */
+  counted?: { selector?: string; text?: string; visible: number; all: number }
+  /** Table contents for `table`: records keyed by heading. */
+  table?: { selector: string; headings: string[]; total: number; offset: number; rows: Array<Record<string, string>>; nextOffset?: number }
+  /** Repeating blocks for `list`. */
+  list?: { selector: string; total: number; offset: number; nextOffset?: number; items: Array<{ selector: string; title?: string; text: string; href?: string; actions?: Array<{ selector: string; text: string }> }> }
+  /** Page geometry for `metrics`. */
+  metrics?: { scroll: { top: number; left: number }; page: { width: number; height: number }; viewport: { width: number; height: number }; screensBelow: number; atBottom: boolean }
+  /** Element geometry for `measure`; `covered` is the usual reason a click misses. */
+  measured?: { selector: string; rect: { x: number; y: number; width: number; height: number }; inViewport: boolean; hidden: boolean; covered: boolean; coveredBy?: string; scrollToTop: number }
+  /** How the feed scrolled for `scrollUntil`: steps taken and whether it ended. */
+  scrolledUntil?: { found: boolean; scrolls: number; atBottom: boolean; top: number }
+  /** Media elements of the page for `media`, with what the person would see. */
+  media?: Array<{ selector: string; kind: 'video' | 'audio'; paused: boolean; muted: boolean; currentTime: number; duration: number; volume: number; src?: string; readyState: number }>
+  /** Verdict of `expect`: which checks passed and what the page actually showed. */
+  expected?: { passed: boolean; checks: Array<{ ok: boolean; describe: string; actual?: string }> }
+  /** Session log for `history`: what happened in this browser, by whom. */
+  history?: { total: number; entries: BrowserHistoryEntry[] }
+  /** Web storage for `storage`, per area, with the origin it belongs to. */
+  storage?: { origin: string; local?: Array<{ key: string; value: string; bytes: number }>; session?: Array<{ key: string; value: string; bytes: number }>; localTotal?: number; sessionTotal?: number; truncated?: boolean }
+  /** Page source for `source`, sliced like `read`. */
+  source?: { html: string; total: number; offset: number; nextOffset?: number }
+  /** Table as CSV text for `csv`, with the same paging as `table`. */
+  csv?: { text: string; rows: number; total: number; offset: number; nextOffset?: number }
+  /**
+   * Why the action failed and what to do about it. The raw Playwright line
+   * ("Timeout 5000ms exceeded") told the model nothing it could act on, so it
+   * retried the same click; each of these failures has a different next step.
+   */
+  failure?: {
+    kind: 'not-found' | 'ambiguous' | 'covered' | 'disabled' | 'detached' | 'navigated' | 'timeout' | 'other'
+    reason: string
+    advice?: string
+    /** Elements that look like the one asked for — what a person would see instead. */
+    candidates?: Array<{ text: string; tag: string; visible: boolean; disabled?: boolean }>
+  }
   /**
    * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
    * проверкам сценария — «текста нет» и «до текста не дочитали» это разные
@@ -281,6 +462,200 @@ export interface BrowserSelectorResult {
    */
   truncated?: boolean
   error?: string
+}
+
+/**
+ * One check of `expect`. Deliberately narrow: these are the things a person
+ * states about a page out loud, not a general expression language.
+ */
+export type BrowserExpectation =
+  | { is: 'text'; selector?: string; value: string; absent?: boolean }
+  | { is: 'visible'; selector: string; absent?: boolean }
+  | { is: 'count'; selector: string; value: number }
+  | { is: 'value'; selector: string; value: string }
+  | { is: 'url'; value: string }
+
+/**
+ * One line of what happened in the browser session. Kept by the runner because
+ * only it sees both sides: the person clicking in the panel and the model
+ * acting through MCP. Without it nobody could answer "what did the model just
+ * do here" — the page state is the only trace, and it lies about the order.
+ */
+export interface BrowserHistoryEntry {
+  at: number
+  actor: 'user' | 'assistant'
+  /** Short human wording: "клик по «Войти»", "переход на …", "заметка". */
+  title: string
+  kind: string
+  selector?: string
+  url?: string
+  ok: boolean
+  error?: string
+  /** Free-text note left by the model for the person watching the panel. */
+  note?: string
+}
+
+/**
+ * Emulated device. "Phone" used to mean only a narrow window: the page laid out
+ * as mobile, but `maxTouchPoints` stayed zero, `pointer: coarse` never matched
+ * and `devicePixelRatio` stayed 1 — which is exactly what carousels, hover menus
+ * and anything that tells a finger from a mouse get wrong.
+ */
+export interface BrowserDeviceOptions {
+  preset?: string
+  width?: number
+  height?: number
+  deviceScaleFactor?: number
+  touch?: boolean
+  orientation?: 'portrait' | 'landscape'
+  userAgent?: string
+}
+
+export interface BrowserDeviceState {
+  preset?: string
+  width: number
+  height: number
+  deviceScaleFactor: number
+  touch: boolean
+  orientation: 'portrait' | 'landscape'
+  userAgent?: string
+}
+
+/**
+ * Просьба модели к человеку. Живёт в сессии, а не в переписке: человек смотрит
+ * на кадр браузера, и просьба должна быть там же, где экран, которого она
+ * касается.
+ */
+export interface BrowserAskRequest {
+  id: string
+  text: string
+  at: number
+  /** Сколько ждать ответа; по истечении просьба закрывается как неотвеченная. */
+  timeoutMs: number
+  answered?: { done: boolean; text?: string; at: number }
+}
+
+/**
+ * Именованный снимок состояния страницы. «Не сломалась ли вёрстка» человек
+ * проверяет глазами — смотрит до и после; у модели сравнивать было не с чем.
+ */
+export interface BrowserSnapshotInfo {
+  name: string
+  fullPage?: boolean
+  at: number
+  url: string
+  title: string
+  bytes: number
+  textLength: number
+}
+
+/** Итог сравнения снимка с текущим состоянием страницы. */
+export interface BrowserSnapshotComparison {
+  name: string
+  /**
+   * Вердикт словами. Доля пикселей сама по себе не отвечает на вопрос человека:
+   * «нет различий» при изменившемся тексте почти всегда значит, что изменение
+   * ниже сгиба, а не что его нет.
+   */
+  verdict: 'identical' | 'visual' | 'dom-only' | 'resized'
+  /** Снимок сделан во всю длину страницы, а не только видимой части. */
+  fullPage?: boolean
+  /** Доля различающихся пикселей: 0 — совпало, 1 — не совпало нигде. */
+  ratio: number
+  changed: number
+  total: number
+  width: number
+  height: number
+  /** Прямоугольник, в который уместились различия: «всё в шапке» — это диагноз. */
+  area?: { x: number; y: number; width: number; height: number }
+  sizeChanged: boolean
+  /** Что появилось и исчезло в тексте страницы. */
+  text?: { added: string[]; removed: string[]; addedTotal: number; removedTotal: number }
+  urlChanged?: boolean
+}
+
+/**
+ * Правило сети: подменить ответ, заблокировать запрос или задержать его.
+ * Человек делает это в devtools за минуту; модель умела только смотреть журнал
+ * постфактум, а воспроизвести условие — нет.
+ */
+export interface BrowserNetworkRule {
+  /** Шаблон адреса с `*`: тот же синтаксис, что у `wait` по URL. */
+  url: string
+  action: 'mock' | 'block' | 'delay'
+  status?: number
+  body?: string
+  contentType?: string
+  delayMs?: number
+}
+
+export interface BrowserNetworkRuleList {
+  rules: BrowserNetworkRule[]
+  total: number
+}
+
+/** Finger gesture: a tap is not a mouse click, and pages handle them apart. */
+export interface BrowserTouchAction {
+  gesture: 'tap' | 'swipe' | 'long-press'
+  selector?: string
+  x?: number
+  y?: number
+  direction?: 'up' | 'down' | 'left' | 'right'
+  distance?: number
+  ms?: number
+}
+
+/** One field of a form fill: value, checkbox state or a chosen option. */
+export interface BrowserFormField {
+  selector: string
+  value?: string
+  values?: string[]
+  checked?: boolean
+}
+
+/** File handed to the page as bytes, for input[type=file] and drop zones alike. */
+export interface BrowserUploadFile {
+  name: string
+  mimeType?: string
+  base64: string
+}
+
+/** A field as the page holds it now — the answer to "did my fill land?". */
+export interface BrowserFormFieldState {
+  selector: string
+  tag: string
+  type?: string
+  name?: string
+  label?: string
+  value?: string
+  checked?: boolean
+  required?: boolean
+  disabled?: boolean
+  readOnly?: boolean
+  /** Browser-side validation message, empty when the field is valid. */
+  invalid?: string
+}
+
+/**
+ * Focused element as the keyboard sees it. `selector` is built the same way as
+ * for describe, so the model can act on what it found; `withinDialog` matters
+ * because focus escaping an open modal is the classic keyboard-trap bug.
+ */
+export interface BrowserFocusState {
+  /** No element is focused: focus sits on body or the page has just loaded. */
+  none?: boolean
+  selector?: string
+  tag?: string
+  role?: string
+  name?: string
+  text?: string
+  value?: string
+  disabled?: boolean
+  readOnly?: boolean
+  /** Visible focus ring: outline/box-shadow actually drawn on the element. */
+  visibleRing?: boolean
+  withinDialog?: boolean
+  rect?: { x: number; y: number; width: number; height: number }
 }
 
 /** Элемент кадра, пригодный для шага сценария и для разбора вёрстки. */
@@ -399,6 +774,43 @@ export type BrowserCommand = BrowserFrameTarget & (
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
   | { type: 'resize'; viewport: Pick<BrowserViewport, 'width'> & Partial<Pick<BrowserViewport, 'height' | 'deviceScaleFactor'>> }
+  /**
+   * The conditions the person is actually in: system theme, reduced motion,
+   * high contrast, a phone without network, a location. Pages behave differently
+   * under each, and none of it could be reproduced from the model's side.
+   */
+  | ({ type: 'environment' } & BrowserEnvironmentOptions)
+  /** Cookies of the session: read them, add one, or drop them by name. */
+  | ({ type: 'cookies' } & BrowserCookieRequest)
+  /** What happened in this session, by both sides; `clear` empties the log. */
+  | { type: 'history'; actor?: 'user' | 'assistant'; limit?: number; clear?: boolean }
+  /** A line the model writes into the panel so the person sees its intent. */
+  | { type: 'note'; text: string }
+  /**
+   * Просьба к человеку и ожидание его ответа. Есть места, где модель не должна
+   * действовать сама: код из СМС, капча, вход по паролю из менеджера. Раньше она
+   * упиралась в такой экран и либо стояла молча, либо пыталась пройти его сама.
+   */
+  | { type: 'ask'; text: string; timeoutMs?: number }
+  /** Ответ человека на просьбу: сделал или отказался. */
+  | { type: 'answer'; askId: string; done: boolean; text?: string }
+  /** Emulated device: size, pixel ratio, touch, orientation, user agent. */
+  | ({ type: 'device' } & BrowserDeviceOptions)
+  /** A finger gesture on the page — tap, swipe, long press. */
+  | ({ type: 'touch' } & BrowserTouchAction)
+  /** Network rules: mock a response, block a request, slow it down. */
+  | { type: 'network-rules'; do: 'add' | 'remove' | 'list'; rule?: BrowserNetworkRule; url?: string }
+  /** Named state snapshots and their comparison with the page as it is now. */
+  | { type: 'snapshot'; do: 'save' | 'list' | 'compare' | 'remove'; name?: string; threshold?: number; fullPage?: boolean }
+  /** A report of what was checked in the browser — for a task comment. */
+  | { type: 'report'; title?: string; limit?: number }
+  /**
+   * Вкладки так, как их называет человек: «та, где корзина», а не идентификатор.
+   * Ждать новую вкладку после клика тоже приходилось опросом в цикле.
+   */
+  | { type: 'tabs-do'; do: 'find' | 'wait-new' | 'close-others'; match?: string; timeoutMs?: number }
+  /** Состояние самой сессии: сколько живёт, что эмулируется, что подменено. */
+  | { type: 'session-info' }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)
@@ -806,6 +1218,12 @@ export interface TurnMeta extends TurnUsage {
   costUsd?: number
   /** Модель, которой отправлен ход (алиас claude / id codex). */
   model?: string
+  /**
+   * Cumulative thread totals reported by Codex `turn.completed` (whole thread,
+   * not this turn). Kept so the next turn of the thread can be priced as the
+   * difference; the `TurnUsage` fields above already hold that difference.
+   */
+  codexThreadUsage?: CodexThreadUsage
   /** Что именно ушло модели этим ходом — для панели «Подробнее». */
   request?: TurnRequestInfo
   /** Legacy-предложение одной задачи; читается UI для обратной совместимости. */
@@ -1064,7 +1482,55 @@ export function normalizeChatInstructions(raw: unknown): ChatInstruction[] {
   return DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item, enabled: flags[item.id] !== false }))
 }
 
+/** Progress is independent from general settings and contains no audio or transcript. */
+export const ONBOARDING_STEPS = ['microphone', 'tts', 'llm', 'machine', 'voice'] as const
+export type OnboardingStep = typeof ONBOARDING_STEPS[number]
+export const ONBOARDING_STATUSES = ['idle', 'checking', 'success', 'warning', 'error', 'skipped'] as const
+export type OnboardingStatus = typeof ONBOARDING_STATUSES[number]
+export interface OnboardingResult { status: OnboardingStatus; diagnostic: string }
+export interface OnboardingState {
+  configuration?: Partial<Record<OnboardingStep, string>>
+  version: 1
+  current: OnboardingStep
+  results: Record<OnboardingStep, OnboardingResult>
+}
+export function initialOnboarding(): OnboardingState {
+  return { version: 1, current: 'microphone', results: Object.fromEntries(
+    ONBOARDING_STEPS.map(step => [step, { status: 'idle', diagnostic: '' }])
+  ) as OnboardingState['results'] }
+}
+export function parseOnboarding(raw: unknown, recover = false): OnboardingState | null {
+  if (!raw || typeof raw !== 'object') return null
+  const value = raw as OnboardingState
+  if (value.version !== 1 || !ONBOARDING_STEPS.includes(value.current) || !value.results) return null
+  const state = initialOnboarding()
+  state.current = value.current
+  if (value.configuration !== undefined) {
+    if (!value.configuration || typeof value.configuration !== 'object' || Array.isArray(value.configuration)) return null
+    state.configuration = {}
+    for (const step of ONBOARDING_STEPS) {
+      const entry = value.configuration[step]
+      if (entry !== undefined && (typeof entry !== 'string' || entry.length > 1000)) return null
+      if (entry !== undefined) state.configuration[step] = entry
+    }
+  }
+  for (const step of ONBOARDING_STEPS) {
+    const result = value.results[step]
+    if (!result || !ONBOARDING_STATUSES.includes(result.status) || typeof result.diagnostic !== 'string' || result.diagnostic.length > 600) return null
+    state.results[step] = recover && result.status === 'checking'
+      ? { status: 'warning', diagnostic: 'Проверка прервана. Запустите её снова.' }
+      : { status: result.status, diagnostic: result.diagnostic }
+  }
+  return state
+}
+export function onboardingTransition(state: OnboardingState, step: OnboardingStep, result: OnboardingResult): OnboardingState {
+  const results = { ...state.results, [step]: result }
+  if (step !== 'voice') results.voice = { status: 'idle', diagnostic: 'Повторите голосовой тест после изменения проверки.' }
+  return { ...state, current: step, results }
+}
+
 export interface Settings {
+  onboarding?: OnboardingState | null
   model: ClaudeModel
   whisperModel: WhisperModel
   diarization: boolean
@@ -1077,9 +1543,15 @@ export interface Settings {
   /** Режим консоли: показывать активность агента (команды, thinking, mode…). */
   showConsole: boolean
   /** Тема интерфейса. */
-  theme: 'light' | 'dark' | 'green'
+  theme: 'light' | 'dark' | 'green' | 'system'
   /** Пользователь прошёл (или пропустил) приветственный мастер. */
   onboarded: boolean
+  /** Какие завершения долгих команд машины показывать пользователю. */
+  machineCommandNotices: 'all' | 'failures' | 'off'
+  /** Длительность тоста в секундах; 0 — до ручного закрытия. */
+  machineCommandNoticeSeconds: number
+  /** Показывать системное уведомление для разрешённых режимом событий. */
+  machineCommandSystemNotifications: boolean
   /** Режим прав агента для Claude CLI. */
   permissionMode: PermissionMode
   /** Рабочий каталог для сессии агента (доступ к репозиторию); null — по умолчанию. */
@@ -1455,6 +1927,9 @@ export const DEFAULT_SETTINGS: Settings = {
   showConsole: false,
   theme: 'light',
   onboarded: false,
+  machineCommandNotices: 'failures',
+  machineCommandNoticeSeconds: 8,
+  machineCommandSystemNotifications: true,
   permissionMode: 'bypassPermissions',
   workdir: null,
   bargeIn: false,
@@ -1495,16 +1970,25 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
     if (input[key] === null || typeof input[key] === 'string') patch[key] = input[key]
   }
 
+  if (input.onboarding === null) patch.onboarding = null
+  else if (input.onboarding !== undefined) {
+    const onboarding = parseOnboarding(input.onboarding)
+    if (onboarding) patch.onboarding = onboarding
+  }
   if (typeof input.model === 'string') patch.model = normalizeClaudeModel(input.model)
   oneOf('whisperModel', WHISPER_MODELS)
-  oneOf('theme', ['light', 'dark', 'green'] as const)
+  oneOf('theme', ['light', 'dark', 'green', 'system'] as const)
+  oneOf('machineCommandNotices', ['all', 'failures', 'off'] as const)
   oneOf('permissionMode', PERMISSION_MODES.map((mode) => mode.id))
   oneOf('llmProvider', ['claude', 'codex'] as const)
   oneOf('aiAssistProvider', ['claude', 'codex'] as const)
-  for (const key of ['diarization', 'autoSpeak', 'showConsole', 'onboarded', 'bargeIn', 'handsFree', 'loginNewDeviceEmails'] as const) bool(key)
+  for (const key of ['diarization', 'autoSpeak', 'showConsole', 'onboarded', 'bargeIn', 'handsFree', 'loginNewDeviceEmails', 'machineCommandSystemNotifications'] as const) bool(key)
   for (const key of ['voice', 'codexModel', 'aiAssistModel'] as const) text(key)
   for (const key of ['micDeviceId', 'workdir', 'execTarget', 'llmEngineId', 'defaultAgentId', 'defaultContextPresetId'] as const) nullableText(key)
   if (Number.isInteger(input.generatedFilesTtlDays)) patch.generatedFilesTtlDays = input.generatedFilesTtlDays
+  if (typeof input.machineCommandNoticeSeconds === 'number' && Number.isFinite(input.machineCommandNoticeSeconds)) {
+    patch.machineCommandNoticeSeconds = Math.min(120, Math.max(0, input.machineCommandNoticeSeconds))
+  }
   if (Array.isArray(input.aiAssistPrompts)) {
     patch.aiAssistPrompts = (input.aiAssistPrompts as unknown[])
       .filter((item): item is ModifierPrompt => typeof item === 'object' && item !== null && typeof (item as ModifierPrompt).id === 'string')

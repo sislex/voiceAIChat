@@ -3,8 +3,8 @@ import { render } from '@testing-library/react'
 import { act } from 'react'
 import { usePolling } from './usePolling'
 
-function Probe({ poll, enabled = true }: { poll: () => void; enabled?: boolean }): JSX.Element {
-  usePolling(poll, { enabled, intervalMs: 1000 })
+function Probe({ poll, enabled = true, refreshOnVisible = true }: { poll: () => void; enabled?: boolean; refreshOnVisible?: boolean }): JSX.Element {
+  usePolling(poll, { enabled, intervalMs: 1000, refreshOnVisible })
   return <div />
 }
 
@@ -54,6 +54,15 @@ describe('usePolling', () => {
     expect(poll).toHaveBeenCalledTimes(1)
     act(() => { vi.advanceTimersByTime(2000) })
     expect(poll).toHaveBeenCalledTimes(3)
+  })
+
+  it('lets the host own the immediate refresh while resuming the timer', () => {
+    const poll = vi.fn()
+    render(<Probe poll={poll} refreshOnVisible={false} />)
+    act(() => { setHidden(true); vi.advanceTimersByTime(5000); setHidden(false) })
+    expect(poll).not.toHaveBeenCalled()
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(poll).toHaveBeenCalledTimes(1)
   })
 
   it('выключенный опрос не тикает вовсе', () => {

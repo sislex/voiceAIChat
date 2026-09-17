@@ -7,6 +7,7 @@
 .vcp-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .vcp-head { display: flex; align-items: center; gap: 13px; padding: 20px 24px 14px; flex-wrap: wrap; }
+.vcp-head, .vcp-quick, .vcp-tabs { flex: 0 0 auto; }
 .vcp-head__main { flex: 1; min-width: 0; }
 .vcp-head__name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .vcp-head__name h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; overflow-wrap: anywhere; max-width: 100%; }
@@ -19,6 +20,16 @@
 
 /* Сетку «быстрых фактов» задаёт MetricGrid; здесь только отступы карточки. */
 .vcp-quick { margin: 0 24px 12px; }
+
+.vcp-tabs {
+  padding-inline: 24px;
+  scroll-padding-inline: 24px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  background: var(--bg);
+}
+.vcp-tabs .vc-tab { min-height: 44px; scroll-snap-align: start; }
+.vcp-tabs .vc-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: var(--radius-small); }
 
 .vcp-panel { padding: 18px 24px 24px; min-width: 0; }
 
@@ -77,6 +88,7 @@
 .vcp-table th { color: var(--text-dim); font-weight: 600; }
 
 .vcp-history__filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vcp-history__more { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 12px; color: var(--text-dim); font-size: 11px; }
 .vcp-audit { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--radius-large); overflow: hidden; }
 .vcp-audit__item { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .vcp-audit__item:last-child { border-bottom: 0; }
@@ -92,13 +104,18 @@
 .vcp-dialog__field textarea { display: block; width: 100%; min-height: 74px; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; resize: vertical; }
 .vcp-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
-@media (max-width: 1050px) {
+@media (max-width: 720px) {
   .vcp-overview__grid { grid-template-columns: 1fr; }
-  .vcp-provider__models { grid-template-columns: 1fr; }
-  .vcp-provider__models label { border-right: 0; border-bottom: 1px solid var(--border); }
 }
 
 @media (max-width: 720px) {
+  .vcp-provider__models { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vcp-provider__models label:nth-child(2n) { border-right: 0; }
+}
+
+@media (max-width: 720px) {
+  .vcp-provider__models { grid-template-columns: 1fr; }
+  .vcp-provider__models label { border-right: 0; border-bottom: 1px solid var(--border); }
   .vcp-head { padding: 16px 14px; }
   /* Тот же порог 40px: действия карточки, массовые кнопки доступа и выгрузка
      журнала стоят в плотных строках и по умолчанию ниже него. */
@@ -114,12 +131,40 @@
   .vcp-card__title .vc-btn,
   .vcp-danger .vc-btn { min-height: 40px; }
   .vcp-quick { margin: 0 14px 8px; }
+  .vcp-quick.vc-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vcp-tabs { padding-inline: 8px; scroll-padding-inline: 8px; }
+  .vcp-tabs .vc-tab { min-height: 48px; padding-inline: 12px; }
   .vcp-panel { padding: 16px 14px; }
   .vcp-machine { grid-template-columns: 40px minmax(0, 1fr) auto; }
   /* Кнопка обновления уезжает на свою строку, иначе на 390px она сжимается
      до нечитаемой ширины и не попадает под палец. */
   .vcp-machine .vc-btn { grid-column: 1 / -1; min-height: 40px; }
   .vcp-audit__item { grid-template-columns: 1fr; }
+  .vcp-section-head { align-items: stretch; }
+  .vcp-section-head > *, .vcp-history__filters, .vcp-history__filters select { width: 100%; }
+  .vcp-history__filters .vc-btn { flex: 1 1 auto; }
+  .vcp-card__title { flex-wrap: wrap; }
+  .vcp-card__title .vc-btn { margin-left: auto; }
+  .vcp-table, .vcp-table tbody, .vcp-table tr, .vcp-table td { display: block; width: 100%; }
+  .vcp-table thead { display: none; }
+  .vcp-table tbody { display: grid; gap: 8px; }
+  .vcp-table tr { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-large); background: var(--surface); }
+  .vcp-table td { display: grid; grid-template-columns: minmax(72px, .7fr) minmax(0, 1fr); gap: 12px; padding: 5px 0; border: 0; text-align: right; overflow-wrap: anywhere; }
+  .vcp-table td::before { content: attr(data-label); color: var(--text-dim); text-align: left; font-weight: 600; }
   /* Полоса несохранённых изменений закрывает нижний край списка. */
-  .vcp-panel { padding-bottom: 96px; }
+  .vcp-panel { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 720px) {
+  .vcp-quick.vc-metrics { grid-template-columns: 1fr; }
+  .vcp-head { gap: 10px; }
+  .vcp-head .vc-avatar { width: 44px !important; height: 44px !important; }
+  .vcp-head__sub { font-size: 11px; }
+  .vcp-machine { grid-template-columns: 36px minmax(0, 1fr); }
+  .vcp-machine__ico { width: 36px; height: 36px; }
+  .vcp-machine > .vc-pill { grid-column: 2; justify-self: start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vcp-tabs { scroll-behavior: auto; }
 }

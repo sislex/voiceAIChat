@@ -427,6 +427,10 @@ describe('projects REST: доступ', () => {
       method: 'PATCH', url: `/api/projects/${p.id}/members/admin`, payload: { role: 'member' }
     })
     expect(changedByBob.statusCode).toBe(200)
+    const demotion = await inj(bobTok, { method: 'PATCH', url: `/api/projects/${p.id}/members/bob`, payload: { role: 'member' } })
+    expect(demotion.statusCode).toBe(400)
+    expect(demotion.json().error).toContain('последнего владельца')
+    expect((await db.projects.getProject('bob', p.id))?.members.find(member => member.username === 'bob')?.role).toBe('owner')
     const lastOwner = await inj(bobTok, {
       method: 'DELETE', url: `/api/projects/${p.id}/members/bob`
     })

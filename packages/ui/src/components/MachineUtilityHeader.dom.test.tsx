@@ -1,10 +1,24 @@
 import { describe, it, expect, vi } from 'vitest'
+import { expectNoViolations, expectLabelledIconButtons } from '@voicechat/ui-foundation/test/a11y'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MachineUtilityHeader, policyBadges } from './MachineUtilityHeader'
 import { makeAgent, makeOfflineAgent, makePolicy } from '../test/fixtures/index'
 
 describe('MachineUtilityHeader — машина видна всегда', () => {
+  // @testCase T9
+  it('labels three utility segments and icon buttons for a mobile header', async () => {
+    const onSwitch = vi.fn()
+    const { container } = render(<div style={{ width: 390 }}><MachineUtilityHeader agents={[makeAgent({ id: 'mobile', name: 'A very long machine name for the mobile viewport' })]} agentId="mobile" onAgentChange={vi.fn()} kind="explorer" onSwitch={onSwitch} /></div>)
+    expect(screen.getByRole('group', { name: 'Что открыто на машине' }).querySelectorAll('button')).toHaveLength(3)
+    await userEvent.click(screen.getByRole('button', { name: /Терминал/ }))
+    expect(onSwitch).toHaveBeenCalledWith('terminal')
+    await userEvent.click(screen.getByRole('button', { name: /Консоль/ }))
+    expect(onSwitch).toHaveBeenCalledWith('console')
+    expectLabelledIconButtons(container)
+    await expectNoViolations()
+  })
+
   it('единственную машину называет и без селектора: имя, «в сети» и версия агента', () => {
     render(
       <MachineUtilityHeader
@@ -101,7 +115,7 @@ describe('MachineUtilityHeader — переключатель и ссылка в
     expect(onSwitch).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: /Терминал/ }))
-    expect(onSwitch).toHaveBeenCalledWith('console')
+    expect(onSwitch).toHaveBeenCalledWith('terminal')
   })
 
   it('подпись консольной кнопки задаёт виджет: без PTY это «Консоль»', () => {
@@ -116,7 +130,7 @@ describe('MachineUtilityHeader — переключатель и ссылка в
       />
     )
     expect(screen.getByRole('button', { name: /Консоль/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('button', { name: /Терминал/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Терминал/ })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('без обработчиков ни переключателя, ни ссылки в «Машины» нет', () => {

@@ -25,6 +25,14 @@ import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import { FilterIcon, GearIcon } from './icons'
 import { formatCombo } from '../lib/hotkeys'
+import { useToast } from '@voicechat/ui-kit'
+import { usePreference, EMPTY_IDS, isStringList, readPreference, writePreference, userKey } from '../lib/shellPreferences'
+
+function SearchTitle({ text, query }: { text: string; query: string }): JSX.Element {
+  const needle = query.trim()
+  const at = text.toLocaleLowerCase().indexOf(needle.toLocaleLowerCase())
+  return !needle || at < 0 ? <>{text}</> : <>{text.slice(0, at)}<mark>{text.slice(at, at + needle.length)}</mark>{text.slice(at + needle.length)}</>
+}
 
 /** Человекочитаемая мета разговора: «Сегодня · 6 сообщений». */
 function formatMeta(c: Conversation, now: number): string {
@@ -260,6 +268,9 @@ export interface SidebarProps {
   onOpenPersonalization?: () => void
   /** «Мой аккаунт» — свой профиль, расход и журнал; доступен любой роли. */
   onOpenAccount?: () => void
+  /** Warm the lazy account chunk when pointer or keyboard intent is visible. */
+  onAccountIntent?: () => void
+  onSettingsIntent?: () => void
   onOpenSettings: () => void
   /** Открыть файловый проводник по машине-агенту (web). */
   onOpenFiles?: () => void
@@ -318,6 +329,8 @@ export interface SidebarProps {
   onRetryProjects?: () => void
   /** Открыть командную палитру (кнопка «⌘K» рядом с поиском); не задан — кнопки нет. */
   onOpenCommandPalette?: () => void
+  paletteShortcut?: string
+  onCloseMobile?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
   open?: boolean
   /** Свернуть сайдбар на десктопе (шеврон в шапке); undefined — кнопку не показываем. */
@@ -362,6 +375,8 @@ export function Sidebar({
   onOpenKnowledgeBase,
   onOpenPersonalization,
   onOpenAccount,
+  onAccountIntent,
+  onSettingsIntent,
   onOpenSettings,
   onOpenFiles,
   onOpenConsole,
@@ -393,6 +408,8 @@ export function Sidebar({
   onAcceptInvitation,
   onDeclineInvitation,
   onOpenCommandPalette,
+  paletteShortcut = 'mod+k',
+  onCloseMobile,
   open = false,
   onToggleCollapse,
   width = 264,
@@ -419,10 +436,30 @@ export function Sidebar({
       : selectedProjectSet.size === 1
         ? projects.find((project) => selectedProjectSet.has(project.id))?.name ?? 'Один проект'
         : `Выбрано проектов: ${selectedProjectSet.size}`
+  const userId = currentUser?.name || 'local'
+  const [pinned, setPinned] = usePreference(userId, 'pinned', EMPTY_IDS, isStringList)
+  const [collapsedGroups, setCollapsedGroups] = usePreference(userId, 'groups', EMPTY_IDS, isStringList)
+  const [archived, setArchived] = usePreference(userId, 'archived', EMPTY_IDS, isStringList)
+  const [showArchived, setShowArchived] = useState(false)
+  const toast = useToast()
+  const swipe = useRef<{ x: number; y: number } | null>(null)
   const workingSet = new Set(workingIds)
   const weekStart = localWeekStart(now)
-  const currentWeekConversations = conversations.filter((conversation) => conversation.updatedAt >= weekStart)
-  const olderConversations = conversations.filter((conversation) => conversation.updatedAt < weekStart)
+  const visibleConversations = conversations.filter(c => (showArchived ? archived.includes(c.id) : !archived.includes(c.id)) && c.title.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase()))
+  const [conversationLimit, setConversationLimit] = useState(100)
+  useEffect(() => setConversationLimit(100), [searchQuery, showArchived, userId])
+  // Keep the current conversation reachable even when it is outside the first page.
+  const pageConversations = visibleConversations.slice(0, conversationLimit)
+  const selectedConversation = visibleConversations.find(conversation => conversation.id === activeId)
+  if (selectedConversation && !pageConversations.includes(selectedConversation)) pageConversations.push(selectedConversation)
+  const pinnedConversations = pageConversations.filter(c => pinned.includes(c.id))
+  const currentWeekConversations = pageConversations.filter(c => !pinned.includes(c.id) && c.updatedAt >= weekStart)
+  const olderConversations = pageConversations.filter(c => !pinned.includes(c.id) && c.updatedAt < weekStart)
+  const grouped = new Map<string, Conversation[]>()
+  for (const c of pageConversations.filter(c => !pinned.includes(c.id))) {
+    const key = c.projectId ?? ''
+    grouped.set(key, [...(grouped.get(key) ?? []), c])
+  }
   // Поиск по сообщениям заменяет список бесед: у панели свои состояния и карточки.
   const inMessages = searchScope === 'messages'
   // Состояния списка бесед по общему правилу: скелетон — только пока данных нет,
@@ -455,7 +492,7 @@ export function Sidebar({
    * до того, как человек упрётся в низ.
    */
   const onListScroll = (event: ReactUIEvent<HTMLElement>): void => {
-    if (!onLoadMore || !hasMoreConversations || moreStatus === 'loading' || moreStatus === 'error') return
+    if (visibleConversations.length > conversationLimit || !onLoadMore || !hasMoreConversations || moreStatus === 'loading' || moreStatus === 'error') return
     const list = event.currentTarget
     if (list.scrollHeight - list.scrollTop - list.clientHeight <= list.clientHeight) onLoadMore()
   }
@@ -561,7 +598,7 @@ export function Sidebar({
                         onPick(c.id)
                       }}
                     >
-                      {c.title}
+                      <SearchTitle text={c.title} query={searchQuery} />
                     </button>
                     {c.costStatus === 'known' && typeof c.costUsd === 'number' && (
                       <span className="ccost" title="Стоимость сохранённых ответов">
@@ -603,6 +640,16 @@ export function Sidebar({
                 </div>
                 {confirmingId !== c.id && (
                   <span className="crow-actions">
+                    <IconButton size="sm" aria-label={`${pinned.includes(c.id) ? 'Открепить' : 'Закрепить'} «${c.title}»`} title="Закрепление беседы" onClick={e => { e.stopPropagation(); setPinned(pinned.includes(c.id) ? pinned.filter(id => id !== c.id) : [...pinned, c.id]) }}>⌖</IconButton>
+                    <IconButton size="sm" aria-label={`${showArchived ? 'Восстановить' : 'Архивировать'} «${c.title}»`} title="Архив беседы" onClick={e => {
+                      e.stopPropagation()
+                      const next = showArchived ? archived.filter(id => id !== c.id) : [...archived, c.id]
+                      setArchived(next)
+                      if (!showArchived) toast.info('Беседа архивирована', { action: { label: 'Отменить', onClick: () => {
+                        const latest = readPreference(userKey(userId, 'archived'), EMPTY_IDS, isStringList)
+                        writePreference(userKey(userId, 'archived'), latest.filter(id => id !== c.id))
+                      } } })
+                    }}>▣</IconButton>
                     <IconButton
                       size="sm"
                       className="vc-btn--danger-quiet"
@@ -642,12 +689,21 @@ export function Sidebar({
           }
 
   return (
-    <aside id="app-sidebar" className={open ? 'side side--open' : 'side'}>
+    <aside id="app-sidebar" className={open ? 'side side--open' : 'side'}
+      onTouchStart={event => { const point = event.touches[0]; swipe.current = open && point ? { x: point.clientX, y: point.clientY } : null }}
+      onTouchMove={event => { const point = event.touches[0]; if (point && swipe.current && Math.abs(point.clientY - swipe.current.y) > 35) swipe.current = null }}
+      onTouchEnd={event => { const start = swipe.current, point = event.changedTouches[0]; swipe.current = null; if (start && point && start.x - point.clientX > 70 && Math.abs(point.clientY - start.y) < 35) onCloseMobile?.() }}
+      onTouchCancel={() => { swipe.current = null }}>
       <div className="sidehead">
         <span className="logo">
           <span className="logodot" style={{ background: ACCENT }} />
           Голос·Чат
         </span>
+        {onOpenCommandPalette && (
+          <IconButton className="cmdk-open" aria-label="Командная палитра" title={`Командная палитра (${formatCombo(paletteShortcut)})`} onClick={onOpenCommandPalette}>
+            {formatCombo(paletteShortcut)}
+          </IconButton>
+        )}
         {onToggleCollapse && (
           <button className="side-collapse" onClick={onToggleCollapse} title="Свернуть панель" aria-label="Свернуть панель">«</button>
         )}
@@ -710,11 +766,7 @@ export function Sidebar({
                   <FilterIcon />
                 </IconButton>
               )}
-              {onOpenCommandPalette && (
-                <IconButton className="cmdk-open" aria-label="Командная палитра" title={`Командная палитра (${formatCombo('mod+k')})`} onClick={onOpenCommandPalette}>
-                  {formatCombo('mod+k')}
-                </IconButton>
-              )}
+
             </div>
           </div>
         </>) : (
@@ -790,7 +842,13 @@ export function Sidebar({
         {/* Глобальные состояния остаются снаружи секций; внутри каждой — только
             корректный role=list с разговорами-listitem. */}
         <div className="convo-groups">
-          {currentWeekConversations.length > 0 && (
+          <Button size="sm" variant="ghost" onClick={() => setShowArchived(!showArchived)}>{showArchived ? 'Все беседы' : 'Архив бесед'}</Button>
+          {pinnedConversations.length > 0 && <section aria-label="Закреплённые"><h2 className="convo-section-title">Закреплённые</h2><div role="list">{pinnedConversations.map(renderConversation)}</div></section>}
+          {projects.length > 0 && [...grouped].map(([id, items]) => <section key={id} aria-label={projects.find(p => p.id === id)?.name ?? 'Без проекта'}>
+            <Button size="sm" variant="ghost" aria-expanded={!collapsedGroups.includes(id) || !!searchQuery} onClick={() => setCollapsedGroups(collapsedGroups.includes(id) ? collapsedGroups.filter(value => value !== id) : [...collapsedGroups, id])}>{projects.find(p => p.id === id)?.name ?? 'Без проекта'}</Button>
+            {(!collapsedGroups.includes(id) || !!searchQuery) && <div role="list">{items.map(renderConversation)}</div>}
+          </section>)}
+          {projects.length === 0 && currentWeekConversations.length > 0 && (
             <section className="convo-section" aria-labelledby="sidebar-current-week-title">
               <h2 id="sidebar-current-week-title" className="convo-section-title">На этой неделе</h2>
               <div className="convo-items" role="list" aria-label="Беседы">
@@ -798,7 +856,7 @@ export function Sidebar({
               </div>
             </section>
           )}
-          {olderConversations.length > 0 && (
+          {projects.length === 0 && olderConversations.length > 0 && (
             <section className="convo-section convo-section--older" aria-labelledby="sidebar-older-title">
               <h2 id="sidebar-older-title" className="convo-section-title">Более старые</h2>
               <div className="convo-items" role="list" aria-label="Более старые беседы">
@@ -809,6 +867,7 @@ export function Sidebar({
           {/* Хвост списка: сюда доскроллили — значит пора за следующей страницей.
               Раньше на этом месте стояла свёрнутая секция с кнопкой, но список
               бесед листают, а не раскрывают. */}
+          {visibleConversations.length > conversationLimit && <Button size="sm" onClick={() => setConversationLimit(limit => limit + 100)}>Показать ещё беседы ({visibleConversations.length - conversationLimit})</Button>}
           {moreStatus === 'loading' && <div className="convolist-more" aria-busy="true"><RefreshIndicator label="Загружаем ещё…" /></div>}
           {moreStatus === 'error' && (
             <ErrorState compact className="convolist-more" message="Не удалось загрузить ещё беседы" onRetry={() => onLoadMore?.()} />
@@ -983,13 +1042,22 @@ export function Sidebar({
                   </Button>
                 )}
                 {onOpenAccount && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenAccount)}>
+                  <Button
+                    variant="ghost"
+                    fullWidth
+                    className="sidefoot-row"
+                    role="menuitem"
+                    onMouseEnter={onAccountIntent}
+                    onFocus={onAccountIntent}
+                    onTouchStart={onAccountIntent}
+                    onClick={acct(onOpenAccount)}
+                  >
                     <span className="footico">👤</span>
                     Мой аккаунт
                   </Button>
                 )}
                 {onOpenPersonalization && <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenPersonalization)}><span className="footico">✨</span>Персонализация</Button>}
-                <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSettings)}>
+                <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onMouseEnter={onSettingsIntent} onFocus={onSettingsIntent} onTouchStart={onSettingsIntent} onClick={acct(onOpenSettings)}>
                   <GearIcon />
                   Настройки
                 </Button>
@@ -1054,7 +1122,7 @@ export function Sidebar({
                 </IconButton>
               )}
             </div>
-            <Button variant="ghost" fullWidth className="sidefoot-row" onClick={onOpenSettings}>
+            <Button variant="ghost" fullWidth className="sidefoot-row" onMouseEnter={onSettingsIntent} onFocus={onSettingsIntent} onTouchStart={onSettingsIntent} onClick={onOpenSettings}>
               <GearIcon />
               Настройки
             </Button>

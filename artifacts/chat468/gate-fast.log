@@ -1,0 +1,2220 @@
+
+> @voicechat/ui@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> @voicechat/ui@0.1.0 test
+> vitest run --silent src/clients/readResources.test.ts src/runtime/appRuntime.test.ts src/store/domains/stores.contract.test.ts
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui
+
+ ✓ src/store/domains/stores.contract.test.ts (31 tests) 104ms
+ ✓ src/clients/readResources.test.ts (11 tests) 175ms
+ ✓ src/runtime/appRuntime.test.ts (18 tests) 186ms
+
+ Test Files  3 passed (3)
+      Tests  60 passed (60)
+   Start at  09:55:36
+   Duration  5.73s (transform 7.31s, setup 1.10s, collect 11.26s, tests 465ms, environment 1.82s, prepare 444ms)
+
+
+> @voicechat/ui@0.1.0 test
+> vitest run --silent src/test/routeResources.browser.test.ts
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui
+
+ ✓ src/test/routeResources.browser.test.ts (5 tests | 2 skipped) 159341ms
+   ✓ records comparable cold/warm request counts, transferred bytes and content/data times for five routes 107804ms
+   ✓ keeps routes navigable in both themes at all five sizes with touch and keyboard input 44792ms
+   ✓ keeps Account identity and navigation usable while an offline block retries 3307ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 2 skipped (5)
+   Start at  09:55:43
+   Duration  160.61s (transform 153ms, setup 259ms, collect 608ms, tests 159.34s, environment 0ms, prepare 113ms)
+
+
+> voicechat-monorepo@0.1.0 gate:fast
+> node --import tsx scripts/application-gate.mjs --worktree
+
+{
+  "full": false,
+  "applications": [
+    "core",
+    "profile-app",
+    "web",
+    "admin-app",
+    "desktop"
+  ],
+  "contracts": [],
+  "reasons": [
+    "core: apps/server/src/taskPreparation.test.ts",
+    "core: общая граница apps/server/src/taskPreparation.test.ts",
+    "profile-app: packages/profile-app/src/ProfilePanel.dom.test.tsx",
+    "web: контракт packages/profile-app/src/ProfilePanel.dom.test.tsx",
+    "admin-app: контракт packages/profile-app/src/ProfilePanel.dom.test.tsx",
+    "desktop: контракт packages/profile-app/src/ProfilePanel.dom.test.tsx",
+    "profile-app: packages/profile-app/src/ProfilePanel.tsx",
+    "web: контракт packages/profile-app/src/ProfilePanel.tsx",
+    "admin-app: контракт packages/profile-app/src/ProfilePanel.tsx",
+    "desktop: контракт packages/profile-app/src/ProfilePanel.tsx",
+    "profile-app: packages/profile-app/src/tabs/HistoryTab.tsx",
+    "web: контракт packages/profile-app/src/tabs/HistoryTab.tsx",
+    "admin-app: контракт packages/profile-app/src/tabs/HistoryTab.tsx",
+    "desktop: контракт packages/profile-app/src/tabs/HistoryTab.tsx",
+    "profile-app: packages/profile-app/src/tabs/UsageTab.tsx",
+    "web: контракт packages/profile-app/src/tabs/UsageTab.tsx",
+    "admin-app: контракт packages/profile-app/src/tabs/UsageTab.tsx",
+    "desktop: контракт packages/profile-app/src/tabs/UsageTab.tsx",
+    "web: packages/ui/src/AccountPage.dom.test.tsx",
+    "web: общая граница packages/ui/src/AccountPage.dom.test.tsx",
+    "web: общая граница packages/ui/src/AccountPage.dom.test.tsx",
+    "web: packages/ui/src/App.chat.dom.test.tsx",
+    "web: общая граница packages/ui/src/App.chat.dom.test.tsx",
+    "web: общая граница packages/ui/src/App.chat.dom.test.tsx",
+    "web: packages/ui/src/App.projects.dom.test.tsx",
+    "web: общая граница packages/ui/src/App.projects.dom.test.tsx",
+    "web: общая граница packages/ui/src/App.projects.dom.test.tsx",
+    "web: packages/ui/src/App.tsx",
+    "web: общая граница packages/ui/src/App.tsx",
+    "web: общая граница packages/ui/src/App.tsx",
+    "web: packages/ui/src/clients/browser.ts",
+    "web: общая граница packages/ui/src/clients/browser.ts",
+    "web: общая граница packages/ui/src/clients/browser.ts",
+    "web: packages/ui/src/clients/types.ts",
+    "web: общая граница packages/ui/src/clients/types.ts",
+    "web: общая граница packages/ui/src/clients/types.ts",
+    "web: packages/ui/src/components/AccountPage.tsx",
+    "web: общая граница packages/ui/src/components/AccountPage.tsx",
+    "web: общая граница packages/ui/src/components/AccountPage.tsx",
+    "web: packages/ui/src/components/SettingsModal.stories.tsx",
+    "web: общая граница packages/ui/src/components/SettingsModal.stories.tsx",
+    "web: общая граница packages/ui/src/components/SettingsModal.stories.tsx",
+    "web: packages/ui/src/components/SettingsModal.tsx",
+    "web: общая граница packages/ui/src/components/SettingsModal.tsx",
+    "web: общая граница packages/ui/src/components/SettingsModal.tsx",
+    "web: packages/ui/src/components/kanban/NewTaskManualQaPanel.dom.test.tsx",
+    "web: общая граница packages/ui/src/components/kanban/NewTaskManualQaPanel.dom.test.tsx",
+    "web: общая граница packages/ui/src/components/kanban/NewTaskManualQaPanel.dom.test.tsx",
+    "web: packages/ui/src/runtime/appRuntime.test.ts",
+    "web: общая граница packages/ui/src/runtime/appRuntime.test.ts",
+    "web: общая граница packages/ui/src/runtime/appRuntime.test.ts",
+    "web: packages/ui/src/runtime/appRuntime.ts",
+    "web: общая граница packages/ui/src/runtime/appRuntime.ts",
+    "web: общая граница packages/ui/src/runtime/appRuntime.ts",
+    "web: packages/ui/src/store/appRuntime.chat.test.ts",
+    "web: общая граница packages/ui/src/store/appRuntime.chat.test.ts",
+    "web: общая граница packages/ui/src/store/appRuntime.chat.test.ts",
+    "web: packages/ui/src/store/domains/operationsStore.ts",
+    "web: общая граница packages/ui/src/store/domains/operationsStore.ts",
+    "web: общая граница packages/ui/src/store/domains/operationsStore.ts",
+    "web: packages/ui/src/store/domains/projectsStore.ts",
+    "web: общая граница packages/ui/src/store/domains/projectsStore.ts",
+    "web: общая граница packages/ui/src/store/domains/projectsStore.ts",
+    "web: packages/ui/src/store/domains/settingsStore.ts",
+    "web: общая граница packages/ui/src/store/domains/settingsStore.ts",
+    "web: общая граница packages/ui/src/store/domains/settingsStore.ts",
+    "web: packages/ui/src/store/domains/shellStore.ts",
+    "web: общая граница packages/ui/src/store/domains/shellStore.ts",
+    "web: общая граница packages/ui/src/store/domains/shellStore.ts",
+    "web: packages/ui/src/store/domains/stores.contract.test.ts",
+    "web: общая граница packages/ui/src/store/domains/stores.contract.test.ts",
+    "web: общая граница packages/ui/src/store/domains/stores.contract.test.ts",
+    "web: packages/ui/src/webReaderDiagnostics.test.ts",
+    "web: общая граница packages/ui/src/webReaderDiagnostics.test.ts",
+    "web: общая граница packages/ui/src/webReaderDiagnostics.test.ts",
+    "web: packages/ui/src/clients/readResources.test.ts",
+    "web: общая граница packages/ui/src/clients/readResources.test.ts",
+    "web: общая граница packages/ui/src/clients/readResources.test.ts",
+    "web: packages/ui/src/clients/readResources.ts",
+    "web: общая граница packages/ui/src/clients/readResources.ts",
+    "web: общая граница packages/ui/src/clients/readResources.ts",
+    "web: packages/ui/src/lib/readCache.test.ts",
+    "web: общая граница packages/ui/src/lib/readCache.test.ts",
+    "web: общая граница packages/ui/src/lib/readCache.test.ts",
+    "web: packages/ui/src/lib/readCache.ts",
+    "web: общая граница packages/ui/src/lib/readCache.ts",
+    "web: общая граница packages/ui/src/lib/readCache.ts",
+    "web: packages/ui/src/test/routeResources.browser.test.ts",
+    "web: общая граница packages/ui/src/test/routeResources.browser.test.ts",
+    "web: общая граница packages/ui/src/test/routeResources.browser.test.ts"
+  ],
+  "e2eFiles": [
+    "e2e/applicationReleases.e2e.test.ts",
+    "e2e/machine-vpn.e2e.test.ts"
+  ]
+}
+[gate:app] npm run -w @voicechat/server typecheck
+
+> @voicechat/server@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+[gate:app] npm run -w @voicechat/server test
+
+> @voicechat/server@0.1.0 test
+> vitest run --silent
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/apps/server
+
+ ✓ src/turns.test.ts (75 tests) 7749ms
+ ✓ src/db/database.projects.test.ts (69 tests) 18634ms
+   ✓ projects: миграция имён связанных чатов > старый чат задачи получает префикс «Задача », переименованный вручную — нет 428ms
+   ✓ projects: миграция владельцев > добавляет created_by владельцем старого проекта и сохраняет остальных участников 516ms
+   ✓ projects: миграция канонического workflow > досоздаёт недостающие системные колонки на существующей БД (инцидент 2026-08-18) 465ms
+   ✓ projects: миграция канонического workflow > назначает cancelled существующей колонке по семантике, а имя использует только без неё 543ms
+   ✓ projects: миграция канонического workflow > переупорядочивает старую доску, переносит legacy-карточки и повторно ничего не меняет 600ms
+   ✓ projects: две фазы доски > обе фазы видят один и тот же набор задач, включая отсечку завершённых 317ms
+   ✓ projects: две фазы доски > сводки CI приходят только по карточкам доски, а не по всей истории проекта 334ms
+   ✓ projects: навыки по умолчанию и связанный чат > createProject/updateProject хранят навыки по умолчанию по типам 360ms
+   ✓ projects: навыки по умолчанию и связанный чат > createTask сразу создаёт чат автору только для пользовательского таска 329ms
+   ✓ доска: завершённые задачи уходят с доски по порогу проекта > старше порога — нет на доске, includeCompleted возвращает 316ms
+   ✓ доска: завершённые задачи уходят с доски по порогу проекта > порог 0 скрывает за полночью, пустой порог не скрывает никогда 338ms
+   ✓ доска: завершённые задачи уходят с доски по порогу проекта > по умолчанию проект держит завершённые 14 дней 333ms
+   ✓ доска: завершённые задачи уходят с доски по порогу проекта > сортирует «Готово» по последнему входу, а не по updatedAt 352ms
+   ✓ доска: завершённые задачи уходят с доски по порогу проекта > порядок «Готово» переживает перезапуск БД 515ms
+   ✓ доска: завершённые задачи уходят с доски по порогу проекта > миграция: у лежащих в «Готово» задач появляется doneAt 560ms
+ ✓ src/ci/runManager.test.ts (76 tests | 6 skipped) 43703ms
+   ✓ автоматическая доработка сохраняет диагностику до первого вызова модели 999ms
+   ✓ новый менеджер после рестарта возвращает незапущенный ран в очередь и прерывает активный 562ms
+   ✓ каталог машин задачи объединяет личные и проектные машины без дублей 477ms
+   ✓ задача без override использует project default, а не персональный default инициатора 632ms
+   ✓ ci run manager > заново разрешает project default при каждом запуске задачи без override 818ms
+   ✓ ci run manager > перед раном гасит сессию браузерной проверки задачи, а без режима chromium не трогает её 667ms
+   ✓ ci run manager > подготавливает отсутствующий repos_root из существующей папки проекта 508ms
+   ✓ ci run manager > bootstrap managed workspace стартует из storage root и согласует env 502ms
+   ✓ ci run manager > managed retry переиспользует стабильный чистый checkout, а частичная структура не считается Git checkout 664ms
+   ✓ ci run manager > синхронизирует существующий чистый checkout с актуальной базовой веткой без git pull 504ms
+   ✓ ci run manager > tracked dirty managed checkout останавливает ран до синхронизации 483ms
+   ✓ ci run manager > untracked dirty managed checkout останавливает ран до синхронизации 512ms
+   ✓ ci run manager > ошибка git fetch завершает подготовку до модели 490ms
+   ✓ ci run manager > ошибка git checkout завершает подготовку до модели 401ms
+   ✓ ci run manager > ошибка git reset завершает подготовку до модели 492ms
+   ✓ ci run manager > нехватка места останавливает ран с понятным сообщением до clone 391ms
+   ✓ ci run manager > после успешного рана незакрытой задачи node_modules остаются на месте 621ms
+   ✓ ci run manager > у закрытой задачи удаляет только node_modules и сохраняет задачный npm-кэш 484ms
+   ✓ ci run manager > задача считается закрытой только в Done и «Отменено» 407ms
+   ✓ ci run manager > ошибка записи managed storage обнаруживается до clone 431ms
+   ✓ ci run manager > при запуске переносит карточку в development и наследует модель проекта 529ms
+   ✓ ci run manager > задачная модель имеет приоритет над проектной в базовом снимке 516ms
+   ✓ ci run manager > сохраняет literal Claude default в базовом снимке 554ms
+   ✓ ci run manager > разовый выбор окна запуска фиксирует пару модели только в новом ране 564ms
+   ✓ ci run manager > проект без явной настройки CI наследует пользовательский Claude default, резюме — на дешёвой модели 583ms
+   ✓ ci run manager > DELETE ci/llm снимает переопределение задачи и возвращает наследование 477ms
+   ✓ ci run manager > DELETE ci/llm для несуществующей задачи → 404 454ms
+   ✓ ci run manager > пустые слоты: ран = работа модели + резюме → success 588ms
+   ✓ ci run manager > выполняет только выбранные этапы, сохраняя их относительный порядок 561ms
+   ✓ ci run manager > не запускает модель и валит ран, если клон отсутствует в ожидаемой папке 653ms
+   ✓ ci run manager > резюме рана уходит отдельным сообщением в связанный чат задачи 632ms
+   ✓ ci run manager > резюме приходит по WS сообщением chat.message — открытый чат обновляется сам 605ms
+   ✓ ci run manager > WS snapshot меняет фактическую модель при переходе model_work → summary 600ms
+   ✓ ci run manager > таймаут транспорта commit-step повторяется без fix-loop в той же попытке 486ms
+   ✓ ci run manager > реальный отказ commit-step сохраняет stderr и exitCode до fix-loop 564ms
+   ✓ ci run manager > упавший слот «после»: резюме всё равно попадает в чат 575ms
+   ✓ ci run manager > legacy kb_update из старого снимка слота не создаёт шаг development-рана 594ms
+   ✓ ci run manager > падение в слоте «до» → ран failed и откат задачи в предыдущую колонку 601ms
+   ✓ ci run manager > allow_failure: упавшая команда не останавливает ран 599ms
+   ✓ ci run manager > legacy cleanup не выполняется, workspace сохраняется, branch пушится один раз 520ms
+   ✓ ci run manager > пуш ветки не удался → cleanup не выполняется, рабочая директория сохранена 505ms
+   ✓ ci run manager > модель работала, а в рабочей копии пусто → ран failed, слот «после» пропущен, копия сохранена 549ms
+   ✓ ci run manager > модель не вызывала инструменты — пустая рабочая копия ран не валит 582ms
+   ✓ ci run manager > пока модель разбирается с упавшим шагом, в прогрессе рана поднят fixing 570ms
+   ✓ ci run manager > ready → development автоматически создаёт один queued development-run и возвращает его id 527ms
+   ✓ ci run manager > быстрый parallel после ready → development продвигает автосозданный queued-run с тем же id 732ms
+   ✓ ci run manager > ошибка автозапуска оставляет карточку в ready, а прочие переходы в development не создают ран 480ms
+   ✓ ci run manager > второй запуск той же задачи отклоняется 409, пока первый не закончился 724ms
+   ✓ ci run manager > перенос из development в TODO снимает ожидающий ран, но не прячет уже запущенный 966ms
+   ✓ ci run manager > fix-loop: модель чинит упавший шаг → ран success, зафиксирована попытка 727ms
+   ✓ ci run manager > исчерпание max_fix_attempts → ран failed и откат задачи 530ms
+   ✓ ci run manager > успешный development-run переводит карточку в Component QA 625ms
+   ✓ ci run manager > нет колонки qa_preparation в проекте — ран success и карточка не двигается 667ms
+   ✓ ci run manager > консоль: read-only пропускает ls и отклоняет rm 658ms
+   ✓ ci run manager > dirty workspace: по подтверждению сбрасывает файлы и запускает новый полный ран 815ms
+   ✓ ci run manager > ошибка модели останавливает after-слот; выбор другой модели продолжает с model_work 908ms
+   ✓ ci run manager > модель вызывает команду справочника как MCP-инструмент → вложенный шаг model_command 854ms
+   ✓ ci run manager > повтор с упавшего шага: тот же ран возобновляется, успешный шаг не перезапускается 814ms
+   ✓ ci run manager > selected earlier command restarts it and rejects foreign step identities 693ms
+   ✓ ci run manager > успешный шаг пересборки прода в ране — автозадача не заводится 582ms
+   ✓ ci run manager > ран без мержа в прод-ветку автозадачу не заводит 608ms
+   ✓ ci run manager: база знаний > обращения рана записаны с ci_run_id и видны в отчётах по ране и задаче 1111ms
+   ✓ ci run manager: база знаний > резюме в чате содержит строку с итогами по базе знаний 844ms
+   ✓ ci run manager: база знаний > режим «off» у проекта: ни контекста, ни инструментов, телеметрия пустая 860ms
+   ✓ ci run manager: база знаний > сломанная база знаний не меняет статус рана 726ms
+   ✓ ci run manager: база знаний > отчёты по ране и задаче: свой — 200, чужой — 404 766ms
+   ✓ карточка после падения, отмены и повтора > ран упал → починили → новый ран доводит карточку до «Готово», лозенг свежий 726ms
+   ✓ карточка после падения, отмены и повтора > повторный ран после падения останавливается на dirty checkout до clone 710ms
+   ✓ карточка после падения, отмены и повтора > повтор с упавшего шага: карточка уходит в разработку и после успеха доезжает до «Готово» 849ms
+   ✓ карточка после падения, отмены и повтора > берёт выбранную машину карточки, разрешает личную и отклоняет чужую 655ms
+ ✓ src/routes/rest.conversations.test.ts (94 tests) 49872ms
+   ✓ REST: conversations/messages/settings > импорт desktop требует токен и идемпотентен 954ms
+   ✓ REST: conversations/messages/settings > draft endpoint атомарно создаёт проектный чат с первой репликой и повторяет ответ 580ms
+   ✓ REST: conversations/messages/settings > новый Make-чат проекта разово обновляет общую копию до origin, обычный чат — нет 479ms
+   ✓ REST: conversations/messages/settings > create → list → get 484ms
+   ✓ REST: conversations/messages/settings > 404 на несуществующий разговор 468ms
+   ✓ REST: conversations/messages/settings > возвращает авторизованный серверный снимок эффективного контекста 712ms
+   ✓ REST: conversations/messages/settings > Make notes GET/PUT сохраняет прежний контракт stack/uiKit и частичные обновления 535ms
+   ✓ REST: conversations/messages/settings > Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404 855ms
+   ✓ REST: conversations/messages/settings > POST /messages для ответа без engine/execTarget подставляет эффективные движок и машину разговора 415ms
+   ✓ REST: conversations/messages/settings > снимок содержит группу «Инструкции чата»; тумблер выключает инструкцию только в разговоре 465ms
+   ✓ REST: conversations/messages/settings > снимок проектного чата: пункт проекта несёт точный текст, уходящий в промпт 389ms
+   ✓ REST: conversations/messages/settings > тумблер контекста: выключает пункт, отражает в снимке и отказывает выключить безопасность 447ms
+   ✓ REST: conversations/messages/settings > снимок проектного чата наследует LLM проекта 508ms
+   ✓ REST: conversations/messages/settings > LLM override разговора имеет приоритет над проектом 467ms
+   ✓ REST: conversations/messages/settings > снимок непривязанного чата наследует пользовательскую LLM-пару 370ms
+   ✓ REST: conversations/messages/settings > не раскрывает снимок чужого или отсутствующего разговора 550ms
+   ✓ REST: conversations/messages/settings > поиск /conversations/search находит по названию (статик-роут не конфликтует с :id) 399ms
+   ✓ REST: conversations/messages/settings > чат задачи в «Готово» уходит из списка, но открывается по ссылке и из карточки 431ms
+   ✓ REST: conversations/messages/settings > cc: projects/sessions/transcript из ~/.claude/projects (VC_CC_DIR) 417ms
+   ✓ REST: conversations/messages/settings > cc:resume создаёт разговор с импортом истории и привязкой session-id 425ms
+   ✓ REST: conversations/messages/settings > cc:resume без slug/id → 400 431ms
+   ✓ REST: conversations/messages/settings > добавление сообщения видно в get 407ms
+   ✓ REST: conversations/messages/settings > повторный POST с messageId возвращает исходное сообщение без дубля и изменения payload 409ms
+   ✓ REST: conversations/messages/settings > обновляет и сохраняет состояние списка task-launch в meta сообщения 402ms
+   ✓ REST: conversations/messages/settings > удаление сообщения убирает его из истории 433ms
+   ✓ REST: conversations/messages/settings > удаление сообщения сбрасывает сессию Claude (модель забывает удалённое) 499ms
+   ✓ REST: conversations/messages/settings > список моделей содержит все поддерживаемые 430ms
+   ✓ REST: conversations/messages/settings > удаление модели/голоса отвечает ok (без файла — идемпотентно) 460ms
+   ✓ REST: conversations/messages/settings > загрузка вложения возвращает id и имя 428ms
+   ✓ REST: conversations/messages/settings > rename и delete 442ms
+   ✓ REST: conversations/messages/settings > settings get/save 392ms
+   ✓ REST: conversations/messages/settings > settings put применяет патч, а не заменяет запись целиком 443ms
+   ✓ REST: conversations/messages/settings > settings put отбрасывает мусорные значения, а не сохраняет их 480ms
+   ✓ REST: conversations/messages/settings > settings get забывает ссылки на исчезнувшие машины 486ms
+   ✓ REST: conversations/messages/settings > нормализует персонализацию и отвергает невозможную дату 482ms
+   ✓ REST: conversations/messages/settings > агенты: create → list (offline) → delete 566ms
+   ✓ REST: conversations/messages/settings > агенты: удаление снимает машину и с цели выполнения, и с дефолта 439ms
+   ✓ REST: conversations/messages/settings > агенты: POST без имени → 400 413ms
+   ✓ REST: conversations/messages/settings > агенты: список содержит политику; setPolicy сохраняет 391ms
+   ✓ REST: conversations/messages/settings > агенты: перевыпуск токена возвращает новый токен 481ms
+   ✓ REST: conversations/messages/settings > скачивание: GET /api/agents/app и /api/app/desktop без .dmg → 404 374ms
+   ✓ REST: conversations/messages/settings > скачивание: GET /api/agents/script отдаёт JS-бандл (attachment) 551ms
+   ✓ REST: conversations/messages/settings > установщик Termux: GET /api/agents/install-android.sh публичен и отдаёт bash 414ms
+   ✓ REST: conversations/messages/settings > установщик Windows: GET /api/agents/install-windows.ps1 публичен и отдаёт PowerShell 480ms
+   ✓ REST: conversations/messages/settings > установщики Linux и macOS публичны, отдают bash и разные скрипты 440ms
+   ✓ REST: conversations/messages/settings > обновление офлайн-машины отклоняется с понятной причиной 396ms
+   ✓ REST: conversations/messages/settings > обновление отклоняется, если сервер виден как localhost (команда ушла бы в саму машину) 407ms
+   ✓ REST: conversations/messages/settings > обновление чужой машины — 404 382ms
+   ✓ REST: conversations/messages/settings > обновление без токена — 401 406ms
+   ✓ REST: conversations/messages/settings > удаление агента сбрасывает execTarget на сервер 478ms
+   ✓ REST: conversations/messages/settings > предпросмотр промпта повторяет текст хода и слушается тумблеров 511ms
+   ✓ REST: conversations/messages/settings > история: размер при пересборке и правда про сессию движка (resume) 525ms
+   ✓ REST: conversations/messages/settings > цепочка AGENTS.md читается с машины по просьбе: от общей к конкретной, без шума о ненайденных 480ms
+   ✓ REST: conversations/messages/settings > снимок отдаёт факт прошлого хода и предупреждения о несогласованности 531ms
+   ✓ REST: conversations/messages/settings > дефолтный пресет контекста применяется к новым разговорам 518ms
+   ✓ REST: conversations/messages/settings > админ видит и правит контекст чужого чата, обычный пользователь — нет 528ms
+   ✓ REST: conversations/messages/settings > политика машины и «вслепую» видны в снимке 438ms
+   ✓ REST: conversations/messages/settings > выключенные проект, БЗ и персонализация вместе дают предупреждение «вслепую» 636ms
+   ✓ REST: conversations/messages/settings > статус индекса базы знаний виден в пункте, а множество инструкций замечено 575ms
+   ✓ REST: conversations/messages/settings > сравнение контекста двух разговоров показывает разницу и ничего не меняет 529ms
+   ✓ REST: conversations/messages/settings > выключенные инструменты приезжают списком, а группы знают свой размер 503ms
+   ✓ REST: conversations/messages/settings > дубликат текста инструкций замечен, а «где выключена» различает настройки и чат 586ms
+   ✓ REST: conversations/messages/settings > пустой контекст предупреждает, а история ходов несёт стоимость 771ms
+   ✓ REST: conversations/messages/settings > копирование контекста переносит выключения другого разговора и не пускает чужой 747ms
+   ✓ REST: conversations/messages/settings > снимок отдаёт имена вложений, историю размеров и оценку стоимости 420ms
+   ✓ REST: conversations/messages/settings > чат задачи с макетом показывает read-only источники make_design 499ms
+   ✓ REST: conversations/messages/settings > в режиме планирования инструменты вида чата честно обещают только чтение 704ms
+   ✓ REST: conversations/messages/settings > перечисляет хинты CLI в «чего в тексте нет» с размерами из shared 674ms
+   ✓ REST: conversations/messages/settings > называет движок-исполнитель и предупреждает о его замене 648ms
+   ✓ REST: conversations/messages/settings > движок показывается с учётом прав пользователя, а модель — алиасом меню 613ms
+   ✓ REST: conversations/messages/settings > в Make-чате без машины режим не понижается, но встроенные инструменты запрещены 505ms
+   ✓ REST: conversations/messages/settings > база знаний объявляет эффект инструментов, а не блока промпта 533ms
+   ✓ REST: conversations/messages/settings > список выключаемых пунктов зафиксирован: новый тумблер требует решения 512ms
+   ✓ REST: conversations/messages/settings > каждый тумблер снимка делает ровно то, что объявил 1762ms
+   ✓ REST: conversations/messages/settings > показывает автопилот ассистента и следует за его переключением 589ms
+   ✓ REST: conversations/messages/settings > в чате без проекта автопилота нет: доски у него не бывает 475ms
+   ✓ REST: conversations/messages/settings > перечисляет инструменты, которые даёт вид чата, и не даёт их выключить 560ms
+   ✓ REST: conversations/messages/settings > в живой сессии движка предупреждает о повторе настроек каждым ходом 532ms
+   ✓ REST: conversations/messages/settings > контекст Make попадает в предпросмотр и выключается тумблером 464ms
+   ✓ REST: conversations/messages/settings > контекст задачи попадает в предпросмотр и выключается отдельным тумблером 508ms
+   ✓ REST: conversations/messages/settings > предпросмотр не показывает инструкции, которых в чате этого вида не будет 530ms
+   ✓ REST: conversations/messages/settings > переименование чата не пишет записи в журнал контекста 499ms
+   ✓ REST: conversations/messages/settings > журнал контекста пишет смену настроек разговора, а не только тумблеры 618ms
+   ✓ REST: conversations/messages/settings > считает итог хода вместе с историей и цену на других моделях 528ms
+   ✓ REST: conversations/messages/settings > предупреждает, когда история занимает больше, чем все настройки 656ms
+   ✓ REST: conversations/messages/settings > предупреждает, когда постоянная часть выросла против прошлых ходов 515ms
+   ✓ REST: GET /api/search — полнотекстовый поиск по сообщениям > без токена → 401 460ms
+   ✓ REST: GET /api/search — полнотекстовый поиск по сообщениям > отдаёт ранжированные результаты со сниппетом и курсором 481ms
+   ✓ REST: GET /api/search — полнотекстовый поиск по сообщениям > не выдаёт сообщения другого пользователя 542ms
+   ✓ REST: GET /api/search — полнотекстовый поиск по сообщениям > сужает по проекту, projectId=none — только беседы без проекта 536ms
+   ✓ REST: GET /api/search — полнотекстовый поиск по сообщениям > пробел в конце запроса приезжает и как «+» (URLSearchParams) 541ms
+   ✓ REST: GET /api/search — полнотекстовый поиск по сообщениям > спецсимволы и мусорные параметры не дают 500 586ms
+   ✓ REST: GET /api/search — полнотекстовый поиск по сообщениям > журнал контекста пишет изменения (не нажатия) и попадает в снимок 1248ms
+   ✓ REST: GET /api/search — полнотекстовый поиск по сообщениям > крупная постоянная часть промпта даёт замечание о размере 621ms
+ ✓ src/ci/modelHooks.test.ts (72 tests | 5 skipped) 7650ms
+   ✓ пробелы базы знаний доходят до шага актуализации > общий таймаут гасит repair и не выдаёт ему новый бюджет стадии 407ms
+ ✓ src/routes/rest.auth.test.ts (51 tests) 33398ms
+   ✓ REST: аутентификация > отвечает credentialed CORS preflight для разрешённых Electron dev origins 1093ms
+   ✓ REST: аутентификация > не выдаёт разрешающие CORS-заголовки неизвестному origin и не ломает запрос без Origin 557ms
+   ✓ REST: аутентификация > без токена защищённый роут → 401, health и login — открыты 626ms
+   ✓ REST: аутентификация > rate-limit входа: 11-я попытка за окно → 429 с Retry-After, по имени и по IP (auth-roadmap п.1) 893ms
+   ✓ REST: аутентификация > блокировка после неудач: 5 неверных → 423 даже с верным паролем, 10 → blocked с причиной auto; успех сбрасывает счётчик (auth-roadmap п.3) 1164ms
+   ✓ REST: аутентификация > сессии: список с текущей, «выйти везде» отзывает остальные, отзыв одной, админ видит и отзывает (auth-roadmap п.4) 669ms
+   ✓ REST: аутентификация > cookie-сессия: по https имена с префиксом __Secure-, старая пара гасится, чтение принимает оба имени (инцидент 31.08.2026) 577ms
+   ✓ REST: аутентификация > сессия запоминает устройство: ключ, платформу, версию клиента, локальную сеть и активность 543ms
+   ✓ REST: аутентификация > место входа с публичного адреса уточняется в фоне и попадает в список 508ms
+   ✓ REST: аутентификация > электронная оболочка и агент опознаются как отдельные платформы 650ms
+   ✓ REST: аутентификация > старая база без новых колонок сессий и журнала открывается без ошибок 682ms
+   ✓ REST: аутентификация > старая база без колонок устройства мигрирует и продолжает читать прежние сессии 583ms
+   ✓ REST: аутентификация > переименование и доверие: только своя сессия, пустое имя снимает метку, чужая — 404 655ms
+   ✓ REST: аутентификация > «выйти везде» с includeCurrent гасит и текущую сессию вместе с cookie 553ms
+   ✓ REST: аутентификация > лимит одновременных сессий вытесняет самую давнюю и пишет событие 583ms
+   ✓ REST: аутентификация > брошенные сессии отзываются по сроку неактивности, свежие остаются 532ms
+   ✓ REST: аутентификация > сессии: повторный отзыв, чужой sid, мутации по cookie без CSRF и предельный User-Agent 793ms
+   ✓ REST: аутентификация > доверие привязано к секрету устройства: тот же браузер из той же сети без cookie проходит второй фактор 885ms
+   ✓ REST: аутентификация > список сессий не отдаёт хеш секрета устройства ни владельцу, ни админу 520ms
+   ✓ REST: аутентификация > завершённые сессии отдаются по запросу и показывают момент завершения 594ms
+   ✓ REST: аутентификация > «это не я» гасит все сессии и требует смену пароля при следующем входе 636ms
+   ✓ REST: аутентификация > админ задаёт лимит одновременных сессий; отрицательное значение и мусор отвергаются 394ms
+   ✓ REST: аутентификация > доверять можно только вход, подтверждённый кодом; признак виден в списке 544ms
+   ✓ REST: аутентификация > роль укорачивает срок жизни сессии 606ms
+   ✓ REST: аутентификация > история устройства отдаёт события этого входа и закрыта для чужих сессий 713ms
+   ✓ REST: аутентификация > админ снимает доверие с устройства пользователя 563ms
+   ✓ REST: аутентификация > массовое закрытие входов предупреждает письмом на подтверждённый адрес 601ms
+   ✓ REST: аутентификация > частые операции с сессиями упираются в ограничение 842ms
+   ✓ REST: аутентификация > история устройства держится на sid и переживает смену адреса 539ms
+   ✓ REST: аутентификация > завершённая сессия помнит причину: отзыв, лимит, тревога и простой 673ms
+   ✓ REST: аутентификация > вытесненную лимитом сессию человек видит в уведомлениях 579ms
+   ✓ REST: аутентификация > имя устройства наследуется новым входом и меняется сразу для всех его сессий 610ms
+   ✓ REST: аутентификация > доверенных устройств не больше лимита, а «снять доверие со всех» гасит их разом 953ms
+   ✓ REST: аутентификация > о действиях администратора над сессиями пользователь узнаёт из уведомлений 647ms
+   ✓ REST: аутентификация > админский список сессий отдаёт сводку живых и доверенных 771ms
+   ✓ REST: аутентификация > cookie-сессия: login ставит HttpOnly vc_session + vc_csrf; GET по cookie проходит, мутация без CSRF → 403, с заголовком → ок; logout гасит cookie (auth-roadmap п.5) 567ms
+   ✓ REST: аутентификация > 2FA TOTP: setup → enable по коду → логин отдаёт тикет → код даёт сессию; disable по коду (auth-roadmap п.6) 716ms
+   ✓ REST: аутентификация > журнал безопасности: неудачный вход, вход и выход попадают в /api/admin/security с IP (auth-roadmap п.7) 623ms
+   ✓ REST: аутентификация > инвайты: админ может отправить ссылку письмом, а инвайт без адреса работает как раньше (auth-roadmap пп.8–9) 510ms
+   ✓ REST: аутентификация > сброс кодом админа и смена своего пароля; временный пароль блокирует мутации до смены (auth-roadmap пп.10–12) 1142ms
+   ✓ REST: аутентификация > «запомнить меня»: без флага cookie сессионная (без Max-Age) и TTL 12 ч, с флагом — Max-Age 30 дней (auth-roadmap п.15) 612ms
+   ✓ REST: аутентификация > новое устройство: уведомляет в приложении и письмом, не чаще раза в сутки для пары UA+IP; настройка отключает письмо (auth-roadmap п.16) 782ms
+   ✓ REST: аутентификация > вход нового устройства без подтверждённого email не пытается отправить письмо и не ломает вход 670ms
+   ✓ REST: аутентификация > лимит LLM в месяц ставится PATCH-ом без роли и виден в списке (auth-roadmap п.17) 459ms
+   ✓ REST: аутентификация > открытая регистрация: выключена → 404; админ включает; заявка шлёт письмо со ссылкой; verify создаёт учётку с email и сессию; повтор токена мёртв 616ms
+   ✓ REST: аутентификация > same-origin cookie авторизует только iframe-превью и удаляется при logout 587ms
+   ✓ REST: аутентификация > POST /api/session/preview выпускает preview-cookie из Bearer, без токена — 401 538ms
+   ✓ REST: аутентификация > данные пользователей изолированы (user не видит разговоры admin) 526ms
+   ✓ REST: свои данные (/api/me/*) > профиль отдаёт свои поля любой роли и не требует прав администратора 528ms
+   ✓ REST: свои данные (/api/me/*) > журнал безопасности показывает только свои события 649ms
+   ✓ REST: свои данные (/api/me/*) > без сессии оба роута — 401 532ms
+ ✓ src/db/database.test.ts (67 tests) 5402ms
+   ✓ VoiceChatDb — миграции > добавляет llm_engines в существующую БД без потери разговоров 371ms
+   ✓ VoiceChatDb — миграции > снимает с Make-чатов привязку к машине и каталог, а «none» и чужие чаты не трогает 398ms
+Switched to a new branch 'CHAT-401-ветка'
+Reset branch 'CHAT-401-ветка'
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: is subject to change. To configure the initial branch name to use in all
+hint: of your new repositories, which will suppress this warning, call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+To /tmp/vc-main-dirty-ASD1ko/origin.git
+ * [new branch]      main -> main
+Cloning into '/tmp/vc-main-dirty-ASD1ko/checkout'...
+done.
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: is subject to change. To configure the initial branch name to use in all
+hint: of your new repositories, which will suppress this warning, call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+To /tmp/vc-main-branch-lO8JvS/origin.git
+ * [new branch]      main -> main
+Cloning into '/tmp/vc-main-branch-lO8JvS/checkout'...
+done.
+Switched to a new branch 'CHAT-407'
+HEAD is now at 0f96b57 first
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: is subject to change. To configure the initial branch name to use in all
+hint: of your new repositories, which will suppress this warning, call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+To /tmp/vc-main-unstashable-O53uPQ/origin.git
+ * [new branch]      main -> main
+Cloning into '/tmp/vc-main-unstashable-O53uPQ/checkout'...
+done.
+Switched to a new branch 'aside'
+To /tmp/vc-main-unstashable-O53uPQ/origin.git
+ * [new branch]      aside -> aside
+From /tmp/vc-main-unstashable-O53uPQ/origin
+ * branch            aside      -> FETCH_HEAD
+ * [new branch]      aside      -> origin/aside
+ ✓ src/db/database.ci.test.ts (52 tests) 9744ms
+   ✓ ci: справочник команд > база от прошлой версии: миграция помечает гейт и убирает его у модели 397ms
+   ✓ ci: справочник команд > миграция переводит штатный гейт на affected-check и сохраняет его проверочным 395ms
+   ✓ VoiceChatDb — миграция существующей БД под режим запуска и паузы > добавляет колонки режима/уточнений в ci_llm_configs, ci_runs и ci_settings 438ms
+   ✓ встроенный шаг «Актуализировать базу знаний» > остаётся в справочнике, но миграция удаляет интеграционные команды из after_model 413ms
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: is subject to change. To configure the initial branch name to use in all
+hint: of your new repositories, which will suppress this warning, call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+To /tmp/vc-main-sync-moV4Ur/origin.git
+ * [new branch]      main -> main
+Cloning into '/tmp/vc-main-sync-moV4Ur/checkout'...
+done.
+To /tmp/vc-main-sync-moV4Ur/origin.git
+   9382d41..87918dd  main -> main
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: is subject to change. To configure the initial branch name to use in all
+hint: of your new repositories, which will suppress this warning, call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+To /tmp/vc-main-bootstrap-KBIKFB/origin.git
+ * [new branch]      main -> main
+Switched to branch 'aside'
+ ✓ src/mcp/remoteBashMcp.test.ts (53 tests) 2153ms
+   ✓ remoteBashMcp > после ответа не остаётся отложенных исключений (тело читает транспорт, не Fastify) 816ms
+ ✓ src/routes/projects.test.ts (64 tests) 40450ms
+   ✓ вложения задачи REST > отдаёт файл вложения владельцу и прячет от неучастника 1040ms
+   ✓ черновики доработок REST > создаётся, правится, переживает список и удаляется 660ms
+   ✓ черновики доработок REST > отправка переводит задачу в подготовку, а отправленный цикл больше не правится 615ms
+   ✓ черновики доработок REST > чужой проект не отдаёт черновики, активный ран блокирует отправку 929ms
+   ✓ task rework cycles REST > читает полную серверную историю по sequence и скрывает её от неучастника 591ms
+   ✓ task rework cycles REST > повторяет одинаковый idempotency key без второго цикла или перехода 513ms
+   ✓ task rework cycles REST > активный ран запрещает создание и остаётся активным 562ms
+   ✓ task rework cycles REST > отклоняет чужой upload до транзакции 532ms
+   ✓ task rework cycles REST > атомарно сохраняет содержимое и возвращает задачу в preparation 530ms
+   ✓ разовый прогон набора Automated QA > без браузерного раннера отвечает 501 человеческим текстом, чужому проекту — 404 582ms
+   ✓ conversation preview URL REST > хранит override, очищает его и принимает только http/https 554ms
+   ✓ conversation status REST > хранит статус, валидирует значение и изолирует владельца 540ms
+   ✓ projects REST: доступ > без токена → 401 588ms
+   ✓ projects REST: доступ > свой проект создаёт любая роль и садится в нём владельцем 670ms
+   ✓ projects REST: доступ > ограничивает число собственных проектов, освобождает слот после удаления и не ограничивает admin 546ms
+   ✓ projects REST: доступ > /api/projects/ со слешем в конце — 404 до авторизации, а не путь в обход матрицы прав 503ms
+   ✓ projects REST: доступ > владелец-неадмин настраивает свой проект и зовёт участников, но в чужой не лезет 458ms
+   ✓ projects REST: доступ > developer создаёт и редактирует задачу, но получает 403 для настроек и release/deploy 567ms
+   ✓ projects REST: доступ > production bootstrap: owner-guard 403, и валидация машины/gitUrl до дорогих шагов 586ms
+   ✓ projects REST: доступ > release branches объясняет неполную конфигурацию машины вместо ложного 404 574ms
+   ✓ projects REST: доступ > список релизов возвращает только лёгкие строки, а шаги и логи — в detail 672ms
+   ✓ projects REST: доступ > создание, список, изоляция по членству 625ms
+   ✓ projects REST: доступ > доска приезжает двумя фазами: скелет карточек и состояние процессов 617ms
+   ✓ projects REST: доступ > владелец добавляет участника; участник видит, но не управляет 1161ms
+   ✓ projects REST: доступ > назначает нескольких владельцев, защищает последнего и не повышает глобального admin 546ms
+   ✓ projects REST: доступ > не назначает владельцем пользователя до добавления в проект 498ms
+   ✓ projects REST: доступ > добавление несуществующего пользователя → 400 525ms
+   ✓ projects REST: доступ > хранит http/https URL превью проекта и отклоняет остальные протоколы 635ms
+   ✓ projects REST: тип проекта и гейт возможностей > каталог типов отдаёт встроенное дерево 633ms
+   ✓ projects REST: тип проекта и гейт возможностей > проект создаётся с подтипом, тип виден в ответе 580ms
+   ✓ projects REST: тип проекта и гейт возможностей > несуществующий и чужой личный тип отклоняются 581ms
+   ✓ projects REST: тип проекта и гейт возможностей > в «Общем проекте» выключенные подсистемы отвечают 409, а доска работает 569ms
+   ✓ projects REST: тип проекта и гейт возможностей > в проекте «Разработка ПО» те же адреса не блокируются гейтом возможностей 617ms
+   ✓ projects REST: тип проекта и гейт возможностей > смена типа немедленно закрывает подсистему у существующего проекта 625ms
+   ✓ projects REST: доска > колонки: reorder не перехватывается :columnId; hidden; delete 547ms
+   ✓ projects REST: доска > задачи: создание, move, assignee-валидация, delete 732ms
+   ✓ projects REST: доска > нормализует критерии одинаково при создании и обновлении 607ms
+   ✓ активность карточки: комментарии, ворклог, история > полный цикл: комментарий добавляется, правится, удаляется; история пишется 681ms
+   ✓ активность карточки: комментарии, ворклог, история > чужой комментарий участнику не правится — 403 словами 599ms
+   ✓ автосвязь задачи с Make-проектом источника > задача из Make-чата получает whole_project-связь, из обычного чата — нет 522ms
+   ✓ projects REST: поля Jira-доски > метки, стори-поинты, срок, флаг и сквозной номер задачи 503ms
+   ✓ projects REST: поля Jira-доски > WIP-лимит колонки задаётся, сбрасывается и не принимает мусор 552ms
+   ✓ projects REST: машины проекта (папка, дефолт) и привязка чата > путь машины и дефолт — только владелец 564ms
+   ✓ projects REST: машины проекта (папка, дефолт) и привязка чата > владелец настраивает собственную машину без предоставления проекту 635ms
+   ✓ projects REST: машины проекта (папка, дефолт) и привязка чата > список доступен участнику, повторная привязка конфликтует, а управление запрещено 657ms
+   ✓ projects REST: машины проекта (папка, дефолт) и привязка чата > создание разговора атомарно сохраняет доступный projectId и отвергает чужой 607ms
+   ✓ projects REST: машины проекта (папка, дефолт) и привязка чата > привязка чата к проекту сохраняет наследование машины и навыки; не-участник → 404 688ms
+   ✓ projects REST: навыки по умолчанию, навыки задачи и связанный чат > PATCH проекта хранит defaultSkills; создание задачи наследует навыки по типу 553ms
+   ✓ projects REST: навыки по умолчанию, навыки задачи и связанный чат > POST .../tasks/:id/chat создаёт/возвращает связанный чат (идемпотентно, гейт членства) 598ms
+   ✓ projects REST: скрытие завершённых задач > задача из «Готово» за порогом не приходит по умолчанию и приходит с includeCompleted=1 595ms
+   ✓ projects REST: скрытие завершённых задач > API возвращает «Готово» в порядке последнего входа, не реагируя на правку 630ms
+   ✓ projects REST: скрытие завершённых задач > мусор в пороге читается как «не скрывать», настройка — только владельцу 632ms
+   ✓ projects REST: merge run > проверяет статус, права и машину; старт атомарен и идемпотентен 755ms
+   ✓ widget tool gateway > предпочитает UI, делает API-fallback и применяет подтверждённый action идемпотентно 653ms
+   ✓ вид доски (личная настройка участника) > пустой по умолчанию, патч мержится, мусор отбрасывается 695ms
+   ✓ вид доски (личная настройка участника) > вид у каждого свой и чужому проекту не отдаётся 711ms
+   ✓ дизайны карточки: REST > связывает карточку со страницей, отдаёт её в списке источников и снимает связь 928ms
+   ✓ дизайны карточки: REST > изолирует источники по владельцу сессии и запрещает прямую связь с чужим Make-проектом 749ms
+   ✓ дизайны карточки: REST > чужой Make-проект и не-Make чат отклоняются с объяснением, посторонний получает 404 666ms
+   ✓ дизайны карточки: REST > атомарно создаёт неизменяемый цикл и переводит задачу в preparation 647ms
+   ✓ дизайны карточки: REST > идемпотентный ключ не создаёт дубль, разные конкурентные ключи получают разные sequence 702ms
+   ✓ дизайны карточки: REST > отклоняет цикл при активном ране и не перемещает задачу 755ms
+   ✓ дизайны карточки: REST > цикл повторно проверяет владельца Make и существование выбранного файла 622ms
+   ✓ дизайны карточки: REST > панель Make видит связанные карточки и связывает новую со своей страницей 618ms
+ ✓ src/db/database.qa.test.ts (33 tests) 5871ms
+ ✓ src/git/workspaceService.test.ts (59 tests) 127ms
+ ✓ src/ci/parallel.test.ts (29 tests | 7 skipped) 2537ms
+ ✓ src/merge/runManager.test.ts (33 tests) 1595ms
+ ✓ src/ci/componentQa.test.ts (25 tests) 1228ms
+ ✓ src/routes/rest.machines.test.ts (17 tests) 8758ms
+   ✓ REST: хранилище машины > authorizes and forwards preview without a full read, and validates the path 1002ms
+   ✓ REST: хранилище машины > готовит marker до записи в БД, сохраняет id и проверяет фактический status 519ms
+   ✓ REST: хранилище машины > материализует каталоги и project marker до сохранения машины проекта 540ms
+   ✓ REST: хранилище машины > показывает зарегистрированное хранилище только для чтения 552ms
+   ✓ REST: хранилище машины > не оставляет ready-запись при ошибке прав 421ms
+   ✓ REST: хранилище машины > bootstrap проектного чата создаёт каталоги окружений, но не пишет environment.json (иначе poisoned manifest → деплой 400) 478ms
+   ✓ REST: хранилище машины > copy-to копирует файл на другую машину: в указанный каталог или в ChatAI/incoming цели 508ms
+   ✓ REST: хранилище машины > GET storage отдаёт карточке чата абсолютные каталоги и статус хранилища 492ms
+   ✓ REST: журнал команд машины > exec через REST попадает в журнал; фильтр по подстроке и CSV-экспорт 587ms
+   ✓ REST: доступ участников к машине проекта (п.18) > доступ «только чтение»: fs-чтение работает, запись/команды/группа — 403; полный доступ возвращает права 512ms
+   ✓ REST: групповая команда (п.15) > выполняет команду на нескольких машинах, сводка различает ok/failed/skipped; политика отклоняет весь запуск 447ms
+   ✓ REST: политика команд проекта и роли (п.10) > deny проекта отклоняет команду консоли с 403 до exec; PATCH проекта и PUT ролей сохраняют правила 433ms
+   ✓ REST: токены агентов (срок, отзыв, привязка к IP) > перевыпуск с ttlDays задаёт срок, отзыв закрывает вход, события попадают в журнал безопасности 477ms
+   ✓ REST: метрики машин для админки > stats и Prometheus-метрики агрегируют журнал команд и статус реестра 468ms
+   ✓ REST: утилиты машины (exec/fs) > exec: 404 на чужую машину; 400 на офлайн-машину владельца 480ms
+   ✓ REST: утилиты машины (exec/fs) > fs.list: 400 на офлайн-машину владельца 395ms
+   ✓ REST: утилиты машины (exec/fs) > GET /api/agents/version публичен и отдаёт версию 438ms
+ ✓ src/session.test.ts (24 tests) 20752ms
+   ✓ WS: аутентификация соединения > без токена сервер закрывает соединение 1030ms
+   ✓ WS: живые изменения списка сессий > отзыв своей Bearer-сессии доезжает по WebSocket, соседняя получает только инвалидацию 792ms
+   ✓ WS: живые изменения списка сессий > «выйти везде» адресно гасит каждую убитую вкладку 699ms
+   ✓ WS: живые изменения списка сессий > чужому пользователю кадры не приходят 860ms
+   ✓ WS: живые изменения списка сессий > переименование и админский отзыв тоже обновляют список живьём 684ms
+   ✓ WS: auth status > шлёт полный снимок при каждом подключении и только содержательные обновления 512ms
+   ✓ WS: Claude-стрим > claude.send → token×2 + done; session-id сохранён в БД 685ms
+   ✓ WS: Claude-стрим > claude.send с verbose → приходит claude.log 552ms
+   ✓ WS /agent: смена политики с машины > agent.setPolicy сохраняется в БД владельца 416ms
+   ✓ WS: роль user не выполняет на сервере (форс plan) > user на сервере → permissionMode форсится в plan 1045ms
+   ✓ WS: роль user не выполняет на сервере (форс plan) > admin на сервере → permissionMode из настроек (не клампится) 1067ms
+   ✓ WS: роль user не выполняет на сервере (форс plan) > permissionMode разговора переопределяет общие настройки 944ms
+   ✓ WS: роль user не выполняет на сервере (форс plan) > переопределение разговора не даёт роли user обойти форс plan на сервере 1314ms
+   ✓ WS: блок STT/TTS при нехватке ресурсов контейнера > audio.start → stt.error (распознавание не запускается) 775ms
+   ✓ WS: блок STT/TTS при нехватке ресурсов контейнера > tts.speak → tts.error (озвучка не запускается) 860ms
+   ✓ WS: блок STT/TTS при нехватке ресурсов контейнера > GET /api/system/capabilities отражает блок 910ms
+   ✓ WS: выбор движка Codex > llmProvider=codex → используется codex-клиент; session-id с префиксом codex 941ms
+   ✓ WS: ходы переживают обрыв соединения (TurnManager) > обрыв WS не отменяет ход: ответ сохраняет в БД сам сервер 1294ms
+   ✓ WS: ходы переживают обрыв соединения (TurnManager) > новое подключение получает claude.active с накопленным текстом, а затем done с сообщением из БД 983ms
+   ✓ WS: ходы переживают обрыв соединения (TurnManager) > claude.cancel с conversationId снимает ход: partial сохраняется как interrupted и поздний done игнорируется 1042ms
+   ✓ WS: relay действий веб-превью > preview.action доходит только своему пользователю, preview.result закрывает запрос 958ms
+   ✓ WS: кадры использования базы знаний > kb.usage доходит только своему пользователю 1220ms
+   ✓ сброс пароля по подтверждённому email > не раскрывает наличие адреса, шлёт ссылку и одноразово меняет пароль с отзывом сессий 696ms
+   ✓ сброс пароля по подтверждённому email > отличает истёкшую ссылку и ограничивает запросы 454ms
+ ✓ src/agents/registry.test.ts (39 tests) 274ms
+ ✓ src/taskPreparation.test.ts (82 tests) 49857ms
+   ✓ keeps the existing preparation KB section linked to verified strict-response regressions 853ms
+   ✓ rejects duplicate keys before requirements or provenance can be overwritten: {"scope":["Keep DNS protection"],"scope":["Remove DNS protection"]} 627ms
+   ✓ rejects duplicate keys before requirements or provenance can be overwritten: {"sources":[{"status":"unavailable","status":"available"}]} 435ms
+   ✓ rejects duplicate keys before requirements or provenance can be overwritten: {"decisions":[{"questionId":"Q1","questionId":null}]} 536ms
+   ✓ rejects duplicate keys before requirements or provenance can be overwritten: {"scope":["Keep requirement"],"\u0073cope":["Discard requirement"]} 638ms
+   ✓ preserves repeated names in independent objects and punctuation inside strings 474ms
+   ✓ normalizes only absent decision references and preserves compatible nulls and requirements 496ms
+   ✓ rejects ambiguous or damaged input: {} {} 505ms
+   ✓ rejects ambiguous or damaged input: {"broken": } {} 522ms
+   ✓ rejects ambiguous or damaged input: [{}] 444ms
+   ✓ rejects ambiguous or damaged input: {"outer": 551ms
+   ✓ rejects ambiguous or damaged input: {"valid":true} {broken 437ms
+   ✓ rejects ambiguous or damaged input: {"a":1} [2] 606ms
+   ✓ rejects ambiguous or damaged input: Подготовка завершена. {"a":1} Also remove access checks. 462ms
+   ✓ rejects ambiguous or damaged input: Change requirements. {"a":1} 439ms
+   ✓ rejects a prefixed brief without saving partial requirements: Подготовка завершена. 532ms
+   ✓ rejects a prefixed brief without saving partial requirements: Исправленный Development Brief: 442ms
+   ✓ normalizes all four diagnostic decisions without changing any other data 390ms
+   ✓ rejects incompatible decision references without coercion: 4 449ms
+   ✓ rejects incompatible decision references without coercion: true 546ms
+   ✓ rejects incompatible decision references without coercion: %j 640ms
+   ✓ rejects incompatible decision references without coercion: {} 655ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > совместима с zsh и fast-forward обновляет отставший main до origin/main 495ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > грязную копию лечит автоматически: правки уезжают в stash, синхронизация продолжается 818ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > копию, оставленную на ветке задачи или в detached HEAD, возвращает на базовую ветку 820ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > когда спрятать изменения нельзя, останавливается и называет мешающие файлы 741ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > обновляет реальную локальную main из origin/main без склеенной ссылки 745ms
+   ✓ синхронизация общей базовой ветки перед подготовкой > пустой или отсутствующий projectWorkdir клонирует по gitUrl, непустой чужой каталог отвергает 960ms
+   ✓ DELETE /api/agents/:id > удаляет машину с RESTRICT-связью, а повторно отвечает not found 490ms
+   ✓ DELETE /api/agents/:id > не раскрывает и не удаляет чужую машину 640ms
+   ✓ подготовка к разработке: движок из настроек > публикует адресные WS-инвалидации и не рассылает полную доску на каждую текстовую дельту 691ms
+   ✓ подготовка к разработке: движок из настроек > проект на Codex: запрос уходит в Codex-клиент и подготовка проходит 601ms
+   ✓ подготовка к разработке: движок из настроек > подключает БЗ и настроенную рабочую директорию машины только для чтения с явным бюджетом 504ms
+   ✓ подготовка к разработке: движок из настроек > без настроенной машины передаёт конкретную диагностику вместо запроса доступа 548ms
+   ✓ подготовка к разработке: движок из настроек > разовый выбор при запуске не перебивает модель проекта 653ms
+   ✓ подготовка к разработке: движок из настроек > отклоняет недоступную проектную модель до создания попытки без скрытой подмены 557ms
+   ✓ подготовка к разработке: движок из настроек > Claude без явной модели: прежний sonnet 536ms
+   ✓ подготовка к разработке: движок из настроек > сброс LLM проекта и effective planning возвращаются к настройкам пользователя 571ms
+   ✓ подготовка к разработке: движок из настроек > игнорирует настройки planning и использует модель проекта для каждой новой попытки 617ms
+   ✓ подготовка к разработке: диагностика и контракт > ошибка авторизации CLI называет движок и профиль пользователя 653ms
+   ✓ подготовка к разработке: диагностика и контракт > гейт готовности и вторая попытка исправления работают как раньше 562ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects multiple JSON objects on every preparation and recovery attempt 628ms
+   ✓ подготовка к разработке: диагностика и контракт > normalizes only an absent decision link: null 667ms
+   ✓ подготовка к разработке: диагностика и контракт > normalizes only an absent decision link: undefined 627ms
+   ✓ подготовка к разработке: диагностика и контракт > normalizes only an absent decision link: q1 811ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects invalid Brief format: prefix 814ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects invalid Brief format: fence 730ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects invalid Brief format: suffix 658ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects invalid Brief format: multiple 653ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects invalid Brief format: type 523ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects invalid Brief format: link 510ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects unknown test-type enumerations without repairing requirements 588ms
+   ✓ подготовка к разработке: диагностика и контракт > требует schemaVersion=2 до строгой валидации 493ms
+   ✓ подготовка к разработке: диагностика и контракт > repair-ход получает точные пути полей, если модель заменила строки массивами и объекты произвольной формой 529ms
+   ✓ подготовка к разработке: диагностика и контракт > отклоняет объектные элементы строковых списков, не меняя смысл требований 616ms
+   ✓ подготовка к разработке: диагностика и контракт > отклоняет объект строкового списка без непустого text и передаёт путь в repair-ход 771ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects incomplete dependent Brief constraints: required-ui 535ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects incomplete dependent Brief constraints: coverage 651ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects incomplete dependent Brief constraints: exclusion 785ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects incomplete dependent Brief constraints: alternative 697ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects incomplete dependent Brief constraints: required-field 605ms
+   ✓ подготовка к разработке: диагностика и контракт > нормализует однозначный список coverage без потери проверок 592ms
+   ✓ подготовка к разработке: диагностика и контракт > отклоняет несовместимые kind источников, но сохраняет однозначный refs 609ms
+   ✓ подготовка к разработке: диагностика и контракт > сохраняет unavailable некритичного источника и нормализует только однозначные значения 983ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects an unknown test type with a precise schema diagnostic 571ms
+   ✓ подготовка к разработке: диагностика и контракт > не подменяет неоднозначный статус источника на available 639ms
+   ✓ подготовка к разработке: диагностика и контракт > после двух невалидных ответов выполняет recovery той же проектной моделью 675ms
+   ✓ подготовка к разработке: диагностика и контракт > ограничивает recovery одной попыткой и завершает диагностируемо без brief 574ms
+   ✓ подготовка к разработке: диагностика и контракт > не отправляет неизвестный kind в recovery и завершает с точным путём 644ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects an escaped Markdown fence before field normalization 522ms
+   ✓ подготовка к разработке: диагностика и контракт > preserves the whole brief through every compatible conversion and a second preparation 594ms
+   ✓ подготовка к разработке: диагностика и контракт > normalizes an absent decision link without changing requirements and is idempotent 636ms
+   ✓ подготовка к разработке: диагностика и контракт > rejects both prefaced responses before accepting a standalone recovery object 588ms
+   ✓ подготовка к разработке: диагностика и контракт > отклоняет неоднозначный ответ из нескольких JSON-объектов 617ms
+   ✓ подготовка к разработке: диагностика и контракт > отмена гасит CLI и закрывает попытку 618ms
+   ✓ подготовка к разработке: выбор модели и текст ошибки > модель по умолчанию зависит от движка, явная — сохраняется 641ms
+   ✓ подготовка к разработке: выбор модели и текст ошибки > не-авторизационная ошибка остаётся сырой, но с движком и профилем 563ms
+   ✓ интерактивная попытка, события и экспорт > сохраняет монотонную ленту и продолжает попытку через её LLM-снимок после смены проекта 679ms
+   ✓ интерактивная попытка, события и экспорт > восстанавливает и дедуплицирует уведомление, хранит закрытие и убирает его после ответа 586ms
+   ✓ интерактивная попытка, события и экспорт > редактирует секреты до хранения и экспортирует один сохранённый снимок 639ms
+   ✓ task-launch создаёт сразу в подготовке > находит переименованную колонку только по semantic type и идемпотентен 556ms
+   ✓ task-launch создаёт сразу в подготовке > без semantic preparation возвращает ошибку конфигурации и ничего не создаёт 520ms
+ ✓ src/releases/releaseManager.test.ts (23 tests) 5537ms
+   ✓ ReleaseManager separated preparation and deploy > does not release when health reports the expected commit with another version 1112ms
+   ✓ ReleaseManager separated preparation and deploy > пишет живой лог health-check с последним ответом production, пока ждёт нужную версию 1626ms
+ ✓ src/ci/cancel.test.ts (13 tests) 1365ms
+ ✓ src/db/database.projectTypes.test.ts (28 tests) 5600ms
+   ✓ миграция существующей базы > старый проект получает корневой тип, повторное открытие не плодит узлы 404ms
+   ✓ миграция существующей базы > перезапуск не дописывает «Общему проекту» конвейер разработки 388ms
+   ✓ миграция существующей базы > настроенная доска переживает перезапуск: имена, своя колонка и скрытие целы 370ms
+   ✓ миграция существующей базы > своя колонка в «Общем проекте» не удаляется канонизацией 335ms
+   ✓ миграция существующей базы > посев не затирает пользовательские узлы 318ms
+   ✓ миграция существующей базы > нормализация шаблона ветки разовая: осознанный feature/{task_number} переживает перезапуск 380ms
+   ✓ миграция существующей базы > старая база нормализуется один раз: исторический дефолт заменяется, отметка ставится 433ms
+ ✓ src/mcp/kanbanMcp.test.ts (25 tests) 4299ms
+   ✓ kanbanMcp > релизные инструменты закрыты для не-владельца и спрашивают подтверждение у владельца 337ms
+ ✓ src/db/database.kbUsage.test.ts (17 tests) 1607ms
+ ✓ src/db/database.qaRunLifecycle.test.ts (24 tests) 3528ms
+ ✓ src/llm/remoteClient.test.ts (13 tests) 201ms
+ ✓ src/db/database.search.test.ts (17 tests) 3489ms
+   ✓ messages_fts — синхронизация триггерами > изменённый текст находится по новому слову и не находится по старому 306ms
+   ✓ messages_fts — миграция и бэкфилл > старая база без индекса бэкфиллится порциями, повторный старт ничего не ломает 393ms
+   ✓ messages_fts — миграция и бэкфилл > потерянное состояние бэкфилла пересобирает индекс, а не удваивает его 332ms
+   ✓ messages_fts — миграция и бэкфилл > сообщения, добавленные во время бэкфилла, не дублируются в индексе 447ms
+ ✓ src/ci/infraErrors.test.ts (21 tests) 30ms
+ ✓ src/ci/report.test.ts (17 tests) 9969ms
+   ✓ расход модели пишется по каждому ходу > после рана в ci_run_usage есть строка на ход работы модели и на резюме 985ms
+   ✓ расход модели пишется по каждому ходу > ход без метаданных CLI строкой расхода не становится 758ms
+   ✓ GET /api/ci/runs/:runId/report > отдаёт суммы токенов, стоимость, число запросов, время модели и все шаги 642ms
+   ✓ GET /api/ci/runs/:runId/report > показывает сохранённое попадание разделов БЗ в открытые файлы 547ms
+   ✓ GET /api/ci/runs/:runId/report > без стоимости от CLI считает оценку по прайсу и помечает её 632ms
+   ✓ GET /api/ci/runs/:runId/report > разбивает расход по стадиям и моделям, которыми они считались 521ms
+   ✓ GET /api/ci/runs/:runId/report > показывает вызовы инструментов рана с разбивкой по видам 510ms
+   ✓ GET /api/ci/runs/:runId/report > показывает контекст на запрос: средний, максимальный и число запросов к API 586ms
+   ✓ GET /api/ci/runs/:runId/report > показывает объём ответов инструментов и три самых тяжёлых ответа 565ms
+   ✓ GET /api/ci/runs/:runId/report > обрезанный ответ несёт исходный объём — видно, сколько лимит сэкономил 532ms
+   ✓ GET /api/ci/runs/:runId/report > мелкие ответы в тяжёлые не попадают, но в объём входят 505ms
+   ✓ GET /api/ci/runs/:runId/report > отказы вызовов считаются отдельно и не путаются с упавшей командой 507ms
+   ✓ GET /api/ci/runs/:runId/report > ран через исполнителя: у codex время работы модели считает сервер, стоимость — прайс 495ms
+   ✓ GET /api/ci/runs/:runId/report > ран без строк расхода (старые раны) открывается: шаги и время есть, расход пуст 362ms
+   ✓ GET /api/ci/runs/:runId/report > чужому пользователю — 404, а не пустой отчёт 593ms
+   ✓ GET /api/projects/:id/tasks/:taskId/report > складывает все раны задачи: повтор добавляет свой расход к итогу 789ms
+   ✓ GET /api/projects/:id/tasks/:taskId/report > несуществующая задача — 404 435ms
+ ✓ src/ci/integrationTests.test.ts (13 tests) 740ms
+ ✓ src/ci/kbUpdate.test.ts (11 tests | 9 skipped) 172ms
+ ✓ src/db/database.autopilot.test.ts (17 tests) 2333ms
+   ✓ остановка на ручном QA для отдельной задачи > миграция сохраняет прежнюю остановку и не перезаписывает выбор при следующем открытии 468ms
+ ✓ src/db/database.applicationReleases.test.ts (12 tests) 2465ms
+   ✓ компонентные релизы и блокировки окружения > проверяет нижнюю и верхнюю границы перед захватом deploy 313ms
+ ✓ src/autopilotPipeline.test.ts (13 tests) 6886ms
+   ✓ автопроход: ручное QA и независимость карточек > пропуски двух QA-этапов сразу приводят к Automated QA и очереди merge 942ms
+   ✓ автопроход: ручное QA и независимость карточек > сбой инфраструктуры QA не создаёт немедленный бесконечный повтор 560ms
+   ✓ автопроход: ручное QA и независимость карточек > с выключенной остановкой ставит задачу в ожидание merge и сразу будит следующий тик 448ms
+   ✓ автопроход: ручное QA и независимость карточек > ждёт ручное QA, а снятие флага немедленно продолжает автопроход 668ms
+   ✓ автопроход: ручное QA и независимость карточек > не принимает строку вместо переключателя 461ms
+   ✓ автопроход: ручное QA и независимость карточек > ошибка первой карточки не мешает второй пройти ручное QA 532ms
+   ✓ автопроход у новых задач > наследуется от настройки проекта и только задачами 455ms
+   ✓ автопроход у новых задач > выключенная настройка оставляет новые задачи без автопрохода 390ms
+   ✓ автопроход: начало конвейера > нулевой лимит повторов разрешает первую попытку подготовки 395ms
+   ✓ автопроход: начало конвейера > включённый автопроход сам уводит задачу из TODO в подготовку и запускает попытку 428ms
+   ✓ автопроход: начало конвейера > без автопрохода карточка остаётся в TODO и подготовка не стартует 460ms
+   ✓ автопроход: начало конвейера > у Git-проекта с offline-машиной подготовка не стартует и попытки не жжёт 563ms
+   ✓ автопроход: начало конвейера > упавшая попытка повторяется автоматически, а после лимита автопроход останавливается 580ms
+ ↓ src/ci/testGate.test.ts (8 tests | 8 skipped)
+ ✓ src/kb/kbMcp.test.ts (22 tests) 2784ms
+   ✓ kbMcp — инструменты базы знаний > после ответа не остаётся отложенных исключений (тело читает транспорт, не Fastify) 893ms
+ ✓ src/db/database.invitations.test.ts (21 tests) 5066ms
+   ✓ приглашения: список, отзыв и перевыпуск > регистрация по приглашённому адресу привязывает его, но не принимает автоматически 364ms
+ ✓ src/ci/automatedQaScenario.test.ts (13 tests) 10046ms
+   ✓ createAutomatedQaScenarioRunner > ожидание текста проверяется чтением страницы после действия 5003ms
+   ✓ шаг, который нельзя проверить > блокирует прогон вместо провала: судить о реализации по нему нельзя 5003ms
+ ✓ src/orchestration/runManager.test.ts (11 tests) 1300ms
+ ✓ src/routes/projects.ws.test.ts (9 tests) 7151ms
+   ✓ WS: живое обновление доски > участник получает board.changed без снапшота после мутации через REST 1018ms
+   ✓ WS: живое обновление доски > подписка не отправляет начальный снапшот и не принимает фильтр 746ms
+   ✓ WS: живое обновление доски > routes selective retries to a new attempt and rejects invalid selections 575ms
+   ✓ WS: живое обновление доски > обновляет нормализованный результат при недоступном workspace Automated QA 530ms
+   ✓ WS: живое обновление доски > не инвалидирует notifications обычной board-мутацией и адресует изменения доступа 1129ms
+   ✓ WS: живое обновление доски > не-участник не получает board.changed по подписке 1100ms
+   ✓ WS: приглашение приходит живьём > приглашённый получает invitations.invalidate, не будучи участником проекта 488ms
+   ✓ WS: приглашение приходит живьём > смена роли участника приходит кадром project.membership, а не уведомлением подготовки 600ms
+   ✓ WS: приглашение приходит живьём > посторонний пользователь кадра не получает 956ms
+ ✓ src/kb/codeUpdate.test.ts (28 tests) 41ms
+ ✓ src/routes/rest.admin.test.ts (15 tests) 7941ms
+   ✓ REST: админ-роуты (только admin) > rejects removing the final administrator and allows demotion when another exists 965ms
+   ✓ REST: админ-роуты (только admin) > serializes concurrent administrator demotions 655ms
+   ✓ REST: админ-роуты (только admin) > paginates after filtering and keeps the legacy full response 667ms
+   ✓ REST: админ-роуты (только admin) > records price changes and validates decimal precision 506ms
+   ✓ REST: админ-роуты (только admin) > marks the current administrator session and revokes another device 482ms
+   ✓ REST: админ-роуты (только admin) > lists reset-code expiry without exposing the secret and revokes it 513ms
+   ✓ REST: админ-роуты (только admin) > selects the last fifty logins before limiting the audit journal 387ms
+   ✓ REST: админ-роуты (только admin) > запуск деплоя доступен только admin и не принимает shell-параметры 516ms
+   ✓ REST: админ-роуты (только admin) > возвращает running и структурированную ошибку host API 480ms
+   ✓ REST: админ-роуты (только admin) > user → 403 на /api/admin/users 465ms
+   ✓ REST: админ-роуты (только admin) > admin: список → создание → блок → удаление 510ms
+   ✓ REST: админ-роуты (только admin) > admin нельзя удалить 433ms
+   ✓ REST: реестр LLM-исполнителей (только admin) > user → 403 на /api/admin/llm-engines 449ms
+   ✓ REST: реестр LLM-исполнителей (только admin) > admin: create → update → health → delete 461ms
+   ✓ REST: реестр LLM-исполнителей (только admin) > валидация create/update полей работает 448ms
+ ✓ src/ci/interactions.test.ts (8 tests) 5502ms
+   ✓ уточняющие вопросы модели > ставит ран на паузу, дублирует вопрос в связанный чат и продолжает диалог по sessionId 1333ms
+   ✓ уточняющие вопросы модели > повторный ответ отклоняется — побеждает первый (лента vs чат) 688ms
+   ✓ уточняющие вопросы модели > степень уточнения «без вопросов» не даёт хинта и не тормозит ран 595ms
+   ✓ уточняющие вопросы модели > бюджет ограничивает число пауз 684ms
+   ✓ гейт одобрения плана > план ждёт одобрения, затем тот же ран продолжает разработкой 529ms
+   ✓ гейт одобрения плана > доработка плана возвращает модель в режим планирования с комментарием 517ms
+   ✓ гейт одобрения плана > отклонение плана останавливает ран, слот «после» не запускается 477ms
+   ✓ гейт одобрения плана > разовый оверрайд режима в запросе перебивает настройку задачи 677ms
+ ✓ src/imageStudioBridge/remote.integration.test.ts (14 tests) 4347ms
+   ✓ студия картинок: embedded > сохраняет лимит загрузки 12 МБ через прокси, байты файла, переименование и корзину 413ms
+   ✓ студия картинок: remote > сохраняет лимит загрузки 12 МБ через прокси, байты файла, переименование и корзину 759ms
+   ✓ студия картинок: remote > генерирует с референсом, правит новым файлом и переименовывает разговор через ядро 400ms
+ ✓ src/db/database.maintenance.test.ts (22 tests) 3646ms
+ ✓ src/server.test.ts (21 tests) 1611ms
+ ✓ src/routes/projectTypes.test.ts (15 tests) 9509ms
+   ✓ каталог типов: чтение и создание > любой вошедший видит встроенное дерево и заводит свой узел 1234ms
+   ✓ каталог типов: чтение и создание > пустое имя и невидимый родитель отклоняются 613ms
+   ✓ каталог типов: чтение и создание > переопределение возможностей чистится от мусора 533ms
+   ✓ каталог типов: правка и удаление > чужой узел не правится и не удаляется 799ms
+   ✓ каталог типов: правка и удаление > встроенный узел не правится даже админом 563ms
+   ✓ каталог типов: правка и удаление > удаление узла с проектами — 409 с понятной причиной 490ms
+   ✓ каталог типов: правка и удаление > цикл в дереве отклоняется 594ms
+   ✓ публикация типа > автор отправляет на утверждение, админ утверждает, узел становится общим 594ms
+   ✓ публикация типа > отказ сохраняет причину, автор может поправить и отправить снова 533ms
+   ✓ публикация типа > опубликованный узел автор больше не правит, но может создать под ним ребёнка 561ms
+   ✓ публикация типа > чужой и невидимый узел по-прежнему отвечают 404, без подсказок 556ms
+   ✓ публикация типа > нельзя вынести на публикацию узел с приватным предком 607ms
+   ✓ публикация типа > решение принимает только admin и только валидное 589ms
+   ✓ сохранить проект как подтип > владелец получает узел под текущим типом проекта 673ms
+   ✓ сохранить проект как подтип > без имени — 400; посторонний — 404; участник — 403 с объяснением 562ms
+ ✓ src/preview/manager.test.ts (12 tests) 568ms
+ ✓ src/machines/vpn/service.test.ts (13 tests) 263ms
+ ✓ src/agents/installSyntax.test.ts (17 tests) 1368ms
+   ✓ Unix-установщик: определение свежей версии Node.js > macos дочитывает index.json при pipefail и сохраняет свою политику 341ms
+ ✓ src/taskChatContext.test.ts (8 tests) 4804ms
+   ✓ GET /api/conversations/:id/task-context > отдаёт иерархию, этап, машину и папку разработки 868ms
+   ✓ GET /api/conversations/:id/task-context > изолирует историю разных task-scoped чатов 701ms
+   ✓ GET /api/conversations/:id/task-context > не раскрывает историю или чат задачи пользователю без доступа 548ms
+   ✓ GET /api/conversations/:id/task-context > для чата без задачи возвращает null 420ms
+   ✓ GET /api/conversations/:id/task-context > использует персональный default чата и online-fallback, но не заменяет явный override 514ms
+   ✓ GET /api/conversations/:id/task-context > забывает машину чата, которой больше нет в реестре 485ms
+   ✓ GET /api/conversations/:id/task-context > не забывает существующую машину, которая сейчас недоступна 684ms
+   ✓ контекст задачи в промпте хода > чат задачи получает иерархию, этап, папку и критерии приёмки 579ms
+ ✓ src/prompt/contextBlocks.test.ts (13 tests) 20ms
+ ✓ src/routes/rest.files.test.ts (9 tests) 5854ms
+   ✓ REST: чтение файла с диска сервера (/api/files/read) > отдаёт картинку из профиля пользователя 1120ms
+   ✓ REST: чтение файла с диска сервера (/api/files/read) > файл вне своей области — 404 750ms
+   ✓ REST: чтение файла с диска сервера (/api/files/read) > без токена — 401 (роут под общей защитой /api) 464ms
+   ✓ REST: чтение файла с диска сервера (/api/files/read) > системный файл не отдаётся 418ms
+   ✓ REST: задачи из предложений улучшений > создаёт атомарно, возвращает идемпотентный результат и отклоняет повторный переход 517ms
+   ✓ REST: задачи из предложений улучшений > очередь проекта, создание одной кнопкой в backlog и удаление предложения 690ms
+   ✓ REST: задачи из предложений улучшений > «создать и подготовить»: отказ подготовки не откатывает созданную задачу 778ms
+   ✓ REST: машины настроек разговора > обычный чат видит только личные машины, проектный — личные и проектные без дублей 588ms
+   ✓ REST: машины настроек разговора > не даёт неучастнику увидеть проектную машину или сохранить недоступную 520ms
+ ✓ src/git/scripts.test.ts (18 tests) 22ms
+ ✓ src/readerBridge/readerRemote.integration.test.ts (5 tests) 1708ms
+   ✓ ядро (reader remote) + отдельный процесс Web Reader > MCP «browser»: подписанный токен из другого процесса принят; действие в панель уходит по RPC в relay ядра и доезжает до WS-сессии 360ms
+ ✓ src/routes/invitations.test.ts (18 tests) 13357ms
+   ✓ приглашения: сторона проекта > preserves a 1 day lifetime when issuing and resending links 1234ms
+   ✓ приглашения: сторона проекта > preserves a 7 day lifetime when issuing and resending links 859ms
+   ✓ приглашения: сторона проекта > preserves a 30 day lifetime when issuing and resending links 612ms
+   ✓ приглашения: сторона проекта > rejects invalid invitation lifetime 0 667ms
+   ✓ приглашения: сторона проекта > rejects invalid invitation lifetime -1 605ms
+   ✓ приглашения: сторона проекта > rejects invalid invitation lifetime 31 629ms
+   ✓ приглашения: сторона проекта > rejects invalid invitation lifetime 1.5 808ms
+   ✓ приглашения: сторона проекта > rejects invalid invitation lifetime 7 1050ms
+   ✓ приглашения: сторона проекта > владелец приглашает по адресу — уходит письмо со ссылкой 673ms
+   ✓ приглашения: сторона проекта > приглашение по логину без адреса создаётся, но письма нет 792ms
+   ✓ приглашения: сторона проекта > не владелец не управляет приглашениями 710ms
+   ✓ приглашения: сторона проекта > пустой получатель и мусорный адрес — 400 1003ms
+   ✓ приглашения: сторона проекта > повторная отправка выдаёт новый токен, отзыв гасит приглашение 682ms
+   ✓ приглашения: сторона приглашённого > приём доступен не-участнику и даёт членство 606ms
+   ✓ приглашения: сторона приглашённого > приглашённый по логину принимает своё приглашение и получает проект 685ms
+   ✓ приглашения: сторона приглашённого > отклонение закрывает приглашение 552ms
+   ✓ приглашения: публичный превью > без входа отдаёт только имя проекта, автора и срок 609ms
+   ✓ приглашения: публичный превью > неизвестный и отозванный токен — 404 575ms
+ ✓ src/kb/research.test.ts (12 tests) 1181ms
+ ✓ src/machinesBridge/httpMachines.test.ts (3 tests) 250ms
+ ✓ src/db/database.releaseAndQaGuards.test.ts (15 tests) 2337ms
+ ✓ src/db/database.designs.test.ts (11 tests) 2711ms
+   ✓ дизайны карточки > связывает задачу со страницей Make-проекта и отдаёт имя проекта вместе со связью 305ms
+   ✓ дизайны карточки > повторная связь той же страницы не плодит дублей, а только обновляет подпись 318ms
+ ✓ src/playwrightReaderBridge/remote.integration.test.ts (12 tests) 4301ms
+   ✓ Playwright 'remote', Web Reader 'embedded' > пользовательский REST работает напрямую и через ядро, изоляция разговоров сохраняется 330ms
+ ✓ src/kb/access.test.ts (7 tests) 2984ms
+   ✓ разделы базы знаний > новый проект получает скелет раздела «Разработка» 717ms
+   ✓ разделы базы знаний > раздел «Использование» виден всем, а вкладка сужает выдачу 505ms
+   ✓ разделы базы знаний > не-участник не видит знания чужого проекта ни фильтром, ни по id, ни поиском 386ms
+   ✓ разделы базы знаний > участник проекта видит его знания сразу после добавления 462ms
+   ✓ разделы базы знаний > персональные знания видит только владелец 307ms
+   ✓ разделы базы знаний > «Исследовать проект» закрыт для не-участника и требует машину 329ms
+ ✓ src/kb/autoContext.test.ts (9 tests) 20ms
+ ✓ src/users/auth.cookies.test.ts (19 tests) 13ms
+ ✓ src/machinesBridge/machinesRemote.integration.test.ts (3 tests) 1223ms
+ ✓ src/kb/usage.test.ts (8 tests) 277ms
+ ✓ src/kanbanBridge/kanbanRemote.integration.test.ts (5 tests) 1201ms
+ ✓ src/kanban/boundary.test.ts (6 tests) 49ms
+ ✓ src/llm/remoteTurn.test.ts (2 tests) 549ms
+   ✓ ход модели через исполнителя по HTTP > события совпадают с локальным spawn 399ms
+ ✓ src/routes/make.projectSync.test.ts (6 tests) 1016ms
+ ✓ src/releases/applicationReleaseManager.test.ts (6 tests) 541ms
+ ✓ src/makeBridge/core.contract.test.ts (7 tests) 1888ms
+   ✓ MakeCore (local) > разговор, владелец, проект и членство 320ms
+   ✓ MakeCore (http) > разговор, владелец, проект и членство 313ms
+   ✓ MakeCore (http) > связи дизайна с карточкой: link → taskLinks/taskDesigns → unlink, доска оживает 334ms
+ ✓ src/users/auth.permissions.test.ts (6 tests) 14ms
+ ✓ src/makeBridge/remote.integration.test.ts (4 tests) 1843ms
+ ✓ src/components/storybookSessions.test.ts (11 tests) 25ms
+ ✓ src/imageRelocate.test.ts (13 tests) 50ms
+ ✓ src/routes/projectComponents.test.ts (8 tests) 5674ms
+   ✓ REST компонентов проекта > не участник не узнаёт о существовании проекта 975ms
+   ✓ REST компонентов проекта > без обязательных параметров — 400 с указанием, чего не хватает 689ms
+   ✓ REST компонентов проекта > не-сториз файл в разбор не принимается 884ms
+   ✓ REST компонентов проекта > тестировщик может читать список, но не запускать Storybook и не заводить тикет 649ms
+   ✓ REST компонентов проекта > неизвестная рабочая копия отвечает кодом, а не пустотой 556ms
+   ✓ REST компонентов проекта > состояние Storybook у неизвестной копии не создаёт сессию 612ms
+   ✓ REST компонентов проекта > открытие кадра требует запущенного Storybook и живой копии 648ms
+   ✓ REST компонентов проекта > туннель кадра нельзя закрыть чужим и без рабочей копии 658ms
+ ✓ src/llm/runnerContract.test.ts (4 tests) 308ms
+ ✓ src/components/componentTicket.test.ts (8 tests) 14ms
+ ↓ src/db/search.perf.test.ts (1 test | 1 skipped)
+ ✓ src/kb/usageRoutes.test.ts (8 tests) 4830ms
+   ✓ GET /api/conversations/:id/kb-usage > отдаёт итоги, разделы, ленту и lastSeq своего чата 1058ms
+   ✓ GET /api/conversations/:id/kb-usage > режим разговора виден в отчёте (панель показывает чип режима) 514ms
+   ✓ GET /api/conversations/:id/kb-usage > чужой и несуществующий чат → 404 531ms
+   ✓ GET /api/conversations/:id/kb-usage > без токена → 401 (маршрут не публичный) 549ms
+   ✓ GET /api/conversations/:id/kb-usage > успешно отмечает загруженную границу, не захватывая более новое событие 674ms
+   ✓ GET /api/conversations/:id/kb-usage > не позволяет отмечать чужой чат и валидирует границу 537ms
+   ✓ GET /api/projects/:id/kb-usage > агрегирует обращения всех чатов проекта 453ms
+   ✓ GET /api/projects/:id/kb-usage > не участник проекта → 404 512ms
+ ✓ src/mcp/consoleMcp.test.ts (9 tests) 452ms
+ ✓ src/mcp/bashFileRead.test.ts (31 tests) 35ms
+ ✓ src/db/taskActivity.test.ts (8 tests) 1790ms
+ ✓ src/admin/standalone/adminRemote.integration.test.ts (3 tests) 1468ms
+ ✓ src/prompt/suggester.test.ts (13 tests) 2861ms
+   ✓ REST /api/prompt/suggest > требует токен 841ms
+   ✓ REST /api/prompt/suggest > возвращает варианты для черновика 623ms
+   ✓ REST /api/prompt/suggest > пустой текст → пустой список без обращения к движку 605ms
+   ✓ REST /api/prompt/suggest > ошибка движка → 502 781ms
+ ✓ src/db/schemaPg.test.ts (6 tests | 1 skipped) 53ms
+ ✓ src/ci/taskPreparationMake.test.ts (2 tests) 1978ms
+   ✓ подготовка задачи из Make-чата > получает make-источники и заметку о дизайне вместо публичного URL 1311ms
+   ✓ подготовка задачи из Make-чата > задача без дизайна готовится как раньше: без источников и без заметки 665ms
+ ✓ src/agents/defaultStorage.test.ts (8 tests) 23ms
+ ✓ src/anthropic/gateway.test.ts (6 tests) 173ms
+ ✓ src/kanbanBridge/remote.test.ts (2 tests) 26ms
+ ✓ src/agents/unixInstall.test.ts (13 tests) 10ms
+ ✓ src/ci/automatedQaCheck.test.ts (5 tests) 15ms
+ ✓ src/releases/managedEnvironmentResolver.test.ts (5 tests) 54ms
+ ✓ src/db/sql/dialect.test.ts (10 tests) 25ms
+ ✓ src/imageStudioBridge/generator.test.ts (5 tests) 127ms
+ ✓ src/kb/service.test.ts (5 tests) 36ms
+ ✓ src/routes/projectGit.test.ts (6 tests) 4462ms
+   ✓ REST панели кода > список рабочих копий доступен участнику и пуст, пока ранов не было 1105ms
+   ✓ REST панели кода > не участник не узнаёт даже о существовании проекта 765ms
+   ✓ REST панели кода > без обязательных параметров — 400 с понятным текстом 597ms
+   ✓ REST панели кода > тестировщику запись запрещена глобальным гейтом права, чтение — нет 608ms
+   ✓ REST панели кода > неизвестная рабочая копия — 404 с кодом, а не пустой ответ 679ms
+   ✓ REST панели кода > форма «произвольный путь на машине» не принимается ни одной ручкой 705ms
+ ✓ src/db/ownership.test.ts (5 tests) 67ms
+ ✓ src/kanbanBridge/internal.test.ts (4 tests) 21ms
+ ✓ src/commandNotify.test.ts (1 test) 1038ms
+   ✓ уведомления о долгих командах > команда из чата пишет полный лог в artifacts/commands хранилища чата; консольная — нет 1035ms
+ ✓ src/db/sql/sqlite.test.ts (4 tests) 55ms
+ ✓ src/kb/taskInjection.test.ts (7 tests) 3451ms
+   ✓ авто-инъекция на кодовых описаниях задач > CHAT-54 получает непустой контекст 542ms
+   ✓ авто-инъекция на кодовых описаниях задач > CHAT-68 получает непустой контекст 430ms
+   ✓ авто-инъекция на кодовых описаниях задач > CHAT-70 получает непустой контекст 348ms
+   ✓ авто-инъекция на кодовых описаниях задач > CHAT-54 приводит к разделам про инструменты машины и ран 333ms
+   ✓ авто-инъекция на кодовых описаниях задач > CHAT-68 приводит к разделу про расход CI-рана 395ms
+   ✓ авто-инъекция на кодовых описаниях задач > CHAT-70 приводит к разделам про модели и UI, несмотря на ${…} в описании 364ms
+   ✓ авто-инъекция на кодовых описаниях задач > средний размер инъекции остаётся в пределах бюджета 1037ms
+ ✓ src/makeBridge/proxy.test.ts (4 tests) 171ms
+ ✓ src/routes/browserShots.test.ts (3 tests) 176ms
+ ↓ src/db/sql/pg.test.ts (3 tests | 3 skipped)
+ ✓ src/imageRetouch.test.ts (6 tests) 208ms
+ ✓ src/users/geo.test.ts (8 tests) 30ms
+ ✓ src/storageMigration/manager.test.ts (4 tests) 29ms
+ ✓ src/internal/execStream.test.ts (3 tests) 128ms
+ ✓ src/routes/applicationReleases.test.ts (3 tests) 787ms
+   ✓ REST-контракт каталога и истории доступен участнику, чужой проект скрыт 379ms
+ ✓ src/infra.caddy.test.ts (7 tests) 32ms
+ ✓ src/llm/runnerFsClient.test.ts (3 tests) 160ms
+ ✓ src/generatedCleanup.test.ts (4 tests) 20ms
+ ✓ src/db/fts.test.ts (50 tests) 101ms
+ ✓ src/readerBridge/proxy.test.ts (2 tests) 146ms
+ ✓ src/kb/taskQuery.test.ts (8 tests) 13ms
+ ✓ src/machines/boundary.test.ts (3 tests) 53ms
+ ✓ src/projectSync.test.ts (7 tests) 10ms
+ ↓ src/db/database.pgBootstrap.test.ts (2 tests | 2 skipped)
+ ✓ src/serverFiles.test.ts (10 tests) 41ms
+ ✓ src/codex/codexSessions.test.ts (6 tests) 28ms
+ ✓ src/db/database.releaseEvents.test.ts (2 tests) 295ms
+ ✓ src/kanbanBridge/proxy.test.ts (1 test) 20ms
+ ↓ src/db/copyToPostgres.test.ts (1 test | 1 skipped)
+ ✓ src/routes/rest.readerEngine.test.ts (6 tests) 3785ms
+   ✓ выбор полного браузера в разговоре Web Reader > по умолчанию использует proxy и сохраняет Chromium вместе с URL 917ms
+   ✓ выбор полного браузера в разговоре Web Reader > обычное сохранение адреса не сбрасывает выбранный движок 615ms
+   ✓ выбор полного браузера в разговоре Web Reader > отвергает неверный движок и неверный тип URL без записи 446ms
+   ✓ выбор полного браузера в разговоре Web Reader > не меняет чужой разговор и не переключает Make 540ms
+   ✓ выбор полного браузера в разговоре Web Reader > ядро направляет модель в выбранный Chromium и возвращает relay после переключения 632ms
+   ✓ выбор полного браузера в разговоре Web Reader > выбор движка переживает открытие базы новым процессом 632ms
+ ✓ src/browser/checkShots.test.ts (6 tests) 22ms
+ ✓ src/merge/textConflictResolver.test.ts (8 tests) 17ms
+ ✓ src/readerBridge/projectResource.test.ts (4 tests) 190ms
+ ✓ src/routes/rest.runnerProxy.test.ts (1 test) 1352ms
+   ✓ REST proxy to runner fs/auth api > проксирует /api/auth/status, /api/cc/*, /api/cx/* и /api/files/read без смены формата 1350ms
+ ✓ src/stt/downloadManager.test.ts (5 tests) 16ms
+ ✓ src/system/resources.test.ts (12 tests) 9ms
+ ✓ src/agents/windowsInstall.test.ts (10 tests) 9ms
+ ✓ src/ci/autopilotResume.test.ts (6 tests) 7ms
+ ✓ src/db/testUsers.test.ts (4 tests) 733ms
+ ✓ src/db/database.locks.test.ts (3 tests) 109ms
+ ✓ src/machines/vpn/tailscale.test.ts (4 tests) 42ms
+ ✓ src/cc/ccSessions.test.ts (5 tests) 21ms
+ ✓ src/db/promiseAudit.test.ts (1 test) 10704ms
+   ✓ слой данных: промисы под await > в db/repos и database.ts нет вызовов с типом Promise вне await/return/Promise.all 10701ms
+ ✓ src/users/mailer.test.ts (2 tests) 27ms
+ ✓ src/agents/watchdog.test.ts (2 tests) 10ms
+ ✓ src/playwrightReaderBridge/boundary.test.ts (2 tests) 44ms
+ ✓ src/projects/promptContext.test.ts (5 tests) 8ms
+ ✓ src/users/auth.previewSession.test.ts (6 tests) 4793ms
+   ✓ Reader: специальная сессия не перекрывается обычной cookie > форма страницы проходит на точном proxy-пути без CSRF внешней оболочки 1360ms
+   ✓ Reader: специальная сессия не перекрывается обычной cookie > сброс cookie сайта доступен панели при обычной cookie-сессии оболочки 601ms
+   ✓ Reader: специальная сессия не перекрывается обычной cookie > остальной API продолжает требовать CSRF для мутации 810ms
+   ✓ Reader: специальная сессия не перекрывается обычной cookie > preview-cookie не даёт доступ к остальному API 852ms
+   ✓ Reader: специальная сессия не перекрывается обычной cookie > обычная cookie без preview-cookie всё ещё требует CSRF даже на прокси 529ms
+   ✓ Reader: специальная сессия не перекрывается обычной cookie > недействительная preview-cookie не разрешает запрос 639ms
+ ✓ src/manifests.test.ts (3 tests) 12ms
+ ✓ src/system/capabilities.test.ts (6 tests) 6ms
+ ✓ src/agents/androidInstall.test.ts (6 tests) 11ms
+ ✓ src/users/auth.previewRun.test.ts (3 tests) 9ms
+ ✓ src/makeBridge/boundary.test.ts (2 tests) 34ms
+ ✓ src/browser/checkTarget.test.ts (5 tests) 6ms
+ ✓ src/ws.test.ts (1 test) 6ms
+ ✓ src/agents/wsAgent.test.ts (1 test) 112ms
+ ✓ src/ci/preparationNotes.test.ts (4 tests) 7ms
+ ✓ src/users/accounts.test.ts (5 tests) 444ms
+   ✓ passwords — scrypt > верный пароль проходит, неверный — нет; пустой пароль допустим 426ms
+ ✓ src/machinesBridge/proxy.test.ts (1 test) 10ms
+ ✓ src/ci/qaScreenshots.test.ts (5 tests) 11ms
+ ✓ src/browser/machinePreview.test.ts (5 tests) 7ms
+ ✓ src/agents/commandGate.test.ts (2 tests) 18ms
+ ✓ src/tts/ttsSession.test.ts (2 tests) 1357ms
+   ✓ WS: TTS-синтез + REST голоса > tts.speak → tts.audio (base64 WAV) 784ms
+   ✓ WS: TTS-синтез + REST голоса > GET /api/tts/voices отдаёт голоса движка 570ms
+ ✓ src/ci/executor.test.ts (5 tests) 8ms
+ ✓ src/stt/sttSession.test.ts (1 test) 961ms
+   ✓ WS: STT-поток > audio.start → чанки → audio.stop → stt.final 957ms
+ ✓ src/agents/vpn.test.ts (2 tests) 9ms
+ ✓ src/ci/qaStateLogs.test.ts (3 tests) 7ms
+ ✓ src/ci/chunkSink.test.ts (2 tests) 58ms
+ ✓ src/db/enrollment.test.ts (2 tests) 90ms
+ ✓ src/auth/loginStatus.test.ts (3 tests) 5ms
+ ✓ src/automationClient.test.ts (2 tests) 14ms
+ ✓ src/routes/applicationFrontends.test.ts (2 tests) 192ms
+ ✓ src/ci/kbHit.test.ts (3 tests) 10ms
+ ✓ src/db/sql/lane.test.ts (2 tests) 21ms
+ ✓ src/mcp/planMode.test.ts (4 tests) 9ms
+ ✓ src/agents/metrics.test.ts (1 test) 11ms
+ ✓ src/ci/testStages.test.ts (5 tests) 10ms
+ ✓ src/users/totp.test.ts (3 tests) 7ms
+ ✓ src/diarization/stubDiarization.test.ts (3 tests) 9ms
+ ✓ src/playwrightReaderBridge/readerEngine.test.ts (3 tests) 8ms
+ ✓ src/imageStudioBridge/boundary.test.ts (1 test) 77ms
+ ✓ src/routes/featurePreview.test.ts (3 tests) 5ms
+ ✓ src/auth/statusState.test.ts (2 tests) 11ms
+ ✓ src/kanban/standalone/machinesMirror.test.ts (1 test) 6ms
+ ✓ src/agents/agentScript.test.ts (2 tests) 181ms
+ ✓ src/ci/console.test.ts (2 tests) 9ms
+ ✓ src/users/pwned.test.ts (1 test) 7ms
+ ✓ src/users/sessionStore.test.ts (12 tests) 398ms
+
+ Test Files  179 passed | 5 skipped (184)
+      Tests  2260 passed | 43 skipped (2303)
+   Start at  09:58:31
+   Duration  249.03s (transform 10.41s, setup 0ms, collect 147.38s, tests 524.92s, environment 67ms, prepare 23.98s)
+
+[gate:app] npm run -w @voicechat/server build
+
+> @voicechat/server@0.1.0 build
+> tsc --noEmit -p tsconfig.json
+
+[gate:app] npm run -w @voicechat/profile-app typecheck
+
+> @voicechat/profile-app@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+[gate:app] npm run -w @voicechat/profile-app test
+
+> @voicechat/profile-app@0.1.0 test
+> vitest run --silent
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/profile-app
+
+ ✓ src/architecture.test.ts (2 tests) 5ms
+ ✓ src/model.test.ts (23 tests) 37ms
+ ✓ src/ProfilePanel.dom.test.tsx (25 tests) 1923ms
+   ✓ ProfilePanel — доступность > без нарушений axe в админском и собственном режиме 410ms
+
+ Test Files  3 passed (3)
+      Tests  50 passed (50)
+   Start at  10:02:48
+   Duration  4.36s (transform 695ms, setup 326ms, collect 1.44s, tests 1.97s, environment 2.18s, prepare 406ms)
+
+[gate:app] npm run -w @voicechat/ui typecheck
+
+> @voicechat/ui@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+[gate:app] npm run -w @voicechat/ui test
+
+> @voicechat/ui@0.1.0 test
+> vitest run --silent
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui
+
+ ✓ src/store/appRuntime.chat.test.ts (136 tests) 550ms
+ ✓ src/components/ConversationSettings.dom.test.tsx (70 tests) 10644ms
+   ✓ ConversationSettings > сохраняет название, машину, директорию и выбранные навыки 585ms
+   ✓ ConversationSettings > подбор базы знаний считается по черновику, а не гадается снимком 514ms
+   ✓ ConversationSettings > фильтр «Изменённые» берёт пункты из журнала, а «Сначала тяжёлые» меняет порядок 342ms
+   ✓ ConversationSettings > пресеты контекста: применение приводит набор к сохранённому, сохранение просит имя полем 474ms
+   ✓ ConversationSettings > доступность инспектора: список источников и карточка пункта 761ms
+ ✓ src/components/kanban/TaskModal.dom.test.tsx (121 tests) 16159ms
+   ✓ TaskModal — настройки автопрохода > сохраняет отдельную остановку на QA и показывает подтверждённое сервером состояние 437ms
+   ✓ TaskModal — синхронизация полных данных задачи > сохраняет оба поля через onUpdate и показывает серверные значения после повторного открытия 367ms
+   ✓ TaskModal — создание задачи из улучшения > открывает стандартный предзаполненный черновик и создаёт только после подтверждения 568ms
+   ✓ TaskModal — подзадачи и активность на «Общем» > добавляет подзадачу в первую видимую колонку с типом потомка 311ms
+   ✓ TaskModal — описание: маркдаун в просмотре, поле в правке > правка и «Сохранить» зовут onUpdate один раз и возвращают просмотр 395ms
+   ✓ TaskModal — критерии приёмки > Enter создаёт пункт, Shift+Enter — внутренний перенос, а blur сохраняет нормализованный Markdown 364ms
+   ✓ TaskModal — доступность > без нарушений axe: карточка задачи целиком 548ms
+   ✓ TaskModal — встроенный AI-чат > показывает редактируемый диагностический черновик без автоматической отправки 312ms
+   ✓ TaskModal — встроенный AI-чат > изолирует task-scoped историю, стриминг и повтор 473ms
+   ✓ TaskModal — встроенный AI-чат > сохраняет docked-композер при загрузке, пустой истории и отправке 327ms
+ ✓ src/components/ChatColumn.dom.test.tsx (83 tests) 4725ms
+   ✓ search highlights occurrences, navigates and only captures find inside the chat 337ms
+ ✓ src/components/kanban/KanbanBoard.dom.test.tsx (114 tests) 27879ms
+   ✓ undoes hiding the actual card without changing task data 457ms
+   ✓ KanbanBoard (изолированный) > показывает и копирует диагностический снимок текущего представления 568ms
+   ✓ KanbanBoard (изолированный) > строит абсолютную кодированную ссылку и показывает результат копирования карточки 422ms
+   ✓ KanbanBoard (изолированный) > показывает исполнителей с аватарами и полными счётчиками и синхронизирует быстрый выбор 565ms
+   ✓ KanbanBoard (изолированный) > ищет варианты фильтра и массово меняет только найденные значения 433ms
+   ✓ KanbanBoard (изолированный) > закрывает справку Escape и кликом по фону с возвратом фокуса 325ms
+   ✓ KanbanBoard (изолированный) > переключает плотность, раскрывает состояние и сохраняет выбор по пользователю и проекту 304ms
+   ✓ KanbanBoard (изолированный) > сворачивает колонку в узкую доступную полосу и возвращает фокус на переключатель 468ms
+   ✓ KanbanBoard (изолированный) > показывает полный и отфильтрованный размер дорожки и связывает переключатель с содержимым 301ms
+   ✓ KanbanBoard (изолированный) > массово сворачивает дорожки и возвращает фокус после отдельного переключения 329ms
+   ✓ KanbanBoard (изолированный) > ищет по содержимому, меткам и исполнителю и показывает количество результатов 639ms
+   ✓ KanbanBoard (изолированный) > метрики включают синхронные быстрые срезы, chips и общий сброс 594ms
+   ✓ KanbanBoard (изолированный) > фильтрует взаимоисключающие интервалы срока и сохраняет их в виде доски 569ms
+   ✓ KanbanBoard (изолированный) > обзор приоритетов показывает устойчивые счётчики и управляет OR-фильтром 382ms
+   ✓ KanbanBoard (изолированный) > фокусирует поиск по /, очищает его по Escape и отдельной кнопкой 379ms
+   ✓ KanbanBoard (изолированный) > объясняет нулевой результат и сбрасывает все фильтры одним действием 356ms
+   ✓ KanbanBoard (изолированный) > переходит между видимыми колонками, фокусирует заголовок и обновляет список скрытых 373ms
+   ✓ KanbanBoard (изолированный) > AI-помощник применяет результат в описание карточки и сохраняет задачу 645ms
+   ✓ KanbanBoard — очередь «Улучшения» > «Создать задачу» создаёт без выбора колонки и открывает новую карточку; «Создать и подготовить» просит подготовку 332ms
+   ✓ KanbanBoard — фильтры исполнителей > совместные фильтры дают независимые действия и глобальный сброс сохраняет локальный 359ms
+   ✓ KanbanBoard — фильтры исполнителей > локальный фильтр пустой колонки сбрасывается без изменения доски 318ms
+   ✓ KanbanBoard — фильтры исполнителей > выбирает нескольких исполнителей по ИЛИ и показывает badge 306ms
+   ✓ KanbanBoard — фильтры исполнителей > комбинирует пользователя с задачами без исполнителя и снимает отдельное условие 342ms
+   ✓ KanbanBoard — фильтры исполнителей > поддерживает выбрать всех, сброс и Escape без изменения выбора 516ms
+   ✓ KanbanBoard — фильтры исполнителей > общий режим временно приоритетен, а локальный выбор сохраняется и восстанавливается 399ms
+   ✓ KanbanBoard — фильтры исполнителей > свимлейны и показ скрытых колонок переживают перезагрузку 326ms
+   ✓ KanbanBoard — фильтры исполнителей > восстанавливает массив после перезагрузки и реагирует на обновление назначения 331ms
+   ✓ KanbanBoard — доступность > без нарушений axe: доска, фильтры, колонки 406ms
+   ✓ KanbanBoard — фильтры на телефоне > MobileScroll passes mobile axe with shared story data 2273ms
+   ✓ KanbanBoard — фильтры на телефоне > MobileFilters passes mobile axe with shared story data 1241ms
+   ✓ KanbanBoard — фильтры на телефоне > selects a mobile column, restores it, and creates in that column with one FAB 546ms
+   ✓ KanbanBoard — фильтры на телефоне > resets mobile filters, returns focus, and exposes every label through card details 818ms
+ ✓ src/components/kanban/TaskCard.dom.test.tsx (59 tests) 2382ms
+ ✓ src/components/Sidebar.dom.test.tsx (64 tests) 2832ms
+ ✓ src/components/ci/RunFeed.dom.test.tsx (47 tests) 3431ms
+   ✓ RunFeed navigation > searches across chunks, highlights matches and reveals a numbered line 340ms
+   ✓ RunFeed — список шагов > открывается мышью, показывает фактический порядок и закрывается с задержкой 400ms
+ ✓ src/components/VoiceBar.dom.test.tsx (64 tests) 3053ms
+ ✓ src/App.dom.test.tsx (74 tests) 31424ms
+   ✓ App — версия релиза > сохраняет номер версии и показывает коммит с задачей в подсказке 809ms
+   ✓ App — версия релиза > скрывает версию, когда release-метаданные не переданы 430ms
+   ✓ App — версия релиза > не добавляет задачу в подсказку, когда она не определена 361ms
+   ✓ App — StrictMode (dev double-effect) > двойной mount эффектов не дизейблит runtime: разговоры загружаются 370ms
+   ✓ App — действия модели в веб-превью (мост window.preview) > браузерное действие из обычного чата отклоняется: рекордер доступен только на отдельной странице 309ms
+   ✓ App — действия модели в веб-превью (мост window.preview) > Reader сохраняет историю и повторяет действие: HTTP 515ms
+   ✓ App — действия модели в веб-превью (мост window.preview) > Web Reader привязывает open/read к чату и восстанавливает панель после refresh 468ms
+   ✓ App — действия модели в веб-превью (мост window.preview) > поздний результат старой регистрации после reload iframe не доставляется 309ms
+   ✓ App — действия модели в веб-превью (мост window.preview) > при переключении Web Reader отклоняет команды панели другого чата 417ms
+   ✓ App — действия модели в веб-превью (мост window.preview) > Playwright Reader монтирует browser-панель (Chromium), а не iframe веб-превью 397ms
+   ✓ App — интеграция UI со стором и IPC > отправка текста Enter создаёт сообщение без статуса модели в шапке 480ms
+   ✓ App — интеграция UI со стором и IPC > открывает каждый раздел глобальных настроек по его hash-маршруту 859ms
+   ✓ App — интеграция UI со стором и IPC > синхронизирует выбор вкладки с историей и восстанавливает его после повторного mount 487ms
+   ✓ App — интеграция UI со стором и IPC > не перехватывает маршрут контекста разговора глобальными настройками 532ms
+   ✓ App — интеграция UI со стором и IPC > открытие и закрытие модалки настроек по кнопке ✕ 509ms
+   ✓ App — интеграция UI со стором и IPC > клик по оверлею закрывает модалку, клик по карточке — нет 337ms
+   ✓ App — интеграция UI со стором и IPC > меню модели содержит актуальные модели Claude 335ms
+   ✓ App — интеграция UI со стором и IPC > зелёная тема применяется без перезагрузки и сохраняется 419ms
+   ✓ App — интеграция UI со стором и IPC > настройки голосового ввода неактивны 402ms
+   ✓ App — интеграция UI со стором и IPC > тумблер «Режим консоли» включает панель консоли и сохраняется 536ms
+   ✓ App — интеграция UI со стором и IPC > поиск в сайдбаре фильтрует список разговоров 404ms
+   ✓ App — интеграция UI со стором и IPC > переименование разговора: заголовок в шапке → ввод → Enter обновляет название и зовёт api 522ms
+   ✓ App — интеграция UI со стором и IPC > удаление разговора: подтверждение убирает его из списка и зовёт api 312ms
+   ✓ App — интеграция UI со стором и IPC > настройки сохраняются между «перезапусками» (общий api → БД) 917ms
+   ✓ App — интеграция UI со стором и IPC > ширина сайдбара переживает «перезапуск» 502ms
+   ✓ App — интеграция UI со стором и IPC > меню голоса показывает реальные названия из движка 432ms
+   ✓ App — интеграция UI со стором и IPC > секция «Скачать голоса» показывает каталог и триггерит скачивание 437ms
+   ✓ App — мобильное меню > клик по пункту меню (Настройки) закрывает выдвинутый сайдбар 335ms
+   ✓ App — мобильное меню > смена маршрута закрывает сайдбар — иначе он висит поверх открытой страницы 392ms
+   ✓ App — доступность > без нарушений axe: сайдбар, чат и композер 532ms
+   ✓ App — доступность > ориентиры на месте: сайдбар и чат объявлены как области 312ms
+   ✓ App — доступность > без нарушений axe: открытые настройки 600ms
+   ✓ App — запуск задачи из чата > сохраняет вертикальный порядок и адаптирует окно на широком desktop 497ms
+   ✓ App — запуск задачи из чата > сохраняет вертикальный порядок и адаптирует окно на средней ширине 441ms
+   ✓ App — запуск задачи из чата > сохраняет вертикальный порядок и адаптирует окно на мобильной ширине 331ms
+   ✓ App — запуск задачи из чата > сразу открывает стандартную карточку с заполненными полями 525ms
+   ✓ App — запуск задачи из чата > показывает участников проекта и создаёт задачу с выбранным исполнителем 609ms
+   ✓ App — запуск задачи из чата > предварительно назначает задачу на текущего пользователя 455ms
+   ✓ App — запуск задачи из чата > сохраняет поля и исполнителя в открытой форме после ошибки создания 522ms
+   ✓ App — запуск задачи из чата > каждая из нескольких карточек создаёт свою задачу и восстанавливается из истории 1257ms
+   ✓ App — запуск задачи из чата > после создания задачи в TODO не продолжает выполнение в текущем чате 515ms
+   ✓ App — запуск задачи из чата > работает в текущем чате без карточки на доске и отправляет выбор следующим ходом 529ms
+   ✓ App — запуск задачи из чата > закрывает черновик без создания задачи и не открывает его повторно 612ms
+   ✓ App — Sidebar в рабочих split-режимах > console-reader начинает со скрытого общего Sidebar и toggle не перемонтирует рабочую панель 358ms
+   ✓ App — Sidebar в рабочих split-режимах > make начинает со скрытого общего Sidebar и toggle не перемонтирует рабочую панель 1460ms
+   ✓ App — Sidebar в рабочих split-режимах > make использует закрываемый мобильный overlay 388ms
+   ✓ App — Sidebar в рабочих split-режимах > console-reader exposes the Make 18 splitter keyboard contract and reset 374ms
+   ✓ App — Sidebar в рабочих split-режимах > студия картинок живёт в той же обёртке мастерской, что и консоль 1224ms
+   ✓ App — Sidebar в рабочих split-режимах > мастерская сворачивает колонку чата и помнит это по поверхности 415ms
+ ✓ src/store/appRuntime.projects.test.ts (40 tests) 314ms
+ ✓ src/App.chat.dom.test.tsx (36 tests) 15256ms
+   ✓ App — пустая главная страница чатов > показывает Make-состояние и открывает существующее создание разговора 798ms
+   ✓ App — machine-required guard > при отсутствии online-машины приостанавливает создание чата и показывает единый web-диалог 552ms
+   ✓ App — machine-required guard > после server-confirmed enrollment назначает default и продолжает создание чата ровно один раз 1330ms
+   ✓ App — machine-required guard > игнорирует запоздалый issue после закрытия диалога и отменяет continuation 428ms
+   ✓ App — machine-required guard > игнорирует запоздалый ответ реестра артефактов после закрытия диалога 426ms
+   ✓ App — machine-required guard > объявляет ошибку скачивания и разрешает повторить действие 363ms
+   ✓ App — адрес открытого чата (#/chat/:id) > на мобильной ширине показывает centered-композер в пустом чате с id и после первой реплики переводит его в docked 551ms
+   ✓ App — адрес открытого чата (#/chat/:id) > загрузка по ссылке открывает чат из адреса, а не самый свежий 311ms
+   ✓ App — адрес открытого чата (#/chat/:id) > клик по разговору в сайдбаре меняет адрес, а смена адреса — открытый чат 417ms
+   ✓ App — адрес открытого чата (#/chat/:id) > новый разговор показывает файловое хранилище и сохраняется до первой отправки 494ms
+   ✓ App — адрес открытого чата (#/chat/:id) > выбранный проект передаётся при создании и остаётся у открытого разговора 576ms
+   ✓ App — адрес открытого чата (#/chat/:id) > ошибка списка проектов видна и не мешает создать разговор без проекта 627ms
+   ✓ App — адрес открытого чата (#/chat/:id) > удаление открытого чата уводит на адрес следующего 345ms
+   ✓ App — отдельная страница Web Reader > активный чат вне списка не подсвечивает первый пункт — виден плейсхолдер 500ms
+   ✓ App — настройки разговора привязаны к инициатору > сразу показывает загрузку настроек и заменяет её формой после актуального снимка 344ms
+   ✓ App — настройки разговора привязаны к инициатору > инвалидирует pending-настройки при закрытии крестиком и Escape 454ms
+   ✓ App — настройки разговора привязаны к инициатору > игнорирует запоздалый ответ настроек после смены разговора 410ms
+   ✓ App — настройки разговора привязаны к инициатору > закрывает окно и показывает существующий toast при ошибке загрузки настроек 390ms
+   ✓ App — настройки разговора привязаны к инициатору > открывает обе адресуемые вкладки и синхронизирует переходы history/hash 382ms
+   ✓ App — настройки разговора привязаны к инициатору > обычный чат сохраняет настройки строго по id показанного разговора 508ms
+   ✓ App — режимы Make без машины > сохраняет development до отправки, во время хода и после его завершения 697ms
+   ✓ App — режимы Make без машины > «Только спросить» временно включает plan и восстанавливает development после хода 1266ms
+ ✓ src/components/releases/ReleaseCenter.dom.test.tsx (26 tests) 4729ms
+   ✓ ReleaseCenter — версия, production и мобильная раскладка > подсказывает следующую версию и подставляет её кнопкой 331ms
+   ✓ ReleaseCenter — версия, production и мобильная раскладка > длинные списки раскрываются постранично 774ms
+   ✓ ReleaseCenter — версия, production и мобильная раскладка > живёт событиями release.updated: перечитывает список и подробности, объявляет завершение тостом 771ms
+ ✓ src/components/ProjectSettings.dom.test.tsx (44 tests) 3747ms
+   ✓ Project settings draft > has accessible invalid and dirty form states 392ms
+   ✓ ProjectSettings — режим базы знаний для CI-рана > сохраняет http/https URL превью и откатывает невалидный адрес 393ms
+ ✓ src/remote/remote.test.ts (35 tests) 100ms
+ ✓ src/components/git/GitPane.dom.test.tsx (30 tests) 2921ms
+   ✓ GitPane > правка сохраняется только после подтверждения и уходит на сервер как есть 412ms
+   ✓ GitPane > без нарушений доступности 343ms
+ ✓ src/components/qa/ManualQaPanel.dom.test.tsx (18 tests) 3600ms
+   ✓ ManualQaPanel > autosaves keyboard selection, ignores text input and preserves dirty input on reconnect 1378ms
+   ✓ ManualQaPanel > requires a comment for failure and preserves it after a save error 868ms
+ ✓ src/App.projects.dom.test.tsx (30 tests) 14400ms
+   ✓ App — страница проекта по URL > #/projects/:id — страница с общей шапкой, вкладками и канбаном, без крестика 1498ms
+   ✓ App — страница проекта по URL > #/projects/:id/releases не грузит доску, переход на «Канбан» её догружает 519ms
+   ✓ App — страница проекта по URL > на десктопе переключатель сворачивает и возвращает Sidebar без сброса позиции доски 871ms
+   ✓ App — страница проекта по URL > на мобильной ширине открывает drawer, закрывает по Esc и backdrop и возвращает фокус 734ms
+   ✓ App — страница проекта по URL > вкладки меняют только содержимое: шапка и имя проекта остаются на месте 631ms
+   ✓ App — страница проекта по URL > #/projects/:id/task/:taskId открывает карточку, Esc закрывает её и оставляет страницу 615ms
+   ✓ App — завершённые задачи скрыты с доски > при включении показа завершённых заменяет старую доску общим лоадером до актуального снимка 639ms
+   ✓ App — завершённые задачи скрыты с доски > при выключении показа завершённых также скрывает всю старую доску до нового снимка 849ms
+   ✓ App — завершённые задачи скрыты с доски > returns to a fresh completed-filter snapshot without another request or skeleton 730ms
+   ✓ App — завершённые задачи скрыты с доски > ошибка смены фильтра завершает лоадер, а штатный повтор снова его показывает 571ms
+   ✓ App — завершённые задачи скрыты с доски > прямая ссылка на скрытую задачу открывает её карточку 542ms
+   ✓ App — завершённые задачи скрыты с доски > protects an unsaved settings draft during hash navigation 734ms
+   ✓ App — завершённые задачи скрыты с доски > порог скрытия правится в настройках проекта 379ms
+   ✓ App — чаты завершённых задач в сайдбаре > чат задачи из «Готово» скрыт, иконка-фильтр его возвращает 304ms
+   ✓ App — чаты завершённых задач в сайдбаре > AI-чат завершённой задачи остаётся во вкладке карточки 546ms
+   ✓ App — вход в раздел «Проекты» > «+ Проект» в сайдбаре открывает страницу созданного проекта 335ms
+   ✓ App — удаление проекта из его настроек > уводит на другой доступный проект, а не на удалённую страницу-список 338ms
+   ✓ App — упавший вызов моста показывается тостом > ошибка автозапуска при переносе показывает причину и откатывает карточку в ready 709ms
+   ✓ App — виджет задачи только в своём чате > «+ Новый» убирает виджет задачи, лента остаётся 519ms
+ ✓ src/components/kanban/NewTaskCardView.dom.test.tsx (18 tests) 1632ms
+ ✓ src/components/FileExplorer.dom.test.tsx (28 tests) 4175ms
+   ✓ FileExplorer (самодостаточный) > selects ranges and checkboxes, lists every path for confirmation, and cancels without mutations 674ms
+   ✓ FileExplorer (самодостаточный) > в режиме правки можно показать diff относительно открытого файла 334ms
+   ✓ FileExplorer (самодостаточный) > копирует файл на другую машину и предлагает открыть каталог назначения 326ms
+ ✓ src/components/MessageImage.dom.test.tsx (31 tests) 1239ms
+ ✓ src/components/ci/CiTaskSettings.dom.test.tsx (16 tests) 1202ms
+ ✓ src/components/SettingsModal.dom.test.tsx (26 tests) 3951ms
+   ✓ SettingsModal · Инструкции > показывает чекбоксы всех инструкций и отправляет список с выключенной 810ms
+   ✓ SettingsModal · Инструкции > редактор: правка текста встроенной сохраняется как text, стандартный текст — без text 457ms
+   ✓ SettingsModal — доступность > без нарушений axe в каждом разделе меню 874ms
+ ✓ src/components/MachineStatus.dom.test.tsx (31 tests) 1382ms
+ ✓ src/components/WidgetAssistantFrame.dom.test.tsx (11 tests) 1898ms
+   ✓ WidgetAssistantFrame > persists a message and sends the latest safe context through the normal LLM transport 306ms
+   ✓ WidgetAssistantFrame > пустой экран макета: подсказка подставляет текст, шапка показывает проект и статус, настройки открываются 443ms
+ ✓ src/components/ProjectPage.dom.test.tsx (24 tests) 2042ms
+ ✓ src/components/preview/FeaturePreviewSection.dom.test.tsx (25 tests) 1405ms
+ ✓ src/runtime/appRuntime.test.ts (18 tests) 197ms
+ ✓ src/store/appRuntime.sidebar.test.ts (12 tests) 98ms
+ ✓ src/components/kanban/TaskCardContainer.dom.test.tsx (11 tests) 1991ms
+   ✓ TaskCardContainer — новая карточка > opens independent settings and progress views through the container 403ms
+   ✓ TaskCardContainer — новая карточка > отправляет несколько черновиков одним циклом: слияние, удаление лишних, отправка 326ms
+ ✓ src/components/ci/MergePanel.dom.test.tsx (11 tests) 733ms
+ ✓ src/AccountPage.dom.test.tsx (20 tests) 1489ms
+ ✓ src/components/AutomatedQaScenarioEditor.dom.test.tsx (16 tests) 633ms
+ ✓ src/components/MachineConsole.dom.test.tsx (13 tests) 1618ms
+   ✓ MachineConsole > persists 200 commands per agent, searches, clears one machine, and completes without executing 427ms
+ ✓ src/components/qa/QaStageRunPanel.dom.test.tsx (10 tests) 1067ms
+   ✓ groups automation and exclusions with workspace file navigation 479ms
+   ✓ shows ordered durations and retries selected failed scenarios only 315ms
+ ✓ src/clients/readResources.test.ts (12 tests) 171ms
+ ✓ src/components/CommandPalette.dom.test.tsx (17 tests) 1081ms
+ ✓ src/components/ProjectMachinesSettings.dom.test.tsx (16 tests) 2247ms
+   ✓ checks the directory on the selected machine and explains failures 403ms
+   ✓ сохраняет по Enter один раз и не отправляет неизменённое значение по blur 307ms
+   ✓ фильтрует каждую таблицу независимо и начинает с online 301ms
+ ✓ src/lib/appCommands.test.ts (22 tests) 51ms
+ ✓ src/components/kb/KbUsagePanel.dom.test.tsx (19 tests) 1298ms
+ ✓ src/components/ProjectTypesSettings.dom.test.tsx (16 tests) 1583ms
+   ✓ ProjectTypesSettings > создание подтипа передаёт имя и родителя 303ms
+   ✓ ProjectTypesSettings > доступность экрана 305ms
+ ✓ src/components/chat/TaskChatHeader.dom.test.tsx (11 tests) 366ms
+ ✓ src/components/kanban/NewTaskPanels.dom.test.tsx (51 tests) 2072ms
+ ✓ src/components/ProjectBoard.dom.test.tsx (13 tests) 3130ms
+   ✓ ProjectBoard > рендерит колонки и карточки с ключами Jira 307ms
+   ✓ ProjectBoard > создание задачи: «+ Создать» открывает композер, Enter зовёт onCreateTask 473ms
+   ✓ ProjectBoard > для Story требует выбрать родительский Epic и передаёт parentId 532ms
+ ✓ src/components/prompt-builder/PromptBuilder.dom.test.tsx (10 tests) 2448ms
+   ✓ PromptBuilder > вызывает generate только по палочке и передаёт активные модификаторы в исходном порядке 346ms
+   ✓ PromptBuilder > добавляет, удаляет варианты и собирает превью 305ms
+   ✓ PromptBuilder > перемещает абзацы и применяет склеенный результат 334ms
+ ✓ src/components/releases/ApplicationReleaseCenter.dom.test.tsx (8 tests) 1085ms
+   ✓ релизы отдельных приложений > показывает требования и передаёт выбранный выпуск с ревизией окружения 393ms
+ ✓ src/components/qa/ComponentQaPanel.dom.test.tsx (6 tests) 859ms
+   ✓ ComponentQaPanel > intersects search and status, opens Storybook and accessible image preview 605ms
+ ✓ src/lib/useHotkeys.test.tsx (16 tests) 113ms
+ ✓ src/components/ShellFeatures.dom.test.tsx (7 tests) 1234ms
+   ✓ retains the last 50 notifications, deduplicates events and isolates read state 810ms
+ ✓ src/components/MachineTerminal.dom.test.tsx (8 tests) 2771ms
+   ✓ MachineTerminal > copies, searches, clears, and resizes the xterm buffer with matching help shortcuts 1121ms
+   ✓ MachineTerminal > закрытие вкладки убивает её сеанс, соседние остаются живы 804ms
+ ✓ src/components/ci/CiCommands.dom.test.tsx (10 tests) 980ms
+ ✓ src/components/MachineUtilityHeader.dom.test.tsx (10 tests) 450ms
+ ✓ src/components/KnowledgeBase.dom.test.tsx (5 tests) 972ms
+   ✓ KnowledgeBase > ищет раздел и открывает read-only Markdown-документ 411ms
+ ✓ src/components/NewProjectDialog.dom.test.tsx (11 tests) 1175ms
+ ✓ src/components/kanban/TaskPreparationTab.dom.test.tsx (6 tests) 431ms
+ ✓ src/components/kanban/TaskDesigns.dom.test.tsx (5 tests) 1206ms
+   ✓ TaskDesigns — секция «Дизайн» карточки > связывает карточку со страницей Make-проекта и показывает её в списке 632ms
+   ✓ TaskDesigns — секция «Дизайн» карточки > выбирает несколько файлов и атомарно заменяет набор при редактировании 367ms
+ ✓ src/components/kanban/TaskActivityPanel.dom.test.tsx (4 tests) 555ms
+   ✓ TaskActivityPanel > комментарий добавляется, правится с пометкой «изменён» и удаляется с подтверждением 427ms
+ ✓ src/components/LoginScreen.dom.test.tsx (13 tests) 1761ms
+   ✓ LoginScreen — сброс пароля кодом и второй фактор (auth-roadmap пп.6, 10) > ссылка переключает на форму сброса, отправка зовёт onReset с логином, кодом и паролем 331ms
+ ✓ src/components/kanban/NewTaskProgressPanel.dom.test.tsx (4 tests) 649ms
+   ✓ NewTaskProgressPanel > разделы: проверки собирают команды всех ранов, ресурсы — итог отчёта 363ms
+ ✓ src/components/kanban/TaskTimeline.dom.test.tsx (6 tests) 668ms
+   ✓ TaskTimeline > показывает сводку, раскрываемые этапы и фактические данные попытки 398ms
+ ✓ src/components/MachineVpn.dom.test.tsx (7 tests) 681ms
+ ✓ src/components/ci/TaskRunFeed.dom.test.tsx (7 tests) 508ms
+ ✓ src/components/kanban/NewTaskManualQaPanel.dom.test.tsx (3 tests) 616ms
+   ✓ NewTaskManualQaPanel > saves a manual result with its revision and keeps historical criteria immutable 414ms
+ ✓ src/components/InviteScreen.dom.test.tsx (9 tests) 844ms
+   ✓ InviteScreen — до входа > показывает проект и кто позвал, ведёт на вход и регистрацию 397ms
+ ✓ src/components/MessageMeta.dom.test.tsx (8 tests) 748ms
+ ✓ src/components/BrowserInput.dom.test.tsx (8 tests) 811ms
+ ✓ src/test/a11y.dom.test.tsx (9 tests) 513ms
+ ✓ src/components/MachineUtility.dom.test.tsx (6 tests) 623ms
+ ✓ src/runtime/applicationHost.dom.test.tsx (4 tests) 644ms
+   ✓ проверяет манифест и SRI, передаёт панели props через общий React 348ms
+ ✓ src/App.commands.dom.test.tsx (9 tests) 3488ms
+   ✓ App — командная палитра > ⌘K открывает палитру, Esc закрывает 819ms
+   ✓ App — командная палитра > повторное ⌘K закрывает палитру 447ms
+   ✓ App — командная палитра > ⌘K работает и из композера — поле ввода не глотает комбинацию 374ms
+   ✓ App — командная палитра > кнопка «⌘K» рядом с поиском открывает палитру мышью 398ms
+   ✓ App — командная палитра > реестр наполнен беседами стора, и команда переключает беседу 357ms
+   ✓ App — командная палитра > базовая команда выполняется с клавиатуры: «Открыть базу знаний» уводит на раздел 352ms
+   ✓ App — командная палитра > команда «Использование базы знаний» открывает панель телеметрии 330ms
+ ✓ src/components/MessageTimeline.dom.test.tsx (7 tests) 278ms
+ ✓ src/components/kanban/NewTaskQaStagesPanel.dom.test.tsx (2 tests) 439ms
+   ✓ NewTaskQaStagesPanel > Component QA: проходы по циклам, попытки выбранного прохода и действия панели 325ms
+ ✓ src/components/git/GitTargetPane.dom.test.tsx (8 tests) 292ms
+ ✓ src/components/HotkeysCheatSheet.dom.test.tsx (8 tests) 206ms
+ ✓ src/App.pages.dom.test.tsx (6 tests) 1764ms
+   ✓ App — утилиты как страницы по URL > #/claude-code рендерит проводник Claude Code страницей (не попап), чат скрыт 360ms
+   ✓ App — утилиты как страницы по URL > пункт «История LLM» в сайдбаре ведёт на #/claude-code, «Закрыть» возвращает чат 540ms
+   ✓ App — утилиты как страницы по URL > #/kb/:documentId открывает конкретный раздел базы знаний 333ms
+ ✓ src/components/kanban/NewTaskPreparationPanel.dom.test.tsx (2 tests) 346ms
+ ✓ src/components/MachineCommandLog.dom.test.tsx (4 tests) 452ms
+ ✓ src/components/QuestionsForm.dom.test.tsx (5 tests) 316ms
+ ✓ src/components/kanban/NewTaskMergePanel.dom.test.tsx (2 tests) 345ms
+ ✓ src/components/kanban/NewTaskStages.dom.test.tsx (3 tests) 209ms
+ ✓ src/lib/autoGrow.dom.test.tsx (3 tests) 217ms
+ ✓ src/components/ImageRetouchEditor.dom.test.tsx (2 tests) 122ms
+ ✓ src/components/MachineBatchCommand.dom.test.tsx (3 tests) 425ms
+   ✓ MachineBatchCommand > выбирает машины, запускает команду и показывает сводку с раскрытием вывода 322ms
+ ✓ src/components/preview/CopyCommand.dom.test.tsx (4 tests) 277ms
+ ✓ src/components/EnginesObserver.dom.test.tsx (4 tests) 361ms
+ ✓ src/clients/realtime.settings.dom.test.ts (3 tests) 18ms
+ ✓ src/components/CodexObserver.dom.test.tsx (5 tests) 345ms
+ ✓ src/components/CcObserver.dom.test.tsx (5 tests) 218ms
+ ✓ src/components/ChatStorageCard.dom.test.tsx (3 tests) 105ms
+ ✓ src/components/ClarificationNotification.dom.test.tsx (4 tests) 449ms
+ ✓ src/components/kanban/NewTaskFeedPanel.dom.test.tsx (3 tests) 447ms
+ ✓ src/components/MessageActivity.dom.test.tsx (5 tests) 112ms
+ ✓ src/components/SignupScreen.dom.test.tsx (2 tests) 719ms
+   ✓ SignupScreen > валидирует пароль и email, отправляет заявку и показывает «Проверьте почту» с повторной отправкой 640ms
+ ✓ src/components/ChangePasswordDialog.dom.test.tsx (2 tests) 812ms
+   ✓ ChangePasswordDialog > подсказывает политику, отправляет current/next и зовёт onDone; ошибка сервера показывается 766ms
+ ✓ src/components/Markdown.dom.test.tsx (5 tests) 211ms
+ ✓ src/components/ConsolePanel.dom.test.tsx (5 tests) 89ms
+ ✓ src/test/stories.a11y.0.dom.test.tsx (220 tests) 28821ms
+   ✓ сториз, шард 0/3 > ../../admin-app/src/AdminApp.stories.tsx › Overview — без serious/critical нарушений 740ms
+   ✓ сториз, шард 0/3 > ../../admin-app/src/AdminApp.stories.tsx › SessionsAndDevices — без serious/critical нарушений 401ms
+   ✓ сториз, шард 0/3 > ../../admin-app/src/AdminApp.stories.tsx › EmptyUsage — без serious/critical нарушений 326ms
+   ✓ сториз, шард 0/3 > ../../admin-app/src/AdminApp.stories.tsx › AccessMatrix — без serious/critical нарушений 326ms
+   ✓ сториз, шард 0/3 > ../../admin-app/src/AdminApp.stories.tsx › UsageWithData — без serious/critical нарушений 334ms
+   ✓ сториз, шард 0/3 > ../../admin-app/src/AdminApp.stories.tsx › ManyMachines — без serious/critical нарушений 414ms
+   ✓ сториз, шард 0/3 > ../../admin-app/src/AdminApp.stories.tsx › ManyUsers — без serious/critical нарушений 1898ms
+   ✓ сториз, шард 0/3 > components/ChatColumn.stories.tsx › NewMessages — без serious/critical нарушений 907ms
+   ✓ сториз, шард 0/3 > components/ChatColumn.stories.tsx › SearchAndCompact — без serious/critical нарушений 366ms
+   ✓ сториз, шард 0/3 > components/ChatColumn.stories.tsx › MobileComposer390 — без serious/critical нарушений 314ms
+   ✓ сториз, шард 0/3 > components/ChatColumn.stories.tsx › LongThread — без serious/critical нарушений 515ms
+   ✓ сториз, шард 0/3 > components/MachineUtility.stories.tsx › Terminal — без serious/critical нарушений 428ms
+   ✓ сториз, шард 0/3 > components/ProjectPage.stories.tsx › Board — без serious/critical нарушений 1011ms
+   ✓ сториз, шард 0/3 > components/ProjectPage.stories.tsx › Switchable — без serious/critical нарушений 714ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › Desktop — без serious/critical нарушений 405ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › DescriptionMarkdown — без serious/critical нарушений 397ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › DescriptionEditing — без serious/critical нарушений 357ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › Phone — без serious/critical нарушений 321ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › Timeline — без serious/critical нарушений 301ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › Progress — без serious/critical нарушений 311ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › Settings — без serious/critical нарушений 300ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › ManualQa — без serious/critical нарушений 364ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › Merge — без serious/critical нарушений 339ms
+   ✓ сториз, шард 0/3 > components/kanban/TaskModal.stories.tsx › RunFeed — без serious/critical нарушений 321ms
+ ✓ src/test/stories.a11y.2.dom.test.tsx (264 tests) 18307ms
+   ✓ сториз, шард 2/3 > components/ProjectMachinesSettings.stories.tsx › Overview — без serious/critical нарушений 434ms
+   ✓ сториз, шард 2/3 > components/ProjectMachinesSettings.stories.tsx › SaveError — без serious/critical нарушений 321ms
+   ✓ сториз, шард 2/3 > components/ProjectMachinesSettings.stories.tsx › ShareAndEdit — без serious/critical нарушений 414ms
+   ✓ сториз, шард 2/3 > components/ProjectMachinesSettings.stories.tsx › PersonalDefault — без serious/critical нарушений 352ms
+ ✓ src/components/InviteRegister.dom.test.tsx (2 tests) 481ms
+   ✓ InviteRegister > показывает роль, подсказывает политику пароля, регистрирует и зовёт onDone 466ms
+ ✓ src/components/kanban/AutomationProgressView.dom.test.tsx (3 tests) 157ms
+ ✓ src/components/MachineHealthBadge.dom.test.tsx (2 tests) 92ms
+ ✓ src/components/prompt-builder/useAiAssist.dom.test.tsx (1 test) 457ms
+   ✓ useAiAssist > применение посылает нативный input-event и возвращает фокус на палочку 455ms
+ ✓ src/components/AgentCommands.dom.test.tsx (2 tests) 208ms
+ ✓ src/components/TwoFactorDialog.dom.test.tsx (1 test) 454ms
+   ✓ TwoFactorDialog > настройка: секрет и ссылка, «Включить» с кодом; затем статус включён и «Выключить» 452ms
+ ✓ src/components/WebReaderEngineSelect.dom.test.tsx (2 tests) 156ms
+ ✓ src/stories/playground/ComponentPlayground.dom.test.tsx (2 tests) 198ms
+ ✓ src/remote/browserBridge.test.ts (2 tests) 24ms
+ ✓ src/styles/taskCardStyles.test.ts (209 tests) 161ms
+ ✓ src/store/domains/stores.contract.test.ts (31 tests) 120ms
+ ✓ src/styles/boardScroll.test.ts (14 tests) 42ms
+ ✓ src/lib/kbUsage.test.ts (15 tests) 19ms
+ ✓ src/store/appRuntime.search.test.ts (10 tests) 58ms
+ ✓ src/components/kanban/kanbanMeta.test.ts (11 tests) 112ms
+ ✓ src/architecture.test.ts (9 tests) 123ms
+ ✓ src/lazyScreens.test.ts (31 tests) 483ms
+   ✓ host не встраивает runtime приложений через вспомогательный импорт 462ms
+ ✓ src/store/appRuntime.kb.test.ts (9 tests) 92ms
+ ✓ src/styles/contrast.test.ts (5 tests) 10ms
+ ✓ src/webReaderDiagnostics.test.ts (2 tests) 16ms
+ ✓ src/store/devtools.test.ts (6 tests) 25ms
+ ✓ src/lib/sentences.test.ts (16 tests) 24ms
+ ✓ src/lib/readCache.test.ts (16 tests) 102ms
+ ✓ src/chatDiagnostics.test.ts (6 tests) 14ms
+ ✓ src/styles/cssTokens.test.ts (3 tests) 134ms
+ ✓ src/styles/colorTokens.test.ts (4 tests) 103ms
+ ✓ src/components/kanban/taskCycles.test.ts (7 tests) 12ms
+ ✓ src/webReaderModelRequest.test.ts (8 tests) 12ms
+ ✓ src/styles/feedStyles.test.ts (26 tests) 60ms
+ ✓ src/lib/widgetUiActions.test.ts (6 tests) 11ms
+ ✓ src/components/context/helpers.test.ts (7 tests) 11ms
+ ✓ src/audio/pcm.test.ts (12 tests) 23ms
+ ✓ src/playwrightReaderDiagnostics.test.ts (5 tests) 9ms
+ ✓ src/styles/chatScroll.test.ts (5 tests) 22ms
+ ✓ src/lib/scenarioPlacement.test.ts (8 tests) 20ms
+ ✓ src/lib/hotkeys.test.ts (11 tests) 15ms
+ ✓ src/styles/appCssStructure.test.ts (3 tests) 65ms
+ ✓ src/consoleReaderDiagnostics.test.ts (5 tests) 13ms
+ ✓ src/readerSplitControls.test.ts (6 tests) 9ms
+ ✓ src/test/stories.a11y.1.dom.test.tsx (226 tests) 75247ms
+   ✓ сториз, шард 1/3 > ../../image-studio-app/src/components/ImageStudioPane.stories.tsx › VirtualGallery500 — без serious/critical нарушений 397ms
+   ✓ сториз, шард 1/3 > ../../make-app/src/components/MakePane.stories.tsx › Preview — без serious/critical нарушений 35692ms
+   ✓ сториз, шард 1/3 > components/ProjectSettings.stories.tsx › MachinesMobile — без serious/critical нарушений 373ms
+   ✓ сториз, шард 1/3 > components/Sidebar.stories.tsx › ScrollAndLongTitles — без serious/critical нарушений 307ms
+   ✓ сториз, шард 1/3 > components/Sidebar.stories.tsx › Mobile — без serious/critical нарушений 420ms
+   ✓ сториз, шард 1/3 > components/ci/RunFeed.stories.tsx › LogSearch — без serious/critical нарушений 334ms
+   ✓ сториз, шард 1/3 > components/ci/RunFeed.stories.tsx › LinePermalink — без serious/critical нарушений 361ms
+   ✓ сториз, шард 1/3 > components/ci/RunFeed.stories.tsx › Mobile390 — без serious/critical нарушений 385ms
+   ✓ сториз, шард 1/3 > components/ci/RunFeed.stories.tsx › HugeLog — без serious/critical нарушений 2797ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › SingleColumn — без serious/critical нарушений 405ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › ManyColumns — без serious/critical нарушений 1439ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › ColumnDensity — без serious/critical нарушений 1060ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › LongTitles — без serious/critical нарушений 403ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › Refreshing — без serious/critical нарушений 846ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › ErrorWithBoard — без serious/critical нарушений 357ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › BrokenData — без serious/critical нарушений 354ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › SwimlanesByEpic — без serious/critical нарушений 1163ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › SwimlanesByAssignee — без serious/critical нарушений 1332ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › WipExceeded — без serious/critical нарушений 527ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › FullFeaturedCard — без serious/critical нарушений 1088ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › HiddenColumns — без serious/critical нарушений 304ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › GrabbedCard — без serious/critical нарушений 957ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › MobileScroll — без serious/critical нарушений 2423ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › MobileFilters — без serious/critical нарушений 2345ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › MobileViewport — без serious/critical нарушений 1059ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › MobileGrabbedCard — без serious/critical нарушений 860ms
+   ✓ сториз, шард 1/3 > components/kanban/KanbanBoard.stories.tsx › Interactive — без serious/critical нарушений 1082ms
+   ✓ сториз, шард 1/3 > components/kanban/NewTaskStages.stories.tsx › AllStatuses — без serious/critical нарушений 431ms
+   ✓ сториз, шард 1/3 > components/ui/Button.stories.tsx › Matrices — без serious/critical нарушений 483ms
+ ✓ src/makeDiagnostics.test.ts (4 tests) 16ms
+ ✓ src/components/qa/qaLabels.test.ts (10 tests) 24ms
+ ✓ src/components/qa/qaPanels.browser.test.ts (5 tests) 21868ms
+   ✓ keeps qa-stage-runs--component-mobile usable at 390px without horizontal overflow 5639ms
+   ✓ keeps qa-stage-runs--integration-groups usable at 390px without horizontal overflow 1796ms
+   ✓ keeps qa-stage-runs--automated-playwright-page-errors usable at 390px without horizontal overflow 1825ms
+   ✓ keeps qa-stage-runs--automated-selective-retry usable at 390px without horizontal overflow 2440ms
+   ✓ keeps qa-manual-qa--mobile-checklist usable at 390px without horizontal overflow 2552ms
+ ✓ src/components/testIds.test.ts (5 tests) 22ms
+ ✓ src/components/kanban/criteriaDiff.test.ts (6 tests) 9ms
+ ✓ src/stories/foundations/tokens.test.ts (9 tests) 12ms
+ ✓ src/styles/chatMakeLayout.test.ts (4 tests) 16ms
+ ✓ src/store/preferenceKeys.test.ts (2 tests) 75ms
+ ✓ src/lib/vad.test.ts (5 tests) 9ms
+ ✓ src/lib/snippet.test.ts (4 tests) 9ms
+ ✓ src/remote/wsClient.test.ts (2 tests) 10ms
+ ✓ src/components/ci/mergeStageDuration.test.ts (4 tests) 10ms
+ ✓ src/components/MachineUtilityHeader.layout.test.tsx (1 test) 928ms
+   ✓ keeps name and status on one row and every segment within 390px in Chromium 926ms
+ ✓ src/components/browserAddress.test.ts (4 tests) 7ms
+ ✓ src/lib/autoGrow.test.ts (4 tests) 9ms
+ ✓ src/lib/machineRequiredGuard.test.ts (3 tests) 8ms
+ ✓ src/lib/ttsPlayer.test.ts (3 tests) 9ms
+ ✓ src/store/appRuntime.ci.test.ts (2 tests) 6ms
+ ✓ src/test/routeResources.browser.test.ts (5 tests | 2 skipped) 156935ms
+   ✓ records comparable cold/warm request counts, transferred bytes and content/data times for five routes 108856ms
+   ✓ keeps routes navigable in both themes at all five sizes with touch and keyboard input 41081ms
+   ✓ keeps Account identity and navigation usable while an offline block retries 2354ms
+
+ Test Files  157 passed (157)
+      Tests  3206 passed | 2 skipped (3208)
+   Start at  10:03:01
+   Duration  334.74s (transform 31.52s, setup 40.87s, collect 89.33s, tests 529.80s, environment 79.48s, prepare 20.21s)
+
+[gate:app] npm run -w @voicechat/ui build-storybook
+
+> @voicechat/ui@0.1.0 build-storybook
+> storybook build -o storybook-static
+
+@storybook/core v8.6.18
+
+info => Cleaning outputDir: storybook-static
+info => Loading presets
+info => Building manager..
+WARN unable to find package.json for @voicechat/ui-foundation
+WARN unable to find package.json for @voicechat/make-app
+WARN unable to find package.json for @voicechat/image-studio-app
+info => Manager built ([38;2;181;126;229m272 ms[39m)
+info => Building preview..
+info Using tsconfig paths for react-docgen
+vite v5.4.21 building for production...
+transforming...
+../../node_modules/@codesandbox/sandpack-react/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "../../node_modules/@codesandbox/sandpack-react/dist/index.mjs" was ignored.
+✓ 2111 modules transformed.
+../../node_modules/@storybook/core/dist/preview/runtime.js (3683:15): Use of eval in "../../node_modules/@storybook/core/dist/preview/runtime.js" is strongly discouraged as it poses security risks and may cause issues with minification.
+../../node_modules/@storybook/core/dist/preview/runtime.js (3685:16): Use of eval in "../../node_modules/@storybook/core/dist/preview/runtime.js" is strongly discouraged as it poses security risks and may cause issues with minification.
+rendering chunks...
+computing gzip size...
+storybook-static/assets/09-trash-uohD_EUy.jpg                             15.13 kB
+storybook-static/iframe.html                                              20.14 kB │ gzip:   5.16 kB
+storybook-static/assets/11-workshop-BDvcMdbE.jpg                          37.92 kB
+storybook-static/assets/07-props-CnpW-pYE.jpg                             40.53 kB
+storybook-static/assets/04-filters-BFFcPnJk.jpg                           46.87 kB
+storybook-static/assets/01-gallery-3mV1YMrj.jpg                           50.53 kB
+storybook-static/assets/12-public-CBtMdKTd.jpg                            53.89 kB
+storybook-static/assets/02-composer-1x3UCfeo.jpg                          54.17 kB
+storybook-static/assets/08-toolbar-more-B3C9YsOb.jpg                      56.67 kB
+storybook-static/assets/03-card-menu-C_sV2oHu.jpg                         56.81 kB
+storybook-static/assets/05-batch-Mmo_SE3Q.jpg                             63.99 kB
+storybook-static/assets/06-viewer-h7J68-fM.jpg                            67.92 kB
+storybook-static/assets/codicon-DCmgc-ay.ttf                              80.34 kB
+storybook-static/assets/10-hotkeys-C-gGMETG.jpg                          100.05 kB
+storybook-static/assets/editor.worker-DX6ApQqM.js                        231.68 kB
+storybook-static/assets/json.worker-CIZWV9vN.js                          364.09 kB
+storybook-static/assets/html.worker-CBI4EQBP.js                          669.69 kB
+storybook-static/assets/css.worker-BRIrhzkG.js                         1,011.01 kB
+storybook-static/assets/ts.worker-Ds4I2Msu.js                          6,022.42 kB
+storybook-static/assets/MachineVpn-4ADguD3z.css                            0.41 kB │ gzip:   0.24 kB
+storybook-static/assets/ButtonPlayground-CV0ZctPS.css                      0.71 kB │ gzip:   0.33 kB
+storybook-static/assets/Markdown-BEHUn5zE.css                              1.32 kB │ gzip:   0.61 kB
+storybook-static/assets/styles-CehmXAhG.css                                3.58 kB │ gzip:   0.96 kB
+storybook-static/assets/MachineUtility-DYP7pi_n.css                        4.15 kB │ gzip:   1.68 kB
+storybook-static/assets/monacoSetup-DYZxrZ1d.css                         115.13 kB │ gzip:  18.09 kB
+storybook-static/assets/preview-CdUrTbkW.css                             442.78 kB │ gzip:  76.24 kB
+storybook-static/assets/kb-CjYTCLN0.js                                     0.06 kB │ gzip:   0.08 kB
+storybook-static/assets/client-C-JwFGHo.js                                 0.09 kB │ gzip:   0.10 kB
+storybook-static/assets/preview-CvbIS5ZJ.js                                0.18 kB │ gzip:   0.16 kB
+storybook-static/assets/_commonjsHelpers-Cpj98o6Y.js                       0.24 kB │ gzip:   0.18 kB
+storybook-static/assets/loadState-C9E-sPL9.js                              0.26 kB │ gzip:   0.15 kB
+storybook-static/assets/llmAccess-C_Yb1AHL.js                              0.27 kB │ gzip:   0.19 kB
+storybook-static/assets/useCommands-BzvxIUSP.js                            0.35 kB │ gzip:   0.23 kB
+storybook-static/assets/index-DUy19JZU.js                                  0.46 kB │ gzip:   0.30 kB
+storybook-static/assets/usePolling-B9yxHfjo.js                             0.47 kB │ gzip:   0.29 kB
+storybook-static/assets/version-BcxnO6Sf.js                                0.51 kB │ gzip:   0.31 kB
+storybook-static/assets/agentProtocol-ChPLBt7B.js                          0.52 kB │ gzip:   0.33 kB
+storybook-static/assets/browserResources-DsTjyVkU.js                       0.53 kB │ gzip:   0.42 kB
+storybook-static/assets/mediaQuery-CCkbYk-e.js                             0.57 kB │ gzip:   0.30 kB
+storybook-static/assets/browserId-xQxZgjMo.js                              0.60 kB │ gzip:   0.38 kB
+storybook-static/assets/shellPreferences-eSuxx32R.js                       0.62 kB │ gzip:   0.41 kB
+storybook-static/assets/clipboard-BEgkkb6H.js                              0.62 kB │ gzip:   0.36 kB
+storybook-static/assets/base-80a1f760-D2CA3Wnb.js                          0.63 kB │ gzip:   0.30 kB
+storybook-static/assets/ImageStudioGuide.stories-BI7xjAeS.js               0.63 kB │ gzip:   0.40 kB
+storybook-static/assets/useDismissibleMenu-BjxVjS3A.js                     0.65 kB │ gzip:   0.34 kB
+storybook-static/assets/animations-C_YQvEXU.js                             0.67 kB │ gzip:   0.48 kB
+storybook-static/assets/chunk-XP5HYGXS-BHXC9YeQ.js                         0.71 kB │ gzip:   0.40 kB
+storybook-static/assets/preview-DGUiP6tS.js                                0.71 kB │ gzip:   0.50 kB
+storybook-static/assets/projectComponents-K_C5xRkt.js                      0.74 kB │ gzip:   0.43 kB
+storybook-static/assets/useQaStageUpdates-BS-_GjqB.js                      0.75 kB │ gzip:   0.45 kB
+storybook-static/assets/index-Bhqu_tAV.js                                  0.79 kB │ gzip:   0.47 kB
+storybook-static/assets/react-18-2hQlJ01F.js                               0.83 kB │ gzip:   0.49 kB
+storybook-static/assets/codeHighlight-B62xOjBw.js                          0.85 kB │ gzip:   0.45 kB
+storybook-static/assets/storyBridges-CC8SoQ-3.js                           0.85 kB │ gzip:   0.50 kB
+storybook-static/assets/AnsiText-L5oy_LV7.js                               0.86 kB │ gzip:   0.56 kB
+storybook-static/assets/jsx-runtime-BYYWji4R.js                            0.92 kB │ gzip:   0.58 kB
+storybook-static/assets/dateFormat-Mm5g7L0f.js                             0.92 kB │ gzip:   0.54 kB
+storybook-static/assets/preview-Db5p5fiR.js                                0.94 kB │ gzip:   0.59 kB
+storybook-static/assets/preview-DOcWTeYY.js                                1.01 kB │ gzip:   0.64 kB
+storybook-static/assets/ansi-DtpFsZ9v.js                                   1.04 kB │ gzip:   0.58 kB
+storybook-static/assets/kbUsageFormat-CRosAzaA.js                          1.07 kB │ gzip:   0.76 kB
+storybook-static/assets/tools-iBbMKii-.js                                  1.20 kB │ gzip:   0.85 kB
+storybook-static/assets/useHotkeys-CbZVUDdg.js                             1.21 kB │ gzip:   0.63 kB
+storybook-static/assets/gitLabels-C1YTJXFU.js                              1.22 kB │ gzip:   0.86 kB
+storybook-static/assets/javascript-h1_FFwxz.js                             1.32 kB │ gzip:   0.70 kB
+storybook-static/assets/hotkeys-C4LhKLGX.js                                1.38 kB │ gzip:   0.71 kB
+storybook-static/assets/MonacoDiffEditor-Cr8LrRW2.js                       1.41 kB │ gzip:   0.79 kB
+storybook-static/assets/questions-Bk4wc6lB.js                              1.47 kB │ gzip:   0.95 kB
+storybook-static/assets/ConnectionBanner.stories-CbNPrH0t.js               1.70 kB │ gzip:   0.96 kB
+storybook-static/assets/persistence-CKag23hp.js                            1.80 kB │ gzip:   0.69 kB
+storybook-static/assets/fixtures-CX6PJmEh.js                               1.82 kB │ gzip:   1.08 kB
+storybook-static/assets/machineHealth-BhPDq4fx.js                          1.86 kB │ gzip:   1.13 kB
+storybook-static/assets/chatInstructions-DnVHq47u.js                       1.92 kB │ gzip:   1.35 kB
+storybook-static/assets/DocsRenderer-CFRXHY34-3VL_l0ZR.js                  1.98 kB │ gzip:   1.00 kB
+storybook-static/assets/NotificationCenter.stories-Dypj47_C.js             2.02 kB │ gzip:   1.11 kB
+storybook-static/assets/preview-BOH-M9Dk.js                                2.22 kB │ gzip:   1.21 kB
+storybook-static/assets/ciFormat-C2ubtOqD.js                               2.28 kB │ gzip:   1.27 kB
+storybook-static/assets/images-CH23vBlI.js                                 2.31 kB │ gzip:   1.40 kB
+storybook-static/assets/ErrorState.stories-CXfQsh6z.js                     2.38 kB │ gzip:   1.12 kB
+storybook-static/assets/git-CjXCeHaJ.js                                    2.42 kB │ gzip:   1.15 kB
+storybook-static/assets/formatCode-cSCV4a2D.js                             2.49 kB │ gzip:   0.59 kB
+storybook-static/assets/taskCycles-Bf4I7Sfm.js                             2.50 kB │ gzip:   1.16 kB
+storybook-static/assets/ClarificationNotification.stories-XeqILM9A.js      2.56 kB │ gzip:   1.17 kB
+storybook-static/assets/surfaces-DXFMOKWz.js                               2.65 kB │ gzip:   0.95 kB
+storybook-static/assets/xml-s0LaHCPm.js                                    2.81 kB │ gzip:   1.18 kB
+storybook-static/assets/commands-BOmIcTa-.js                               2.98 kB │ gzip:   1.55 kB
+storybook-static/assets/NotificationContainer.stories-IBJKmZPs.js          3.00 kB │ gzip:   1.22 kB
+storybook-static/assets/PlaywrightReaderApp.stories-DbBAJarx.js            3.14 kB │ gzip:   1.39 kB
+storybook-static/assets/ConfirmDialog.stories-zbrVtBpC.js                  3.19 kB │ gzip:   1.30 kB
+storybook-static/assets/AutomationProgressView-DAtzmtAH.js                 3.19 kB │ gzip:   1.45 kB
+storybook-static/assets/MobileNavigation.stories-B6xVWhcu.js               3.21 kB │ gzip:   1.38 kB
+storybook-static/assets/surfaces.stories-GYquxItt.js                       3.23 kB │ gzip:   1.26 kB
+storybook-static/assets/QuestionsForm-BC0DnwPI.js                          3.23 kB │ gzip:   1.69 kB
+storybook-static/assets/widgetAssistant-CqydwUuf.js                        3.25 kB │ gzip:   1.24 kB
+storybook-static/assets/MessageActivity-B4V63hFI.js                        3.49 kB │ gzip:   1.66 kB
+storybook-static/assets/preview-DD_OYowb.js                                3.51 kB │ gzip:   1.69 kB
+storybook-static/assets/machines-CK2U748_.js                               3.62 kB │ gzip:   1.89 kB
+storybook-static/assets/MakeNotesDialog.stories-BKBxWJT_.js                3.67 kB │ gzip:   1.55 kB
+storybook-static/assets/projects-BdwKgk--.js                               3.68 kB │ gzip:   1.88 kB
+storybook-static/assets/qa-B4ObmSZt.js                                     3.73 kB │ gzip:   1.87 kB
+storybook-static/assets/HotkeysCheatSheet.stories-CndX6qcU.js              3.85 kB │ gzip:   1.88 kB
+storybook-static/assets/Toast.stories-C7B7Tj3g.js                          3.95 kB │ gzip:   1.86 kB
+storybook-static/assets/ClarificationNotification-CNqivfon.js              3.99 kB │ gzip:   1.20 kB
+storybook-static/assets/markdown-DSZPf7rp.js                               4.03 kB │ gzip:   1.53 kB
+storybook-static/assets/EmptyState.stories-Cgeh90rA.js                     4.10 kB │ gzip:   1.79 kB
+storybook-static/assets/Markdown.stories-CW5Sbuxb.js                       4.24 kB │ gzip:   2.01 kB
+storybook-static/assets/CiSlotEditor.stories-Bpd0N1Hh.js                   4.26 kB │ gzip:   1.93 kB
+storybook-static/assets/ProjectsApp-dH9TYZcw.js                            4.28 kB │ gzip:   1.24 kB
+storybook-static/assets/yaml-B5NsvfpL.js                                   4.41 kB │ gzip:   1.74 kB
+storybook-static/assets/FeaturePreviewSection.stories-C8hiQg2u.js          4.62 kB │ gzip:   1.61 kB
+storybook-static/assets/AgentCard-Bq1sCVwV.js                              4.64 kB │ gzip:   1.96 kB
+storybook-static/assets/MessageTimeline.stories-B4JJ1675.js                4.66 kB │ gzip:   2.00 kB
+storybook-static/assets/dnd-Dxx-8wJC.js                                    4.70 kB │ gzip:   1.91 kB
+storybook-static/assets/ci-RJflIqqw.js                                     4.71 kB │ gzip:   2.06 kB
+storybook-static/assets/projectTypes-C-9aONcK.js                           4.75 kB │ gzip:   2.12 kB
+storybook-static/assets/css-D3h14YRZ.js                                    4.76 kB │ gzip:   1.53 kB
+storybook-static/assets/ToolFrame-HZnKQaX2.js                              4.84 kB │ gzip:   2.20 kB
+storybook-static/assets/MessageTimeline-B3t4wE3l.js                        4.85 kB │ gzip:   2.42 kB
+storybook-static/assets/LlmSettingsEditor-Cs2vbqn8.js                      4.87 kB │ gzip:   1.89 kB
+storybook-static/assets/clarification-DGqbjeB7.js                          4.88 kB │ gzip:   2.26 kB
+storybook-static/assets/AgentCard.stories-Cldq6Rbm.js                      4.95 kB │ gzip:   2.04 kB
+storybook-static/assets/MakeNotesDialog-BzN19Jip.js                        4.96 kB │ gzip:   1.93 kB
+storybook-static/assets/WebReaderApp.stories-BEzv1na1.js                   5.06 kB │ gzip:   1.89 kB
+storybook-static/assets/preview-B0GEC7uH.js                                5.06 kB │ gzip:   1.88 kB
+storybook-static/assets/CiSlotEditor-JiuTtjRd.js                           5.11 kB │ gzip:   2.52 kB
+storybook-static/assets/CiConsole-FzOByXiL.js                              5.15 kB │ gzip:   2.51 kB
+storybook-static/assets/GitWorkspaceList.stories-RfrtdQF0.js               5.23 kB │ gzip:   2.26 kB
+storybook-static/assets/CardPrimitives.stories-CN6fedk3.js                 5.23 kB │ gzip:   2.15 kB
+storybook-static/assets/SessionsApp.stories-BPgxqkQS.js                    5.26 kB │ gzip:   2.05 kB
+storybook-static/assets/MessageActivity.stories-DslXY_rC.js                5.29 kB │ gzip:   2.22 kB
+storybook-static/assets/Button.stories-J6Xq3k1V.js                         5.30 kB │ gzip:   2.00 kB
+storybook-static/assets/view-1nN0ZWPh.js                                   5.31 kB │ gzip:   2.34 kB
+storybook-static/assets/ManualQaPanel.stories-DZGZpFpt.js                  5.32 kB │ gzip:   1.94 kB
+storybook-static/assets/ProjectsApp.stories-C1YW7BCl.js                    5.35 kB │ gzip:   2.24 kB
+storybook-static/assets/html-DLnRcJzX.js                                   5.41 kB │ gzip:   1.62 kB
+storybook-static/assets/MonacoCodeEditor-BWVIOygA.js                       5.43 kB │ gzip:   2.55 kB
+storybook-static/assets/kanbanMeta-B8OwXhJB.js                             5.54 kB │ gzip:   2.72 kB
+storybook-static/assets/Operations.stories-B1OoK9Ps.js                     5.63 kB │ gzip:   1.54 kB
+storybook-static/assets/MessageImage.stories-B7mvcSJM.js                   5.68 kB │ gzip:   2.52 kB
+storybook-static/assets/Skeleton.stories-FDqDZcej.js                       5.69 kB │ gzip:   2.36 kB
+storybook-static/assets/Dialog.stories-CQKt6ymp.js                         5.75 kB │ gzip:   2.34 kB
+storybook-static/assets/ProjectMachinesSettings.stories-BZIPPolT.js        5.79 kB │ gzip:   2.15 kB
+storybook-static/assets/typescript-BqUXhmLA.js                             5.80 kB │ gzip:   2.39 kB
+storybook-static/assets/types-BqYJHRjo.js                                  5.81 kB │ gzip:   2.74 kB
+storybook-static/assets/MergePanel.stories-Nu9G9qhi.js                     6.09 kB │ gzip:   2.51 kB
+storybook-static/assets/Icons.stories-BJw7vtDu.js                          6.17 kB │ gzip:   2.70 kB
+storybook-static/assets/icons-M-fant0Z.js                                  6.19 kB │ gzip:   1.99 kB
+storybook-static/assets/NewProjectDialog.stories-BYM4cfu8.js               6.32 kB │ gzip:   2.99 kB
+storybook-static/assets/MessageMeta.stories-D2YDWjtB.js                    6.43 kB │ gzip:   2.54 kB
+storybook-static/assets/CiConsole.stories-DaCeNbNb.js                      6.59 kB │ gzip:   2.41 kB
+storybook-static/assets/ProjectTypesSettings.stories-CO1iXu1r.js           6.68 kB │ gzip:   2.44 kB
+storybook-static/assets/NewTaskStages.stories-DdjtWMB4.js                  6.74 kB │ gzip:   2.68 kB
+storybook-static/assets/chat-BS-xlM0V.js                                   6.74 kB │ gzip:   3.59 kB
+storybook-static/assets/CiReport.stories-B2eiME1r.js                       6.99 kB │ gzip:   2.76 kB
+storybook-static/assets/index-ClcD9ViR.js                                  7.18 kB │ gzip:   2.92 kB
+storybook-static/assets/InviteScreen.stories-DXI_wYwf.js                   7.36 kB │ gzip:   2.72 kB
+storybook-static/assets/AddingComponent-B6hGpdk8.js                        7.37 kB │ gzip:   3.18 kB
+storybook-static/assets/CiTaskSettings.stories-Bm_dEbu9.js                 7.45 kB │ gzip:   2.72 kB
+storybook-static/assets/preview-CCCznEf4.js                                7.62 kB │ gzip:   1.56 kB
+storybook-static/assets/MakeProjectComponents.stories-Vzk0vg6M.js          7.75 kB │ gzip:   2.69 kB
+storybook-static/assets/ProfileApp.stories-DK7NxJZ2.js                     7.84 kB │ gzip:   3.35 kB
+storybook-static/assets/MessageMeta--YgcNavB.js                            8.00 kB │ gzip:   3.20 kB
+storybook-static/assets/ImageStudioViewer.stories-BRF9iRfA.js              8.01 kB │ gzip:   2.47 kB
+storybook-static/assets/preview-BBWR9nbA.js                                8.12 kB │ gzip:   3.10 kB
+storybook-static/assets/ProjectTypesSettings-7fCbnCNd.js                   8.16 kB │ gzip:   3.33 kB
+storybook-static/assets/MachineVpn-BCuZ0l2t.js                             8.41 kB │ gzip:   3.97 kB
+storybook-static/assets/AutomatedQaScenarioEditor-7x3Y5JfF.js              8.48 kB │ gzip:   3.19 kB
+storybook-static/assets/TaskChatHeader.stories-o7YUSMDf.js                 8.73 kB │ gzip:   3.51 kB
+storybook-static/assets/parts-B-To_NK7.js                                  8.85 kB │ gzip:   3.84 kB
+storybook-static/assets/CiReport-LPTyejgr.js                               9.02 kB │ gzip:   3.17 kB
+storybook-static/assets/CodeDiff-B36wLTnb.js                               9.38 kB │ gzip:   2.74 kB
+storybook-static/assets/AutomatedQaScenarioEditor.stories-BMeWs1D1.js      9.52 kB │ gzip:   3.07 kB
+storybook-static/assets/MachineVpn.stories-CkTs7ejr.js                     9.83 kB │ gzip:   2.85 kB
+storybook-static/assets/CiStatus.stories-Cezmirvv.js                      10.18 kB │ gzip:   3.29 kB
+storybook-static/assets/ci-FqzqKw8b.js                                    10.41 kB │ gzip:   4.06 kB
+storybook-static/assets/SpacingRadius.stories-BtloSavb.js                 10.81 kB │ gzip:   3.49 kB
+storybook-static/assets/CommandPalette.stories-CXofY-FO.js                10.99 kB │ gzip:   4.61 kB
+storybook-static/assets/NewTaskStages-Dbc9tFKo.js                         11.11 kB │ gzip:   3.14 kB
+storybook-static/assets/Primitives.stories-01Mj3m4Z.js                    11.12 kB │ gzip:   3.91 kB
+storybook-static/assets/PromptBuilder.stories-DC2shmaU.js                 11.40 kB │ gzip:   3.50 kB
+storybook-static/assets/useAiAssist-8y3Nqdbq.js                           11.40 kB │ gzip:   4.19 kB
+storybook-static/assets/ImageStudioGuide-DYxSjPm2.js                      11.50 kB │ gzip:   6.38 kB
+storybook-static/assets/NewTaskPanels.stories-B3gI-PLD.js                 12.02 kB │ gzip:   4.37 kB
+storybook-static/assets/AppShell.stories-BRljOvUM.js                      12.67 kB │ gzip:   4.63 kB
+storybook-static/assets/Colors.stories-CYmmNfhi.js                        12.71 kB │ gzip:   3.86 kB
+storybook-static/assets/ProjectPage.stories-B5UkL6P4.js                   12.75 kB │ gzip:   5.16 kB
+storybook-static/assets/CiTaskSettings-BiNQCTA6.js                        12.85 kB │ gzip:   4.70 kB
+storybook-static/assets/test-utils-B7RDpIBK.js                            12.99 kB │ gzip:   5.05 kB
+storybook-static/assets/ComponentQaPanel-BO4NluP2.js                      13.10 kB │ gzip:   4.81 kB
+storybook-static/assets/MessageImage-BeHIvjdz.js                          13.21 kB │ gzip:   5.71 kB
+storybook-static/assets/FeaturePreviewSection-AZbhoinQ.js                 13.94 kB │ gzip:   5.06 kB
+storybook-static/assets/Typography.stories-BifFb3xM.js                    14.30 kB │ gzip:   4.06 kB
+storybook-static/assets/RunFeed.stories-DIoSk_Ug.js                       14.75 kB │ gzip:   5.11 kB
+storybook-static/assets/GitPane.stories-DCtWGd7p.js                       15.32 kB │ gzip:   4.82 kB
+storybook-static/assets/QaStageRunPanel-dUjW0DPe.js                       15.93 kB │ gzip:   6.12 kB
+storybook-static/assets/MachineUtility.stories-uagGLGwp.js                16.18 kB │ gzip:   5.07 kB
+storybook-static/assets/MakeProjectComponents-CspB0mPH.js                 17.45 kB │ gzip:   5.84 kB
+storybook-static/assets/magic-string.es-DjU5CGuV.js                       18.01 kB │ gzip:   5.56 kB
+storybook-static/assets/MergePanel-Ck6uppb2.js                            19.06 kB │ gzip:   7.07 kB
+storybook-static/assets/ProjectMachinesSettings--bMkIww3.js               19.47 kB │ gzip:   6.20 kB
+storybook-static/assets/consoleHook-59e792cb-CuN_dpKz.js                  19.71 kB │ gzip:   6.04 kB
+storybook-static/assets/KbUsagePanel.stories-RanBGbnE.js                  19.79 kB │ gzip:   6.63 kB
+storybook-static/assets/TaskCard.stories-DRYWoFrI.js                      19.79 kB │ gzip:   5.45 kB
+storybook-static/assets/TaskModal.stories-DW6WGOt1.js                     20.08 kB │ gzip:   7.38 kB
+storybook-static/assets/QaStageRunPanel.stories-SnM7OwHa.js               20.40 kB │ gzip:   5.30 kB
+storybook-static/assets/ManualQaPanel-B5NSI6-n.js                         21.06 kB │ gzip:   7.63 kB
+storybook-static/assets/scenarioStep-DFcxsGqQ.js                          22.88 kB │ gzip:   7.34 kB
+storybook-static/assets/tsMode-DPO6uXLo.js                                22.99 kB │ gzip:   6.59 kB
+storybook-static/assets/RunPanels.stories-Ctc0mTXu.js                     23.06 kB │ gzip:   6.46 kB
+storybook-static/assets/KanbanBoard.stories-BWjCjL9g.js                   23.41 kB │ gzip:   7.94 kB
+storybook-static/assets/CiCommands.stories-D6cshs75.js                    23.62 kB │ gzip:   7.72 kB
+storybook-static/assets/browser-CkJuJxJl.js                               24.54 kB │ gzip:   9.66 kB
+storybook-static/assets/protocol-BYqEKzNC.js                              24.76 kB │ gzip:   4.20 kB
+storybook-static/assets/ChatColumn.stories-D5N67g_Q.js                    26.98 kB │ gzip:   8.47 kB
+storybook-static/assets/VoiceBar-EwpuKG8j.js                              27.71 kB │ gzip:   8.73 kB
+storybook-static/assets/NewTaskCardView-DiUObwOP.js                       28.49 kB │ gzip:   8.65 kB
+storybook-static/assets/index-CCVJh3S2.js                                 28.84 kB │ gzip:   9.00 kB
+storybook-static/assets/Color-YHDXOIA2-D1NagkVO.js                        29.33 kB │ gzip:  11.04 kB
+storybook-static/assets/matchers-7Z3WT2CE-T3xScrR7.js                     29.79 kB │ gzip:  10.30 kB
+storybook-static/assets/entry-preview-BsZ5Dexr.js                         29.85 kB │ gzip:   9.56 kB
+storybook-static/assets/VoiceBar.stories-7zUKa8Fe.js                      30.52 kB │ gzip:   9.30 kB
+storybook-static/assets/fixtures-Va_2exqW.js                              30.61 kB │ gzip:  10.82 kB
+storybook-static/assets/TaskCard-CZBSXNz1.js                              31.89 kB │ gzip:   9.32 kB
+storybook-static/assets/cssMode-gMzQGj5v.js                               32.50 kB │ gzip:   8.87 kB
+storybook-static/assets/htmlMode-D9-QcW2W.js                              33.05 kB │ gzip:   9.00 kB
+storybook-static/assets/ProfilePanel-D5LbzPf9.js                          38.90 kB │ gzip:  11.28 kB
+storybook-static/assets/GitPane-BMS5k8GK.js                               39.05 kB │ gzip:  11.86 kB
+storybook-static/assets/SettingsModal.stories-DptT5W6n.js                 39.49 kB │ gzip:  11.88 kB
+storybook-static/assets/jsonMode-Dpr1Q9PO.js                              41.92 kB │ gzip:  12.21 kB
+storybook-static/assets/RunFeed-DWpNIt09.js                               43.73 kB │ gzip:  14.90 kB
+storybook-static/assets/ChatColumn-ClJAZ7Mm.js                            44.18 kB │ gzip:  14.15 kB
+storybook-static/assets/KanbanAssistant.stories-BS8CPLiA.js               46.03 kB │ gzip:  11.62 kB
+storybook-static/assets/MachineStatus.stories-CDr92rmF.js                 51.29 kB │ gzip:  15.85 kB
+storybook-static/assets/typescript-eXMp0nWP.js                            52.65 kB │ gzip:  16.79 kB
+storybook-static/assets/NewTaskFeedPanel-aFn6otFA.js                      52.84 kB │ gzip:  15.39 kB
+storybook-static/assets/Sidebar.stories-dp8z0rPm.js                       53.49 kB │ gzip:  15.08 kB
+storybook-static/assets/index-Bhelpi4i.js                                 57.15 kB │ gzip:  16.30 kB
+storybook-static/assets/AttemptHistory-C25Tl-l9.js                        59.33 kB │ gzip:  16.52 kB
+storybook-static/assets/BrowserSessionPane.stories-xA5vv5cj.js            61.45 kB │ gzip:  19.70 kB
+storybook-static/assets/imageStudio-n_WWyFhz.js                           62.28 kB │ gzip:  17.94 kB
+storybook-static/assets/ReleaseCenter.stories-BeWyTtie.js                 68.14 kB │ gzip:  21.49 kB
+storybook-static/assets/ProjectSettings.stories-DaODB_NQ.js               72.20 kB │ gzip:  19.66 kB
+storybook-static/assets/standalone-DlTBAC-5.js                            78.85 kB │ gzip:  26.63 kB
+storybook-static/assets/ContextInspector.stories-jz-1uOZ4.js              82.13 kB │ gzip:  23.93 kB
+storybook-static/assets/TaskModal-cf20c545.js                             99.34 kB │ gzip:  28.57 kB
+storybook-static/assets/fakeApi-CuTR2Ev3.js                              109.64 kB │ gzip:  34.77 kB
+storybook-static/assets/ui-BtE150d1.js                                   119.58 kB │ gzip:  47.67 kB
+storybook-static/assets/AdminApp.stories-B2njcEbT.js                     120.03 kB │ gzip:  29.95 kB
+storybook-static/assets/yaml-DnvusxS2.js                                 121.00 kB │ gzip:  38.67 kB
+storybook-static/assets/markdown-BYbWo2-Z.js                             131.89 kB │ gzip:  50.98 kB
+storybook-static/assets/index-Brl4xq4Y.js                                134.00 kB │ gzip:  43.17 kB
+storybook-static/assets/html-BckHB4w0.js                                 139.69 kB │ gzip:  46.08 kB
+storybook-static/assets/KanbanBoard-Cja1OPrD.js                          140.71 kB │ gzip:  40.22 kB
+storybook-static/assets/index-599aeaf7-D1JiXypX.js                       144.50 kB │ gzip:  24.49 kB
+storybook-static/assets/postcss-BdUEQaWJ.js                              147.47 kB │ gzip:  42.43 kB
+storybook-static/assets/index-BcnP1epn.js                                149.72 kB │ gzip:  25.47 kB
+storybook-static/assets/monacoLocalization-CU6Kr43J.js                   162.12 kB │ gzip:  45.61 kB
+storybook-static/assets/estree-BA_MSjFq.js                               198.04 kB │ gzip:  56.89 kB
+storybook-static/assets/MakePane.stories-B5U8bC5d.js                     199.61 kB │ gzip:  59.06 kB
+storybook-static/assets/html2canvas.esm-CBrSDip1.js                      201.42 kB │ gzip:  48.03 kB
+storybook-static/assets/ImageStudioPane.stories-WCCcKQIh.js              210.06 kB │ gzip:  63.10 kB
+storybook-static/assets/iframe-D6JORqxa.js                               231.04 kB │ gzip:  77.94 kB
+storybook-static/assets/entry-preview-docs-7jaTlrcw.js                   244.71 kB │ gzip:  73.44 kB
+storybook-static/assets/NewTaskCardView.stories-dfpQ3Fx8.js              254.94 kB │ gzip:  79.31 kB
+storybook-static/assets/Markdown-DymuZXV3.js                             283.89 kB │ gzip:  88.45 kB
+storybook-static/assets/babel-DbajE58w.js                                307.92 kB │ gzip:  82.41 kB
+storybook-static/assets/MachineUtility-QtW02zlA.js                       346.73 kB │ gzip:  92.64 kB
+storybook-static/assets/typescript-BLR8hp-3.js                           452.20 kB │ gzip: 122.84 kB
+storybook-static/assets/axe.min-5CaPXsko.js                              575.38 kB │ gzip: 154.40 kB
+storybook-static/assets/axe-d-K7rF9D.js                                  592.81 kB │ gzip: 163.80 kB
+storybook-static/assets/ButtonPlayground-BbbPMqpK.js                     628.85 kB │ gzip: 213.23 kB
+storybook-static/assets/index-DeN4tkzB.js                                662.40 kB │ gzip: 157.06 kB
+storybook-static/assets/index-2FkSj5dC.js                                882.54 kB │ gzip: 275.22 kB
+storybook-static/assets/monacoSetup-B3Nqu1qH.js                        4,097.46 kB │ gzip: 894.00 kB
+
+(!) Some chunks are larger than 1024 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2m 40s
+info => Preview built ([38;2;181;126;229m2.68 min[39m)
+info => Output directory: /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/storybook-static
+[gate:app] npm run -w @voicechat/web typecheck
+
+> @voicechat/web@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+[gate:app] npm run -w @voicechat/web test
+
+> @voicechat/web@0.1.0 test
+> vitest run
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/apps/web
+
+ ✓ src/devProxy.test.ts (2 tests) 4ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  10:12:01
+   Duration  596ms (transform 67ms, setup 0ms, collect 225ms, tests 4ms, environment 0ms, prepare 97ms)
+
+[gate:app] npm run -w @voicechat/web build
+
+> @voicechat/web@0.1.0 build
+> vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 1850 modules transformed.
+rendering chunks...
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitPane.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitTargetPane.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitTargetPane.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/MachineUtility.tsx, /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/kanban/TaskModal.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/MachineUtility.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ChatColumn.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ContextInspector.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ConversationSettings.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/SettingsModal.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                                 1.25 kB │ gzip:   0.52 kB
+dist/assets/codicon-DCmgc-ay.ttf               80.34 kB
+dist/assets/editor.worker-DX6ApQqM.js         231.68 kB
+dist/assets/json.worker-CIZWV9vN.js           364.09 kB
+dist/assets/html.worker-CBI4EQBP.js           669.69 kB
+dist/assets/css.worker-BRIrhzkG.js          1,011.01 kB
+dist/assets/ts.worker-Ds4I2Msu.js           6,022.42 kB
+dist/assets/MachineStatus-4ADguD3z.css          0.41 kB │ gzip:   0.24 kB
+dist/assets/markdown-BEHUn5zE.css               1.32 kB │ gzip:   0.61 kB
+dist/assets/terminal-DYP7pi_n.css               4.15 kB │ gzip:   1.68 kB
+dist/assets/monaco-Cff06kPg.css               115.14 kB │ gzip:  18.09 kB
+dist/assets/index-B0u8gcG9.css                366.93 kB │ gzip:  64.69 kB
+dist/assets/MonacoDiffEditor-k3qRH9yw.js        0.64 kB │ gzip:   0.45 kB
+dist/assets/GitWorkspaceList-C7wU-9OP.js        1.99 kB │ gzip:   1.07 kB
+dist/assets/SessionsDialogHost-WSi9Q9Uz.js      2.04 kB │ gzip:   0.96 kB
+dist/assets/MonacoCodeEditor-Lds1Phi3.js        2.67 kB │ gzip:   1.38 kB
+dist/assets/ProjectPage-z8tVPijb.js             2.94 kB │ gzip:   1.66 kB
+dist/assets/AccountPage-bvhdji3W.js             6.80 kB │ gzip:   2.77 kB
+dist/assets/CiSlotEditor-Bzyw6M2l.js            7.91 kB │ gzip:   3.85 kB
+dist/assets/KnowledgeBase-CS6C26iO.js           8.09 kB │ gzip:   3.72 kB
+dist/assets/sessionsStore-BAK0TAPb.js          23.14 kB │ gzip:   8.20 kB
+dist/assets/qrcode-C2qLkN4o.js                 24.04 kB │ gzip:   9.45 kB
+dist/assets/index-D9UhIJaX.js                  35.37 kB │ gzip:  11.72 kB
+dist/assets/MachineStatus-rjCCGFLg.js          37.93 kB │ gzip:  13.41 kB
+dist/assets/ProjectSettings-DIQdXIv1.js        67.98 kB │ gzip:  21.24 kB
+dist/assets/react-BHR-zMpM.js                 142.49 kB │ gzip:  45.69 kB
+dist/assets/TaskModal-BRZ6KlIr.js             171.81 kB │ gzip:  52.02 kB
+dist/assets/ProjectBoard-Bt169oAG.js          209.55 kB │ gzip:  63.25 kB
+dist/assets/terminal-DGHPw4qf.js              291.26 kB │ gzip:  72.72 kB
+dist/assets/markdown-C65z0Iha.js              334.17 kB │ gzip: 103.70 kB
+dist/assets/index-K0kzHutU.js               1,028.64 kB │ gzip: 320.47 kB
+dist/assets/monacoSetup-DeBE_VvU.js         1,117.43 kB │ gzip: 126.10 kB
+dist/assets/prettier-DycMSh8D.js            1,587.93 kB │ gzip: 468.02 kB
+dist/assets/monaco-DpaXHH7b.js              3,143.42 kB │ gzip: 808.40 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 56.64s
+[gate:app] npm run -w @voicechat/admin-app typecheck
+
+> @voicechat/admin-app@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+[gate:app] npm run -w @voicechat/admin-app test
+
+> @voicechat/admin-app@0.1.0 test
+> vitest run --silent
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/admin-app
+
+ ✓ src/store/adminStore.test.ts (3 tests) 16ms
+ ✓ src/users/usersModel.test.ts (12 tests) 27ms
+ ✓ src/AgentFleetUpdate.dom.test.tsx (3 tests) 265ms
+ ✓ src/ProjectTypesAdmin.dom.test.tsx (5 tests) 519ms
+ ✓ src/routes.test.ts (17 tests) 15ms
+ ✓ src/RoleCommandPolicyEditor.dom.test.tsx (1 test) 187ms
+ ✓ src/architecture.test.ts (1 test) 5ms
+ ✓ src/UsersAdmin.dom.test.tsx (47 tests) 8810ms
+   ✓ CHAT-453 access management > requests another server page only after Show more 726ms
+   ✓ CHAT-453 access management > uses one typed confirmation for more than five selected users 452ms
+   ✓ CHAT-453 access management > keeps loaded pages when selecting a user updates the host cache 463ms
+   ✓ UsersAdmin — список и метрики > поиск и фильтр статуса сужают список, счётчик показывает выборку 325ms
+   ✓ UsersAdmin — масштаб > «показать ещё» догружает следующую страницу и сообщает остаток 3396ms
+
+ Test Files  8 passed (8)
+      Tests  89 passed (89)
+   Start at  10:13:03
+   Duration  12.34s (transform 1.63s, setup 1.02s, collect 3.96s, tests 9.84s, environment 6.14s, prepare 1.13s)
+
+[gate:app] npm --prefix apps/desktop run typecheck
+
+> @voicechat/desktop@0.1.0 typecheck
+> npm run typecheck:node && npm run typecheck:web
+
+
+> @voicechat/desktop@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json --composite false
+
+
+> @voicechat/desktop@0.1.0 typecheck:web
+> tsc --noEmit -p tsconfig.web.json --composite false
+
+[gate:app] npm --prefix apps/desktop run test
+
+> @voicechat/desktop@0.1.0 pretest
+> npm run rebuild:node
+
+
+> @voicechat/desktop@0.1.0 rebuild:node
+> npm rebuild better-sqlite3
+
+rebuilt dependencies successfully
+
+> @voicechat/desktop@0.1.0 test
+> vitest run
+
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/apps/desktop
+
+ ✓ src/main/remoteConfig.test.ts (6 tests) 26ms
+ ✓ src/main/db/database.test.ts (15 tests) 100ms
+
+ Test Files  2 passed (2)
+      Tests  21 passed (21)
+   Start at  10:13:32
+   Duration  721ms (transform 223ms, setup 0ms, collect 360ms, tests 126ms, environment 1ms, prepare 268ms)
+
+[gate:app] npm --prefix apps/desktop run build
+
+> @voicechat/desktop@0.1.0 build
+> electron-vite build
+
+vite v5.4.21 building SSR bundle for production...
+transforming...
+✓ 130 modules transformed.
+rendering chunks...
+out/main/index.js  122.02 kB
+✓ built in 961ms
+vite v5.4.21 building SSR bundle for production...
+transforming...
+✓ 1 modules transformed.
+rendering chunks...
+out/preload/index.mjs  1.39 kB
+✓ built in 15ms
+vite v5.4.21 building for production...
+transforming...
+✓ 1856 modules transformed.
+rendering chunks...
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitPane.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitTargetPane.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitTargetPane.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/MachineUtility.tsx, /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/kanban/TaskModal.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/MachineUtility.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ChatColumn.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ContextInspector.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ConversationSettings.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/SettingsModal.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx, dynamic import will not move module into another chunk.
+
+../../out/renderer/agent-log.html                              0.90 kB
+../../out/renderer/remote-setup.html                           1.39 kB
+../../out/renderer/index.html                                  1.42 kB
+../../out/renderer/agent-setup.html                            1.49 kB
+../../out/renderer/assets/codicon-DCmgc-ay.ttf                80.34 kB
+../../out/renderer/assets/editor.worker-ZSx8gsAZ.js          503.10 kB
+../../out/renderer/assets/json.worker-CYJeM0Vc.js            802.53 kB
+../../out/renderer/assets/html.worker-CLkxC0C0.js          1,200.21 kB
+../../out/renderer/assets/css.worker-rtSqh8pb.js           1,829.45 kB
+../../out/renderer/assets/ts.worker-D6bfeQIp.js           12,093.35 kB
+../../out/renderer/assets/MachineStatus-Cwnw1qHU.css           0.51 kB
+../../out/renderer/assets/markdown-DqdTtQ31.css                2.18 kB
+../../out/renderer/assets/terminal-BKlWQB97.css                5.56 kB
+../../out/renderer/assets/monacoSetup-B6F6NJSG.css           164.44 kB
+../../out/renderer/assets/index-42IeAL9z.css                 554.35 kB
+../../out/renderer/assets/remote-setup-CAzIUqe1.js             0.62 kB
+../../out/renderer/assets/agent-setup-Dcb69TpT.js              0.69 kB
+../../out/renderer/assets/agent-log-CCU1MG2U.js                0.78 kB
+../../out/renderer/assets/MonacoDiffEditor-BYuMMd0x.js         1.07 kB
+../../out/renderer/assets/javascript-Cr23Fnid.js               1.82 kB
+../../out/renderer/assets/GitWorkspaceList-CcJ3P4PR.js         3.34 kB
+../../out/renderer/assets/SessionsDialogHost-D3oXAGWi.js       3.96 kB
+../../out/renderer/assets/xml-CqcdH1HL.js                      4.10 kB
+../../out/renderer/assets/MonacoCodeEditor-B98rNTNg.js         4.53 kB
+../../out/renderer/assets/ProjectPage-Cpmu-xhG.js              5.41 kB
+../../out/renderer/assets/css-Dc1e6frd.js                      6.49 kB
+../../out/renderer/assets/markdown-C1LDbTIq.js                 7.03 kB
+../../out/renderer/assets/yaml-DZwJOhaP.js                     7.14 kB
+../../out/renderer/assets/html-B1x7Z6We.js                     8.91 kB
+../../out/renderer/assets/typescript-BXAmy8na.js               9.25 kB
+../../out/renderer/assets/CiSlotEditor-CZJ_A7ac.js            12.79 kB
+../../out/renderer/assets/AccountPage-DAzjD7pN.js             14.54 kB
+../../out/renderer/assets/KnowledgeBase-BhYl3MOa.js           15.35 kB
+../../out/renderer/assets/sessionsStore-cPGEFZHh.js           39.18 kB
+../../out/renderer/assets/tsMode-BcvCBcou.js                  43.35 kB
+../../out/renderer/assets/qrcode-BzWjNt9H.js                  53.05 kB
+../../out/renderer/assets/index-Ctvj5Qi1.js                   67.02 kB
+../../out/renderer/assets/cssMode-BZdRCLlp.js                 69.02 kB
+../../out/renderer/assets/MachineStatus-qDwrbEdY.js           69.46 kB
+../../out/renderer/assets/htmlMode-_Q0Nmwfk.js                70.04 kB
+../../out/renderer/assets/jsonMode-BHWEIv2c.js                91.86 kB
+../../out/renderer/assets/standalone-bUBVPhGa.js             100.79 kB
+../../out/renderer/assets/ProjectSettings-B4BCJ8EN.js        118.16 kB
+../../out/renderer/assets/yaml-8mHiCpW-.js                   165.37 kB
+../../out/renderer/assets/html-CBW6-o2_.js                   170.69 kB
+../../out/renderer/assets/markdown-aNdcxj5d.js               176.61 kB
+../../out/renderer/assets/postcss-D0LOvqqW.js                202.36 kB
+../../out/renderer/assets/react-CFJZ7fIF.js                  215.71 kB
+../../out/renderer/assets/estree-DL7DLHAB.js                 244.66 kB
+../../out/renderer/assets/TaskModal-DqTgY9t2.js              322.12 kB
+../../out/renderer/assets/babel-DVeTUIEq.js                  389.89 kB
+../../out/renderer/assets/ProjectBoard-DmwaW9n-.js           392.83 kB
+../../out/renderer/assets/terminal-Ixw0CWPY.js               402.60 kB
+../../out/renderer/assets/typescript-LJosMJj_.js             582.81 kB
+../../out/renderer/assets/markdown-Bf8Fxnkt.js               717.83 kB
+../../out/renderer/assets/index-C6EfQpqt.js                1,871.11 kB
+../../out/renderer/assets/monacoSetup-x2hMegW7.js          6,821.30 kB
+✓ built in 57.78s
+[gate:app] npm run build:frontends
+
+> voicechat-monorepo@0.1.0 build:frontends
+> node --import tsx scripts/application-frontend.mjs
+
+vite v5.4.21 building for production...
+transforming...
+✓ 947 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/assets/editor.worker-pDU4FRj1.js    231.68 kB
+dist/assets/json.worker-CPl-TQsa.js      364.09 kB
+dist/assets/html.worker-BpsmuRNd.js      669.69 kB
+dist/assets/css.worker-BSc4qqxy.js     1,011.02 kB
+dist/assets/ts.worker-DwWvmLE7.js      6,022.47 kB
+dist/style.css                           269.29 kB │ gzip:    83.76 kB
+dist/panel.js                          7,258.67 kB │ gzip: 1,804.22 kB
+✓ built in 50.62s
+[frontend] make-ui 0.1.0: packages/make-app/dist
+vite v5.4.21 building for production...
+transforming...
+✓ 49 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/style.css     25.05 kB │ gzip:   4.76 kB
+dist/panel.js   1,076.17 kB │ gzip: 593.74 kB
+✓ built in 809ms
+[frontend] image-studio-ui 0.1.0: packages/image-studio-app/dist
+vite v5.4.21 building for production...
+transforming...
+✓ 26 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/style.css   6.70 kB │ gzip:  1.40 kB
+dist/panel.js   64.33 kB │ gzip: 20.74 kB
+✓ built in 319ms
+[frontend] playwright-reader-ui 0.1.0: packages/playwright-reader-app/dist
+vite v5.4.21 building for production...
+transforming...
+✓ 19 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/style.css  32.12 kB │ gzip:  6.72 kB
+dist/panel.js   45.15 kB │ gzip: 15.13 kB
+✓ built in 241ms
+[frontend] web-reader-ui 0.1.0: packages/web-reader-app/dist
+[gate:app] npm run -w @voicechat/web build
+
+> @voicechat/web@0.1.0 build
+> vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 1850 modules transformed.
+rendering chunks...
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitPane.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitTargetPane.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/git/GitTargetPane.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/MachineUtility.tsx, /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/kanban/TaskModal.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/MachineUtility.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ChatColumn.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ContextInspector.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/ConversationSettings.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter]
+(!) /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/components/SettingsModal.tsx is dynamically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx but also statically imported by /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468/packages/ui/src/App.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                                 1.25 kB │ gzip:   0.52 kB
+dist/assets/codicon-DCmgc-ay.ttf               80.34 kB
+dist/assets/editor.worker-DX6ApQqM.js         231.68 kB
+dist/assets/json.worker-CIZWV9vN.js           364.09 kB
+dist/assets/html.worker-CBI4EQBP.js           669.69 kB
+dist/assets/css.worker-BRIrhzkG.js          1,011.01 kB
+dist/assets/ts.worker-Ds4I2Msu.js           6,022.42 kB
+dist/assets/MachineStatus-4ADguD3z.css          0.41 kB │ gzip:   0.24 kB
+dist/assets/markdown-BEHUn5zE.css               1.32 kB │ gzip:   0.61 kB
+dist/assets/terminal-DYP7pi_n.css               4.15 kB │ gzip:   1.68 kB
+dist/assets/monaco-Cff06kPg.css               115.14 kB │ gzip:  18.09 kB
+dist/assets/index-B0u8gcG9.css                366.93 kB │ gzip:  64.69 kB
+dist/assets/MonacoDiffEditor-k3qRH9yw.js        0.64 kB │ gzip:   0.45 kB
+dist/assets/GitWorkspaceList-C7wU-9OP.js        1.99 kB │ gzip:   1.07 kB
+dist/assets/SessionsDialogHost-WSi9Q9Uz.js      2.04 kB │ gzip:   0.96 kB
+dist/assets/MonacoCodeEditor-Lds1Phi3.js        2.67 kB │ gzip:   1.38 kB
+dist/assets/ProjectPage-z8tVPijb.js             2.94 kB │ gzip:   1.66 kB
+dist/assets/AccountPage-bvhdji3W.js             6.80 kB │ gzip:   2.77 kB
+dist/assets/CiSlotEditor-Bzyw6M2l.js            7.91 kB │ gzip:   3.85 kB
+dist/assets/KnowledgeBase-CS6C26iO.js           8.09 kB │ gzip:   3.72 kB
+dist/assets/sessionsStore-BAK0TAPb.js          23.14 kB │ gzip:   8.20 kB
+dist/assets/qrcode-C2qLkN4o.js                 24.04 kB │ gzip:   9.45 kB
+dist/assets/index-D9UhIJaX.js                  35.37 kB │ gzip:  11.72 kB
+dist/assets/MachineStatus-rjCCGFLg.js          37.93 kB │ gzip:  13.41 kB
+dist/assets/ProjectSettings-DIQdXIv1.js        67.98 kB │ gzip:  21.24 kB
+dist/assets/react-BHR-zMpM.js                 142.49 kB │ gzip:  45.69 kB
+dist/assets/TaskModal-BRZ6KlIr.js             171.81 kB │ gzip:  52.02 kB
+dist/assets/ProjectBoard-Bt169oAG.js          209.55 kB │ gzip:  63.25 kB
+dist/assets/terminal-DGHPw4qf.js              291.26 kB │ gzip:  72.72 kB
+dist/assets/markdown-C65z0Iha.js              334.17 kB │ gzip: 103.70 kB
+dist/assets/index-K0kzHutU.js               1,028.64 kB │ gzip: 320.47 kB
+dist/assets/monacoSetup-DeBE_VvU.js         1,117.43 kB │ gzip: 126.10 kB
+dist/assets/prettier-DycMSh8D.js            1,587.93 kB │ gzip: 468.02 kB
+dist/assets/monaco-DpaXHH7b.js              3,143.42 kB │ gzip: 808.40 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 1m
+[gate:app] npm exec -- vitest run --config e2e/vitest.config.ts e2e/applicationReleases.e2e.test.ts e2e/machine-vpn.e2e.test.ts
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /root/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/0d08841b-d123-4eab-8613-cf70eef8fdb4/environments/test/temporary/repository/CHAT-468
+
+ ✓ e2e/machine-vpn.e2e.test.ts (2 tests) 11172ms
+   ✓ VPN Component QA in Chromium > completes gateway selection, LAN confirmation and pending-state feedback with the keyboard 3871ms
+   ✓ VPN Component QA in Chromium > keeps gateway failure and explicit off visible on a narrow screen 1473ms
+ ✓ e2e/applicationReleases.e2e.test.ts (2 tests) 10372ms
+   ✓ установка приложения в браузере обновляет версию, digest и историю 576ms
+   ✓ несовместимая production-версия блокирует действие и панель помещается на мобильном экране 658ms
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  10:16:28
+   Duration  23.80s (transform 151ms, setup 0ms, collect 1.54s, tests 21.54s, environment 1ms, prepare 201ms)

@@ -123,15 +123,18 @@ describe('BrowserSessionPane', () => {
     expect(calls[calls.length - 1][1].command.action).toMatchObject({ button: 'left', detail: 2 })
   })
 
-  it('переключатель размера окна шлёт resize', async () => {
+  it('переключатель размера окна включает устройство целиком, а без поддержки — resize', async () => {
+    // Круг 9: «телефон» — это тач и плотность пикселей, а не только ширина;
+    // раннер без команды device по-прежнему получает прежний ресайз.
     const browser = fakeBrowser()
     render(<BrowserSessionPane conversationId="c1" browser={browser} />)
     await screen.findByAltText('Кадр Chromium')
     fireEvent.click(screen.getByText('Телефон'))
     await waitFor(() => expect(browser.command).toHaveBeenCalled())
-    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1].command).toMatchObject({
-      type: 'resize', viewport: { width: 390, height: 844 }
-    })
+    const sent = (browser.command as ReturnType<typeof vi.fn>).mock.calls.map(([, request]) => request.command)
+    expect(sent[0]).toMatchObject({ type: 'device', preset: 'phone' })
+    await waitFor(() => expect((browser.command as ReturnType<typeof vi.fn>).mock.calls.map(([, request]) => request.command))
+      .toContainEqual(expect.objectContaining({ type: 'resize', viewport: { width: 390, height: 844, deviceScaleFactor: 1 } })))
   })
 
   it('клавиатура работает прямо в кадре, без отдельного поля', async () => {

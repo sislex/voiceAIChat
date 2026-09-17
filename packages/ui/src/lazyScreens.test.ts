@@ -29,6 +29,10 @@ const LAZY: Array<readonly [string, string]> = [
   ['SessionsDialogHost', './components/SessionsDialogHost'],
   ['TaskModal', './components/kanban/TaskModal'],
   ['ProjectSettings', './components/ProjectSettings'],
+  ['EnginesObserver', './components/EnginesObserver'],
+  ['PersonalizationPage', './components/SettingsPage'],
+  ['ConversationSettings', './components/ConversationSettings'],
+  ['ReleaseCenter', './components/releases/ReleaseCenter'],
 ]
 
 describe('тяжёлые экраны не возвращаются в главный чанк', () => {
@@ -36,6 +40,7 @@ describe('тяжёлые экраны не возвращаются в глав�
     expect(app, `${name} должен объявляться через lazy(...)`).toMatch(new RegExp(`const ${name} = lazy\\(`))
   })
 
+  // @testCase TC-REGRESSION
   it.each(LAZY)('%s не импортируется статически из %s', (name, path) => {
     // Статический импорт значения из того же модуля сводит ленивый чанк на нет:
     // Rollup положит модуль в главный, а `import()` вернёт уже загруженное.
@@ -44,7 +49,7 @@ describe('тяжёлые экраны не возвращаются в глав�
     const offenders = statics
       .map((match) => match[1]!.split(',').map((part) => part.trim()))
       .flat()
-      .filter((part) => part === name || part.endsWith(` ${name}`))
+      .filter((part) => part.length > 0 && !part.startsWith('type '))
     expect(offenders, `${name} тянется статически из ${path}`).toEqual([])
   })
 
@@ -52,7 +57,7 @@ describe('тяжёлые экраны не возвращаются в глав�
     // `Suspense` без fallback показывает пустоту вместо экрана: пользователь
     // видит белое место и не знает, что что-то грузится.
     const suspense = [...app.matchAll(/<Suspense fallback=\{([^]*?)\}>/g)]
-    expect(suspense.length).toBeGreaterThanOrEqual(LAZY.length - 2)
+    expect(suspense.length).toBeGreaterThanOrEqual(LAZY.length - 5)
     const empty = suspense.filter((match) => match[1]!.trim() === 'null')
     // `fallback={null}` допустим только у окна сессий: оно открывается из меню и
     // само по себе невидимо до готовности.
@@ -83,6 +88,7 @@ it.each([['MakePane', 'make-ui'], ['MakeSharedView', 'make-ui'], ['ImageStudioPa
   expect(app).not.toMatch(new RegExp(`^import (?!type )[^\\n]*\\b${name}\\b[^\\n]* from`, 'm'))
 })
 
+// @testCase TC-CONTRACT
 it('host не встраивает runtime приложений через вспомогательный импорт', () => {
   const source = ts.createSourceFile('App.tsx', app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const packages = ['make-app', 'image-studio-app', 'playwright-reader-app', 'web-reader-app']

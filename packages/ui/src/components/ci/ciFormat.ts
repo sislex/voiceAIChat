@@ -1,6 +1,37 @@
 // Мелкие форматтеры и семантика статусов CI, общие для карточки, ленты и консоли.
 import { CI_USAGE_KIND_LABELS, type CiClarifyLevel, type CiExecutionLlmSnapshot, type CiRunMode, type CiStatus, type CiUsageKind } from '@shared/ci'
 
+import type { CiLogLine, CiRunStep } from '@shared/ci'
+import { stripAnsi } from '@shared/ansi'
+
+export type StepFilter = 'all' | 'failed' | 'commands' | 'model'
+export function matchesStep(step: CiRunStep, filter: StepFilter): boolean {
+  if (filter === 'failed') return ['failed', 'timeout', 'interrupted'].includes(step.status)
+  if (filter === 'commands') return step.kind === 'command' || step.kind === 'model_command'
+  if (filter === 'model') return step.kind === 'model_work' || step.kind === 'model_summary'
+  return true
+}
+
+/** Assemble transport chunks before numbering and searching physical lines. */
+export function logRows(lines: CiLogLine[]): string[] {
+  const text = stripAnsi(lines.map((line) => line.chunk).join(''))
+  if (!text) return []
+  const rows = text.split('\n')
+  if (rows.at(-1) === '') rows.pop()
+  return rows
+}
+export function lineAnchor(stepId: string, line: number): string {
+  return `step-${stepId}-L${line}`
+}
+export function lineMatches(text: string, query: string): number[] {
+  if (!query) return []
+  const positions: number[] = []
+  const source = text.toLocaleLowerCase()
+  const needle = query.toLocaleLowerCase()
+  for (let at = source.indexOf(needle); at !== -1; at = source.indexOf(needle, at + needle.length)) positions.push(at)
+  return positions
+}
+
 /** Подписи режима запуска и глубины уточнений (карточка, проект, шапка чата). */
 export const RUN_MODE_LABEL: Record<CiRunMode, string> = {
   plan: 'План',

@@ -129,6 +129,8 @@ export interface HealthResponse {
 
 /** Пути REST (единый источник для сервера и клиентов). */
 export const REST = {
+  uiPerformance: '/api/ui-performance',
+  uiPerformanceReport: '/api/ui-performance/report',
   health: '/api/health',
   kbStatus: '/api/kb/status',
   kbTopics: '/api/kb/topics',
@@ -229,6 +231,7 @@ export const REST = {
   conversationDraft: '/api/conversations/draft',
   conversationsSearch: '/api/conversations/search',
   /** Полнотекстовый поиск по сообщениям пользователя (FTS5). */
+  universalSearch: '/api/universal-search',
   messagesSearch: '/api/search',
   conversation: (id: string) => `/api/conversations/${id}`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
@@ -321,6 +324,7 @@ export const REST = {
   agentUpdate: (id: string) => `/api/agents/${encodeURIComponent(id)}/update`,
   // --- Файловый проводник по машине ---
   agentFs: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs`,
+  agentFsPreview: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/preview`,
   agentFsFile: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/file`,
   agentFsRename: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/rename`,
   agentFsMkdir: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/mkdir`,
@@ -465,11 +469,14 @@ export const REST = {
   taskMergeMachines: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/merge/machines`,
   mergeRun: (runId: string) => `/api/merge/runs/${encodeURIComponent(runId)}`,
+  taskTemporaryResources: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/temporary-resources`,
   taskRepositories: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/repositories`,
   taskMergeRuns: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/merge/runs`,
   mergeRunDeploy: (runId: string) => `/api/merge/runs/${encodeURIComponent(runId)}/deploy`,
+  mergeRunMachine: (runId: string) => `/api/merge/runs/${encodeURIComponent(runId)}/machine`,
   taskQa: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa`,
   taskComponentQa: (id:string,taskId:string) =>
@@ -814,7 +821,7 @@ export type ServerMessage =
    * ран активен: на проде один открытый таск давал десятки запросов в минуту.
    * Кадр несёт только адрес — снимок панель читает своим REST-запросом.
    */
-  | { t: 'qa.stage.updated'; projectId: string; taskId: string; stage: QaRunStage }
+  | { t: 'qa.stage.updated'; projectId: string; taskId: string; stage: QaRunStage | 'manual_qa' }
   /**
    * Release Center: подготовка или деплой релиза сменили статус либо шаг. Кадр
    * несёт адрес и новый статус — список и подробности перечитываются REST-ом,
@@ -879,7 +886,7 @@ export type ServerMessage =
   /** Прогресс плана работ канбан-ассистента: шаги, статусы, ошибка. */
   | { t: 'assistant.orchestration'; plan: import('./orchestration').Orchestration }
   /** Reader: действие изменило/прочитало живую страницу — панель синхронизирует кадр и ленту. */
-  | { t: 'reader.changed'; conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction }
+  | { t: 'reader.changed'; conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction; /** Короткий итог действия для ленты (проверка: пройдена или нет). */ summary?: string; ok?: boolean }
   /** Make: файлы проекта изменились (ассистентом или пользователем) — превью и дерево обновляются. */
   | { t: 'make.changed'; conversationId: string; rev: number; paths: string[] }
   /** Presence вкладок проекта Make (roadmap-2 п.14): кто открыл проект и какой файл правит. */

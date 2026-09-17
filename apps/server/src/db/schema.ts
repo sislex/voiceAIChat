@@ -166,6 +166,14 @@ CREATE TABLE IF NOT EXISTS agents (
   pin_ip INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS machine_vpn_networks (
+  user_id TEXT PRIMARY KEY,
+  tailnet TEXT NOT NULL UNIQUE,
+  encrypted_secret TEXT NOT NULL,
+  generation INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS login_enrollments (
   status_id  TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL UNIQUE,
@@ -1028,6 +1036,8 @@ CREATE TABLE IF NOT EXISTS merge_runs (
   requested_llm_provider TEXT,
   requested_llm_model TEXT,
   llm_fallback_reason TEXT,
+  assignment_version INTEGER NOT NULL DEFAULT 0,
+  machine_name TEXT,
   stage TEXT NOT NULL DEFAULT 'queued',
   conflicts_json TEXT NOT NULL DEFAULT '[]',
   deploy_id TEXT,

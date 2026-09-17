@@ -28,6 +28,22 @@ function items(): string[] {
   return screen.getAllByRole('option').map((node) => node.textContent ?? '')
 }
 
+// @testCase TC2
+it('shows five unique available recent commands per user and searches navigation fuzzily', () => {
+  localStorage.clear()
+  for (const command of commands) rememberCommand(command.id, 'alice')
+  rememberCommand('chat:1', 'alice')
+  const view = render(<CommandPalette open userId="alice" onClose={() => {}} commands={commands} />)
+  expect(screen.getByRole('group', { name: 'Недавние' }).querySelectorAll('[role="option"]')).toHaveLength(5)
+  expect(screen.getAllByRole('option')[0]).toHaveTextContent('Миграция базы')
+  fireEvent.change(input(), { target: { value: 'мгб' } })
+  expect(items().join(' ')).toContain('Миграция базы')
+  view.rerender(<CommandPalette open userId="bob" onClose={() => {}} commands={commands} />)
+  expect(screen.queryByRole('group', { name: 'Недавние' })).toBeNull()
+  view.rerender(<CommandPalette open userId="alice" onClose={() => {}} commands={commands.filter(command => command.id !== 'chat:1')} />)
+  expect(screen.queryByText('Миграция базы')).toBeNull()
+})
+
 describe('CommandPalette', () => {
   beforeEach(() => {
     localStorage.clear()

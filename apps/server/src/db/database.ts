@@ -193,6 +193,14 @@ export class VoiceChatDb {
       await this.sql.exec(SCHEMA_SQL)
       await this.migrate()
     }
+    // Legacy Codex replies stored cumulative thread totals as per-message spend;
+    // rewrite them once, on both backends (see migrateCodexThreadUsage). The
+    // key is `v2`: `v1` was marked done by hand on production to stop the boot
+    // loop of release 0.1.304, whose pass loaded every meta at once and hit
+    // the heap limit — the rewrite itself never ran there.
+    await this.runOnce('codex_thread_usage_v2', async () => {
+      await this.ctx.repos.chat.migrateCodexThreadUsage()
+    })
     await this.ctx.repos.ci.ensureKbUpdateCommand()
     await this.ctx.repos.ci.pruneDevelopmentAfterModelCommands()
     await this.ctx.repos.chat.setupMessagesFts()
@@ -799,6 +807,8 @@ export class VoiceChatDb {
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'requested_llm_provider')) await this.sql.exec(`ALTER TABLE merge_runs ADD COLUMN requested_llm_provider TEXT`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'requested_llm_model')) await this.sql.exec(`ALTER TABLE merge_runs ADD COLUMN requested_llm_model TEXT`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'llm_fallback_reason')) await this.sql.exec(`ALTER TABLE merge_runs ADD COLUMN llm_fallback_reason TEXT`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'assignment_version')) await this.sql.exec(`ALTER TABLE merge_runs ADD COLUMN assignment_version INTEGER NOT NULL DEFAULT 0`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'machine_name')) await this.sql.exec(`ALTER TABLE merge_runs ADD COLUMN machine_name TEXT`)
     const ciRunCols = (await this.sql.all(`PRAGMA table_info(ci_runs)`)) as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'error')) await this.sql.exec(`ALTER TABLE ci_runs ADD COLUMN error TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'run_column_id')) await this.sql.exec(`ALTER TABLE ci_runs ADD COLUMN run_column_id TEXT`)

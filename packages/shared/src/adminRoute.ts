@@ -9,15 +9,15 @@
 // Логика чистая (строка → объект и обратно), поэтому место ей здесь же, где
 // `issueKey`/`projectKey`.
 
-export type AdminTab = 'overview' | 'access' | 'machines' | 'usage' | 'history'
+export type AdminTab = 'overview' | 'access' | 'machines' | 'usage' | 'history' | 'sessions'
 
 /** Что видно в списке людей. Живёт в адресе: ссылкой на отфильтрованный список
  *  можно поделиться, а возврат «назад» не теряет выборку. */
 export interface AdminUsersQuery {
   query?: string
   role?: string
-  state?: 'online' | 'blocked'
-  sort?: 'activity' | 'name' | 'spend'
+  state?: 'online' | 'blocked' | 'inactive'
+  sort?: 'activity' | 'name' | 'spend' | 'login'
   /** Обратный порядок: по умолчанию свежие и дорогие сверху. */
   asc?: boolean
 }
@@ -31,7 +31,7 @@ export type AdminRoute =
    *  человека им не место — это состояние установки, а не пользователя. */
   | { page: 'system' }
 
-const tabs = new Set<AdminTab>(['overview', 'access', 'machines', 'usage', 'history'])
+const tabs = new Set<AdminTab>(['overview', 'access', 'machines', 'usage', 'history', 'sessions'])
 
 /** Разбор строки запроса списка; неизвестные значения игнорируются, а не ломают адрес. */
 function parseList(search: string): AdminUsersQuery {
@@ -41,8 +41,8 @@ function parseList(search: string): AdminUsersQuery {
   return {
     ...(params.get('q') ? { query: params.get('q')! } : {}),
     ...(params.get('role') ? { role: params.get('role')! } : {}),
-    ...(state === 'online' || state === 'blocked' ? { state } : {}),
-    ...(sort === 'activity' || sort === 'name' || sort === 'spend' ? { sort } : {}),
+    ...(state === 'online' || state === 'blocked' || state === 'inactive' ? { state } : {}),
+    ...(sort === 'activity' || sort === 'name' || sort === 'spend' || sort === 'login' ? { sort } : {}),
     ...(params.get('asc') === '1' ? { asc: true } : {})
   }
 }

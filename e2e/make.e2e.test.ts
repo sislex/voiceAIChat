@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
+import jsQR from 'jsqr'
 
 const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'apps/web/dist')
@@ -56,6 +57,8 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     await api(`/api/make/${conversationId}/template`, { method: 'POST', body: JSON.stringify({ templateId: 'react-ts' }) })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     page.on('pageerror', error => browserDiagnostics.push(error.message))
     page.on('requestfailed', request => browserDiagnostics.push(`${request.method()} ${new URL(request.url()).pathname}: ${request.failure()?.errorText}`))
     await page.goto(`${BASE}/`)
@@ -88,6 +91,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     }
   })
 
+  // @testCase TC1
   it('mobile Make tabs отдают всю область только активной панели', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('tab', { name: 'Проект' }).click()
@@ -200,6 +204,152 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     await page.setViewportSize({ width: 1400, height: 900 })
     await page.getByRole('combobox', { name: 'Make interface language' }).selectOption('ru')
   })
+
+  // @testCase T1
+  // @testCase T2
+  // @testCase T3
+  // @testCase T4
+  // @testCase T6
+  // @testCase T7
+  it('completes the Make workspace flow at 390 px and verifies responsive boundaries', async () => {
+    const created = await (await api('/api/conversations', { method: 'POST', body: JSON.stringify({ title: 'CHAT-454 mobile', assistantKind: 'make' }) })).json() as { id?: string; conversation?: { id: string } }
+    const id = created.id ?? created.conversation!.id
+    const source = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>body{background:rgb(255,255,255);color:black} @media (prefers-color-scheme: dark){body{background:rgb(0,0,0);color:white}} @supports(display:grid){@media (min-width:1000px) and (prefers-color-scheme:dark){body{color:rgb(255,0,0)}}}</style></head><body><h1>needle</h1></body></html>'
+    expect((await api('/api/make/' + id + '/file', { method: 'PUT', body: JSON.stringify({ path: 'index.html', content: source }) })).ok).toBe(true)
+    const mobileContext = await browser.newContext({ storageState: await page.context().storageState() })
+    await mobileContext.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE })
+    const mobile = await mobileContext.newPage()
+    await mobile.setViewportSize({ width: 390, height: 844 })
+    const more = async (label: string): Promise<void> => {
+      await mobile.locator('.make-pane').getByRole('button', { name: 'Ещё', exact: true }).click()
+      await mobile.getByRole('button', { name: label, exact: true }).click()
+    }
+    const panels = () => mobile.getByRole('group', { name: 'Панели проекта' })
+    const file = async (path: string): Promise<string> => ((await (await api('/api/make/' + id + '/file?path=' + encodeURIComponent(path))).json()) as { content: string }).content
+    try {
+      await mobile.goto(BASE + '/#/make/' + id)
+      await mobile.getByRole('tab', { name: 'Проект', exact: true }).click()
+      await panels().getByRole('button', { name: 'Файлы', exact: true }).click()
+      const tree = mobile.getByRole('navigation', { name: 'Файлы проекта' })
+      await tree.getByRole('button', { name: 'Создать папку', exact: true }).click()
+      await mobile.getByRole('dialog').getByRole('textbox').fill('notes')
+      await mobile.getByRole('dialog').getByRole('button', { name: 'Создать', exact: true }).click()
+      await tree.getByRole('button', { name: 'Операции с файлами notes', exact: true }).click()
+      await mobile.getByRole('menuitem', { name: 'Новый файл', exact: true }).click()
+      await mobile.getByRole('dialog').getByRole('textbox').fill('notes/a.txt')
+      await mobile.getByRole('dialog').getByRole('button', { name: 'Создать', exact: true }).click()
+      const input = mobile.getByLabel('Содержимое notes/a.txt', { exact: true })
+      await input.fill('needle needle')
+      expect(await mobile.locator('.make-editor .monaco-editor').count()).toBe(0)
+      expect(await mobile.locator('.make-highlight').isVisible()).toBe(true)
+      await mobile.getByLabel('автосохранение', { exact: true }).uncheck()
+      await panels().getByRole('button', { name: 'Файлы', exact: true }).click()
+      await tree.getByRole('button', { name: 'Операции с файлами notes', exact: true }).click()
+      await mobile.getByRole('menuitem', { name: 'Переименовать', exact: true }).click()
+      await mobile.getByRole('dialog').getByRole('textbox').fill('moved')
+      await mobile.getByRole('dialog').getByRole('button', { name: 'Переименовать', exact: true }).click()
+      await panels().getByRole('button', { name: 'Код', exact: true }).click()
+      await expect.poll(() => mobile.getByLabel('Содержимое moved/a.txt').inputValue()).toBe('needle needle')
+      await mobile.getByRole('combobox', { name: 'Язык интерфейса Make' }).selectOption('en')
+      expect(await mobile.getByLabel('Contents of moved/a.txt').inputValue()).toBe('needle needle')
+      await mobile.getByRole('combobox', { name: 'Make interface language' }).selectOption('ru')
+      await mobile.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await expect.poll(() => file('moved/a.txt')).toBe('needle needle')
+      await expect.poll(() => mobile.locator('.make-editor time').count()).toBe(1)
+
+      await panels().getByRole('button', { name: 'Файлы', exact: true }).click()
+      await mobile.getByRole('searchbox', { name: 'Поиск по файлам проекта' }).fill('needle')
+      await mobile.getByRole('searchbox', { name: 'Поиск по файлам проекта' }).press('Enter')
+      await mobile.getByRole('button', { name: 'Заменить по проекту' }).click()
+      await mobile.getByLabel('Заменить на', { exact: true }).fill('replacement')
+      expect(await mobile.getByRole('button', { name: 'Заменить все', exact: true }).isDisabled()).toBe(true)
+      await mobile.getByRole('region', { name: 'moved/a.txt', exact: true }).getByRole('button', { name: 'Заменить это совпадение', exact: true }).nth(1).click()
+      await mobile.getByTestId('make-replace-preview').waitFor()
+      expect(await file('moved/a.txt')).toBe('needle needle')
+      await mobile.getByTestId('make-replace').getByRole('button', { name: 'Заменить это совпадение', exact: true }).click()
+      await mobile.getByRole('button', { name: 'Заменить', exact: true }).click()
+      await expect.poll(() => file('moved/a.txt')).toBe('needle replacement')
+      await panels().getByRole('button', { name: 'Файлы', exact: true }).click()
+      await mobile.getByRole('button', { name: 'Предпросмотр', exact: true }).click()
+      await mobile.getByTestId('make-replace-preview').waitFor()
+      expect(await file('moved/a.txt')).toBe('needle replacement')
+      await mobile.getByRole('button', { name: 'Заменить все', exact: true }).click()
+      await mobile.getByRole('button', { name: 'Заменить', exact: true }).click()
+      await expect.poll(() => file('moved/a.txt')).toBe('replacement replacement')
+
+      const first = await (await api('/api/make/' + id + '/snapshots', { method: 'POST', body: JSON.stringify({ label: 'first mobile' }) })).json() as { snapshots: Array<{ id: string }> }
+      await api('/api/make/' + id + '/file', { method: 'PUT', body: JSON.stringify({ path: 'moved/a.txt', content: 'second revision' }) })
+      const second = await (await api('/api/make/' + id + '/snapshots', { method: 'POST', body: JSON.stringify({ label: 'second mobile' }) })).json() as { snapshots: Array<{ id: string }> }
+      await mobile.reload()
+      await mobile.getByRole('tab', { name: 'Проект', exact: true }).click()
+      await mobile.getByRole('tab', { name: 'История', exact: true }).click()
+      await mobile.getByLabel('Первый снимок', { exact: true }).selectOption(first.snapshots[0]!.id)
+      await mobile.getByLabel('Второй снимок', { exact: true }).selectOption(second.snapshots[0]!.id)
+      await mobile.getByRole('button', { name: 'Сравнить снимки', exact: true }).click()
+      const row = mobile.getByTestId('make-pair-diff').locator('li').filter({ has: mobile.locator('code', { hasText: 'moved/a.txt' }) })
+      await row.getByRole('button', { name: 'Первый снимок', exact: true }).click()
+      const history = mobile.locator('.make-editor textarea')
+      expect(await history.inputValue()).toBe('replacement replacement')
+      expect(await history.getAttribute('readonly')).not.toBeNull()
+      expect(await mobile.getByRole('button', { name: 'Сохранить', exact: true }).isDisabled()).toBe(true)
+      expect(await mobile.locator('.make-highlight').isVisible()).toBe(true)
+      await mobile.screenshot({ path: join(tmpdir(), 'chat454-history-390.png'), animations: 'disabled' })
+
+      await panels().getByRole('button', { name: 'Превью', exact: true }).click()
+      await mobile.getByRole('button', { name: 'Телефон', exact: true }).click()
+      const frame = mobile.frameLocator('iframe[title="Превью проекта"]')
+      await more('Тема превью')
+      await expect.poll(() => frame.locator('body').evaluate((body) => getComputedStyle(body).backgroundColor)).toBe('rgb(0, 0, 0)')
+      expect(await frame.locator('body').evaluate((body) => getComputedStyle(body).color)).toBe('rgb(255, 255, 255)')
+      expect(await frame.locator('body').evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(true)
+      await more('Повернуть превью')
+      expect(await mobile.locator('iframe[title="Превью проекта"]').evaluate((el) => (el as HTMLIFrameElement).contentWindow!.innerWidth)).toBe(844)
+      await mobile.getByRole('button', { name: 'Планшет', exact: true }).click()
+      expect(await mobile.locator('iframe[title="Превью проекта"]').evaluate((el) => (el as HTMLIFrameElement).contentWindow!.innerWidth)).toBe(768)
+      await more('Свой размер')
+      await mobile.getByRole('dialog').getByRole('textbox').fill('500 x 600')
+      await mobile.getByRole('dialog').getByRole('button', { name: 'Применить', exact: true }).click()
+      expect(await mobile.locator('iframe[title="Превью проекта"]').evaluate((el) => [(el as HTMLIFrameElement).contentWindow!.innerWidth, (el as HTMLIFrameElement).contentWindow!.innerHeight])).toEqual([500, 600])
+      const separatePromise = mobile.waitForEvent('popup')
+      await more('Открыть в новой вкладке')
+      const separate = await separatePromise
+      await separate.waitForLoadState()
+      expect(separate.url()).toContain('makeScheme=dark')
+      expect(await separate.locator('body').evaluate((body) => getComputedStyle(body).backgroundColor)).toBe('rgb(0, 0, 0)')
+      await separate.close()
+      for (const width of [720, 721, 390]) {
+        await mobile.setViewportSize({ width, height: 844 })
+        await expect.poll(() => panels().isVisible()).toBe(width <= 720)
+      }
+      const published = await (await api('/api/make/' + id + '/publish', { method: 'POST', body: '{}' })).json() as { published: { url: string } }
+      await fetch(new URL(published.published.url, BASE), { headers: { referer: 'https://example.org/review' } })
+      await mobile.reload()
+      await mobile.getByRole('tab', { name: 'Проект', exact: true }).click()
+      const requests: string[] = []
+      mobile.on('request', (request) => requests.push(request.url()))
+      await mobile.getByRole('button', { name: 'Опубликован', exact: true }).click()
+      const qr = mobile.getByRole('img', { name: 'QR-код публикации' })
+      await qr.waitFor()
+      const pixels = await qr.evaluate(async (element) => {
+        const image = element as HTMLImageElement
+        await image.decode()
+        const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+        const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0)
+        return { width: canvas.width, height: canvas.height, data: Array.from(context.getImageData(0, 0, canvas.width, canvas.height).data) }
+      })
+      expect(jsQR(new Uint8ClampedArray(pixels.data), pixels.width, pixels.height)?.data).toBe(new URL(published.published.url, BASE).href)
+      await mobile.getByRole('button', { name: 'Копировать', exact: true }).click()
+      expect(await mobile.evaluate(() => navigator.clipboard.readText())).toBe(new URL(published.published.url, BASE).href)
+      expect(requests.filter((url) => /^https?:/.test(url) && !url.startsWith(BASE))).toEqual([])
+      expect(await mobile.getByTestId('make-publish-stats').textContent()).toContain('example.org (1)')
+      expect(await mobile.locator('.make-publish-bar').first().getAttribute('title')).toMatch(/: 1$/)
+      const bounds = await mobile.getByTestId('make-pane').evaluate((node) => ({ width: node.clientWidth, scroll: node.scrollWidth }))
+      expect(bounds.scroll).toBeLessThanOrEqual(bounds.width)
+      await mobile.screenshot({ path: join(tmpdir(), 'chat454-make-390.png'), animations: 'disabled' })
+      await mobile.getByTestId('make-publish-stats').scrollIntoViewIfNeeded()
+      await mobile.screenshot({ path: join(tmpdir(), 'chat454-stats-390.png'), animations: 'disabled' })
+    } finally { await mobileContext.close() }
+  }, 120_000)
 
   it('localizes the public password page and invalid-password feedback', async () => {
     const result = await api(`/api/make/${conversationId}/publish`, { method: 'POST', body: JSON.stringify({ password: 'locale-test-password', allowComments: true }) })

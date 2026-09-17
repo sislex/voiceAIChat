@@ -229,6 +229,9 @@ describe("каталог владельцев", () => {
     expect(() => validateApplicationCatalog(APPLICATION_CATALOG)).not.toThrow();
     expect(applicationForPath("apps/make/src/routes.ts")?.id).toBe("make");
     expect(applicationForPath("packages/ui/src/App.tsx")?.id).toBe("web");
+    expect(applicationForPath("e2e/machine-vpn.e2e.test.ts")?.id).toBe("web");
+    expect(applicationForPath("e2e/applicationFrontend.e2e.test.ts")).toBeUndefined();
+    expect(applicationForPath("e2e/make.e2e.test.ts")).toBeUndefined();
     expect(
       applicationForPath("apps/make/../server/src/index.ts"),
     ).toBeUndefined();

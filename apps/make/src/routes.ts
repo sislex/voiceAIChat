@@ -7,7 +7,7 @@ import { publicText, publicLanguageSelect } from './publicLocale.js'
 // through make.changed.
 
 import { createHash } from 'node:crypto'
-import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectNotes, MakeProjectPullResult } from '@voicechat/shared'
+import type { MakeComment, MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectNotes, MakeProjectPullResult } from '@voicechat/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SlidingWindowLimiter } from '@voicechat/shared'
 import { MAKE_PROJECT_SYNC_MAX_FILES, MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_COMMENTS_PAGE, MAKE_SNAPSHOT_PREVIEW, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
@@ -63,7 +63,7 @@ function guestCommentsWidget(base: string, locale: MakeLocale): string {
 
 export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
 (function(){
-  if (window.parent === window) return;
+  if (window.parent === window && !new URLSearchParams(location.search).has('makeScheme')) return;
   // Консоль превью: console.* и ошибки страницы уходят родителю — панель показывает их под превью.
   (function(){
     var levels = ['log','info','warn','error'];
@@ -123,10 +123,34 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
   window.addEventListener('scroll', function(){ clearTimeout(scrollTimer); scrollTimer = setTimeout(reportState, 120); }, true);
   window.addEventListener('hashchange', reportState);
   window.addEventListener('message', function(e){ var d = e.data; if (!d || d.type !== 'vc-make.restore') return; if (d.hash && d.hash !== location.hash) { try { location.hash = d.hash; } catch(err){} } if (typeof d.y === 'number') { window.scrollTo(d.x || 0, d.y); setTimeout(function(){ window.scrollTo(d.x || 0, d.y); }, 250); } });
-  // Тема и язык превью: prefers-color-scheme нельзя подменить, поэтому переписываем media-правила таблиц
-  // стилей (dark → all / light → not all) и выставляем color-scheme; язык — <html lang>.
-  var envScheme = 'auto';
-  function applyScheme(scheme){ envScheme = scheme; document.documentElement.style.colorScheme = scheme === 'auto' ? '' : scheme; var sheets = document.styleSheets; for (var i = 0; i < sheets.length; i++) { var rules; try { rules = sheets[i].cssRules; } catch(e) { continue; } for (var j = 0; j < rules.length; j++) { var r = rules[j]; if (!r.media) continue; var orig = r.__vcMedia || (r.__vcMedia = r.media.mediaText); if (orig.indexOf('prefers-color-scheme') < 0) continue; if (scheme === 'auto') { r.media.mediaText = orig; continue; } var wantsDark = orig.indexOf('dark') >= 0; r.media.mediaText = (wantsDark === (scheme === 'dark')) ? 'all' : 'not all'; } } }
+  // Preserve compound media conditions while emulating both CSS and matchMedia consumers.
+  var envScheme = new URLSearchParams(location.search).get('makeScheme') || 'auto';
+  if (['auto', 'dark', 'light'].indexOf(envScheme) < 0) envScheme = 'auto';
+  var nativeMatchMedia = window.matchMedia.bind(window), schemeQueries = [];
+  function schemeQuery(query){ return envScheme === 'auto' ? query : query.replace(/[(]prefers-color-scheme[ ]*:[ ]*(dark|light)[)]/gi, function(_, value){ return value.toLowerCase() === envScheme ? '(min-width: 0px)' : '(max-width: 0px)'; }); }
+  window.matchMedia = function(query){
+    query = String(query);
+    if (query.indexOf('prefers-color-scheme') < 0) return nativeMatchMedia(query);
+    var source = nativeMatchMedia(query), target = new EventTarget(), previous = nativeMatchMedia(schemeQuery(query)).matches;
+    Object.defineProperties(target, { media: { value: query }, matches: { get: function(){ return nativeMatchMedia(schemeQuery(query)).matches; } } });
+    target.onchange = null;
+    target.addListener = function(listener){ target.addEventListener('change', listener); };
+    target.removeListener = function(listener){ target.removeEventListener('change', listener); };
+    function refresh(){ var next = target.matches; if (next === previous) return; previous = next; var event = new Event('change'); Object.defineProperties(event, { matches: { value: next }, media: { value: query } }); target.dispatchEvent(event); if (typeof target.onchange === 'function') target.onchange.call(target, event); }
+    source.addEventListener('change', refresh); window.addEventListener('resize', refresh); schemeQueries.push(refresh);
+    return target;
+  };
+  function applyScheme(scheme){
+    if (['auto', 'dark', 'light'].indexOf(scheme) < 0) return;
+    envScheme = scheme; document.documentElement.style.colorScheme = scheme === 'auto' ? '' : scheme;
+    function media(list){ var original = list.__vcSchemeOriginal || (list.__vcSchemeOriginal = list.mediaText); if (original.indexOf('prefers-color-scheme') >= 0) list.mediaText = schemeQuery(original); }
+    function visit(rules){ for (var j = 0; j < rules.length; j++) { var rule = rules[j]; if (rule.media) media(rule.media); try { if (rule.cssRules) visit(rule.cssRules); } catch(error){} } }
+    for (var i = 0; i < document.styleSheets.length; i++) { var sheet = document.styleSheets[i]; try { if (sheet.media) media(sheet.media); visit(sheet.cssRules); } catch(error){} }
+    schemeQueries.forEach(function(refresh){ refresh(); });
+  }
+  applyScheme(envScheme);
+  document.addEventListener('load', function(){ applyScheme(envScheme); }, true);
+  new MutationObserver(function(){ applyScheme(envScheme); }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   // Эмуляция состояний (roadmap-4 п.20): правила с :hover/:focus/:active клонируются под классы .vc-force-*, класс ставится выбранному элементу.
   var forcedRulesDone = false, forcedEl = null;
   function cloneStateRules(){ if (forcedRulesDone) return; forcedRulesDone = true; var sheets = document.styleSheets; var extra = []; for (var i = 0; i < sheets.length; i++) { var rules; try { rules = sheets[i].cssRules; } catch(e) { continue; } for (var j = 0; j < rules.length; j++) { var r = rules[j]; if (!r.selectorText || !/:(hover|focus|focus-visible|focus-within|active)(?![a-z-])/.test(r.selectorText)) continue; var sel = r.selectorText.replace(/:hover(?![a-z-])/g, '.vc-force-hover').replace(/:focus(-visible|-within)?(?![a-z-])/g, '.vc-force-focus').replace(/:active(?![a-z-])/g, '.vc-force-active'); extra.push(sel + '{' + r.style.cssText + '}'); } } if (extra.length) { var st = document.createElement('style'); st.setAttribute('data-vc-make-box',''); st.textContent = extra.join(String.fromCharCode(10)); document.head.appendChild(st); } }
@@ -207,14 +231,15 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     try { return await workspaces.read(req.params.id, req.query.path ?? '') } catch (error) { return sendError(reply, error) }
   })
 
-  app.put<{ Params: { id: string }; Body: { path?: string; content?: string } }>('/api/make/:id/file', async (req, reply) => {
+  app.put<{ Params: { id: string }; Body: { path?: string; content?: string; kind?: 'file' | 'directory'; createOnly?: boolean } }>('/api/make/:id/file', async (req, reply) => {
     const userId = uid(req)
     if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
-    const { path, content } = req.body ?? {}
+    const { path, content, kind, createOnly } = req.body ?? {}
+    if ((kind !== undefined && kind !== 'file' && kind !== 'directory') || (createOnly !== undefined && typeof createOnly !== 'boolean')) return reply.code(400).send({ error: 'Invalid file operation' })
     if (typeof path !== 'string' || typeof content !== 'string') return reply.code(400).send({ error: 'path и content обязательны' })
     try {
       await workspaces.ensure(req.params.id)
-      const state = await workspaces.write(req.params.id, path, content)
+      const state = await workspaces.write(req.params.id, path, content, { kind, createOnly })
       hub.changed(userId, req.params.id, state.rev, [normalizeMakePath(path) ?? path])
       return state
     } catch (error) { return sendError(reply, error) }
@@ -280,9 +305,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
-  app.get<{ Params: { id: string; snapshotId: string } }>('/api/make/:id/snapshots/:snapshotId/diff', async (req, reply) => {
+  app.get<{ Params: { id: string; snapshotId: string }; Querystring: { compareSnapshotId?: string } }>('/api/make/:id/snapshots/:snapshotId/diff', async (req, reply) => {
     if (!await own(uid(req), req.params.id, reply)) return reply
-    try { return await workspaces.snapshotDiff(req.params.id, req.params.snapshotId) } catch (error) { return sendError(reply, error) }
+    try { return await workspaces.snapshotDiff(req.params.id, req.params.snapshotId, req.query.compareSnapshotId) } catch (error) { return sendError(reply, error) }
   })
 
   app.get<{ Params: { id: string; snapshotId: string }; Querystring: { path?: string } }>('/api/make/:id/snapshots/:snapshotId/file', async (req, reply) => {
@@ -601,10 +626,16 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     return { clients }
   })
 
+  // Private replies are hydrated only here, after checking ownership separately from access.
+  const commentView = async (userId: string, id: string, comments: MakeComment[]) => {
+    if (await core.conversationOwner(id) !== userId) return comments
+    const replies = await workspaces.ownerReplies(id)
+    return comments.map((comment) => ({ ...comment, canReply: true as const, ...(replies[comment.id] !== undefined ? { ownerReply: replies[comment.id] } : {}) }))
+  }
   // Comments attached to preview elements (item 32).
   app.get<{ Params: { id: string } }>('/api/make/:id/comments', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    try { await workspaces.ensure(req.params.id); return { comments: await workspaces.comments(req.params.id) } } catch (error) { return sendError(reply, error) }
+    try { await workspaces.ensure(req.params.id); return { comments: await commentView(uid(req), req.params.id, await workspaces.comments(req.params.id)) } } catch (error) { return sendError(reply, error) }
   })
   app.post<{ Params: { id: string }; Body: { selector?: string; elementLabel?: string; text?: string } | undefined }>('/api/make/:id/comments', async (req, reply) => {
     const userId = uid(req)
@@ -613,16 +644,21 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       await workspaces.ensure(req.params.id)
       const comments = await workspaces.addComment(req.params.id, { selector: req.body?.selector ?? '', elementLabel: req.body?.elementLabel ?? '', text: req.body?.text ?? '', author: userId })
       hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])
-      return { comments }
+      return { comments: await commentView(userId, req.params.id, comments) }
     } catch (error) { return sendError(reply, error) }
   })
-  app.patch<{ Params: { id: string; commentId: string }; Body: { resolved?: boolean; text?: string; status?: 'pending' | 'approved' } | undefined }>('/api/make/:id/comments/:commentId', async (req, reply) => {
+  app.patch<{ Params: { id: string; commentId: string }; Body: { resolved?: boolean; text?: string; status?: 'pending' | 'approved'; ownerReply?: string } | undefined }>('/api/make/:id/comments/:commentId', async (req, reply) => {
     const userId = uid(req)
     if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
     try {
+      if (req.body?.ownerReply !== undefined) {
+        if (await core.conversationOwner(req.params.id) !== userId) return reply.code(404).send({ error: 'conversation not found' })
+        if (typeof req.body.ownerReply !== 'string') return reply.code(400).send({ error: 'Invalid owner reply' })
+        await workspaces.replyToComment(req.params.id, req.params.commentId, req.body.ownerReply)
+      }
       const comments = await workspaces.updateComment(req.params.id, req.params.commentId, { resolved: req.body?.resolved, text: req.body?.text, status: req.body?.status === 'approved' || req.body?.status === 'pending' ? req.body.status : undefined })
       hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])
-      return { comments }
+      return { comments: await commentView(userId, req.params.id, comments) }
     } catch (error) { return sendError(reply, error) }
   })
   app.delete<{ Params: { id: string; commentId: string } }>('/api/make/:id/comments/:commentId', async (req, reply) => {
@@ -631,7 +667,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     try {
       const comments = await workspaces.removeComment(req.params.id, req.params.commentId)
       hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])
-      return { comments }
+      return { comments: await commentView(userId, req.params.id, comments) }
     } catch (error) { return sendError(reply, error) }
   })
 
@@ -675,14 +711,16 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     try { await workspaces.ensure(req.params.id); return { matches: await workspaces.search(req.params.id, req.query.q ?? '', 200, { regex: req.query.regex === '1', matchCase: req.query.matchCase === '1' }) } } catch (error) { return sendError(reply, error) }
   })
 
-  app.post<{ Params: { id: string }; Body: { query?: string; replacement?: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean } }>('/api/make/:id/replace', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { query?: string; replacement?: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean; previewToken?: string; path?: string; matchIndex?: number } }>('/api/make/:id/replace', async (req, reply) => {
     const userId = uid(req)
     if (!await own(userId, req.params.id, reply)) return reply
-    const { query, replacement, matchCase, regex, dryRun } = req.body ?? {}
+    const { query, replacement, matchCase, regex, dryRun, previewToken, path, matchIndex } = req.body ?? {}
     if (typeof query !== 'string' || typeof replacement !== 'string') return reply.code(400).send({ error: 'query и replacement обязательны' })
+    if (!dryRun && (typeof previewToken !== 'string' || !previewToken)) return reply.code(400).send({ error: 'Preview changes before applying replacement' })
+    if (path !== undefined && (typeof path !== 'string' || normalizeMakePath(path) !== path)) return reply.code(400).send({ error: 'Invalid match path' })
     try {
-      const result = await workspaces.replaceAll(req.params.id, query, replacement, { matchCase: Boolean(matchCase), regex: Boolean(regex), dryRun: Boolean(dryRun) })
-      if (result.files > 0) hub.changed(userId, req.params.id, result.state.rev, result.state.files.map((f) => f.path))
+      const result = await workspaces.replaceAll(req.params.id, query, replacement, { matchCase: Boolean(matchCase), regex: Boolean(regex), dryRun: Boolean(dryRun), previewToken, path, matchIndex })
+      if (!dryRun && result.files > 0) hub.changed(userId, req.params.id, result.state.rev, result.state.files.map((f) => f.path))
       return result
     } catch (error) { return sendError(reply, error) }
   })

@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 1,
+  "notes": "CHAT-473: explicit byte limits with less than 1% measured headroom. Chat includes a rendered Markdown/code message. Both clients remain below 80% of their original initial JS gzip. Changes require reviewed measurements; CI never rewrites limits.",
+  "routes": {
+    "web/chat/cold": {
+      "js": {
+        "raw": 1215000,
+        "gzip": 365000,
+        "brotli": 297500
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "web/chat/warm": {
+      "js": {
+        "raw": 1215000,
+        "gzip": 365000,
+        "brotli": 297500
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "web/account/cold": {
+      "js": {
+        "raw": 1233000,
+        "gzip": 371000,
+        "brotli": 303000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "web/account/warm": {
+      "js": {
+        "raw": 1233000,
+        "gzip": 371000,
+        "brotli": 303000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "web/account/navigation": {
+      "js": {
+        "raw": 1233000,
+        "gzip": 371000,
+        "brotli": 303000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "web/settings/cold": {
+      "js": {
+        "raw": 1251000,
+        "gzip": 376000,
+        "brotli": 307000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "web/settings/warm": {
+      "js": {
+        "raw": 1251000,
+        "gzip": 376000,
+        "brotli": 307000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "web/settings/navigation": {
+      "js": {
+        "raw": 1251000,
+        "gzip": 376000,
+        "brotli": 307000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "electron/chat/cold": {
+      "js": {
+        "raw": 1201000,
+        "gzip": 360000,
+        "brotli": 294000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "electron/chat/warm": {
+      "js": {
+        "raw": 1201000,
+        "gzip": 360000,
+        "brotli": 294000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "electron/account/cold": {
+      "js": {
+        "raw": 1219000,
+        "gzip": 366500,
+        "brotli": 299000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "electron/account/warm": {
+      "js": {
+        "raw": 1219000,
+        "gzip": 366500,
+        "brotli": 299000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "electron/account/navigation": {
+      "js": {
+        "raw": 1219000,
+        "gzip": 366500,
+        "brotli": 299000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "electron/settings/cold": {
+      "js": {
+        "raw": 1237000,
+        "gzip": 371500,
+        "brotli": 303500
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "electron/settings/warm": {
+      "js": {
+        "raw": 1237000,
+        "gzip": 371500,
+        "brotli": 303500
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "electron/settings/navigation": {
+      "js": {
+        "raw": 1237000,
+        "gzip": 371500,
+        "brotli": 303500
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    }
+  },
+  "forbiddenInitial": {
+    "web/chat/cold": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-",
+      "/SettingsModal-",
+      "/AccountPage-"
+    ],
+    "web/chat/warm": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-",
+      "/SettingsModal-",
+      "/AccountPage-"
+    ],
+    "web/account/cold": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "web/account/warm": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "web/account/navigation": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "web/settings/cold": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "web/settings/warm": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "web/settings/navigation": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "electron/chat/cold": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-",
+      "/SettingsModal-",
+      "/AccountPage-"
+    ],
+    "electron/chat/warm": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-",
+      "/SettingsModal-",
+      "/AccountPage-"
+    ],
+    "electron/account/cold": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "electron/account/warm": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "electron/account/navigation": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "electron/settings/cold": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "electron/settings/warm": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ],
+    "electron/settings/navigation": [
+      "/monaco",
+      "/Monaco",
+      "/terminal-",
+      "/prettier-",
+      "/GitPane-",
+      "/GitTargetPane-",
+      "/qrcode-",
+      "/EnginesObserver-",
+      "/ReleaseCenter-"
+    ]
+  }
+}

@@ -1732,7 +1732,7 @@ export class TasksRepo extends BaseRepo {
     if (!(await this.repos.projects.isProjectMember(userId,projectId))) return null
     const task = (await this.sql.get(`SELECT t.id,c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`, [taskId, projectId])) as {id:string;semantic_type:string}|undefined
     if (!task) return null
-    const allRuns=((await this.sql.all(`SELECT * FROM component_qa_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`, [taskId])) as Record<string,unknown>[]).map((row)=>this.repos.ci.mapComponentQaRun(row))
+    const allRuns=((await this.sql.all(`SELECT r.*,w.agent_id AS qa_machine_id FROM component_qa_runs r LEFT JOIN ci_runs d ON d.id=r.development_run_id LEFT JOIN ci_workspaces w ON w.id=d.workspace_id WHERE r.task_id=? ORDER BY r.attempt DESC,r.created_at DESC`, [taskId])) as Record<string,unknown>[]).map((row)=>this.repos.ci.mapComponentQaRun(row))
     const activeRun=allRuns.find((run)=>run.status==='queued'||run.status==='running') ?? null
     const latestRun=allRuns[0] ?? null
     const runs=trimHistoricalRunLogs(allRuns,[activeRun?.id,latestRun?.id])
@@ -1791,6 +1791,10 @@ export class TasksRepo extends BaseRepo {
 
   async markTaskRepositoryDeleted(taskId: string, agentId: string, path: string): Promise<void> {
     await this.sql.run(`UPDATE task_repositories SET state='deleted', deleted_at=? WHERE task_id=? AND agent_id=? AND path=? AND state='active'`, [this.now(), taskId, agentId, path])
+  }
+
+  async listCleanupRepositoryCandidates(): Promise<TaskRepository[]> {
+    return ((await this.sql.all(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.state='active' ORDER BY r.created_at`)) as Record<string, unknown>[]).map(mapTaskRepository)
   }
 
   async listActiveTaskRepositories(taskId: string): Promise<TaskRepository[]> {

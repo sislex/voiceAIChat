@@ -2,14 +2,19 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-09
-checked: c8fcb5e8
+updated: 2026-09-16
+checked: d67c25c6
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - apps/server/src/ci
+  - apps/server/src/cleanup
+  - apps/agent/src/connection.ts
+  - apps/agent/src/exec.ts
+  - packages/shared/src/temporaryResources.ts
+  - packages/ui/src/components/ci/TemporaryResources.tsx
   - apps/server/src/automationClient.ts
   - apps/automation-runner/src
   - packages/shared/src/automation.ts
@@ -77,6 +82,18 @@ packages:
 ---
 
 # CI-раннер канбана
+
+## Development preview (CHAT-447)
+
+Development preview is independent of the committed feature-preview lifecycle. Settings live in shared `developmentPreview.ts`; task GET/PUT CI returns `developmentPreview` alongside `browserCheck`. Legacy rows keep preview disabled and normalize the browser failure policy to `continue`. Both settings are stored in the existing `ci_task_browser_checks.check_json` document.
+
+`DevelopmentPreviewManager` registers the active model-work identity, publishes lifecycle snapshots into the persisted realtime system log, and exposes `preview_start/status/logs/restart/stop` through the run-scoped CI MCP broker. Model-work receives the selected application, startup route, readiness, exact URL when available, and failure policy. Failed preview/browser checks receive a bounded repair turn; `continue` accepts model-work with warning, while `block` rejects successful completion. The model's final text cannot supply passing evidence. Finishing model-work stops the environment and revokes its grant.
+
+The manager persists handles without credentials in `development-previews.json`, serializes mutations, aborts startup before stop, reconciles active entries on restart, and retries cleanup through a 30-second collector. TTL is capped at two hours. This collector manages known persisted entries; it does not scan unrelated Docker resources.
+
+Default core previews build `@voicechat/web` from the sanitized source snapshot in a separate network-disabled build service, then serve `apps/web/dist` through `VC_WEB_DIR`. Browser-only checks also enforce the selected continue/block policy through the trusted browser adapter after bounded repair turns.
+
+Current limits: scoped generation supports Claude only; Codex is deliberately rejected until a verified tool-free invocation exists. Browser verification still requires the model to open the exact task URL first. The runtime uses an operator-pinned dependency image; dependency changes requiring a new image are not rebuilt automatically.
 
 Выполнение переиспользуемых серверных команд вокруг работы модели обычным действием
 «В очередь» на карточке задачи: команды слота **до** → работа модели → команды
@@ -152,8 +169,9 @@ relay. В фазе плана браузер не подключается — �
 системную строку со ссылкой `GET /api/ci/runs/:runId/browser-shots/:name`
 (`REST.ciRunBrowserShot`, роут — в `routes/browserShots.ts`, доступ решает `getCiRun`,
 имя обязано быть номером). Base64 в лог не кладётся: лента реплеится целиком
-после каждого reconnect. `RunFeed` ссылку **не линкует** — она остаётся текстом,
-кадр открывается копированием адреса; картинок в ленте по-прежнему нет. Уборка
+после каждого reconnect. `RunFeed` recognizes the exact screenshot log marker and
+loads the PNG on demand through the authenticated CI bridge. The image links to
+a full-size Blob URL, revoked when its log component unmounts. Cleanup
 идёт при старте и раз в сутки: каталоги исчезнувших ранов удаляются сразу,
 остальные — через 7 дней (снимки вердикта QA живут 30, но их по одному на ран).
 
@@ -166,6 +184,47 @@ relay. В фазе плана браузер не подключается — �
 падения сервера; профиль Chromium остаётся в томе, поэтому входы на
 проверяемом сайте переживают сброс.
 
+### Обязательное свидетельство browser-check
+
+`model_work` один раз фиксирует настройку браузерной проверки задачи. Функции
+`ciBrowserCheckPrompt` и `ciBrowserCheckUrl` из `packages/shared/src/ci.ts`
+передают в development точный URL назначенной машины с портом и hash-маршрутом,
+в том числе при переходе от одобренного плана. Промпт требует поднять
+dev-окружение и проверить ширины 1440, 1024, 390 и 320 px. Для Chromium в
+allow-list Claude CLI добавлены `viewport` и `evaluate`, поэтому обязательные
+проверки не ждут интерактивного разрешения.
+
+Подписанный turn-токен связывает наблюдения Reader с пользователем, разговором,
+раном, текущим шагом `model_work` и точным целевым URL
+(`packages/web-reader-contracts/src/turnToken.ts`). MCP записывает только
+фактически завершившиеся browser-действия через
+`ReaderCore.logBrowserEvidence`; если ответ инструмента не содержит URL или
+viewport, сборщик запрашивает состояние доверенной browser-сессии, а не считает
+запрошенный адрес фактически открытым. Core дополнительно проверяет доступ к
+рану, автора, разговор и то, что указанный шаг ещё выполняется. В
+`browser.observed` сохраняются только вид действия, успех, совпадение с целью и
+ширина; содержимое страницы, введённые значения, сырые ошибки и секреты
+отбрасываются. Реализация проходит через
+`apps/web-reader/src/mcp/previewMcp.ts`,
+`apps/server/src/readerBridge/localCore.ts` и
+`apps/server/src/db/repos/ci.ts`.
+
+Перед успешным завершением хук оценивает durable-события только своего шага:
+нужно открыть точный URL, выполнить клавиатурное и интерактивное действие, а на
+каждой обязательной ширине — `read`, `a11y`, `styles`, `evaluate`,
+`errors`, `console`, `network` и `screenshot`. Текст модели и строки лога
+не являются доказательством; новый retry-шаг не переиспользует наблюдения
+старого. Итог сохраняется событием `browser.checked` и показывается в ленте.
+Неполный набор даёт `browser_check:blocked`, а недоступность сессии, транспорта
+или Reader — `browser_check:infrastructure_error`; шаг и ран остаются
+`failed`, конкретная причина сохраняется в outcome/progress, последующие
+команды не запускаются.
+
+Этот gate подтверждает минимальный набор выполненных инструментальных действий,
+но не отсутствие дефектов. Сценарные результаты, визуальная оценка и исправление
+находок по-прежнему требуют содержательного анализа; один HTTP 200 dev-сервера
+не считается браузерным свидетельством.
+
 ## Защита диска и очистка development-рана
 
 Перед системным bootstrap нового development-рана `CiRunManager` проверяет свободное
@@ -175,19 +234,81 @@ relay. В фазе плана браузер не подключается — �
 инъектируется как `minRunFreeDiskKb` для тестов; рабочая политика и порядок проверки
 заданы в `apps/server/src/ci/runManager.ts`.
 
-После любого терминального исхода (`success`, `failed` или `cancelled`) раннер
-best-effort удаляет только корневой `node_modules` checkout — **но лишь у закрытой
-задачи** (`VoiceChatDb.isTaskClosed`: колонка `done`/`cancelled` либо задачи уже
-нет). Пока задача жива, зависимости остаются: в этом же checkout следом идут
-Component QA и интеграционные тесты, и снос сразу после development-рана ронял их
-первой же стадией с npm-бинарём (`sh: tsc: command not found`, код 127). Ошибка
-уборки не меняет уже сохранённый статус рана. Сам Git-репозиторий остаётся для
-выбранной стратегии переиспользования, а задачный npm-кэш лежит рядом с рабочей
-копией, передаётся npm через `npm_config_cache`, пишется в `ci_workspaces.npm_cache_dir`
-и сохраняется между ранами; неиспользованные каталоги кэша старше 14 дней удаляются
-при подготовке нового запуска. Закрытие задачи убирает копию целиком — это делает
-`MergeRunManager.releaseTaskRepositories`. Источник поведения и путей —
-`apps/server/src/ci/runManager.ts`.
+Temporary cleanup is implemented by `apps/server/src/cleanup/{store,service,remote,module}.ts`.
+It belongs to the kanban cluster and uses its `KanbanMachines` port; the architecture
+boundary test includes cleanup sources in the same dependency checks.
+It registers three categories before application creation: process/test temporary
+directories (passed as TMPDIR/TMP/TEMP), merge worktrees, and task environments.
+The server-side `temporary-resources.json` stores machine, canonical root/path,
+owner, resource generation and inode identity, Git registration, consumers, state
+and attempts outside the removable tree. Creation intent is persisted first;
+existing paths or interrupted ownership confirmation are retained, not adopted by name.
+
+A successful owner's resource is eligible only after actual executor settlement,
+saved run results, no active CI/merge/QA/preview consumers, and fresh machine checks.
+A task environment additionally requires an existing closed task. Missing tasks,
+decision-required merge owners and unknown process state are not completion proof.
+Run logs/reports stay in the database. Before removal the helper copies top-level
+`test-results`, `playwright-report`, `coverage`, `artifacts`, `logs`, `reports`,
+`*.log` and `*.junit.xml` into
+`<registered-root>/.voicechat-cleanup-results/<resource-id>`, verifies hashes and
+refuses conflicting or unsupported archive entries. The journal retains that
+archive path. A failed archive leaves the resource intact; Git untracked files
+still block deletion even when their name resembles an artifact.
+
+`VC_TEMP_DIAGNOSTIC_RETENTION_MS` defaults to 604800000 (7 days), accepts a
+nonnegative safe integer, and expires at `finishedAt + retention <= now`.
+Failed, cancelled and interrupted owners use this period. Success needs no delay;
+expiry never overrides activity, ownership or Git checks.
+`VC_TEMP_CLEANUP_INTERVAL_MS` defaults to 60000, accepts an integer >=1000.
+Invalid settings fail startup. The same cycle runs after executor settlement,
+at startup and periodically, so offline resources are retried after reconnect.
+Unknown/partial deletion remains pending; already absent directories free zero
+reported bytes. Unknown sizes/freed bytes are null, never estimated.
+
+All service instances must share the data directory. A filesystem lock covers
+the final evidence re-check, deletion, registration and acquisition of persistent
+task consumers. A sweep inspects candidates **without** the lock and retakes the
+decision under it, because every task-scoped mutation registers a consumer under
+that same lock: holding it across remote inspection of all resources made
+`POST /api/projects/:id/tasks/:taskId/chat`, CI `retry`/`discard-and-retry` and
+preview mutations wait out the whole sweep (~100 s observed in production) and
+then fail with `cleanup_or_consumer_busy`. The registry is rewritten and fsynced
+in full on every change, so the attempt journal keeps only the last 100 attempts
+per task — exactly what the snapshot API shows. A busy registry answers HTTP 503
+with `retry-after`, not 500.
+CI restart/console, merge execution, preview operations and task/run mutation HTTP
+handlers participate. A dead local lock/consumer is recoverable only after the OS
+proves its PID absent; foreign hosts, PID reuse and interrupted lock recovery are
+conservative barriers requiring inspection. The lock is not stolen on timeout.
+The agent additionally excludes other exec/PTY and filesystem operations while an
+admitted removal runs; old agents cannot satisfy the deletion handshake.
+Machine checks require Python 3, lsof and descriptor-relative no-follow operations;
+unsupported platforms/tools defer cleanup. Current machine path policy is checked.
+
+Dirty/staged/untracked Git work, ignored files outside node_modules or the verified
+artifact archive set, unpublished commits (including refs and recoverable reflogs),
+unknown origin publication, explicit Git worktree locks,
+nested repositories/mounts, hardlinks, special files, SQLite/database files,
+`.voicechat-permanent` and `.generated_images` block recursive removal.
+Permanent shared merge clones, chat workspaces and unrelated /tmp files are excluded.
+Legacy task repository records are shown as unconfirmed and retained.
+Age-only npm-cache deletion and terminal-status node_modules removal are disabled;
+shared npm caches remain reusable.
+
+`GET /api/projects/:projectId/tasks/:taskId/temporary-resources` applies existing
+task access checks and returns candidates plus recent attempts. It only inspects;
+there is no API accepting a path to delete. MergePanel's temporary-resource view
+shows loading, errors/retry, empty results, machine/path/owner/category, size or
+measurement reason, retention, blockers and the journal; repository events and
+reconnect refresh it. Attempts include time, reason, outcome, error and measured
+freed bytes (subtracting newly archived data); run history remains accessible.
+
+Tests in `cleanup/*.test.ts`, `agent/src/cleanupAdmission.test.ts` and
+`TemporaryResources.dom.test.tsx` cover TC-01–TC-08; the MergePanel story
+`TemporaryResourceReview` covers offline/unknown-size/journal presentation.
+Development Brief regressions TC-09–TC-11 are documented in the existing
+[task preparation section](task-preparation.md#developmentreadiness-и-readiness-гейт).
 
 ## Восстановление рабочей копии после отмены
 
@@ -2173,6 +2294,57 @@ $14–15, то есть замер попал в тот же порядок, ч�
 мерялось: там $0.11 на ран и пересказ готового списка шагов.
 
 ## Контракт и UI
+
+Лента рана фильтрует шаги (все, упавшие/timeout/interrupted, команды, ходы
+модели), ищет по логу без учёта регистра, переходит между совпадениями и умеет
+сворачивать/разворачивать все шаги. `CiLogLine` — транспортный chunk, а не
+физическая строка: `logRows` в `packages/ui/src/components/ci/ciFormat.ts`
+сначала склеивает chunks шага и снимает ANSI, и только затем делит текст для
+нумерации и поиска. Построчные ссылки имеют вид `#step-<id>-L<n>` и раскрывают
+свёрнутых родителей. Номер строки начинает диапазон, Shift выбирает его конец;
+копирование не включает ANSI. У каждого шага своё слежение за концом и
+ограниченная область прокрутки. Browser artifacts сохраняют authenticated loader.
+
+Ожидающий вопрос показывает длительность ожидания. «Ответить позже» сохраняет
+частичный ответ в sessionStorage по идентификаторам рана и interaction и скрывает
+форму, не отвечая серверу; повторное открытие восстанавливает черновик. Одобрение
+плана показывает prefix/suffix diff с предыдущей plan interaction. Вопросы
+приходят отдельными realtime-событиями: и `TaskRunFeed`, и `DevelopmentRunFeed`
+в `packages/ui/src/components/ci/TaskRunFeed.tsx` обязаны подписываться на
+`onInteraction`, заменять interaction с тем же id в своём cache и снимать
+подписку при unmount.
+
+Run details and snapshots include an optional project queue summary: visible
+waiting/busy task identities, project-local ordering, and server-wide occupied
+slot count and limit. Queue ordering follows the board order used by the
+scheduler. Removing a queued run uses dequeue and reports a race with start;
+confirmed bypass uses the existing parallel start, promoting the queued run.
+An active feed refreshes its queue snapshot every five seconds.
+
+The feed loads getRunReport and refreshes active usage every 15 seconds. Its
+token bar and report table use the existing stage/model aggregates and retain
+estimated/unknown-cost semantics. The console uses the shared Dialog, command
+history, read-only path completion and confirmation for destructive shell
+commands. Mobile layouts use step cards, bounded logs, sticky bottom actions
+and a full-screen console.
+
+Task command settings receive commandContext (machine, command workdir and
+environment) from the server. Slot previews expand known environment references
+for display; execution keeps shell evaluation and passes the environment as
+quoted arguments. An explicit confirmed machine check uses the existing fs.exec
+bridge, is aborted after at most 30 seconds and displays the first 50 output
+lines. Built-in steps and PROD_DIR-routed commands are identified separately and
+are not executed by this local check. The cleanup warning remains.
+
+`retry-from-step` принимает необязательный `stepId` корневого model-work или
+каталожного command-шагa. Перед отправкой лента показывает, какие шаги останутся
+в истории и какие выполнятся снова. Это продолжение того же `runId` в той же
+рабочей директории; точка возобновления строится по текущей конфигурации слотов,
+а не по сохранённой копии старого workflow (см. `retryFromFailed` в
+`apps/server/src/ci/runManager.ts`). Если command id удалён из слота или встречается
+там несколько раз, точку нельзя определить однозначно и сервер требует полный
+повтор вместо молчаливого выбора другого вхождения.
+
 
 Типы — `packages/shared/src/ci.ts`; REST-пути и WS-сообщения `ci.*` — в
 `protocol.ts` (union'ы + `*_MESSAGE_TYPES`). Роуты — `routes/ci.ts`. Мост

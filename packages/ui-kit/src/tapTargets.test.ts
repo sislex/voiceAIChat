@@ -15,7 +15,7 @@ const styles = readFileSync(fileURLToPath(new URL('./styles.css', import.meta.ur
 
 describe('минимум 40px у .vc-btn--icon', () => {
   it('задан в ui-kit под мобильным вьюпортом', () => {
-    const rule = styles.match(/@media \(max-width: 640px\) \{[^}]*\.vc-btn--icon[^}]*\}/)
+    const rule = styles.match(/@media \(max-width: 720px\) \{[^}]*\.vc-btn--icon[^}]*\}/)
     expect(rule?.[0]).toContain('min-width:40px')
     expect(rule?.[0]).toContain('min-height:40px')
   })

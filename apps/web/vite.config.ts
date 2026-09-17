@@ -41,6 +41,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Shared preload/CJS helpers must not create a static edge into Monaco.
+          if (id.includes('commonjsHelpers') || id.includes('vite/preload-helper')) return 'react'
           if (id.includes('node_modules/@xterm')) return 'terminal'
           if (id.includes('node_modules/monaco-editor') || id.includes('node_modules/@monaco-editor')) return 'monaco'
           if (id.includes('node_modules/html2canvas')) return 'screenshot'

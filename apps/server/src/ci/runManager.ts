@@ -14,6 +14,7 @@ import { extractImprovementFiles, isActiveCiStatus, isTerminalCiStatus, clampMod
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_NAME } from '../db/database.js'
+import type { TemporaryCleanup } from '../cleanup/service.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
 import { CI_INFRA_LABEL, classifyCiInfraFailure, classifyLlmTransportFailure, formatCiInfraFailure } from './infraErrors.js'
@@ -30,6 +31,7 @@ const CANCEL_GRACE_MS = 15_000
 const MIN_RUN_FREE_DISK_KB = 1024 * 1024
 
 export interface CiRunManagerDeps {
+  cleanup?: TemporaryCleanup
   db: VoiceChatDb
   executor: CommandExecutor
   /** Дёрнуть обновление доски (сводка рана на карточке). */
@@ -105,7 +107,7 @@ export interface CiRunManager {
    * указанную машину и уходит в работу мимо очереди.
    */
   forceStartOnMachine(userId: string, projectId: string, taskId: string, agentId: string): Promise<{ run: CiRun } | { error: string }>
-  retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<{ run: CiRun } | { error: string }>
+  retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null; stepId?: string }): Promise<{ run: CiRun } | { error: string }>
   discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }>
   cancel(userId: string, runId: string): Promise<boolean>
   /** Убрать именно ожидающий ран; не маскирует уже начавшееся выполнение. */
@@ -113,6 +115,8 @@ export interface CiRunManager {
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   publish(message: ServerMessage, ownerUserId: string): void
   snapshot(userId: string, runId: string): Promise<void | ServerMessage>
+  commandContext(userId: string, projectId: string, taskId: string): Promise<import('@voicechat/shared').CiCommandContext | null>
+  queueSummary(userId: string, projectId: string): Promise<import('@voicechat/shared').CiRunDetail['queue']>
   /** Восстановить очередь и закрыть начатые раны после рестарта процесса. */
   reconcile(): Promise<{ queued: CiRun[]; interrupted: CiRun[] }>
   activeRunIds(): string[]
@@ -642,33 +646,6 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * в любом случае — даже если после отмены `execute` завис на процессе модели:
    * иначе слот и мьютекс держатся до перезапуска сервера.
    */
-  async function cleanupTaskNodeModules(runId: string): Promise<void> {
-    const current = active.get(runId)
-    if (!current?.workspacePath) return
-    try {
-      const row = await deps.db.ci.getCiRunRaw(runId)
-      if (!row?.agentId || !isTerminalCiStatus(row.status)) return
-      // Пока задача жива, `node_modules` — не мусор: следом за development-раном
-      // в этом же checkout идут Component QA и интеграционные тесты. Снос сразу
-      // после рана ронял их первой же стадией с npm-бинарём (`tsc: command not
-      // found`, код 127), и падение уходило в fix-loop как дефект реализации
-      // (CHAT-411, три круга подряд). Закрытая задача убирает копию целиком —
-      // `releaseTaskRepositories` в merge-ране.
-      if (!await deps.db.tasks.isTaskClosed(row.taskId)) return
-      const nodeModules = `${current.workspacePath}/node_modules`
-      await deps.executor.run({
-        agentId: row.agentId,
-        script: `if [ -d ${shq(nodeModules)} ]; then rm -rf -- ${shq(nodeModules)}; fi`,
-        workdir: current.workspacePath,
-        env: { WORKSPACE: current.workspacePath, BRANCH: current.branch ?? '' },
-        timeoutMs: 120_000,
-        secrets: []
-      }, async () => {})
-    } catch {
-      // Cleanup best-effort: исход рана уже сохранён и не должен меняться из-за уборки.
-    }
-  }
-
   function enqueue(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint, bypassQueue = false): void {
     const slot: RunSlot = { runId, held: false, abandoned: false, bypass: bypassQueue }
     runSlots.set(runId, slot)
@@ -679,12 +656,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       })
       .catch(() => {})
       .finally(async () => {
-        // Сначала дожидаемся остановки исполнителя и восстанавливаем отменённый
-        // checkout. Затем удаляем тяжёлые регенерируемые зависимости для любого
-        // терминального исхода. До конца обеих операций active сохраняет путь и
-        // держит новый ран этой задачи на барьере рабочей директории.
+        // Cleanup requires the persistent lifecycle service and actual executor settlement.
+        // A terminal status or cancellation watchdog never authorizes deletion.
         await resetCancelledWorkspace(runId, userId)
-        await cleanupTaskNodeModules(runId)
         // Зависший execute может позже дойти до своей паузы или до своего
         // release — `abandoned` и идемпотентный release не дают ему занять
         // слот/мьютекс, которые мы уже отпустили за него.
@@ -937,7 +911,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
 
   /** Повтор с упавшего шага: тот же ран, переиспользуем рабочую директорию,
    *  перезапускаем стоп-шаг и всё после него; успешные ранее шаги сохраняются. */
-  async function retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<{ run: CiRun } | { error: string }> {
+  async function retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null; stepId?: string }): Promise<{ run: CiRun } | { error: string }> {
     const detail = await deps.db.ci.getCiRun(userId, runId)
     if (!detail) return { error: 'Ран недоступен' }
     const run = detail.run
@@ -945,7 +919,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       return { error: 'Повтор с шага доступен только для упавшего рана' }
     }
     if (await hasActiveRunForTask(run.taskId)) return { error: 'Для этой задачи уже выполняется ран' }
-    const failedModel = detail.steps
+    const selectedStep = model?.stepId ? detail.steps.find((step) => step.id === model.stepId) : undefined
+    if (model?.stepId && (!selectedStep || selectedStep.parentStepId || !['model_work', 'command'].includes(selectedStep.kind))) return { error: 'Выбранный шаг недоступен для повтора' }
+    let failedModel: import('@voicechat/shared').CiRunStep | undefined = detail.steps
       .filter((st) => st.kind === 'model_work' && (st.status === 'failed' || st.status === 'timeout'))
       .sort((a2, b2) => b2.position - a2.position)[0]
     const failedCandidates = detail.steps
@@ -955,6 +931,12 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     for (const st of failedCandidates) {
       const c = await deps.db.ci.getCiCommand(userId, st.commandId as string)
       if (c ? !c.allowFailure : true) { failedCommand = st; break }
+    }
+    const unresolvedPosition = Math.max(failedModel?.position ?? -1, failedCommand?.position ?? -1)
+    if (selectedStep && unresolvedPosition >= 0 && selectedStep.position > unresolvedPosition) return { error: 'Нельзя переиспользовать упавший шаг. Выберите его или более ранний шаг.' }
+    if (selectedStep) {
+      failedModel = selectedStep.kind === 'model_work' ? selectedStep : undefined
+      failedCommand = selectedStep.kind === 'command' ? selectedStep : undefined
     }
     let resume: ResumePoint
     let eventPayload: Record<string, unknown>
@@ -974,7 +956,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const failed = failedCommand
       const slot = failed.slot as CiSlot
       const slotIds = (await deps.db.ci.resolveTaskSlots(run.projectId, run.taskId))[slot === 'before_model' ? 'beforeModel' : 'afterModel']
-      const index = Math.max(0, slotIds.indexOf(failed.commandId as string))
+      const index = slotIds.indexOf(failed.commandId as string)
+      if (index < 0 || slotIds.lastIndexOf(failed.commandId as string) !== index) return { error: 'Команда удалена или повторяется в слоте. Запустите весь workflow заново.' }
       resume = { kind: 'command', slot, index }
       eventPayload = { slot, index }
     }
@@ -1521,6 +1504,20 @@ fi`
   }
 
   async function execute(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
+    const row = await deps.db.ci.getCiRunRaw(runId)
+    if (!row) return
+    const work = () => executeOwned(runId, userId, ctl, resume)
+    try { await (deps.cleanup ? deps.cleanup.consume(row.taskId, work) : work()) }
+    catch (error) {
+      const current = await deps.db.ci.getCiRunRaw(runId)
+      if (current && !isTerminalCiStatus(current.status)) {
+        await finalize(runId, userId, ctl.signal.aborted ? 'cancelled' : 'failed', `Temporary resource preparation failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    finally { void deps.cleanup?.cycle(row.taskId).catch(() => {}) }
+  }
+
+  async function executeOwned(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
     const runRow = await deps.db.ci.getCiRunRaw(runId)
     if (!runRow) return
     // Ран отменили, пока он стоял в очереди проекта: не начинаем вовсе, иначе
@@ -1598,6 +1595,14 @@ fi`
       NPM_CACHE_DIR: npmCacheDir,
       npm_config_cache: npmCacheDir
     }
+    if (deps.cleanup && (managedStorage?.rootPath || legacyRepoRoot)) {
+      const common = { projectId: runRow.projectId, taskId: runRow.taskId, userId, machineId: agentId, machineName: machine?.name ?? agentId, root: managedStorage?.rootPath ?? legacyRepoRoot }
+      // Existing, unregistered trees remain usable but are never adopted for deletion.
+      await deps.cleanup.register({ ...common, runId: null, path: workspacePath, category: 'task-environment' }).catch(() => undefined)
+      const temporary = `${repoRoot}/.process-${runId}`
+      const owned = await deps.cleanup.register({ ...common, runId, path: temporary, category: 'process' })
+      if (owned.identity) { env.TMPDIR = temporary; env.TMP = temporary; env.TEMP = temporary }
+    }
     const signal = ctl.signal
 
     // Инвариант параллельных ранов: своя рабочая директория и своя ветка.
@@ -1652,14 +1657,12 @@ fi`
 
     // Рабочая директория: подготовка по стратегии повтора + запись workspace.
     const strategy = project.ciReuseStrategy || 'fail'
-    // Кэши старых задач копятся на диске — чистим те, к которым две недели не
-    // ходили. `touch` отмечает «использован сейчас»: без него давно живущая
-    // задача теряла бы кэш на своём же ране (mtime каталога не растёт сам).
+    // Cache age alone is not ownership evidence; shared caches are retained.
     const ensureManaged = managedStorage
       ? `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)} || { echo "MachineStorage недоступен для записи: ${managedStorage.rootPath}" >&2; exit 73; }`
       : `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)}`
     const freeDiskCheck = `available_kb="$(df -Pk . | awk 'NR == 2 { print $4 }')" || exit 74; case "$available_kb" in ''|*[!0-9]*) echo "Не удалось определить свободное место перед запуском рана" >&2; exit 74;; esac; if [ "$available_kb" -lt ${minRunFreeDiskKb} ]; then echo "Недостаточно места для запуска рана: свободно $((available_kb / 1024)) МБ, нужно не меньше ${Math.ceil(minRunFreeDiskKb / 1024)} МБ. Освободите диск и повторите запуск." >&2; exit 74; fi`
-    const cachePrep = `${freeDiskCheck}\n${ensureManaged}; touch ${shq(npmCacheDir)} 2>/dev/null || true; find ${shq(npmCacheRoot)} -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} + 2>/dev/null || true`
+    const cachePrep = `${freeDiskCheck}\n${ensureManaged}; touch ${shq(npmCacheDir)} 2>/dev/null || true`
     const repoPath = workspacePath
     // Связанный чат задачи должен выполнять команды там же, где модель CI: внутри
     // клонированного репозитория, а не в каталоге-контейнере workspace.
@@ -1890,13 +1893,17 @@ fi`
           modelError = error instanceof Error ? error.message : String(error)
         }
       } else {
-        const line = await deps.db.ci.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
+        if ((await deps.db.ci.getTaskBrowserCheck(task.id)).mode !== 'off') {
+          modelOk = false
+          modelError = 'browser_check:infrastructure_error — model_work hook is unavailable'
+        }
+        const line = await deps.db.ci.appendCiLog(runId, mwStep.id, 'system', modelError || 'Работа модели пропущена (хук не подключён)\n')
         broadcast({ t: 'ci.log', runId, line }, userId)
       }
       const stepStatus: CiStatus = modelOk ? 'success' : modelCancelled || signal.aborted ? 'cancelled' : 'failed'
       const mwFinished = now()
       const upd = (await deps.db.ci.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: mwFinished, durationMs: mwFinished - mwStart }))!
-      await deps.db.ci.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
+      await deps.db.ci.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : modelError || 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
       await emitStage(runId, userId)
       await emitStep(upd, userId)
       // Отмена пользователем: слот «после» и резюме не запускаем, карточку возвращаем.
@@ -1920,6 +1927,9 @@ fi`
           broadcast({ t: 'ci.log', runId, line }, userId)
           await deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: transport.kind, stepId: mwStep.id } })
           await progress(runId, done, total, `Инфраструктурная ошибка — ${CI_INFRA_LABEL[transport.kind]}`, userId)
+        } else if (modelError.startsWith('browser_check:')) {
+          await deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.browser_check_blocked', actorType: 'system', payload: { stepId: mwStep.id, reason: modelError } })
+          await progress(runId, done, total, modelError, userId)
         } else {
           await progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
         }
@@ -2413,11 +2423,58 @@ fi`
   }
   function publish(message: ServerMessage, ownerUserId: string): void { broadcast(message, ownerUserId) }
 
+  async function commandContext(userId: string, projectId: string, taskId: string): Promise<import('@voicechat/shared').CiCommandContext | null> {
+    const project = await deps.db.projects.getProject(userId, projectId)
+    const task = await deps.db.tasks.getCiTask(userId, projectId, taskId)
+    if (!project || !task) return null
+    const agentId = task.agentId ?? project.defaultAgentId
+    if (!agentId || !await deps.db.machines.canUseAgent(userId, agentId, projectId)) return null
+    const machine = project.machines.find((item) => item.agentId === agentId)
+    const machinePath = machine?.path?.trim().replace(/[\\/]+$/, '') || ''
+    const storage = (await deps.db.machines.listMachineStorages(userId, agentId))[0]
+    const projectSlug = slugify(project.name)
+    const taskNumber = issueKey(project.name, task)
+    const taskKey = `${projectSlug}-${task.seq ?? 0}`
+    const paths = storage ? managedCiWorkspacePaths(storage.rootPath, projectId, taskId, taskNumber) : null
+    const repoRoot = paths?.repoRoot ?? (machine?.reposRoot?.trim().replace(/[\\/]+$/, '') || machinePath.replace(/[\\/][^\\/]+$/, ''))
+    const workdir = paths?.repository ?? `${repoRoot}/${projectSlug}`
+    const workspace = paths?.workspace ?? `${workdir}/${taskNumber}`
+    const cache = paths?.npmCacheDir ?? `${repoRoot || workspace}/.npm-cache/${taskKey}`
+    return { agentId, workdir, env: {
+      TASK_NUMBER: taskNumber, TASK_KEY: taskKey, SLUG: taskNumber,
+      BRANCH: (project.ciBranchTemplate || '{task_number}').replace('{task_number}', taskNumber).replace('{slug}', slugify(task.title)),
+      BASE_BRANCH: project.ciBaseBranch || 'main', REPO_URL: project.gitUrl ?? '',
+      REPO_ROOT: repoRoot, WORKSPACE: workspace, PROJECT: projectSlug,
+      NPM_CACHE_DIR: cache, npm_config_cache: cache
+    } }
+  }
+
+  async function queueSummary(userId: string, projectId: string): Promise<import('@voicechat/shared').CiRunDetail['queue']> {
+    const board = await deps.db.tasks.getBoard(userId, projectId)
+    if (!board) return undefined
+    const order = new Map(board.tasks.map((task, index) => [task.id, index]))
+    const result: NonNullable<import('@voicechat/shared').CiRunDetail['queue']> = {
+      limit: (await deps.db.ci.getCiSettings()).maxConcurrentRuns,
+      occupied: running, waiting: [], busy: []
+    }
+    for (const [runId, owner] of active) {
+      if (owner.projectId !== projectId) continue
+      const run = await deps.db.ci.getCiRunRaw(runId)
+      if (!run) continue
+      const title = board.tasks.find((task) => task.id === run.taskId)?.title ?? run.taskId
+      const slot = runSlots.get(runId)
+      if (run.status === 'queued') result.waiting.push({ runId, taskId: run.taskId, title, createdAt: run.createdAt })
+      else if (run.status === 'running' && (slot?.held || slot?.bypass)) result.busy.push({ runId, taskId: run.taskId, title, agentId: run.agentId, bypass: !!slot?.bypass })
+    }
+    result.waiting.sort((a, b) => (order.get(a.taskId) ?? Infinity) - (order.get(b.taskId) ?? Infinity))
+    return result
+  }
+
   async function snapshot(userId: string, runId: string): Promise<void | ServerMessage> {
     const detail = await deps.db.ci.getCiRun(userId, runId)
     if (!detail) return
     const log = await deps.db.ci.getCiRunLog(userId, runId)
-    return { t: 'ci.snapshot', runId, detail, log }
+    return { t: 'ci.snapshot', runId, detail: { ...detail, queue: await queueSummary(userId, detail.run.projectId) }, log }
   }
 
   function activeRunIds(): string[] {
@@ -2447,7 +2504,20 @@ fi`
     }
   }
 
-  return { start, startForDevelopmentTransition, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, reconcile, activeRunIds, consoleExec, answerInteraction }
+  const admitTask = <T>(taskId: string, work: () => Promise<T>): Promise<T> => deps.cleanup ? deps.cleanup.consume(taskId, work) : work()
+  const admitRun = async <T>(userId: string, runId: string, work: () => Promise<T>): Promise<T> => {
+    const detail = await deps.db.ci.getCiRun(userId, runId)
+    return detail ? admitTask(detail.run.taskId, work) : work()
+  }
+  return {
+    start: (...args) => admitTask(args[2], () => start(...args)),
+    startForDevelopmentTransition: (...args) => admitTask(args[2], () => startForDevelopmentTransition(...args)),
+    forceStartOnMachine: (...args) => admitTask(args[2], () => forceStartOnMachine(...args)),
+    retryFromFailed: (...args) => admitRun(args[0], args[1], () => retryFromFailed(...args)),
+    discardChangesAndRetry: (...args) => admitRun(args[0], args[1], () => discardChangesAndRetry(...args)),
+    consoleExec: (...args) => admitRun(args[0], args[1], () => consoleExec(...args)),
+    cancel, dequeue, subscribe, publish, snapshot, commandContext, queueSummary, reconcile, activeRunIds, answerInteraction
+  }
 }
 
 /**

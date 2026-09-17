@@ -6,28 +6,83 @@ import type { WebRecorderHostMessage } from '@shared/webRecorder'
 import { browserId } from '@shared/browserId'
 import { prepareReaderPreview } from './preparePreview'
 import { ReaderActionHistory } from './ReaderActionHistory'
-import { createReaderHostBridge, type ReaderHostBridge, type PreviewActionOutcome } from './hostBridge'
+import { previewActionProgressLabel } from './actionLabel'
+import { createReaderHostBridge, type ReaderHostBridge, type ReaderHostRegistration, type PreviewActionOutcome } from './hostBridge'
 
 
-export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, pageError, onAskError, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
+export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, onRevealAction, onClearActions, pageErrorCount = 0, onAsk, onControl, manual = false, confirmRequest = null, onConfirmAction, onDenyAction, actionError = null, onRetryAction, pageError, onAskError, pendingAction = null, onPageTitle, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // A dismissed page error stays hidden until a different error text arrives.
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
+  // Закладки сеанса: их кладут и модель, и человек, а список один на двоих.
+  const [bookmarks, setBookmarks] = useState<{ url: string; label: string; at: number }[]>([])
+  // Модель спросила человека или передала ему шаг: панель ждёт живого ответа.
+  const [waiting, setWaiting] = useState<{ kind: 'question' | 'handover'; text: string; options?: string[]; since: number } | null>(null)
+  const [answerDraft, setAnswerDraft] = useState('')
+  // Заметки ассистента человеку и последний собранный отчёт.
+  const [notes, setNotes] = useState<{ text: string; url: string | null; at: number }[]>([])
+  const [reportText, setReportText] = useState<string | null>(null)
+  const answerRef = useRef<HTMLInputElement>(null)
+  // Long-running model actions show elapsed seconds so the person knows the panel is busy, not stuck.
+  const [pendingSeconds, setPendingSeconds] = useState(0)
+  // Progress of a multi-step sequence: "шаг 2 из 5" tells the person how long the routine still is.
+  const [sequenceProgress, setSequenceProgress] = useState<{ done: number; total: number; action: PreviewAction } | null>(null)
+  // Report of this panel session goes to the chat draft: the person forwards it to the task or the team.
+  const registrationRef = useRef<ReaderHostRegistration | null>(null)
+  const reportToChat = async (): Promise<void> => {
+    const registration = registrationRef.current
+    if (!registration) return
+    // Текст отчёта собирает мост: один и тот же и для чата, и для буфера, и для модели.
+    const outcome = await registration.run({ kind: 'report', readable: true })
+    const report = outcome.ok ? outcome.result as { text?: string } : null
+    if (!report?.text) return
+    setReportText(report.text)
+    callbacks.current.onAsk?.(report.text)
+  }
+  const copyReport = async (): Promise<void> => {
+    const registration = registrationRef.current
+    if (!registration) return
+    const outcome = await registration.run({ kind: 'report', readable: true })
+    const text = outcome.ok ? (outcome.result as { text?: string }).text : undefined
+    if (!text) return
+    setReportText(text)
+    try { await navigator.clipboard?.writeText(text) } catch { /* буфер недоступен: текст всё равно показан */ }
+  }
+  useEffect(() => {
+    if (!pendingAction) { setPendingSeconds(0); return }
+    const started = Date.now()
+    const timer = setInterval(() => setPendingSeconds(Math.round((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [pendingAction])
   const retrySave = useRef<(() => void) | null>(null)
   const retryOpen = useRef<(() => void) | null>(null)
   const gateSequence = useRef(0)
   const savedByReader = useRef<string | null | undefined>(undefined)
   const url = conversationUrl ?? projectUrl
-  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview })
-  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview }
+  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview, onPageTitle, onAsk, onControl })
+  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview, onPageTitle, onAsk, onControl }
 
   // Мост живёт со смонтированным iframe одного разговора и создаётся в эффекте:
   // dispose необратим, а StrictMode в dev прогоняет mount → cleanup → mount —
   // мост из useMemo оставался бы мёртвым после повторного mount.
   const bridgeRef = useRef<ReaderHostBridge | null>(null)
   const [bridgeGeneration, setBridgeGeneration] = useState(0)
+  useEffect(() => { setBookmarks([]); setWaiting(null); setNotes([]); setReportText(null) }, [conversationId])
+  // Вопрос ассистента должен попасть под курсор сразу: человек отвечает, не ища поле мышью.
+  useEffect(() => { if (waiting?.kind === 'question') answerRef.current?.focus() }, [waiting])
+  // Сколько ассистент уже ждёт: человек видит, что ход стоит именно на нём.
+  const [waitingSeconds, setWaitingSeconds] = useState(0)
+  useEffect(() => {
+    if (!waiting) { setWaitingSeconds(0); return }
+    const tick = (): void => setWaitingSeconds(Math.floor((Date.now() - waiting.since) / 1000))
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [waiting])
   useEffect(() => {
     savedByReader.current = undefined
     setSaveError(null)
@@ -73,7 +128,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
         target.postMessage(message, platform.origin)
       },
       capabilities: ['mcp-actions', 'diagnostics', 'inspector', 'recording'],
-      onRegistration: (registration) => callbacks.current.onRegisterHost?.(registration ? {
+      onRegistration: (registration) => { registrationRef.current = registration ? { ...registration } : null; return callbacks.current.onRegisterHost?.(registration ? {
         ...registration,
         run: async function runRegistered(action: PreviewAction): Promise<PreviewActionOutcome> {
           if (action.kind !== 'open') {
@@ -103,8 +158,15 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
           catch { return { ok: false, error: 'Страница открыта, но её адрес не удалось сохранить.' } }
           return outcome
         }
-      } : null),
+      } : null) },
       onSaveUrl: (nextUrl) => { void save(nextUrl).catch(() => {}) },
+      onPageTitle: (title) => callbacks.current.onPageTitle?.(title),
+      onAsk: (text) => callbacks.current.onAsk?.(text),
+      onBookmarks: (list) => setBookmarks(list),
+      onWaitingForPerson: (next) => { setWaiting(next); setAnswerDraft('') },
+      onNotes: (list) => setNotes(list),
+      onControl: (manual) => callbacks.current.onControl?.(manual),
+      onSequenceProgress: (progress) => { if (alive) setSequenceProgress(progress) },
       onElement: (element) => callbacks.current.onSelectElement?.(element),
       onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
     })
@@ -122,6 +184,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       retryOpen.current = null
       unsubscribe()
       bridge.dispose()
+      callbacks.current.onPageTitle?.(null)
+      callbacks.current.onControl?.(false)
       if (bridgeRef.current === bridge) bridgeRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,8 +229,35 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   return <section className="webpreview" aria-label="Web Reader">
     {saving && <p role="status">Сохраняем адрес страницы…</p>}
     {saveError && <div className="webpreview-error" role="alert"><span>{saveError}</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retrySave.current?.()}>Повторить сохранение</button></div>}
-    {pageError && <div className="webpreview-error" role="alert"><span>{pageError}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}</div>}
-    <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} />
+    {pageError && pageError !== dismissedError && <div className="webpreview-error webpreview-page-error" role="alert"><span>{pageError}{pageErrorCount > 1 && <small> и ещё {pageErrorCount - 1}</small>}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}<button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" aria-label="Скрыть ошибку страницы" onClick={() => setDismissedError(pageError)}>×</button></div>}
+    {pendingAction && <p className="webpreview-live" role="status" aria-live="polite"><span className="webpreview-live__dot" aria-hidden="true" />Ассистент {sequenceProgress ? `выполняет шаг ${sequenceProgress.done + 1} из ${sequenceProgress.total}: ${previewActionProgressLabel(sequenceProgress.action)}` : previewActionProgressLabel(pendingAction)}…{pendingSeconds >= 3 && <span className="webpreview-live__time"> {pendingSeconds} с</span>}</p>}
+    {confirmRequest && <div className="webpreview-confirm" role="alertdialog" aria-live="assertive" aria-label="Подтверждение действия ассистента"><span>Ассистент хочет: {previewActionProgressLabel(confirmRequest.action)} — {confirmRequest.reason} ({confirmRequest.target}). Разрешить?</span><button className="vc-btn vc-btn--primary vc-btn--sm" type="button" autoFocus onClick={() => onConfirmAction?.({ ...confirmRequest.action, confirm: true } as PreviewAction)}>Разрешить</button><button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onDenyAction?.()}>Отказать</button></div>}
+    {actionError && !pendingAction && <div className="webpreview-error webpreview-action-error" role="status" aria-live="polite"><span>Ассистент не смог: {previewActionProgressLabel(actionError.action)} — {actionError.error}</span>{onRetryAction && !/Только я управляю/.test(actionError.error) && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onRetryAction(actionError.action)}>Повторить</button>}</div>}
+    {waiting?.kind === 'question' && <form className="webpreview-question" role="group" aria-label="Вопрос ассистента" onSubmit={(event) => { event.preventDefault(); const answer = answerDraft.trim(); if (answer) bridgeRef.current?.answerQuestion(answer) }}>
+      <p aria-live="assertive">Ассистент спрашивает: {waiting.text}{waitingSeconds >= 5 && <small> · ждёт {waitingSeconds} с</small>}</p>
+      {waiting.options && waiting.options.length > 0 && <div className="webpreview-question__options">{waiting.options.map(option => <button key={option} type="button" className="vc-btn vc-btn--secondary vc-btn--sm" onClick={() => bridgeRef.current?.answerQuestion(option)}>{option}</button>)}</div>}
+      <label><span className="vc-sr-only">Ответ ассистенту</span><input ref={answerRef} type="text" value={answerDraft} placeholder="Ваш ответ" onChange={(event) => setAnswerDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); bridgeRef.current?.answerQuestion(null) } }} /></label>
+      <button type="submit" className="vc-btn vc-btn--primary vc-btn--sm" disabled={!answerDraft.trim()}>Ответить</button>
+      <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" onClick={() => bridgeRef.current?.answerQuestion(null)}>Не сейчас</button>
+    </form>}
+    {waiting?.kind === 'handover' && <div className="webpreview-question webpreview-handover" role="status" aria-live="polite">
+      <p>Ассистент ждёт вас: {waiting.text}{waitingSeconds >= 5 && <small> · {waitingSeconds} с</small>}</p>
+      <button type="button" className="vc-btn vc-btn--primary vc-btn--sm" onClick={() => bridgeRef.current?.finishHandover()}>Готово, продолжай</button>
+    </div>}
+    {bookmarks.length > 0 && <nav className="webpreview-bookmarks" aria-label="Закладки страницы">
+      {bookmarks.map(item => <span key={item.url} className="webpreview-bookmarks__item">
+        <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" title={item.url} disabled={manual} onClick={() => bridgeRef.current?.run({ kind: 'open', url: item.url })}>{item.label}</button>
+        <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" aria-label={`Убрать закладку ${item.label}`} title="Убрать закладку" onClick={() => { void bridgeRef.current?.run({ kind: 'bookmark', remove: item.url }) }}>×</button>
+      </span>)}
+    </nav>}
+    {onPageTitle && <p className="webpreview-bookmark-add"><button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" disabled={manual} onClick={() => { void bridgeRef.current?.run({ kind: 'bookmark' }) }}>Запомнить страницу</button></p>}
+    <ReaderActionHistory key={`history-${conversationId}`} actions={actions} onRepeat={onRepeatAction} onReveal={onRevealAction} onClear={onClearActions} currentUrl={conversationUrl} manual={manual} />
+    {notes.length > 0 && <section className="webpreview-notes" aria-label="Заметки ассистента">
+      <ul>{notes.map((note, index) => <li key={`${note.at}-${index}`}><span>{note.text}</span>{note.url && <small title={note.url}>{(() => { try { return new URL(note.url).host } catch { return note.url } })()}</small>}</li>)}</ul>
+      <button type="button" className="vc-btn vc-btn--ghost vc-btn--sm" onClick={() => { void navigator.clipboard?.writeText(notes.map(note => note.text).join('\n')).catch(() => undefined) }}>Скопировать заметки</button>
+    </section>}
+    {reportText && <pre className="webpreview-report-text" aria-label="Текст отчёта">{reportText}</pre>}
+    {actions.length > 0 && onAsk && <p className="webpreview-report"><button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" disabled={manual} title={manual ? 'Управляете вы: отчёт соберётся после возврата управления' : undefined} onClick={() => { void reportToChat() }}>Отчёт в чат</button><button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" onClick={() => { void copyReport() }}>Скопировать отчёт</button>{reportText && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" onClick={() => setReportText(null)}>Скрыть отчёт</button>}</p>}
     {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
     {previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retryOpen.current ? retryOpen.current() : setRetryKey((value) => value + 1)}>Повторить</button></div>}
     <iframe key={conversationId} ref={frameRef} className="webpreview-frame" src={src} title="Web Reader" aria-hidden={previewSession !== 'ready'} tabIndex={previewSession === 'ready' ? 0 : -1} {...{ inert: previewSession !== 'ready' ? '' : undefined }} />

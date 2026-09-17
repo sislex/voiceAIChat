@@ -74,6 +74,7 @@ function mcpServerArgs(name: string, url: string): string[] {
  * Промпт всегда уходит через stdin — см. комментарий про ARG_MAX ниже.
  */
 export function codexInvocation(req: LlmRequest): { args: string[]; prompt: string } {
+  if (req.textOnly) throw new Error('preview_text_only_unavailable')
   // Проброс команд на агента: MCP-инструмент вместо локального shell.
   let prompt = req.prompt
   const args = ['exec', '--json', '--skip-git-repo-check']

@@ -70,9 +70,13 @@ describe('Reader: адресная строка и адаптивный инте
     expect(await shell().locator('details').getAttribute('open')).toBeNull()
   })
   it('сохраняет выбранные 1024 пикселя внутри узкой панели', async () => {
-    await page.setViewportSize({ width: 375, height: 760 }); await shell().getByLabel('Ширина вьюпорта').selectOption('1024')
+    // На узкой панели список пресетов скрыт (он всё равно шире панели), поэтому ширину выбирают на широком
+    // экране: выбранная остаётся в силе, а убрать её можно чипом сброса — он на телефоне и остаётся.
+    await shell().getByLabel('Ширина вьюпорта').selectOption('1024')
+    await page.setViewportSize({ width: 375, height: 760 })
     expect(await content().locator('body').evaluate(() => window.innerWidth)).toBe(1024)
     expect(await shell().locator('.webpreview-viewport').evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
+    expect(await shell().getByLabel('Сбросить ширину 1024 px').isVisible()).toBe(true)
   })
   it('помещает тулбар на мобильном экране и показывает состояние записи', async () => {
     await page.setViewportSize({ width: 375, height: 760 })

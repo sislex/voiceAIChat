@@ -4,14 +4,18 @@
 // Данные берутся личными роутами (`/api/me/*`, `/api/agents`): весь префикс
 // `/api/admin/` закрыт привилегией `users:manage`, и не-админ туда не попадёт.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, ErrorState, Skeleton } from '@voicechat/ui-kit'
+import { useEffect, useMemo, useState } from 'react'
+import { readResources } from '../clients/readResources'
+import { uiPerformance } from '../lib/uiPerformance'
+import { isObsoleteRead } from '../lib/readCache'
+import { Button, ErrorState, Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import {
   ProfilePanel,
   READ_ONLY,
   type ProfilePeriod,
   type ProfileProvider,
   type ProfileSecurityEvent,
+  type SecurityGroup,
   type ProfileTab,
   type ProfileUsage,
   type ProfileUser
@@ -106,62 +110,206 @@ export function toProfileEvents(events: SecurityEvent[]): ProfileSecurityEvent[]
   }))
 }
 
-export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, onExportCsv, now = Date.now() }: AccountPageProps): JSX.Element {
-  const [profile, setProfile] = useState<ProfileUser | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [usage, setUsage] = useState<ProfileUsage | null>(null)
-  const [period, setPeriod] = useState<ProfilePeriod>('month')
-  const [denied, setDenied] = useState<Array<{ provider: string; modelId: string }>>([])
-  const [events, setEvents] = useState<ProfileSecurityEvent[] | null>(null)
-
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      const [me, access] = await Promise.all([api['me:profile'](), api['llm:access']()])
-      setProfile(toProfileUser(me))
-      setDenied(access.map((entry) => ({ provider: entry.provider, modelId: entry.modelId })))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }, [api])
-
-  useEffect(() => { void load() }, [load])
-
-  // Расход грузится под выбранный период, журнал — только когда он нужен: пока
-  // человек смотрит обзор, тянуть двести событий незачем.
+export function AccountPage({ api: sourceApi, tab, onChangeTab, onClose, onOpenSessions, onExportCsv, now = Date.now() }: AccountPageProps): JSX.Element {
+  const reads = useMemo(() => readResources(sourceApi), [sourceApi])
+  const api = reads.api
+  const [clockTick, setClockTick] = useState(0)
   useEffect(() => {
-    const range = periodRange(period, now)
+    const timer = setInterval(() => setClockTick(value => value + 1), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+  useEffect(() => reads.cache.onInvalidated((family) => {
+    if (!family || family === 'profile' || family === 'access' || family === 'usage' || family === 'security' || family === 'machines') {
+      setClockTick(value => value + 1)
+    }
+  }), [reads])
+  // Move report boundaries only on a freshness tick, never on ordinary renders.
+  const referenceNow = useMemo(() => reads.periodNow(now), [reads, clockTick])
+  const [profile, setProfile] = useState<ProfileUser | null>(() => {
+    const cached = reads.peek('me:profile')
+    return cached ? toProfileUser({ ...cached, ...(reads.peek('agents:list') ? { agents: reads.peek('agents:list') } : {}) }) : null
+  })
+  const [error, setError] = useState<string | null>(null)
+  const [profileReload, setProfileReload] = useState(0)
+  const [accessLoading, setAccessLoading] = useState(false)
+  const [accessLoaded, setAccessLoaded] = useState(() => reads.fresh('llm:access'))
+  const [accessError, setAccessError] = useState<string | null>(null)
+  const [accessReload, setAccessReload] = useState(0)
+  const [usageByPeriod, setUsageByPeriod] = useState<Partial<Record<ProfilePeriod, ProfileUsage>>>(() => {
+    const report = reads.peek('usage:report', { unit: 'day', ...periodRange('month', referenceNow) })
+    return report ? { month: toProfileUsage(report) } : {}
+  })
+  const [usageLoading, setUsageLoading] = useState(false)
+  const [usageError, setUsageError] = useState<string | null>(null)
+  const [usageReload, setUsageReload] = useState(0)
+  const [period, setPeriod] = useState<ProfilePeriod>('month')
+  const [denied, setDenied] = useState<Array<{ provider: string; modelId: string }>>(() => reads.peek('llm:access') ?? [])
+  const [events, setEvents] = useState<ProfileSecurityEvent[] | null>(() => {
+    const cached = reads.peek('me:security', { limit: 200, group: 'all' })
+    return cached ? toProfileEvents(cached) : null
+  })
+  const [eventsLoading, setEventsLoading] = useState(false)
+  const [eventsLoaded, setEventsLoaded] = useState(() => reads.fresh('me:security', { limit: 200, group: 'all' }))
+  const [eventsGroup, setEventsGroup] = useState<SecurityGroup | null>('all')
+  const [securityGroup, setSecurityGroup] = useState<SecurityGroup>('all')
+  const [eventsError, setEventsError] = useState<string | null>(null)
+  const [eventsReload, setEventsReload] = useState(0)
+  const [machinesLoading, setMachinesLoading] = useState(false)
+  const [machinesLoaded, setMachinesLoaded] = useState(() => reads.fresh('agents:list'))
+  const [machinesError, setMachinesError] = useState<string | null>(null)
+  const [machinesReload, setMachinesReload] = useState(0)
+  const usage = usageByPeriod[period] ?? null
+
+  useEffect(() => {
     let cancelled = false
-    void api['usage:report']({ unit: 'day', ...range })
-      .then((report) => { if (!cancelled) setUsage(toProfileUsage(report)) })
-      .catch(() => { if (!cancelled) setUsage(null) })
+    setError(null)
+    void api['me:profile']().then(me => {
+      if (cancelled) return
+      const agents = reads.peek('agents:list') ?? me.agents
+      setProfile(toProfileUser({ ...me, ...(agents ? { agents } : {}) }))
+      if (agents !== undefined) setMachinesLoaded(true)
+    }).catch(err => {
+      if (!cancelled && !isObsoleteRead(err)) setError(err instanceof Error ? err.message : String(err))
+    })
     return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, period])
+  }, [api, profileReload, clockTick])
+
+  // Access contributes one overview metric, but it must not delay the profile
+  // identity and navigation that make the page feel ready.
+  useEffect(() => {
+    if (tab !== 'overview' && tab !== 'access') return
+    if (accessLoaded && reads.fresh('llm:access')) return
+    let cancelled = false
+    setAccessLoading(true)
+    setAccessError(null)
+    void api['llm:access']()
+      .then((access) => {
+        if (cancelled) return
+        setDenied(access.map((entry) => ({ provider: entry.provider, modelId: entry.modelId })))
+        setAccessLoading(false)
+        setAccessLoaded(true)
+      })
+      .catch((err) => {
+        if (cancelled || isObsoleteRead(err)) return
+        setAccessError(err instanceof Error ? err.message : String(err))
+        setAccessLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [api, tab, accessLoaded, accessReload, reads, clockTick])
+
+  // Usage aggregation is relevant only to Overview and Usage. Other tabs avoid
+  // scanning message metadata until the user asks for those figures.
+  useEffect(() => {
+    if (tab !== 'overview' && tab !== 'usage') return
+    const range = periodRange(period, referenceNow)
+    if (usageByPeriod[period] && reads.fresh('usage:report', { unit: 'day', ...range })) return
+    let cancelled = false
+    setUsageLoading(true)
+    setUsageError(null)
+    void api['usage:report']({ unit: 'day', ...range })
+      .then((report) => {
+        if (cancelled) return
+        setUsageByPeriod((current) => ({ ...current, [period]: toProfileUsage(report) }))
+        setUsageLoading(false)
+      })
+      .catch((err) => {
+        if (cancelled || isObsoleteRead(err)) return
+        setUsageError(err instanceof Error ? err.message : String(err))
+        setUsageLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [api, period, referenceNow, tab, usageByPeriod, usageReload, reads, clockTick])
 
   useEffect(() => {
     if (tab !== 'history' && tab !== 'overview') return
-    if (events !== null) return
+    const requestedGroup: SecurityGroup = tab === 'overview' ? 'all' : securityGroup
+    if (eventsLoaded && eventsGroup === requestedGroup && reads.fresh('me:security', { limit: 200, group: requestedGroup })) return
     let cancelled = false
-    void api['me:security']({ limit: 200 })
-      .then((list) => { if (!cancelled) setEvents(toProfileEvents(list)) })
-      .catch(() => { if (!cancelled) setEvents([]) })
+    setEventsLoading(true)
+    setEventsError(null)
+    void api['me:security']({ limit: 200, group: requestedGroup })
+      .then((list) => {
+        if (cancelled) return
+        setEvents(toProfileEvents(list))
+        setEventsLoading(false)
+        setEventsLoaded(true)
+        setEventsGroup(requestedGroup)
+      })
+      .catch((err) => {
+        if (cancelled || isObsoleteRead(err)) return
+        setEventsError(err instanceof Error ? err.message : String(err))
+        setEventsLoading(false)
+      })
     return () => { cancelled = true }
-  }, [api, tab, events])
+  }, [api, tab, eventsGroup, eventsLoaded, eventsReload, securityGroup, reads, clockTick])
+
+  // Full versions and telemetry are useful only after the Machines tab opens.
+  useEffect(() => {
+    if (tab !== 'machines' || !profile) return
+    if (machinesLoaded && reads.fresh('agents:list')) return
+    let cancelled = false
+    setMachinesLoading(true)
+    setMachinesError(null)
+    void api['agents:list']()
+      .then((agents) => {
+        if (cancelled) return
+        const withMachines = toProfileUser({
+          name: profile.name,
+          role: profile.role,
+          blocked: profile.blocked,
+          createdAt: profile.createdAt,
+          conversationCount: profile.conversationCount,
+          agents
+        })
+        setProfile((current) => current ? {
+          ...current,
+          machines: withMachines.machines,
+          machinesTotal: agents.length,
+          machinesOnline: agents.filter((agent) => agent.online).length
+        } : current)
+        setMachinesLoading(false)
+        setMachinesLoaded(true)
+      })
+      .catch((err) => {
+        if (cancelled || isObsoleteRead(err)) return
+        setMachinesError(err instanceof Error ? err.message : String(err))
+        setMachinesLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [api, tab, profile, machinesLoaded, machinesReload, reads, clockTick])
 
   const capabilities = useMemo(() => READ_ONLY, [])
+  const requestedSecurityGroup: SecurityGroup = tab === 'overview' ? 'all' : securityGroup
+  const showAccessLoading = (accessLoading && !accessLoaded) || ((tab === 'overview' || tab === 'access') && !accessLoaded && !accessError)
+  const showUsageLoading = (usageLoading && !usage) || ((tab === 'overview' || tab === 'usage') && !usageByPeriod[period] && !usageError)
+  const showEventsLoading = (eventsLoading && (!eventsLoaded || eventsGroup !== requestedSecurityGroup)) || ((tab === 'overview' || tab === 'history') && (!eventsLoaded || eventsGroup !== requestedSecurityGroup) && !eventsError)
+  const showMachinesLoading = (machinesLoading && !machinesLoaded) || (tab === 'machines' && !machinesLoaded && !machinesError)
+  const performanceTabReady = tab === 'access' ? !showAccessLoading && !accessError
+    : tab === 'usage' ? !showUsageLoading && !usageError
+    : tab === 'history' ? !showEventsLoading && !eventsError
+    : tab === 'machines' ? !showMachinesLoading && !machinesError
+    : !showAccessLoading && !accessError && !showUsageLoading && !usageError && !showEventsLoading && !eventsError
+  useEffect(() => {
+    if (!profile || error || !performanceTabReady) return
+    const frame = requestAnimationFrame(() => { const p = uiPerformance(); p.mark('route', 'account_ready'); p.finish('route', 'account') })
+    return () => cancelAnimationFrame(frame)
+  }, [tab, profile, error, performanceTabReady])
 
   return (
-    <section className="admin-page" aria-label="Мой аккаунт" data-testid="account-page">
-      <header className="admin-head">
-        <h2>Мой аккаунт</h2>
+    <section className="admin-page account-page" aria-label="Мой аккаунт" data-testid="account-page">
+      <header className="admin-head account-head">
+        <div className="account-head__copy">
+          <h1>Мой аккаунт</h1>
+          <p>Профиль, доступ, устройства и использование моделей</p>
+        </div>
         <span className="uadmin-actions">
           {onOpenSessions && <Button size="sm" onClick={onOpenSessions}>Сессии и устройства</Button>}
           <Button size="sm" onClick={onClose}>Закрыть</Button>
         </span>
       </header>
-      {error && <ErrorState message="Не удалось загрузить профиль" detail={error} onRetry={() => void load()} />}
+      {error && <ErrorState message="Не удалось загрузить профиль" detail={error} onRetry={() => setProfileReload((value) => value + 1)} />}
       {!profile && !error && <Skeleton variant="list" count={3} height={64} lines={2} testId="account-skeleton" />}
+      {profile && (usageLoading && usage || accessLoading && accessLoaded || eventsLoading && eventsLoaded || machinesLoading && machinesLoaded) && <RefreshIndicator />}
       {profile && (
         <ProfilePanel
           user={profile}
@@ -169,14 +317,41 @@ export function AccountPage({ api, tab, onChangeTab, onClose, onOpenSessions, on
           providers={PROVIDERS}
           denied={denied}
           usage={usage}
+          usageLoading={showUsageLoading}
+          accessLoading={showAccessLoading}
+          machinesLoading={showMachinesLoading}
+          eventsLoading={showEventsLoading}
+          error={tab === 'access' ? accessError : tab === 'machines' ? machinesError : tab === 'usage' ? usageError : tab === 'history' ? eventsError : usageError ?? eventsError ?? accessError}
           period={period}
           events={events}
+          securityGroup={securityGroup}
+          onChangeSecurityGroup={(group) => {
+            setSecurityGroup(group)
+            const cached = reads.peek('me:security', { limit: 200, group })
+            if (cached && reads.fresh('me:security', { limit: 200, group })) {
+              setEvents(toProfileEvents(cached))
+              setEventsGroup(group)
+              setEventsLoaded(true)
+              setEventsError(null)
+            } else setEventsLoaded(false)
+          }}
           latestAgentVersion={AGENT_VERSION}
           activeWindowMs={ACTIVE_WINDOW_MS}
-          now={now}
+          now={referenceNow}
           tab={tab}
           onChangeTab={onChangeTab}
           onSelectPeriod={setPeriod}
+          onRetry={() => {
+            if (tab === 'access') setAccessReload((value) => value + 1)
+            else if (tab === 'machines') setMachinesReload((value) => value + 1)
+            else if (tab === 'history') setEventsReload((value) => value + 1)
+            else if (tab === 'usage') setUsageReload((value) => value + 1)
+            else {
+              if (accessError) setAccessReload((value) => value + 1)
+              if (eventsError) setEventsReload((value) => value + 1)
+              if (usageError) setUsageReload((value) => value + 1)
+            }
+          }}
           onExportCsv={onExportCsv}
         />
       )}

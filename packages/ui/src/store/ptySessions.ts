@@ -84,6 +84,7 @@ export function createPtySessionStore(opts: CreatePtySessionStoreOptions = {}): 
       return same.ptyId
     },
     create: (agentId, cwd) => add(agentId, cwd),
+    setCwd: (ptyId, cwd) => set({ ...state, tabs: state.tabs.map((tab) => tab.ptyId === ptyId ? { ...tab, cwd } : tab) }),
     activate: (ptyId) => {
       if (state.activeId === ptyId || !state.tabs.some((t) => t.ptyId === ptyId)) return
       set({ tabs: state.tabs, activeId: ptyId })

@@ -1,11 +1,12 @@
 ---
 title: Автопроход задачи по QA-конвейеру
-updated: 2026-09-11
-checked: 55104903
+updated: 2026-09-16
+checked: a92960ef
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/kanban/module.ts
   - apps/server/src/db/repos/tasks.ts
+  - apps/server/src/db/repos/qa.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/routes/projects.ts
@@ -14,8 +15,11 @@ areas:
   - apps/server/src/ci/integrationTests.ts
   - apps/server/src/ci/runManager.ts
   - apps/server/src/ci/modelHooks.ts
+  - apps/server/src/ci/autopilotResume.ts
+  - apps/server/src/ci/runAdmission.ts
   - packages/ui/src/components/kanban/TaskCard.tsx
   - packages/ui/src/components/kanban/TaskModal.tsx
+  - packages/ui/src/components/ci/RunFeed.tsx
   - packages/ui/src/components/ProjectSettings.tsx
 ---
 
@@ -65,6 +69,16 @@ when its executor never starts. Retrying failed or blocked QA respects the share
 delay using persisted `finishedAt`, preventing immediate infrastructure retry
 loops. A zero retry limit still permits the first preparation and merge attempts.
 
+The delay alone was not a limit: an infrastructure failure deliberately skips the
+fix-cycle counter, so a QA stage whose environment is broken restarted after every
+backoff forever — in production three tasks each queued five 30-minute Automated QA
+runs on «Лимит времени Automated QA исчерпан» and nobody was told. The tick now
+counts the streak of failed stage runs (`trailingQaStageFailures` in
+`ci/autopilotResume.ts`, newest first over `runs` of the stage; `cancelled` breaks
+the streak) and at `autoPilotFixLimit` records `autopilot.stopped` and moves the
+task to `decision_required` — the safeguard merge already had. Regression:
+`autopilotPipeline.test.ts › останавливает этап после лимита подряд упавших ранов`.
+
 Начало конвейера покрыто тем же координатором. Из `backlog` и `preparation`
 карточка сама уходит в подготовку (`launchTaskPreparation` идемпотентен и
 переносит её в колонку `preparation`), из `ready` — сама встаёт в очередь
@@ -94,20 +108,50 @@ development-рана через `startForDevelopmentTransition`. До этого
 `run.autopilot_infra_resume`, а считает их `db.countCiEvents(runId, type)`. Дефект
 кода так не лечится — для него остаётся обычный fix-loop.
 
-Перезапуск development-рана выдерживает паузу `AUTOPILOT_RETRY_BACKOFF_MS`
-(`retryAllowedNow`): без неё board-события гнали ретраи подряд, и лимит
-доработок сгорал за 14 секунд — вместо трёх осмысленных попыток задача получала
-три мгновенных отказа. Провал «Рабочая копия содержит локальные изменения»
-(`isDirtyWorkspaceFailure`) перезапуском не лечится вовсе: там лежит
-незакоммиченная работа модели, и решение — повтор с шага коммита либо сброс
-копии — принимает человек; автопроход только пишет `autopilot.stopped`.
+Автоматический development-старт из `ready` и `development` проходит через
+один общий предохранитель. Он читает последний актуальный ран и до любого нового
+рана или `retryFromFailed` проверяет dirty workspace, паузу
+`AUTOPILOT_RETRY_BACKOFF_MS` и `db.countTrailingFailedCiRuns(taskId)` против
+`autoPilotFixLimit`. Поэтому возврат карточки в `ready` не стирает историю
+отказов и не обходит cooldown или лимит; при отсутствии предыдущего отказа первый
+старт разрешён даже с нулевым лимитом повторов.
 
-Карточка в `development` с упавшим раном и без активного — тоже тупик: fix-loop
-отрабатывает внутри рана, а следующий ран без человека не появлялся. Координатор
-сначала пробует продолжить брошенный ран, иначе ставит новый; предохранитель —
-`db.countTrailingFailedCiRuns(taskId)`: подряд упавших ранов должно быть меньше
-`autoPilotFixLimit`, иначе карточка уходит в `decision_required` с
-`autopilot.stopped`. Успешный ран обнуляет этот счётчик.
+Провал «Рабочая копия содержит локальные изменения»
+(`isDirtyWorkspaceFailure`) имеет приоритет и над `run.infra_error`: там лежит
+потенциально ценная незакоммиченная работа, поэтому автоматика не создаёт новый
+ран, не продолжает старый и не очищает каталог. Она один раз на связанный `runId`
+пишет персистентный `autopilot.stopped` с причиной и ручным действием; повторные
+и попавшие в `pendingTicks` события после рестарта не размножают запись.
+Пользователь сохраняет изменения либо вручную продолжает подходящий шаг того же
+рана; сброс рабочей копии остаётся действием с явным подтверждением. Для обычного
+code failure сохраняется новый fix-run, а инфраструктурный отказ после общих
+проверок продолжает существующий ран через `retryFromFailed` в пределах отдельного
+лимита `AUTOPILOT_INFRA_RESUMES`. При исчерпании общего лимита карточка по
+доступному workflow переходит в `decision_required` с `autopilot.stopped`.
+Успешный ран обнуляет последовательность отказов.
+
+Общая детерминированная матрица причин и API допуска находятся в
+`apps/server/src/ci/runAdmission.ts`. Политики одинаково моделируют development,
+Component QA, Integration Tests, Automated QA и merge: инфраструктурные причины
+(`offline`, отсутствующий toolchain, недоступный origin, ENOSPC) повторяемы и
+предпочитают продолжение с упавшего шага; dirty workspace и незавершённый merge
+сохраняют работу и требуют решения человека; исчерпанный бюджет, неверная
+привязка и неизвестная причина закрывают допуск. `admitPipelineRun` принимает
+сериализуемый snapshot и проверяет абсолютный workspace, владельца и версию
+привязки, активную попытку, блокирующее решение, сохранённые budget и
+`nextRetryAt`; первый запуск разрешён при нулевом retry-limit.
+`AdmissionReservations` предоставляет процессную дедупликацию одновременных
+резерваций. На текущем срезе production-пути ещё не вызывают `admitPipelineRun`
+и не используют `AdmissionReservations`: матрица закреплена unit-тестами, а из
+рабочего кода к ней подключён только `isDirtyWorkspaceFailure` через
+`classifyPipelineFailure`. Поэтому проверка версии привязки до её атомарной
+активации пока является контрактом API, а не сквозной гарантией всех запусков.
+
+Регрессия в `apps/server/src/autopilotPipeline.test.ts` воспроизводит
+`ready → development → failed/timeout dirty → ready`, конкурентные board-события
+и отсутствие новых ранов/повторных stop-событий. Границы cooldown и
+инфраструктурной классификации закреплены в `ci/autopilotResume.test.ts`, а
+видимое объяснение и безопасные ручные действия — DOM-тестом `RunFeed`.
 
 Ожидание ответа на вопрос модели (`waiting_for_answer`) координатор не трогает:
 там нужен человек. Упавшая попытка подготовки повторяется автоматически в

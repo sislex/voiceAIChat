@@ -102,8 +102,8 @@ export function makeLogSheet(count: number, stepId = 's1'): CiLogLine[] {
       stream: i % 17 === 16 ? 'stderr' : 'stdout',
       chunk:
         i % 17 === 16
-          ? `npm warn deprecated пакет-${i} больше не поддерживается`
-          : `added ${i + 1}/2413 packages · node_modules/@voicechat/пакет-${i}`
+          ? `npm warn deprecated пакет-${i} больше не поддерживается\n`
+          : `added ${i + 1}/2413 packages · node_modules/@voicechat/пакет-${i}\n`
     })
   )
 }

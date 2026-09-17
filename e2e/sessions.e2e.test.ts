@@ -71,6 +71,8 @@ describe.skipIf(!existsSync(WEB_DIST))('Сессии и устройства E2E
 
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    // Returning-user fixture; first entry is covered by TC9.
+    await page.addInitScript(() => localStorage.setItem('vc:shell:admin:tour', 'true'))
     await page.goto(`${BASE}/`)
     await page.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
     // Deep-link из письма о новом входе открывает окно сессий напрямую.
@@ -135,7 +137,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Сессии и устройства E2E
     // невидим — в цикле 3 карточка уже сыпалась по букве в столбик.
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await phone.goto(`${BASE}/`)
-    await phone.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
+    await phone.evaluate((t) => { localStorage.setItem('vc.session.token', t); localStorage.setItem('vc:shell:admin:tour', 'true') }, token)
     await phone.goto(`${BASE}/#/security/sessions`)
     await phone.reload()
     await expect.poll(() => phone.getByTestId('sessions-panel').count(), { timeout: 30_000 }).toBe(1)

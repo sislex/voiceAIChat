@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
-updated: 2026-09-10
-checked: 8c54ade4
+updated: 2026-09-13
+checked: 09e82a75
 areas:
   - packages/shared/src/preview.ts
   - packages/shared/src/projects.ts
@@ -22,6 +22,10 @@ areas:
 ---
 
 # Feature-preview окружения задач
+
+## Development-run preview
+
+The opt-in development preview in `ci/developmentPreview*.ts` is separate from `FeaturePreviewManager`. It snapshots current tracked and non-ignored worktree files, records HEAD and a source/configuration digest, and creates disposable resources keyed by project/task/run. It never uses the committed preview checkout, existing preview volumes or production Compose configuration. Restart recreates its source snapshot, test volume and scoped grant. See [CI runner](ci-runner.md#development-preview-chat-447) and [deployment](../deploy.md#development-preview-operation) for configuration and limitations.
 
 ## Назначение и запуск
 
@@ -69,7 +73,7 @@ Feature-preview — отдельное управляемое окружение
 
 Секция показывает этап и пояснение, прошедшее время, доступный progressbar, подробный список этапов и безопасный журнал, а также branch/workspace/SHA, машину, health, seed и ошибку. Определённая полоса получает aria-valuenow; до серверного снимка она неопределённая и без процента. `aria-live` объявляет компактный статус, журнал не озвучивается. На reduced motion loader и неопределённая полоса статичны; на мобильной ширине сетка и действия складываются без горизонтального скролла. Для `running + healthy` доступны «Открыть проект» и отдельно Storybook. Внешний URL открывается напрямую, loopback — через companion-туннель; внутренние URL/порты остаются в техническом блоке. Reset/remove/установка Docker требуют подтверждения. После подтверждённого health manager сохраняет `tasks.preview_ready`; stop/remove/failure/reconcile снимают признак.
 
-Селект машины в `packages/ui/src/components/preview/FeaturePreviewSection.tsx` строится только из `project.machines`: значением option и параметром операций остаётся исходный `agentId`, а подписью служит непустое после `trim()` имя машины с fallback на `agentId`. Пока окружения нет, начальный выбор берётся из `project.defaultAgentId` только если такой `agentId` присутствует среди машин проекта; первая машина автоматически не выбирается. После первого ручного изменения повторные рендеры и обновления проекта выбор не переинициализируют. Для существующего окружения источником фактической машины остаётся `PreviewEnvironment.agentId`: UI синхронизирует селект с ним и показывает его даже после удаления этой машины из актуального списка, используя известное имя либо сам ID. Новый `start` без окружения доступен и отправляется только для выбранного `agentId`, который сейчас есть в `project.machines`.
+Селект машины в `packages/ui/src/components/preview/FeaturePreviewSection.tsx` строится только из `project.machines`: значением option и параметром операций остаётся исходный `agentId`, а подписью служит непустое после `trim()` имя машины с fallback на `agentId`. Пока окружения нет, начальный выбор берётся из `project.defaultAgentId` только если такой `agentId` присутствует среди машин проекта; первая машина автоматически не выбирается. После первого ручного изменения повторные рендеры и обновления проекта выбор не переинициализируют. Для существующего окружения источником фактической машины остаётся `PreviewEnvironment.agentId`: UI синхронизирует селект с ним и показывает его даже после удаления этой машины из актуального списка, используя известное имя либо сам ID. Новый `start` без окружения доступен и отправляется только для выбранного `agentId`, который сейчас есть в `project.machines`. Поэтому при первом рендере кнопка запуска уже присутствует в DOM, но остаётся disabled, пока асинхронный `projects:get` не вернёт машины и эффект не выберет допустимый `defaultAgentId`; попытка клика в этот промежуток не вызывает `featurePreview.operate`. DOM-тесты запуска должны ждать `toBeEnabled()`: `findByRole` подтверждает лишь появление кнопки, а не завершение выбора машины.
 
 ## Docker, Storybook и изоляция
 

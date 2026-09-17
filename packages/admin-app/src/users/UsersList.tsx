@@ -1,7 +1,7 @@
 // Левая колонка: поиск, фильтры, сортировка и строки людей.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Avatar, Badge, Button, EmptyState, ErrorState, RefreshIndicator, SearchField, Skeleton, Toolbar } from '@voicechat/ui-kit'
+import { useConfirm, Avatar, Badge, Button, EmptyState, ErrorState, RefreshIndicator, SearchField, Skeleton, Toolbar } from '@voicechat/ui-kit'
 import type { AdminUserInfo, UserUsageSummary } from '@shared/admin'
 import { formatAgo } from '@voicechat/profile-app'
 import { filterUsers, isActive, LIST_PAGE, pageUsers, pluralUsers, userSpend, type UsersFilter } from './usersModel'
@@ -10,6 +10,9 @@ import type { LoadStatus } from '../loadState'
 import { loadView } from '../loadState'
 
 export interface UsersListProps {
+  onLoadUsersPage?: (input: { limit?: number; offset?: number; q?: string; role?: string; state?: string; sort?: string; asc?: string }) => Promise<AdminUserInfo[]>
+  onBulkUsers?: (names: string[], action: 'block' | 'unblock' | 'revoke') => Promise<void>
+  currentUserName?: string
   users: AdminUserInfo[]
   usageSummary: readonly UserUsageSummary[]
   selected: string | null
@@ -25,10 +28,58 @@ export interface UsersListProps {
 
 const ROLES = ['admin', 'developer', 'tester', 'observer']
 
-export function UsersList({ users, usageSummary, selected, filter, onFilter, onSelect, status = 'ready', error = null, onRetry, now }: UsersListProps): JSX.Element {
-  const view = loadView(status, users.length > 0)
+export function UsersList({ onLoadUsersPage, onBulkUsers, currentUserName, users, usageSummary, selected, filter, onFilter, onSelect, status = 'ready', error = null, onRetry, now }: UsersListProps): JSX.Element {
+  const confirm = useConfirm()
+  const [checked, setChecked] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [pageRows, setPageRows] = useState<AdminUserInfo[]>([])
+  const [pageBusy, setPageBusy] = useState(false)
+  const [pageError, setPageError] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const generation = useRef(0)
+  const pageQuery = JSON.stringify({ q: filter.query, role: filter.role, state: filter.state, sort: filter.sort, asc: filter.descending ? '0' : '1' })
+  const loadPage = async (offset: number, version: number): Promise<void> => {
+    if (!onLoadUsersPage) return
+    setPageBusy(true)
+    setPageError(null)
+    try {
+      const rows = await onLoadUsersPage({ q: filter.query, role: filter.role, state: filter.state, sort: filter.sort, asc: filter.descending ? '0' : '1', limit: 40, offset })
+      if (generation.current !== version) return
+      setPageRows((previous) => offset === 0 ? rows : [...previous, ...rows.filter((row) => !previous.some((item) => item.name === row.name))])
+      setHasMore(rows.length === 40)
+    } catch (error) {
+      if (generation.current === version) setPageError(error instanceof Error ? error.message : String(error))
+    } finally { if (generation.current === version) setPageBusy(false) }
+  }
+  useEffect(() => {
+    const version = ++generation.current
+    setChecked([])
+    setPageRows([])
+    setHasMore(false)
+    void loadPage(0, version)
+    return () => { generation.current++ }
+    // A serialized query prevents reloads caused by freshly allocated filter objects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageQuery, onLoadUsersPage])
+  useEffect(() => {
+    setPageRows((previous) => previous.map((row) => users.find((user) => user.name === row.name) ?? row))
+  }, [users])
+  const bulk = async (action: 'block' | 'unblock' | 'revoke', selection = checked): Promise<void> => {
+    const names = [...selection]
+    const title = action === 'block' ? 'Заблокировать пользователей' : action === 'unblock' ? 'Разблокировать пользователей' : 'Отозвать все сессии'
+    if (!onBulkUsers || !names.length || !(await confirm({ title, message: names.join(', '), variant: 'danger', ...(names.length > 5 ? { requireText: String(names.length) } : {}) }))) return
+    setBusy(true)
+    setActionError(null)
+    try { await onBulkUsers(names, action); setChecked([]); await loadPage(0, generation.current) }
+    catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
+    finally { setBusy(false) }
+  }
+  const source = onLoadUsersPage ? pageRows : users
+  const view = loadView(onLoadUsersPage ? pageBusy ? 'loading' : pageError ? 'error' : 'ready' : status, source.length > 0)
   // Ввод отделён от фильтра: перебор сотен строк на каждую букву заметен уже на
   // сотне учёток, а курсор в поле не должен ждать перерисовку списка.
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [query, setQuery] = useState(filter.query)
   const [shown, setShown] = useState(LIST_PAGE)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -55,11 +106,11 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
     row?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
   }, [selected])
 
-  const found = useMemo(() => filterUsers(users, filter, now, usageSummary), [users, filter, now, usageSummary])
-  const { visible, rest } = pageUsers(found, shown)
+  const found = useMemo(() => filterUsers(onLoadUsersPage ? pageRows : users, filter, now, usageSummary), [onLoadUsersPage, pageRows, users, filter, now, usageSummary])
+  const { visible, rest } = onLoadUsersPage ? { visible: found, rest: hasMore ? 40 : 0 } : pageUsers(found, shown)
   // «из N» показывается при любом сужении, включая поиск: иначе непонятно,
   // это весь список или его часть.
-  const narrowed = found.length !== users.length
+  const narrowed = !onLoadUsersPage && found.length !== users.length
 
   return (
     <nav className="ua-list" aria-label="Список пользователей">
@@ -70,8 +121,9 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
           label="Имя пользователя"
           testId="users-search"
         />
+        <Button size="sm" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)}>Фильтры</Button>
       </div>
-      <div className="ua-list__filters">
+      <div className={filtersOpen ? 'ua-list__filters' : 'ua-list__filters ua-list__filters--closed'}>
         <select aria-label="Роль" value={filter.role} onChange={(event) => onFilter({ ...filter, role: event.target.value })}>
           <option value="all">Все роли</option>
           {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
@@ -80,13 +132,14 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
           <option value="all">Любой статус</option>
           <option value="online">Активные</option>
           <option value="blocked">Заблокированные</option>
+          <option value="inactive">Без входа 30 дней</option>
         </select>
       </div>
       <Toolbar
         bare
         live
         className="ua-list__meta"
-        summary={<span data-testid="users-count">{pluralUsers(found.length)}{narrowed ? ` из ${users.length}` : ''}</span>}
+        summary={<span data-testid="users-count">{onLoadUsersPage ? 'Загружено: ' : ''}{pluralUsers(found.length)}{narrowed ? ` из ${users.length}` : ''}</span>}
       >
         {/* Порядок виден и меняется мышью: раньше сортировка по расходу
             существовала только в адресе, и о ней невозможно было узнать. */}
@@ -96,6 +149,7 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
           onChange={(event) => onFilter({ ...filter, sort: event.target.value as UsersFilter['sort'] })}
         >
           <option value="activity">По активности</option>
+          <option value="login">По последнему входу</option>
           <option value="name">По имени</option>
           <option value="spend">По расходу</option>
         </select>
@@ -120,9 +174,18 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
         <EmptyState compact icon="⌕" title="Никто не найден" description="Смягчите фильтры или очистите поиск." />
       )}
 
+      {pageError && <ErrorState message="Не удалось загрузить страницу" detail={pageError} onRetry={() => void loadPage(pageRows.length, generation.current)} />}
+      {actionError && <ErrorState message="Не все действия выполнены" detail={actionError} />}
+      {onBulkUsers && checked.length > 0 && <div className="ua-bulk" aria-label="Массовые действия">
+        <span>Выбрано: {checked.length}</span>
+        <Button size="sm" disabled={busy} onClick={() => void bulk('block')}>Заблокировать</Button>
+        <Button size="sm" disabled={busy} onClick={() => void bulk('unblock')}>Разблокировать</Button>
+        <Button size="sm" disabled={busy} onClick={() => void bulk('revoke')}>Отозвать все сессии</Button>
+      </div>}
       <ul className="ua-list__items" role="list" ref={listRef}>
         {visible.map((user) => (
           <li key={user.name}>
+            {onBulkUsers && user.name !== 'admin' && user.name !== currentUserName && <input type="checkbox" aria-label={`Выбрать ${user.name}`} checked={checked.includes(user.name)} disabled={busy} onChange={(event) => setChecked((current) => event.target.checked ? [...current, user.name] : current.filter((name) => name !== user.name))} />}
             <button
               type="button"
               className={user.name === selected ? 'ua-row ua-row--on' : 'ua-row'}
@@ -166,13 +229,19 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
                 )}
               </span>
             </button>
+            {onBulkUsers && user.name !== 'admin' && user.name !== currentUserName && <details className="ua-row-menu">
+              <summary aria-label={`Действия для ${user.name}`}>Действия</summary>
+              <Button size="sm" onClick={() => onSelect(user.name)}>Открыть карточку</Button>
+              <Button size="sm" disabled={busy} onClick={() => void bulk(user.blocked ? 'unblock' : 'block', [user.name])}>{user.blocked ? 'Разблокировать' : 'Заблокировать'}</Button>
+              <Button size="sm" disabled={busy} onClick={() => void bulk('revoke', [user.name])}>Отозвать сессии</Button>
+            </details>}
           </li>
         ))}
       </ul>
       {rest > 0 && (
         <p className="ua-list__more">
-          <Button size="sm" variant="ghost" onClick={() => setShown((value) => value + LIST_PAGE)}>
-            Показать ещё {Math.min(rest, LIST_PAGE)} из {rest}
+          <Button size="sm" variant="ghost" disabled={pageBusy} onClick={() => onLoadUsersPage ? void loadPage(pageRows.length, generation.current) : setShown((value) => value + LIST_PAGE)}>
+            {onLoadUsersPage ? 'Показать ещё' : `Показать ещё ${Math.min(rest, LIST_PAGE)} из ${rest}`}
           </Button>
         </p>
       )}
