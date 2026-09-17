@@ -13,6 +13,7 @@ import type { BrowserCommand, BrowserHistoryEntry } from '@voicechat/shared'
  */
 
 const LIMIT = 200
+const IMAGE_LIMIT = 20
 
 export class SessionHistory {
   private entries: BrowserHistoryEntry[] = []
@@ -20,13 +21,24 @@ export class SessionHistory {
   record(entry: BrowserHistoryEntry): void {
     this.entries.push(entry)
     if (this.entries.length > LIMIT) this.entries.splice(0, this.entries.length - LIMIT)
+    // Evidence is intentionally short-lived: two data URLs for every one of 200
+    // actions would retain many megabytes in the runner and REST metadata.
+    const withImages = this.entries.filter((item) => item.beforeImage || item.afterImage)
+    for (const old of withImages.slice(0, -IMAGE_LIMIT)) {
+      delete old.beforeImage
+      delete old.afterImage
+    }
   }
 
   /** Tail of the log: fresh lines matter, the beginning of a long session does not. */
-  list(options: { actor?: 'user' | 'assistant'; limit?: number } = {}): { total: number; entries: BrowserHistoryEntry[] } {
+  list(options: { actor?: 'user' | 'assistant'; limit?: number; includeImages?: boolean } = {}): { total: number; entries: BrowserHistoryEntry[] } {
     const filtered = options.actor ? this.entries.filter((entry) => entry.actor === options.actor) : this.entries
     const limit = Math.min(Math.max(options.limit ?? 30, 1), LIMIT)
-    return { total: filtered.length, entries: filtered.slice(-limit) }
+    const entries = filtered.slice(-limit)
+    return {
+      total: filtered.length,
+      entries: options.includeImages ? entries : entries.map(({ beforeImage: _before, afterImage: _after, ...entry }) => entry)
+    }
   }
 
   clear(): void {

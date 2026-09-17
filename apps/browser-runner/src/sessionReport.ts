@@ -79,7 +79,13 @@ export function buildSessionReport(input: ReportInput): ReportOutput {
     lines.push('')
     lines.push('### Шаги')
     // Хвост, а не начало: свежие шаги объясняют итог, а первые — только вход.
-    for (const entry of acting.slice(-30)) lines.push(`- ${entry.actor === 'assistant' ? 'модель' : 'человек'}: ${entry.title}${entry.ok ? '' : ' — не выполнено'}`)
+    for (const entry of acting.slice(-30)) {
+      const selector = entry.selector ? ` · selector: \`${entry.selector}\`` : ''
+      const result = entry.result ? ` · ${entry.result}` : entry.ok ? '' : ' · не выполнено'
+      const duration = typeof entry.durationMs === 'number' ? ` · ${entry.durationMs} мс` : ''
+      lines.push(`- ${entry.actor === 'assistant' ? 'модель' : 'человек'}: ${entry.title}${selector}${result}${duration}`)
+      for (const error of entry.pageErrors ?? []) lines.push(`  - Ошибка страницы: ${error}`)
+    }
   }
 
   const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 500), 32_000)

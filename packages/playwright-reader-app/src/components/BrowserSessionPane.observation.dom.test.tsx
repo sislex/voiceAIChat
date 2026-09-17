@@ -39,6 +39,23 @@ it('получает адрес, заголовок, вкладки и авто�
   expect(screen.getByText('последнее действие — модели')).toBeVisible()
 })
 
+it('поток кадров основной, отбрасывает старый sequence и закрывается при размонтировании', async () => {
+  let deliver!: (frame: { seq: number; dataUrl?: string; page?: { url: string; title: string }; status?: BrowserSessionMetadata }) => void
+  const close = vi.fn()
+  const subscribeFrames = vi.fn((_id: string, _req: { incarnation: string }, onFrame: typeof deliver) => { deliver = onFrame; return close })
+  const browser = bridge({ subscribeFrames })
+  const view = await mount(browser)
+  await act(async () => { deliver({ seq: 2, dataUrl: frame('live').dataUrl, page: { url: 'https://project.test/live', title: 'Live' } }) })
+  await act(async () => { deliver({ seq: 1, dataUrl: frame('stale').dataUrl }) })
+  expect(screen.getByAltText('Кадр Chromium')).toHaveAttribute('src', frame('live').dataUrl)
+  expect(screen.getByLabelText('Адрес страницы')).toHaveValue('https://project.test/live')
+  await tick(2400)
+  expect(browser.screenshot).toHaveBeenCalledTimes(1)
+  expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'status' } }))
+  view.unmount()
+  expect(close).toHaveBeenCalledTimes(1)
+})
+
 it('пустая стартовая вкладка не вызывает ложную смену сайта и не попадает в историю', async () => {
   const browser = bridge({ start: vi.fn(async () => state({ currentUrl: 'about:blank' })) })
   await mount(browser)

@@ -1976,7 +1976,7 @@ CREATE TABLE IF NOT EXISTS project_releases (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, version TEXT NOT NULL, branch TEXT NOT NULL,
   commit_sha TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', triggered_by TEXT NOT NULL,
   attempt INTEGER NOT NULL DEFAULT 1, previous_release_id TEXT, created_at INTEGER NOT NULL,
-  released_at INTEGER, agent_id TEXT, checkout_path TEXT, deleted_at INTEGER,
+  released_at INTEGER, agent_id TEXT, checkout_path TEXT, deleted_at INTEGER, archived_at INTEGER,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (previous_release_id) REFERENCES project_releases(id)
 );
@@ -1997,6 +1997,13 @@ CREATE TABLE IF NOT EXISTS project_release_events (
   FOREIGN KEY (release_id) REFERENCES project_releases(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_project_release_events ON project_release_events(release_id, created_at);
+CREATE TABLE IF NOT EXISTS release_notifications (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, project_id TEXT NOT NULL, release_id TEXT NOT NULL,
+  title TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL, dismissed_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (release_id) REFERENCES project_releases(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_release_notifications_user ON release_notifications(user_id, dismissed_at, created_at DESC);
 
 -- Компонентные выпуски не меняют семантику старой истории release/x.y.z.
 CREATE TABLE IF NOT EXISTS application_releases (
