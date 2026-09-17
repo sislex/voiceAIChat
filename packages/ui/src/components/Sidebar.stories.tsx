@@ -117,6 +117,27 @@ export const ShortViewportAccountMenu: Story = {
     await userEvent.click(within(canvasElement).getByRole('button', { name: /Администратор/ }))
   }
 }
+export const ToolsMenuAuthenticated: Story = {
+  args: {
+    currentUser: { name: 'Администратор', role: 'admin' },
+    onOpenMake: () => {}, onOpenWebReader: () => {}, onOpenPlaywrightReader: () => {},
+    onOpenFiles: () => {}, onOpenConsole: () => {}, onOpenConsoleReader: () => {},
+    onOpenKnowledgeBase: () => {}, onOpenImageStudio: () => {}
+  },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Инструменты' }))
+  }
+}
+export const ToolsMenuLocal: Story = {
+  args: { onOpenWebReader: () => {}, onOpenPlaywrightReader: () => {}, onOpenFiles: () => {}, onOpenConsole: () => {} },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Инструменты' }))
+  }
+}
+export const ShortViewportToolsMenu: Story = {
+  ...ToolsMenuAuthenticated,
+  decorators: [(Story) => <div style={{ width: 340, height: 500 }}><Story /></div>]
+}
 export const Mobile: Story = {
   ...ScrollAndLongTitles,
   args: { ...ScrollAndLongTitles.args, open: true },

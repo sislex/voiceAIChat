@@ -464,7 +464,6 @@ describe('voiceStore — проекты и доска', () => {
     }
   })
 
-  // @testCase TC-INT-01
   it('moveTask оптимистично меняет колонку и зовёт tasks:move', async () => {
     const { store, api } = makeStore()
     const spy = vi.spyOn(api, 'tasks:move')

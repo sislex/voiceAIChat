@@ -1,15 +1,35 @@
 // @vitest-environment node
 import { mkdir } from 'node:fs/promises'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { afterAll, beforeAll, expect, it } from 'vitest'
-import { chromium, type Browser } from 'playwright'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
+import { chromium, type Browser, type Page } from 'playwright'
 import { resolve } from 'node:path'
 
 let server:ChildProcess, browser:Browser
+let projectSettingsWarm=false
 const root=resolve(__dirname,'../../../../..')
 const port=19000+Math.floor(Math.random()*1000)
 const base=`http://127.0.0.1:${port}`
 const teardownTimeoutMs=120000
+
+type QaPanelsCleanup=()=>void|Promise<void>
+async function finishQaPanelsTeardown(...cleanups:QaPanelsCleanup[]){
+  const results=await Promise.allSettled(cleanups.map(cleanup=>Promise.resolve().then(cleanup)))
+  const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[])
+  if(errors.length===1)throw errors[0]
+  if(errors.length>1)throw new AggregateError(errors,'QA panels teardown failed')
+}
+
+async function openProjectSettingsStory(page:Page,tab:string,id:string,timeout:number):Promise<void>{
+  const response=await page.goto(base+'/iframe.html?id='+id+'&viewMode=story',{waitUntil:'domcontentloaded',timeout})
+  if(!response?.ok())throw new Error(`ProjectSettings ${tab} (${id}) failed to load: HTTP ${response?.status()??'no response'}`)
+  try{
+    await page.getByTestId('project-settings').waitFor({state:'visible',timeout})
+  }catch(error){
+    throw new Error(`ProjectSettings ${tab} (${id}) did not become render-ready after HTTP ${response.status()}`,{cause:error})
+  }
+}
+
 beforeAll(async()=>{
   await mkdir(resolve(root,'.generated_images'),{recursive:true})
   server=spawn('npm',['run','-w','@voicechat/ui','storybook','--','--ci','--no-open','--port',String(port)],{cwd:root,stdio:'ignore',detached:true})
@@ -24,16 +44,45 @@ beforeAll(async()=>{
   // скомпилирован Vite; именно холодная компиляция делала первый tab случайным.
   const warmup=await browser.newPage({viewport:{width:390,height:844}})
   try{
-    const response=await warmup.goto(base+'/iframe.html?id=projects-projectsettings--general-mobile&viewMode=story',{waitUntil:'domcontentloaded',timeout:30000})
-    if(!response?.ok())throw new Error(`ProjectSettings warmup failed: HTTP ${response?.status()??'no response'}`)
-    await warmup.getByTestId('project-settings').waitFor({state:'visible',timeout:30000})
+    await openProjectSettingsStory(warmup,'general warmup','projects-projectsettings--general-mobile',60000)
+    projectSettingsWarm=true
   }finally{await warmup.close()}
 },120000)
-// @testCase TC-01
 afterAll(async()=>{
-  await browser?.close()
-  if(server?.pid)try{process.kill(-server.pid,'SIGTERM')}catch{}
+  await finishQaPanelsTeardown(
+    () => browser?.close(),
+    () => { if(server?.pid)process.kill(-server.pid,'SIGTERM') },
+  )
 },teardownTimeoutMs)
+
+// @testCase TC-01
+it('waits for every QA panels teardown operation',async()=>{
+  let releaseBrowser!:()=>void, releaseStorybook!:()=>void
+  let finished=false
+  const teardown=finishQaPanelsTeardown(
+    ()=>new Promise<void>(resolve=>{releaseBrowser=resolve}),
+    ()=>new Promise<void>(resolve=>{releaseStorybook=resolve}),
+  ).then(()=>{finished=true})
+  await vi.waitFor(()=>expect(releaseBrowser).toBeTypeOf('function'))
+  await vi.waitFor(()=>expect(releaseStorybook).toBeTypeOf('function'))
+  releaseBrowser()
+  await Promise.resolve()
+  expect(finished).toBe(false)
+  releaseStorybook()
+  await teardown
+  expect(finished).toBe(true)
+},30000)
+
+// @testCase TC-03
+it('finishes remaining teardown work and reports a real cleanup error',async()=>{
+  const error=new Error('browser close failed')
+  let storybookStopped=false
+  await expect(finishQaPanelsTeardown(
+    async()=>{throw error},
+    async()=>{storybookStopped=true},
+  )).rejects.toBe(error)
+  expect(storybookStopped).toBe(true)
+},30000)
 
 // @testCase TC-INTEGRATION-06
 // @testCase TC-02
@@ -69,6 +118,11 @@ it.each([
  }finally{await page.close()}
 },30000)
 
+// @testCase TC-INTEGRATION-05
+it('warms the cold ProjectSettings story before parameterized checks',()=>{
+ expect(projectSettingsWarm).toBe(true)
+})
+
 const projectSettingsStories = [
  ['general','projects-projectsettings--general-mobile'],
  ['llm','projects-projectsettings--llm-mobile'],
@@ -82,10 +136,7 @@ const projectSettingsStories = [
 it.each(projectSettingsStories)('keeps ProjectSettings %s usable at 390x844',async(tab,id)=>{
  const page=await browser.newPage({viewport:{width:390,height:844}})
  try{
-  const response=await page.goto(base+'/iframe.html?id='+id+'&viewMode=story',{waitUntil:'domcontentloaded',timeout:15000})
-  if(!response?.ok())throw new Error(`ProjectSettings ${tab} failed to load: HTTP ${response?.status()??'no response'}`)
-  const settings=page.getByTestId('project-settings')
-  await settings.waitFor({state:'visible',timeout:15000})
+  await openProjectSettingsStory(page,tab,id,15000)
   await page.getByRole('tab',{selected:true}).waitFor({state:'visible',timeout:5000})
   await page.evaluate(()=>document.fonts.ready)
   const geometry=await page.evaluate(()=>{
