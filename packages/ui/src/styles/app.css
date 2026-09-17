@@ -9021,7 +9021,22 @@ body:has([role="menu"]) .jboard-mobile-create { visibility: hidden; pointer-even
 
 /* Новая карточка: рейка этапов, бейджи статусов, снимки workflow и очередь
    доработок по Make-проекту «Проект 19». Токены общие с остальной карточкой. */
-.new-task-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.new-task-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; text-align: left; font: inherit; padding: 0; min-width: 0; }
+.new-task-title--expanded { white-space: normal; overflow-wrap: anywhere; max-height: 25vh; overflow-y: auto; }
+.new-task-side-summary { display: none; cursor: pointer; }
+.new-task-statement { display: grid; gap: 10px; }
+.new-task-statement label { display: grid; gap: 6px; min-width: 0; }
+.new-task-statement textarea { width: 100%; min-width: 0; line-height: 1.5; }
+.new-task-workflow-dates { display: grid; gap: 3px; font-size: 11px; overflow-wrap: anywhere; }
+.new-task-workflow-step { flex-wrap: wrap; }
+.new-task-mini-timeline { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.new-task-mini-timeline .vc-btn { min-width: 0; white-space: normal; overflow-wrap: anywhere; border-bottom: 4px solid var(--accent); }
+.new-task-stage-error { color: var(--danger); overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .new-task-side-summary { display: list-item; padding: 10px; }
+  .new-task-side:not([open]) > :not(summary) { display: none; }
+  .new-task-stage-content, .new-task-column { min-width: 0; overflow-wrap: anywhere; }
+}
 .new-task-eyebrow { display: block; margin-bottom: 4px; color: var(--text-dim); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .new-task-process { display: grid; gap: 14px; min-width: 0; }
 .new-task-process label, .new-task-settings label { display: grid; gap: 6px; min-width: 0; font-size: 12px; }
