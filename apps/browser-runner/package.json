@@ -21,6 +21,7 @@
     "@voicechat/shared": "*",
     "fastify": "^5.1.0",
     "playwright": "1.62.1",
+    "sharp": "^0.34.5",
     "@voicechat/browser-contracts": "*"
   },
   "devDependencies": {

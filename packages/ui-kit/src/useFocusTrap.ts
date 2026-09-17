@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, type RefObject } from 'react'
 
 /** Hidden panels and disabled fieldsets cannot be focus-loop boundaries. */
 export function focusableNodes(panel: HTMLElement): HTMLElement[] {
@@ -17,7 +17,7 @@ export function focusableNodes(panel: HTMLElement): HTMLElement[] {
 
 /** Modal focus ownership is independent of its visual frame and stack registration. */
 export function useFocusTrap(panelRef: RefObject<HTMLElement>, top: boolean, initialFocusRef?: RefObject<HTMLElement>, headRef?: RefObject<HTMLElement>): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const opener = document.activeElement as HTMLElement | null
     const panel = panelRef.current
     const nodes = panel ? focusableNodes(panel) : []

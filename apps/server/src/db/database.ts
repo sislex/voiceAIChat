@@ -735,6 +735,7 @@ export class VoiceChatDb {
     if (releaseCols.length && !releaseCols.some(c=>c.name==='agent_id')) await this.sql.exec(`ALTER TABLE project_releases ADD COLUMN agent_id TEXT`)
     if (releaseCols.length && !releaseCols.some(c=>c.name==='checkout_path')) await this.sql.exec(`ALTER TABLE project_releases ADD COLUMN checkout_path TEXT`)
     if (releaseCols.length && !releaseCols.some(c=>c.name==='deleted_at')) await this.sql.exec(`ALTER TABLE project_releases ADD COLUMN deleted_at INTEGER`)
+    if (releaseCols.length && !releaseCols.some(c=>c.name==='archived_at')) await this.sql.exec(`ALTER TABLE project_releases ADD COLUMN archived_at INTEGER`)
     const releaseStepCols = (await this.sql.all(`PRAGMA table_info(project_release_steps)`)) as Array<{ name: string }>
     if (releaseStepCols.length && !releaseStepCols.some(c=>c.name==='limit_ms')) await this.sql.exec(`ALTER TABLE project_release_steps ADD COLUMN limit_ms INTEGER`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_epic')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN default_skills_epic TEXT NOT NULL DEFAULT '[]'`)

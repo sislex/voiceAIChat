@@ -2,7 +2,7 @@ import { ApplicationReleaseCenter } from './ApplicationReleaseCenter'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePolling } from '@voicechat/ui-kit'
 import { formatDateTime, formatRelativeTime, isoDate } from '../../lib/dateFormat'
-import { compareReleaseBranches, DEFAULT_RELEASE_TIMEOUTS, normalizeReleaseVersionInput, releaseFailureSummary, releaseVersion, suggestNextReleaseVersion, type ProductionReadiness, type ProjectRelease, type ProjectReleaseSummary, type ReleaseBranch, type ReleaseMachine, type ReleaseStep, type ReleaseTimeouts } from '@voicechat/shared'
+import { compareReleaseBranches, DEFAULT_RELEASE_TIMEOUTS, normalizeReleaseVersionInput, releaseChangeGroup, releaseFailureSummary, releaseVersion, suggestNextReleaseVersion, type ProductionReadiness, type ProjectRelease, type ProjectReleaseSummary, type ReleaseBranch, type ReleaseChange, type ReleaseChangesResult, type ReleaseMachine, type ReleaseStep, type ReleaseTimeouts } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
 import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import { useConfirm, useToast, EmptyState, ErrorState, ProgressTrack, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
@@ -67,6 +67,16 @@ const download=(release:ProjectRelease):void=>{
   const suffix=release.previousReleaseId?`deploy-${isoDate(release.createdAt).slice(0,10)}`:'preparation'
   anchor.href=url;anchor.download=`release-${release.version}-${suffix}.txt`;anchor.click();URL.revokeObjectURL(url)
 }
+const downloadJson=(release:ProjectRelease):void=>{
+  const blob=new Blob([JSON.stringify({...release,exportedAt:Date.now(),durationMs:duration(release)},null,2)],{type:'application/json;charset=utf-8'})
+  const url=URL.createObjectURL(blob),anchor=document.createElement('a')
+  anchor.href=url;anchor.download=`release-${release.version}.json`;anchor.click();URL.revokeObjectURL(url)
+}
+const changeSummary=(changes:readonly ReleaseChange[]):string=>{
+  const counts=new Map<string,number>();for(const change of changes){const group=releaseChangeGroup(change.subject);counts.set(group,(counts.get(group)??0)+1)}
+  const groups=[...counts].sort((a,b)=>b[1]-a[1]).map(([group,count])=>`${count} ${group}`).join(', ')
+  return `${changes.length} коммитов${groups?`, из них ${groups}`:''}`
+}
 /** One-second tick while something runs: elapsed times and the total duration stay live. */
 function useLiveNow(active:boolean):number{
   const [now,setNow]=useState(()=>Date.now())
@@ -105,8 +115,11 @@ interface ReleaseDetailActions{
   onOpenSource?:()=>void
   busy?:boolean
 }
-function ReleaseDetail({release,onBack,github,productionSha,actions}:{release:ProjectRelease;onBack:()=>void;github:string|null;productionSha:string|null;actions?:ReleaseDetailActions}):JSX.Element{
+function ReleaseDetail({release,onBack,github,productionSha,api,projectId,actions}:{release:ProjectRelease;onBack:()=>void;github:string|null;productionSha:string|null;api:RendererApi;projectId:string;actions?:ReleaseDetailActions}):JSX.Element{
   const toast=useToast()
+  const [changes,setChanges]=useState<ReleaseChangesResult|null>(null)
+  const [changesError,setChangesError]=useState('')
+  useEffect(()=>{let live=true;setChanges(null);setChangesError('');void api['releases:changes']({projectId,releaseId:release.id}).then(value=>{if(live)setChanges(value)}).catch(reason=>{if(live)setChangesError(reason instanceof Error?reason.message:String(reason))});return()=>{live=false}},[api,projectId,release.id])
   const copySha=async():Promise<void>=>{try{await navigator.clipboard.writeText(release.sha);toast.success('SHA скопирован')}catch{toast.error('Не удалось скопировать SHA')}}
   const copyLink=async():Promise<void>=>{try{await navigator.clipboard.writeText(window.location.href);toast.success('Ссылка на релиз скопирована')}catch{toast.error('Не удалось скопировать ссылку')}}
   // Esc returns to the list like in every other drill-down of the app.
@@ -125,6 +138,7 @@ function ReleaseDetail({release,onBack,github,productionSha,actions}:{release:Pr
         {release.status==='failed'&&deploy&&actions?.onRedeploy&&<button className="vc-btn vc-btn--primary" disabled={actions.busy} onClick={actions.onRedeploy}>Повторить деплой</button>}
         {release.status==='failed'&&!deploy&&actions?.onRebuild&&<button className="vc-btn vc-btn--primary" disabled={actions.busy} onClick={actions.onRebuild}>Удалить и собрать заново</button>}
         <button className="vc-btn vc-btn--secondary" onClick={()=>download(release)}>Скачать лог</button>
+        <button className="vc-btn vc-btn--secondary" onClick={()=>downloadJson(release)}>Скачать JSON</button>
       </span>
     </header>
     <div className="release-metrics">
@@ -138,6 +152,7 @@ function ReleaseDetail({release,onBack,github,productionSha,actions}:{release:Pr
       <a href={`${github}/tree/${release.branch}`} target="_blank" rel="noreferrer">Ветка {release.branch} ↗</a>
       {productionSha&&productionSha!==release.sha&&<a href={`${github}/compare/${productionSha.slice(0,12)}...${release.sha.slice(0,12)}`} target="_blank" rel="noreferrer">Изменения относительно production ↗</a>}
     </p>}
+    <section className="release-changes" aria-label="Изменения относительно production"><h3>Изменения относительно production</h3>{changesError?<p role="alert">{changesError}</p>:!changes?<RefreshIndicator label="Загружаем состав релиза…"/>:changes.changes===null?<p>Нет production для сравнения</p>:changes.changes.length===0?<p>Коммитов между версиями нет.</p>:<>{<p>{changeSummary(changes.changes)}</p>}{[...new Set(changes.changes.map(change=>releaseChangeGroup(change.subject)))].map(group=><div key={group} className="release-change-group"><h4>{group}</h4><ul>{changes.changes!.filter(change=>releaseChangeGroup(change.subject)===group).map(change=><li key={change.sha}>{github?<a href={`${github}/commit/${change.sha}`} target="_blank" rel="noreferrer">{change.subject}</a>:change.subject}<small>{change.author} · {formatDateTime(change.at)} · {change.sha.slice(0,8)}</small></li>)}</ul></div>)}</>}</section>
     <p className="release-steps-summary">{visibleSteps.filter(step=>step.status==='passed').length} из {visibleSteps.length} шагов пройдено{visibleSteps.some(step=>step.status==='skipped')?` · пропущено ${visibleSteps.filter(step=>step.status==='skipped').length}`:''}{visibleSteps.some(step=>step.status==='failed')?' · есть ошибка':''}</p>
     <StepFeed steps={visibleSteps} now={now}/>
   </section>
@@ -146,6 +161,7 @@ function ReleaseDetail({release,onBack,github,productionSha,actions}:{release:Pr
 function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT_RELEASE_TIMEOUTS,api=window.api,gitUrl,production,onOpenSettings,initialReleaseId,onOpenRelease}:Props):JSX.Element {
   const [filter,setFilter]=useState<ReleaseFilter>('all')
   const [query,setQuery]=useState('')
+  const [showArchived,setShowArchived]=useState(false)
   const [tab,setTabState]=useState<Tab>(storedTab)
   const setTab=(next:Tab):void=>{try{window.localStorage?.setItem(RELEASES_TAB_KEY,next)}catch{}setTabState(next)}
   const github=githubWebUrl(gitUrl)
@@ -154,6 +170,8 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   const [branches,setBranches]=useState<ReleaseBranch[]>([])
   const [releaseItems,setReleaseItems]=useState<ProjectReleaseSummary[]>([])
   const [deploymentItems,setDeploymentItems]=useState<ProjectReleaseSummary[]>([])
+  const [compareIds,setCompareIds]=useState<string[]>([])
+  const [comparison,setComparison]=useState<{left:ProjectRelease;right:ProjectRelease;changes:ReleaseChangesResult}|null>(null)
   const [releaseStatus,setReleaseStatus]=useState<LoadStatus>('idle')
   const [releaseError,setReleaseError]=useState('')
   const [deploymentError,setDeploymentError]=useState('')
@@ -197,15 +215,18 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
             ?selectedMachine.unavailableReason??'Машина непригодна для сборки релиза.'
             :''
   const [settingsOpen,setSettingsOpen]=useState(false)
+  const createActionRef=useRef<HTMLDivElement>(null),deployActionRef=useRef<HTMLDivElement>(null)
+  const [stickyVisible,setStickyVisible]=useState(false)
+  useEffect(()=>{const node=tab==='releases'?createActionRef.current:deployActionRef.current;if(!node||typeof IntersectionObserver==='undefined'){setStickyVisible(false);return}const observer=new IntersectionObserver(([entry])=>setStickyVisible(!entry!.isIntersecting),{threshold:0});observer.observe(node);return()=>observer.disconnect()},[tab])
   const [timeouts,setTimeouts]=useState(releaseTimeouts)
   const [settingsSaved,setSettingsSaved]=useState(false)
   const refreshReleases=useCallback(async()=>{
     setReleaseStatus('loading')
     try{
-      const next=await api['releases:list']({projectId})
+      const next=await api['releases:list']({projectId,includeArchived:showArchived})
       setReleaseItems(next.filter(item=>!item.previousReleaseId));setDeploymentItems(next.filter(item=>item.previousReleaseId));setReleaseError('');setReleaseStatus('ready')
     }catch(reason){setReleaseError(reason instanceof Error?reason.message:String(reason));setReleaseStatus('error')}
-  },[api,projectId])
+  },[api,projectId,showArchived])
   const refreshBranches=useCallback(async()=>{
     try{
       const next=await api['releases:branches']({projectId})
@@ -223,14 +244,15 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   // Terminal transitions of a run the user watched are announced once: the
   // deploy takes ten minutes, and nobody keeps staring at the table for that long.
   const knownStatuses=useRef(new Map<string,string>())
+  const [liveAnnouncement,setLiveAnnouncement]=useState('')
   useEffect(()=>{
     const known=knownStatuses.current
     for(const item of [...releaseItems,...deploymentItems]){
       const previous=known.get(item.id)
       if(previous&&previous!==item.status&&terminal.has(item.status)){
         const what=item.previousReleaseId?`Деплой ${item.branch}`:`Сборка ${item.branch}`
-        if(item.status==='failed')toast.error(`${what}: ошибка${item.failure?` — ${item.failure}`:''}`)
-        else toast.success(item.status==='released'?`${item.branch} опубликован в production`:`${what} готова`)
+        if(item.status==='failed'){toast.error(`${what}: ошибка${item.failure?` — ${item.failure}`:''}`);setLiveAnnouncement(`${what} завершилась с ошибкой${item.failure?`: ${item.failure}`:''}`)}
+        else{toast.success(item.status==='released'?`${item.branch} опубликован в production`:`${what} готова`);setLiveAnnouncement(item.status==='released'?`Деплой ${item.branch} завершён успешно`:`Сборка ${item.branch} завершена успешно`)}
       }
       known.set(item.id,item.status)
     }
@@ -276,11 +298,14 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   const releases=[...releaseItems,...deploymentItems]
   const preparations=releaseItems
   const deployments=deploymentItems
+  useEffect(()=>{let live=true;if(compareIds.length!==2){setComparison(null);return}const [leftId,rightId]=compareIds;void Promise.all([api['releases:get']({projectId,releaseId:leftId!}),api['releases:get']({projectId,releaseId:rightId!})]).then(async([left,right])=>{if(!left||!right)return;const newer=left.createdAt>=right.createdAt?left:right,older=newer===left?right:left;const changes=await api['releases:changes']({projectId,releaseId:newer.id,from:older.sha});if(live)setComparison({left:older,right:newer,changes})}).catch(reason=>{if(live)setError(reason instanceof Error?reason.message:String(reason))});return()=>{live=false}},[api,projectId,compareIds.join(':')])
   const releaseView=loadView(releaseStatus,preparations.length>0)
   const deploymentView=loadView(releaseStatus,deployments.length>0)
   const readyBranches=useMemo(()=>branches.filter(branch=>releaseItems.some(item=>item.branch===branch.branch&&item.status==='ready')),[branches,releaseItems])
   useEffect(()=>setSelected(current=>readyBranches.some(item=>item.branch===current)?current:(readyBranches[0]?.branch??'')),[readyBranches])
   const prepared=releases.find(item=>item.branch===selected&&item.status==='ready')
+  const [deployChanges,setDeployChanges]=useState<ReleaseChangesResult|null>(null)
+  useEffect(()=>{let live=true;setDeployChanges(null);if(prepared)void api['releases:changes']({projectId,releaseId:prepared.id}).then(value=>{if(live)setDeployChanges(value)}).catch(()=>undefined);return()=>{live=false}},[api,projectId,prepared?.id])
   const current=deployments.find(item=>item.status==='released')
   const latestDeploy=deployments[0]
   // Only one build and one deploy run at a time — the server rejects the second
@@ -330,7 +355,7 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   const timeoutsInvalid=Object.values(timeouts).some(value=>!Number.isFinite(value)||value<1000||value>86_400_000)
   const saveSettings=async():Promise<void>=>{if(timeoutsInvalid){setError('Лимит каждого этапа — от 1 секунды до 24 часов.');return}setBusy(true);setError('');try{await api['projects:update']({id:projectId,releaseTimeouts:timeouts});setSettingsSaved(true);setSettingsOpen(false)}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
   const remove=async(release:ProjectReleaseSummary):Promise<void>=>{const ok=await confirm({title:`Удалить релиз ${release.branch}?`,message:`Ветка ${release.branch} будет удалена из origin, запись — из списка. Введите название ветки, чтобы подтвердить.`,variant:'danger',confirmLabel:'Удалить',requireText:release.branch});if(!ok)return;setBusy(true);try{await api['releases:delete']({projectId,releaseId:release.id,branch:release.branch});await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
-  const deploy=async(branch=selected):Promise<void>=>{setBusy(true);setError('');try{const release=await api['releases:deploy']({projectId,branch});detailRequest.current+=1;setDetailReleaseId(release.id);setDetail(release);setDetailStatus('ready');await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
+  const deploy=async(branch=selected):Promise<void>=>{const candidate=releases.find(item=>item.branch===branch&&item.status==='ready');const changes=candidate&&candidate.id===prepared?.id?deployChanges:await (candidate?api['releases:changes']({projectId,releaseId:candidate.id}):Promise.resolve(null));const rollback=Boolean(current&&compareReleaseBranches(branch,current.branch)!==null&&(compareReleaseBranches(branch,current.branch)??0)<0);const repeat=current?.branch===branch;const composition=changes?.changes===null?'Нет production для сравнения':changes?.changes?changeSummary(changes.changes):'Состав загружается';const ok=await confirm({title:`Задеплоить ${branch}?`,message:[`Версия: ${branch.replace(/^release\//,'')}`,`SHA: ${candidate?.sha??'—'}`,`Production: ${production?.machineName??'машина проекта'}`,`Режим: ${production?.mode??'legacy'}`,composition].join('\n'),variant:repeat||rollback?'danger':'default',confirmLabel:repeat?'Задеплоить повторно':rollback?'Выполнить откат':'Задеплоить'});if(!ok)return;setBusy(true);setError('');try{const release=await api['releases:deploy']({projectId,branch});detailRequest.current+=1;setDetailReleaseId(release.id);setDetail(release);setDetailStatus('ready');await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
   // A failed preparation keeps its branch in origin; rebuilding the same
   // version means deleting that branch first — one confirmed action instead of two.
   const rebuild=async(release:ProjectRelease):Promise<void>=>{
@@ -347,7 +372,7 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
   if(detailStatus==='error')return <section className="release-detail"><button className="vc-btn vc-btn--secondary" onClick={closeDetail}>← К списку</button><ErrorState message="Не удалось загрузить подробности релиза" detail={detailError} onRetry={()=>void openDetail(detailReleaseId)}/></section>
   if(detail)return <>
     {error&&<p role="alert" className="release-alert">{error}</p>}
-    <ReleaseDetail release={detail} onBack={closeDetail} github={github} productionSha={current&&current.id!==detail.id?current.sha:null} actions={{
+    <ReleaseDetail release={detail} onBack={closeDetail} github={github} productionSha={current&&current.id!==detail.id?current.sha:null} api={api} projectId={projectId} actions={{
       busy,
       ...(owner&&detail.previousReleaseId?{onRedeploy:()=>void deploy(detail.branch)}:{}),
       ...(owner&&!detail.previousReleaseId&&selectedAgentId?{onRebuild:()=>void rebuild(detail)}:{}),
@@ -362,6 +387,7 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
     <div className="release-settings-actions"><button type="button" className="vc-btn vc-btn--ghost" disabled={busy} title="Подставить лимиты по умолчанию" onClick={()=>setTimeouts(DEFAULT_RELEASE_TIMEOUTS)}>Сбросить к умолчаниям</button><button type="button" className="vc-btn vc-btn--secondary" disabled={busy} onClick={()=>{setTimeouts(releaseTimeouts);setSettingsOpen(false)}}>Отмена</button><button className="vc-btn vc-btn--primary" disabled={busy||timeoutsInvalid}>Сохранить</button></div>
   </form>
   return <section className="release-center" aria-label="Релизы и деплой">
+    <p className="sr-only" aria-live="polite" aria-atomic="true">{liveAnnouncement}</p>
     <nav className="release-tabs" role="tablist" aria-label="Разделы релизов" onKeyDown={event=>{if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();const next=tab==='releases'?'deploy':'releases';setTab(next);(event.currentTarget.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`))?.focus()}}}><button role="tab" data-tab="releases" tabIndex={tab==='releases'?0:-1} aria-selected={tab==='releases'} onClick={()=>setTab('releases')}>Релизы{preparations.some(item=>!terminal.has(item.status))&&<span className="release-tab-live" title="Идёт сборка" aria-hidden="true"/>}</button><button role="tab" data-tab="deploy" tabIndex={tab==='deploy'?0:-1} aria-selected={tab==='deploy'} onClick={()=>setTab('deploy')}>Деплой{deployments.some(item=>!terminal.has(item.status))&&<span className="release-tab-live" title="Идёт деплой" aria-hidden="true"/>}</button></nav>
     {error&&<p role="alert" className="release-alert">{error}</p>}
     {settingsSaved&&<p role="status" className="release-saved">Лимиты сохранены.</p>}
@@ -369,7 +395,7 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
     {tab==='releases'?<div className="release-pane">
       <header><div><h2>Релизы</h2><p>Подготовка и история сборок</p></div><span>{releaseView.refreshing&&<RefreshIndicator label="Обновляем релизы…"/>}{settingsButton}<button className="vc-btn vc-btn--secondary" disabled={releaseStatus==='loading'} onClick={()=>void refreshReleases()}>Обновить</button></span></header>
       {settingsForm}
-      <div className="release-create"><label>Машина сборки релиза<select aria-label="Машина сборки релиза" value={selectedAgentId} disabled={!owner||busy||machinesStatus==='loading'||releaseMachines.length===0} onChange={event=>setSelectedAgentId(event.target.value)}><option value="" disabled>{machinesStatus==='loading'?'Загрузка машин…':releaseMachines.length===0?'Доступных машин нет':'Выберите машину'}</option>{releaseMachines.map(machine=><option key={machine.agentId} value={machine.agentId} disabled={!machine.eligible}>{machine.name} · {machine.online?'online':'offline'} · {machine.ownership==='mine'?'личная машина':'машина проекта'}{machine.unavailableReason?` · ${machine.unavailableReason}`:''}</option>)}</select></label>{machinesStatus==='error'&&<ErrorState compact message="Не удалось загрузить машины" detail={machinesError} onRetry={()=>void refreshMachines()}/>} {machineProblem&&<p role="alert">{machineProblem}</p>}
+      <div className="release-create" ref={createActionRef}><label>Машина сборки релиза<select aria-label="Машина сборки релиза" value={selectedAgentId} disabled={!owner||busy||machinesStatus==='loading'||releaseMachines.length===0} onChange={event=>setSelectedAgentId(event.target.value)}><option value="" disabled>{machinesStatus==='loading'?'Загрузка машин…':releaseMachines.length===0?'Доступных машин нет':'Выберите машину'}</option>{releaseMachines.map(machine=><option key={machine.agentId} value={machine.agentId} disabled={!machine.eligible}>{machine.name} · {machine.online?'online':'offline'} · {machine.ownership==='mine'?'личная машина':'машина проекта'}{machine.unavailableReason?` · ${machine.unavailableReason}`:''}</option>)}</select></label>{machinesStatus==='error'&&<ErrorState compact message="Не удалось загрузить машины" detail={machinesError} onRetry={()=>void refreshMachines()}/>} {machineProblem&&<p role="alert">{machineProblem}</p>}
         <label>Новая версия<span className="release-version-field"><input value={version} placeholder={suggestion} inputMode="decimal" aria-invalid={Boolean(versionProblem)} aria-describedby="release-version-hint" disabled={!owner} onChange={event=>setVersion(event.target.value)}/>{owner&&versionTrimmed!==suggestion&&<button type="button" className="vc-btn vc-btn--ghost" onClick={()=>setVersion(suggestion)} title={`Подставить следующую версию ${suggestion}`}>{suggestion}</button>}</span></label>
         <button className="vc-btn vc-btn--primary" disabled={!owner||busy||Boolean(machineProblem)||Boolean(versionProblem)||!versionTrimmed||Boolean(activePreparation)} onClick={()=>void create()}>Собрать новый релиз</button>
         <p id="release-version-hint" className={versionProblem?'release-field-error':'release-field-hint'} role={versionProblem?'alert':undefined}>{versionProblem||(activePreparation?`Идёт сборка ${activePreparation.branch} — новую можно запустить после её завершения.`:`Ветка release/${versionTrimmed||suggestion} от ${baseBranch}.`)}</p>
@@ -377,9 +403,11 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
       {releaseView.staleError&&<ErrorState compact message="Не удалось обновить релизы" detail={releaseError} onRetry={()=>void refreshReleases()}/>}
       {preparations.length>0&&<div className="release-filters" role="group" aria-label="Фильтр релизов">
         {([['all','Все'],['ready','Готовые'],['failed','Ошибки'],['production','В production']] as const).map(([id,label])=><button key={id} type="button" className={filter===id?'release-filter release-filter--active':'release-filter'} aria-pressed={filter===id} onClick={()=>{setFilter(id);setReleasePage(1)}}>{label}{id==='failed'&&preparations.some(item=>item.status==='failed')?<span className="release-filter-count">{preparations.filter(item=>item.status==='failed').length}</span>:null}</button>)}
+        <label className="release-archive-toggle"><input type="checkbox" checked={showArchived} onChange={event=>{setShowArchived(event.target.checked);setReleasePage(1)}}/>Показать архивные</label>
         <input type="search" className="release-search" aria-label="Поиск по версии или SHA" placeholder="0.1.30…" value={query} onChange={event=>{setQuery(event.target.value);setReleasePage(1)}}/>
       </div>}
-      <div className="release-table-wrap" aria-busy={releaseStatus==='loading'}>{releaseView.state==='skeleton'?<Skeleton variant="list" item="block" count={5} height={49}/>:releaseView.state==='error'?<ErrorState message="Не удалось загрузить релизы" detail={releaseError} onRetry={()=>void refreshReleases()}/>:releaseView.state==='empty'?<EmptyState title="Релизов пока нет" description="Соберите новый релиз — он появится в этом списке."/>:<table className="release-table"><thead><tr><th scope="col">Название</th><th scope="col">Дата</th><th scope="col">Время сборки</th><th scope="col">Статус</th><th scope="col">Действия</th></tr></thead><tbody>{visiblePreparations.slice(0,releasePage*PAGE).map(release=><tr key={release.id} tabIndex={0} aria-label={`Релиз ${release.branch}, ${statusLabels[release.status]??release.status}`} onClick={()=>void openDetail(release.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void openDetail(release.id)}}}><td data-label="Название"><strong>{release.branch}</strong><small>{release.sha.slice(0,12)||'SHA ещё не зафиксирован'}{current?.branch===release.branch?' · в production':''}</small>{release.failure&&<small className="release-failure">{release.failure}</small>}</td><td data-label="Дата"><time dateTime={new Date(release.createdAt).toISOString()} title={formatDateTime(release.createdAt)}>{formatRelativeTime(release.createdAt)}</time></td><td data-label="Время сборки">{fmtDuration(release.durationMs)}{eta(release)}</td><td data-label="Статус"><span className="release-status" data-status={release.status}>{statusLabels[release.status]??release.status}</span></td><td data-label="Действия">{terminal.has(release.status)&&<button className="vc-btn vc-btn--ghost" title="Скачать лог сборки" onClick={event=>{event.stopPropagation();void downloadRow(release)}}>Лог</button>}{owner&&['ready','failed'].includes(release.status)&&<button className="vc-btn vc-btn--secondary" disabled={current?.branch===release.branch} title={current?.branch===release.branch?'Релиз сейчас в production — сначала задеплойте другой':undefined} onClick={event=>{event.stopPropagation();void remove(release)}}>Удалить</button>}</td></tr>)}{visiblePreparations.length===0&&<tr><td colSpan={5} className="release-table-empty">Под фильтр ничего не попало.</td></tr>}</tbody></table>}</div>
+      <div className="release-table-wrap" aria-busy={releaseStatus==='loading'}>{releaseView.state==='skeleton'?<Skeleton variant="list" item="block" count={5} height={49}/>:releaseView.state==='error'?<ErrorState message="Не удалось загрузить релизы" detail={releaseError} onRetry={()=>void refreshReleases()}/>:releaseView.state==='empty'?<EmptyState title="Релизов пока нет" description="Соберите новый релиз — он появится в этом списке."/>:<table className="release-table"><thead><tr><th scope="col">Сравнить</th><th scope="col">Название</th><th scope="col">Дата</th><th scope="col">Время сборки</th><th scope="col">Статус</th><th scope="col">Действия</th></tr></thead><tbody>{visiblePreparations.slice(0,releasePage*PAGE).map(release=><tr key={release.id} tabIndex={0} aria-label={`Релиз ${release.branch}, ${statusLabels[release.status]??release.status}`} onClick={()=>void openDetail(release.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void openDetail(release.id)}}}><td data-label="Сравнить"><input type="checkbox" aria-label={`Сравнить ${release.branch}`} checked={compareIds.includes(release.id)} disabled={!compareIds.includes(release.id)&&compareIds.length>=2} onClick={event=>event.stopPropagation()} onChange={event=>setCompareIds(ids=>event.target.checked?[...ids,release.id]:ids.filter(id=>id!==release.id))}/></td><td data-label="Название"><strong>{release.branch}</strong><small>{release.sha.slice(0,12)||'SHA ещё не зафиксирован'}{current?.branch===release.branch?' · в production':''}</small>{release.failure&&<small className="release-failure">{release.failure}</small>}</td><td data-label="Дата"><time dateTime={new Date(release.createdAt).toISOString()} title={formatDateTime(release.createdAt)}>{formatRelativeTime(release.createdAt)}</time></td><td data-label="Время сборки">{fmtDuration(release.durationMs)}{eta(release)}</td><td data-label="Статус"><span className="release-status" data-status={release.status}>{statusLabels[release.status]??release.status}</span></td><td data-label="Действия">{terminal.has(release.status)&&<button className="vc-btn vc-btn--ghost" title="Скачать лог сборки" onClick={event=>{event.stopPropagation();void downloadRow(release)}}>Лог</button>}{owner&&['ready','failed'].includes(release.status)&&<button className="vc-btn vc-btn--secondary" disabled={current?.branch===release.branch} title={current?.branch===release.branch?'Релиз сейчас в production — сначала задеплойте другой':undefined} onClick={event=>{event.stopPropagation();void remove(release)}}>Удалить</button>}</td></tr>)}{visiblePreparations.length===0&&<tr><td colSpan={6} className="release-table-empty">Под фильтр ничего не попало.</td></tr>}</tbody></table>}</div>
+      {comparison&&<section className="release-comparison" aria-label="Сравнение релизов"><h3>Сравнение {comparison.left.branch} → {comparison.right.branch}</h3><p>Статус: {statusLabels[comparison.left.status]} → {statusLabels[comparison.right.status]} · длительность: {fmtDuration(duration(comparison.left))} → {fmtDuration(duration(comparison.right))}</p><table><thead><tr><th>Шаг</th><th>{comparison.left.version}</th><th>{comparison.right.version}</th><th>Разница</th></tr></thead><tbody>{comparison.right.steps.map(step=>{const before=comparison.left.steps.find(item=>item.kind===step.kind);const a=before?.startedAt?((before.finishedAt??Date.now())-before.startedAt):null,b=step.startedAt?((step.finishedAt??Date.now())-step.startedAt):null;return <tr key={step.kind}><th>{labels[step.kind]}</th><td>{before?stepStatusLabels[before.status]:'—'} · {fmtDuration(a)}</td><td>{stepStatusLabels[step.status]} · {fmtDuration(b)}</td><td>{a!=null&&b!=null?fmtDuration(Math.abs(b-a)):'—'}</td></tr>})}</tbody></table>{comparison.changes.changes&&<details><summary>{changeSummary(comparison.changes.changes)}</summary><ul>{comparison.changes.changes.map(change=><li key={change.sha}>{change.subject}</li>)}</ul></details>}</section>}
       {visiblePreparations.length>releasePage*PAGE&&<button className="vc-btn vc-btn--secondary release-more" onClick={()=>setReleasePage(page=>page+1)}>Показать ещё ({visiblePreparations.length-releasePage*PAGE})</button>}
     </div>:<div className="release-pane">
       <header><div><h2>Деплой</h2><p>Публикация подготовленного релиза в production</p></div><span>{deploymentView.refreshing&&<RefreshIndicator label="Обновляем деплои…"/>}{settingsButton}<button className="vc-btn vc-btn--secondary" disabled={releaseStatus==='loading'} onClick={()=>void refresh()}>Обновить</button></span></header>
@@ -392,12 +420,13 @@ function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT
       {production?.ready&&<div className="release-production-info"><span>Production</span><strong>{production.machineName??'машина проекта'}</strong><span>{production.mode==='managed'?'Managed MachineStorage':'Legacy checkout'}{production.healthCheckCommand?` · health-check: ${production.healthCheckCommand}`:''}</span></div>}
       {current&&current.id!==latestDeploy?.id&&<button className="release-last-deploy release-production" onClick={()=>void openDetail(current.id)}><span>Сейчас в production</span><strong>{current.branch}<small>{current.sha.slice(0,12)} · с {formatDateTime(current.createdAt)}</small></strong><span><span className="release-status" data-status={current.status}>{statusLabels[current.status]??current.status}</span></span></button>}
       {latestDeploy&&<button className="release-last-deploy" onClick={()=>void openDetail(latestDeploy.id)}><span>Последний деплой</span><strong>{latestDeploy.branch}<small>{latestDeploy.sha.slice(0,12)} · {formatDateTime(latestDeploy.createdAt)}{latestDeploy.attempt?` · попытка ${latestDeploy.attempt}`:''}{latestDeploy.id===current?.id?' · сейчас в production':''}</small>{latestDeploy.failure&&<small className="release-failure">{latestDeploy.failure}</small>}</strong><span><span className="release-status" data-status={latestDeploy.status}>{statusLabels[latestDeploy.status]??latestDeploy.status}</span> · {fmtDuration(latestDeploy.durationMs)}{eta(latestDeploy)}</span></button>}
-      <div className="release-deploy"><label><span>Релиз{readyBranches.length>0&&<span className="release-count"> · готовых: {readyBranches.length}</span>}</span><select aria-label="Релиз" value={selected} onChange={event=>setSelected(event.target.value)}><option value="" disabled>{readyBranches.length?'Выберите релиз':'Готовых релизов нет'}</option>{readyBranches.map(branch=><option key={branch.branch} value={branch.branch}>{branch.branch} · {branch.sha.slice(0,12)}{current?.branch===branch.branch?' · сейчас в production':''}</option>)}</select></label>{activeDeployment?<p role="status" className="release-transition">Идёт деплой {activeDeployment.branch} ({statusLabels[activeDeployment.status]??activeDeployment.status}) — новый можно запустить после его завершения.</p>:transition&&<p role="status" className="release-transition">{transition}</p>}<button className="vc-btn vc-btn--primary" disabled={!owner||busy||!prepared||Boolean(activeDeployment)||(production?!production.ready:false)} title={production&&!production.ready?'Сначала настройте production в настройках проекта':undefined} onClick={()=>void deploy()}>{redeploy?'Задеплоить повторно':'Задеплоить'}</button></div>
+      <div className="release-deploy" ref={deployActionRef}><label><span>Релиз{readyBranches.length>0&&<span className="release-count"> · готовых: {readyBranches.length}</span>}</span><select aria-label="Релиз" value={selected} onChange={event=>setSelected(event.target.value)}><option value="" disabled>{readyBranches.length?'Выберите релиз':'Готовых релизов нет'}</option>{readyBranches.map(branch=><option key={branch.branch} value={branch.branch}>{branch.branch} · {branch.sha.slice(0,12)}{current?.branch===branch.branch?' · сейчас в production':''}</option>)}</select></label>{activeDeployment?<p role="status" className="release-transition">Идёт деплой {activeDeployment.branch} ({statusLabels[activeDeployment.status]??activeDeployment.status}) — новый можно запустить после его завершения.</p>:transition&&<p role="status" className="release-transition">{transition}</p>}{prepared&&<details className="release-deploy-changes"><summary>{deployChanges?.changes===null?'Нет production для сравнения':deployChanges?.changes?changeSummary(deployChanges.changes):'Загружаем состав релиза…'}</summary>{deployChanges?.changes&&<ul>{deployChanges.changes.map(change=><li key={change.sha}>{change.subject}</li>)}</ul>}</details>}<button className="vc-btn vc-btn--primary" disabled={!owner||busy||!prepared||Boolean(activeDeployment)||(production?!production.ready:false)} title={production&&!production.ready?'Сначала настройте production в настройках проекта':undefined} onClick={()=>void deploy()}>{redeploy?'Задеплоить повторно':'Задеплоить'}</button></div>
       {deploymentError&&<ErrorState compact message="Не удалось загрузить release-ветки" detail={deploymentError} onRetry={()=>void refreshBranches()}/>}
       {deploymentView.staleError&&<ErrorState compact message="Не удалось обновить деплои" detail={releaseError} onRetry={()=>void refreshReleases()}/>}
       <div className="release-table-wrap" aria-busy={releaseStatus==='loading'}>{deploymentView.state==='skeleton'?<Skeleton variant="list" item="block" count={5} height={49}/>:deploymentView.state==='error'?<ErrorState message="Не удалось загрузить деплои" detail={releaseError} onRetry={()=>void refreshReleases()}/>:deploymentView.state==='empty'?<EmptyState title="Деплоев пока нет" description="Выберите готовый релиз и опубликуйте его в production."/>:<table className="release-table"><thead><tr><th scope="col">Релиз</th><th scope="col">Дата</th><th scope="col">Длительность</th><th scope="col">Статус</th></tr></thead><tbody>{deployments.slice(0,deployPage*PAGE).map(release=><tr key={release.id} tabIndex={0} aria-label={`Деплой ${release.branch}, ${statusLabels[release.status]??release.status}`} onClick={()=>void openDetail(release.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void openDetail(release.id)}}}><td data-label="Релиз"><strong>{release.branch}</strong><small>{release.sha.slice(0,12)}{release.attempt?` · попытка ${release.attempt}`:''}{release.id===current?.id?' · в production':''}</small>{release.failure&&<small className="release-failure">{release.failure}</small>}</td><td data-label="Дата"><time dateTime={new Date(release.createdAt).toISOString()} title={formatDateTime(release.createdAt)}>{formatRelativeTime(release.createdAt)}</time></td><td data-label="Длительность">{fmtDuration(release.durationMs)}</td><td data-label="Статус"><span className="release-status" data-status={release.status}>{statusLabels[release.status]??release.status}</span></td></tr>)}</tbody></table>}</div>
       {deployments.length>deployPage*PAGE&&<button className="vc-btn vc-btn--secondary release-more" onClick={()=>setDeployPage(page=>page+1)}>Показать ещё ({deployments.length-deployPage*PAGE})</button>}
     </div>}
+    {stickyVisible&&<div className="release-sticky-actions" role="region" aria-label="Действия релиза">{tab==='releases'?<button className="vc-btn vc-btn--primary" disabled={!owner||busy||Boolean(machineProblem)||Boolean(versionProblem)||!versionTrimmed||Boolean(activePreparation)} onClick={()=>void create()}>Собрать новый релиз</button>:<button className="vc-btn vc-btn--primary" disabled={!owner||busy||!prepared||Boolean(activeDeployment)||(production?!production.ready:false)} title={production&&!production.ready?'Сначала настройте production в настройках проекта':undefined} onClick={()=>void deploy()}>{redeploy?'Задеплоить повторно':'Задеплоить'}</button>}</div>}
   </section>
 }
 

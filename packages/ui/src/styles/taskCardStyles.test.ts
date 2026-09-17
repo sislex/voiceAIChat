@@ -38,6 +38,7 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.jcard--mobile .jcard-grip')).toContain('min-width: 40px')
     expect(rule('.jcard--mobile .jcard-grip')).toContain('min-height: 40px')
     expect(rule('.jcard--mobile')).toContain('max-width: none')
+
   })
 
   it.each([

@@ -198,6 +198,7 @@ describe('Dialog — фокус', () => {
     expect(opener).toHaveFocus()
   })
 
+  // @testCase TC-REG-01
   it('initialFocusRef перебивает первый элемент', async () => {
     function WithRef(): JSX.Element {
       const field = useRef<HTMLInputElement>(null)

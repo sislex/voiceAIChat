@@ -359,6 +359,7 @@ describe('автопроход: общий development-предохраните�
 
   // @testCase TC-1
   // @testCase TC-2
+  // @testCase TC-5
   it.each(['failed', 'timeout'] as const)('blocks the full dirty-workspace rollback cycle in ready (%s)', async (status) => {
     const fixture = await failedDevelopmentInReady('Рабочая копия содержит локальные изменения: /repo/CHAT-477', status)
     await enableAutoPilot(fixture.projectId, fixture.taskId)
@@ -372,6 +373,7 @@ describe('автопроход: общий development-предохраните�
   })
 
   // @testCase TC-3
+  // @testCase TC-5-DEDUP
   it('deduplicates concurrent and pending board updates for the persisted dirty blocker', async () => {
     const fixture = await failedDevelopmentInReady('Рабочая копия содержит локальные изменения')
     await Promise.all(Array.from({ length: 8 }, (_, index) =>

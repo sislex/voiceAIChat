@@ -20,7 +20,7 @@ describe('development preview contract', () => {
     expect(normalizeDevelopmentPreview({enabled:true}).enabled).toBe(true)
     expect(normalizeCiBrowserCheck({}).mode).toBe('off')
   })
-  // @testCase TC-NEG-02
+  // @testCase TC-INT-04
   it('requires target identity, screenshots and successful mandatory browser calls', () => {
     const e: DevelopmentBrowserEvidence = {url:'http://a/',sha:'sha',configDigest:'digest',viewport:{width:800,height:600},
       calls:['open','read','screenshot','errors','network','a11y','styles'].map(tool=>({tool,at:1,ok:true})),

@@ -75,9 +75,24 @@ function runOptions({ rules, tags = DEFAULT_TAGS }: A11yOptions = {}): RunOption
 }
 
 /** Нарушения axe для узла (по умолчанию — весь документ: окна уходят порталом). */
+let axeQueue: Promise<void> = Promise.resolve()
+
+/**
+ * axe-core keeps a single global run state per document. Vitest may execute
+ * multiple consumers in the same worker, so queue analyses and always release
+ * the queue after both successful and failed runs.
+ */
+function serializeAxe<T>(analysis: () => Promise<T>): Promise<T> {
+  const result = axeQueue.then(analysis, analysis)
+  axeQueue = result.then(() => undefined, () => undefined)
+  return result
+}
+
 export async function runAxe(container: ElementContext = document.body, options: A11yOptions = {}): Promise<Result[]> {
-  const result = await axe.run(container, runOptions(options))
-  return result.violations
+  return serializeAxe(async () => {
+    const result = await axe.run(container, runOptions(options))
+    return result.violations
+  })
 }
 
 /** Отчёт для сообщения об ошибке: правило, важность, узлы и как починить. */
