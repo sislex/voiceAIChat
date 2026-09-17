@@ -79,6 +79,10 @@
 .playwright-reader-diagnostics__list li { overflow-wrap: anywhere; }
 .playwright-reader-diagnostics__list li[data-kind='console'] { color: var(--danger); }
 .playwright-reader-diagnostics__list li[data-kind='network'] code { color: var(--danger); font-weight: 600; }
+.playwright-reader-feed-result { color: var(--text-dim); }
+.playwright-reader-feed-error { display: block; margin-top: 2px; color: var(--danger); }
+.playwright-reader-feed-evidence { display: flex; gap: 6px; margin-top: 6px; }
+.playwright-reader-feed-evidence img { width: 112px; max-width: 45%; aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
 
 /* Круг 1 «работает и на компьютере, и на телефоне».
    Кадр — картинка: без собственного масштаба страница с телефонной панели

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-16
-checked: 68124e0f
+updated: 2026-09-17
+checked: a5b4718d
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -626,3 +626,13 @@ web-клиенте — авторизованный fetch → base64 (см. ui.m
 404. POST
 `/api/conversations` принимает `assistantKind: 'images'`;whitelist строк БД
 и CHECK по scope расширены (см. data-auth.md).
+
+## Поток кадров Playwright Reader
+
+`GET /api/browser/:id/frames` — авторизованный долгоживущий NDJSON-канал с
+`application/x-ndjson`. Запись содержит монотонный `seq`, необязательные
+`dataUrl`, сведения страницы и status сессии; точные типы и адрес маршрута живут
+в `packages/shared/src/ipc.ts` и `packages/shared/src/protocol.ts`. Web-мост в
+`packages/ui/src/remote/index.ts` переподключается после обрыва, передаёт
+последний sequence и не доставляет повторные или не-image кадры. Разовый
+screenshot остаётся совместимым fallback для host без `subscribeFrames`.

@@ -490,7 +490,16 @@ export interface BrowserHistoryEntry {
   selector?: string
   url?: string
   ok: boolean
+  /** Wall-clock duration of the command, including browser waits. */
+  durationMs?: number
+  /** Bounded human-readable outcome returned by the browser action. */
+  result?: string
   error?: string
+  /** Console/page errors emitted while this exact command was running. */
+  pageErrors?: string[]
+  /** Small JPEG evidence captured immediately around the action. */
+  beforeImage?: string
+  afterImage?: string
   /** Free-text note left by the model for the person watching the panel. */
   note?: string
 }

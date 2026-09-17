@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-17
-checked: 3129e7d5
+checked: 938f8b9b
 
 areas:
   - packages/shared/src/projects.ts
@@ -1930,6 +1930,16 @@ with TC1–TC8 markers; the three new stories are StatementEditing, StageWithErr
 and MobileRail. The browser check is
 `node packages/ui/src/components/kanban/NewTaskCardView.browser.mjs` after
 `npm run build:storybook`; it checks axe and layout at 1280px and 390px.
+
+Storybook metadata in `NewTaskCardView.stories.tsx` explicitly maps component
+`new-task-card-view` to the required primary story
+`kanban-newtaskcard--desktop`. The broader browser regression in
+`NewTaskPanels.browser.mjs` opens that story plus `--reworks` and `--rework` in
+light and dark themes at 390 and 1280 px. It waits for the «Общее»/«Доработки»
+tabs, workflow rail, rework history or draft form as appropriate, and rejects
+page errors and document-level horizontal overflow. DOM regressions for inline
+editing, draft/submitted reworks and workflow durations remain beside
+`NewTaskCardView` in `NewTaskCardView.dom.test.tsx`.
 
 «Подготовка» владеет выбором машины и модели, попытками каждого цикла,
 вопросами и ответами, readiness-гейтами, Development Brief и шагами рана. Из
