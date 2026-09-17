@@ -57,6 +57,12 @@ import type { KbUsageTracker } from './kb/usage.js'
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
 export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
 
+/** Навыки, которые реально передаются исполнителю после контекстных тумблеров. */
+export function enabledContextSkills(skillNames: string[], disabledContext: Iterable<string>): string[] {
+  const disabled = new Set(disabledContext)
+  return skillNames.filter((name) => !disabled.has(`skill-${encodeURIComponent(name)}`))
+}
+
 export interface TurnManagerDeps {
   db: VoiceChatDb
   claude: LlmClient
@@ -545,7 +551,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const disabledContext = new Set(conv?.disabledContext ?? [])
     const kbMode = disabledContext.has('knowledge-mode') ? 'off' : (conv?.kbContextMode ?? 'auto')
     // Навыки: выключенные (skill-<encoded>) убираем из выбранных для этого хода.
-    const effectiveSkills = (conv?.skillNames ?? []).filter((name) => !disabledContext.has(`skill-${encodeURIComponent(name)}`))
+    const effectiveSkills = enabledContextSkills(conv?.skillNames ?? [], disabledContext)
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
     const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
