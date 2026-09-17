@@ -57,6 +57,17 @@ it('marks board readiness after loading ends with actual controls and data', asy
   p.hidden();mark.mockRestore()
 })
 describe('ProjectBoard', () => {
+  // @testCase TC-UI-01
+  it('сохраняет карточки во время фоновой синхронизации и показывает свежий снимок', () => {
+    renderBoard({ loading: true })
+    expect(screen.getByText('A')).toBeInTheDocument()
+    expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
+
+    cleanup()
+    renderBoard({ board: { ...board, tasks: board.tasks.map((item) => item.id === 't1' ? { ...item, title: 'A после board.changed' } : item) } })
+    expect(screen.getByText('A после board.changed')).toBeInTheDocument()
+  })
+
   it('рендерит колонки и карточки с ключами Jira', () => {
     renderBoard()
     expect(screen.getAllByTestId('kanban-column')).toHaveLength(2)

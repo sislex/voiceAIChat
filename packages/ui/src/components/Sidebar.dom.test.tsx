@@ -196,55 +196,128 @@ describe('Sidebar — машина последнего сообщения', () 
 })
 
 
-describe('Sidebar — инструменты в меню по клику на пользователя', () => {
+describe('Sidebar — отдельное меню инструментов', () => {
   const user = { name: 'Алекс', role: 'admin' } as SessionUser
-
-  it('иконки виджетов лежат в меню аккаунта, а не в отдельном ряду', () => {
-    const onOpenObserver = vi.fn()
-    const onOpenLocalApp = vi.fn()
-    setup({
-      currentUser: user,
-      onOpenObserver,
-      onOpenLocalApp,
-      onOpenKnowledgeBase: vi.fn(),
-        onOpenFiles: vi.fn(),
-      onOpenConsole: vi.fn(),
-      onOpenMachines: vi.fn(),
-      onOpenUsers: vi.fn(),
-      onLogout: vi.fn()
-    })
-
-    // Отдельного нижнего ряда иконок больше нет.
-    expect(document.querySelector('.foottools')).toBeNull()
-    // До клика меню (и его пункты) не отрисованы.
-    expect(screen.queryByText('История LLM')).not.toBeInTheDocument()
-
-    // Клик по пользователю открывает всплывающее меню с инструментами.
-    fireEvent.click(screen.getByRole('button', { name: /Алекс/ }))
-    const menu = screen.getByRole('menu')
-    for (const label of ['История LLM', 'База знаний', 'Проводник', 'Консоль']) {
-      expect(within(menu).getByText(label)).toBeInTheDocument()
-    }
-    // Управление и настройки — там же.
-    expect(within(menu).getByText('Открыть локальную версию')).toBeInTheDocument()
-    expect(within(menu).getByText('Машины')).toBeInTheDocument()
-    expect(within(menu).getByText('Настройки')).toBeInTheDocument()
-
-    fireEvent.click(within(menu).getByText('Открыть локальную версию'))
-    expect(onOpenLocalApp).toHaveBeenCalledTimes(1)
-
-    // Открываем меню снова: первый клик по пункту корректно закрыл его.
-    fireEvent.click(screen.getByRole('button', { name: /Алекс/ }))
-    // Пункт-инструмент кликабелен и вызывает свой обработчик.
-    fireEvent.click(within(screen.getByRole('menu')).getByText('История LLM'))
-    expect(onOpenObserver).toHaveBeenCalledTimes(1)
+  const allTools = () => ({
+    onOpenMake: vi.fn(), onOpenWebReader: vi.fn(), onOpenPlaywrightReader: vi.fn(),
+    onOpenFiles: vi.fn(), onOpenConsole: vi.fn(), onOpenConsoleReader: vi.fn()
   })
 
-  it('в локальном режиме без учётки инструменты остаются рядом иконок', () => {
-    setup({ onOpenFiles: vi.fn(), onOpenConsole: vi.fn() })
-    expect(document.querySelector('.foottools')).not.toBeNull()
+  // @testCase TC-UI-01
+  it('показывает авторизованному пользователю три группы отдельно от сохранённого меню пользователя', () => {
+    setup({ currentUser: user, ...allTools(), onOpenKnowledgeBase: vi.fn(), onOpenImageStudio: vi.fn(), onOpenUsers: vi.fn() })
+    fireEvent.click(screen.getByRole('button', { name: 'Инструменты' }))
+    const menu = screen.getByRole('menu', { name: 'Инструменты' })
+    expect(within(menu).getAllByRole('group').map((group) => group.getAttribute('aria-labelledby'))).toEqual([
+      'tools-group-Автоматизация', 'tools-group-Веб', 'tools-group-Система'
+    ])
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      '✦Make — веб-проект', '🌐Web Reader', '▣Playwright Reader', '📁Проводник', '⌨️Консоль', '▮Консоль с ассистентом'
+    ])
+
+    fireEvent.click(screen.getByRole('button', { name: /Алекс/ }))
+    const account = screen.getByRole('menu', { name: 'Меню пользователя' })
+    for (const label of ['История LLM', 'База знаний', 'Студия картинок', 'Пользователи', 'Настройки']) {
+      expect(within(account).getByText(label)).toBeInTheDocument()
+    }
+    for (const label of ['Make — веб-проект', 'Web Reader', 'Playwright Reader', 'Проводник', 'Консоль', 'Консоль с ассистентом']) {
+      expect(within(account).queryByText(label)).not.toBeInTheDocument()
+    }
+  })
+
+  // @testCase TC-UI-02
+  it('строит только непустые группы по переданным callbacks', () => {
+    setup({ currentUser: user, onOpenWebReader: vi.fn(), onOpenConsole: vi.fn() })
+    fireEvent.click(screen.getByRole('button', { name: 'Инструменты' }))
+    const menu = screen.getByRole('menu', { name: 'Инструменты' })
+    expect(within(menu).queryByText('Автоматизация')).not.toBeInTheDocument()
+    expect(within(menu).getAllByRole('group').map((group) => group.textContent)).toEqual(['Веб🌐Web Reader', 'Система⌨️Консоль'])
+  })
+
+  // @testCase TC-UI-03
+  it('не показывает триггер без шести согласованных callbacks', () => {
+    const first = setup({ currentUser: user, onOpenKnowledgeBase: vi.fn(), onOpenImageStudio: vi.fn() })
+    expect(screen.queryByRole('button', { name: 'Инструменты' })).not.toBeInTheDocument()
+    first.unmount()
+    setup()
+    expect(screen.queryByRole('button', { name: 'Инструменты' })).not.toBeInTheDocument()
+  })
+
+  // @testCase TC-UI-04
+  it('каждый пункт закрывает меню и ровно один раз вызывает прежний callback', () => {
+    const callbacks = allTools()
+    setup({ currentUser: user, ...callbacks })
+    const labels = ['Make — веб-проект', 'Web Reader', 'Playwright Reader', 'Проводник', 'Консоль', 'Консоль с ассистентом']
+    const spies = [callbacks.onOpenMake, callbacks.onOpenWebReader, callbacks.onOpenPlaywrightReader, callbacks.onOpenFiles, callbacks.onOpenConsole, callbacks.onOpenConsoleReader]
+    labels.forEach((label, index) => {
+      fireEvent.click(screen.getByRole('button', { name: 'Инструменты' }))
+      fireEvent.click(within(screen.getByRole('menu', { name: 'Инструменты' })).getByRole('menuitem', { name: new RegExp(`${label}$`) }))
+      expect(spies[index]).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('menu', { name: 'Инструменты' })).not.toBeInTheDocument()
+    })
+  })
+
+  // @testCase TC-UI-05
+  it('взаимно закрывает меню, закрывает повторным кликом и внешним кликом', () => {
+    setup({ currentUser: user, onOpenFiles: vi.fn() })
+    const tools = screen.getByRole('button', { name: 'Инструменты' })
+    const account = screen.getByRole('button', { name: /Алекс/ })
+    fireEvent.click(tools)
+    fireEvent.click(account)
+    expect(screen.queryByRole('menu', { name: 'Инструменты' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menu', { name: 'Меню пользователя' })).toBeInTheDocument()
+    fireEvent.click(tools)
+    expect(screen.getAllByRole('menu')).toHaveLength(1)
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    fireEvent.click(tools); fireEvent.click(tools)
+    expect(tools).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  // @testCase TC-UI-06
+  it('поддерживает ARIA, стрелки, Escape и возврат фокуса', async () => {
+    setup({ currentUser: user, onOpenWebReader: vi.fn(), onOpenConsole: vi.fn() })
+    const trigger = screen.getByRole('button', { name: 'Инструменты' })
+    trigger.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    expect(screen.getByRole('menuitem', { name: /Web Reader$/ })).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: /Консоль$/ })).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    expect(trigger).toHaveFocus()
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  // @testCase TC-UI-07
+  it('в локальной оболочке объединяет только переданное подмножество', () => {
+    setup({ onOpenFiles: vi.fn(), onOpenConsole: vi.fn(), onOpenWebReader: vi.fn(), onOpenPlaywrightReader: vi.fn() })
+    expect(screen.queryByLabelText('Открыть проводник')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Инструменты' }))
+    const menu = screen.getByRole('menu', { name: 'Инструменты' })
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      '🌐Web Reader', '▣Playwright Reader', '📁Проводник', '⌨️Консоль'
+    ])
+    expect(within(menu).queryByText('Автоматизация')).not.toBeInTheDocument()
     expect(screen.getByLabelText('История LLM')).toBeInTheDocument()
-    expect(screen.getByLabelText('Открыть консоль')).toBeInTheDocument()
+  })
+
+  // @testCase TC-REG-09
+  it('сохраняет прямую диспетчеризацию callback без маршрутизации внутри Sidebar', () => {
+    const onOpenWebReader = vi.fn()
+    setup({ currentUser: user, onOpenWebReader })
+    fireEvent.click(screen.getByRole('button', { name: 'Инструменты' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Web Reader$/ }))
+    expect(onOpenWebReader).toHaveBeenCalledOnce()
+  })
+
+  // @testCase TC-REG-10
+  it('сохраняет viewport-safe прокручиваемый DOM-контракт меню', () => {
+    setup({ currentUser: user, ...allTools() })
+    fireEvent.click(screen.getByRole('button', { name: 'Инструменты' }))
+    expect(screen.getByRole('menu', { name: 'Инструменты' })).toHaveClass('acct-menu', 'tools-menu')
   })
 })
 
