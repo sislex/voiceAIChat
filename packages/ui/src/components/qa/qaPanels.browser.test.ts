@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { mkdir } from 'node:fs/promises'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { afterAll, beforeAll, expect, it } from 'vitest'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { chromium, type Browser } from 'playwright'
 import { resolve } from 'node:path'
 
@@ -10,6 +10,14 @@ const root=resolve(__dirname,'../../../../..')
 const port=19000+Math.floor(Math.random()*1000)
 const base=`http://127.0.0.1:${port}`
 const teardownTimeoutMs=120000
+
+type QaPanelsCleanup=()=>void|Promise<void>
+async function finishQaPanelsTeardown(...cleanups:QaPanelsCleanup[]){
+  const results=await Promise.allSettled(cleanups.map(cleanup=>Promise.resolve().then(cleanup)))
+  const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[])
+  if(errors.length===1)throw errors[0]
+  if(errors.length>1)throw new AggregateError(errors,'QA panels teardown failed')
+}
 beforeAll(async()=>{
   await mkdir(resolve(root,'.generated_images'),{recursive:true})
   server=spawn('npm',['run','-w','@voicechat/ui','storybook','--','--ci','--no-open','--port',String(port)],{cwd:root,stdio:'ignore',detached:true})
@@ -20,11 +28,41 @@ beforeAll(async()=>{
   }
   browser=await chromium.launch()
 },120000)
-// @testCase TC-01
 afterAll(async()=>{
-  await browser?.close()
-  if(server?.pid)try{process.kill(-server.pid,'SIGTERM')}catch{}
+  await finishQaPanelsTeardown(
+    () => browser?.close(),
+    () => { if(server?.pid)process.kill(-server.pid,'SIGTERM') },
+  )
 },teardownTimeoutMs)
+
+// @testCase TC-01
+it('waits for every QA panels teardown operation',async()=>{
+  let releaseBrowser!:()=>void, releaseStorybook!:()=>void
+  let finished=false
+  const teardown=finishQaPanelsTeardown(
+    ()=>new Promise<void>(resolve=>{releaseBrowser=resolve}),
+    ()=>new Promise<void>(resolve=>{releaseStorybook=resolve}),
+  ).then(()=>{finished=true})
+  await vi.waitFor(()=>expect(releaseBrowser).toBeTypeOf('function'))
+  await vi.waitFor(()=>expect(releaseStorybook).toBeTypeOf('function'))
+  releaseBrowser()
+  await Promise.resolve()
+  expect(finished).toBe(false)
+  releaseStorybook()
+  await teardown
+  expect(finished).toBe(true)
+},30000)
+
+// @testCase TC-03
+it('finishes remaining teardown work and reports a real cleanup error',async()=>{
+  const error=new Error('browser close failed')
+  let storybookStopped=false
+  await expect(finishQaPanelsTeardown(
+    async()=>{throw error},
+    async()=>{storybookStopped=true},
+  )).rejects.toBe(error)
+  expect(storybookStopped).toBe(true)
+},30000)
 
 // @testCase TC-02
 // @testCase TC-04
