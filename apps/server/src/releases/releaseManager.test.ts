@@ -303,6 +303,31 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(calls).toBe(3)
   })
 
+  it('notifies the project owner when a release finishes',async()=>{
+    const release=await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.8',version:'0.1.8',sha:'abcdef1234567890',status:'checking'})
+    await db.releases.setProjectReleaseStatus(release.id,'ready','owner')
+    expect(await db.tasks.listTaskPreparationNotifications('owner')).toEqual([expect.objectContaining({kind:'release',releaseId:release.id,title:'Сборка 0.1.8 завершена',projectId})])
+  })
+
+  it('archives failed preparations and hides them by default without deleting branches',async()=>{
+    const release=await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.9',version:'0.1.9',sha:'abcdef1234567890',status:'failed'})
+    expect(await db.releases.archiveFailedPreparations(10_000)).toBe(1)
+    expect(await db.releases.listProjectReleaseSummaries('owner',projectId)).toEqual([])
+    expect(await db.releases.listProjectReleaseSummaries('owner',projectId,true)).toEqual([expect.objectContaining({id:release.id,archivedAt:expect.any(Number)})])
+    expect((await db.releases.getProjectRelease('owner',projectId,release.id))?.deletedAt).toBeNull()
+  })
+
+  it('returns and caches git changes for 60 seconds, while missing production stays unknown',async()=>{
+    let calls=0
+    const runtime:ReleaseRuntime={prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{calls+=1;expect(command).toContain('git log --format=%H%x1f%an%x1f%at%x1f%s');return {exitCode:0,output:'abcdef1234567890\x1fAlex\x1f1700000000\x1ffeat(ui): comparison\n'}}}
+    const manager=new ReleaseManager(db,runtime,{changesTtlMs:60_000})
+    expect(await manager.changes(ci(),'abcdef1234567890',null)).toEqual({fromSha:null,toSha:'abcdef1234567890',changes:null})
+    const first=await manager.changes(ci(),'abcdef1234567890','1234567890abcdef')
+    const second=await manager.changes(ci(),'abcdef1234567890','1234567890abcdef')
+    expect(first.changes).toEqual([{sha:'abcdef1234567890',author:'Alex',at:1_700_000_000_000,subject:'feat(ui): comparison'}])
+    expect(second).toEqual(first);expect(calls).toBe(1)
+  })
+
   it('resumes an active health check after server restart and verifies the expected commit and version',async()=>{
     const release=await db.releases.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'health_check'})
     await db.releases.setProjectReleaseStep(release.id,'health_check','running','waiting','owner')

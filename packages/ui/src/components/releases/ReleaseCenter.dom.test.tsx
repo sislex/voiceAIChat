@@ -37,6 +37,17 @@ describe('ReleaseCenter — версия, production и мобильная ра�
   // The remembered tab must not leak between tests: a deploy-tab test would
   // otherwise open the next one on «Деплой».
   beforeEach(() => { window.localStorage.removeItem('vc.releases.tab'); window.localStorage.removeItem('vc.releases.mode') })
+  it('показывает мобильную панель действий, когда форма ушла из viewport',async()=>{
+    const original=globalThis.IntersectionObserver
+    globalThis.IntersectionObserver=class { constructor(private cb:IntersectionObserverCallback){} observe(target:Element){this.cb([{isIntersecting:false,target} as IntersectionObserverEntry],this as unknown as IntersectionObserver)} unobserve(){} disconnect(){} takeRecords(){return []} root=null;rootMargin='0px';thresholds=[0] } as unknown as typeof IntersectionObserver
+    try{render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()}/>);expect(await screen.findByRole('region',{name:'Действия релиза'})).toHaveTextContent('Собрать новый релиз')}finally{globalThis.IntersectionObserver=original}
+  })
+
+  it('загружает архивные подготовки только после переключателя',async()=>{
+    const value=api();value['releases:list']=vi.fn(async({includeArchived})=>includeArchived?[summary({...older,status:'failed',archivedAt:Date.now()},{archivedAt:Date.now()})]:[summary(deployment),summary(prepared)])
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value}/>);expect(screen.queryByText('release/0.1.299')).toBeNull();await userEvent.click(await screen.findByRole('checkbox',{name:'Показать архивные'}));expect(await screen.findByText('release/0.1.299')).toBeInTheDocument();expect(value['releases:list']).toHaveBeenLastCalledWith({projectId:'p1',includeArchived:true})
+  })
+
   it('подсказывает следующую версию и подставляет её кнопкой', async () => {
     const value = api()
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
@@ -108,7 +119,7 @@ describe('ReleaseCenter — версия, production и мобильная ра�
   it('ячейки таблиц несут подписи колонок для карточной раскладки телефона', async () => {
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
     const row = (await screen.findByText('release/0.1.300')).closest('tr')!
-    expect(row.querySelectorAll('td[data-label]')).toHaveLength(5)
+    expect(row.querySelectorAll('td[data-label]')).toHaveLength(6)
     expect(row.querySelector('td[data-label="Статус"]')).toHaveTextContent('Готов')
     await userEvent.click(screen.getByRole('tab', { name: 'Деплой' }))
     const history = screen.getAllByRole('row').find((item) => item.getAttribute('aria-label')?.startsWith('Деплой'))!
@@ -195,6 +206,7 @@ describe('ReleaseCenter — версия, production и мобильная ра�
     await userEvent.click(screen.getByRole('button', { name: /Последний деплой/ }))
     expect(await screen.findByText('попытка 2', { exact: false })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Повторить деплой' }))
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Задеплоить повторно'}))
     expect(value['releases:deploy']).toHaveBeenCalledWith({ projectId: 'p1', branch: 'release/0.1.300' })
     expect(await screen.findByText('попытка 3', { exact: false })).toBeInTheDocument()
     // The deploy detail links back to the preparation it was made from.

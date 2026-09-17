@@ -1947,17 +1947,20 @@ export class TasksRepo extends BaseRepo {
         AND d.question_id IS NULL
       ORDER BY q.asked_at,q.question_id
     `, [userId, userId])) as Record<string, unknown>[]
-    return rows.map((row) => ({
+    const preparation=rows.map((row) => ({
       questionId: String(row.question_id), attemptId: String(row.attempt_id),
       projectId: String(row.project_id), projectName: String(row.project_name),
       taskId: String(row.task_id), taskTitle: String(row.task_title),
       text: String(row.text), askedAt: Number(row.asked_at),
-      dismissedAt: row.dismissed_at == null ? null : Number(row.dismissed_at)
+      dismissedAt: row.dismissed_at == null ? null : Number(row.dismissed_at),kind:'preparation' as const
     }))
+    const releases=await this.sql.all<{id:string;project_id:string;release_id:string;project_name:string;title:string;text:string;created_at:number;dismissed_at:number|null}>(`SELECT n.id,n.project_id,n.release_id,p.name AS project_name,n.title,n.text,n.created_at,n.dismissed_at FROM release_notifications n JOIN projects p ON p.id=n.project_id WHERE n.user_id=? AND n.dismissed_at IS NULL ORDER BY n.created_at`,[userId])
+    return [...preparation,...releases.map(row=>({questionId:row.id,attemptId:row.release_id,projectId:row.project_id,projectName:row.project_name,taskId:'',taskTitle:row.title,text:row.text,askedAt:row.created_at,dismissedAt:row.dismissed_at,kind:'release' as const,releaseId:row.release_id,title:row.title,actionLabel:'Открыть релиз'}))].sort((a,b)=>a.askedAt-b.askedAt)
   }
 
   async dismissTaskPreparationNotification(userId: string, questionId: string): Promise<boolean> {
     const now = this.now()
+    if(await this.repos.releases.dismissReleaseNotification(userId,questionId,now))return true
     const result = await this.sql.run(`
       INSERT OR IGNORE INTO task_preparation_notification_dismissals (question_id,user_id,dismissed_at)
       SELECT q.question_id,?,?

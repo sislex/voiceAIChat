@@ -5,7 +5,7 @@ import { gateSignature, scenarioLabel, qaScenarioId } from '@voicechat/shared'
 import type { AutomatedQaExecutionContext, CiStageExecutionContext } from '../db/database.js'
 import type { AutomatedQaScenarioRunner } from './automatedQaScenario.js'
 import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
-import { workspaceInstallCommand, WORKSPACE_INSTALL_TIMEOUT_MS } from './workspaceDeps.js'
+import { workspaceInstallEnvironment, WORKSPACE_INSTALL_TIMEOUT_MS } from './workspaceDeps.js'
 
 export interface ComponentQaFinishInput {
   status: 'passed' | 'failed' | 'blocked'
@@ -83,7 +83,13 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
       // Зависимости ставим сами: checkout достаётся от development-рана и его
       // `node_modules` могли не пережить уборку. Установка идёт отдельной
       // записью, чтобы нумерация стадий проекта осталась прежней.
-      const install = workspaceInstallCommand(context.npmCacheDir)
+      const installEnvironment = workspaceInstallEnvironment(context.workdir, runId)
+      const install = installEnvironment.command
+      await deps.db.ci.appendComponentQaLog(
+        runId,
+        'stdout',
+        `[dependency_setup] HOME=${installEnvironment.homeDir} npm_cache=${installEnvironment.npmCacheDir}\n`
+      )
       const runStage = async (script: string, timeoutMs: number): Promise<{ record: ComponentQaCommandResult; passed: boolean; infrastructure: boolean } | null> => {
         const stageStartedAt = now(), remainingMs = Math.min(timeoutMs, deadline - stageStartedAt)
         await deps.db.ci.appendComponentQaLog(runId, 'stdout', `$ ${script}\n`)
