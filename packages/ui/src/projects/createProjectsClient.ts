@@ -11,7 +11,7 @@ export function createProjectsClient(api: RendererApi, board?: RendererBoardBrid
     getBoard: (projectId, options) => api['board:get']({ id: projectId, includeCompleted: options?.includeCompleted }),
     subscribeBoard: (projectId, listener) => {
       if (!board) return () => undefined
-      const stopChanged = board.onChanged(listener)
+      const stopChanged = board.onCardsChanged(listener)
       const stopConnected = board.onConnected(() => {
         board.subscribe(projectId)
         listener({ projectId, reason: 'reconnected' })

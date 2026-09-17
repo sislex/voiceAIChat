@@ -23,6 +23,7 @@ export const KANBAN_HEALTH_PATH = '/v1/health'
 export type KanbanEvent =
   | { kind: 'frame'; message: ServerMessage; userId: string }
   | { kind: 'board'; projectId: string }
+  | { kind: 'boardStatuses'; projectId: string }
   | { kind: 'preparationRun'; update: { userId: string; projectId: string; taskId: string; runId: string } }
   | { kind: 'taskRepositories'; update: { projectId: string; taskId: string } }
   | { kind: 'qaStage'; update: { projectId: string; taskId: string; stage: QaRunStage | 'manual_qa' } }

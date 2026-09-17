@@ -1276,6 +1276,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     board: {
       changed: (projectId) => boardHub.emit(projectId),
       subscribe: (cb) => boardHub.onChange(cb),
+      subscribeStatuses: (cb) => boardHub.onStatusesChange(cb),
       subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb),
       subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb),
       subscribeQaStages: (cb) => boardHub.onQaStageChange(cb),

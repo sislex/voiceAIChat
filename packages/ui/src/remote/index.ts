@@ -195,7 +195,8 @@ export function makeBoardBridge(ws: WsClient): RendererBoardBridge {
   return {
     subscribe: (projectId) => ws.send({ t: 'board.subscribe', projectId }),
     unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
-    onChanged: (cb) => ws.on('board.changed', (m) => cb({ projectId: m.projectId })),
+    onCardsChanged: (cb) => ws.on('board.cards.changed', (m) => cb({ projectId: m.projectId })),
+    onStatusesChanged: (cb) => ws.on('board.statuses.changed', (m) => cb({ projectId: m.projectId })),
     onConnected: (cb) => ws.onConnected(() => cb()),
     onPreparationRunUpdated: (cb) => ws.on('preparation.run.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId, runId: m.runId })),
     onTaskRepositoriesUpdated: (cb) => ws.on('task.repositories.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId })),

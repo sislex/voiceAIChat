@@ -40,12 +40,12 @@ function connect(token: string): Promise<WebSocket> {
   })
 }
 
-/** Ждём лёгкую инвалидацию board.changed, иначе null по таймауту. */
-function waitBoardChanged(ws: WebSocket, projectId: string, ms = 1000): Promise<Extract<ServerMessage, { t: 'board.changed' }> | null> {
+/** Ждём лёгкую инвалидацию board.cards.changed, иначе null по таймауту. */
+function waitBoardChanged(ws: WebSocket, projectId: string, ms = 1000, type: 'board.cards.changed' | 'board.statuses.changed' = 'board.cards.changed'): Promise<Extract<ServerMessage, { t: 'board.cards.changed' | 'board.statuses.changed' }> | null> {
   return new Promise((resolve) => {
     const onMsg = (d: Buffer) => {
       const m = JSON.parse(d.toString()) as ServerMessage
-      if (m.t === 'board.changed' && m.projectId === projectId) {
+      if (m.t === type && m.projectId === projectId) {
         ws.off('message', onMsg)
         resolve(m)
       }
@@ -110,7 +110,9 @@ async function createProject(): Promise<ProjectDetail> {
 }
 
 describe('WS: живое обновление доски', () => {
-  it('участник получает board.changed без снапшота после мутации через REST', async () => {
+  // @testCase TC-WS-01
+  // @testCase TC-GATE-01
+  it('участник получает board.cards.changed без снапшота после мутации через REST', async () => {
     const p = await createProject()
     const auth = { authorization: `Bearer ${adminTok}` }
     const board = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
@@ -126,8 +128,21 @@ describe('WS: живое обновление доски', () => {
       payload: { columnId: board.columns[0]!.id, title: 'Hello' }
     })
     const got = await next
-    expect(got).toEqual({ t: 'board.changed', projectId: p.id })
+    expect(got).toEqual({ t: 'board.cards.changed', projectId: p.id })
     expect(got).not.toHaveProperty('board')
+    ws.close()
+  })
+
+  it('мутация колонки публикует только board.statuses.changed', async () => {
+    const p = await createProject()
+    const ws = await connect(adminTok)
+    ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const statusChanged = waitBoardChanged(ws, p.id, 1000, 'board.statuses.changed')
+    const cardsChanged = waitBoardChanged(ws, p.id, 200, 'board.cards.changed')
+    await app.inject({ method: 'POST', url: `/api/projects/${p.id}/columns`, headers: { authorization: `Bearer ${adminTok}` }, payload: { name: 'Remote status' } })
+    expect(await statusChanged).toEqual({ t: 'board.statuses.changed', projectId: p.id })
+    expect(await cardsChanged).toBeNull()
     ws.close()
   })
 
@@ -178,7 +193,7 @@ describe('WS: живое обновление доски', () => {
     const started = await app.inject({ method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/qa/runs/automated_qa`, headers: auth })
     expect(started.statusCode).toBe(202)
     const run = started.json() as { id: string }
-    expect(await active).toEqual({ t: 'board.changed', projectId: p.id })
+    expect(await active).toEqual({ t: 'board.cards.changed', projectId: p.id })
     // Результат этапа живёт во второй фазе доски: скелет отдаёт только карточки.
     const statusesOf = async (): Promise<BoardStatuses> =>
       (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board/statuses`, headers: auth })).json() as BoardStatuses
@@ -186,7 +201,7 @@ describe('WS: живое обновление доски', () => {
 
     const cancelled = waitBoardChanged(ws, p.id)
     expect((await app.inject({ method: 'DELETE', url: `/api/qa/runs/${run.id}`, headers: auth })).statusCode).toBe(200)
-    expect(await cancelled).toEqual({ t: 'board.changed', projectId: p.id })
+    expect(await cancelled).toEqual({ t: 'board.cards.changed', projectId: p.id })
     expect((await statusesOf()).tasks.find((item) => item.taskId === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
     ws.close()
   })
@@ -212,7 +227,7 @@ describe('WS: живое обновление доски', () => {
     bob.close()
   })
 
-  it('не-участник не получает board.changed по подписке', async () => {
+  it('не-участник не получает board.cards.changed по подписке', async () => {
     const p = await createProject()
     const ws = await connect(bobTok)
     const changed = waitBoardChanged(ws, p.id, 600)

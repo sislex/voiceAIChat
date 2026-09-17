@@ -591,7 +591,7 @@ merge-переходах. Задачи в `done` здесь нормальны: 
 позднее серверное значение применяется только пока пользователь не изменил
 соответствующее поле. Черновик одного редактора не блокирует гидратацию другого,
 а смена `task.id` полностью сбрасывает оба черновика и режимы редактирования.
-Живые обновления доски остаются change-driven: WS `board.changed`
+Живые обновления доски остаются change-driven: WS `board.cards.changed`
 (инвалидация, не снапшот) → дебаунс-рефетч теперь уже лёгкого board.
 
 Подготовка задачи: `preparation/runs` (весь список ранов, тяжёлый) грузится
@@ -830,18 +830,19 @@ validation, unsaved changes, production results and the constrained mobile layou
 ## Реалтайм (BoardHub)
 
 Живые изменения доски рассылаются по WS: `apps/server/src/projects/boardHub.ts` —
-процесс-глобальный stateless-эмиттер (`emit(projectId)` после успешных REST-, CI- и
-QA-мутаций, `onChange` для сессий), по образцу `AgentRegistry.onChange`.
+процесс-глобальный stateless-эмиттер с раздельными каналами карточек и статусов.
 Per-connection подписка в `session.ts` принимает `board.subscribe`, проверяет членство
-через существующее чтение доски и затем отправляет только лёгкие
-`{t:'board.changed', projectId}`; полный `Board` по WebSocket не передаётся.
+через существующее чтение доски и отправляет только лёгкие типизированные кадры
+`{t:'board.cards.changed', projectId}` и `{t:'board.statuses.changed', projectId}`;
+полные снимки по WebSocket не передаются. Мутации карточек публикуют первый канал,
+создание, переименование, настройка, перестановка и удаление колонок — второй.
 `board.unsubscribe` и закрытие сокета снимают логическую подписку.
 
 Тот же hub имеет отдельный лёгкий канал `emitPreparationRun` /
 `onPreparationRunChange`: сессия фильтрует его по владельцу соединения и отправляет
 `preparation.run.updated` с `projectId`, `taskId`, `runId`, не перечитывая доску. Тем же путём (BoardHub → KanbanService → standalone-шина → remote-мост → session) идёт `release.updated {projectId, releaseId, status}` для Release Center — см. [releases.md](features/releases.md).
 Текстовые дельты подготовки используют только этот адресный канал и не создают
-`board.changed` для каждого фрагмента лога.
+`board.cards.changed` для каждого фрагмента лога.
 
 Изменения учтённых копий репозитория задачи идут ещё одним адресным каналом
 `emitTaskRepositories` / `onTaskRepositoriesChange`. `MergeRunManager` публикует
@@ -853,18 +854,19 @@ Per-connection подписка в `session.ts` принимает `board.subscr
 Источники — `apps/server/src/projects/boardHub.ts`, `apps/server/src/session.ts` и
 `packages/ui/src/components/ci/MergePanel.tsx`.
 
-Единственный источник полного снимка доски — `GET /api/projects/:projectId/board`.
-Web-клиент отправляет подписку до первоначального GET, игнорирует инвалидации других
-проектов и объединяет сигналы активного проекта окном 50 мс. Координатор в обоих
-projects store допускает один GET для текущей версии `projectId + includeCompleted`;
-сигнал во время загрузки ставит один pending-refetch, а generation-token не даёт
+Полные снимки остаются в HTTP: `GET /api/projects/:projectId/board` и
+`GET /api/projects/:projectId/board/statuses`. При первом открытии web-клиент подписывается
+на проект и однократно читает оба ресурса с `includeCompleted=1`; периодического polling
+нет. `board.cards.changed` перечитывает только Board, `board.statuses.changed` — только
+BoardStatuses, а события другого проекта и остальные доменные кадры игнорируются.
+У каждого ресурса свой single-flight и pending-refetch; generation-token не даёт
 запоздалому ответу старого проекта или фильтра заменить состояние. Успешный reconnect
-повторно отправляет только текущую логическую подписку и планирует одну синхронизацию.
+повторно отправляет текущую логическую подписку и однократно синхронизирует оба ресурса.
 История открытой подготовки после reconnect выполняет ровно одну собственную
 контрольную синхронизацию. Смена проекта/фильтра, закрытие и dispose очищают
 debounce-таймер, pending-сигнал и подписку. Фоновая ошибка сохраняет последний
 успешный снимок. Клиентский мост `window.board` (`RendererBoardBridge`) — только web;
-он доставляет общие инвалидации доски, адресные preparation-run события и lifecycle
+он доставляет раздельные инвалидации карточек и статусов, адресные preparation-run события и lifecycle
 подключения. В desktop живой синхронизации нет.
 
 ## Фронтенд
@@ -2319,13 +2321,13 @@ CRUD `…/comments[/:commentId]` и `…/worklog[/:entryId]`; ошибка пр�
 `openProject(id, { board: false })` в
 `packages/ui/src/store/domains/projectsStore.ts` открывает релизы, настройки
 или код, загружая только `projects:get`: запросы снимка, личного вида и
-статусов доски и подписка `board.changed` до перехода на канбан не нужны.
+статусов доски и подписка `board.cards.changed` до перехода на канбан не нужны.
 `ensureBoard(id)` догружает доску по требованию. Если снимок того же проекта
 уже есть и его cache-key ещё свеж, функция ничего не запрашивает; после TTL она
 обновляет снимок, не скрывая текущую доску и выбранный фильтр завершённых задач.
 
 Общий read-cache разделяет board-ключи по project id и нормализованному
-`includeCompleted`. Проектные мутации и `board.changed` инвалидируют
+`includeCompleted`. Проектные мутации и `board.cards.changed` инвалидируют
 относящиеся к проекту чтения; потеря доступа удаляет проект и его кэшированные
 данные. Generation-проверки и идентичность cache-entry не дают позднему ответу
 для прежнего проекта, фильтра или уже инвалидированной записи изменить

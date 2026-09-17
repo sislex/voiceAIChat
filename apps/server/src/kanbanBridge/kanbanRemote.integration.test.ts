@@ -121,7 +121,7 @@ describe('ядро (remote) + отдельный процесс канбана',
       ws.send(JSON.stringify({ t: 'board.subscribe', projectId: project.id }))
       await new Promise((r) => setTimeout(r, 100))
       const board = (await (await fetch(`${coreUrl}/api/projects/${project.id}/board`, { headers: adminAuth })).json()) as Board
-      const changed = waitFrame(ws, (m) => m.t === 'board.changed' && (m as { projectId: string }).projectId === project.id)
+      const changed = waitFrame(ws, (m) => m.t === 'board.cards.changed' && (m as { projectId: string }).projectId === project.id)
       const task = await fetch(`${coreUrl}/api/projects/${project.id}/tasks`, { method: 'POST', headers: { ...adminAuth, ...json }, body: JSON.stringify({ columnId: board.columns[0]!.id, title: 'Через прокси' }) })
       expect(task.status).toBe(200)
       expect(await changed).not.toBeNull()

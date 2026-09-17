@@ -1511,7 +1511,7 @@ describe('TaskModal — подготовка к разработке', () => {
     const previousBoard = window.board
     window.board = {
       subscribe: vi.fn(), unsubscribe: vi.fn(),
-      onChanged: vi.fn(() => () => {}), onConnected: vi.fn(() => () => {}),
+      onCardsChanged: vi.fn(() => () => {}), onStatusesChanged: vi.fn(() => () => {}), onConnected: vi.fn(() => () => {}),
       onPreparationRunUpdated: vi.fn((cb) => { preparationUpdated = cb; return offUpdate }),
       onTaskRepositoriesUpdated: vi.fn(() => () => {}),
       onQaStageUpdated: vi.fn(() => () => {}),
