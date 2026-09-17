@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-17
-checked: 938f8b9b
+checked: a6ef2f4d
 
 areas:
   - packages/shared/src/projects.ts
@@ -761,38 +761,30 @@ not copied into the request text. Unsaved credentials or a missing preview URL
 disable the action. Production-password warnings remain visible.
 
 
-The settings shell keeps the tab navigation outside a single focusable internal
-vertical scroll surface; the document and tab panels do not add competing
-vertical scrollers. The active horizontal tab is scrolled into view and the tab
-list uses roving tabindex with arrow/Home/End navigation. Each active panel has
-an `h2`; field errors only set `aria-describedby` while the stable error element
-exists, and save pending/success/failure states are announced locally.
+The application shell keeps the document fixed, and its shrinkable flex chain
+ends in `.project-settings-form`. The settings H1 and horizontal tab list stay
+outside the sole focusable vertical scroll surface, `.project-settings-scroll`;
+individual panels and long command output do not create competing vertical
+scrollers. The tab list uses roving tabindex with cyclic arrow/Home/End navigation,
+and the selected tab is brought into view after pointer, keyboard or route changes.
+Each active panel has an H2 associated with the tabpanel.
 
-At phone widths, tabs scroll horizontally with a continuation cue, forms and
-selects use the full single column, the save bar includes the bottom safe area,
-and machine tables become bordered cards while preserving the same controls.
-Long machine values remain selectable and have a copy action whose failure
-message tells the user to select the value manually. Stories cover validation,
-unsaved changes, production results and a 390px layout.
+`ProjectSettingsDraft` overlays its patch onto the server detail before rendering,
+so controls and the LLM summary always describe the same unsaved state. Switching
+settings tabs preserves that patch. Browser unload and navigation outside this
+project's settings require confirmation, while navigation among its settings tabs
+does not. Saving disables the fieldset and announces pending, success and failure
+locally; field errors receive `role=alert`, and a control has `aria-describedby`
+only while its error exists. Removing any removable participant asks for
+confirmation naming that participant; the last owner remains protected.
 
-The application shell keeps the document fixed. Its flex chain from `.app` through
-`.app-content`, `.toolpage`, `.widget-assistant`, `.widget-assistant-widget`
-and `.project-settings-form` is shrinkable with `min-height: 0`. Within settings,
-the H1 and tab list remain outside the sole vertical scroll surface,
-`.project-settings-content`; the sticky save bar reserves the bottom safe area.
-
-At phone widths, tabs form a horizontally scrollable, single-line tablist and forms
-use one column. Selecting a tab by pointer, touch, route change or the Home/End/arrow
-keys automatically brings the active tab into view, including at 390 px. The page
-has one H1, validation relationships follow the rendered alerts, and App title
-segments are deduplicated before the single `ChatAI` suffix. Storybook exposes
-separate desktop and 390×844 mobile states for all six tabs; the browser regression
-first waits for the cold ProjectSettings story module, then checks document/form/panel
-widths, the visible selected tab and labelled mobile machine rows. DOM tests cover
-cyclic ArrowLeft/ArrowRight/Home/End navigation,
-controlled routing, feature fallback and draft retention. Story accessibility
-shards analyze `document.body` through the shared serialized axe queue, whose
-failure path releases the queue; serious and critical violations remain forbidden.
+At phone widths, the tab list scrolls horizontally with a continuation cue, forms
+and selects occupy one column, and the sticky save bar reserves the bottom safe
+area. Machine tables become bordered per-machine cards without losing controls.
+Long paths and commands wrap or remain selectable instead of being clipped;
+machine values also have an explicit copy action, whose accessible failure message
+tells the user to select the value manually. The behavior is covered by DOM and
+Storybook accessibility/layout tests, including the narrow viewport.
 
 
 ## Чаты завершённых задач скрыты из списка бесед
