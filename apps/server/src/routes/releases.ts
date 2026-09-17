@@ -110,14 +110,24 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
       return reply.code(202).send(release)
     }catch(error){return bad(reply,error)}
   })
-  app.get<{Params:{id:string}}>('/api/projects/:id/releases',async(req,reply)=>{
+  app.get<{Params:{id:string};Querystring:{archived?:string}}>('/api/projects/:id/releases',async(req,reply)=>{
     if(!await project(req,req.params.id))return nf(reply)
-    return await db.releases.listProjectReleaseSummaries(uid(req),req.params.id)
+    return await db.releases.listProjectReleaseSummaries(uid(req),req.params.id,req.query?.archived==='1')
   })
   app.post<{Params:{id:string};Body:{branch?:string}}>('/api/projects/:id/releases/deploy',deployGuard,async(req,reply)=>{
     const production=await productionTarget(req,req.params.id)
     if(!production)return bad(reply,'Production-машина, checkout, deploy-команда или health-check не настроены')
     try{if(production.mode==='managed'){const check=await managed.preflight(uid(req),req.params.id,'production');if(!check.ok)return reply.code(400).send(check)}return reply.code(202).send(await releases.start(uid(req),await ciTarget(req,req.params.id),production,req.body?.branch??''))}catch(error){return bad(reply,error)}
+  })
+  app.get<{Params:{id:string;releaseId:string};Querystring:{from?:string}}>('/api/projects/:id/releases/:releaseId/changes',async(req,reply)=>{
+    const userId=uid(req)
+    const release=await db.releases.getProjectRelease(userId,req.params.id,req.params.releaseId)
+    if(!release)return nf(reply)
+    const explicit=req.query?.from?.trim()||null
+    const production=explicit?null:(await db.releases.listProjectReleaseSummaries(userId,req.params.id)).find(item=>item.status==='released'&&item.previousReleaseId)
+    const fromSha=explicit??production?.sha??null
+    if(fromSha===null)return {fromSha:null,toSha:release.sha,changes:null}
+    try{return await releases.changes(await ciTarget(req,req.params.id),release.sha,fromSha)}catch(error){return bad(reply,error)}
   })
   app.delete<{Params:{id:string;releaseId:string};Body:{branch?:string}}>('/api/projects/:id/releases/:releaseId',prepareGuard,async(req,reply)=>{
     try{await releases.deleteBranch(uid(req),await ciTarget(req,req.params.id),req.params.releaseId,req.body?.branch??'');return {deleted:true as const}}catch(error){return bad(reply,error)}

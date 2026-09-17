@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import axe from 'axe-core'
+import { runAxe } from '../test/a11y.js'
 import { ToolFrame } from './ToolFrame'
 
 describe('ToolFrame (общая рамка тулов)', () => {
@@ -137,5 +139,39 @@ describe('ToolFrame (общая рамка тулов)', () => {
       </ToolFrame>
     )
     expect(screen.queryByLabelText('Закрыть')).toBeNull()
+  })
+})
+
+describe('axe serialization', () => {
+  // @testCase TC-REG-03
+  it('serializes concurrent analyses in one document', async () => {
+    let active = 0
+    let maximum = 0
+    const run = vi.spyOn(axe, 'run') as unknown as ReturnType<typeof vi.fn>
+    run.mockImplementation(async () => {
+      active += 1
+      maximum = Math.max(maximum, active)
+      await Promise.resolve()
+      active -= 1
+      return { violations: [] }
+    })
+
+    await Promise.all([runAxe(), runAxe(), runAxe()])
+
+    expect(run).toHaveBeenCalledTimes(3)
+    expect(maximum).toBe(1)
+    run.mockRestore()
+  })
+
+  // @testCase TC-NEG-04
+  it('releases the queue when an analysis fails', async () => {
+    const run = vi.spyOn(axe, 'run') as unknown as ReturnType<typeof vi.fn>
+    run.mockRejectedValueOnce(new Error('analysis failed'))
+      .mockResolvedValueOnce({ violations: [] })
+
+    await expect(runAxe()).rejects.toThrow('analysis failed')
+    await expect(runAxe()).resolves.toEqual([])
+    expect(run).toHaveBeenCalledTimes(2)
+    run.mockRestore()
   })
 })

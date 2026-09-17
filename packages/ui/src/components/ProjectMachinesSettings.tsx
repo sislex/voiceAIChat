@@ -146,7 +146,7 @@ function ConfigCells({ projectId, machine, readonly, onSave, onReset }: { projec
     const inputId = `project-machine-${machine.agentId}-${key}`
     const directoryKind = PROJECT_MACHINE_DIRECTORY_KINDS.includes(key as ProjectMachineDirectoryKind) ? key as ProjectMachineDirectoryKind : null
     const overridden = directoryKind ? machine.directories?.[directoryKind]?.override === true : false
-    return <td key={key} data-label={label} className="proj-machine-field" style={cellStyle}>
+    return <td key={key} className="proj-machine-field" data-label={label} style={cellStyle}>
       <label htmlFor={inputId} style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 700 }}>
         {label} <span title={help} aria-label={`Подсказка: ${label} — ${machine.name ?? machine.agentId}`} tabIndex={0} style={{ cursor: 'help', color: 'var(--text-dim)' }}>ⓘ</span>
       </label>
@@ -182,7 +182,7 @@ function Table(p: { productionAgentId?: string | null; defaultAgentId?: string |
       <colgroup>{columns.map(({ key }) => <col key={key} style={{ width: p.widths[key] }} />)}</colgroup>
       <thead><tr>{columns.map((column) => <ResizableHeader key={column.key} column={column} width={p.widths[column.key]} onResize={p.onResize} />)}</tr></thead>
       <tbody>{filtered.map((m) => { const readiness = machineReadiness(m); return <tr key={m.agentId}>
-        <td style={cellStyle}>
+        <td data-label="Машина" style={cellStyle}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <Tooltip className={`proj-status-dot ${m.online === true ? 'proj-status-dot--online' : 'proj-status-dot--offline'}`} text={m.online === true ? 'Online' : 'Offline'} />
             <strong style={{ overflowWrap: 'anywhere' }}>{m.name ?? m.agentId}</strong>

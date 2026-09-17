@@ -272,6 +272,7 @@ export const REST = {
   browserSessionStart: (id: string) => `/api/browser/${encodeURIComponent(id)}/start`,
   browserSessionCommand: (id: string) => `/api/browser/${encodeURIComponent(id)}/command`,
   browserSessionScreenshot: (id: string) => `/api/browser/${encodeURIComponent(id)}/screenshot`,
+  browserSessionFrames: (id: string) => `/api/browser/${encodeURIComponent(id)}/frames`,
   browserSession: (id: string) => `/api/browser/${encodeURIComponent(id)}`,
   settings: '/api/settings',
   llmAccess: '/api/llm-access',
@@ -573,6 +574,7 @@ export const REST = {
   /** Авто-подготовка прод-машины: storage/привязка/каталоги/команды/managed за один запрос. */
   projectProductionBootstrap: (id: string) => `/api/projects/${encodeURIComponent(id)}/production/bootstrap`,
   projectRelease: (id: string, releaseId: string) => `/api/projects/${encodeURIComponent(id)}/releases/${encodeURIComponent(releaseId)}`,
+  projectReleaseChanges: (id: string, releaseId: string, from?: string) => `/api/projects/${encodeURIComponent(id)}/releases/${encodeURIComponent(releaseId)}/changes${from ? `?from=${encodeURIComponent(from)}` : ''}`,
   projectCi: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci`,
   projectCiLlm: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/llm`,
   taskCiLlm: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/llm`,

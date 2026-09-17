@@ -22,6 +22,7 @@ afterEach(() => { delete (window as { ci?: unknown }).ci })
 
 describe('NewTaskPreparationPanel', () => {
   // @testCase TC-INT-02
+
   it('раскладывает попытки по этапам: исходная постановка и каждый цикл доработки', async () => {
     bridge()
     const loadRuns = vi.fn(async () => [run(), run({ id: 'r2', attempt: 2, status: 'running', createdAt: 2_000, finishedAt: null, canCancel: true })])
@@ -43,6 +44,7 @@ describe('NewTaskPreparationPanel', () => {
     await waitFor(() => expect(screen.getByTestId('new-task-preparation-stage-1')).toHaveAttribute('aria-current', 'step'))
     expect(screen.getByTestId('new-task-preparation-stage-2')).toHaveTextContent('Выполняется')
     await waitFor(() => expect(screen.getByTestId('new-task-preparation-stage-1')).toHaveTextContent('готово'))
+
   })
 
   it('цикл без попыток предлагает запуск подготовки прямо в своём этапе', async () => {

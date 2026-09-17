@@ -248,13 +248,16 @@ describe('Playwright Reader: настоящий интерфейс и инстр
   })
 
   it('показывает потерю кадров и восстанавливает трансляцию после возврата сети', async () => {
-    const pattern = '**/api/browser/*/screenshot'
+    const pattern = '**/api/browser/*/frames*'
     await page.route(pattern, route => route.abort('failed'))
     try {
-      await expect.poll(() => page.getByText(/Кадр не обновляется/).count(), { timeout: 15_000 }).toBe(1)
+      // Уже открытый streaming response route не перехватит; reload заставляет
+      // мост открыть новое соединение, которое мы предсказуемо обрываем.
+      await page.reload()
+      await expect.poll(() => page.getByText(/Поток кадров восстанавливается/).count(), { timeout: 15_000 }).toBe(1)
       if (artifacts) await page.screenshot({ path: join(artifacts, '05-frame-connection-lost.png') })
     } finally { await page.unroute(pattern) }
-    await expect.poll(() => page.getByText(/Кадр не обновляется/).count(), { timeout: 15_000 }).toBe(0)
+    await expect.poll(() => page.getByText(/Поток кадров восстанавливается/).count(), { timeout: 15_000 }).toBe(0)
     await capture('05-frame-connection-restored')
   })
 

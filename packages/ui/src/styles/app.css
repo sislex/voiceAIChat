@@ -4656,11 +4656,15 @@ button.conscmd:hover {
 .proj-test-users { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
 .proj-test-users li { display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr auto; gap: 6px; align-items: center; }
 @media (max-width: 720px) { .proj-test-users li { grid-template-columns: minmax(0, 1fr); } }
-.project-settings-form { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
-.project-settings-form > fieldset, .project-settings-form .proj-detail { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; }
+.project-settings-story-host { display: flex; width: 100%; height: 100dvh; min-width: 0; min-height: 0; overflow: hidden; }
+.project-settings-form { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; max-width: 100%; min-width: 0; min-height: 0; height: 100%; overflow: hidden; padding: 16px 22px; box-sizing: border-box; }
+.project-settings-form > fieldset, .project-settings-form .proj-detail { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.project-settings-title { flex: none; margin: 0; font-size: 20px; line-height: 1.3; }
 .project-settings-form .proj-settings-tabs-wrap { position: relative; flex: 0 0 auto; min-width: 0; }
 .project-settings-form .proj-settings-tabs-wrap::after { content: "›"; position: absolute; right: 0; top: 0; bottom: 8px; display: grid; place-items: center; width: 24px; color: var(--text); background: linear-gradient(90deg, transparent, var(--surface)); pointer-events: none; }
-.project-settings-form .proj-settings-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-right: 28px; scrollbar-width: thin; }
+.project-settings-content { flex: 1 1 auto; min-width: 0; min-height: 0; max-width: 100%; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere; overscroll-behavior: contain; padding: 2px 4px calc(var(--space-4) + env(safe-area-inset-bottom)) 0; box-sizing: border-box; }
+.project-settings-content > * { min-width: 0; max-width: 100%; }
+.project-settings-form .proj-settings-tabs { flex: none; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-width: 100%; padding-right: 28px; scrollbar-width: thin; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; box-sizing: border-box; }
 .project-settings-form .proj-settings-tabs button { flex-shrink: 0; white-space: nowrap; }
 .project-settings-form .project-settings-scroll { flex: 1 1 auto; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 4px calc(var(--space-5) + env(safe-area-inset-bottom)); }
 .project-settings-heading { margin: 0 0 var(--space-3); font-size: 1.25rem; }
@@ -4675,10 +4679,15 @@ button.conscmd:hover {
 .project-check-ok { color: var(--success); }
 .project-settings-form [aria-invalid="true"] { border-color: var(--danger); }
 @media (max-width: 720px) {
+  .project-settings-form { padding: 12px; }
   .project-settings-form .proj-meta-edit, .project-settings-form .feature-policy { display: flex; flex-direction: column; min-width: 0; }
   .project-settings-form input, .project-settings-form select, .project-settings-form textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .project-settings-form .proj-section, .project-settings-form .proj-members li, .project-settings-form .proj-invite { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .project-settings-form .proj-members li, .project-settings-form .proj-add-member, .project-settings-form .proj-invite { flex-wrap: wrap; }
+  .project-settings-form .vc-actionbar { align-items: stretch; }
+  .project-settings-form .vc-actionbar > * { min-width: 0; }
   .project-settings-form .proj-machines-table-wrap { overflow: visible !important; }
-  .project-settings-form .proj-machines-table { display: block; width: 100% !important; min-width: 0 !important; }
+  .project-settings-form .proj-machines-table { display: block; width: 100% !important; min-width: 0 !important; table-layout: fixed; }
   .project-settings-form .proj-machines-table thead, .project-settings-form .proj-machines-table colgroup { display: none; }
   .project-settings-form .proj-machines-table tbody { display: grid; gap: var(--space-3); }
   .project-settings-form .proj-machines-table tr { display: block; width: 100%; margin: 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); box-sizing: border-box; overflow: hidden; }
@@ -5521,7 +5530,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .projlist { padding-top: 8px; }
 .projitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: none; background: none; color: inherit; cursor: pointer; }
 .projitem .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.projitem-role { font-size: 11px; opacity: 0.6; flex: 0 0 auto; }
+.projitem-role { font-size: 11px; color: var(--text-dim); flex: 0 0 auto; }
 /* Тип и роль в строке проекта: одна колонка справа, тип сверху. */
 .projitem-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex: 0 0 auto; min-width: 0; }
 .projitem-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-dim);
@@ -7222,7 +7231,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 .widget-assistant--page { position: fixed; inset: 0; z-index: 40; width: 100vw; height: 100dvh; background: var(--bg); }
 .widget-assistant-widget { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
-.widget-assistant-widget > * { flex: 1 1 auto; min-width: 0; }
+.widget-assistant-widget > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
 .widget-assistant-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .widget-assistant-divider:hover { background: var(--assistant-primary); }
 .widget-assistant-panel { flex: 0 0 var(--widget-assistant-width); min-width: 280px; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--assistant-border); background: var(--assistant-surface); container-type: inline-size; container-name: assistant-panel; }
@@ -7727,6 +7736,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .release-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.release-metrics span{padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--panel);color:var(--text-dim)}.release-metrics strong{color:var(--text)}
 .release-run-feed{display:grid;gap:0;margin:0;padding:0;list-style:none}.release-run-step{position:relative;padding-left:28px}.release-run-step:before{content:'';position:absolute;left:9px;top:22px;bottom:-10px;width:2px;background:var(--border)}.release-run-step:last-child:before{display:none}.release-run-step details{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface);overflow:hidden}.release-run-step summary{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:10px;padding:12px;cursor:pointer}.release-run-dot{position:absolute;left:3px;width:14px;height:14px;border:3px solid var(--surface);border-radius:50%;background:var(--text-dim)}.release-run-step[data-status='running'] .release-run-dot{background:var(--accent)}.release-run-step[data-status='passed'] .release-run-dot{background:var(--success)}.release-run-step[data-status='failed'] .release-run-dot{background:var(--danger)}.release-run-step[data-status='skipped'] .release-run-dot{background:var(--border)}.release-run-step[data-status='skipped'] summary strong{color:var(--text-dim)}.release-run-status,.release-run-step time{color:var(--text-dim);font-size:12px}.release-run-step pre{max-height:420px;overflow:auto;margin:0;padding:12px;border-top:1px solid var(--border);background:var(--bg);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font-size:12px}
 .release-step-summary{margin:0;padding:10px 12px;color:var(--danger);background:var(--danger-soft)}
+.release-changes,.release-comparison{padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}.release-changes h3,.release-comparison h3{margin-top:0}.release-change-group h4{text-transform:uppercase}.release-change-group li{margin:6px 0}.release-change-group small{display:block;color:var(--text-dim)}.release-comparison table{width:100%;border-collapse:collapse}.release-comparison th,.release-comparison td{padding:7px;border-bottom:1px solid var(--border);text-align:left}.release-sticky-actions{display:none}
 @media(max-width:720px){.release-center,.release-detail{padding:12px}
 .release-mode{margin-top:10px;width:calc(100% - 24px);justify-content:stretch}.release-mode-button{flex:1}
 .release-center>header,.release-detail>header,.release-pane>header{align-items:flex-start;flex-wrap:wrap}
@@ -7747,6 +7757,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .release-run-status{display:none}
 .release-settings-actions .vc-btn{flex:1}
 .release-search{margin-left:0;flex-basis:100%}
+.release-sticky-actions{position:fixed;z-index:30;display:flex;left:0;right:0;bottom:0;padding:12px max(12px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border-top:1px solid var(--border);background:color-mix(in srgb,var(--surface) 94%,transparent);box-shadow:0 -8px 24px #0002}.release-sticky-actions .vc-btn{width:100%}
 }
 
 /* Вкладка Merge задачи: запуск, лента рана, история попыток и репозитории. */
@@ -9025,7 +9036,22 @@ body:has([role="menu"]) .jboard-mobile-create { visibility: hidden; pointer-even
 
 /* Новая карточка: рейка этапов, бейджи статусов, снимки workflow и очередь
    доработок по Make-проекту «Проект 19». Токены общие с остальной карточкой. */
-.new-task-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.new-task-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; text-align: left; font: inherit; padding: 0; min-width: 0; }
+.new-task-title--expanded { white-space: normal; overflow-wrap: anywhere; max-height: 25vh; overflow-y: auto; }
+.new-task-side-summary { display: none; cursor: pointer; }
+.new-task-statement { display: grid; gap: 10px; }
+.new-task-statement label { display: grid; gap: 6px; min-width: 0; }
+.new-task-statement textarea { width: 100%; min-width: 0; line-height: 1.5; }
+.new-task-workflow-dates { display: grid; gap: 3px; font-size: 11px; overflow-wrap: anywhere; }
+.new-task-workflow-step { flex-wrap: wrap; }
+.new-task-mini-timeline { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.new-task-mini-timeline .vc-btn { min-width: 0; white-space: normal; overflow-wrap: anywhere; border-bottom: 4px solid var(--accent); }
+.new-task-stage-error { color: var(--danger); overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .new-task-side-summary { display: list-item; padding: 10px; }
+  .new-task-side:not([open]) > :not(summary) { display: none; }
+  .new-task-stage-content, .new-task-column { min-width: 0; overflow-wrap: anywhere; }
+}
 .new-task-eyebrow { display: block; margin-bottom: 4px; color: var(--text-dim); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .new-task-process { display: grid; gap: 14px; min-width: 0; }
 .new-task-process label, .new-task-settings label { display: grid; gap: 6px; min-width: 0; font-size: 12px; }

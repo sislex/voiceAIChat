@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-09-15
-checked: 31632c58
+updated: 2026-09-17
+checked: a5b4718d
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -23,6 +23,12 @@ areas:
 ---
 
 # Playwright Reader и browser-runner
+
+## Development preview evidence
+
+`ci/developmentPreviewBrowser.ts` observes the existing `task-<taskId>` Chromium session. An empty session or a URL other than the exact preview target (including its internal proxy representation) fails navigation evidence. The adapter then performs navigation, DOM read, error-console/network inspection, a11y snapshot, body styles and PNG capture. Evidence carries source SHA, configuration digest, viewport, timestamped calls and screenshot links. Console/network errors prevent a passing result. The a11y snapshot and sampled body styles are evidence, not a comprehensive accessibility or responsive audit.
+
+Saved PNGs use the existing CI browser-shot URL contract. Screenshots remain after environment cleanup; the preview URL becomes inactive. An unavailable browser produces warning under `continue` and blocks success under explicitly selected `block`.
 
 ## Независимый frontend domain
 
@@ -1710,3 +1716,19 @@ Chromium. Ограничения первого круга не описываю
 - **Список инструментов в контрактном тесте снимайте у самого сервера,** а не
   регулярным выражением по исходнику: в схемах встречаются строки вроде `'add'`,
   и регекс их не отличает от имени инструмента.
+
+## Поток кадров и доказательства шага (CHAT-456, 16.09.2026)
+
+`GET /api/browser/:id/frames` отдаёт непрерывный NDJSON с MIME
+`application/x-ndjson`; каждый кадр содержит монотонный `seq`, data URL с реальным
+MIME снимка и, когда доступно, адрес/заголовок страницы. Web-мост автоматически
+переподключается, передаёт последний sequence и отбрасывает повторы; панель также
+проверяет sequence перед заменой изображения. Для host без stream capability
+сохранён прежний screenshot-поллинг.
+
+Browser-runner связывает с записью действия selector, итог, длительность, ошибки
+console и уменьшенные JPEG-снимки до/после команды модели. Изображения хранятся
+только у последних 20 шагов, а status панели получает самую свежую пару;
+ответы инструментов модели получают историю без data URL, чтобы не переполнять
+MCP-ответ. Остальные bounded-данные показываются в ленте и входят в markdown-
+отчёт; введённый текст и содержимое файлов в историю не записываются.

@@ -327,6 +327,20 @@ export function openWebReaderWorkspace(): void {
   window.open(url.toString(), '_blank', 'noopener,noreferrer')
 }
 
+export function buildDocumentTitle(...parts: Array<string | null | undefined>): string {
+  const seen = new Set<string>()
+  return parts
+    .map(part => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .filter(part => {
+      const key = part.toLocaleLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join(' — ')
+}
+
 
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
@@ -718,8 +732,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const pageProject = projects.projects.find(project => project.id === titleProjectId)?.name
     ?? (projects.projectDetail && projects.projectDetail.id === titleProjectId ? projects.projectDetail.name : null)
   useEffect(() => {
-    const titleParts = [inReader ? readerPageTitle : null, pageSection, pageProject, 'ChatAI'].filter((part): part is string => Boolean(part))
-    document.title = titleParts.filter((part, index) => titleParts.findIndex((candidate) => candidate.toLocaleLowerCase() === part.toLocaleLowerCase()) === index).join(' — ')
+    document.title = buildDocumentTitle(inReader ? readerPageTitle : null, pageSection, pageProject, 'ChatAI')
   }, [inReader, readerPageTitle, pageSection, pageProject])
 
   const [dividerActive, setDividerActive] = useState(false)
@@ -1134,6 +1147,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     setClarificationNavigatingId(notification.questionId)
     setClarificationErrors((errors) => { const next = { ...errors }; delete next[notification.questionId]; return next })
     try {
+      if(notification.kind==='release'&&notification.releaseId){navigate(`/projects/${notification.projectId}/releases/${notification.releaseId}`);return}
       // Проверка перехода не применяет снимок до успеха: если вопрос исчез во
       // время клика, карточка уведомления остаётся видимой вместе с ошибкой.
       const snapshot = await api['tasks:listPreparationNotifications']()

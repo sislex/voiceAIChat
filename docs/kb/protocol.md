@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-15
-checked: 68124e0f
+updated: 2026-09-17
+checked: a782dc51
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -17,6 +17,14 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Development preview contracts
+
+Shared `developmentPreview.ts` defines settings, lifecycle/result states, diagnostics, evidence and preview operations. Task CI GET/PUT exposes `developmentPreview` separately from `browserCheck.failurePolicy`. Unknown preview environment/DSN/volume fields are rejected with HTTP 400 before settings changes.
+
+`GET /api/ci/runs/:runId/development-preview` returns the authorized run's state. POST accepts only `restart` or `stop`, checks the run initiator and requires an active run. The optional renderer CI bridge method uses these routes. Lifecycle JSON is persisted and broadcast through existing `ci.log` system events, and RunFeed renders its status, diagnostics, preview/screenshot links and actions.
+
+The CI MCP broker publishes `preview_start`, `preview_status`, `preview_logs`, `preview_restart`, `preview_stop` only for a registered development preview. These tools accept no caller-provided paths, tokens or Compose configuration.
 
 ## Коды ошибок и текст для человека
 
@@ -50,6 +58,12 @@ areas:
 `packages/shared/src/agentProtocol.ts` (сервер↔машина).
 Протокол сервер↔исполнитель LLM живёт отдельно — `packages/shared/src/llm.ts`,
 описание в [features/llm-runners.md](features/llm-runners.md).
+
+## Состав релиза
+
+`GET /api/projects/:id/releases/:releaseId/changes?from=<sha>` возвращает `ReleaseChangesResult`: `toSha`, `fromSha` и `changes` (`ReleaseChange[]`). Без `from` сервер сравнивает с текущим production SHA; если production отсутствует, `fromSha` и `changes` равны `null`, что намеренно отличается от пустого diff. Параметр `from` всегда означает явное сравнение двух релизов. Web-мост — `releases:changes`, URL строится только через `REST.projectReleaseChanges`. SHA валидируются до удалённого выполнения, а результат пары `from`/`to` кэшируется на минуту на уровне `ReleaseManager`.
+
+Список `GET /api/projects/:id/releases` по умолчанию не возвращает записи с `archived_at`; query `archived=1` включает их. Мост `releases:list` передаёт это как `includeArchived`, сохраняя прежнее поведение для клиентов без нового аргумента.
 
 ## Правило добавления чего угодно в контракт
 
@@ -614,3 +628,13 @@ web-клиенте — авторизованный fetch → base64 (см. ui.m
 404. POST
 `/api/conversations` принимает `assistantKind: 'images'`;whitelist строк БД
 и CHECK по scope расширены (см. data-auth.md).
+
+## Поток кадров Playwright Reader
+
+`GET /api/browser/:id/frames` — авторизованный долгоживущий NDJSON-канал с
+`application/x-ndjson`. Запись содержит монотонный `seq`, необязательные
+`dataUrl`, сведения страницы и status сессии; точные типы и адрес маршрута живут
+в `packages/shared/src/ipc.ts` и `packages/shared/src/protocol.ts`. Web-мост в
+`packages/ui/src/remote/index.ts` переподключается после обрыва, передаёт
+последний sequence и не доставляет повторные или не-image кадры. Разовый
+screenshot остаётся совместимым fallback для host без `subscribeFrames`.

@@ -598,6 +598,10 @@ export interface PreparationClarificationNotification {
   text: string
   askedAt: number
   dismissedAt: number | null
+  kind?: 'preparation' | 'release'
+  releaseId?: string
+  title?: string
+  actionLabel?: string
 }
 export interface TaskPreparationLlmSelection {
   machineId?: string

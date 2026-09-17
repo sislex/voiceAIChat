@@ -149,6 +149,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const [frameError, setFrameError] = useState('')
   const frameFailures = useRef(0)
   const frameRevision = useRef(0)
+  const lastFrameSequence = useRef(0)
   const frameRequest = useRef<{ generation: number; promise: Promise<void> } | null>(null)
   const [typing, setTyping] = useState<string>('')
   const incarnation = useRef<string | null>(null)
@@ -242,7 +243,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     activeTab.current = next.activeTabId ?? undefined
     incarnation.current = next.incarnation
     dialogOpen.current = Boolean(next.dialogs?.some(dialog => dialog.tabId === next.activeTabId))
-    setMeta(next)
+    // История — источник истины для видимого автора: status может прийти рядом
+    // с наблюдающим запросом панели, который не является действием человека.
+    const lastHistoryActor = next.history?.at(-1)?.actor
+    const observed = lastHistoryActor ? { ...next, lastActor: lastHistoryActor } : next
+    setMeta(observed)
     if (next.currentUrl) observePage({ url: next.currentUrl, title: next.title ?? '' })
     setViewportId(VIEWPORTS.find(viewport => viewport.viewport.width === next.viewport.width && viewport.viewport.height === next.viewport.height)?.id ?? null)
     if (!addressDirty.current && !addressFocused.current) setAddress(isWebAddress(next.currentUrl) ? next.currentUrl : '')
@@ -317,9 +322,54 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     }
   }, [browser, conversationId, refreshFrame])
 
-  // Поллинг кадров, пока сессия готова и вкладка на экране.
+  // Основной канал — непрерывный поток. Последовательность защищает экран от
+  // запоздавшего кадра прежнего соединения после автоматического reconnect.
   useEffect(() => {
-    if (phase !== 'ready') return
+    if (phase !== 'ready' || !browser?.subscribeFrames || !incarnation.current) return
+    const generation = alive.current
+    lastFrameSequence.current = 0
+    return browser.subscribeFrames(conversationId, { incarnation: incarnation.current, format: 'jpeg', quality: 82 }, next => {
+      if (generation !== alive.current || next.seq <= lastFrameSequence.current) return
+      lastFrameSequence.current = next.seq
+      if (next.dataUrl) setFrame(next.dataUrl)
+      frameFailures.current = 0; setFrameError('')
+      if (next.status) {
+        if (next.status.tabs.length === 0) setFrame(null)
+        applyMeta(next.status)
+      } else if (next.page) observePage(next.page)
+    }, error => {
+      if (generation !== alive.current) return
+      if (++frameFailures.current >= 3) setFrameError(`Поток кадров восстанавливается: ${error.message}`)
+      // stale_tab после закрытия последней вкладки — нормальное состояние кадра,
+      // но именно status должен немедленно показать пустую панель и кнопку создания.
+      void browser.command(conversationId, { incarnation: incarnation.current!, command: { type: 'status' } })
+        .then(next => { if (generation === alive.current && isBrowserSessionMetadata(next)) applyMeta(next) })
+        .catch(() => undefined)
+    })
+  }, [phase, browser, conversationId, observePage, applyMeta])
+
+  // Кадр не несёт вкладки, диалоги, actor и историю. Поток заменяет только
+  // screenshot-поллинг; лёгкий status остаётся, иначе действия модели визуально
+  // происходят, но шапка и лента навсегда сохраняют прежнее состояние.
+  useEffect(() => {
+    if (phase !== 'ready' || !browser?.subscribeFrames || !incarnation.current) return
+    const generation = alive.current
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const poll = async (): Promise<void> => {
+      try {
+        const next = await browser.command(conversationId, { incarnation: incarnation.current!, command: { type: 'status' } })
+        if (!disposed && generation === alive.current && isBrowserSessionMetadata(next)) applyMeta(next)
+      } catch { /* Поток и следующий status сами восстановят наблюдение. */ }
+      if (!disposed && generation === alive.current) timer = setTimeout(() => void poll(), POLL_MS)
+    }
+    timer = setTimeout(() => void poll(), POLL_ACTIVE_MS)
+    return () => { disposed = true; if (timer) clearTimeout(timer) }
+  }, [phase, browser, conversationId, applyMeta])
+
+  // Fallback для старого host без потокового capability.
+  useEffect(() => {
+    if (phase !== 'ready' || browser?.subscribeFrames) return
     let timer: ReturnType<typeof setTimeout> | null = null
     let epoch = 0
     let disposed = false
@@ -346,7 +396,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     if (!document.hidden) start()
     document.addEventListener('visibilitychange', onVisibility)
     return () => { disposed = true; stop(); document.removeEventListener('visibilitychange', onVisibility) }
-  }, [phase, refreshFrame, pollTick])
+  }, [phase, browser, refreshFrame, pollTick])
 
   const run = useCallback(async (command: Parameters<RendererBrowserBridge['command']>[1]['command']): Promise<unknown> => {
     if (!browser || !incarnation.current) return
@@ -1429,7 +1479,15 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
                   <span className="playwright-reader-actor" data-actor={entry.actor}>{entry.actor === 'assistant' ? 'модель' : 'вы'}</span>
                   {' · '}
                   {entry.kind === 'note' ? <strong>{entry.title}</strong> : entry.title}
-                  {entry.error && <small> · {entry.error}</small>}
+                  <small className="playwright-reader-feed-result"> · {entry.result ?? (entry.ok ? 'Выполнено' : 'Не выполнено')}{typeof entry.durationMs === 'number' ? ` · ${entry.durationMs} мс` : ''}</small>
+                  {entry.error && <small className="playwright-reader-feed-error"> · {entry.error}</small>}
+                  {entry.pageErrors?.map((error, errorIndex) => <small key={errorIndex} className="playwright-reader-feed-error">Ошибка страницы: {error}</small>)}
+                  {(entry.beforeImage || entry.afterImage) && (
+                    <span className="playwright-reader-feed-evidence" aria-label="Снимки действия">
+                      {entry.beforeImage && <img src={entry.beforeImage} alt="До действия" />}
+                      {entry.afterImage && <img src={entry.afterImage} alt="После действия" />}
+                    </span>
+                  )}
                   {entry.selector && (
                     <IconButton size="sm" aria-label={`Показать ${entry.selector}`} title="Показать элемент на странице" disabled={phase !== 'ready'}
                       onClick={() => void showMatch(entry.selector!)}>◎</IconButton>
