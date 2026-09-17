@@ -1,5 +1,5 @@
 import { createChunkSink } from '../ci/chunkSink.js'
-import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, suggestNextReleaseVersion, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseStatus, type ReleaseStepKind, type ReleaseStepStatus, type ReleaseTimeouts } from '@voicechat/shared'
+import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, suggestNextReleaseVersion, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseChange, type ReleaseChangesResult, type ReleaseStatus, type ReleaseStepKind, type ReleaseStepStatus, type ReleaseTimeouts } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
 export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; gitUrl:string; prepareCheckout:boolean; limits?:ReleaseTimeouts }
@@ -132,11 +132,13 @@ export const releaseRegressionCleanupCommand=(target:ReleaseProjectTarget,releas
 
 /** `git ls-remote` against origin costs a network round-trip on the CI machine; the list is read on every refresh. */
 export const BRANCH_LIST_TTL_MS = 10_000
+export const RELEASE_CHANGES_TTL_MS = 60_000
 export class ReleaseManager {
   private readonly preparing=new Set<string>()
   private readonly deploying=new Set<string>()
-  private readonly branchCache=new Map<string,{at:number;branches:ReleaseBranch[]}>()
-  constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime,private readonly options:{healthLogIntervalMs?:number;branchListTtlMs?:number;onChange?:(update:{projectId:string;releaseId:string;status:ReleaseStatus})=>void}={}){}
+  private readonly branchCache=new Map<string,{at:number;branches:ReleaseBranch[]}>
+  private readonly changesCache=new Map<string,{at:number;value:ReleaseChangesResult}>()
+  constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime,private readonly options:{healthLogIntervalMs?:number;branchListTtlMs?:number;changesTtlMs?:number;onChange?:(update:{projectId:string;releaseId:string;status:ReleaseStatus})=>void;onFinished?:(update:{projectId:string;releaseId:string;status:ReleaseStatus;userId:string})=>void}={}){}
 
   /** Every persisted change also goes to the live feed, so the Release Center stops polling. */
   private async setStep(projectId:string,releaseId:string,kind:ReleaseStepKind,status:ReleaseStepStatus,log:string,actor:string):Promise<void> {
@@ -146,6 +148,7 @@ export class ReleaseManager {
   private async setStatus(projectId:string,releaseId:string,status:ReleaseStatus,actor:string):Promise<void> {
     await this.db.releases.setProjectReleaseStatus(releaseId,status,actor)
     this.notify(projectId,releaseId,status)
+    if(['ready','released','failed'].includes(status))this.options.onFinished?.({projectId,releaseId,status,userId:actor})
   }
   private notify(projectId:string,releaseId:string,status?:ReleaseStatus):void {
     if(!this.options.onChange)return
@@ -170,6 +173,25 @@ export class ReleaseManager {
     this.branchCache.set(key,{at:Date.now(),branches})
     return branches.map(item=>({...item}))
   }
+  async changes(target:ReleaseProjectTarget,toSha:string,fromSha:string|null):Promise<ReleaseChangesResult> {
+    const valid=(sha:string):boolean=>/^[0-9a-f]{7,64}$/i.test(sha)
+    if(!valid(toSha)||fromSha!==null&&!valid(fromSha))throw new Error('Некорректный SHA для сравнения')
+    if(fromSha===null)return {fromSha:null,toSha,changes:null}
+    const key=`${target.agentId}:${target.path}:${fromSha}:${toSha}`
+    const cached=this.changesCache.get(key)
+    if(cached&&Date.now()-cached.at<(this.options.changesTtlMs??RELEASE_CHANGES_TTL_MS))return {...cached.value,changes:cached.value.changes?.map(item=>({...item}))??null}
+    const result=await this.runtime.exec(target,git(target,`log --format=%H%x1f%an%x1f%at%x1f%s ${quote(fromSha)}..${quote(toSha)}`),120_000)
+    if(result.exitCode!==0||result.timedOut)throw new Error(result.output||'Не удалось получить состав релиза')
+    const changes:ReleaseChange[]=result.output.split(/\r?\n/).filter(Boolean).map(line=>{
+      const [sha,author,atSeconds,subject]=line.split('\x1f')
+      if(!sha||!author||!atSeconds||subject===undefined)throw new Error('Git вернул некорректный состав релиза')
+      return {sha,author,at:Number(atSeconds)*1000,subject}
+    })
+    const value:ReleaseChangesResult={fromSha,toSha,changes}
+    this.changesCache.set(key,{at:Date.now(),value})
+    return {...value,changes:changes.map(item=>({...item}))}
+  }
+
   /** Writes to origin (create, delete, KB commit) make the cached list stale at once. */
   private forgetBranches(target:ReleaseProjectTarget):void{this.branchCache.delete(`${target.agentId}:${target.gitUrl}`)}
 

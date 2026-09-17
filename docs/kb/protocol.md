@@ -1,6 +1,6 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-15
+updated: 2026-09-16
 checked: 68124e0f
 areas:
   - apps/playwright-reader
@@ -50,6 +50,10 @@ areas:
 `packages/shared/src/agentProtocol.ts` (сервер↔машина).
 Протокол сервер↔исполнитель LLM живёт отдельно — `packages/shared/src/llm.ts`,
 описание в [features/llm-runners.md](features/llm-runners.md).
+
+## Состав релиза
+
+`GET /api/projects/:id/releases/:releaseId/changes?from=<sha>` возвращает `ReleaseChangesResult`: `toSha`, `fromSha` и `changes` (`ReleaseChange[]`). Без `from` сервер сравнивает с текущим production SHA; если production отсутствует, `fromSha` и `changes` равны `null`, что намеренно отличается от пустого diff. Параметр `from` всегда означает явное сравнение двух релизов. Web-мост — `releases:changes`, URL строится только через `REST.projectReleaseChanges`.
 
 ## Правило добавления чего угодно в контракт
 
