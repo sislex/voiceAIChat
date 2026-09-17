@@ -121,6 +121,7 @@ function ConfigCells({ projectId, machine, readonly, onSave, onReset }: { projec
   })
   const [draft, setDraft] = useState(values)
   const [pathChecks, setPathChecks] = useState<Partial<Record<Field, string>>>({})
+  const [copyError, setCopyError] = useState<Partial<Record<Field, string>>>({})
   const checkPath = async (key: Field): Promise<void> => {
     setPathChecks(current => ({ ...current, [key]: 'Проверка…' }))
     try {
@@ -145,13 +146,15 @@ function ConfigCells({ projectId, machine, readonly, onSave, onReset }: { projec
     const inputId = `project-machine-${machine.agentId}-${key}`
     const directoryKind = PROJECT_MACHINE_DIRECTORY_KINDS.includes(key as ProjectMachineDirectoryKind) ? key as ProjectMachineDirectoryKind : null
     const overridden = directoryKind ? machine.directories?.[directoryKind]?.override === true : false
-    return <td key={key} className="proj-machine-field" style={cellStyle}>
+    return <td key={key} data-label={label} className="proj-machine-field" style={cellStyle}>
       <label htmlFor={inputId} style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 700 }}>
         {label} <span title={help} aria-label={`Подсказка: ${label} — ${machine.name ?? machine.agentId}`} tabIndex={0} style={{ cursor: 'help', color: 'var(--text-dim)' }}>ⓘ</span>
       </label>
-      <input id={inputId} className="login-input" style={{ ...inputStyle, opacity: readonly ? 0.72 : 1 }} aria-label={`${label}: ${machine.name ?? machine.agentId}`} readOnly={readonly} value={draft[key]}
+      <input id={inputId} className="login-input proj-machine-value" style={{ ...inputStyle, opacity: readonly ? 0.72 : 1 }} aria-label={`${label}: ${machine.name ?? machine.agentId}`} readOnly={readonly} value={draft[key]}
         onChange={(e) => { setDraft((v) => ({ ...v, [key]: e.target.value })); setPathChecks(current => ({ ...current, [key]: undefined })) }} onBlur={() => void commit(key)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void commit(key) } }} />
+      <Button size="sm" variant="ghost" aria-label={`Копировать: ${label} — ${machine.name ?? machine.agentId}`} onClick={() => void navigator.clipboard.writeText(draft[key]).then(() => setCopyError(current => ({ ...current, [key]: undefined }))).catch(() => setCopyError(current => ({ ...current, [key]: 'Не удалось скопировать. Выделите значение в поле вручную.' })))}>Копировать</Button>
+      {copyError[key] && <p role="alert" className="proj-error">{copyError[key]}</p>}
       {directoryKind && <><Button size="sm" disabled={!draft[key].trim() || !machine.online || machine.canUse === false || pathChecks[key] === 'Проверка…'} aria-label={`Проверить путь: ${label} — ${machine.name ?? machine.agentId}`} onClick={() => void checkPath(key)}>Проверить путь</Button>{pathChecks[key] && <p role="status">{pathChecks[key]}</p>}</>}
       {overridden && <span className="proj-muted" style={{ display: 'block', marginTop: 4 }}>Переопределено <button type="button" disabled={readonly} onClick={() => void onReset?.(projectId, machine.agentId, directoryKind!)}>Сбросить</button></span>}
       {directoryKind && machine.recommendations?.[directoryKind] && <span className="proj-muted" style={{ display: 'block', marginTop: 4, overflowWrap: 'anywhere' }}>Рекомендация: {machine.recommendations[directoryKind]}</span>}
@@ -175,7 +178,7 @@ function Table(p: { productionAgentId?: string | null; defaultAgentId?: string |
       </label>
     </div>
     {filtered.length === 0 ? <p className="proj-muted" style={{ margin: 0 }}>{p.machines.length === 0 ? p.empty : 'Нет машин, соответствующих фильтру.'}</p> :
-    <div style={tableWrapStyle}><table className="proj-machines-table" style={tableStyle}>
+    <div className="proj-machines-table-wrap" role="region" aria-label={`${p.title}: прокручиваемая таблица`} tabIndex={0} style={tableWrapStyle}><table className="proj-machines-table" style={tableStyle}>
       <colgroup>{columns.map(({ key }) => <col key={key} style={{ width: p.widths[key] }} />)}</colgroup>
       <thead><tr>{columns.map((column) => <ResizableHeader key={column.key} column={column} width={p.widths[column.key]} onResize={p.onResize} />)}</tr></thead>
       <tbody>{filtered.map((m) => { const readiness = machineReadiness(m); return <tr key={m.agentId}>

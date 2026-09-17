@@ -718,7 +718,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const pageProject = projects.projects.find(project => project.id === titleProjectId)?.name
     ?? (projects.projectDetail && projects.projectDetail.id === titleProjectId ? projects.projectDetail.name : null)
   useEffect(() => {
-    document.title = [inReader ? readerPageTitle : null, pageSection, pageProject, 'ChatAI'].filter(Boolean).join(' — ')
+    const titleParts = [inReader ? readerPageTitle : null, pageSection, pageProject, 'ChatAI'].filter((part): part is string => Boolean(part))
+    document.title = titleParts.filter((part, index) => titleParts.findIndex((candidate) => candidate.toLocaleLowerCase() === part.toLocaleLowerCase()) === index).join(' — ')
   }, [inReader, readerPageTitle, pageSection, pageProject])
 
   const [dividerActive, setDividerActive] = useState(false)
