@@ -3,6 +3,7 @@
 // вложены под model_work, последний элемент — итог модели. Подписка на realtime
 // при монтировании, отписка при закрытии; REST-подгрузка как фолбэк.
 
+import type { DevelopmentPreviewStatus } from '@shared/developmentPreview'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 import { createPortal } from 'react-dom'
@@ -477,6 +478,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         </div>
       </div>
 
+      <DevelopmentPreviewSummary runId={runId} lines={cache?.log ?? []} />
       {run && isDirtyWorkspaceFailureMessage(run.error) && (
         <section className="ci-retry-preview" role="alert" aria-label="Автопроход остановлен">
           <strong>Автопроход остановлен: рабочая копия содержит несохранённые изменения.</strong>
@@ -868,6 +870,32 @@ export function InteractionCard(props: {
       )}
     </div>
   )
+}
+
+function DevelopmentPreviewSummary({ runId, lines }: {runId:string;lines:CiLogLine[]}): JSX.Element | null {
+  const [error,setError]=useState<string|null>(null)
+  const [busy,setBusy]=useState(false)
+  let status: DevelopmentPreviewStatus | null=null
+  for (const line of [...lines].reverse()) if (line.stream==='system' && line.chunk.startsWith('[development-preview] ')) {
+    try { status=JSON.parse(line.chunk.slice('[development-preview] '.length)) as DevelopmentPreviewStatus; break } catch { /* incomplete stream frame */ }
+  }
+  if (!status) return null
+  const live=status.state==='ready'||status.state==='checking'||status.state==='starting'
+  const action=(operation:'restart'|'stop'):void=>{
+    setBusy(true);setError(null)
+    void window.ci?.developmentPreview?.(runId,operation).catch((e:unknown)=>setError(e instanceof Error?e.message:String(e))).finally(()=>setBusy(false))
+  }
+  const labels:Record<string,string>={off:'Выключено',prepare:'Подготовка',starting:'Запуск',ready:'Готово',checking:'Проверка',stopped:'Остановлено',expired:'Истекло',failed:'Ошибка',pending:'Ожидает проверки',passed:'Проверено',warning:'Предупреждение',skipped:'Пропущено',blocked:'Обязательная проверка заблокирована'}
+  return <section className="ci-task-browser" aria-label="Тестовое окружение разработки" aria-live="polite">
+    <strong>Docker preview: {labels[status.state]??status.state} · Браузер: {labels[status.browserResult]??status.browserResult}</strong>
+    <span>Попытки: {status.attempt??0}/{status.maxAttempts??2} · БД: {status.database??'pending'}</span>
+    {status.diagnostic && <p>{typeof status.diagnostic==='object'?status.diagnostic.code:String(status.diagnostic)}: {status.diagnostic.message}</p>}
+    {(status.browserResult==='warning'||status.browserResult==='skipped') && <p>Работа продолжена согласно настройке «Продолжить при недоступности».</p>}
+    {live && status.url && /^http:\/\/[a-zA-Z0-9-]+\.machine\.internal:\d+\//.test(status.url) ? <a href={status.url} target="_blank" rel="noreferrer">Открыть preview</a> : <span>Ссылка на окружение неактивна</span>}
+    {status.evidence?.screenshots.filter((url)=>url.startsWith('/api/')).map((url)=><a key={url} href={url} target="_blank" rel="noreferrer">Снимок проверки</a>)}
+    {live && window.ci?.developmentPreview && <><Button disabled={busy} onClick={()=>action('restart')}>Перезапустить окружение</Button><Button disabled={busy} onClick={()=>action('stop')}>Остановить окружение</Button></>}
+    {error && <ErrorState compact message={error} />}
+  </section>
 }
 
 /** Common prefix/suffix keeps repeated lines and ordering visible without quadratic work. */

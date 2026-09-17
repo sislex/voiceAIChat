@@ -76,6 +76,10 @@ export function claudeArgs(req: LlmRequest): string[] {
   // remote: база знаний подключается и в ходе без машины, а `--mcp-config` и
   // `--append-system-prompt` CLI принимает по одному разу — значит и склеивать
   // их надо в одном месте.
+  if (req.textOnly) {
+    args.push('--tools', '', '--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: {} }), '--setting-sources', '', '--no-session-persistence')
+    return args
+  }
   const mcpServers: Record<string, { type: 'http'; url: string }> = {}
   const allowed: string[] = []
   // Единый список запрещённых инструментов: `--disallowedTools` CLI принимает один
@@ -114,7 +118,7 @@ export function claudeArgs(req: LlmRequest): string[] {
     let ciHint = ''
     if (req.remote.ciMcpUrl) {
       mcpServers.ci = { type: 'http', url: req.remote.ciMcpUrl }
-      allowed.push('mcp__ci__run_command', 'mcp__ci__list_commands')
+      allowed.push('mcp__ci__run_command', 'mcp__ci__list_commands', 'mcp__ci__preview_start', 'mcp__ci__preview_status', 'mcp__ci__preview_logs', 'mcp__ci__preview_restart', 'mcp__ci__preview_stop')
       ciHint =
         `\n\nДоступны именованные команды CI-справочника: инструмент mcp__ci__run_command ` +
         `(аргумент name), список — mcp__ci__list_commands.`

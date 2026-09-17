@@ -9,13 +9,11 @@ const input = (over: Partial<Parameters<typeof shouldResumeAfterInfraFailure>[0]
   ({ status: 'failed', infraErrors: 1, resumes: 0, limit: 3, ...over })
 
 describe('возобновление рана после сбоя машины', () => {
-  // @testCase TC-4
   it('упавший по вине машины ран продолжается с того же шага', () => {
     expect(shouldResumeAfterInfraFailure(input())).toBe(true)
     expect(shouldResumeAfterInfraFailure(input({ status: 'timeout' }))).toBe(true)
   })
 
-  // @testCase TC-4
   it('дефект кода возобновлением не лечится: этим занимается fix-loop', () => {
     expect(shouldResumeAfterInfraFailure(input({ infraErrors: 0 }))).toBe(false)
   })
@@ -35,6 +33,8 @@ describe('возобновление рана после сбоя машины',
 })
 
 describe('перезапуск development-рана', () => {
+  // @testCase TC-4
+  // @testCase TC-5-NONDIRTY
   it('грязная копия задачи распознаётся: перезапуск её не лечит', () => {
     expect(isDirtyWorkspaceFailure('Рабочая копия содержит локальные изменения: /path/CHAT-413')).toBe(true)
     expect(isDirtyWorkspaceFailure('Шаг «Работа модели» завершился с ошибкой.')).toBe(false)
