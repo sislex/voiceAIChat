@@ -34,6 +34,7 @@ describe('возобновление рана после сбоя машины',
 
 describe('перезапуск development-рана', () => {
   // @testCase TC-4
+  // @testCase TC-5-NONDIRTY
   it('грязная копия задачи распознаётся: перезапуск её не лечит', () => {
     expect(isDirtyWorkspaceFailure('Рабочая копия содержит локальные изменения: /path/CHAT-413')).toBe(true)
     expect(isDirtyWorkspaceFailure('Шаг «Работа модели» завершился с ошибкой.')).toBe(false)
