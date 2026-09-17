@@ -23,6 +23,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
+import sharp from 'sharp'
 import type { BrowserAskRequest, BrowserAskResult, BrowserCommandRequest, BrowserNetworkRulesResult, BrowserReportResult, BrowserSessionInfoResult, BrowserSnapshotComparison, BrowserSnapshotResult, BrowserCookiesResult, BrowserDeviceResult, BrowserDeviceState, BrowserEnvironmentResult, BrowserEnvironmentState, BrowserHistoryResult, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
@@ -76,6 +77,29 @@ interface Session {
 // Внешняя аналитика и изображения могут грузиться бесконечно; работать с DOM
 // нужно одинаково при переходе, перезагрузке, истории и открытии вкладки.
 const NAVIGATION_OPTIONS = { waitUntil: 'domcontentloaded' as const, timeout: 30_000 }
+
+/** Короткий результат для ленты: без payload, введённого текста и содержимого файлов. */
+export function commandResult(outcome: unknown): string | undefined {
+  if (!outcome || typeof outcome !== 'object') return 'Выполнено'
+  const value = outcome as Record<string, unknown>
+  if (value.ok === false) return 'Не выполнено'
+  if (typeof value.count === 'number') return `Найдено: ${value.count}`
+  if (typeof value.waitedMs === 'number') return `Готово за ${Math.round(value.waitedMs)} мс`
+  if (Array.isArray(value.matches)) return `Найдено: ${value.matches.length}`
+  return 'Выполнено'
+}
+
+/** Небольшое визуальное свидетельство шага; ошибка снимка не ломает действие. */
+async function actionThumbnail(page?: Page): Promise<string | undefined> {
+  if (!page || page.isClosed()) return undefined
+  try {
+    const image = await page.screenshot({ type: 'jpeg', quality: 25, scale: 'css', animations: 'disabled', timeout: 250 })
+    const thumbnail = await sharp(image).resize({ width: 160, height: 100, fit: 'cover' }).jpeg({ quality: 22 }).toBuffer()
+    return `data:image/jpeg;base64,${thumbnail.toString('base64')}`
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Какая вкладка становится активной после закрытия. Закрытая не должна
@@ -408,16 +432,34 @@ export class BrowserSessionManager {
     // удачной — именно на ней человек понимает, где модель застряла.
     const described = describeCommand(command)
     if (described) {
+      const startedAt = Date.now()
+      const errorOffset = session.console.length
+      const evidencePage = session.pages.get(request.tabId ?? session.activeTabId)
+      const canCaptureBefore = request.actor === 'assistant' && session.queue.size === 0 && !(evidencePage && isEvaluating(evidencePage))
+      const beforeImage = canCaptureBefore ? await actionThumbnail(evidencePage) : undefined
+      const evidence = async () => {
+        const durationMs = Math.max(0, Date.now() - startedAt)
+        const pageErrors = session.console.slice(errorOffset).filter((entry) => entry.level === 'error').map((entry) => entry.text.slice(0, 200)).slice(0, 5)
+        const afterPage = session.pages.get(request.tabId ?? session.activeTabId)
+        const afterImage = request.actor === 'assistant' && afterPage && !session.dialogs.forPage(afterPage) && !isEvaluating(afterPage) ? await actionThumbnail(afterPage) : undefined
+        return {
+          durationMs,
+          ...(pageErrors.length ? { pageErrors } : {}),
+          ...(beforeImage ? { beforeImage } : {}),
+          ...(afterImage ? { afterImage } : {})
+        }
+      }
       try {
         const outcome = await this.dispatch(sessionId, request, session)
         const failed = outcome && typeof outcome === 'object' && 'ok' in outcome && outcome.ok === false
+        const result = failed ? 'Не выполнено' : commandResult(outcome)
         session.history.record({
-          at: Date.now(), actor: request.actor, ...described, ok: !failed,
+          at: Date.now(), actor: request.actor, ...described, ok: !failed, ...await evidence(), ...(result ? { result } : {}),
           ...(failed && 'error' in outcome && typeof outcome.error === 'string' ? { error: outcome.error.slice(0, 200) } : {})
         })
         return outcome
       } catch (error) {
-        session.history.record({ at: Date.now(), actor: request.actor, ...described, ok: false, error: error instanceof Error ? error.message.split('\n')[0].slice(0, 200) : 'ошибка' })
+        session.history.record({ at: Date.now(), actor: request.actor, ...described, ok: false, ...await evidence(), result: 'Ошибка', error: error instanceof Error ? error.message.split('\n')[0].slice(0, 200) : 'ошибка' })
         throw error
       }
     }
@@ -480,7 +522,7 @@ export class BrowserSessionManager {
       if (!['navigate', 'selector', 'inspect', 'screenshot'].includes(command.type)) throw new Error('Эта команда не поддерживает frame')
     }
     // Наблюдение панели не должно стирать отметку о действии модели.
-    if (command.type === 'status') return this.metadata(session)
+    if (command.type === 'status') return this.metadata(session, request.actor === 'user')
     if (command.type !== 'screenshot' && !(command.type === 'inspect' && ['audit', 'probe', 'accessibility'].includes(command.action.kind))) session.lastActor = request.actor
     // Управление вкладками не требует существования прежней активной страницы:
     // после закрытия последней пользователь всё ещё должен суметь открыть новую.
@@ -743,7 +785,7 @@ export class BrowserSessionManager {
    * а модель заголовка не видела. `page.title()` асинхронен и на закрывающейся
    * вкладке бросает — отсюда `catch`, а не жёсткий отказ всей команды.
    */
-  private async metadata(session: Session): Promise<BrowserSessionMetadata> {
+  private async metadata(session: Session, includeHistoryImages = false): Promise<BrowserSessionMetadata> {
     session.lastUsedAt = Date.now()
     const tabs: BrowserTab[] = await Promise.all([...session.pages].map(async ([id, page]) => ({
       id, url: this.publicUrl(page.url()), title: await session.dialogs.title(page), active: id === session.activeTabId,
@@ -754,6 +796,15 @@ export class BrowserSessionManager {
     const activePage = session.pages.get(session.activeTabId)
     const rawActive = activePage?.url() ?? ''
     const aliasedHost = rawActive && this.publicUrl(rawActive) !== rawActive ? this.hostOf(rawActive) : ''
+    const history = session.history.list({ limit: 20 }).entries
+    if (includeHistoryImages) {
+      const images = new Map(session.history.list({ limit: 1, includeImages: true }).entries.map(entry => [entry.at, entry]))
+      for (const entry of history) {
+        const image = images.get(entry.at)
+        if (image?.beforeImage) entry.beforeImage = image.beforeImage
+        if (image?.afterImage) entry.afterImage = image.afterImage
+      }
+    }
     return {
       id: session.id,
       profileMode: session.profileMode,
@@ -767,7 +818,7 @@ export class BrowserSessionManager {
       control: session.queue.owner, queuedCommands: session.queue.size,
       // Хвост журнала едет вместе с метаданными: панель показывает ленту без
       // отдельного опроса, а он стоил бы ещё одного запроса на каждый кадр.
-      history: session.history.list({ limit: 20 }).entries,
+      history,
       ...(session.device ? { device: session.device } : {}),
       ...(session.ask ? { ask: session.ask } : {}),
       activeTabId: session.activeTabId,

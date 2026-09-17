@@ -130,4 +130,3 @@ export function NewTaskPreparationPanel(props: NewTaskPreparationPanelProps): JS
     </StageRail>
   </div>
 }
-
