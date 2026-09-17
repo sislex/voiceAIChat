@@ -23,6 +23,7 @@ export function MergePanel(props: {
   runId: string | null
   canStart: boolean
   onStartMerge?: (agentId: string | null) => void
+  onRetryAction?: (action: (() => void) | null) => void
   /** Открыть панель кода этой задачи: смотреть diff и коммитить — не работа merge-панели. */
   onOpenCode?: () => void
   /**
@@ -154,6 +155,12 @@ export function MergePanel(props: {
   const personalMachines = currentMachines.filter((machine) => machine.personal)
   const projectMachines = currentMachines.filter((machine) => machine.project && !machine.personal)
   const selectedReadiness = agentId ? mergeReadiness[agentId] : undefined
+  const startMerge = useCallback(() => {
+    if (props.canStart && currentStatus !== 'loading' && selectedReadiness?.selectable) props.onStartMerge?.(agentId)
+  }, [props.canStart, props.onStartMerge, currentStatus, selectedReadiness?.selectable, agentId])
+  useEffect(() => {
+    props.onRetryAction?.(props.canStart && props.onStartMerge && currentStatus !== 'loading' && selectedReadiness?.selectable ? startMerge : null)
+  }, [props.onRetryAction, props.canStart, props.onStartMerge, currentStatus, selectedReadiness?.selectable, startMerge])
   const machineOption = (machine: CiTaskMachine): JSX.Element => {
     const readiness = mergeReadiness[machine.agentId]
     const disabled = currentStatus === 'loading' || !readiness?.selectable
@@ -196,7 +203,7 @@ export function MergePanel(props: {
                   {projectMachines.length > 0 && <optgroup label="Машины проекта">{projectMachines.map(machineOption)}</optgroup>}
                 </select>
               </label>
-              <Button variant="primary" disabled={currentStatus === 'loading' || !selectedReadiness?.selectable} onClick={() => props.onStartMerge?.(agentId)}>Мерж в main</Button>
+              <Button variant="primary" disabled={currentStatus === 'loading' || !selectedReadiness?.selectable} onClick={startMerge}>Мерж в main</Button>
               {selectedReadiness && !selectedReadiness.ready && <span className="merge-start-error" role="alert">{selectedReadiness.message}</span>}
               <span className="merge-start-hint">Ран сольёт подготовленную ветку задачи в main: изолированный клон, обязательные проверки, безопасный push.</span>
             </div>

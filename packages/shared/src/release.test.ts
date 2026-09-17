@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RELEASE_STEP_ORDER, assertReleaseBranch, compareReleaseBranches, normalizeReleaseVersionInput, productionReadiness, releaseFailureSummary, releaseVersion, suggestNextReleaseVersion } from './release'
+import { RELEASE_STEP_ORDER, assertReleaseBranch, compareReleaseBranches, normalizeReleaseVersionInput, productionReadiness, releaseChangeGroup, releaseFailureSummary, releaseVersion, suggestNextReleaseVersion } from './release'
 
 describe('release branch contract', () => {
   it.each([
@@ -51,6 +51,14 @@ describe('suggestNextReleaseVersion', () => {
   it('игнорирует невалидные ветки и без релизов даёт стартовую версию', () => {
     expect(suggestNextReleaseVersion(['main', 'origin/release/3.0.0'])).toBe('0.1.0')
     expect(suggestNextReleaseVersion([], '1.0.0')).toBe('1.0.0')
+  })
+})
+
+describe('releaseChangeGroup',()=>{
+  it('groups conventional commit prefixes and keeps unknown subjects separate',()=>{
+    expect(releaseChangeGroup('feat(ui): add comparison')).toBe('feat')
+    expect(releaseChangeGroup('fix!: production guard')).toBe('fix')
+    expect(releaseChangeGroup('Merge branch main')).toBe('other')
   })
 })
 

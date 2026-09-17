@@ -8,6 +8,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import type { KanbanMachines } from '../kanban/core.js'
 import type { FeaturePreviewManager } from '../preview/manager.js'
 import type { TemporaryCleanup } from './service.js'
+import { CleanupBusy } from './store.js'
 import { createTemporaryCleanup, startTemporaryCleanup, registerCleanupRoutes } from './module.js'
 
 const directories: string[] = []
@@ -72,5 +73,19 @@ it('holds HTTP restart and preview mutations behind resource admission and relea
   enter()
   expect((await response).statusCode).toBe(200)
   expect(handler).toHaveBeenCalledOnce(); expect(release).toHaveBeenCalledOnce()
+  await app.close()
+})
+// @testCase TC-03
+it('answers a busy registry with a retryable 503 instead of a server error', async () => {
+  const app = Fastify()
+  const acquire = vi.fn(async () => { throw new CleanupBusy() })
+  registerCleanupRoutes(app, {} as VoiceChatDb, { acquire } as unknown as TemporaryCleanup)
+  const handler = vi.fn(async () => ({ ok: true }))
+  app.post('/api/projects/p/tasks/t/preview', handler)
+  const response = await app.inject({ method: 'POST', url: '/api/projects/p/tasks/t/preview' })
+  expect(response.statusCode).toBe(503)
+  expect(response.json()).toEqual({ error: 'cleanup_or_consumer_busy' })
+  expect(response.headers['retry-after']).toBe('5')
+  expect(handler).not.toHaveBeenCalled()
   await app.close()
 })

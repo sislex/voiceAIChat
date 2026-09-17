@@ -5,7 +5,8 @@ import { ApplicationReleaseManager, createApplicationReleaseRuntime } from '../r
 // `buildServer` (~1 000 строк) и замыкалось на его локальные переменные; теперь зависимости от ядра
 // перечислены явно в `KanbanDeps` — это первый шаг к отдельному сервису канбана
 // (docs/plans/kanban-service.md). Код внутри перенесён как есть.
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
+import { ciBrowserCheckUrl, browserEvidenceComplete } from '@voicechat/shared'
 import { join } from 'node:path'
 import { type FastifyInstance } from 'fastify'
 import { taskReworkContext } from '@voicechat/shared'
@@ -23,10 +24,13 @@ import { knowledgeBaseTimeoutMs, ReleaseManager, releaseKnowledgeBaseCommand } f
 import { releaseCiTarget, releaseProductionTarget } from '../releases/targets.js'
 import { ManagedEnvironmentResolver } from '../releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from '../preview/manager.js'
+import { DevelopmentPreviewManager } from '../ci/developmentPreview.js'
+import { developmentBrowserCheck } from '../ci/developmentPreviewBrowser.js'
+import { createDevelopmentDockerRuntime } from '../ci/developmentPreviewDocker.js'
 import { createCiRunManager, type CiRunManager } from '../ci/runManager.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from '../ci/componentQa.js'
 import { automatedQaRemarks } from '@voicechat/shared'
-import { isDirtyWorkspaceFailure, retryAllowedNow, shouldResumeAfterInfraFailure } from '../ci/autopilotResume.js'
+import { isDirtyWorkspaceFailure, retryAllowedNow, shouldResumeAfterInfraFailure, trailingQaStageFailures } from '../ci/autopilotResume.js'
 import { createIntegrationTestRunner } from '../ci/integrationTests.js'
 import { createAutomatedQaCheck } from '../ci/automatedQaCheck.js'
 import { createTemporaryCleanup, registerCleanupRoutes, startTemporaryCleanup } from '../cleanup/module.js'
@@ -122,7 +126,53 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
     preparationDeltaThrottle.set(runId, now)
     boardHub.emitPreparationRun({ userId, projectId, taskId, runId }) // дельты карточку не меняют — board не трогаем
   }
+  const developmentRuntime = createDevelopmentDockerRuntime({
+    executor: ciExecutor, enabled: process.env.VC_DEVELOPMENT_PREVIEW_ENABLED === 'true',
+    image: process.env.VC_DEVELOPMENT_PREVIEW_IMAGE, guardImage: process.env.VC_DEVELOPMENT_PREVIEW_GUARD_IMAGE,
+    async engine(input, id) {
+      if (id) return db.llm.getLlmEngine(id)
+      const run = await db.ci.getCiRun(input.userId, input.runId)
+      const role = (await db.identity.getUser(input.userId))?.role ?? 'developer'
+      return (await db.llm.resolveLlmEngine(run?.run.llmEngineId, input.kind, role)).engine
+    },
+    closeBrowser: async (input) => { await browserRunner?.stop('task-' + input.taskId) }
+  })
+  if (browserRunner) developmentRuntime.check = developmentBrowserCheck(browserRunner, previewMcpBaseUrl.split('/mcp/')[0], join(config.dataDir, 'ci-browser-shots'))
+  const developmentPreviews = new DevelopmentPreviewManager(developmentRuntime, join(config.dataDir, 'development-previews.json'))
+  app.get<{Params:{runId:string}}>('/api/ci/runs/:runId/development-preview',async(req,reply)=>{
+    if (!await db.ci.getCiRun(uid(req),req.params.runId)) return reply.code(404).send({error:'not_found'})
+    return developmentPreviews.status(req.params.runId)
+  })
+  app.post<{Params:{runId:string};Body:{operation?:unknown}}>('/api/ci/runs/:runId/development-preview',async(req,reply)=>{
+    const detail=await db.ci.getCiRun(uid(req),req.params.runId)
+    if (!detail) return reply.code(404).send({error:'not_found'})
+    if (detail.run.triggeredBy !== uid(req)) return reply.code(403).send({error:'forbidden'})
+    if (detail.run.status !== 'running') return reply.code(409).send({error:'development_run_not_active'})
+    if (req.body?.operation !== 'restart' && req.body?.operation !== 'stop') return reply.code(400).send({error:'invalid_operation'})
+    if (!developmentPreviews.status(req.params.runId)) return reply.code(404).send({error:'preview_not_found'})
+    return developmentPreviews.invoke(req.params.runId,req.body.operation)
+  })
+  await developmentPreviews.sweep(true)
+  const previewGc = setInterval(() => { void developmentPreviews.sweep().catch(() => {}) }, 30000)
+  previewGc.unref()
+  app.addHook('onClose', async () => { clearInterval(previewGc); await developmentPreviews.sweep(true) })
   const ciModelHooks = createCiModelHooks({
+    developmentPreviews,
+    async verifyBrowserOnly(ctx, check) {
+      if (!developmentRuntime.check || !ctx.agentId) return false
+      let sha = ''
+      const result = await ciExecutor.run({agentId:ctx.agentId,workdir:ctx.workspacePath,script:'git rev-parse --verify HEAD',env:{},timeoutMs:10000},async(chunk)=>{sha+=chunk},ctx.signal)
+      sha=sha.trim()
+      if(result.exitCode!==0||!/^[a-f0-9]{40,64}$/.test(sha))return false
+      const status={url:ciBrowserCheckUrl(check,ctx.agentId),sha,configDigest:createHash('sha256').update(JSON.stringify(check)).digest('hex')}
+      const evidence=await developmentRuntime.check({
+        projectId:ctx.project.id,taskId:ctx.task.id,runId:ctx.run.id,userId:ctx.run.triggeredBy,agentId:ctx.agentId,
+        workspace:ctx.workspacePath,kind:ctx.run.llmProvider,model:ctx.run.llmModel,
+        settings:await db.ci.getTaskDevelopmentPreview(ctx.task.id),check
+      },status,ctx.signal)
+      await ctx.log(ctx.parentStepId,'system','Browser evidence: '+JSON.stringify(evidence)+'\n')
+      return browserEvidenceComplete(evidence,status.url,status.sha,status.configDigest)&&!evidence.findings.console.length&&!evidence.findings.runtime.length&&!evidence.findings.network.length
+    },
     db,
     claude: await claude,
     codex: await codex,
@@ -312,6 +362,8 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
         requireString(decision, 'id', `${path}.id`)
         requireString(decision, 'text', `${path}.text`)
         requireString(decision, 'rationale', `${path}.rationale`)
+        // Null unambiguously means no question link; never invent an identifier.
+        if (decision.questionId === null) delete decision.questionId
         if (decision.questionId !== undefined && typeof decision.questionId !== 'string') issues.push(`${path}.questionId должен быть строкой`)
       }
       for (const [index, item] of (Array.isArray(root.assumptions) ? root.assumptions : []).entries()) {
@@ -449,6 +501,7 @@ ${task ? taskReworkContext(task, await db.tasks.taskReworkCycles(userId, project
 
 Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект schemaVersion=2. Даже «Подготовка завершена» и «Исправленный Development Brief» вне объекта запрещены. Первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Это отдельный промежуточный запрос уточнения, а не Development Brief: он не завершает подготовку и не заменяет DevelopmentReadiness schemaVersion=2. Если решения не ссылаются на вопрос, опусти decisions[].questionId; не передавай null или выдуманную ссылку вместо необязательной строки. Не добавляй сообщение об успешной подготовке перед объектом или после него. Не отправляй промежуточные сообщения о прогрессе подготовки. Все требования и пробелы БЗ помещай только в предусмотренные поля объекта; содержательный текст вне JSON не может быть безопасно нормализован. Нормализация не исправляет формат ответа: однозначные совместимые значения полей проверяются только после разбора всего единственного JSON-объекта, без догадок, удаления обёрток или заполнения пропущенных требований. Перед отправкой проверь весь ответ как JSON, а не найденный в нём фрагмент: один корневой объект, schemaVersion числом 2, обязательные поля и условные UI-требования сохранены. Обработчик отклоняет любые обёртки, включая известные префиксы и Markdown: они не нормализуются и не удаляются. Имена полей внутри каждого объекта должны быть уникальны: повторяющиеся ключи отклоняются, а не заменяют ранее заданные требования или сведения об источниках. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 (версия — число 2, не строка) со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. testType принимает только ui|api|integration|negative|regression|manual. Если uiImpact не равен none, среди testCases обязателен хотя бы один с required=true и testType=ui — по нему запускается этап Component QA, и без него задача встанет после разработки. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
     const ordinaryResponses: string[] = []
+
     const terminalValidationFailure = async (message: string, text: string, recoveryDetail?: string): Promise<void> => {
       const terminalMessage = recoveryDetail ? `Recovery Development Brief завершился ошибкой: ${recoveryDetail}; исходная диагностика: ${message}` : message
       const readiness = (() => { try { return parseTaskPreparation(text) } catch { return null } })()
@@ -474,7 +527,7 @@ schemaVersion: 2; goal, functionalRequirements, acceptanceCriteria — string; s
 acceptanceCriteriaItems: {id,title,precondition,action,observableResult:string}[].
 testCases: {id,title,description,preconditions,testData,steps,expectedResult,testType,notAutomatedReason,alternativeManualVerification,comments:string,required:boolean,automatable:boolean,automationLinks:array}[]. testType — ui|api|integration|negative|regression|manual; при uiImpact≠none обязателен хотя бы один testCase с required=true и testType=ui.
 affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reusable:boolean,storybookStoryId:string|null,coverage:object}[]. Для каждого компонента coverage непустой; при storybookStoryId=null обязательны непустые exclusionReason и alternativeVerification.
-openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[]; assumptions: {id,text,rationale:string,material:boolean}[].
+openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[] (questionId при наличии только строка; если связи нет, поле опускается, не null); assumptions: {id,text,rationale:string,material:boolean}[].
 sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,status:available|absent|unavailable,summary:string,refs:string[],critical:boolean}[].
 Сохрани исходные требования. Если диагностика выявляет дефект подготовки, добавь в scope, acceptanceCriteria/acceptanceCriteriaItems и testCases отдельные проверяемые работы: усиление prompt/schema, безопасная нормализация однозначных совместимых значений, регрессионные тесты и актуализация существующего раздела БЗ. Не добавляй новые исследования и не выдумывай источники.`
       const handle = await client.send({ userId, prompt: recoveryPrompt, sessionId: null, model, executionDisabled: true, makeSources: preparationMakeSources }, {
@@ -764,7 +817,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       if (result.timedOut) throw new Error(`Release-preflight базы знаний не уложился в ${Math.round(limitMs / 1000)} с`)
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
-  }, { onChange: (update) => boardHub.emitRelease(update) })
+  }, { onChange: (update) => boardHub.emitRelease(update), onFinished: (update) => notificationHub.emit(update.projectId,update.userId) })
+  const archiveOldReleases=():Promise<number>=>db.releases.archiveFailedPreparations(Date.now()-30*24*60*60_000)
+  void archiveOldReleases()
+  const releaseArchiveTimer=setInterval(()=>void archiveOldReleases(),24*60*60_000)
+  releaseArchiveTimer.unref?.()
+  app.addHook('onClose',async()=>clearInterval(releaseArchiveTimer))
   const managedEnvironments = new ManagedEnvironmentResolver(db, releaseManager, (agentId) => machines.policyOf(agentId)?.allowedDirs ?? [])
   await releaseManager.reconcile(async (release) => {
     const project = await db.projects.getProject(release.triggeredBy, release.projectId)
@@ -1031,11 +1089,25 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
                 : true
             if (needsMachine && !await projectHasOnlineMachine(userId, projectId)) continue
             if (stage === 'component_qa' || stage === 'integration_tests' || stage === 'automated_qa') {
-              const latest = stage === 'component_qa'
-                ? (await db.tasks.getComponentQaTaskState(userId, projectId, task.id))?.latestRun
+              const history: ReadonlyArray<{ id: string; status: string; finishedAt: number | null }> = stage === 'component_qa'
+                ? (await db.tasks.getComponentQaTaskState(userId, projectId, task.id))?.runs ?? []
                 : stage === 'integration_tests'
-                  ? (await db.ci.getIntegrationTestTaskState(userId, projectId, task.id))?.latestRun
-                  : (await db.qa.listQaStageRuns(userId, projectId, task.id, stage))[0]
+                  ? (await db.ci.getIntegrationTestTaskState(userId, projectId, task.id))?.runs ?? []
+                  : await db.qa.listQaStageRuns(userId, projectId, task.id, stage)
+              const latest = history[0]
+              // A stage that only ever fails has to reach a person. Infrastructure
+              // failures skip the fix-cycle counter on purpose, so this streak is
+              // the only thing between a broken environment and an endless queue of
+              // half-hour runs — the same safeguard merge already has.
+              const failures = trailingQaStageFailures(history)
+              const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
+              if (failures >= limit) {
+                await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage, runId: latest?.id ?? null, reason: 'Подряд упавшие раны этапа', failures, limit })
+                try { await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', `autopilot.${stage}_limit_exhausted`) }
+                catch { /* переход недоступен из текущей колонки */ }
+                emitBoard(projectId)
+                continue
+              }
               // A completion event must not immediately repeat the same failure.
               // Persisted finishedAt keeps the retry delay across server restarts.
               if (latest && (latest.status === 'blocked' || latest.status === 'failed')

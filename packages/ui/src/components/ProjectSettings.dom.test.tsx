@@ -71,6 +71,39 @@ describe('Project settings draft', () => {
     fireEvent.change(screen.getByLabelText('Git-репозиторий'), { target: { value: 'bad-url' } })
     await expectNoViolations()
   })
+  // @testCase TC-02
+  it('keeps error descriptions in sync with rendered alerts', () => {
+    render(<ProjectSettings {...props()} />)
+    const cases = [
+      { label: 'Название проекта', invalid: '', valid: 'Проект' },
+      { label: 'Git-репозиторий', invalid: 'bad-url', valid: 'https://github.com/team/repo.git' },
+      { label: 'URL веб-превью', invalid: 'bad-url', valid: 'https://preview.example' }
+    ]
+
+    for (const item of cases) {
+      const field = screen.getByLabelText(item.label)
+      expect(field).not.toHaveAttribute('aria-describedby')
+      fireEvent.change(field, { target: { value: item.invalid } })
+      const descriptionId = field.getAttribute('aria-describedby')
+      expect(descriptionId).toBeTruthy()
+      const alert = document.getElementById(descriptionId!)
+      expect(alert).toHaveAttribute('role', 'alert')
+      fireEvent.change(field, { target: { value: item.valid } })
+      expect(field).not.toHaveAttribute('aria-describedby')
+      expect(document.getElementById(descriptionId!)).toBeNull()
+    }
+  })
+
+  // @testCase TC-05
+  it('has one page heading followed by no skipped heading levels', () => {
+    render(<ProjectSettings {...props()} />)
+    const headings = screen.getAllByRole('heading')
+    expect(headings.filter(heading => heading.tagName === 'H1')).toHaveLength(1)
+    expect(headings[0]).toHaveTextContent('Настройки проекта')
+    const levels = headings.map(heading => Number(heading.tagName.slice(1)))
+    expect(levels.every((level, index) => index === 0 || level <= levels[index - 1]! + 1)).toBe(true)
+  })
+
   it('checks legacy checkout and health without deploying', async () => {
     const bridges = installStoryBridges()
     const exec = vi.fn().mockResolvedValueOnce({ exitCode: 0, output: 'true', timedOut: false }).mockResolvedValueOnce({ exitCode: 1, output: 'connection refused', timedOut: false })
@@ -157,6 +190,7 @@ describe('Project settings draft', () => {
     expect(onUpdate).toHaveBeenCalledWith('p1', { name: 'Saved', gitUrl: 'git@example.com:team/repo.git' })
   })
 
+  // @testCase TC-REG-05
   it('keeps the draft after a failed save and across server updates', async () => {
     const p = props({ onUpdate: vi.fn().mockRejectedValue(new Error('Save failed')) })
     const view = render(<ProjectSettings {...p} />)
@@ -215,6 +249,28 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(screen.queryByLabelText('Название проекта')).not.toBeInTheDocument()
     view.rerender(<ProjectSettings {...props({ detail: detail({ name: 'Обновлённый проект' }) })} />)
     expect(screen.getByRole('tab', { name: 'LLM' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  // @testCase TC-UI-02
+  it('supports cyclic Arrow, Home and End navigation with a single roving tab stop', async () => {
+    render(<ProjectSettings {...props()} />)
+    const general = screen.getByRole('tab', { name: 'Общее' })
+    general.focus()
+
+    await userEvent.keyboard('{ArrowRight}')
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'LLM' })).toHaveFocus())
+    await userEvent.keyboard('{End}')
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Машины' })).toHaveFocus())
+    await userEvent.keyboard('{ArrowRight}')
+    await waitFor(() => expect(general).toHaveFocus())
+    await userEvent.keyboard('{ArrowLeft}')
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Машины' })).toHaveFocus())
+    await userEvent.keyboard('{Home}')
+    await waitFor(() => expect(general).toHaveFocus())
+
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.filter(tab => tab.getAttribute('aria-selected') === 'true')).toEqual([general])
+    expect(tabs.filter(tab => tab.tabIndex === 0)).toEqual([general])
   })
 
   it('передаёт персональные права в выбор движка LLM проекта', async () => {
@@ -465,6 +521,7 @@ describe('ProjectSettings — тип проекта', () => {
 describe('ProjectSettings — вкладка из адреса', () => {
   const generalChain = builtinProjectTypeChain(BUILTIN_PROJECT_TYPE_IDS.general)
 
+  // @testCase TC-REG-05
   it('открывает вкладку, пришедшую от хоста, и не переключает её сама', async () => {
     const onTabChange = vi.fn()
     render(<ProjectSettings {...props({ activeTab: 'members', onTabChange })} />)
