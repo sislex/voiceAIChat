@@ -30,6 +30,7 @@ const cycle: TaskReworkCycleViewModel = {
 afterEach(() => { delete window.qa })
 
 describe('NewTaskManualQaPanel', () => {
+  // @testCase TC2
   it('показывает тестовое окружение активной сессии и проходы по циклам', async () => {
     const active = session({ id: 's2', status: 'active', startedAt: 2_000, finishedAt: null, appUrl: 'https://preview.test/CHAT-445-2' })
     const state: QaTaskState = { criteria: [], versions: [], sessions: [active, session({})], activeSession: active, preparation: null }
@@ -124,6 +125,7 @@ describe('NewTaskManualQaPanel', () => {
     } finally {
       window.board = previousBoard
     }
+
   })
 
   it('без сессий объясняет, когда появится preview', async () => {

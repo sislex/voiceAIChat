@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { StageCard, StageHeading, StageRail } from './NewTaskStages'
+import type { NewTaskCardViewProps } from './NewTaskCardView'
 import type { Meta, StoryObj } from '@storybook/react'
 import { fn } from '@storybook/test'
 import { NewTaskCardView } from './NewTaskCardView'
@@ -13,7 +16,7 @@ const model: TaskCardViewModel = {
   source: { description: 'Реализовать новую карточку по живому Make-проекту.', acceptanceCriteria: '1. Соответствует макету.', attachments: [{ id: 'brief', name: 'brief.pdf', mimeType: 'application/pdf', status: 'ready' }] },
   workflow: [
     { id: 'preparation', semanticType: 'preparation', label: 'Подготовка', state: 'passed' },
-    { id: 'development', semanticType: 'development', label: 'Разработка', state: 'passed' },
+    { id: 'development', semanticType: 'development', label: 'Разработка', state: 'passed', startedAt: Date.UTC(2026, 8, 4), finishedAt: Date.UTC(2026, 8, 4, 0, 12), durationMs: 720000 },
     { id: 'component_qa', semanticType: 'component_qa', label: 'Component QA', state: 'current' },
     { id: 'integration_tests', semanticType: 'integration_tests', label: 'Интеграционные тесты', state: 'upcoming' }
   ],
@@ -42,6 +45,45 @@ const meta: Meta<typeof NewTaskCardView> = {
 }
 export default meta
 type Story = StoryObj<typeof NewTaskCardView>
+function InteractiveCard(args: NewTaskCardViewProps): JSX.Element {
+  const [current, setCurrent] = useState(args.model)
+  const [activeTab, setTab] = useState(args.activeTab)
+  return <NewTaskCardView {...args} model={current} activeTab={activeTab} callbacks={{
+    ...args.callbacks, onChangeTab: setTab,
+    onUpdate: async (fields) => { setCurrent((value) => ({ ...value, ...fields })) }
+  }} />
+}
+
+function ErrorRail(): JSX.Element {
+  const [failed, setFailed] = useState(true)
+  return <><StageHeading eyebrow="Component QA" title="Проверка компонентов" /><StageRail><StageCard number={1} status={failed ? 'failed' : 'queued'}
+    eyebrow="Этап 1" title="Проверка компонентов" error={'Не удалось открыть страницу\nПодробности в ленте'}
+    onRetry={() => setFailed(false)}><p>Результат последнего рана этого этапа.</p></StageCard></StageRail></>
+}
+
+// @testCase TC1
+export const StatementEditing: Story = {
+  name: 'Редактирование постановки',
+  render: (args) => <InteractiveCard {...args} />
+}
+
+// @testCase TC1
+export const StageWithError: Story = {
+  name: 'Этап с ошибкой',
+  args: { activeTab: 'component_qa', model: { ...model, tabs: [...model.tabs, { id: 'component_qa', label: 'Component QA' }] }, renderPanel: () => <ErrorRail /> }
+}
+
+// @testCase TC1
+export const MobileRail: Story = {
+  name: 'Мобильная рейка',
+  parameters: { viewport: { defaultViewport: 'chat449mobile', viewports: { chat449mobile: { name: '390px', styles: { width: '390px', height: '844px' } } } } },
+  args: {
+    ...StageWithError.args,
+    model: { ...model, title: 'Очень длинное название задачи '.repeat(8), tabs: [...model.tabs, { id: 'component_qa', label: 'Component QA' }] }
+  },
+  render: (args) => <InteractiveCard {...args} />
+}
+
 export const Desktop: Story = {}
 export const Tablet: Story = { parameters: { viewport: { defaultViewport: 'tablet' } } }
 export const Mobile: Story = { parameters: { viewport: { defaultViewport: 'mobile1' } } }

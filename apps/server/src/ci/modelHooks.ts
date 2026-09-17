@@ -893,10 +893,10 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
               prompt = previews.prompt(ctx.run.id) + '\nBrowser result: ' + JSON.stringify(status) + '\nDiagnose, fix if possible and retry. Continue remaining code checks according to failure policy.'
               continue
             }
-            if (!accepted) return { ok: false, error: 'Required browser check blocked successful completion' }
+            if (!accepted) return { ok: false, error: 'browser_check:blocked — required development preview evidence is unavailable' }
           } else if (previewSettings.enabled) {
             await log('system', '[development-preview] ' + JSON.stringify({ state: 'skipped', browserResult: browserCheck.failurePolicy === 'block' ? 'blocked' : 'skipped', diagnostic: 'feature_disabled', failurePolicy: browserCheck.failurePolicy ?? 'continue' }) + '\n')
-            if (browserCheck.mode !== 'off' && browserCheck.failurePolicy === 'block') return { ok: false, error: 'Required development preview unavailable' }
+            if (browserCheck.mode !== 'off' && browserCheck.failurePolicy === 'block') return { ok: false, error: 'browser_check:blocked — required development preview is unavailable' }
           } else if (browserCheck.mode !== 'off') {
             const evidence = evaluateCiBrowserEvidence(await deps.db.ci.getCiBrowserEvidence(ctx.run.triggeredBy, ctx.run.id, ctx.parentStepId))
             // A Reader-enabled turn is itself the browser check: narrative success is
@@ -904,6 +904,10 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             if (browserFields.previewMcpUrl) {
               await deps.db.ci.addCiEvent({ projectId: ctx.project.id, runId: ctx.run.id, type: 'browser.checked', actorType: 'system', payload: { stepId: ctx.parentStepId, ...evidence } })
               await log('system', `Browser-check evidence: ${JSON.stringify(evidence)}\n`)
+              if (evidence.status !== 'passed' && ++previewGateAttempts < 2) {
+                prompt = 'Browser check lacks verified evidence. Retry the exact target ' + ciBrowserCheckUrl(browserCheck, ctx.agentId) + '. Failure policy: ' + (browserCheck.failurePolicy ?? 'continue') + '. Continue code and tests when policy is continue.'
+                continue
+              }
               if (evidence.status !== 'passed') return { ok: false, error: `browser_check:${evidence.status} — missing ${evidence.missing.join(', ')}` }
             } else {
               const passed = await deps.verifyBrowserOnly?.(ctx, browserCheck).catch(() => false) ?? false

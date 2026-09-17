@@ -161,6 +161,7 @@ describe.skipIf(ON_POSTGRES)('ci: браузерная проверка зада
     expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board', failurePolicy: 'continue' })
   })
 
+  // @testCase TC-API-01
   it('persists preview independently of browser mode and preserves it on browser updates', async () => {
     const { task } = await project()
     expect((await db.ci.getTaskDevelopmentPreview(task.id)).enabled).toBe(false)

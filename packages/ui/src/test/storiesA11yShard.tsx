@@ -49,12 +49,14 @@ export function describeStoryShard(
       expect(stories.length).toBeGreaterThan(minimum)
     })
 
-    // @testCase TC1
+    // @testCase TC-REG-03
+    // Лимит локален для тяжёлой story: при полном `vitest run` browser-тест и
+    // три shard конкурируют за CPU. Изолированный axe остаётся субсекундным.
     it.each(stories)('%s — без serious/critical нарушений', async (_name, Story) => {
       render(<Story />)
       // Проверяем документ целиком: окна (Dialog, PromptBuilder) уходят порталом
       // в document.body, вне контейнера рендера.
       await expectNoCriticalViolations()
-    })
+    }, 120_000)
   })
 }
