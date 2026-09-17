@@ -158,6 +158,7 @@ export const CI_BROWSER_CHECK_MODE_LABELS: Record<CiBrowserCheckMode, string> = 
 }
 
 export interface CiBrowserCheck {
+  failurePolicy?: import('./developmentPreview').BrowserFailurePolicy
   mode: CiBrowserCheckMode
   /** Порт dev-сервера на выбранной машине: страница живёт на её loopback. */
   devServerPort: number
@@ -166,7 +167,7 @@ export interface CiBrowserCheck {
 }
 
 /** Порт по умолчанию — Vite: им поднимается клиент этого монорепо. */
-export const DEFAULT_CI_BROWSER_CHECK: CiBrowserCheck = { mode: 'off', devServerPort: 5173, startPath: '/' }
+export const DEFAULT_CI_BROWSER_CHECK: CiBrowserCheck = { mode: 'off', devServerPort: 5173, startPath: '/', failurePolicy: 'continue' }
 
 /**
  * Нормализация входа: битое значение означает «проверок нет», а не отказ, —
@@ -180,7 +181,7 @@ export function normalizeCiBrowserCheck(value: unknown): CiBrowserCheck {
   const port = typeof raw.devServerPort === 'number' && Number.isInteger(raw.devServerPort) && raw.devServerPort >= 1 && raw.devServerPort <= 65535
     ? raw.devServerPort
     : DEFAULT_CI_BROWSER_CHECK.devServerPort
-  return { mode, devServerPort: port, startPath: normalizeCiBrowserStartPath(raw.startPath) }
+  return { mode, devServerPort: port, startPath: normalizeCiBrowserStartPath(raw.startPath), failurePolicy: raw.failurePolicy === 'block' ? 'block' : 'continue' }
 }
 
 /** Путь стартовой страницы: чужой хост и схему сюда не пускаем — адрес машины собирает сервер. */

@@ -815,6 +815,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase T9
   // @testCase T11
+
   // @testCase TC-SCHEMA-SINGLE-JSON
   // @testCase TC-BRIEF-01
   it('rejects multiple JSON objects on every preparation and recovery attempt', async () => {
@@ -902,6 +903,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase T7
   // @testCase TC-BRIEF-1
   // @testCase TC-BRIEF-01
+
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })

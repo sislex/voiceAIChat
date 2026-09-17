@@ -1,7 +1,8 @@
 // Presentational building blocks of the "Проект 19" task card: the stage rail
 // with numbered circles, status badges, workflow chips and sent reworks.
 // Panels own loading and actions; these primitives only render supplied data.
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Badge, Button } from '@voicechat/ui-kit'
 import { formatDateTime } from '../../lib/dateFormat'
 import type { TaskReworkCycleViewModel } from './TaskCardViewModel'
@@ -23,13 +24,27 @@ export function StageHeading({ eyebrow, title, description, badge }: { eyebrow: 
   </header>
 }
 
-export function StageRail({ children, testId }: { children: ReactNode; testId?: string }): JSX.Element {
-  return <div className="new-task-stage-rail" {...(testId ? { 'data-testid': testId } : {})}>{children}</div>
+export function StageRail({ children, testId, panel }: { children: ReactNode; testId?: string; panel?: ReactNode }): JSX.Element {
+  const rail = useRef<HTMLDivElement>(null)
+  const [host] = useState(() => document.createElement('div'))
+  // React owns one portal for the whole tab. Only its DOM host moves between
+  // stage slots; changing the selected cycle must not reload the panel.
+  useLayoutEffect(() => {
+    const slot = rail.current?.querySelector('[aria-current="step"] [data-stage-panel-slot]')
+    if (slot && host.parentElement !== slot) slot.appendChild(host)
+  })
+  useLayoutEffect(() => () => host.remove(), [host])
+  return <div ref={rail} className="new-task-stage-rail" {...(testId ? { 'data-testid': testId } : {})}>
+    {children}
+    {panel != null && createPortal(panel, host)}
+  </div>
 }
 
 export interface StageCardProps {
   number: number
   status: StageStatus
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
   /** "Этап 2" / "Проход 3" — what the design prints above the title. */
   eyebrow: string
   title: string
@@ -80,11 +95,16 @@ export function StageCard(props: StageCardProps): JSX.Element {
           {props.onSelect && !props.selected && <Button size="sm" variant="ghost" onClick={props.onSelect}>Показать</Button>}
         </div>
       </header>
+      {['failed', 'blocked', 'timeout'].includes(props.status) && <div className="new-task-stage-error">
+        {props.error?.split(/\r?\n/)[0] && <p>{props.error.split(/\r?\n/)[0]}</p>}
+        <Button size="sm" disabled={!props.onRetry} onClick={props.onRetry}>Повторить</Button>
+      </div>}
       {props.workflow && props.workflow.length > 0 && <WorkflowSnapshot steps={props.workflow} title={props.workflowTitle ?? 'Текущий workflow задачи'} />}
       {props.cycle
         ? <CycleReworks cycle={props.cycle} />
         : (props.sourceTitle || props.sourceText) && <SourceBox title={props.sourceTitle ?? 'Источник этапа'} text={props.sourceText ?? ''} />}
       {props.children}
+      <div data-stage-panel-slot="" className="new-task-stage-panel" />
       {props.details && <details className="new-task-stage-details" open={props.detailsOpen ?? isOpenByDefault(props.status)}>
         <summary>{props.detailsSummary ?? 'Лента и результаты этапа'}</summary>
         {props.details}

@@ -23,6 +23,7 @@ export function NewTaskMergePanel(props: NewTaskMergePanelProps): JSX.Element {
     return { task, merge }
   })
   const [agentId, setAgentId] = useState<string | null>(null)
+
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const { busy, error, act } = useNewTaskAction(history.refresh)
@@ -50,6 +51,7 @@ export function NewTaskMergePanel(props: NewTaskMergePanelProps): JSX.Element {
           statusLabel={shown?.status === 'success' ? 'Влито в main' : undefined} eyebrow={`Проход ${stage.number}`} title={stageTitle('Merge', stage)}
           workflow={props.workflow} cycle={stage.cycle} sourceTitle="Цикл 1" sourceText="Результат разработки первоначальной постановки задачи."
           selected={stage.key === selected.key} onSelect={() => { setSelectedKey(stage.key); setSelectedId(null) }} connector={index < stages.length - 1} testId={`new-task-merge-stage-${stage.number}`}>
+
           <CheckList checks={[
             { id: 'main', title: 'Актуальность main', ok: shown?.conflicts.length ? false : shown?.status === 'success' ? true : null, note: shown?.targetSha ? `main ${shown.targetSha.slice(0, 8)}` : 'Нет данных' },
             { id: 'checks', title: 'CI и конфликты', ok: shown?.checks.some(check => check.status === 'failed') ? false : shown?.status === 'success' ? true : null, note: shown ? `${shown.checks.length} проверок` : 'Ран ещё не запускался' }
@@ -80,6 +82,7 @@ export function NewTaskMergePanel(props: NewTaskMergePanelProps): JSX.Element {
                 if (await confirm({ title: 'Остановить ран?', message: 'Текущий merge-ран будет отменён.', variant: 'danger', confirmLabel: 'Остановить' })) await window.ci!.cancelMerge(run.id)
               })}>Отменить</Button>}
             </> : <EmptyState compact icon="🔀" title="Merge-ранов этого цикла ещё не было" description="Ран появится после запуска слияния ветки задачи." />}
+
           </>}
         </StageCard>
       })}

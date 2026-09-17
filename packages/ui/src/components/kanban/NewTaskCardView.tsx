@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Badge, Button, Dialog, EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
+import { Badge, Button, Dialog, EmptyState, ErrorState, Skeleton, useToast } from '@voicechat/ui-kit'
 import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
+import { useAutoGrow } from '../../lib/autoGrow'
+import { MOBILE_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { formatDateTime } from '../../lib/dateFormat'
 import { fmtDuration } from '../ci/ciFormat'
 import { CRITERION_STATE_LABEL, diffCriteria } from './criteriaDiff'
@@ -178,6 +180,10 @@ function WorkflowList({ steps }: { steps: TaskCardViewModel['workflow'] }): JSX.
     return <li className={'new-task-workflow-step new-task-workflow-step--' + step.state} key={step.id} role="listitem">
       <span className="new-task-workflow-num" aria-hidden="true">{step.state === 'passed' ? '✓' : index + 1}</span>
       <span className="new-task-workflow-body"><strong>{step.label}</strong><small>{WORKFLOW_STATE_LABEL[step.state]}</small></span>
+      <span className="new-task-workflow-dates">{(step.state === 'passed' || step.state === 'current') && [
+        { label: 'Начало', value: step.startedAt },
+        { label: 'Окончание', value: step.state === 'passed' ? step.finishedAt : null }
+      ].map(({ label, value }) => value != null && Number.isFinite(value) && <time key={label} dateTime={new Date(value).toISOString()} title={label + ': ' + formatDateTime(value)}>{label}: {formatDateTime(value)}</time>)}</span>
       {text && <time className={'new-task-workflow-time' + (elapsed != null ? ' new-task-workflow-time--live' : '')} aria-label={(elapsed != null ? 'Прошло ' : 'Заняло ') + text}>
         {elapsed != null && <em aria-hidden="true" />}{text}
       </time>}
@@ -187,6 +193,7 @@ function WorkflowList({ steps }: { steps: TaskCardViewModel['workflow'] }): JSX.
 
 /** Одна доработка очереди: чекбокс выбора, содержание и действия черновика. */
 function DraftRow({ cycle, selected, onToggle, callbacks, pending, canSubmit }: { cycle: TaskReworkCycleViewModel; selected: boolean; onToggle(): void; callbacks: TaskCardCallbacks; pending?: boolean; canSubmit: boolean }): JSX.Element {
+
   // Заголовок строки — первая строка описания, остальное уходит в тело: иначе
   // однострочная доработка показывалась бы дважды подряд.
   const [title, ...rest] = cycle.description.split('\n')
@@ -207,6 +214,7 @@ function DraftRow({ cycle, selected, onToggle, callbacks, pending, canSubmit }: 
         <Button size="sm" variant="primary" disabled={!canSubmit || pending} onClick={() => void callbacks.onSubmitDraft?.(cycle.id)}>Отправить на доработку</Button>
         <Button size="sm" variant="secondary" disabled={pending} onClick={() => callbacks.onEditDraft?.(cycle.id)}>Изменить</Button>
         <Button size="sm" variant="danger" disabled={pending} onClick={() => void callbacks.onDeleteDraft?.(cycle.id)}>Удалить</Button>
+
       </footer>
     </div>
   </article>
@@ -239,14 +247,67 @@ function CycleRow({ cycle, callbacks }: { cycle: TaskReworkCycleViewModel; callb
   </article>
 }
 
+function Statement({ model, onUpdate }: { model: TaskCardViewModel; onUpdate: TaskCardCallbacks['onUpdate'] }): JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [description, setDescription] = useState(model.description)
+  const [criteria, setCriteria] = useState(model.acceptanceCriteria)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const descriptionRef = useAutoGrow(description, 3, 30)
+  const criteriaRef = useAutoGrow(criteria, 3, 30)
+  const edit = (): void => {
+    if (!onUpdate) return
+    setDescription(model.description); setCriteria(model.acceptanceCriteria); setError(null); setEditing(true)
+  }
+  const save = async (): Promise<void> => {
+    if (!onUpdate || pending) return
+    setPending(true); setError(null)
+    try {
+      await onUpdate({ description, acceptanceCriteria: criteria })
+      setEditing(false)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось сохранить постановку') }
+    finally { setPending(false) }
+  }
+  if (editing) return <div className="new-task-statement">
+    <label>Описание<textarea ref={descriptionRef} value={description} disabled={pending} onChange={(event) => setDescription(event.target.value)} /></label>
+    <label>Критерии приёмки<textarea ref={criteriaRef} value={criteria} disabled={pending} onChange={(event) => setCriteria(event.target.value)} /></label>
+    {error && <p role="alert">{error}</p>}
+    <div><Button size="sm" variant="primary" loading={pending} onClick={() => void save()}>Сохранить</Button>
+    <Button size="sm" disabled={pending} onClick={() => { setEditing(false); setError(null) }}>Отмена</Button></div>
+  </div>
+  return <div onDoubleClick={edit}>
+    {onUpdate && <Button size="sm" variant="ghost" onClick={edit}>Изменить</Button>}
+    <p>{model.description || 'Описание не заполнено'}</p>
+    <CriteriaList source={model.source.acceptanceCriteria} current={model.acceptanceCriteria} />
+  </div>
+}
+
 export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
   const { model, activeTab, callbacks } = props
   const [criterion, setCriterion] = useState('')
+  const toast = useToast()
+  const mobile = useMediaQuery(MOBILE_QUERY)
+  const [titleExpanded, setTitleExpanded] = useState(false)
+  const [draftOrder, setDraftOrder] = useState('newest')
   const [sourceOpen, setSourceOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [makeFiles, setMakeFiles] = useState<Record<string, MakeFilesState>>({})
   const [makeEditor, setMakeEditor] = useState<{ linkId: string | null; initial: TaskCardMakeLinkDraft | null } | null>(null)
   const [selectedDrafts, setSelectedDrafts] = useState<string[]>([])
+  useEffect(() => {
+    if (!props.reworkOpen || !props.reworkDraft.editingId) return
+    let live = true
+    for (const source of props.reworkDraft.makeSources ?? []) {
+      if (source.mode !== 'files' || !callbacks.onLoadMakeFiles) continue
+      setMakeFiles((all) => ({ ...all, [source.conversationId]: { state: 'loading', paths: source.paths } }))
+      void callbacks.onLoadMakeFiles(source.conversationId).then((paths) => {
+        if (live) setMakeFiles((all) => ({ ...all, [source.conversationId]: { state: 'ready', paths } }))
+      }).catch(() => {
+        if (live) setMakeFiles((all) => ({ ...all, [source.conversationId]: { state: 'error', paths: source.paths } }))
+      })
+    }
+    return () => { live = false }
+  }, [props.reworkOpen, props.reworkDraft.editingId])
   // The body is one scroll container for every tab: without a reset the QA tab
   // opened at the scroll position the user left in the previous one.
   const bodyRef = useRef<HTMLElement>(null)
@@ -303,8 +364,7 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
     <div className="new-task-column">
       <section className="new-task-section">
         <header className="new-task-section-head"><h3>Актуальная постановка</h3><span className="new-task-cycle-badge">Цикл {model.cycleNumber}</span></header>
-        <p>{model.description || 'Описание не заполнено'}</p>
-        <CriteriaList source={model.source.acceptanceCriteria} current={model.acceptanceCriteria} />
+        <Statement model={model} onUpdate={callbacks.onUpdate} />
       </section>
       <section className="new-task-section">
         <header className="new-task-section-head">
@@ -340,7 +400,8 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
       </section>
       {makeBlock}
     </div>
-    <aside className="new-task-column new-task-side">
+    <details className="new-task-column new-task-side" open={mobile ? undefined : true}>
+      <summary className="new-task-side-summary">Workflow и задача</summary>
       <section className="new-task-section">
         <h3>Workflow</h3>
         <WorkflowList steps={model.workflow} />
@@ -358,10 +419,10 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         <h3>Последний ран</h3>
         {model.runs[0]
           ? <button type="button" className="new-task-run-link" onClick={() => callbacks.onOpenRun(model.runs[0]!.id)}>{model.runs[0].title} · {RUN_LABELS[model.runs[0].status]}</button>
-          : <p className="new-task-muted">Ранов пока нет</p>}
+          : <EmptyState compact title="Ранов пока нет" description="Начните с подготовки задачи." actionLabel="Открыть подготовку" {...(model.tabs.some((tab) => tab.id === 'preparation') ? { onAction: () => callbacks.onChangeTab('preparation') } : {})} />}
       </section>
       {model.actions.canRework && <Button variant="primary" fullWidth onClick={callbacks.onStartRework}>↩ На доработку · цикл {model.nextCycleNumber}</Button>}
-    </aside>
+    </details>
   </div>
 
   const selectable = model.drafts.map((cycle) => cycle.id)
@@ -380,12 +441,13 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
       {model.drafts.length > 0 && <div className="new-task-bulk-bar">
         <label><input type="checkbox" checked={allSelected} onChange={() => setSelectedDrafts(allSelected ? [] : selectable)} /> Выбрать все доступные</label>
         <span>Выбрано: {selected.length}</span>
+        <label>Сортировка<select value={draftOrder} onChange={(event) => setDraftOrder(event.target.value)}><option value="newest">Новые сверху</option><option value="number">По номеру</option></select></label>
         <Button size="sm" variant="primary" loading={props.reworkPending} disabled={!selected.length || !model.actions.canRework} title={model.actions.canRework ? undefined : 'Отправка доступна после успешной разработки'} onClick={() => void callbacks.onSubmitDrafts?.(selected)}>Отправить выбранные на доработку</Button>
       </div>}
       {model.drafts.length === 0
-        ? <EmptyState title="Очередь пуста" description="Добавьте доработку — она сохранится черновиком и отправится отдельным циклом." />
+        ? <EmptyState title="Очередь пуста" description="Добавьте доработку — она сохранится черновиком и отправится отдельным циклом." actionLabel="Добавить доработку" onAction={callbacks.onStartRework} />
         : <div className="new-task-rework-list" role="list">
-          {model.drafts.map((cycle) => <DraftRow key={cycle.id} cycle={cycle} pending={props.reworkPending} canSubmit={model.actions.canRework} selected={selected.includes(cycle.id)} onToggle={() => setSelectedDrafts((all) => all.includes(cycle.id) ? all.filter((id) => id !== cycle.id) : [...all, cycle.id])} callbacks={callbacks} />)}
+          {[...model.drafts].sort((a, b) => draftOrder === 'number' ? a.sequence - b.sequence : b.createdAt - a.createdAt || b.sequence - a.sequence).map((cycle) => <DraftRow key={cycle.id} cycle={cycle} pending={props.reworkPending} canSubmit={model.actions.canRework && Boolean(callbacks.onSubmitDraft)} selected={selected.includes(cycle.id)} onToggle={() => setSelectedDrafts((all) => all.includes(cycle.id) ? all.filter((id) => id !== cycle.id) : [...all, cycle.id])} callbacks={callbacks} />)}
         </div>}
     </section>
     <div className="new-task-history-separator" role="separator" aria-label="История запущенных циклов"><span>История запущенных циклов</span></div>
@@ -402,8 +464,10 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
 
   return <Dialog
     title={<span>
-      <small className="new-task-key">{model.taskKey} · {model.projectName}</small>
-      <span className="new-task-title" title={model.title}>{model.title}</span>
+      <small className="new-task-key"><Button size="sm" variant="ghost" aria-label="Копировать ключ задачи" onClick={() => {
+        void Promise.resolve().then(() => navigator.clipboard.writeText(model.taskKey)).then(() => toast.success('Скопировано')).catch(() => toast.error('Не удалось скопировать ключ'))
+      }}>{model.taskKey}</Button> · {model.projectName}</small>
+      <Button variant="ghost" className={'new-task-title' + (titleExpanded ? ' new-task-title--expanded' : '')} title={model.title} aria-expanded={titleExpanded} onClick={() => setTitleExpanded((value) => !value)}>{model.title}</Button>
       <small className="new-task-stage-line">
         <span className={'new-task-stage new-task-stage--' + (model.stage.fallback ? 'fallback' : model.stage.semanticType)}>
           {model.stage.label}{model.stage.statusLabel ? ` · ${model.stage.statusLabel}` : ''}
@@ -424,12 +488,13 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
       {model.actions.hasActiveRun && <div className="new-task-banner" role="status">
         <strong>Активный ран блокирует возврат</strong>
         <span>{model.actions.reworkBlockedReason ?? 'Остановите его или дождитесь завершения.'}</span>
+        {model.tabs.some((tab) => tab.id === 'feed') && <Button size="sm" onClick={() => callbacks.onChangeTab('feed')}>Открыть ленту</Button>}
         {model.actions.canStopRun && callbacks.onStopRun && <Button size="sm" variant="danger" onClick={() => void callbacks.onStopRun?.()}>Остановить ран</Button>}
       </div>}
       <nav className="new-task-tabs" aria-label="Разделы карточки" role="tablist">
         {model.tabs.map((tab) =>
           <Button key={tab.id} size="sm" variant="ghost" role="tab" aria-selected={tab.id === activeTab} {...(tab.id === activeTab ? { ref: activeTabRef } : {})} onClick={() => callbacks.onChangeTab(tab.id)}>
-            {tab.label}
+            {tab.label}{tab.id === 'reworks' && <span aria-label="Выбранные черновики"> · выбрано {selected.length}</span>}
             {tab.count != null && tab.count > 0 && <span className="new-task-tab-count">{tab.count}</span>}
             {tab.live && <span className="new-task-tab-live" aria-label="идёт сейчас" />}
           </Button>
@@ -451,17 +516,29 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         {model.actions.hasActiveRun && <div className="new-task-warning" role="alert"><strong>Сейчас выполняется ран</strong><p>Черновик сохранится, но отправить его можно будет только после завершения рана.</p></div>}
         <label>Описание доработки<textarea value={props.reworkDraft.description} onChange={(e) => setDraft({ description: e.target.value })} aria-invalid={!props.reworkDraft.description.trim()} /></label>
         <label>Дополнительный критерий<div className="new-task-inline"><input value={criterion} onChange={(e) => setCriterion(e.target.value)} /><Button size="sm" onClick={() => { if (criterion.trim()) { setDraft({ criteria: [...props.reworkDraft.criteria, criterion.trim()] }); setCriterion('') } }}>Добавить</Button></div></label>
-        <ul>{props.reworkDraft.criteria.map((item, index) => <li key={index}>{item}</li>)}</ul>
+        <ul>{props.reworkDraft.criteria.map((item, index) => <li key={index}>
+          <label>Критерий {index + 1}<input value={item} onChange={(event) => setDraft({ criteria: props.reworkDraft.criteria.map((value, at) => at === index ? event.target.value : value) })} /></label>
+          <Button size="sm" variant="ghost" onClick={() => setDraft({ criteria: props.reworkDraft.criteria.filter((_, at) => at !== index) })}>Удалить критерий {index + 1}</Button>
+        </li>)}</ul>
         <fieldset><legend>Make-источники</legend>
           {props.makeSourcesState?.state === 'loading' && <p role="status">Загружаем Make-проекты…</p>}
           {props.makeSourcesState?.state === 'error' && <div role="alert"><p>{props.makeSourcesState.error ?? 'Не удалось загрузить Make-проекты'}</p><Button size="sm" onClick={callbacks.onRetryMakeSources}>Повторить</Button></div>}
-          {props.makeSourcesState?.state === 'empty' && <EmptyState title="Нет доступных Make-проектов" description="Цикл можно создать без Make-источника." />}
-          {props.makeSourcesState?.items.map((source) => {
+          {props.makeSourcesState?.state === 'empty' && <EmptyState title="Нет доступных Make-проектов" description="Цикл можно создать без Make-источника." actionLabel="Обновить список" {...(callbacks.onRetryMakeSources ? { onAction: callbacks.onRetryMakeSources } : {})} />}
+          {[...(props.makeSourcesState?.items ?? []), ...(props.reworkDraft.makeSources ?? [])
+            .filter((item) => !props.makeSourcesState?.items.some((source) => source.conversationId === item.conversationId))
+            .map((item) => ({ conversationId: item.conversationId, title: item.conversationId + ' · недоступен' }))].map((source) => {
             const selectedSource = props.reworkDraft.makeSources?.find((item) => item.conversationId === source.conversationId)
             const update = (next?: { conversationId: string; mode: 'whole_project' | 'files'; paths: string[] }) => setDraft({ makeSources: next ? [...(props.reworkDraft.makeSources ?? []).filter((item) => item.conversationId !== source.conversationId), next] : (props.reworkDraft.makeSources ?? []).filter((item) => item.conversationId !== source.conversationId) })
             return <div key={source.conversationId}><label><input type="checkbox" checked={Boolean(selectedSource)} onChange={(e) => update(e.target.checked ? { conversationId: source.conversationId, mode: 'whole_project', paths: [] } : undefined)} />{source.title}</label>
               {selectedSource && <><label><input type="radio" name={'mode-' + source.conversationId} checked={selectedSource.mode === 'whole_project'} onChange={() => update({ ...selectedSource, mode: 'whole_project', paths: [] })} />Весь проект</label><label><input type="radio" name={'mode-' + source.conversationId} checked={selectedSource.mode === 'files'} onChange={() => { update({ ...selectedSource, mode: 'files', paths: [] }); setMakeFiles((all) => ({ ...all, [source.conversationId]: { state: 'loading', paths: [] } })); void callbacks.onLoadMakeFiles?.(source.conversationId).then((paths) => setMakeFiles((all) => ({ ...all, [source.conversationId]: { state: 'ready', paths } }))).catch(() => setMakeFiles((all) => ({ ...all, [source.conversationId]: { state: 'error', paths: [] } }))) }} />Отдельные файлы</label>
-              {selectedSource.mode === 'files' && (makeFiles[source.conversationId]?.state === 'loading' ? <p role="status">Загружаем файлы…</p> : makeFiles[source.conversationId]?.state === 'error' ? <p role="alert">Не удалось загрузить файлы</p> : (makeFiles[source.conversationId]?.paths.length ? makeFiles[source.conversationId]!.paths.map((path) => <label key={path}><input type="checkbox" checked={selectedSource.paths.includes(path)} onChange={(e) => update({ ...selectedSource, paths: e.target.checked ? [...selectedSource.paths, path].sort() : selectedSource.paths.filter((item) => item !== path) })} />{path}</label>) : <p>В проекте нет файлов</p>))}</>}
+              {selectedSource.mode === 'files' && <>
+                {makeFiles[source.conversationId]?.state === 'loading' && <p role="status">Загружаем файлы…</p>}
+                {makeFiles[source.conversationId]?.state === 'error' && <p role="alert">Не удалось загрузить файлы. Сохранённый выбор оставлен.</p>}
+                {[...new Set([...selectedSource.paths, ...(makeFiles[source.conversationId]?.paths ?? [])])].map((path) => <label key={path}>
+                  <input type="checkbox" checked={selectedSource.paths.includes(path)} onChange={(event) => update({ ...selectedSource, paths: event.target.checked ? [...selectedSource.paths, path].sort() : selectedSource.paths.filter((item) => item !== path) })} />{path}
+                </label>)}
+                {makeFiles[source.conversationId]?.state === 'ready' && !makeFiles[source.conversationId]?.paths.length && !selectedSource.paths.length && <p>В проекте нет файлов</p>}
+              </>}</>}
             </div>
           })}
         </fieldset>
