@@ -6,7 +6,7 @@
 /** Разобранная инфраструктурная ошибка: что случилось и что с этим делать. */
 export interface CiInfraFailure {
   /** Машиночитаемый вид сбоя (уходит в аудит `run.infra_error`). */
-  kind: 'npm_cache' | 'disk_full' | 'agent_offline' | 'missing_dependencies' | 'llm_transport'
+  kind: 'npm_cache' | 'npm_environment' | 'disk_full' | 'agent_offline' | 'missing_dependencies' | 'llm_transport'
   /** Короткое описание для лога шага. */
   message: string
   /** Что делать оператору. */
@@ -16,6 +16,8 @@ export interface CiInfraFailure {
 /** Повреждённый `_cacache`: EEXIST/ENOENT/EINTEGRITY при переносе во content-v2. */
 const NPM_CACHE_PATH = /_cacache/
 const NPM_CACHE_CODE = /\b(EEXIST|ENOENT|EINTEGRITY)\b/
+/** npm не может подготовить HOME/cache или распаковывает повреждённое дерево. */
+const NPM_ENVIRONMENT = /\bEACCES\b|TAR_ENTRY_ERROR|permission denied/i
 /** Кончилось место (том машины) — тоже не про задачу. */
 const DISK_FULL = /\bENOSPC\b|no space left on device/i
 /**
@@ -68,6 +70,13 @@ export function classifyCiInfraFailure(args: { exitCode: number | null; output: 
       hint: 'Почистить кэш на машине (`npm cache clean --force`) и проверить, что шаг получает изолированный кэш рана (`npm_config_cache=$NPM_CACHE_DIR`): гонка двух `npm ci` за общий ~/.npm ломает его именно так.'
     }
   }
+  if (NPM_ENVIRONMENT.test(out)) {
+    return {
+      kind: 'npm_environment',
+      message: `npm не смог подготовить изолированное окружение зависимостей — инфраструктурный сбой машины, а не ошибка компонента${args.exitCode != null ? ` (код выхода ${args.exitCode})` : ''}.`,
+      hint: 'Проверить строки [dependency_setup] с фактическими HOME и npm_cache, доступность этих каталогов текущему пользователю и повторить ран в чистом окружении.'
+    }
+  }
   if (DISK_FULL.test(out)) {
     return {
       kind: 'disk_full',
@@ -97,6 +106,7 @@ export function classifyCiInfraFailure(args: { exitCode: number | null; output: 
 /** Ярлык вида сбоя для ленты рана: короткий, без подсказки. */
 export const CI_INFRA_LABEL: Record<CiInfraFailure['kind'], string> = {
   npm_cache: 'повреждён кэш npm',
+  npm_environment: 'недоступно окружение npm',
   disk_full: 'нет места на диске',
   agent_offline: 'машина потеряла связь',
   missing_dependencies: 'нет зависимостей в рабочей копии',
