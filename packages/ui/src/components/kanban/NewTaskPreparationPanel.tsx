@@ -56,6 +56,7 @@ export function NewTaskPreparationPanel(props: NewTaskPreparationPanelProps): JS
   }, [identity, history.refresh])
   useEffect(() => { setAnswer('') }, [run?.id])
   const accept = (next: TaskPreparationRun | void) => { if (next) setSelectedId(next.id) }
+
   return <div className="new-task-process" data-testid="new-task-preparation">
     <StageHeading eyebrow="История подготовки" title="Этапы подготовки к разработке"
       description="Каждый новый набор доработок готовится отдельно, не перезаписывая исходный Development Brief."
@@ -123,6 +124,7 @@ export function NewTaskPreparationPanel(props: NewTaskPreparationPanelProps): JS
               </div>
             </>}
           </>}
+
         </StageCard>
       })}
     </StageRail>

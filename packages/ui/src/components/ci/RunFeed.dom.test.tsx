@@ -137,6 +137,7 @@ describe('RunFeed navigation', () => {
     }
     render(<RunFeed {...baseProps(cache)} />)
     const stop = screen.getByRole('alert', { name: 'Автопроход остановлен' })
+    expect(stop).toHaveAccessibleName('Автопроход остановлен')
     expect(stop).toHaveTextContent('несохранённые изменения')
     expect(stop).toHaveTextContent('dirty-run')
     expect(stop).toHaveTextContent('вручную продолжите подходящий шаг')
@@ -265,6 +266,36 @@ describe('RunFeed', () => {
     expect(screen.getByText('Ран завершился до первого шага')).toBeInTheDocument()
     expect(screen.getByText('Машина выполнения недоступна или находится офлайн.')).toBeInTheDocument()
     expect(screen.queryByText('Шагов пока нет')).not.toBeInTheDocument()
+  })
+
+  // @testCase TC-UI-02
+  it('различает lifecycle preview, диагностику, test DB, screenshots и истёкшую ссылку', () => {
+    const status = {
+      state: 'warning', browserResult: 'warning', attempt: 2, maxAttempts: 2,
+      database: 'ready', url: 'http://preview.machine.internal:5173/',
+      diagnostic: { code: 'browser_infrastructure', message: 'Chromium недоступен' },
+      evidence: { screenshots: ['/api/ci/runs/run-1/artifacts/check.png'] }
+    }
+    const detail = { run: mkRun(), steps: [], fixAttempts: [], interactions: [] }
+    const previewLog = (value: Record<string, unknown>): ReturnType<typeof mkLog> =>
+      mkLog({ stream: 'system', chunk: '[development-preview] ' + JSON.stringify(value) })
+    const view = render(<RunFeed {...baseProps({ detail, log: [previewLog(status)], conclusion: null })} />)
+
+    const summary = screen.getByRole('region', { name: 'Тестовое окружение разработки' })
+    expect(summary).toHaveTextContent('Docker preview: Предупреждение')
+    expect(summary).toHaveTextContent('Браузер: Предупреждение')
+    expect(summary).toHaveTextContent('БД: ready')
+    expect(summary).toHaveTextContent('browser_infrastructure: Chromium недоступен')
+    expect(screen.getByRole('link', { name: 'Снимок проверки' })).toHaveAttribute('href', '/api/ci/runs/run-1/artifacts/check.png')
+
+    view.rerender(<RunFeed {...baseProps({
+      detail,
+      log: [previewLog({ ...status, state: 'expired', browserResult: 'skipped', url: null })],
+      conclusion: null
+    })} />)
+    expect(summary).toHaveTextContent('Docker preview: Истекло')
+    expect(screen.queryByRole('link', { name: 'Открыть preview' })).not.toBeInTheDocument()
+    expect(screen.getByText('Ссылка на окружение неактивна')).toBeInTheDocument()
   })
 
   it('показывает фактическую модель стадии отдельно от базовой модели рана', () => {

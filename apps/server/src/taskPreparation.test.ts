@@ -99,6 +99,7 @@ it('preserves repeated names in independent objects and punctuation inside strin
 // @testCase T12
 // @testCase T9
 // @testCase TC-BRIEF-2
+// @testCase TC-11
 it('normalizes only absent decision references and preserves compatible nulls and requirements', () => {
   const original = JSON.parse(READINESS)
   original.scope = ['Keep columnId as status', 'Keep onMoveTask(taskId, columnId, afterId, beforeId)', 'Keep autoPilot=true and autoPilotRequiresManualQa=false']
@@ -123,6 +124,7 @@ it.each(['{} {}', '{"broken": } {}', '[{}]', '{"outer":', '{"valid":true} {broke
 
 // @testCase TC-6
 // @testCase TC-7
+// @testCase TC-10
 // @testCase TC-BRIEF-REGRESSION
 // @testCase TC-BRIEF-03
 // @testCase T13
@@ -813,6 +815,7 @@ describe('подготовка к разработке: диагностика �
 
   // @testCase T9
   // @testCase T11
+
   // @testCase TC-SCHEMA-SINGLE-JSON
   // @testCase TC-BRIEF-01
   it('rejects multiple JSON objects on every preparation and recovery attempt', async () => {
@@ -900,6 +903,7 @@ describe('подготовка к разработке: диагностика �
   // @testCase T7
   // @testCase TC-BRIEF-1
   // @testCase TC-BRIEF-01
+
   it('требует schemaVersion=2 до строгой валидации', async () => {
     const { project, task } = await taskInBacklog()
     const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })

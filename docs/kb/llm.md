@@ -33,6 +33,14 @@ areas:
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
 
+## Scoped preview generation
+
+Runner `POST /v1/preview-grants` and DELETE by grant ID require the existing master Runner token. A grant binds project/task/run/user/provider/model and only the `generate` operation, expires within two hours, and stores its opaque token hashed in memory. Restart revokes all grants; explicit revoke and the one-second TTL sweep cancel active CLI children. Scoped tokens authorize only exact `POST /v1/run`, never health, filesystem, cancellation or grant issuance.
+
+The preview gateway removes caller-supplied user identity, cwd, MCP configuration and session continuation before forwarding generation. Runner also validates the narrow body and enforces the grant's identity/model. Claude receives `--tools ""`, an empty strict MCP configuration, empty setting sources and disabled session persistence. No CLI home or credentials enter a preview container.
+
+Codex grants currently fail closed with `preview_text_only_unavailable`. Existing `executionDisabled` is insufficient isolation: Claude previously disabled only Bash, and Codex used a prompt hint while its default invocation could retain bypass flags. This implementation does not present that hint as a security boundary.
+
 ## Модель вызывается как CLI, а не по API
 
 `ClaudeCli` (`apps/llm-runner/src/cli/claudeCli.ts`) делает
