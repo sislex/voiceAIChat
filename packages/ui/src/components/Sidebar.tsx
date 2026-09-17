@@ -419,6 +419,7 @@ export function Sidebar({
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   // Открыто ли меню аккаунта (Машины/Пользователи/Настройки/Выйти).
   const [acctOpen, setAcctOpen] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(false)
   const [projectFilterOpen, setProjectFilterOpen] = useState(false)
   // Инлайн-форма создания проекта в списке проектов.
   const [projectQuery, setProjectQuery] = useState('')
@@ -426,6 +427,9 @@ export function Sidebar({
   const resizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
   const wheelDeltaRef = useRef(0)
   const acctRef = useRef<HTMLDivElement | null>(null)
+  const acctTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const toolsRef = useRef<HTMLDivElement | null>(null)
+  const toolsTriggerRef = useRef<HTMLButtonElement | null>(null)
   const projectFilterRef = useRef<HTMLDivElement | null>(null)
   const selectedProjectSet = new Set(selectedProjectIds)
   const allProjectsSelected = selectedProjectSet.size === projects.length
@@ -473,6 +477,19 @@ export function Sidebar({
     const haystack = [project.name, ...(project.typeChain?.nodes.map((node) => node.name) ?? [])]
     return haystack.some((value) => value.toLocaleLowerCase().includes(needle))
   })
+  const toolGroups = [
+    { label: 'Автоматизация', items: onOpenMake ? [{ icon: '✦', label: 'Make — веб-проект', callback: onOpenMake }] : [] },
+    { label: 'Веб', items: [
+      ...(onOpenWebReader ? [{ icon: '🌐', label: 'Web Reader', callback: onOpenWebReader }] : []),
+      ...(onOpenPlaywrightReader ? [{ icon: '▣', label: 'Playwright Reader', callback: onOpenPlaywrightReader }] : [])
+    ] },
+    { label: 'Система', items: [
+      ...(onOpenFiles ? [{ icon: '📁', label: 'Проводник', callback: onOpenFiles }] : []),
+      ...(onOpenConsole ? [{ icon: '⌨️', label: 'Консоль', callback: onOpenConsole }] : []),
+      ...(onOpenConsoleReader ? [{ icon: '▮', label: 'Консоль с ассистентом', callback: onOpenConsoleReader }] : [])
+    ] }
+  ].filter((group) => group.items.length > 0)
+  const hasTools = toolGroups.length > 0
 
   const setControlsVisible = (visible: boolean): void => {
     setControlsOpen((current) => current[mode] === visible ? current : { ...current, [mode]: visible })
@@ -522,14 +539,17 @@ export function Sidebar({
     }
   }
 
-  // Меню аккаунта закрывается по клику вне и по Esc.
+  // Оба всплывающих меню закрываются снаружи и по Escape с возвратом фокуса.
   useEffect(() => {
-    if (!acctOpen) return
-    const onDoc = (e: MouseEvent): void => {
-      if (acctRef.current && !acctRef.current.contains(e.target as Node)) setAcctOpen(false)
+    if (!acctOpen && !toolsOpen) return
+    const onDoc = (event: MouseEvent): void => {
+      if (acctOpen && acctRef.current && !acctRef.current.contains(event.target as Node)) setAcctOpen(false)
+      if (toolsOpen && toolsRef.current && !toolsRef.current.contains(event.target as Node)) setToolsOpen(false)
     }
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setAcctOpen(false)
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      if (acctOpen) { setAcctOpen(false); acctTriggerRef.current?.focus() }
+      if (toolsOpen) { setToolsOpen(false); toolsTriggerRef.current?.focus() }
     }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
@@ -537,7 +557,7 @@ export function Sidebar({
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
     }
-  }, [acctOpen])
+  }, [acctOpen, toolsOpen])
 
   useEffect(() => {
     if (!projectFilterOpen) return
@@ -555,10 +575,29 @@ export function Sidebar({
     }
   }, [projectFilterOpen])
 
-  // Пункт меню аккаунта: закрыть меню и выполнить действие.
+  // Пункт всплывающего меню: сначала закрыть меню, затем выполнить прежнее действие.
   const acct = (fn: () => void) => (): void => {
     setAcctOpen(false)
     fn()
+  }
+  const tool = (fn: () => void) => (): void => {
+    setToolsOpen(false)
+    fn()
+  }
+  const focusFirstMenuItem = (container: HTMLDivElement | null): void => {
+    requestAnimationFrame(() => container?.querySelector<HTMLElement>('[role="menuitem"]')?.focus())
+  }
+  const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    if (!items.length) return
+    event.preventDefault()
+    const current = items.indexOf(document.activeElement as HTMLElement)
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? items.length - 1
+        : event.key === 'ArrowDown' ? (current + 1 + items.length) % items.length
+          : (current - 1 + items.length) % items.length
+    items[next]?.focus()
   }
 
   const renderConversation = (c: Conversation): JSX.Element => {
@@ -943,17 +982,51 @@ export function Sidebar({
         </div>
       )}
       <div className="sidefoot">
-        {/* Меню аккаунта: инструменты-виджеты + управление, настройки, выход.
-            Иконки виджетов перенесены сюда из отдельного нижнего ряда —
-            всплывают по клику на пользователя. */}
+        {hasTools && (
+          <div className="acct tools" ref={toolsRef}>
+            <Button
+              ref={toolsTriggerRef}
+              variant="ghost"
+              fullWidth
+              className="sidefoot-row acct-toggle"
+              aria-label="Инструменты"
+              aria-haspopup="menu"
+              aria-expanded={toolsOpen}
+              onClick={() => { setAcctOpen(false); setToolsOpen((open) => !open) }}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown') { event.preventDefault(); setAcctOpen(false); setToolsOpen(true); focusFirstMenuItem(toolsRef.current) }
+              }}
+            >
+              <span className="footico">🧰</span>
+              <span className="username">Инструменты</span>
+              <span className="acct-caret" aria-hidden>▾</span>
+            </Button>
+            {toolsOpen && (
+              <div className="acct-menu tools-menu" role="menu" aria-label="Инструменты" onKeyDown={onMenuKeyDown}>
+                {toolGroups.map((group) => (
+                  <div className="tools-group" role="group" aria-labelledby={`tools-group-${group.label}`} key={group.label}>
+                    <div className="tools-group-title" id={`tools-group-${group.label}`}>{group.label}</div>
+                    {group.items.map((item) => (
+                      <Button key={item.label} variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={tool(item.callback)}>
+                        <span className="footico">{item.icon}</span>
+                        {item.label}
+                      </Button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {/* Меню пользователя сохраняет поверхности и управление аккаунтом. */}
         {currentUser && currentUser.name ? (
           <div className="acct" ref={acctRef}>
             <Button
               variant="ghost"
               fullWidth
               className="sidefoot-row acct-toggle"
-              
-              onClick={() => setAcctOpen((v) => !v)}
+              ref={acctTriggerRef}
+              onClick={() => { setToolsOpen(false); setAcctOpen((v) => !v) }}
               aria-haspopup="menu"
               aria-expanded={acctOpen}
               title={`Роль: ${currentUser.role}`}
@@ -963,7 +1036,7 @@ export function Sidebar({
               <span className="acct-caret" aria-hidden>▾</span>
             </Button>
             {acctOpen && (
-              <div className="acct-menu" role="menu">
+              <div className="acct-menu" role="menu" aria-label="Меню пользователя" onKeyDown={onMenuKeyDown}>
                 <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenObserver)}>
                   <span className="footico">🤖</span>
                   История LLM
@@ -972,42 +1045,6 @@ export function Sidebar({
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
                     <span className="footico">📚</span>
                     База знаний
-                  </Button>
-                )}
-                {onOpenFiles && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenFiles)}>
-                    <span className="footico">📁</span>
-                    Проводник
-                  </Button>
-                )}
-                {onOpenConsole && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenConsole)}>
-                    <span className="footico">⌨️</span>
-                    Консоль
-                  </Button>
-                )}
-                {onOpenWebReader && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenWebReader)}>
-                    <span className="footico">🌐</span>
-                    Web Reader
-                  </Button>
-                )}
-                {onOpenPlaywrightReader && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenPlaywrightReader)}>
-                    <span className="footico">▣</span>
-                    Playwright Reader
-                  </Button>
-                )}
-                {onOpenConsoleReader && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenConsoleReader)}>
-                    <span className="footico">▮</span>
-                    Консоль с ассистентом
-                  </Button>
-                )}
-                {onOpenMake && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenMake)}>
-                    <span className="footico">✦</span>
-                    Make — веб-проект
                   </Button>
                 )}
                 {onOpenImageStudio && (
@@ -1099,26 +1136,6 @@ export function Sidebar({
               {onOpenKnowledgeBase && (
                 <IconButton className="foottools-item" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
                   📚
-                </IconButton>
-              )}
-              {onOpenFiles && (
-                <IconButton className="foottools-item" onClick={onOpenFiles} title="Открыть проводник" aria-label="Открыть проводник">
-                  📁
-                </IconButton>
-              )}
-              {onOpenConsole && (
-                <IconButton className="foottools-item" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
-                  ⌨️
-                </IconButton>
-              )}
-              {onOpenWebReader && (
-                <IconButton className="foottools-item" onClick={onOpenWebReader} title="Web Reader" aria-label="Web Reader">
-                  🌐
-                </IconButton>
-              )}
-              {onOpenPlaywrightReader && (
-                <IconButton className="foottools-item" onClick={onOpenPlaywrightReader} title="Playwright Reader" aria-label="Playwright Reader">
-                  ▣
                 </IconButton>
               )}
             </div>
