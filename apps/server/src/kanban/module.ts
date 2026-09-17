@@ -764,7 +764,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       if (result.timedOut) throw new Error(`Release-preflight базы знаний не уложился в ${Math.round(limitMs / 1000)} с`)
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
-  }, { onChange: (update) => boardHub.emitRelease(update) })
+  }, { onChange: (update) => boardHub.emitRelease(update), onFinished: (update) => notificationHub.emit(update.projectId,update.userId) })
+  const archiveOldReleases=():Promise<number>=>db.releases.archiveFailedPreparations(Date.now()-30*24*60*60_000)
+  void archiveOldReleases()
+  const releaseArchiveTimer=setInterval(()=>void archiveOldReleases(),24*60*60_000)
+  releaseArchiveTimer.unref?.()
+  app.addHook('onClose',async()=>clearInterval(releaseArchiveTimer))
   const managedEnvironments = new ManagedEnvironmentResolver(db, releaseManager, (agentId) => machines.policyOf(agentId)?.allowedDirs ?? [])
   await releaseManager.reconcile(async (release) => {
     const project = await db.projects.getProject(release.triggeredBy, release.projectId)

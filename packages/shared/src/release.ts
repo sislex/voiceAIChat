@@ -24,6 +24,17 @@ export const releaseStepLimit = (kind: ReleaseStepKind, limits: ReleaseTimeouts)
 
 export interface ReleaseBranch { branch: string; version: string; sha: string }
 
+export interface ReleaseChange { sha: string; author: string; at: number; subject: string }
+export interface ReleaseChangesResult {
+  /** null means that production has not been deployed yet; it is not an empty diff. */
+  fromSha: string | null
+  toSha: string
+  changes: ReleaseChange[] | null
+}
+export function releaseChangeGroup(subject: string): string {
+  return /^(feat|fix|docs|refactor|test|chore|perf|build|ci)(?:\([^)]*\))?[!:]/i.exec(subject)?.[1]?.toLowerCase() ?? 'other'
+}
+
 /** Разрешённая текущему пользователю машина для подготовки release-ветки. */
 export interface ReleaseMachine {
   agentId: string
@@ -104,6 +115,7 @@ export interface ProjectReleaseSummary {
   attempt?: number
   /** Short cause of a failed step, so the list explains a red row without opening it. */
   failure?: string | null
+  archivedAt?: number | null
 }
 
 export interface ProjectRelease {
@@ -123,6 +135,7 @@ export interface ProjectRelease {
   agentId?: string | null
   checkoutPath?: string | null
   deletedAt?: number | null
+  archivedAt?: number | null
   steps: ReleaseStep[]
 }
 export function releaseVersion(branch: string): string | null {
