@@ -14,6 +14,8 @@ import { useQaStageUpdates } from './useQaStageUpdates'
  * server only accepts them for it.
  */
 export interface ComponentQaPanelProps {
+  onRetryActions?: (actions: Record<string, () => void>) => void
+
   projectId:string;taskId:string;active:boolean;onFixStarted?:(id:string)=>void
   runId?:string|null;onStateChange?:(state:ComponentQaTaskState)=>void;hideHistory?:boolean
 }
@@ -33,6 +35,11 @@ export function ComponentQaPanel(props:ComponentQaPanelProps):JSX.Element {
   // Опрос встаёт вместе со вкладкой браузера: карточка, оставленная открытой,
   // стучала в сервер каждые две секунды и в фоне.
   useQaStageUpdates({ projectId: props.projectId, taskId: props.taskId, stage: 'component_qa', onUpdate: () => void load(), active: Boolean(state?.activeRun) })
+  const act=useCallback(async(action:()=>Promise<unknown>)=>{setBusy(true);try{await action();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}},[load])
+  const retry = useCallback(() => { if (!busy && !props.active && !state?.activeRun && window.qa?.startComponent) void act(() => window.qa!.startComponent!(props.projectId, props.taskId)) }, [act, busy, props.active, props.projectId, props.taskId, state?.activeRun])
+  useEffect(() => {
+    props.onRetryActions?.(Object.fromEntries((state?.runs ?? []).filter((item) => item.canRetry && !busy && !props.active && !state?.activeRun && window.qa?.startComponent).map((item) => [item.id, retry])))
+  }, [state, busy, props.active, retry, props.onRetryActions])
   if (!window.qa?.getComponent) return <section className="component-qa-panel">
     <EmptyState compact icon="🧪" title="Component QA недоступен" description="Мост QA не подключён в этой сборке." testId="component-qa-unavailable" />
   </section>
@@ -43,7 +50,6 @@ export function ComponentQaPanel(props:ComponentQaPanelProps):JSX.Element {
   </section>
   const run=props.runId?state.runs.find(item=>item.id===props.runId)??null:state.latestRun
   const latest=run!=null&&run.id===state.latestRun?.id
-  const act=async(action:()=>Promise<unknown>)=>{if(busy)return;setBusy(true);try{await action();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}}
   return <section className="component-qa-panel" aria-label="Component QA">
     <PanelHeading
       kicker={run ? `Попытка ${run.attempt}` : 'Component QA'}
@@ -116,7 +122,7 @@ export function ComponentQaPanel(props:ComponentQaPanelProps):JSX.Element {
     <div className="component-qa-actions">
       <Button size="sm" disabled={busy||props.active||!state.canStart} onClick={()=>void act(()=>window.qa!.startComponent!(props.projectId,props.taskId))}>Запустить</Button>
       {state.activeRun&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.cancelComponent!(props.projectId,props.taskId,state.activeRun!.id))}>Отменить</Button>}
-      {run?.canRetry&&<Button size="sm" disabled={busy||props.active||state.activeRun!=null} onClick={()=>void act(()=>window.qa!.startComponent!(props.projectId,props.taskId))}>Повторить</Button>}
+      {run?.canRetry&&<Button size="sm" disabled={busy||props.active||state.activeRun!=null} onClick={retry}>Повторить</Button>}
       {run?.storybookUrl&&<Button size="sm" onClick={()=>window.open(run.storybookUrl!,'_blank')}>Открыть Storybook</Button>}
       {run&&latest&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(async()=>{const fix=await window.qa!.fixComponent!(props.projectId,props.taskId,run.id);props.onFixStarted?.(fix.id)})}>Отправить на доработку</Button>}
       {run&&latest&&<Button size="sm" disabled={busy||!state.canComplete} onClick={()=>void act(()=>window.qa!.completeComponent!(props.projectId,props.taskId,run.id))}>Перейти к созданию интеграционных автотестов</Button>}

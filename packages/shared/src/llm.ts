@@ -60,6 +60,8 @@ export interface LlmRequest {
   /** Удалённое выполнение Bash через MCP-мост; undefined — Bash на сервере. */
   /** true — shell-команды запрещены полностью, даже на сервере. */
   executionDisabled?: boolean
+  /** Enforced tool-free CLI invocation for untrusted preview generation. */
+  textOnly?: boolean
   /**
    * true — remote-инструменты доступны, но только для чтения (фаза плана CI):
    * модель исследует рабочую копию на машине, но ничего в ней не меняет.

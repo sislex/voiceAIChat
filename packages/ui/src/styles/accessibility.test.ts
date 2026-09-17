@@ -33,7 +33,7 @@ it('keeps one constrained project-settings scroll surface through the applicatio
     expect(body.replace(/\s+/g, ''), selector).toContain('min-height:0')
   }
   expect(normalized).toContain('.widget-assistant-widget > * { flex: 1 1 auto; min-width: 0; min-height: 0; }')
-  expect(normalized).toContain('.project-settings-content { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto;')
+  expect(normalized).toContain('.project-settings-content { flex: 1 1 auto; min-width: 0; min-height: 0; max-width: 100%; overflow-x: hidden; overflow-y: auto;')
   expect(normalized).toContain('.project-settings-form .proj-detail { flex: 1 1 auto; min-height: 0; overflow: hidden; }')
 })
 
