@@ -50,6 +50,7 @@ export function describeStoryShard(
     })
 
     // @testCase TC-REG-03
+    // @testCase TC-UI-02
     // Лимит локален для тяжёлой story: при полном `vitest run` browser-тест и
     // три shard конкурируют за CPU. Изолированный axe остаётся субсекундным.
     it.each(stories)('%s — без serious/critical нарушений', async (_name, Story) => {

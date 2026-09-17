@@ -110,6 +110,7 @@ async function createProject(): Promise<ProjectDetail> {
 }
 
 describe('WS: живое обновление доски', () => {
+  // @testCase TC-INT-01
   it('участник получает board.changed без снапшота после мутации через REST', async () => {
     const p = await createProject()
     const auth = { authorization: `Bearer ${adminTok}` }
@@ -212,6 +213,7 @@ describe('WS: живое обновление доски', () => {
     bob.close()
   })
 
+  // @testCase TC-INT-01
   it('не-участник не получает board.changed по подписке', async () => {
     const p = await createProject()
     const ws = await connect(bobTok)

@@ -18,17 +18,8 @@ export function SettingsPage<T extends string>({ tabs, activeTab, onTabChange, a
 }): JSX.Element {
   const tabsRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const container = tabsRef.current
-    const selected = container?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
-    if (!container || !selected) return
-    const containerRect = container.getBoundingClientRect()
-    const selectedRect = selected.getBoundingClientRect()
-    const left = container.scrollLeft + selectedRect.left - containerRect.left
-    const right = left + selectedRect.width
-    if (left < container.scrollLeft) container.scrollTo?.({ left, behavior: 'auto' })
-    else if (right > container.scrollLeft + container.clientWidth) {
-      container.scrollTo?.({ left: right - container.clientWidth, behavior: 'auto' })
-    }
+    const selected = tabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    selected?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
   }, [activeTab, tabs])
 
   const selectFromKeyboard = (tab: T): void => {
