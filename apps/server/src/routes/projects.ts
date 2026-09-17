@@ -1,6 +1,6 @@
 // REST для проектов и канбан-доски. Все маршруты под Bearer-защитой; доступ
 // определяется членством в проекте (см. VoiceChatDb: isProjectMember/Owner).
-// После мутаций доски зовём boardHub.emit → живой board.changed подписчикам.
+// После мутаций доски зовём boardHub.emit → живой board.cards.changed подписчикам.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AutomatedQaCheckResult } from '@voicechat/shared'
@@ -600,7 +600,7 @@ export function registerProjectRoutes(
       if (!name) return badReq(reply, 'name required')
       const col = await db.projects.createColumn(uid(req), req.params.id, name)
       if (!col) return nf(reply)
-      boardHub.emit(req.params.id)
+      boardHub.emitStatuses(req.params.id)
       return col
     }
   )
@@ -612,7 +612,7 @@ export function registerProjectRoutes(
       const order = req.body?.order
       if (!Array.isArray(order)) return badReq(reply, 'order required')
       if (!await db.projects.reorderColumns(uid(req), req.params.id, order)) return nf(reply)
-      boardHub.emit(req.params.id)
+      boardHub.emitStatuses(req.params.id)
       return { ok: true }
     }
   )
@@ -630,7 +630,7 @@ export function registerProjectRoutes(
       if (b.wipLimit !== undefined) fields.wipLimit = b.wipLimit
       if (fields.name === undefined && fields.wipLimit === undefined) return badReq(reply, 'nothing to update')
       if (!await db.projects.updateColumn(uid(req), req.params.id, req.params.columnId, fields)) return nf(reply)
-      boardHub.emit(req.params.id)
+      boardHub.emitStatuses(req.params.id)
       return { ok: true }
     }
   )
@@ -640,7 +640,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const hidden = Boolean(req.body?.hidden)
       if (!await db.projects.setColumnHidden(uid(req), req.params.id, req.params.columnId, hidden)) return nf(reply)
-      boardHub.emit(req.params.id)
+      boardHub.emitStatuses(req.params.id)
       return { ok: true }
     }
   )
@@ -649,7 +649,7 @@ export function registerProjectRoutes(
     '/api/projects/:id/columns/:columnId',
     async (req, reply) => {
       if (!await db.projects.deleteColumn(uid(req), req.params.id, req.params.columnId)) return nf(reply)
-      boardHub.emit(req.params.id)
+      boardHub.emitStatuses(req.params.id)
       return { ok: true }
     }
   )

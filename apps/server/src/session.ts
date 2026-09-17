@@ -55,6 +55,7 @@ export interface SessionDeps {
   board?: {
     getBoard(projectId: string, includeCompleted?: boolean): Promise<Board | null>
     subscribe(cb: (projectId: string) => void): () => void
+    subscribeStatuses(cb: (projectId: string) => void): () => void
     subscribePreparationRuns(cb: (update: { userId: string; projectId: string; taskId: string; runId: string }) => void): () => void
     subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => Promise<void>): () => void
     subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage | 'manual_qa' }) => Promise<void>): () => void
@@ -120,6 +121,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubDownload: (() => void) | null = null
   let unsubAgents: (() => void) | null = null
   let unsubBoard: (() => void) | null = null
+  let unsubBoardStatuses: (() => void) | null = null
   let unsubSessions: (() => void) | null = null
   let unsubPreparationRuns: (() => void) | null = null
   let unsubTaskRepositories: (() => void) | null = null
@@ -223,7 +225,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
       if (deps.board) {
         unsubBoard = deps.board.subscribe((projectId) => {
           if (projectId !== boardProjectId) return
-          ctx.send({ t: 'board.changed', projectId })
+          ctx.send({ t: 'board.cards.changed', projectId })
+        })
+        unsubBoardStatuses = deps.board.subscribeStatuses((projectId) => {
+          if (projectId !== boardProjectId) return
+          ctx.send({ t: 'board.statuses.changed', projectId })
         })
         unsubPreparationRuns = deps.board.subscribePreparationRuns((update) => {
           if (update.userId !== deps.user.name) return
@@ -449,6 +455,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubAgents = null
       unsubBoard?.()
       unsubBoard = null
+      unsubBoardStatuses?.()
+      unsubBoardStatuses = null
       unsubSessions?.()
       unsubSessions = null
       unsubPreparationRuns?.()

@@ -309,7 +309,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     else if (run.status === 'failed') notify({ kind: 'error', text: `Merge ${run.sourceBranch} завершился с ошибкой: ${run.error ?? 'см. вкладку Merge задачи'}` })
   })
   if (unsubscribeMerge) core.onDispose(unsubscribeMerge)
-  // Дебаунс с гарантией: активный ран шлёт board.changed непрерывно, и при 50 мс
+  // Дебаунс с гарантией: активный ран шлёт board.cards.changed непрерывно, и при 50 мс
   // доска перезапрашивалась почти на каждое событие (8 раз за 6 секунд на стенде).
   // Пауза в 400 мс склеивает поток, но одного дебаунса мало: пока события идут
   // подряд, он откладывал бы обновление бесконечно и доска замерла бы до тишины.
@@ -326,10 +326,13 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   let boardTimer: ReturnType<typeof setTimeout> | null = null
   let boardFlight: { generation: number; promise: Promise<void> } | null = null
   let boardPending = false
+  let statusesFlight: { generation: number; promise: Promise<void> } | null = null
+  let statusesPending = false
 
   function clearBoardSync(): void {
     boardGeneration++
     boardPending = false
+    statusesPending = false
     boardDirtySince = 0
     if (boardTimer) clearTimeout(boardTimer)
     boardTimer = null
@@ -354,7 +357,6 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         const prev = getState().board
         setState({ board, boardError: null })
         if (prev && !sameTaskChatVisibility(prev, board)) deps.chat.scheduleConversationsRefresh()
-        await syncBoardStatuses(id, includeCompleted, generation)
       } catch (err) {
         if (generation !== boardGeneration || getState().activeProjectId !== id) {
           // фоновое обновление отменённой доски — молча
@@ -383,20 +385,32 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
    * карточку могли перетащить, и оптимистичное перемещение терять нельзя.
    */
   async function syncBoardStatuses(id: string, includeCompleted: boolean, generation: number): Promise<void> {
-    let statuses: BoardStatuses
-    try {
-      statuses = await client['board:getStatuses']({ id, includeCompleted })
-    } catch (err) {
-      // Скелет уже на экране: без состояния доска работает, ронять её незачем.
-      console.warn('[projects] состояние карточек доски недоступно', err)
-      return
+    if (statusesFlight?.generation === generation) {
+      statusesPending = true
+      return statusesFlight.promise
     }
-    if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
-    const board = getState().board
-    if (!board) return
-    const ciSummaries = { ...getState().ciSummaries }
-    for (const r of statuses.ciRuns) ciSummaries[r.taskId] = r
-    setState({ board: { ...board, tasks: applyTaskStatuses(board.tasks, statuses.tasks), ciRuns: statuses.ciRuns }, ciSummaries })
+    let promise!: Promise<void>
+    promise = (async () => {
+      try {
+        const statuses: BoardStatuses = await client['board:getStatuses']({ id, includeCompleted })
+        if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
+        const board = getState().board
+        if (!board) return
+        const ciSummaries = { ...getState().ciSummaries }
+        for (const r of statuses.ciRuns) ciSummaries[r.taskId] = r
+        setState({ board: { ...board, tasks: applyTaskStatuses(board.tasks, statuses.tasks), ciRuns: statuses.ciRuns }, ciSummaries })
+      } catch (err) {
+        console.warn('[projects] состояние карточек доски недоступно', err)
+      } finally {
+        if (statusesFlight?.promise === promise) statusesFlight = null
+        if (generation === boardGeneration && statusesPending) {
+          statusesPending = false
+          void syncBoardStatuses(id, includeCompleted, generation)
+        }
+      }
+    })()
+    statusesFlight = { generation, promise }
+    return promise
   }
 
   function scheduleBoardSync(): void {
@@ -425,25 +439,36 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     }, wait)
   }
 
-  const unsubscribeBoardChanged = boardBridge?.onChanged(({ projectId }) => {
+  const unsubscribeBoardChanged = boardBridge?.onCardsChanged(({ projectId }) => {
+    if (projectId !== getState().activeProjectId) return
     client.invalidateProjectReads?.(projectId)
-    if (projectId === getState().activeProjectId) scheduleBoardSync()
+    scheduleBoardSync()
+  })
+  const unsubscribeStatusesChanged = boardBridge?.onStatusesChanged(({ projectId }) => {
+    if (projectId !== getState().activeProjectId) return
+    client.invalidateProjectReads?.(projectId)
+    void syncBoardStatuses(projectId, true, boardGeneration)
   })
   const unsubscribeBoardConnected = boardBridge?.onConnected(() => {
     const id = getState().activeProjectId
+    if (id) boardBridge.subscribe(id)
+  })
+  const unsubscribeBoardReconnect = boardBridge?.onReconnect(() => {
+    const id = getState().activeProjectId
     if (!id) return
     boardBridge.subscribe(id)
-    // Initial connection must not invalidate the first HTTP snapshot or hide its error.
-    if (getState().boardLoading && !getState().board) return
     client.invalidateProjectReads?.(id)
     scheduleBoardSync()
+    void syncBoardStatuses(id, true, boardGeneration)
   })
   core.onDispose(() => {
     projectsEpoch++
     clearBoardSync()
     if (getState().activeProjectId) boardBridge?.unsubscribe()
     unsubscribeBoardChanged?.()
+    unsubscribeStatusesChanged?.()
     unsubscribeBoardConnected?.()
+    unsubscribeBoardReconnect?.()
   })
 
   // --- Проекты --------------------------------------------------------------
@@ -536,7 +561,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
    * Открывает проект. `board: false` — для вкладок, где доски нет (релизы,
    * настройки, код): им хватает деталей проекта, а доска стоит четырёх запросов
    * (снимок, вид, состояния карточек, при включённом фильтре — второй снимок) и
-   * подписки на `board.changed`, которая при работающем ране перечитывает доску
+   * подписки на `board.cards.changed`, которая при работающем ране перечитывает доску
    * каждые пару секунд. На вкладку доски её догружает `ensureBoard`.
    */
   async function openProject(id: string, options: { board?: boolean } = {}): Promise<void> {
@@ -544,16 +569,12 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     if (getState().activeProjectId) boardBridge?.unsubscribe()
     clearBoardSync()
     const generation = boardGeneration
-    // Первый запрос всегда в окне проекта, даже когда «показывать завершённые»
-    // включено: старые карточки «Готово» — это сотни лишних строк, а доска
-    // обязана появиться сразу. Включённый фильтр догружает их следом, поэтому и
-    // сам флаг на время старта честно стоит в «нет».
-    const wantsCompleted = getState().boardIncludeCompleted
+    // Канбан всегда открывается полным снимком: завершённые карточки нужны сразу.
     const cachedBoard = withBoard ? client.cachedBoard?.(id) : undefined
     const cachedProject = client.cachedProject?.(id)
-    setState({ activeProjectId: id, boardLoading: withBoard && !cachedBoard, boardError: null, board: cachedBoard ?? null, projectDetail: cachedProject ?? null, projectSettingsOpen: false, boardIncludeCompleted: false })
+    setState({ activeProjectId: id, boardLoading: withBoard && !cachedBoard, boardError: null, board: cachedBoard ?? null, projectDetail: cachedProject ?? null, projectSettingsOpen: false, boardIncludeCompleted: true })
     if (!withBoard) return loadProjectDetail(id, generation)
-    await loadBoard(id, generation, wantsCompleted)
+    await loadBoard(id, generation)
   }
 
   async function openBoard(id: string): Promise<void> {
@@ -591,15 +612,14 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     }
     clearBoardSync()
     const generation = boardGeneration
-    const wantsCompleted = getState().boardIncludeCompleted
-    setState({ boardLoading: true, boardError: null, boardIncludeCompleted: false })
-    await loadBoard(id, generation, wantsCompleted)
+    setState({ boardLoading: true, boardError: null, boardIncludeCompleted: true })
+    await loadBoard(id, generation)
   }
 
-  async function loadBoard(id: string, generation: number, wantsCompleted: boolean): Promise<void> {
+  async function loadBoard(id: string, generation: number): Promise<void> {
     boardBridge?.subscribe(id)
     try {
-      const includeCompleted = false
+      const includeCompleted = true
       const known = getState().projectDetail
       const [board, detail, view] = await Promise.all([
         client['board:get']({ id, includeCompleted }),
@@ -615,9 +635,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       setState({ board, projectDetail: detail, boardLoading: false, boardError: null, boardView: view })
       // «Показывать завершённые» живёт в виде доски на сервере; локальный флаг
       // приводим к нему, и он же решает, догружать ли старые завершённые.
-      const showCompleted = view?.showCompleted ?? wantsCompleted
-      if (showCompleted) void actions.setBoardIncludeCompleted(true)
-      else await syncBoardStatuses(id, includeCompleted, generation)
+      await syncBoardStatuses(id, includeCompleted, generation)
     } catch (err) {
       if (generation !== boardGeneration || getState().activeProjectId !== id) return
       if (accessLost(err)) {

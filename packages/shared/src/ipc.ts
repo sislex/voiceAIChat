@@ -1017,7 +1017,7 @@ export interface RendererAgentsBridge {
 
 /**
  * Мост живой канбан-доски (web, поверх WS): подписка на доску проекта и приём
- * инвалидаций board.changed. В desktop отсутствует → без живой синхронизации.
+ * раздельных инвалидаций карточек и статусов. В desktop отсутствует → без живой синхронизации.
  */
 export interface RendererRealtimeBridge {
   /** UI connection episode; machine status is a separate event. */
@@ -1044,8 +1044,10 @@ export interface RendererBoardBridge {
   subscribe(projectId: string): void
   /** Отписаться от текущей доски. */
   unsubscribe(): void
-  /** Подписка на инвалидации доски. */
-  onChanged(cb: (m: { projectId: string }) => void): () => void
+  /** Карточки доски изменились; полный Board читается по HTTP. */
+  onCardsChanged(cb: (m: { projectId: string }) => void): () => void
+  /** Статусы/колонки изменились; BoardStatuses читается по HTTP. */
+  onStatusesChanged(cb: (m: { projectId: string }) => void): () => void
   /** Успешное открытие общего WebSocket, включая reconnect. */
   onConnected(cb: () => void): () => void
   /** Адресная инвалидация истории подготовки задачи. */

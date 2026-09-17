@@ -22,9 +22,9 @@ describe('attachWs: очередь исходящих кадров ограни�
     const socket = fakeSocket()
     const onOverflow = vi.fn()
     const ctx = await attachWs(socket, {}, { maxBufferedBytes: 500, onOverflow })
-    ctx.send({ t: 'board.changed', projectId: 'p' })
+    ctx.send({ t: 'board.cards.changed', projectId: 'p' })
     socket.bufferedAmount = 0 // клиент прочитал
-    ctx.send({ t: 'board.changed', projectId: 'p' })
+    ctx.send({ t: 'board.cards.changed', projectId: 'p' })
     expect(socket.terminate).not.toHaveBeenCalled()
     for (let i = 0; i < 10; i++) ctx.send({ t: 'ci.log', runId: 'r', line: { runId: 'r', stepId: 's', seq: i, stream: 'stdout', chunk: 'x'.repeat(40), at: 0 } })
     expect(socket.terminate).toHaveBeenCalledTimes(1)
@@ -33,7 +33,7 @@ describe('attachWs: очередь исходящих кадров ограни�
     expect(info.bufferedAmount).toBeGreaterThan(500)
     expect(info.frames[0]![0]).toBe('ci.log')
     const sentBefore = socket.sent.length
-    ctx.send({ t: 'board.changed', projectId: 'p' })
+    ctx.send({ t: 'board.cards.changed', projectId: 'p' })
     ctx.sendBinary(Buffer.from('a'))
     expect(socket.sent.length).toBe(sentBefore) // после разрыва в мёртвый сокет не пишем
   })

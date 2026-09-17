@@ -102,9 +102,9 @@ describe('HttpMachines', () => {
     await until(() => expect(fake.rpcCalls).toEqual([{ method: 'ptyStart', args: ['m1', 'p1', 80, 24] }]))
     expect(machines.ptyLive('p1')).toBe(true)
     fake.push({ kind: 'pty', event: { t: 'pty.output', ptyId: 'p1', data: '$ ' } })
-    fake.push({ kind: 'frame', message: { t: 'board.changed', projectId: 'x' }, userId: 'ann' })
+    fake.push({ kind: 'frame', message: { t: 'board.cards.changed', projectId: 'x' }, userId: 'ann' })
     // Кадр отправлен после вывода PTY тем же сокетом: дождались его — значит дошло и то, и другое.
-    await until(() => expect(publish).toHaveBeenCalledWith({ t: 'board.changed', projectId: 'x' }, 'ann'))
+    await until(() => expect(publish).toHaveBeenCalledWith({ t: 'board.cards.changed', projectId: 'x' }, 'ann'))
     expect(events).toEqual([{ t: 'pty.output', ptyId: 'p1', data: '$ ' }])
     // Буфер — у процесса машин: живую сессию спрашиваем по RPC, чужую — нет.
     expect(await machines.ptyBufferText('p1')).toBe('$ ls')

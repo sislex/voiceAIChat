@@ -1,5 +1,5 @@
 // Процесс-глобальный эмиттер изменений досок проектов. REST-мутации зовут
-// emit(projectId); WS-сессии подписчиков шлют лёгкую инвалидацию board.changed.
+// emit(projectId); WS-сессии подписчиков шлют лёгкие раздельные инвалидации.
 // Не хранит состояние — только уведомляет (истина живёт в БД). Аналог
 // AgentRegistry.onChange для живого списка машин.
 
@@ -41,6 +41,7 @@ export class NotificationHub {
 
 export class BoardHub {
   private readonly listeners = new Set<BoardListener>()
+  private readonly statusesListeners = new Set<BoardListener>()
   private readonly preparationRunListeners = new Set<PreparationRunListener>()
   private readonly taskRepositoriesListeners = new Set<TaskRepositoriesListener>()
   private readonly qaStageListeners = new Set<QaStageListener>()
@@ -52,12 +53,22 @@ export class BoardHub {
     for (const l of this.listeners) l(projectId)
   }
 
-  /** Подписаться на изменения; возвращает функцию отписки. */
+  /** Подписаться на изменения карточек; возвращает функцию отписки. */
   onChange(cb: BoardListener): () => void {
     this.listeners.add(cb)
     return () => {
       this.listeners.delete(cb)
     }
+  }
+
+  /** Уведомить подписчиков об изменении структуры статусов/колонок. */
+  emitStatuses(projectId: string): void {
+    for (const listener of this.statusesListeners) listener(projectId)
+  }
+
+  onStatusesChange(cb: BoardListener): () => void {
+    this.statusesListeners.add(cb)
+    return () => this.statusesListeners.delete(cb)
   }
 
   /** Лёгкая адресная инвалидация REST-снимка истории preparation-run. */

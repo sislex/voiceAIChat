@@ -808,7 +808,8 @@ export type ServerMessage =
   | { t: 'pty.output'; ptyId: string; data: string }
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
   | { t: 'pty.error'; ptyId: string; message: string }
-  | { t: 'board.changed'; projectId: string }
+  | { t: 'board.cards.changed'; projectId: string }
+  | { t: 'board.statuses.changed'; projectId: string }
   /** Долгая команда машины завершилась (см. VC_LONG_COMMAND_MS) — тост/уведомление владельцу. */
   | { t: 'machine.command'; event: MachineCommandEvent }
   /** Watchdog: машина не в сети дольше порога / вернулась. */
@@ -829,7 +830,7 @@ export type ServerMessage =
    */
   | { t: 'release.updated'; projectId: string; releaseId: string; status: import('./release').ReleaseStatus }
   /**
-   * Очередь «Улучшения» проекта изменилась. Отдельно от `board.changed`: доска
+   * Очередь «Улучшения» проекта изменилась. Отдельно от `board.cards.changed`: доска
    * инвалидируется на каждое движение любой задачи, и панель улучшений ходила за
    * своим списком ровно столько же раз, хотя предложения меняются редко.
    */
@@ -953,7 +954,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'pty.output',
   'pty.exit',
   'pty.error',
-  'board.changed',
+  'board.cards.changed',
+  'board.statuses.changed',
   'machine.command',
   'machine.status',
   'preparation.run.updated',

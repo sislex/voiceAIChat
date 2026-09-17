@@ -730,7 +730,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'] })
   else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub)
 
-  // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
+  // Проекты + канбан-доска (членство в проекте) + живой board.cards.changed по WS.
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = async (): Promise<WhisperModel> => (await db.settings.getSettings('admin')).whisperModel
@@ -1268,6 +1268,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       board: {
         getBoard: async (projectId, includeCompleted) => await db.tasks.getBoard(user.name, projectId, { includeCompleted }),
         subscribe: kanban.service.board.subscribe,
+        subscribeStatuses: kanban.service.board.subscribeStatuses,
         subscribePreparationRuns: kanban.service.board.subscribePreparationRuns,
         subscribeTaskRepositories: kanban.service.board.subscribeTaskRepositories,
         subscribeQaStages: kanban.service.board.subscribeQaStages,

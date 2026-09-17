@@ -16,6 +16,7 @@ export interface KanbanBoardFeed {
   /** Доску изменил кто-то вне кластера (Make, панель кода) — разослать подписчикам. */
   changed(projectId: string): void
   subscribe(cb: (projectId: string) => void): () => void
+  subscribeStatuses(cb: (projectId: string) => void): () => void
   subscribePreparationRuns(cb: (update: { userId: string; projectId: string; taskId: string; runId: string }) => void): () => void
   subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => Promise<void>): () => void
   subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: QaRunStage | 'manual_qa' }) => Promise<void>): () => void

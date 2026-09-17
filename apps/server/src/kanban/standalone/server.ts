@@ -148,6 +148,7 @@ export async function buildKanbanServer(opts: BuildKanbanServerOptions): Promise
   }
   kanban.service.runs.subscribe((message, userId) => emit({ kind: 'frame', message, userId }))
   kanban.service.board.subscribe((projectId) => emit({ kind: 'board', projectId }))
+  kanban.service.board.subscribeStatuses((projectId) => emit({ kind: 'boardStatuses', projectId }))
   kanban.service.board.subscribePreparationRuns((update) => emit({ kind: 'preparationRun', update }))
   kanban.service.board.subscribeTaskRepositories(async (update) => emit({ kind: 'taskRepositories', update }))
   kanban.service.board.subscribeQaStages(async (update) => emit({ kind: 'qaStage', update }))

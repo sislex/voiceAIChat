@@ -37,6 +37,7 @@ export function createRemoteKanban(opts: RemoteKanbanOptions): RemoteKanban {
   const rpc = createRpcClient({ baseUrl: opts.kanbanUrl, token: opts.token, fetchImpl, path: KANBAN_INTERNAL_SERVICE_PATH })
   const frames = new Listeners<[ServerMessage, string]>()
   const board = new Listeners<[string]>()
+  const boardStatuses = new Listeners<[string]>()
   const preparationRuns = new Listeners<[{ userId: string; projectId: string; taskId: string; runId: string }]>()
   const taskRepositories = new Listeners<[{ projectId: string; taskId: string }]>()
   const qaStages = new Listeners<[{ projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage | 'manual_qa' }]>()
@@ -52,6 +53,7 @@ export function createRemoteKanban(opts: RemoteKanbanOptions): RemoteKanban {
     board: {
       changed: (projectId) => { void rpc('boardChanged', projectId).catch((error) => opts.onError?.(error, 'boardChanged')) },
       subscribe: (cb) => board.add(cb),
+      subscribeStatuses: (cb) => boardStatuses.add(cb),
       subscribePreparationRuns: (cb) => preparationRuns.add(cb),
       subscribeTaskRepositories: (cb) => taskRepositories.add(cb),
       subscribeQaStages: (cb) => qaStages.add(cb),
@@ -68,6 +70,7 @@ export function createRemoteKanban(opts: RemoteKanbanOptions): RemoteKanban {
       switch (event.kind) {
         case 'frame': frames.emit(event.message, event.userId); break
         case 'board': board.emit(event.projectId); break
+        case 'boardStatuses': boardStatuses.emit(event.projectId); break
         case 'preparationRun': preparationRuns.emit(event.update); break
         case 'taskRepositories': taskRepositories.emit(event.update); break
         case 'qaStage': qaStages.emit(event.update); break
