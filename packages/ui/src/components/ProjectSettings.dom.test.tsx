@@ -160,11 +160,14 @@ describe('Project settings draft', () => {
     expect(Boolean(projectFieldError(String(field), String(value)))).toBe(invalid)
   })
 
-  // @testCase TC-INT-08
+  // @testCase TC-REG-03
   it('collects fields, blocks invalid saves, cancels and warns before leaving', async () => {
     const onUpdate = vi.fn()
     render(<ProjectSettings {...props({ onUpdate })} />)
     fireEvent.change(screen.getByLabelText('Название проекта'), { target: { value: 'Draft' } })
+    await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Общее' }))
+    expect(screen.getByLabelText('Название проекта')).toHaveValue('Draft')
     fireEvent.change(screen.getByLabelText('Git-репозиторий'), { target: { value: 'invalid' } })
     expect(screen.getByLabelText('Git-репозиторий')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
@@ -533,10 +536,11 @@ describe('ProjectSettings — вкладка из адреса', () => {
     expect(screen.getByRole('tab', { name: 'LLM' })).toHaveAttribute('aria-selected', 'false')
   })
 
-  it('вкладку выключенной подсистемы заменяет на «Общее» без новой записи в истории', async () => {
+  // @testCase TC-NEG-04
+  it.each(['workflow', 'machines'] as const)('вкладку %s выключенной подсистемы заменяет на «Общее» без новой записи в истории', async (activeTab) => {
     const onTabChange = vi.fn()
     render(<ProjectSettings {...props({
-      activeTab: 'machines', onTabChange,
+      activeTab, onTabChange,
       detail: detail({ typeId: BUILTIN_PROJECT_TYPE_IDS.general, typeChain: generalChain })
     })} />)
     await waitFor(() => expect(onTabChange).toHaveBeenCalledWith('general', { replace: true }))
