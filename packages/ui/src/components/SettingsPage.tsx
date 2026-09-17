@@ -19,7 +19,7 @@ export function SettingsPage<T extends string>({ tabs, activeTab, onTabChange, a
   const tabsRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const selected = tabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
-    selected?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    selected?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
   }, [activeTab, tabs])
 
   const selectFromKeyboard = (tab: T): void => {
