@@ -1124,8 +1124,10 @@ export interface RendererBrowserBridge {
    * показать ошибки страницы, не соврав компилятору.
    */
   command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult>
-  /** Кадр текущей вкладки как data-URL (поллинг для screencast). */
+  /** Разовый кадр; используется как fallback, если поток недоступен. */
   screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string; page?: { url: string; title: string }; control?: 'shared' | 'user'; queuedCommands?: number }>
+  /** Непрерывный NDJSON-поток кадров. Мост сам восстанавливает соединение. */
+  subscribeFrames?(conversationId: string, req: RendererBrowserScreenshotOptions, onFrame: (frame: { seq: number; dataUrl?: string; page?: { url: string; title: string }; status?: BrowserSessionMetadata }) => void, onError?: (error: Error) => void): () => void
   /** Закрывает Chromium-сессию разговора. */
   stop(conversationId: string): Promise<void>
 }

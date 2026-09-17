@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { StageCard, StageHeading, StageRail } from './NewTaskStages'
 import type { NewTaskCardViewProps } from './NewTaskCardView'
 import type { Meta, StoryObj } from '@storybook/react'
+import { fn } from '@storybook/test'
 import { NewTaskCardView } from './NewTaskCardView'
 import type { TaskCardViewModel } from './TaskCardViewModel'
 
@@ -29,11 +30,17 @@ const model: TaskCardViewModel = {
 const meta: Meta<typeof NewTaskCardView> = {
   title: 'Kanban/NewTaskCard',
   component: NewTaskCardView,
+  parameters: {
+    componentQa: {
+      componentId: 'new-task-card-view',
+      primaryStoryId: 'kanban-newtaskcard--desktop'
+    }
+  },
   args: {
     model, activeTab: 'overview', version: 'new', reworkOpen: false,
     reworkDraft: { description: '', criteria: [], makeMode: 'whole_project', makePaths: [], attachments: [] },
-    onVersionChange: () => {},
-    callbacks: { onClose: () => {}, onChangeTab: () => {}, onOpenRun: () => {}, onOpenMake: () => {}, onStartRework: () => {}, onChangeReworkDraft: () => {}, onAddReworkFiles: () => {}, onRemoveReworkFile: () => {}, onRetryReworkFile: () => {}, onRetryHistory: () => {}, onSubmitRework: () => {}, onCancelRework: () => {} }
+    onVersionChange: fn(),
+    callbacks: { onClose: fn(), onChangeTab: fn(), onOpenRun: fn(), onOpenMake: fn(), onStartRework: fn(), onChangeReworkDraft: fn(), onAddReworkFiles: fn(), onRemoveReworkFile: fn(), onRetryReworkFile: fn(), onRetryHistory: fn(), onSubmitRework: fn(), onCancelRework: fn() }
   }
 }
 export default meta

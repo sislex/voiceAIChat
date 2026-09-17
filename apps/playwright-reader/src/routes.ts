@@ -44,6 +44,7 @@ function normalizeViewport(value: unknown): BrowserViewport | undefined {
 
 export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesDeps): void {
   const { core, runner, runnerFacingBase } = deps
+  const frameSequences = new Map<string, number>()
 
   // Общая проверка: разговор существует, принадлежит пользователю и это
   // Playwright Reader; иначе ни сессии, ни команд к чужому Chromium.
@@ -117,6 +118,42 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
       return { dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`, ...(page ? { page } : {}), ...(control ? { control } : {}), ...(typeof queuedCommands === 'number' ? { queuedCommands } : {}) }
     } catch (err) {
       return fail(reply, err)
+    }
+  })
+
+  app.get<{ Params: { id: string }; Querystring: { incarnation?: string; after?: string } }>('/api/browser/:id/frames', async (req, reply) => {
+    try {
+      const id = await guard(req, req.params.id)
+      const incarnation = req.query?.incarnation
+      if (typeof incarnation !== 'string') throw new BrowserRunnerError(400, 'Нужен incarnation')
+      reply.hijack()
+      reply.raw.writeHead(200, {
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'no-cache, no-transform',
+        connection: 'keep-alive',
+        'x-content-type-options': 'nosniff'
+      })
+      let closed = false
+      reply.raw.on('close', () => { closed = true })
+      while (!closed) {
+        const current = await runner!.command(id, { requestId: randomUUID(), incarnation, actor: 'assistant', command: { type: 'status' } })
+        const status = isBrowserSessionMetadata(current) ? current : undefined
+        const seq = (frameSequences.get(id) ?? 0) + 1
+        frameSequences.set(id, seq)
+        if (!status?.activeTabId || status.tabs.length === 0) {
+          reply.raw.write(JSON.stringify({ seq, ...(status ? { status } : {}) }) + '\n')
+          await new Promise(resolve => setTimeout(resolve, 250))
+          continue
+        }
+        const shot = await runner!.screenshot(id, { requestId: randomUUID(), incarnation, actor: 'user', command: { type: 'screenshot', format: 'jpeg', quality: 82 } })
+        if (closed) break
+        const page = shot.metadata?.page
+        reply.raw.write(JSON.stringify({ seq, dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`, ...(page ? { page } : {}), ...(status ? { status } : {}) }) + '\n')
+        await new Promise(resolve => setTimeout(resolve, 250))
+      }
+    } catch (err) {
+      if (!reply.raw.headersSent) return fail(reply, err)
+      reply.raw.destroy(err instanceof Error ? err : undefined)
     }
   })
 

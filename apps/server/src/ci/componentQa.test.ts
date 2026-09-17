@@ -67,7 +67,7 @@ describe('createComponentQaRunner', () => {
     expect(input.status).toBe('passed')
     expect(input.failureClassification).toBeNull()
     expect(input.commands.map((command) => ({ commandId: command.commandId, name: command.name, command: command.command, exitCode: command.exitCode, status: command.status, diagnostic: command.diagnostic }))).toEqual([
-      { commandId: 'install', name: 'Установка зависимостей', command: "npm_config_cache='/cache/task' npm ci --no-audit --no-fund", exitCode: 0, status: 'passed', diagnostic: '' },
+      { commandId: 'install', name: 'Установка зависимостей', command: "mkdir -p '/ws/.component-qa/run1/home' '/ws/.component-qa/run1/npm-cache' && env HOME='/ws/.component-qa/run1/home' npm_config_cache='/ws/.component-qa/run1/npm-cache' npm ci --no-audit --no-fund", exitCode: 0, status: 'passed', diagnostic: '' },
       { commandId: 'stage-1', name: 'Стадия 1 из 2', command: 'npm run one', exitCode: 0, status: 'passed', diagnostic: '' },
       { commandId: 'stage-2', name: 'Стадия 2 из 2', command: 'npm run two', exitCode: 0, status: 'passed', diagnostic: '' }
     ])
@@ -76,7 +76,7 @@ describe('createComponentQaRunner', () => {
     expect(input.commands[0].durationMs).toBe(1000)
     expect(input.scenarios[0].status).toBe('passed')
     // Эхо команды в потоковом логе отделяет установку от стадий проекта.
-    expect(s.log).toEqual(["$ npm_config_cache='/cache/task' npm ci --no-audit --no-fund\n", '$ npm run one\n', 'one ok\n', '$ npm run two\n', 'two ok\n'])
+    expect(s.log).toEqual(["[dependency_setup] HOME=/ws/.component-qa/run1/home npm_cache=/ws/.component-qa/run1/npm-cache\n", "$ mkdir -p '/ws/.component-qa/run1/home' '/ws/.component-qa/run1/npm-cache' && env HOME='/ws/.component-qa/run1/home' npm_config_cache='/ws/.component-qa/run1/npm-cache' npm ci --no-audit --no-fund\n", '$ npm run one\n', 'one ok\n', '$ npm run two\n', 'two ok\n'])
   })
 
   it('первый ненулевой код возврата прерывает оставшиеся стадии', async () => {
@@ -130,19 +130,22 @@ describe('createComponentQaRunner', () => {
     expect(s.stageRecords(input)[1]).toMatchObject({ commandId: 'stage-2', status: 'blocked', diagnostic: 'command_timeout' })
   })
 
-  it('ставит зависимости перед стадиями тем же кэшем задачи', async () => {
+  // @testCase TC-INT-INFRA-01
+  it('ставит зависимости перед стадиями в чистом окружении конкретного рана', async () => {
     const s = await setup(['npm run one'], [{ exitCode: 0, timedOut: false }])
     await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
-    expect(s.calls[0]).toMatchObject({ script: "npm_config_cache='/cache/task' npm ci --no-audit --no-fund", workdir: '/ws', agentId: 'agent' })
+    expect(s.calls[0]).toMatchObject({ script: "mkdir -p '/ws/.component-qa/run1/home' '/ws/.component-qa/run1/npm-cache' && env HOME='/ws/.component-qa/run1/home' npm_config_cache='/ws/.component-qa/run1/npm-cache' npm ci --no-audit --no-fund", workdir: '/ws', agentId: 'agent' })
+    expect(s.calls[0].script).not.toContain('/Users/alexeyrozhnov')
+    expect(s.log[0]).toBe('[dependency_setup] HOME=/ws/.component-qa/run1/home npm_cache=/ws/.component-qa/run1/npm-cache\n')
     expect(s.finished[0].status).toBe('passed')
   })
 
-  it('без сохранённого кэша ставит зависимости кэшем npm по умолчанию', async () => {
+  it('без сохранённого development-кэша всё равно использует изолированный кэш рана', async () => {
     const s = await setup(['npm run one'], [{ exitCode: 0, timedOut: false }], { npmCacheDir: null })
     await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
-    expect(s.calls[0].script).toBe('npm ci --no-audit --no-fund')
+    expect(s.calls[0].script).toContain("npm_config_cache='/ws/.component-qa/run1/npm-cache'")
   })
 
   it('провал установки прерывает ран и не запускает стадии', async () => {
@@ -154,6 +157,25 @@ describe('createComponentQaRunner', () => {
     expect(input.status).toBe('failed')
     expect(input.commands).toHaveLength(1)
     expect(input.commands[0]).toMatchObject({ commandId: 'install', status: 'failed', diagnostic: 'non_zero_exit' })
+  })
+
+  // @testCase TC-NEG-INFRA-01
+  it.each([
+    ['EACCES', 'npm error code EACCES\nnpm error syscall mkdir\n'],
+    ['TAR_ENTRY_ERROR', 'npm warn tar TAR_ENTRY_ERROR ENOENT: no such file or directory\n']
+  ])('%s при подготовке npm блокирует ран как инфраструктуру и сохраняет безопасную диагностику', async (_kind, output) => {
+    const s = await setup(['npm run test:storybook'], [], { install: { exitCode: 1, timedOut: false, output } })
+    await s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.calls).toHaveLength(1)
+    expect(s.finished[0]).toMatchObject({
+      status: 'blocked',
+      failureClassification: 'infrastructure',
+      blockerReasons: ['npm_environment'],
+      commands: [expect.objectContaining({ commandId: 'install', diagnostic: 'npm_environment' })]
+    })
+    expect(s.log.join('')).toContain('[dependency_setup] HOME=/ws/.component-qa/run1/home npm_cache=/ws/.component-qa/run1/npm-cache')
+    expect(s.log.join('')).not.toContain('token=')
   })
 
   // Регрессия CHAT-411: пустой `node_modules` уводил ран в fix-loop как дефект
