@@ -15,24 +15,24 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ код изменён 2026-09-15, сверка 2026-09-11 (по датам: правки того же дня не видны — поставь checked) |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 35 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 26 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-16 | ⚠ 17 коммит(ов) в areas после сверки: aa8eb95f Merge main into CHAT-484 (task 66e9bba2-7e8c-42e6-b42b-a923d5d6e777) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-16 | ⚠ 19 коммит(ов) в areas после сверки: 3129e7d5 Merge main into CHAT-487 (task 0083fdb3-9a17-41ed-a60d-bc85b3776e94) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 2 коммит(ов) в areas после сверки: 0d74e062 Merge main into CHAT-449 (task 1fa649c4-8315-4b8b-8728-6f3aacc0429e) … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 8 коммит(ов) в areas после сверки: 7d3df3fc fix(ui): make project settings layout accessible … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 203 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 361 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 12 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 5 коммит(ов) в areas после сверки: 0d74e062 Merge main into CHAT-449 (task 1fa649c4-8315-4b8b-8728-6f3aacc0429e) … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 8 коммит(ов) в areas после сверки: 3129e7d5 Merge main into CHAT-487 (task 0083fdb3-9a17-41ed-a60d-bc85b3776e94) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 10 коммит(ов) в areas после сверки: 0d74e062 Merge main into CHAT-449 (task 1fa649c4-8315-4b8b-8728-6f3aacc0429e) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-15 | ⚠ 16 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1546 коммит(ов) в areas после сверки: 325f4f24 docs(kb): update after merge 1fa649c4-8315-4b8b-8728-6f3aacc0429e … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 32 коммит(ов) в areas после сверки: 0d74e062 Merge main into CHAT-449 (task 1fa649c4-8315-4b8b-8728-6f3aacc0429e) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 63 коммит(ов) в areas после сверки: 0d74e062 Merge main into CHAT-449 (task 1fa649c4-8315-4b8b-8728-6f3aacc0429e) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1549 коммит(ов) в areas после сверки: 3129e7d5 Merge main into CHAT-487 (task 0083fdb3-9a17-41ed-a60d-bc85b3776e94) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 34 коммит(ов) в areas после сверки: 3129e7d5 Merge main into CHAT-487 (task 0083fdb3-9a17-41ed-a60d-bc85b3776e94) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-12 | ⚠ 65 коммит(ов) в areas после сверки: 3129e7d5 Merge main into CHAT-487 (task 0083fdb3-9a17-41ed-a60d-bc85b3776e94) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 7 коммит(ов) в areas после сверки: 0d74e062 Merge main into CHAT-449 (task 1fa649c4-8315-4b8b-8728-6f3aacc0429e) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 370 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 27 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 34 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-16 | ⚠ 4 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-16 | ⚠ 6 коммит(ов) в areas после сверки: 3129e7d5 Merge main into CHAT-487 (task 0083fdb3-9a17-41ed-a60d-bc85b3776e94) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 263 коммит(ов) в areas после сверки: 5b48daf9 Merge main into CHAT-482 (task 4406e522-009a-4ebe-8bde-4e3b7c71be1b) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-17 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-15 | ⚠ 25 коммит(ов) в areas после сверки: 6cf8a24f Merge main into CHAT-447 (task 51889303-0c4d-4f9a-b8ba-3f52e9b09243) … |
@@ -42,7 +42,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-15 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-16 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 158 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-16 | ⚠ 15 коммит(ов) в areas после сверки: 85a08691 fix(merge): автоисправление упавших проверок задачи 66e9bba2-7e8c-42e6-b42b-a923d5d6e777 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-16 | ⚠ 18 коммит(ов) в areas после сверки: 3129e7d5 Merge main into CHAT-487 (task 0083fdb3-9a17-41ed-a60d-bc85b3776e94) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-17, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -75,18 +75,18 @@
 
 ## Журнал сессий
 
-Всего записей: 875. Последние:
+Всего записей: 876. Последние:
 
 - [2026-09-17-pc-radvilovich-project-settings-layout-a11y.md](log/2026-09-17-pc-radvilovich-project-settings-layout-a11y.md) — project-settings-layout-a11y
 - [2026-09-17-pc-radvilovich-component-qa-browser-teardown.md](log/2026-09-17-pc-radvilovich-component-qa-browser-teardown.md) — component-qa-browser-teardown
 - [2026-09-17-pc-radvilovich-chat449-task-card-kb.md](log/2026-09-17-pc-radvilovich-chat449-task-card-kb.md) — chat449-task-card-kb
+- [2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-project-settings-component-qa.md](log/2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-project-settings-component-qa.md) — project-settings-component-qa
 - [2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-development-preview.md](log/2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-development-preview.md) — development-preview
 - [2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md](log/2026-09-16-pc-radvilovich-temporary-resource-lifecycle.md) — temporary-resource-lifecycle
 - [2026-09-16-pc-radvilovich-run-admission.md](log/2026-09-16-pc-radvilovich-run-admission.md) — run-admission
 - [2026-09-16-pc-radvilovich-machine-command-notices.md](log/2026-09-16-pc-radvilovich-machine-command-notices.md) — machine-command-notices
 - [2026-09-16-pc-radvilovich-autopilot-dirty-workspace-guard.md](log/2026-09-16-pc-radvilovich-autopilot-dirty-workspace-guard.md) — autopilot-dirty-workspace-guard
 - [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-vpn-marker-discovery-kb.md) — vpn-marker-discovery-kb
-- [2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-temporary-cleanup-kb.md](log/2026-09-16-alexeys-macbook-air-tailae39a6-ts-net-temporary-cleanup-kb.md) — temporary-cleanup-kb
 
 ## Исторические планы
 
