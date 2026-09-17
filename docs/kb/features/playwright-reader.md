@@ -24,6 +24,12 @@ areas:
 
 # Playwright Reader и browser-runner
 
+## Development preview evidence
+
+`ci/developmentPreviewBrowser.ts` observes the existing `task-<taskId>` Chromium session. An empty session or a URL other than the exact preview target (including its internal proxy representation) fails navigation evidence. The adapter then performs navigation, DOM read, error-console/network inspection, a11y snapshot, body styles and PNG capture. Evidence carries source SHA, configuration digest, viewport, timestamped calls and screenshot links. Console/network errors prevent a passing result. The a11y snapshot and sampled body styles are evidence, not a comprehensive accessibility or responsive audit.
+
+Saved PNGs use the existing CI browser-shot URL contract. Screenshots remain after environment cleanup; the preview URL becomes inactive. An unavailable browser produces warning under `continue` and blocks success under explicitly selected `block`.
+
 ## Независимый frontend domain
 
 `@voicechat/playwright-reader-app` владеет route `#/playwright-reader[/conversationId]`, фильтруемым по `assistantKind: 'playwright-reader'` conversation read model, browser-панелью и собственным store/module lifecycle. Chat приходит через `ReaderChatPort`, а сессия — через создаваемый host-адаптером `BrowserSessionPort`; прямых imports host, Web Reader, `chatStore`, transport, browser storage или исходников browser-runner в пакете нет.
