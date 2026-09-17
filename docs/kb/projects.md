@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-17
-checked: 8f820f9c
+checked: 3129e7d5
 
 areas:
   - packages/shared/src/projects.ts
@@ -725,12 +725,15 @@ clients cannot persist truthy strings or numbers.
 Смена проектной пары сразу обновляет привязанные чаты; задачи получают её через
 `resolveTaskLlmConfig` по обычной цепочке наследования.
 
-The active settings tab comes from `/projects/:id/settings/:tab`; stories and
-standalone tests fall back to local state. Server detail refreshes preserve the tab
-and unsaved project-field patches. `ProjectSettingsDraft` batches `onUpdate`
-fields into one save and retains them on rejection. Its sticky Save/Cancel bar
-reports validation errors; browser unload and hash-router navigation warn before
-discarding a draft. Switching settings tabs keeps the draft.
+The active settings tab comes from `#/projects/:projectId/settings/:tab`; stories
+and standalone tests fall back to local state. `ProjectSettings` derives the visible
+tabs from the effective project-type features: Workflow requires `ci`, Machines
+requires `machines`, while General, LLM, Board and Members remain available. If a
+type change disables the current tab, routing replaces it with General. Server detail
+refreshes preserve the tab and unsaved project-field patches. `ProjectSettingsDraft`
+batches `onUpdate` fields into one save and retains them on rejection. Its sticky
+Save/Cancel bar reports validation errors; browser unload and hash-router navigation
+warn before discarding a draft. Switching settings tabs keeps the draft.
 
 Git URLs accept HTTPS, SSH URLs and SCP-style SSH syntax. CI branch names reject
 spaces and invalid Git ref syntax. Branch templates support `{task_number}` and
