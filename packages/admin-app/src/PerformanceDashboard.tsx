@@ -1,26 +1,24 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { Button, EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
+import { Button, EmptyState, ErrorState, Skeleton, useOnlineStatus, type OnlineStatusSource } from '@voicechat/ui-kit'
 import { UI_PERFORMANCE_POLICY as P, type UiPerformanceQuery, type UiPerformanceReport } from '@shared/uiPerformance'
 import { createPerformanceStore } from './store/performanceStore'
 
-export interface PerformanceDashboardProps { load(query: UiPerformanceQuery): Promise<UiPerformanceReport> }
+export interface PerformanceDashboardProps {
+  load(query: UiPerformanceQuery): Promise<UiPerformanceReport>
+  onlineSource?: OnlineStatusSource
+}
 const labels = {
   shell_interactive: 'Shell interactive', chat_ready: 'Chat ready', account_ready: 'Account ready',
   board_ready: 'Board ready', message_first_token: 'Message → first token', message_first_audio: 'Message → first audio'
 }
-export function PerformanceDashboard({ load }: PerformanceDashboardProps): JSX.Element {
+export function PerformanceDashboard({ load, onlineSource }: PerformanceDashboardProps): JSX.Element {
   const store = useMemo(() => createPerformanceStore(load), [load])
   const state = useSyncExternalStore(store.subscribe, store.getState)
   const [hours, setHours] = useState(24)
   const [filters, setFilters] = useState<Partial<UiPerformanceQuery>>({})
   const refresh = () => { const to = Date.now(); void store.load({ ...filters, from: to-hours*3600000, to, buckets: 24 }) }
   useEffect(() => { refresh(); return () => store.dispose() }, [store])
-  const [online, setOnline] = useState(() => navigator.onLine)
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine)
-    window.addEventListener('online',update); window.addEventListener('offline',update)
-    return () => { window.removeEventListener('online',update); window.removeEventListener('offline',update) }
-  }, [])
+  const online = useOnlineStatus(onlineSource)
   const report = state.report
   const duration = (value: number | null) => value === null ? '—' : value.toFixed(1) + ' ms'
   return <section aria-label="UI performance" className="ui-performance">
@@ -38,7 +36,7 @@ export function PerformanceDashboard({ load }: PerformanceDashboardProps): JSX.E
       <label>Version<input value={filters.version ?? ''} maxLength={40} pattern="unknown|[0-9]+[.][0-9]+[.][0-9]+|[a-f0-9]{7,40}" onChange={e => setFilters({ ...filters, version: e.target.value || undefined })} /></label>
       <Button type="submit">Apply filters</Button>
     </form>
-    {!online && <p role="status">Offline — displayed data may be stale.</p>}
+    {online === false && <p role="status">Offline — displayed data may be stale.</p>}
     {state.loading && (report ? <p role="status">Updating…</p> : <Skeleton variant="list" count={6} />)}
     {state.error && <ErrorState message="Could not load UI performance. Displayed data may be stale." onRetry={refresh} />}
     {report && <>
