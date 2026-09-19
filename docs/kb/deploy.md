@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-12
-checked: d9864647
+updated: 2026-09-20
+checked: 7ed88f46
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -310,6 +310,20 @@ localhost, где сервера нет, и инструменты `mcp__remote_
 (`mcpBaseMisconfigured`, `apps/server/src/mcp/publicBase.ts`).
 
 ## Прод
+
+### External runner ownership at the September 2026 release checkpoint
+
+Live inspection on 2026-09-20 confirmed that core runs release `0.1.309`
+(`5169e54033b2`) with a clean production checkout. Its Compose chain includes
+`/etc/voicechat/playwright-reader-recovery.yml` and
+`/etc/voicechat/llm-runner-external.yml` after the repository's `docker-compose.yml`.
+Both `/etc/voicechat/production.env` and the runtime checkout's `.env` retain
+that chain. LLM runner relays are managed separately; a core release must preserve
+these overrides and must not recreate the legacy local work/personal runners.
+Do not rerun `scripts/prod/install.sh` to deploy an ordinary release: that installer
+replaces `production.env`, including additional operator-managed configuration.
+Use the installed `voicechat-deploy` entrypoint and verify the effective services
+before deployment and the release version/commit afterward.
 
 Этот раздел — инструкция для запросов **«обнови прод»**, **«обновить production»**,
 **«обновить контейнер»**, **«пересобрать контейнеры»**, **«задеплоить main»**,

@@ -9,12 +9,12 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-13 | ⚠ 34 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-10 | ⚠ 85 коммит(ов) в areas после сверки: a6be15b4 Merge remote-tracking branch 'origin/main' into CHAT-490 … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ✓ |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 65 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ код изменён 2026-09-15, сверка 2026-09-11 (по датам: правки того же дня не видны — поставь checked) |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: effba481 perf(ui): reduce initial bundles and enforce route budgets |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-13 | ⚠ 40 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-12 | ⚠ 26 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-20 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 9 коммит(ов) в areas после сверки: a6ef2f4d fix(merge): автоисправление упавших проверок задачи a38b261a-9d94-499e-847a-e7349c344cba … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 6 коммит(ов) в areas после сверки: 13c40c4a Merge main into CHAT-452 … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 11 коммит(ов) в areas после сверки: 5f98a55c Merge remote-tracking branch 'origin/main' into CHAT-483 … |
@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 2 коммит(ов) в areas после сверки: 9ca54750 Merge branch 'CHAT-491' … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 19 коммит(ов) в areas после сверки: afbca61a Merge main into CHAT-485 (task 99650814-5021-4c64-870d-5c32d929ec7a) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-17 | ⚠ 3 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1573 коммит(ов) в areas после сверки: b2c0efc9 Merge remote-tracking branch 'origin/main' into CHAT-483 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1574 коммит(ов) в areas после сверки: 7ed88f46 docs(kb): update after merge a38b261a-9d94-499e-847a-e7349c344cba … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 42 коммит(ов) в areas после сверки: a6ef2f4d fix(merge): автоисправление упавших проверок задачи a38b261a-9d94-499e-847a-e7349c344cba … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-17 | ⚠ 6 коммит(ов) в areas после сверки: a6ef2f4d fix(merge): автоисправление упавших проверок задачи a38b261a-9d94-499e-847a-e7349c344cba … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 16 коммит(ов) в areas после сверки: 5f98a55c Merge remote-tracking branch 'origin/main' into CHAT-483 … |
@@ -37,12 +37,12 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-17 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-17 | ⚠ 3 коммит(ов) в areas после сверки: 6fbb65f5 fix: preserve board websocket invalidations during load … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ⚠ 52 коммит(ов) в areas после сверки: e782b417 Merge main into CHAT-493 … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 83 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-20 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 206 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-15 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-16 | ⚠ 1 коммит(ов) в areas после сверки: 5fe2cdd8 feat(reader): stream frames and enrich action evidence |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 158 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-17 | ⚠ 7 коммит(ов) в areas после сверки: a6ef2f4d fix(merge): автоисправление упавших проверок задачи a38b261a-9d94-499e-847a-e7349c344cba … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-17, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -75,8 +75,10 @@
 
 ## Журнал сессий
 
-Всего записей: 885. Последние:
+Всего записей: 887. Последние:
 
+- [2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md) — sislexa-project-name
+- [2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md) — sislexa-platform-contract-foundation
 - [2026-09-17-pc-radvilovich-release-center-cycle-8.md](log/2026-09-17-pc-radvilovich-release-center-cycle-8.md) — release-center-cycle-8
 - [2026-09-17-pc-radvilovich-project-settings-layout-a11y.md](log/2026-09-17-pc-radvilovich-project-settings-layout-a11y.md) — project-settings-layout-a11y
 - [2026-09-17-pc-radvilovich-component-qa-browser-teardown.md](log/2026-09-17-pc-radvilovich-component-qa-browser-teardown.md) — component-qa-browser-teardown
@@ -85,8 +87,6 @@
 - [2026-09-17-macbookair-qa-panels-teardown.md](log/2026-09-17-macbookair-qa-panels-teardown.md) — qa-panels-teardown
 - [2026-09-17-macbookair-grouped-tools-menu.md](log/2026-09-17-macbookair-grouped-tools-menu.md) — grouped-tools-menu
 - [2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-project-settings-component-qa.md](log/2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-project-settings-component-qa.md) — project-settings-component-qa
-- [2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-project-settings-accessibility.md](log/2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-project-settings-accessibility.md) — project-settings-accessibility
-- [2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-development-preview.md](log/2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-development-preview.md) — development-preview
 
 ## Исторические планы
 

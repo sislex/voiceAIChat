@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-17
-checked: 5fe971f1
+updated: 2026-09-20
+checked: 7ed88f46
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2493,6 +2493,13 @@ Rollup положит модуль в главный чанк, а `import()` в�
 по кнопке «Проверить доступность» в панели Make.
 
 ## Библиотека универсальных примитивов @voicechat/ui-kit
+
+`useOnlineStatus` is a public connectivity hook backed by `useSyncExternalStore`.
+It accepts an optional `OnlineStatusSource` with `subscribe` and `getSnapshot`,
+defaults to browser online/offline events, and returns `null` when connectivity
+is unknown (including the server snapshot). The hook removes its listeners on
+unmount or source replacement. Product modules can consume this capability
+without owning browser-global subscriptions; connectivity is not API reachability.
 
 `packages/ui-kit` — отдельный workspace-пакет `@voicechat/ui-kit` (`private`, `type: module`, версия 0.1.0). Он плоский: все примитивы лежат прямо в `src/`, без подкаталогов, единственный публичный вход — `src/index.ts`, единственный стиль — `src/styles.css`. Поле `exports` в `package.json` содержит ровно две записи (`"."` и `"./styles.css"`), поэтому внутренние пути потребителю не видны — импорт `@voicechat/ui-kit/src/Dialog` не разрешится. Из index экспортируются `Button`/`IconButton`, `Dialog` + `useDialogStack` (`DIALOG_Z_BASE`, `DIALOG_Z_STEP`, `dialogStackDepth`), `ConfirmDialog` + `ConfirmProvider`/`useConfirm`, `ToastProvider`/`useToast` (`TOAST_DURATION_MS`, `TOAST_VISIBLE_MAX`), `UiProviders`, `Skeleton`/`RefreshIndicator`, `EmptyState`, `ErrorState` и их типы. `mediaQuery.ts` (`MOBILE_QUERY`, `useMediaQuery`) переехал в пакет, но остаётся внутренним — в index его нет; у `packages/ui` свой `lib/mediaQuery.ts` с тем же содержимым.
 
