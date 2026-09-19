@@ -1,5 +1,9 @@
 # voiceAIChat — инструкции для агента
 
+The project name is **Sislexa**. The owner confirmed purchasing a `sislexa`
+domain; its TLD has not been specified. See [project identity](docs/kb/architecture.md#project-identity)
+for the naming decision and its relationship to existing technical identifiers.
+
 Голосовой чат-бот: браузер/десктоп говорит с Claude или Codex CLI, речь распознаётся
 Whisper, ответ озвучивается Piper. Плюс «машины» — компаньон-агенты на чужих
 хостах, на которых модель выполняет команды и держит живой терминал.
@@ -110,7 +114,7 @@ npm run kb:check             # что в базе знаний устарело 
   were made. Make code comments and Markdown are maintained in English across
   `apps/make`, `packages/make-app`, and `packages/make-contracts`. Keep tests next
   to their source as `*.test.ts` / `*.dom.test.tsx`.
-- **Communicate with the user in English.**
+- **Communicate with the user in Russian by default in every conversation in this project**, unless the user explicitly requests another language.
 - **В прод-чекауте не работают.** `target.path` (сейчас `/root/ChatAI`) — это корень
   **данных** прода, git-репозитория там нет. Деплой-чекаут задаёт `VC_REPO_DIR` в
   `/etc/voicechat/production.env`, он лежит внутри данных проекта и стоит на ветке

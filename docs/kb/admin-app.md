@@ -1,7 +1,7 @@
 ---
 title: Frontend-модуль Administration: граница, store и подключение
-updated: 2026-09-13
-checked: 09971e0d
+updated: 2026-09-20
+checked: 7ed88f46
 areas:
   - packages/admin-app
   - packages/ui/src/App.tsx
@@ -27,6 +27,13 @@ Host adapter `createAdminClient` в `packages/ui/src/clients/browser.ts` пер�
 `SessionPort` отделяет обновление собственной учётной записи от admin state. После изменения роли текущего пользователя store просит host перечитать сессию и личный LLM access. Если admin-роль потеряна, состояние немедленно очищается и host закрывает административный экран.
 
 ## Store и lifecycle
+
+`PerformanceDashboard` reads connectivity through the public UI Kit
+`useOnlineStatus` hook. Its optional `onlineSource` prop lets a standalone host
+inject a snapshot/subscription source; the default source follows browser online
+and offline events. The panel owns no browser listeners. Unknown connectivity
+does not display an offline warning, and subscriptions are released on unmount.
+This is a connectivity hint; API failures still use the dashboard's error state.
 
 `createAdminStore` в `src/store/adminStore.ts` создаёт React-независимый store с `getState`, `subscribe`, actions и идемпотентным `dispose`. Он не импортирует другие stores. Состояние включает список и выбор пользователя, usage и общую сводку, deny-list, разговоры и сообщения, engines, health results, model prices и состояния загрузки/ошибок.
 

@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-09-10
-checked: 83b7e546
+updated: 2026-09-20
+checked: 7ed88f46
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -21,6 +21,24 @@ areas:
 ---
 
 # Архитектура: кто с кем разговаривает
+
+## Project identity
+
+The owner selected **Sislexa** as the project name and confirmed purchasing a
+domain with the `sislexa` label. The purchased TLD has not been specified, so
+neither `sislexa.com` nor `sislexa.ai` is documented as the confirmed domain.
+Use Sislexa when referring to the project. Existing `voiceAIChat`, `ChatAI`, and
+`@voicechat/*` technical identifiers remain in the repository; this naming
+decision does not establish a new deployment URL or rename those identifiers.
+
+The proposed move to independently hosted application repositories, shared user
+identity, delegated API access, and cross-application usage accounting is tracked
+in the [modular platform design](../plans/sislexa-modular-platform.md). That document
+distinguishes confirmed requirements from proposed mechanisms; it does not describe
+an implemented migration. The first operation/usage contracts are implemented in
+shared, while production integration and service extraction remain pending.
+It also proposes personal module-level consumption and
+active-time analytics, with explicit attribution and overlap rules.
 
 ## Границы Reader-модулей
 

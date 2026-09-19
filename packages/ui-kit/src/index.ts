@@ -18,6 +18,7 @@ export {
 } from './Toast'
 export { UiProviders } from './UiProviders'
 export { usePolling, type PollingOptions } from './usePolling'
+export { useOnlineStatus, type OnlineStatusSource } from './useOnlineStatus'
 export { useFocusTrap } from './useFocusTrap'
 export {
   Skeleton,
