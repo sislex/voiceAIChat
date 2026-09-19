@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-09-11
-checked: 29171e8f
+updated: 2026-09-20
+checked: 7ed88f46
 areas:
   - packages/shared/src
 ---
@@ -17,6 +17,28 @@ areas:
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
 
 ## Карта модулей
+
+### Sislexa operation and consumption contracts
+
+`platformOperation.ts` defines version 1 accounting context with immutable user ID,
+identity issuer, calling client, payer, environment, initiating module, project,
+and operation ancestry. `parsePlatformOperationContext` validates structure and
+returns a frozen copy; it is not token verification or authorization.
+`createChildPlatformOperationContext` retains the original user, payer, project,
+environment, and module while changing the actor and child operation ID.
+
+`platformUsage.ts` summarizes trusted finalized leaf events by the initiating
+module. Input, output, cache-read, and cache-write counters must be disjoint;
+provider adapters own normalization. Reports filter by user/issuer/environment,
+half-open time range, and optional project/payer. Identical event IDs are deduplicated;
+conflicting payloads and unsafe numeric counters are rejected. Zero total usage
+has a null percentage. The pure reducer is not a durable ledger or a spending
+authorization mechanism. Both contracts are exported by `index.ts`; production
+routes, account migration, and activity collection are not integrated yet.
+The implementation sequence is tracked in the
+[Sislexa platform plan](../plans/sislexa-modular-platform.md).
+
+### Existing modules
 
 | Модуль | Ответственность |
 |---|---|
