@@ -38,3 +38,11 @@ The component runtime advances to 1.0.1. Older tool distributions need a compati
 - Source archives record full source commits; releases and deployment inputs pin them.
 - Production rollout uses the installed voicechat-deploy flow, preserving data and
   rollback artifacts. Deployment status must be recorded separately from implementation.
+
+
+## Delivered
+
+Voice 1.0.0 and Image Studio 1.0.1 are published from their independent repositories.
+Core integration merged in PR #209 and shipped as production 0.1.314. Independent
+gates, both canonical Core gates and live deployment checks passed. Operational
+proof, rollback inputs and credential expiry are recorded in `docs/kb/deploy.md`.
