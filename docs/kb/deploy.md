@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: 7ed88f46
+checked: 48ab7ed2
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -879,3 +879,38 @@ firewall-ом, а тем, что это имя у Caddy теперь **есть*
 
 Первая сборка тянет образ Playwright (~2 ГБ) — на проде стоит следить за местом:
 инцидент с переполнением диска уже был (на 29.08.2026 свободно 8.4 ГБ из 59).
+
+## Independent tool source releases
+
+The tool repositories provide `npm ci`, `npm run gate`, and a Dockerfile whose
+final `api` target runs the standalone API. `--target frontend` serves the
+versioned UI manifest and immutable assets. Supply `APPLICATION_VERSION` and
+`APPLICATION_COMMIT` from that repository's release, not from the host release.
+All dependency endpoints and secrets remain runtime configuration. API health
+works before Core is reachable; authenticated operations still require Core and,
+for browser actions, the configured Reader/browser runner services.
+
+The host's `application-build.mjs` includes only reachable locked vendor archives
+in isolated build contexts. It rejects paths outside `vendor/`, directory archives
+and symlinks. The host frontend builder preserves each adapter's upstream version
+and commit rather than relabeling panels with the Chat release. Production changes
+continue through the installed `voicechat-deploy` command and preserve operator
+Compose overrides, especially external LLM relays.
+
+`deploy/tools.lock.json` records the exact source revisions consumed by the host.
+To build from those repositories, append `deploy/compose.tools.yml` to the
+existing `COMPOSE_FILE` chain and set `SISLEXA_MAKE_SOURCE`,
+`SISLEXA_PLAYWRIGHT_READER_SOURCE` and `SISLEXA_WEB_READER_SOURCE` to clean source
+snapshots at those revisions. This override starts the standalone Reader and
+three frontend servers, while preserving API service names, Make data mounts,
+browser runner settings and the existing LLM relay override. It requires Compose
+support for `!reset` to clear the optional Reader profile. UI asset volumes retain
+hashed assets for already open tabs. The standard deploy command remains the
+only production container replacement entrypoint.
+
+At the first cutover, seed each frontend asset volume from the previous core
+image's `packages/<tool>-app/dist`, excluding `manifest.json`. Preserve identical
+hashed files and reject a same-name/different-content collision; make the cache
+writable by the image's Node user. This retains assets for open tabs while the
+active manifest continues to come from the new image. Later releases reuse the
+same asset volume normally. Verify old entry URLs as well as new manifest SRI.

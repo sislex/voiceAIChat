@@ -618,12 +618,15 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     expect(prompt.defaultValue).toBe('Черновик')
     await mcp('handle-dialog', { dialogId: prompt.id, accept: true, promptText: 'Документ модели' })
     expect(await mcp('read', { selector: '#result' })).toContain('prompt:Документ модели')
+    // The panel polls independently of MCP; the next test must not click this stale prompt.
+    await expect.poll(async () => page.getByRole('dialog', { name: 'Диалог сайта' }).count()).toBe(0)
     await capture('29-model-answered-prompt')
   })
 
   it('панель отвечает на alert и prompt, затем оставляет защищённую страницу открытой', async () => {
     await mcpReply('click', { selector: '#alert' }, true)
     let dialog = page.getByRole('dialog', { name: 'Диалог сайта' })
+    await dialog.getByText('Сообщение сайта', { exact: true }).waitFor()
     await dialog.getByRole('button', { name: 'ОК', exact: true }).click()
     await expect.poll(async () => JSON.parse(await mcp('dialogs')).total).toBe(0)
     expect(await mcp('read', { selector: '#result' })).toContain('alert completed')

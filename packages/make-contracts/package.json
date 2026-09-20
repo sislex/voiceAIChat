@@ -10,16 +10,24 @@
     "./localization": "./src/localization.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent"
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test"
   },
   "dependencies": {
-    "@voicechat/shared": "*"
+    "@voicechat/shared": "*",
+    "@sislexa/make": "file:../../vendor/sislexa-make-1.0.0-7fb6727e9ccf.tgz"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
     "fastify": "^5.1.0"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/make",
+    "workspace": "packages/make-contracts",
+    "repository": "https://github.com/sislex/make",
+    "version": "1.0.0",
+    "commit": "7fb6727e9ccf28cdb1ee3d421968e5b82b618ca5"
   }
 }

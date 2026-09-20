@@ -1,0 +1,610 @@
+{
+  "web/chat/cold": {
+    "previous": {
+      "js": {
+        "raw": 1215000,
+        "gzip": 365000,
+        "brotli": 297500
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1239066,
+        "gzip": 373445,
+        "brotli": 303954
+      },
+      "css": {
+        "raw": 386522,
+        "gzip": 67031,
+        "brotli": 53943
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1241600,
+        "gzip": 374200,
+        "brotli": 304600
+      },
+      "css": {
+        "raw": 387300,
+        "gzip": 67200,
+        "brotli": 54100
+      }
+    }
+  },
+  "web/chat/warm": {
+    "previous": {
+      "js": {
+        "raw": 1215000,
+        "gzip": 365000,
+        "brotli": 297500
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1239066,
+        "gzip": 373445,
+        "brotli": 303954
+      },
+      "css": {
+        "raw": 386522,
+        "gzip": 67031,
+        "brotli": 53943
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1241600,
+        "gzip": 374200,
+        "brotli": 304600
+      },
+      "css": {
+        "raw": 387300,
+        "gzip": 67200,
+        "brotli": 54100
+      }
+    }
+  },
+  "web/account/cold": {
+    "previous": {
+      "js": {
+        "raw": 1233000,
+        "gzip": 371000,
+        "brotli": 303000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1257852,
+        "gzip": 379638,
+        "brotli": 309180
+      },
+      "css": {
+        "raw": 386522,
+        "gzip": 67031,
+        "brotli": 53943
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1260400,
+        "gzip": 380400,
+        "brotli": 309800
+      },
+      "css": {
+        "raw": 387300,
+        "gzip": 67200,
+        "brotli": 54100
+      }
+    }
+  },
+  "web/account/warm": {
+    "previous": {
+      "js": {
+        "raw": 1233000,
+        "gzip": 371000,
+        "brotli": 303000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1257852,
+        "gzip": 379638,
+        "brotli": 309180
+      },
+      "css": {
+        "raw": 386522,
+        "gzip": 67031,
+        "brotli": 53943
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1260400,
+        "gzip": 380400,
+        "brotli": 309800
+      },
+      "css": {
+        "raw": 387300,
+        "gzip": 67200,
+        "brotli": 54100
+      }
+    }
+  },
+  "web/account/navigation": {
+    "previous": {
+      "js": {
+        "raw": 1233000,
+        "gzip": 371000,
+        "brotli": 303000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1257852,
+        "gzip": 379638,
+        "brotli": 309180
+      },
+      "css": {
+        "raw": 386522,
+        "gzip": 67031,
+        "brotli": 53943
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1260400,
+        "gzip": 380400,
+        "brotli": 309800
+      },
+      "css": {
+        "raw": 387300,
+        "gzip": 67200,
+        "brotli": 54100
+      }
+    }
+  },
+  "web/settings/cold": {
+    "previous": {
+      "js": {
+        "raw": 1251000,
+        "gzip": 376000,
+        "brotli": 307000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1277509,
+        "gzip": 384817,
+        "brotli": 313686
+      },
+      "css": {
+        "raw": 386522,
+        "gzip": 67031,
+        "brotli": 53943
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1280100,
+        "gzip": 385600,
+        "brotli": 314400
+      },
+      "css": {
+        "raw": 387300,
+        "gzip": 67200,
+        "brotli": 54100
+      }
+    }
+  },
+  "web/settings/warm": {
+    "previous": {
+      "js": {
+        "raw": 1251000,
+        "gzip": 376000,
+        "brotli": 307000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1277509,
+        "gzip": 384817,
+        "brotli": 313686
+      },
+      "css": {
+        "raw": 386522,
+        "gzip": 67031,
+        "brotli": 53943
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1280100,
+        "gzip": 385600,
+        "brotli": 314400
+      },
+      "css": {
+        "raw": 387300,
+        "gzip": 67200,
+        "brotli": 54100
+      }
+    }
+  },
+  "web/settings/navigation": {
+    "previous": {
+      "js": {
+        "raw": 1251000,
+        "gzip": 376000,
+        "brotli": 307000
+      },
+      "css": {
+        "raw": 380000,
+        "gzip": 66000,
+        "brotli": 53200
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1277509,
+        "gzip": 384817,
+        "brotli": 313686
+      },
+      "css": {
+        "raw": 386522,
+        "gzip": 67031,
+        "brotli": 53943
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1280100,
+        "gzip": 385600,
+        "brotli": 314400
+      },
+      "css": {
+        "raw": 387300,
+        "gzip": 67200,
+        "brotli": 54100
+      }
+    }
+  },
+  "electron/chat/cold": {
+    "previous": {
+      "js": {
+        "raw": 1201000,
+        "gzip": 360000,
+        "brotli": 294000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1222994,
+        "gzip": 368305,
+        "brotli": 299807
+      },
+      "css": {
+        "raw": 384695,
+        "gzip": 66719,
+        "brotli": 53767
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1225500,
+        "gzip": 369100,
+        "brotli": 300500
+      },
+      "css": {
+        "raw": 385500,
+        "gzip": 66900,
+        "brotli": 53900
+      }
+    }
+  },
+  "electron/chat/warm": {
+    "previous": {
+      "js": {
+        "raw": 1201000,
+        "gzip": 360000,
+        "brotli": 294000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1222994,
+        "gzip": 368305,
+        "brotli": 299807
+      },
+      "css": {
+        "raw": 384695,
+        "gzip": 66719,
+        "brotli": 53767
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1225500,
+        "gzip": 369100,
+        "brotli": 300500
+      },
+      "css": {
+        "raw": 385500,
+        "gzip": 66900,
+        "brotli": 53900
+      }
+    }
+  },
+  "electron/account/cold": {
+    "previous": {
+      "js": {
+        "raw": 1219000,
+        "gzip": 366500,
+        "brotli": 299000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1241740,
+        "gzip": 374466,
+        "brotli": 305006
+      },
+      "css": {
+        "raw": 384695,
+        "gzip": 66719,
+        "brotli": 53767
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1244300,
+        "gzip": 375300,
+        "brotli": 305700
+      },
+      "css": {
+        "raw": 385500,
+        "gzip": 66900,
+        "brotli": 53900
+      }
+    }
+  },
+  "electron/account/warm": {
+    "previous": {
+      "js": {
+        "raw": 1219000,
+        "gzip": 366500,
+        "brotli": 299000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1241740,
+        "gzip": 374466,
+        "brotli": 305006
+      },
+      "css": {
+        "raw": 384695,
+        "gzip": 66719,
+        "brotli": 53767
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1244300,
+        "gzip": 375300,
+        "brotli": 305700
+      },
+      "css": {
+        "raw": 385500,
+        "gzip": 66900,
+        "brotli": 53900
+      }
+    }
+  },
+  "electron/account/navigation": {
+    "previous": {
+      "js": {
+        "raw": 1219000,
+        "gzip": 366500,
+        "brotli": 299000
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1241740,
+        "gzip": 374466,
+        "brotli": 305006
+      },
+      "css": {
+        "raw": 384695,
+        "gzip": 66719,
+        "brotli": 53767
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1244300,
+        "gzip": 375300,
+        "brotli": 305700
+      },
+      "css": {
+        "raw": 385500,
+        "gzip": 66900,
+        "brotli": 53900
+      }
+    }
+  },
+  "electron/settings/cold": {
+    "previous": {
+      "js": {
+        "raw": 1237000,
+        "gzip": 371500,
+        "brotli": 303500
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1261150,
+        "gzip": 379569,
+        "brotli": 309462
+      },
+      "css": {
+        "raw": 384695,
+        "gzip": 66719,
+        "brotli": 53767
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1263700,
+        "gzip": 380400,
+        "brotli": 310100
+      },
+      "css": {
+        "raw": 385500,
+        "gzip": 66900,
+        "brotli": 53900
+      }
+    }
+  },
+  "electron/settings/warm": {
+    "previous": {
+      "js": {
+        "raw": 1237000,
+        "gzip": 371500,
+        "brotli": 303500
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1261150,
+        "gzip": 379569,
+        "brotli": 309462
+      },
+      "css": {
+        "raw": 384695,
+        "gzip": 66719,
+        "brotli": 53767
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1263700,
+        "gzip": 380400,
+        "brotli": 310100
+      },
+      "css": {
+        "raw": 385500,
+        "gzip": 66900,
+        "brotli": 53900
+      }
+    }
+  },
+  "electron/settings/navigation": {
+    "previous": {
+      "js": {
+        "raw": 1237000,
+        "gzip": 371500,
+        "brotli": 303500
+      },
+      "css": {
+        "raw": 378000,
+        "gzip": 65700,
+        "brotli": 53000
+      }
+    },
+    "measured": {
+      "js": {
+        "raw": 1261150,
+        "gzip": 379569,
+        "brotli": 309462
+      },
+      "css": {
+        "raw": 384695,
+        "gzip": 66719,
+        "brotli": 53767
+      }
+    },
+    "limits": {
+      "js": {
+        "raw": 1263700,
+        "gzip": 380400,
+        "brotli": 310100
+      },
+      "css": {
+        "raw": 385500,
+        "gzip": 66900,
+        "brotli": 53900
+      }
+    }
+  }
+}

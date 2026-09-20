@@ -15,9 +15,10 @@ import { imageBlock } from '@shared/images'
 import { toolBlock } from '@shared/tools'
 import { formatQuestionsBlock } from '@shared/questions'
 import type { LiveSegment } from '@voicechat/ui-foundation/lib/view'
+import { T0 } from '@voicechat/ui-foundation/test/fixtures/time'
 
 /** Единая точка отсчёта времени: фикстуры не зависят от «сейчас». */
-export const T0 = 1_700_000_000_000
+export { T0 }
 
 let seq = 0
 

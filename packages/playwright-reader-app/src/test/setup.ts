@@ -1,1 +1,1 @@
-export * from '@voicechat/chat-app'
+export * from '@sislexa/playwright-reader/ui/test/setup'

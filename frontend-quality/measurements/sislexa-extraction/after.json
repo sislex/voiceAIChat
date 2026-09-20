@@ -1,0 +1,3977 @@
+{
+  "schemaVersion": 1,
+  "commit": "48ab7ed2a36952d48f5ca2c68249af4cbde6cf6d",
+  "dirty": true,
+  "compression": {
+    "gzip": {
+      "level": 9
+    },
+    "brotli": {
+      "quality": 11
+    }
+  },
+  "conditions": {
+    "scenario": "returning admin, onboarded, existing chat with a fixed Markdown/code message; no optional-surface intent",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "theme": "light",
+    "settleMs": 5000,
+    "transport": "localhost HTTP and Electron file; Electron signs in through UI on each navigation because the HTTP fixture cookie is cross-site from file origin; compression calculated per resource",
+    "node": "v22.19.0",
+    "zlib": "1.3.1-470d3a2",
+    "brotli": "1.1.0",
+    "cpu": "unthrottled",
+    "network": "unthrottled loopback; Google font stylesheet fetched and measured",
+    "cache": "CDP clearBrowserCache for cold, same context reload for warm",
+    "actualViewports": {
+      "web": {
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "electron": {
+        "width": 1280,
+        "height": 774,
+        "deviceScaleFactor": 2
+      }
+    }
+  },
+  "resources": {
+    "web/assets/AccountPage-j-2oCEoK.js": {
+      "type": "js",
+      "sha256": "abf4f70834b1c93a2b76094044c066dfd1ba326fe96072e7f3b39b744100e42c",
+      "raw": 7302,
+      "gzip": 2905,
+      "brotli": 2545,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/CiCommands-B-2CLtVd.js": {
+      "type": "js",
+      "sha256": "d3cc2d238a511dec1e357f47f0523083a06bab007c630b62e079ef535418101f",
+      "raw": 13136,
+      "gzip": 4326,
+      "brotli": 3719,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/CiSlotEditor-D7079tv-.js": {
+      "type": "js",
+      "sha256": "36e2738ec8397f8b14de5ba2e352e77aa22c343797b94fb04511b63e0cad1889",
+      "raw": 8722,
+      "gzip": 3851,
+      "brotli": 3327,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/CodeDiff--ifGgTWv.js": {
+      "type": "js",
+      "sha256": "fd3f4533cfbc563a5184a11afc0f55b567fd68c2e7e05e9e4c01c42aa3fe72f3",
+      "raw": 2871,
+      "gzip": 1271,
+      "brotli": 1102,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/codeHighlight-BfGGlgyw.js",
+        "web/assets/index-DXkOW38J.js"
+      ],
+      "dynamicImports": [
+        "web/assets/MonacoCodeEditor-DyRW-5Z3.js",
+        "web/assets/MonacoDiffEditor-Qew9jCo6.js"
+      ]
+    },
+    "web/assets/CommandPalette-ClIxPxks.js": {
+      "type": "js",
+      "sha256": "b5f9118c70e45968301085eedbea7f001d435a1932a6c3912615e871d6e300af",
+      "raw": 9593,
+      "gzip": 4165,
+      "brotli": 3607,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ConsoleSessionPane-CnPyIiE0.js": {
+      "type": "js",
+      "sha256": "66e38b3bd9113aa3e9398e40345798f32ac78d034852869bdffd9cea1d4e0315",
+      "raw": 1764,
+      "gzip": 886,
+      "brotli": 721,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/MachineTerminal-DtPsvyux.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/terminal-DGHPw4qf.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ContextInspector-BsAp4m2W.js": {
+      "type": "js",
+      "sha256": "37771264c6c8c19f5afe19240c3820c61d2a93de261e26b8f990cc221960b170",
+      "raw": 68075,
+      "gzip": 17290,
+      "brotli": 14776,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/chatInstructions-8I7vfqnS.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ConversationSettings-BUQPWeQA.js": {
+      "type": "js",
+      "sha256": "f697f246bfba9ffd6a02761df685a87b19947f28030246c87bc030e4992df399",
+      "raw": 22930,
+      "gzip": 7001,
+      "brotli": 6011,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/SettingsPage-C81ALisw.js",
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": [
+        "web/assets/ContextInspector-BsAp4m2W.js"
+      ]
+    },
+    "web/assets/EnginesObserver-76xCkcWC.js": {
+      "type": "js",
+      "sha256": "0b258cb4159a01c2d52efe60c640884ecaa7c1c5463a7fb46e30504c3621308f",
+      "raw": 7980,
+      "gzip": 2146,
+      "brotli": 1819,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/GitPane-Bqrn-NMt.js": {
+      "type": "js",
+      "sha256": "b0f154a4046f364f8bf02e11cdb503dbf9e45adecb8d7fd413008b0f3efd394e",
+      "raw": 33537,
+      "gzip": 10110,
+      "brotli": 8818,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/CodeDiff--ifGgTWv.js",
+        "web/assets/gitLabels-Dnt5Wcgg.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/codeHighlight-BfGGlgyw.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/GitTargetPane-CYTxA2tB.js": {
+      "type": "js",
+      "sha256": "18d2df908747e61d4e289bab9058ce8bc7ca48b89cc4c18b0ab742864bd37266",
+      "raw": 2536,
+      "gzip": 1338,
+      "brotli": 1142,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": [
+        "web/assets/GitPane-Bqrn-NMt.js"
+      ]
+    },
+    "web/assets/GitWorkspaceList-C9DjJQrc.js": {
+      "type": "js",
+      "sha256": "d287300b0418779682295945afe8adf37442b4c8ce2ddd99a0aab0d34981f08e",
+      "raw": 2220,
+      "gzip": 1058,
+      "brotli": 854,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/gitLabels-Dnt5Wcgg.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/HotkeysCheatSheet-BCYXFpY-.js": {
+      "type": "js",
+      "sha256": "cae24f0da63ee2a9873a71e7ed88d1ef768eba1ea03fb9c158b62acc89406c07",
+      "raw": 1531,
+      "gzip": 844,
+      "brotli": 697,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/KanbanAssistant-bfiZGTI0.js": {
+      "type": "js",
+      "sha256": "29295924e7f424ed3c8bdfd3fd43e277aab632fec7f956082689267f10ce06ef",
+      "raw": 20926,
+      "gzip": 7214,
+      "brotli": 6178,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/KbUsagePanel-BhqsyGdG.js": {
+      "type": "js",
+      "sha256": "f6d8dfbd6b5ced20061bd696ed2bf121af44c81e5d16a2de98d88ea175b04ae5",
+      "raw": 11428,
+      "gzip": 4039,
+      "brotli": 3506,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/kbUsageFormat-DHi-IiWs.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/KnowledgeBase--eSMj5cT.js": {
+      "type": "js",
+      "sha256": "86b74254fd1284263b2701845dbd0599f766d5509590d76dfc339dabd3163b9b",
+      "raw": 9089,
+      "gzip": 3674,
+      "brotli": 3099,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/LlmSettingsEditor-CGkWVXq2.js": {
+      "type": "js",
+      "sha256": "c0fe3d82e57d801afe9dc030c53b6ac874c1123b305c76597f53ddcbfdf66afb",
+      "raw": 3353,
+      "gzip": 1336,
+      "brotli": 1123,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/MachineStatus-4ADguD3z.css": {
+      "type": "css",
+      "sha256": "abf75dea2f75e88d0487cbf8b63fe1e5447a1aacc49bea22a7fe344ad1df41da",
+      "raw": 406,
+      "gzip": 236,
+      "brotli": 170,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/MachineStatus-CzHGY3sn.js": {
+      "type": "js",
+      "sha256": "b3e2b48187bf82cfb8d2555dd7b694d5f1a9f2d641622d67cf0c61887328e78e",
+      "raw": 43355,
+      "gzip": 13367,
+      "brotli": 11689,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/qrcode-C2qLkN4o.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/MachineTerminal-DtPsvyux.js": {
+      "type": "js",
+      "sha256": "8562ffab3d1e7b4a03c507556164fd4c9d878bd4301abb927b1913d3777c436f",
+      "raw": 13862,
+      "gzip": 5621,
+      "brotli": 4870,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/index-DXkOW38J.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/MachineUtility-BtxoZ0z2.js": {
+      "type": "js",
+      "sha256": "acb3fe43c9d1eec262241352aa47b24d44700e252133e2b1f6396cec2f75049d",
+      "raw": 31228,
+      "gzip": 10670,
+      "brotli": 9421,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/MachineTerminal-DtPsvyux.js",
+        "web/assets/CodeDiff--ifGgTWv.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/terminal-DGHPw4qf.js",
+        "web/assets/codeHighlight-BfGGlgyw.js"
+      ],
+      "dynamicImports": [
+        "web/assets/GitTargetPane-CYTxA2tB.js"
+      ]
+    },
+    "web/assets/MonacoCodeEditor-DyRW-5Z3.js": {
+      "type": "js",
+      "sha256": "bceac46a7b1c25c02b8a8a5bb357c7480f0407b1e9f24c3af952233e2814d0d3",
+      "raw": 2685,
+      "gzip": 1379,
+      "brotli": 1201,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/monaco-BSSCtlEN.js",
+        "web/assets/monacoSetup-CLtb2B7j.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/MonacoDiffEditor-Qew9jCo6.js": {
+      "type": "js",
+      "sha256": "1135b79ee3a0793798e2707b47fc24649650f2a2efe3c64df6a9527a12bd5164",
+      "raw": 654,
+      "gzip": 446,
+      "brotli": 384,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/monaco-BSSCtlEN.js",
+        "web/assets/monacoSetup-CLtb2B7j.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ProjectBoard-BK9_i1_j.js": {
+      "type": "js",
+      "sha256": "69d4c595cb3cdd719baf512104b92a859455d967730b53d22a8c508893d8e07e",
+      "raw": 241063,
+      "gzip": 66316,
+      "brotli": 55119,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/TaskModal-BcLtGfBD.js",
+        "web/assets/RunFeed-_vV39I35.js",
+        "web/assets/CiSlotEditor-D7079tv-.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/kbUsageFormat-DHi-IiWs.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ProjectPage-BYNuHR5l.js": {
+      "type": "js",
+      "sha256": "5b998fbfed6e8daa0f1b7a3fc72ed902a19ffc750699f0193e5303fbaa50553a",
+      "raw": 3207,
+      "gzip": 1618,
+      "brotli": 1314,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ProjectSettings-DIePz4Hr.js": {
+      "type": "js",
+      "sha256": "63688abbaa5f3e1c76232655b0e09d945aec585c800f32682bbd463eef2919bc",
+      "raw": 77299,
+      "gzip": 21611,
+      "brotli": 18856,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/CiSlotEditor-D7079tv-.js",
+        "web/assets/codeHighlight-BfGGlgyw.js",
+        "web/assets/SettingsPage-C81ALisw.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/ReleaseCenter-D6vy3psY.js": {
+      "type": "js",
+      "sha256": "8756b168ec26dfe40dc2533d4a13f994bc9b7977e0205bd460173d3f099cac0c",
+      "raw": 56587,
+      "gzip": 16188,
+      "brotli": 14052,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/RunFeed-_vV39I35.js": {
+      "type": "js",
+      "sha256": "896a2f241520c0b33d9300dba145984f3a955771d352169afdf7700f7120f9b2",
+      "raw": 49856,
+      "gzip": 16359,
+      "brotli": 14225,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/kbUsageFormat-DHi-IiWs.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/SessionsDialogHost-CKrmCLE_.js": {
+      "type": "js",
+      "sha256": "3ed5019260ac50525141fdfe33edb19f317fd89f60617425b10f44bed75b7abf",
+      "raw": 1983,
+      "gzip": 927,
+      "brotli": 802,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/sessionsStore-DoZarngw.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/SettingsModal-COQVASpo.js": {
+      "type": "js",
+      "sha256": "d0e5c81e35e76e11d426f1619fe09b7ec9ce0cdb79ce213f6d4f27640c215d9d",
+      "raw": 34469,
+      "gzip": 9663,
+      "brotli": 8290,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/chatInstructions-8I7vfqnS.js",
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/SettingsPage-C81ALisw.js": {
+      "type": "js",
+      "sha256": "09b8be1398bd61df95c06362b732069533c0df88be015e6d43c8ea4af5a306d4",
+      "raw": 7077,
+      "gzip": 2902,
+      "brotli": 2290,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/TaskModal-BAt6xfig.css": {
+      "type": "css",
+      "sha256": "9c5625cb0c69633751c2b1dc868c8a2a09f32cca284cc9b6d342825439956805",
+      "raw": 665,
+      "gzip": 326,
+      "brotli": 240,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/TaskModal-BcLtGfBD.js": {
+      "type": "js",
+      "sha256": "3b381671ef41fc648e45339959ce45276747820cf0ff7e34d87cc359b32866c4",
+      "raw": 200367,
+      "gzip": 55712,
+      "brotli": 46145,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/CiSlotEditor-D7079tv-.js",
+        "web/assets/RunFeed-_vV39I35.js"
+      ],
+      "dynamicImports": [
+        "web/assets/GitTargetPane-CYTxA2tB.js"
+      ]
+    },
+    "web/assets/TwoFactorDialog-D7V_VydO.js": {
+      "type": "js",
+      "sha256": "9be081d640a5621d68e41257f95a7deeaa41a35d51d5b6f57db0d453f7e8044f",
+      "raw": 3188,
+      "gzip": 1327,
+      "brotli": 1113,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/applicationCatalog-Cez8vdJp.js": {
+      "type": "js",
+      "sha256": "7dde560c5f4b0cc11cc21bd0187f907b5c5ebf50a33f5b41372535083e08ee94",
+      "raw": 11484,
+      "gzip": 3288,
+      "brotli": 2681,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/chatInstructions-8I7vfqnS.js": {
+      "type": "js",
+      "sha256": "819d60272bb2d2f0a3b309b66d16d266dcc5b45643cc47c0e0aaf1b55016dfc8",
+      "raw": 621,
+      "gzip": 373,
+      "brotli": 319,
+      "imports": [
+        "web/assets/index-DXkOW38J.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/codeHighlight-BfGGlgyw.js": {
+      "type": "js",
+      "sha256": "c08968b4f28dd761f519fb1fccb93ae9e17080b442dca2f591c1a594dfa5e372",
+      "raw": 845,
+      "gzip": 445,
+      "brotli": 372,
+      "imports": [
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/css.worker-BRIrhzkG.js": {
+      "type": "js",
+      "sha256": "0802b285dc2c065b345f48c69beeaaf88d27ef840f6daa337609e68ccb480c7b",
+      "raw": 1011293,
+      "gzip": 227206,
+      "brotli": 174717,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/editor.worker-DX6ApQqM.js": {
+      "type": "js",
+      "sha256": "f4240aa0920bfbcc9f6bf4aa69d93a2ee5ca37c9400ed0cdee830430a2985a57",
+      "raw": 231738,
+      "gzip": 71275,
+      "brotli": 58494,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/gitLabels-Dnt5Wcgg.js": {
+      "type": "js",
+      "sha256": "be5f303a36f311acbf42f9a07716ba1d0adcceeb8c0a1d06421505cb6ba14032",
+      "raw": 1658,
+      "gzip": 860,
+      "brotli": 682,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/html.worker-CBI4EQBP.js": {
+      "type": "js",
+      "sha256": "cbde8e547a46ad90b506408f239b60e38bc137d9b9eb4f6c4dca28429e748de9",
+      "raw": 673877,
+      "gzip": 176405,
+      "brotli": 142676,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/index-BAlEPpyt.js": {
+      "type": "js",
+      "sha256": "a100702b7be1cb3e09958a354135c031ad0e990b73ff7fc4ffe1c9d6240d1c1a",
+      "raw": 42805,
+      "gzip": 13184,
+      "brotli": 11540,
+      "imports": [
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/sessionsStore-DoZarngw.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/index-CWZsbnbV.css": {
+      "type": "css",
+      "sha256": "d67547b56637301f37e05f620b285f740a705b8f6ac77486992ab2abc093802d",
+      "raw": 376490,
+      "gzip": 65722,
+      "brotli": 52913,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/index-DXkOW38J.js": {
+      "type": "js",
+      "sha256": "5bc8a2d2f007966ff171468d0b4d8e1ca17ab04190f461efdd91075eac5dc76c",
+      "raw": 760896,
+      "gzip": 225930,
+      "brotli": 180522,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/markdown-B45geBhu.js"
+      ],
+      "dynamicImports": [
+        "web/assets/MachineUtility-BtxoZ0z2.js",
+        "web/assets/ConsoleSessionPane-CnPyIiE0.js",
+        "web/assets/TwoFactorDialog-D7V_VydO.js",
+        "web/assets/EnginesObserver-76xCkcWC.js",
+        "web/assets/SettingsPage-C81ALisw.js",
+        "web/assets/ReleaseCenter-D6vy3psY.js",
+        "web/assets/KanbanAssistant-bfiZGTI0.js",
+        "web/assets/CiCommands-B-2CLtVd.js",
+        "web/assets/RunFeed-_vV39I35.js",
+        "web/assets/ConversationSettings-BUQPWeQA.js",
+        "web/assets/KbUsagePanel-BhqsyGdG.js",
+        "web/assets/CommandPalette-ClIxPxks.js",
+        "web/assets/HotkeysCheatSheet-BCYXFpY-.js",
+        "web/assets/SessionsDialogHost-CKrmCLE_.js",
+        "web/assets/index-BAlEPpyt.js",
+        "web/assets/index-BAlEPpyt.js",
+        "web/assets/AccountPage-j-2oCEoK.js",
+        "web/assets/TaskModal-BcLtGfBD.js",
+        "web/assets/ProjectSettings-DIePz4Hr.js",
+        "web/assets/MachineStatus-CzHGY3sn.js",
+        "web/assets/MachineUtility-BtxoZ0z2.js",
+        "web/assets/KnowledgeBase--eSMj5cT.js",
+        "web/assets/ProjectPage-BYNuHR5l.js",
+        "web/assets/ProjectPage-BYNuHR5l.js",
+        "web/assets/ProjectPage-BYNuHR5l.js",
+        "web/assets/ProjectBoard-BK9_i1_j.js",
+        "web/assets/GitPane-Bqrn-NMt.js",
+        "web/assets/GitWorkspaceList-C9DjJQrc.js",
+        "web/assets/GitTargetPane-CYTxA2tB.js",
+        "web/assets/ContextInspector-BsAp4m2W.js",
+        "web/assets/SettingsModal-COQVASpo.js"
+      ]
+    },
+    "web/assets/json.worker-CIZWV9vN.js": {
+      "type": "js",
+      "sha256": "f2c4ac3096645971de78f9de2b90a13fa86c98a957891d7a43fa13f5023163ef",
+      "raw": 364153,
+      "gzip": 109546,
+      "brotli": 90024,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/kbUsageFormat-DHi-IiWs.js": {
+      "type": "js",
+      "sha256": "5c1f0894bd453002cdbb07dfe081a841abf08605d5774dfdf7b9b21deb4f5d84",
+      "raw": 903,
+      "gzip": 613,
+      "brotli": 488,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/markdown-B45geBhu.js": {
+      "type": "js",
+      "sha256": "8594373e29297b088c0893e9dab9f89271644214d65f9fb8878306ce74110bad",
+      "raw": 334187,
+      "gzip": 101096,
+      "brotli": 82836,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/markdown-BEHUn5zE.css": {
+      "type": "css",
+      "sha256": "a597b77cebd36d2d2a00f9a3a63322c48a69a0cbc0fdaf59fba0630347ba988e",
+      "raw": 1316,
+      "gzip": 614,
+      "brotli": 492,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/monaco-BSSCtlEN.js": {
+      "type": "js",
+      "sha256": "f2e96d25b98e70783c07a313c0a484cbdad5727ac24559098eb3b0d72ae9700a",
+      "raw": 3142789,
+      "gzip": 805150,
+      "brotli": 625219,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/monaco-Cff06kPg.css": {
+      "type": "css",
+      "sha256": "f2e586f679c3b834231fdb86d1f1d7b92b7fa1657745d292c45c39f0d8605dae",
+      "raw": 115142,
+      "gzip": 17905,
+      "brotli": 15509,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/monacoSetup-CLtb2B7j.js": {
+      "type": "js",
+      "sha256": "3ca10cb1eb8094a2cbd6c324d386a7c168953f9e29e6b1613c4ba738422458bd",
+      "raw": 1120211,
+      "gzip": 123826,
+      "brotli": 75116,
+      "imports": [
+        "web/assets/monaco-BSSCtlEN.js",
+        "web/assets/react-Ztm9MH8b.js"
+      ],
+      "dynamicImports": [
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js",
+        "web/assets/prettier-DycMSh8D.js"
+      ]
+    },
+    "web/assets/prettier-DycMSh8D.js": {
+      "type": "js",
+      "sha256": "7a49a595d6950814b3de74e4addcfcac11c6bbb18239adf67c37eac149546d12",
+      "raw": 1598327,
+      "gzip": 466478,
+      "brotli": 354905,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/qrcode-C2qLkN4o.js": {
+      "type": "js",
+      "sha256": "f27ad5ec53dc17b6035b77714959be11a8a4ac848929d79163e79f26725abdcd",
+      "raw": 24038,
+      "gzip": 9441,
+      "brotli": 8318,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/react-Ztm9MH8b.js": {
+      "type": "js",
+      "sha256": "b0436108cc0cc006deadc36688bdf5ad0600c30dbebf56852545ccb21fd27b78",
+      "raw": 143507,
+      "gzip": 46135,
+      "brotli": 40375,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/sessionsStore-DoZarngw.js": {
+      "type": "js",
+      "sha256": "3aa41ab3b18b7086517c74e70ca6fa4b51fe5c664a03a860a3d48805f870ba43",
+      "raw": 25398,
+      "gzip": 8232,
+      "brotli": 7268,
+      "imports": [
+        "web/assets/react-Ztm9MH8b.js",
+        "web/assets/index-DXkOW38J.js"
+      ],
+      "dynamicImports": []
+    },
+    "web/assets/terminal-DGHPw4qf.js": {
+      "type": "js",
+      "sha256": "cbec866be49b897426d72533e091017628d41107cf39439f56ff6d8cc3059ce8",
+      "raw": 291446,
+      "gzip": 72213,
+      "brotli": 59896,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/terminal-DYP7pi_n.css": {
+      "type": "css",
+      "sha256": "7c5a01f382f76539fc9b4db6b18e18a7035741845fd14968c5cdc0a7e373d817",
+      "raw": 4150,
+      "gzip": 1674,
+      "brotli": 1207,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/assets/ts.worker-Ds4I2Msu.js": {
+      "type": "js",
+      "sha256": "f1058ff106b5e51c71dea1677f42ae6b6e3a653c6686edce44e89c8cb93a2dcc",
+      "raw": 6022668,
+      "gzip": 1361351,
+      "brotli": 994007,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/theme-init.js": {
+      "type": "js",
+      "sha256": "2a996011959a0711f225d9ea1fea8dede11eb16cdea514c3c8ff140bf95322eb",
+      "raw": 476,
+      "gzip": 284,
+      "brotli": 221,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css": {
+      "type": "css",
+      "sha256": "3956c1eabc2d78b29faa96f11edf84714ccffa49422feb842608ff43c8674158",
+      "raw": 8716,
+      "gzip": 695,
+      "brotli": 538,
+      "imports": [],
+      "dynamicImports": [],
+      "source": "https://fonts.googleapis.com"
+    },
+    "electron/assets/AccountPage-BbGMypGf.js": {
+      "type": "js",
+      "sha256": "e1d2d67cafda883d4bdbb26f420d7f895f268c2971e4581e94df97832de36e48",
+      "raw": 7262,
+      "gzip": 2873,
+      "brotli": 2518,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/CiCommands-BtV4FY8n.js": {
+      "type": "js",
+      "sha256": "cda6b21708aff225a677e67b71e9876a7b5627197946924b23785be843359254",
+      "raw": 13120,
+      "gzip": 4314,
+      "brotli": 3709,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/CiSlotEditor-D1EQyPkL.js": {
+      "type": "js",
+      "sha256": "5b1d420a1366f1ac46a6508cb6ac5c78c7a4ee25b994ac65a13890f989d4566f",
+      "raw": 8404,
+      "gzip": 3738,
+      "brotli": 3194,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/CodeDiff-DBWVKpgs.js": {
+      "type": "js",
+      "sha256": "c004e56da00779e19fcefb6c0a82ca543292918ba0f550647f65d97dd777476e",
+      "raw": 2837,
+      "gzip": 1254,
+      "brotli": 1092,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/codeHighlight-BBYexzXZ.js",
+        "electron/assets/index-rzyWcILr.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/MonacoCodeEditor-g8SDH08S.js",
+        "electron/assets/MonacoDiffEditor-CPIgYlZ1.js"
+      ]
+    },
+    "electron/assets/CommandPalette-BGt6C018.js": {
+      "type": "js",
+      "sha256": "17436baec48603773d1f52b1d6c7d0455a987e9b4a3feab7e50672ae6c0eba73",
+      "raw": 9171,
+      "gzip": 4014,
+      "brotli": 3471,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ConsoleSessionPane-hKwboAUv.js": {
+      "type": "js",
+      "sha256": "16e09e6233c937c5328d9e41762f60beac5c39e15f1966d63ff4f6f5b9a63fad",
+      "raw": 1738,
+      "gzip": 862,
+      "brotli": 705,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/MachineTerminal-Bydqw4dm.js",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/terminal-Bs9Bl2ok.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ContextInspector-C9KUSkrr.js": {
+      "type": "js",
+      "sha256": "7fa7bde27d6f680558472acbc3776b81438b8db24b0af9d835b07de43712a736",
+      "raw": 66988,
+      "gzip": 16929,
+      "brotli": 14477,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/chatInstructions-Dxyb0ymF.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ConversationSettings-DU2oq8wv.js": {
+      "type": "js",
+      "sha256": "52a6f483c86d8026ff7d8cc439f65b99c79adc47337831b79af6bc7c688db8ee",
+      "raw": 22689,
+      "gzip": 6920,
+      "brotli": 5938,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/SettingsPage-D7uDAQcV.js",
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/ContextInspector-C9KUSkrr.js"
+      ]
+    },
+    "electron/assets/EnginesObserver-DsVffvwh.js": {
+      "type": "js",
+      "sha256": "1cddec3170d76dacdb4dae0796c5829acd44e205e0362ffe3fad27437a8cf699",
+      "raw": 7980,
+      "gzip": 2144,
+      "brotli": 1814,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/GitPane-DlOjw0jH.js": {
+      "type": "js",
+      "sha256": "5451b6a9ca8f96b2b4386ac931c288fb51e08a2e949f39bde9e1b8b2adffb7ed",
+      "raw": 32703,
+      "gzip": 9888,
+      "brotli": 8579,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/CodeDiff-DBWVKpgs.js",
+        "electron/assets/gitLabels-Dnt5Wcgg.js",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/codeHighlight-BBYexzXZ.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/GitTargetPane-CwvjJOC5.js": {
+      "type": "js",
+      "sha256": "b47e58d3307725be10d8d14e0937d72e74b76611a9fd00ca41f6f73d3ff74d5d",
+      "raw": 2507,
+      "gzip": 1342,
+      "brotli": 1141,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/GitPane-DlOjw0jH.js"
+      ]
+    },
+    "electron/assets/GitWorkspaceList-yl9cWGPo.js": {
+      "type": "js",
+      "sha256": "c02f77f33fbbee96222edb77c13aaae8c882c6b71ec61ddbffdb7b84b4c43f1f",
+      "raw": 2220,
+      "gzip": 1057,
+      "brotli": 855,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/gitLabels-Dnt5Wcgg.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/HotkeysCheatSheet-CWHEWsNM.js": {
+      "type": "js",
+      "sha256": "5823da0485645eea4ae27d7af550ffdb346763dae28b39afee4fc1b3ddf0373c",
+      "raw": 1531,
+      "gzip": 842,
+      "brotli": 702,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/KanbanAssistant-BI1bWRdn.js": {
+      "type": "js",
+      "sha256": "036f0e8962ea353d607fc611990e66c0ef848ccb191ca2007134631179543412",
+      "raw": 20523,
+      "gzip": 7070,
+      "brotli": 6067,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/KbUsagePanel-B0yob1At.js": {
+      "type": "js",
+      "sha256": "f522c4b8856fbb9ce7b277a61800a66410de11ac610a97df9e71ba8f68a2f2a0",
+      "raw": 11087,
+      "gzip": 3934,
+      "brotli": 3407,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/kbUsageFormat-BQuTxidS.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/KnowledgeBase-BGBTSnBg.js": {
+      "type": "js",
+      "sha256": "affe92638bb664ae6533b9b37df09dd6076a45240fd815a7171b08b115df0a9b",
+      "raw": 9006,
+      "gzip": 3640,
+      "brotli": 3068,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/LlmSettingsEditor-o8l8TrT9.js": {
+      "type": "js",
+      "sha256": "892aedc0f1beccbc9c8dd293e68800c52a55b0a81adf973491306fd7f6d6fa69",
+      "raw": 3225,
+      "gzip": 1315,
+      "brotli": 1107,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/MachineStatus-4ADguD3z.css": {
+      "type": "css",
+      "sha256": "abf75dea2f75e88d0487cbf8b63fe1e5447a1aacc49bea22a7fe344ad1df41da",
+      "raw": 406,
+      "gzip": 236,
+      "brotli": 170,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/MachineStatus-Bsdderjn.js": {
+      "type": "js",
+      "sha256": "f48a577507a2f1ac8bdb7f7da09dc349b8cc25b52b062c0d5e8fad0c0f692f6b",
+      "raw": 42727,
+      "gzip": 13158,
+      "brotli": 11453,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/qrcode-C2qLkN4o.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/MachineTerminal-Bydqw4dm.js": {
+      "type": "js",
+      "sha256": "7c0d93299523dc31c7dc1e831788b5e72d9606ed3260cf9368e02687a981a3f1",
+      "raw": 13326,
+      "gzip": 5459,
+      "brotli": 4726,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/terminal-Bs9Bl2ok.js",
+        "electron/assets/index-rzyWcILr.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/MachineUtility-CdutnhcQ.js": {
+      "type": "js",
+      "sha256": "ca3821d5f1613b2dc2fef2d6825460f0f597415ffd141647588154cf43c1b163",
+      "raw": 30467,
+      "gzip": 10480,
+      "brotli": 9285,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/MachineTerminal-Bydqw4dm.js",
+        "electron/assets/CodeDiff-DBWVKpgs.js",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/terminal-Bs9Bl2ok.js",
+        "electron/assets/codeHighlight-BBYexzXZ.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/GitTargetPane-CwvjJOC5.js"
+      ]
+    },
+    "electron/assets/MonacoCodeEditor-g8SDH08S.js": {
+      "type": "js",
+      "sha256": "959b0850ba611115e656a181d3cc45a96e7805837e2cae7b52abddefd6b63a77",
+      "raw": 2513,
+      "gzip": 1321,
+      "brotli": 1153,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/monacoSetup-Dq5JZMQQ.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/MonacoDiffEditor-CPIgYlZ1.js": {
+      "type": "js",
+      "sha256": "b6aa6586b8687886ffd4f9399137f2e66c8242bac68e0812ff937911a29c1ac6",
+      "raw": 620,
+      "gzip": 436,
+      "brotli": 351,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/monacoSetup-Dq5JZMQQ.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ProjectBoard-DaUiehig.js": {
+      "type": "js",
+      "sha256": "defdee2781aec8e8fe7e3efbca37d571b4958de71fd63ca7d1fb58b8ed01a377",
+      "raw": 233280,
+      "gzip": 63928,
+      "brotli": 53187,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/TaskModal-D505V4Gs.js",
+        "electron/assets/RunFeed-nmLMDx9e.js",
+        "electron/assets/CiSlotEditor-D1EQyPkL.js",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/kbUsageFormat-BQuTxidS.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ProjectPage-DXvyWFyo.js": {
+      "type": "js",
+      "sha256": "016a0c00cde1f4f750d5bdf17118e005a4b7488bb98f38f2d73c7f6816cce0f2",
+      "raw": 3189,
+      "gzip": 1601,
+      "brotli": 1300,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ProjectSettings-VgINxOuj.js": {
+      "type": "js",
+      "sha256": "89eb3339fe5990d8f13d6c06ff863373724cab4c0e1d85459bc0be1340842b0c",
+      "raw": 75915,
+      "gzip": 21216,
+      "brotli": 18460,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/CiSlotEditor-D1EQyPkL.js",
+        "electron/assets/codeHighlight-BBYexzXZ.js",
+        "electron/assets/SettingsPage-D7uDAQcV.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/ReleaseCenter-BXAQiCVc.js": {
+      "type": "js",
+      "sha256": "0bab59ca49580dbc294e204469d5a3c21ab234bca6f26a7c322365a04f0e493e",
+      "raw": 55511,
+      "gzip": 15887,
+      "brotli": 13791,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/RunFeed-nmLMDx9e.js": {
+      "type": "js",
+      "sha256": "c58c2689bd5441da98a0a2d50868afa394dd322aab084ff83d43e8e2a1ff13be",
+      "raw": 48200,
+      "gzip": 15900,
+      "brotli": 13793,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/kbUsageFormat-BQuTxidS.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/SessionsDialogHost-D70LtP6S.js": {
+      "type": "js",
+      "sha256": "29d342740f8210f0500dc892d808670f378e1592b7cb0f1d01ef70ba19bc9d83",
+      "raw": 1959,
+      "gzip": 910,
+      "brotli": 789,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/sessionsStore-DsPkPtup.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/SettingsModal-DHkpYNnj.js": {
+      "type": "js",
+      "sha256": "4b4a8237a127fbe332c602ffddc2738701abef3e14e25a295e1ab2c6ba3b4737",
+      "raw": 34334,
+      "gzip": 9599,
+      "brotli": 8250,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/chatInstructions-Dxyb0ymF.js",
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/SettingsPage-D7uDAQcV.js": {
+      "type": "js",
+      "sha256": "f05e234e7e150f23d51854069a090221c1e0c2bbbd2a6e26a6d3860fa799f416",
+      "raw": 6945,
+      "gzip": 2855,
+      "brotli": 2253,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/TaskModal-BAt6xfig.css": {
+      "type": "css",
+      "sha256": "9c5625cb0c69633751c2b1dc868c8a2a09f32cca284cc9b6d342825439956805",
+      "raw": 665,
+      "gzip": 326,
+      "brotli": 240,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/TaskModal-D505V4Gs.js": {
+      "type": "js",
+      "sha256": "d7ea5133c12807d1df9dfc49179ab0e79a5ab7167ad7436dad1ccaaaac7ab1ef",
+      "raw": 193229,
+      "gzip": 53661,
+      "brotli": 44457,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/CiSlotEditor-D1EQyPkL.js",
+        "electron/assets/RunFeed-nmLMDx9e.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/GitTargetPane-CwvjJOC5.js"
+      ]
+    },
+    "electron/assets/TwoFactorDialog-DaCmvGVn.js": {
+      "type": "js",
+      "sha256": "149669df7f6259366fcd11b942749d8fff48b324c3c45fa9e5ecf39592c4cb94",
+      "raw": 3188,
+      "gzip": 1326,
+      "brotli": 1113,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/agent-log-BA6ZqmwP.js": {
+      "type": "js",
+      "sha256": "18f81af4c3ea78a576e5a5c8675695b813f923dcf252669121c7845678287935",
+      "raw": 605,
+      "gzip": 409,
+      "brotli": 315,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/agent-setup-Ci0SWepb.js": {
+      "type": "js",
+      "sha256": "18d13a538df5aff084c9499f3fe95e04c8f4b278fa2058f7cb079199be46f665",
+      "raw": 509,
+      "gzip": 350,
+      "brotli": 268,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/applicationCatalog-Cez8vdJp.js": {
+      "type": "js",
+      "sha256": "7dde560c5f4b0cc11cc21bd0187f907b5c5ebf50a33f5b41372535083e08ee94",
+      "raw": 11484,
+      "gzip": 3288,
+      "brotli": 2681,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/babel-C1DoOr4z.js": {
+      "type": "js",
+      "sha256": "c1f01fbf8cd15f98d20378000a9d296092e3783889a8913f547ff051ac5bc9e7",
+      "raw": 309841,
+      "gzip": 81852,
+      "brotli": 66155,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/chatInstructions-Dxyb0ymF.js": {
+      "type": "js",
+      "sha256": "2143449bdf574946e5ae74744743730df2866aea91daf44c121f2136fdb42809",
+      "raw": 597,
+      "gzip": 350,
+      "brotli": 298,
+      "imports": [
+        "electron/assets/index-rzyWcILr.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/codeHighlight-BBYexzXZ.js": {
+      "type": "js",
+      "sha256": "e5e8ca384f779ab74568e4a251ebd9f483ba7a730279bf307b1c26d3716b3232",
+      "raw": 845,
+      "gzip": 448,
+      "brotli": 375,
+      "imports": [
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/css-D3h14YRZ.js": {
+      "type": "js",
+      "sha256": "55cd0c924635240191c8189f4a500720e61eee267eb2093474bf686ae5820ea6",
+      "raw": 4756,
+      "gzip": 1531,
+      "brotli": 1337,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/css.worker-zQUO28Un.js": {
+      "type": "js",
+      "sha256": "103aaab10b83ccd8d3b44e8e3b9af3e5b04bd067d8c849bafab521189e57f1a5",
+      "raw": 1009654,
+      "gzip": 226381,
+      "brotli": 173947,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/cssMode-IskwSqC5.js": {
+      "type": "js",
+      "sha256": "734b2a17773038d8b8deffd3f9a893d6575d080bb4e89cb3e579a4bdc14d5046",
+      "raw": 32397,
+      "gzip": 8797,
+      "brotli": 7787,
+      "imports": [
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/editor.worker-wFIaQSWA.js": {
+      "type": "js",
+      "sha256": "51348a37bc1beb30733ae07401a7b4c26a3da89daa702b1589bd25f7224209b8",
+      "raw": 230675,
+      "gzip": 70656,
+      "brotli": 58088,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/estree-DKqUHeFj.js": {
+      "type": "js",
+      "sha256": "440ebb6d7014ab978bba596eef2d4f50485bea129e761414a2d433a479f05ae1",
+      "raw": 196398,
+      "gzip": 56462,
+      "brotli": 47523,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/gitLabels-Dnt5Wcgg.js": {
+      "type": "js",
+      "sha256": "be5f303a36f311acbf42f9a07716ba1d0adcceeb8c0a1d06421505cb6ba14032",
+      "raw": 1658,
+      "gzip": 860,
+      "brotli": 682,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/html-BQm5naL7.js": {
+      "type": "js",
+      "sha256": "8c1011a8e26a959035d61db652132a814ef73166d59b23fd7c86ac27d8cb587b",
+      "raw": 143230,
+      "gzip": 45921,
+      "brotli": 39300,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/html-UmyEjvvP.js": {
+      "type": "js",
+      "sha256": "18dfb34f285a765681f553e77d260171772290a752b5af65bb64354656ae9560",
+      "raw": 5306,
+      "gzip": 1563,
+      "brotli": 1383,
+      "imports": [
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/html.worker-MgVplfgg.js": {
+      "type": "js",
+      "sha256": "5bab962be1e6d35cbe42072615dc64db4e8dc2d746a2d84805a61e2f288b82d3",
+      "raw": 672364,
+      "gzip": 175574,
+      "brotli": 141905,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/htmlMode-DHtaNooC.js": {
+      "type": "js",
+      "sha256": "56532ea52b12885c3e3b236ab39499b0d125bc8ae5700dfaa59c35ca4bf1498c",
+      "raw": 32948,
+      "gzip": 8916,
+      "brotli": 7895,
+      "imports": [
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/index-B8eovvAt.css": {
+      "type": "css",
+      "sha256": "e91fb6ea7ade076a713530b0206da1dca03ee1af1087567949e8d88a28f59093",
+      "raw": 374663,
+      "gzip": 65410,
+      "brotli": 52737,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/index-CAdDAIna.js": {
+      "type": "js",
+      "sha256": "ee4ac55d3ceb3f9320a38a57b5c69cd81f1a8bb5c50763fe29c15cde97ff762f",
+      "raw": 42507,
+      "gzip": 13105,
+      "brotli": 11417,
+      "imports": [
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/sessionsStore-DsPkPtup.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/index-rzyWcILr.js": {
+      "type": "js",
+      "sha256": "9bdeb19efd0ad128852bc79e4b192c523a587d49dabd85fa2d7a9f704476238c",
+      "raw": 744603,
+      "gzip": 220694,
+      "brotli": 176242,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/markdown-DMT30cMY.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/MachineUtility-CdutnhcQ.js",
+        "electron/assets/ConsoleSessionPane-hKwboAUv.js",
+        "electron/assets/TwoFactorDialog-DaCmvGVn.js",
+        "electron/assets/EnginesObserver-DsVffvwh.js",
+        "electron/assets/SettingsPage-D7uDAQcV.js",
+        "electron/assets/ReleaseCenter-BXAQiCVc.js",
+        "electron/assets/KanbanAssistant-BI1bWRdn.js",
+        "electron/assets/CiCommands-BtV4FY8n.js",
+        "electron/assets/RunFeed-nmLMDx9e.js",
+        "electron/assets/ConversationSettings-DU2oq8wv.js",
+        "electron/assets/KbUsagePanel-B0yob1At.js",
+        "electron/assets/CommandPalette-BGt6C018.js",
+        "electron/assets/HotkeysCheatSheet-CWHEWsNM.js",
+        "electron/assets/SessionsDialogHost-D70LtP6S.js",
+        "electron/assets/index-CAdDAIna.js",
+        "electron/assets/index-CAdDAIna.js",
+        "electron/assets/AccountPage-BbGMypGf.js",
+        "electron/assets/TaskModal-D505V4Gs.js",
+        "electron/assets/ProjectSettings-VgINxOuj.js",
+        "electron/assets/MachineStatus-Bsdderjn.js",
+        "electron/assets/MachineUtility-CdutnhcQ.js",
+        "electron/assets/KnowledgeBase-BGBTSnBg.js",
+        "electron/assets/ProjectPage-DXvyWFyo.js",
+        "electron/assets/ProjectPage-DXvyWFyo.js",
+        "electron/assets/ProjectPage-DXvyWFyo.js",
+        "electron/assets/ProjectBoard-DaUiehig.js",
+        "electron/assets/GitPane-DlOjw0jH.js",
+        "electron/assets/GitWorkspaceList-yl9cWGPo.js",
+        "electron/assets/GitTargetPane-CwvjJOC5.js",
+        "electron/assets/ContextInspector-C9KUSkrr.js",
+        "electron/assets/SettingsModal-DHkpYNnj.js"
+      ]
+    },
+    "electron/assets/javascript-Cjr9_nWd.js": {
+      "type": "js",
+      "sha256": "d4c3baa0338a2c938470808c47c93d7d1dad35ecb113cf3e823ca23f9985b363",
+      "raw": 1220,
+      "gzip": 639,
+      "brotli": 538,
+      "imports": [
+        "electron/assets/typescript-Bwonw64k.js",
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/json.worker-CdYhYu-b.js": {
+      "type": "js",
+      "sha256": "b2d0945fa71dc92ab153d488f36973e3b213c8c021ae3f61cc932454d96dd562",
+      "raw": 362332,
+      "gzip": 108674,
+      "brotli": 89148,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/jsonMode-cNgN-Zzv.js": {
+      "type": "js",
+      "sha256": "94caed03148b1f8c1d2a2287940997e3363f3320a15849734c7b3082f85e36d4",
+      "raw": 41814,
+      "gzip": 12125,
+      "brotli": 10653,
+      "imports": [
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/kbUsageFormat-BQuTxidS.js": {
+      "type": "js",
+      "sha256": "e7222c7a1c69b0e4990c3a9d4328bf4712a375e6e3b964617a36b80cb66563e2",
+      "raw": 903,
+      "gzip": 614,
+      "brotli": 487,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/markdown-BEHUn5zE.css": {
+      "type": "css",
+      "sha256": "a597b77cebd36d2d2a00f9a3a63322c48a69a0cbc0fdaf59fba0630347ba988e",
+      "raw": 1316,
+      "gzip": 614,
+      "brotli": 492,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/markdown-DMT30cMY.js": {
+      "type": "js",
+      "sha256": "b5bf762427b5a9b79c598cfc080cd77fee131036b71bca8f8599a0b9860c4c6b",
+      "raw": 334187,
+      "gzip": 101096,
+      "brotli": 82934,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/markdown-DSZPf7rp.js": {
+      "type": "js",
+      "sha256": "dd93207d8c63297f54f25e8614236b3b6f078fb254fb8acaac4a9721ecf2a93e",
+      "raw": 4034,
+      "gzip": 1534,
+      "brotli": 1344,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/markdown-DluK_Mm7.js": {
+      "type": "js",
+      "sha256": "8a453745b0b990dc6b8fbfc289144d462b71cbad925921ae549fb29b0842251a",
+      "raw": 135840,
+      "gzip": 50826,
+      "brotli": 43160,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/monacoSetup-Dq5JZMQQ.js": {
+      "type": "js",
+      "sha256": "b6e455f28c6cc502cb42fd037839752df9eb698f0036069fa6eaca8c5a3c2e1e",
+      "raw": 4082340,
+      "gzip": 879985,
+      "brotli": 670479,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": [
+        "electron/assets/tsMode-D9T1aT8I.js",
+        "electron/assets/htmlMode-DHtaNooC.js",
+        "electron/assets/cssMode-IskwSqC5.js",
+        "electron/assets/jsonMode-cNgN-Zzv.js",
+        "electron/assets/javascript-Cjr9_nWd.js",
+        "electron/assets/typescript-Bwonw64k.js",
+        "electron/assets/html-UmyEjvvP.js",
+        "electron/assets/css-D3h14YRZ.js",
+        "electron/assets/markdown-DSZPf7rp.js",
+        "electron/assets/xml-DrLj41Si.js",
+        "electron/assets/yaml-iedHx-9g.js",
+        "electron/assets/babel-C1DoOr4z.js",
+        "electron/assets/estree-DKqUHeFj.js",
+        "electron/assets/typescript-BXE1H07_.js",
+        "electron/assets/estree-DKqUHeFj.js",
+        "electron/assets/html-BQm5naL7.js",
+        "electron/assets/babel-C1DoOr4z.js",
+        "electron/assets/postcss-CPJrcnLZ.js",
+        "electron/assets/estree-DKqUHeFj.js",
+        "electron/assets/postcss-CPJrcnLZ.js",
+        "electron/assets/babel-C1DoOr4z.js",
+        "electron/assets/estree-DKqUHeFj.js",
+        "electron/assets/markdown-DluK_Mm7.js",
+        "electron/assets/yaml-lRk4UCtu.js",
+        "electron/assets/standalone-xTqm29f_.js"
+      ]
+    },
+    "electron/assets/monacoSetup-gm1crtVM.css": {
+      "type": "css",
+      "sha256": "6c5546871a8d75de30869b708af40021480ca90d7c5e571a47b11f3a9608c83d",
+      "raw": 113279,
+      "gzip": 17821,
+      "brotli": 15418,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/postcss-CPJrcnLZ.js": {
+      "type": "js",
+      "sha256": "23fc216755602e5c6d62b18b773331c47df51a33f4d2a0f685ee4dcdbb569058",
+      "raw": 147005,
+      "gzip": 42181,
+      "brotli": 37222,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/qrcode-C2qLkN4o.js": {
+      "type": "js",
+      "sha256": "f27ad5ec53dc17b6035b77714959be11a8a4ac848929d79163e79f26725abdcd",
+      "raw": 24038,
+      "gzip": 9441,
+      "brotli": 8318,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/react-Bbqgwd8K.js": {
+      "type": "js",
+      "sha256": "2e1f2d79f9fe72559664bcb24f762f2f404b46556285f0605967743b0c0aef48",
+      "raw": 143728,
+      "gzip": 46231,
+      "brotli": 40410,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/remote-setup-CnaSamow.js": {
+      "type": "js",
+      "sha256": "7060c308891468d648d9f6e0e63b9499ad26b0c68131ac46d73df73bf4db96c0",
+      "raw": 460,
+      "gzip": 316,
+      "brotli": 248,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/sessionsStore-DsPkPtup.js": {
+      "type": "js",
+      "sha256": "9b3de748e5b49f660fc87fd9cf42082da3a30b75e773edd14d736db2578872ca",
+      "raw": 24741,
+      "gzip": 8052,
+      "brotli": 7075,
+      "imports": [
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/assets/index-rzyWcILr.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/standalone-xTqm29f_.js": {
+      "type": "js",
+      "sha256": "c15ecf923b1f9e270113969921878d2c62f50265ac38af5ab2ff62d474f4256f",
+      "raw": 78421,
+      "gzip": 26498,
+      "brotli": 23069,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/terminal-Bs9Bl2ok.js": {
+      "type": "js",
+      "sha256": "0d98ba2dd560c1a6336e9836385becbdc0ec558e71735c2eaaf9fe5ff1f68a0d",
+      "raw": 289857,
+      "gzip": 71682,
+      "brotli": 59451,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/terminal-LZoznX6r.css": {
+      "type": "css",
+      "sha256": "74bc98ddf724be047787ec218ca121f98e81e79978d18c0b37a3aba938ccb880",
+      "raw": 4081,
+      "gzip": 1663,
+      "brotli": 1200,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/ts.worker-BQHvlPb0.js": {
+      "type": "js",
+      "sha256": "80ae1f8d876bed57c23e721c615b54c90cbe93e8e1b31063f3a4018f0c127717",
+      "raw": 6014213,
+      "gzip": 1359303,
+      "brotli": 992663,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/tsMode-D9T1aT8I.js": {
+      "type": "js",
+      "sha256": "0863ea3072fa6851fde522a9e30cfaf6188350e4b7562594d7ed81469929ac7d",
+      "raw": 23131,
+      "gzip": 6507,
+      "brotli": 5778,
+      "imports": [
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/typescript-BXE1H07_.js": {
+      "type": "js",
+      "sha256": "9e523b63adf73c7b1b3517ba48ca83511f8c64b49c58d95495d95a7ce00c5675",
+      "raw": 451786,
+      "gzip": 122185,
+      "brotli": 100506,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/assets/typescript-Bwonw64k.js": {
+      "type": "js",
+      "sha256": "1e6c1a60e539607f3f72946aff42b9bbc150556d3f0ee0221fb9679a9bdf2de7",
+      "raw": 5699,
+      "gzip": 2334,
+      "brotli": 2069,
+      "imports": [
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/xml-DrLj41Si.js": {
+      "type": "js",
+      "sha256": "01d8fb91d1a24e76d97f9b103d2af3da4952c7d4265465dd23dc870186898d2b",
+      "raw": 2705,
+      "gzip": 1131,
+      "brotli": 980,
+      "imports": [
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/yaml-iedHx-9g.js": {
+      "type": "js",
+      "sha256": "580c73efd8fb30b3bd396973c688c34a1670b0bfb46893770d47bbef5ad616d6",
+      "raw": 4307,
+      "gzip": 1687,
+      "brotli": 1499,
+      "imports": [
+        "electron/assets/monacoSetup-Dq5JZMQQ.js",
+        "electron/assets/react-Bbqgwd8K.js"
+      ],
+      "dynamicImports": []
+    },
+    "electron/assets/yaml-lRk4UCtu.js": {
+      "type": "js",
+      "sha256": "554dc997f2e3bb6dbb33a97aa94d8e1ffbc518b08caef19ec36e83bdd0965bb8",
+      "raw": 120718,
+      "gzip": 38548,
+      "brotli": 34692,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/theme-init.js": {
+      "type": "js",
+      "sha256": "2a996011959a0711f225d9ea1fea8dede11eb16cdea514c3c8ff140bf95322eb",
+      "raw": 476,
+      "gzip": 284,
+      "brotli": 221,
+      "imports": [],
+      "dynamicImports": []
+    },
+    "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css": {
+      "type": "css",
+      "sha256": "3956c1eabc2d78b29faa96f11edf84714ccffa49422feb842608ff43c8674158",
+      "raw": 8716,
+      "gzip": 695,
+      "brotli": 538,
+      "imports": [],
+      "dynamicImports": [],
+      "source": "https://fonts.googleapis.com"
+    }
+  },
+  "routes": {
+    "web/chat/cold": {
+      "ready": true,
+      "initial": [
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 3.109000086784363,
+          "duration": 3.5019999742507935,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 3.1890000104904175,
+          "duration": 130.39100003242493,
+          "transfer": 814,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXkOW38J.js",
+          "start": 3.2239999771118164,
+          "duration": 7.53000009059906,
+          "transfer": 761208,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-Ztm9MH8b.js",
+          "start": 3.2640000581741333,
+          "duration": 5.917999982833862,
+          "transfer": 143819,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-B45geBhu.js",
+          "start": 3.2899999618530273,
+          "duration": 6.925999999046326,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 3.315999984741211,
+          "duration": 4.101000070571899,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-CWZsbnbV.css",
+          "start": 3.343000054359436,
+          "duration": 6.4049999713897705,
+          "transfer": 376788,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1239066,
+          "gzip": 373445,
+          "brotli": 303954
+        },
+        "css": {
+          "raw": 386522,
+          "gzip": 67031,
+          "brotli": 53943
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/chat/warm": {
+      "ready": true,
+      "initial": [
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 4.041000008583069,
+          "duration": 2.5049999952316284,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 4.140000104904175,
+          "duration": 0.07999992370605469,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXkOW38J.js",
+          "start": 4.243000030517578,
+          "duration": 2.8669999837875366,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-Ztm9MH8b.js",
+          "start": 4.2850000858306885,
+          "duration": 3.884999990463257,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-B45geBhu.js",
+          "start": 4.321000099182129,
+          "duration": 4.574000000953674,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 4.358000040054321,
+          "duration": 3.40500009059906,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-CWZsbnbV.css",
+          "start": 4.397000074386597,
+          "duration": 4.052999973297119,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1239066,
+          "gzip": 373445,
+          "brotli": 303954
+        },
+        "css": {
+          "raw": 386522,
+          "gzip": 67031,
+          "brotli": 53943
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/account/cold": {
+      "ready": true,
+      "initial": [
+        "web/assets/AccountPage-j-2oCEoK.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 4.177999973297119,
+          "duration": 3.7699999809265137,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 4.271999955177307,
+          "duration": 112.40200006961823,
+          "transfer": 837,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXkOW38J.js",
+          "start": 4.317000031471252,
+          "duration": 9.376999855041504,
+          "transfer": 761208,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-Ztm9MH8b.js",
+          "start": 4.351999878883362,
+          "duration": 6.100000023841858,
+          "transfer": 143819,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-B45geBhu.js",
+          "start": 4.382999897003174,
+          "duration": 8.409000039100647,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 4.414999961853027,
+          "duration": 4.2209999561309814,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-CWZsbnbV.css",
+          "start": 4.444999933242798,
+          "duration": 6.731000065803528,
+          "transfer": 376788,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/AccountPage-j-2oCEoK.js",
+          "start": 137.93799996376038,
+          "duration": 14.878000020980835,
+          "transfer": 7611,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/applicationCatalog-Cez8vdJp.js",
+          "start": 138.07099997997284,
+          "duration": 15.902999997138977,
+          "transfer": 11794,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1257852,
+          "gzip": 379638,
+          "brotli": 309180
+        },
+        "css": {
+          "raw": 386522,
+          "gzip": 67031,
+          "brotli": 53943
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/AccountPage-j-2oCEoK.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/account/warm": {
+      "ready": true,
+      "initial": [
+        "web/assets/AccountPage-j-2oCEoK.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 3.5749999284744263,
+          "duration": 1.7410000562667847,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 3.663999915122986,
+          "duration": 0.08000004291534424,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXkOW38J.js",
+          "start": 3.7649999856948853,
+          "duration": 2.080999970436096,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-Ztm9MH8b.js",
+          "start": 3.8079999685287476,
+          "duration": 2.558000087738037,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-B45geBhu.js",
+          "start": 3.843000054359436,
+          "duration": 3.3879998922348022,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 3.8910000324249268,
+          "duration": 2.146999955177307,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-CWZsbnbV.css",
+          "start": 3.9259999990463257,
+          "duration": 2.705999970436096,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/AccountPage-j-2oCEoK.js",
+          "start": 37.668999910354614,
+          "duration": 3.0880000591278076,
+          "transfer": 244,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/applicationCatalog-Cez8vdJp.js",
+          "start": 37.73800003528595,
+          "duration": 5.85699999332428,
+          "transfer": 244,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1257852,
+          "gzip": 379638,
+          "brotli": 309180
+        },
+        "css": {
+          "raw": 386522,
+          "gzip": 67031,
+          "brotli": 53943
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/AccountPage-j-2oCEoK.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/settings/cold": {
+      "ready": true,
+      "initial": [
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/SettingsModal-COQVASpo.js",
+        "web/assets/chatInstructions-8I7vfqnS.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 3.4790000915527344,
+          "duration": 5.661999940872192,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 3.5690001249313354,
+          "duration": 115.17999994754791,
+          "transfer": 837,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXkOW38J.js",
+          "start": 3.627000093460083,
+          "duration": 8.167999982833862,
+          "transfer": 761208,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-Ztm9MH8b.js",
+          "start": 3.664000153541565,
+          "duration": 6.58299994468689,
+          "transfer": 143819,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-B45geBhu.js",
+          "start": 3.6940001249313354,
+          "duration": 7.4049999713897705,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 3.7250001430511475,
+          "duration": 4.215999960899353,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-CWZsbnbV.css",
+          "start": 3.7540000677108765,
+          "duration": 5.733000040054321,
+          "transfer": 376788,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/SettingsModal-COQVASpo.js",
+          "start": 170.961000084877,
+          "duration": 8.605999946594238,
+          "transfer": 34779,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/chatInstructions-8I7vfqnS.js",
+          "start": 171.03800010681152,
+          "duration": 7.898999929428101,
+          "transfer": 928,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+          "start": 171.07500004768372,
+          "duration": 8.004999995231628,
+          "transfer": 3661,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1277509,
+          "gzip": 384817,
+          "brotli": 313686
+        },
+        "css": {
+          "raw": 386522,
+          "gzip": 67031,
+          "brotli": 53943
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/SettingsModal-COQVASpo.js",
+        "web/assets/chatInstructions-8I7vfqnS.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/settings/warm": {
+      "ready": true,
+      "initial": [
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/SettingsModal-COQVASpo.js",
+        "web/assets/chatInstructions-8I7vfqnS.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 3.7279999256134033,
+          "duration": 2.134000062942505,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 3.840000033378601,
+          "duration": 0.08399999141693115,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXkOW38J.js",
+          "start": 3.950000047683716,
+          "duration": 2.890999913215637,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-Ztm9MH8b.js",
+          "start": 3.9919999837875366,
+          "duration": 3.252000093460083,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-B45geBhu.js",
+          "start": 4.0269999504089355,
+          "duration": 5.136000037193298,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 4.064999938011169,
+          "duration": 4.276000022888184,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-CWZsbnbV.css",
+          "start": 4.103000044822693,
+          "duration": 4.648999929428101,
+          "transfer": 245,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/SettingsModal-COQVASpo.js",
+          "start": 43.675999999046326,
+          "duration": 7.290000081062317,
+          "transfer": 244,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/chatInstructions-8I7vfqnS.js",
+          "start": 43.73199999332428,
+          "duration": 7.705999970436096,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+          "start": 43.76800000667572,
+          "duration": 8.01800000667572,
+          "transfer": 243,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 304,
+          "fromCache": true,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1277509,
+          "gzip": 384817,
+          "brotli": 313686
+        },
+        "css": {
+          "raw": 386522,
+          "gzip": 67031,
+          "brotli": 53943
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/SettingsModal-COQVASpo.js",
+        "web/assets/chatInstructions-8I7vfqnS.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ]
+    },
+    "web/account/navigation": {
+      "ready": true,
+      "initial": [
+        "web/assets/AccountPage-j-2oCEoK.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 3.6169999837875366,
+          "duration": 3.0149999856948853,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 3.7029999494552612,
+          "duration": 141.93700003623962,
+          "transfer": 837,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXkOW38J.js",
+          "start": 3.7389999628067017,
+          "duration": 7.10699999332428,
+          "transfer": 761208,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-Ztm9MH8b.js",
+          "start": 3.7709999084472656,
+          "duration": 4.898000121116638,
+          "transfer": 143819,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-B45geBhu.js",
+          "start": 3.8019999265670776,
+          "duration": 6.193000078201294,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 3.8289999961853027,
+          "duration": 3.0160000324249268,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-CWZsbnbV.css",
+          "start": 3.8539998531341553,
+          "duration": 5.739000082015991,
+          "transfer": 376788,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/AccountPage-j-2oCEoK.js",
+          "start": 5207.193999886513,
+          "duration": 3.7260000705718994,
+          "transfer": 7611,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/applicationCatalog-Cez8vdJp.js",
+          "start": 5207.350999951363,
+          "duration": 3.8109999895095825,
+          "transfer": 11794,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1257852,
+          "gzip": 379638,
+          "brotli": 309180
+        },
+        "css": {
+          "raw": 386522,
+          "gzip": 67031,
+          "brotli": 53943
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/AccountPage-j-2oCEoK.js",
+        "web/assets/applicationCatalog-Cez8vdJp.js"
+      ]
+    },
+    "web/settings/navigation": {
+      "ready": true,
+      "initial": [
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/SettingsModal-COQVASpo.js",
+        "web/assets/chatInstructions-8I7vfqnS.js",
+        "web/assets/index-CWZsbnbV.css",
+        "web/assets/index-DXkOW38J.js",
+        "web/assets/markdown-B45geBhu.js",
+        "web/assets/markdown-BEHUn5zE.css",
+        "web/assets/react-Ztm9MH8b.js",
+        "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "web/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "web/theme-init.js",
+          "start": 3.277999997138977,
+          "duration": 3.916000008583069,
+          "transfer": 783,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 3.365000009536743,
+          "duration": 116.04499995708466,
+          "transfer": 837,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-DXkOW38J.js",
+          "start": 3.402999997138977,
+          "duration": 12.105999946594238,
+          "transfer": 761208,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/react-Ztm9MH8b.js",
+          "start": 3.434000015258789,
+          "duration": 7.6269999742507935,
+          "transfer": 143819,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-B45geBhu.js",
+          "start": 3.4670000076293945,
+          "duration": 11.05400002002716,
+          "transfer": 334499,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/markdown-BEHUn5zE.css",
+          "start": 3.4950000047683716,
+          "duration": 4.08899998664856,
+          "transfer": 1610,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/index-CWZsbnbV.css",
+          "start": 3.527999997138977,
+          "duration": 9.40499997138977,
+          "transfer": 376788,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/SettingsModal-COQVASpo.js",
+          "start": 5200,
+          "duration": 4.416999936103821,
+          "transfer": 34779,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/chatInstructions-8I7vfqnS.js",
+          "start": 5200.162999868393,
+          "duration": 3.2880001068115234,
+          "transfer": 928,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+          "start": 5200.24899995327,
+          "duration": 3.993000030517578,
+          "transfer": 3661,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1277509,
+          "gzip": 384817,
+          "brotli": 313686
+        },
+        "css": {
+          "raw": 386522,
+          "gzip": 67031,
+          "brotli": 53943
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "web/assets/LlmSettingsEditor-CGkWVXq2.js",
+        "web/assets/SettingsModal-COQVASpo.js",
+        "web/assets/chatInstructions-8I7vfqnS.js"
+      ]
+    },
+    "electron/chat/cold": {
+      "ready": true,
+      "initial": [
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 18.033999919891357,
+          "duration": 15.842000007629395,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 34.145999908447266,
+          "duration": 374.7849999666214,
+          "transfer": 1185,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-rzyWcILr.js",
+          "start": 34.25100004673004,
+          "duration": 3.868000030517578,
+          "transfer": 744603,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-Bbqgwd8K.js",
+          "start": 34.31499993801117,
+          "duration": 5.917999982833862,
+          "transfer": 143728,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DMT30cMY.js",
+          "start": 34.355000019073486,
+          "duration": 5.197999954223633,
+          "transfer": 334187,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-BEHUn5zE.css",
+          "start": 34.394999980926514,
+          "duration": 0.5230000019073486,
+          "transfer": 1316,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-B8eovvAt.css",
+          "start": 34.42999994754791,
+          "duration": 0.7409999370574951,
+          "transfer": 374663,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1222994,
+          "gzip": 368305,
+          "brotli": 299807
+        },
+        "css": {
+          "raw": 384695,
+          "gzip": 66719,
+          "brotli": 53767
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/chat/warm": {
+      "ready": true,
+      "initial": [
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 19.311999917030334,
+          "duration": 0.437000036239624,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 19.962999939918518,
+          "duration": 3.347000002861023,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-rzyWcILr.js",
+          "start": 20.04199993610382,
+          "duration": 7.156000018119812,
+          "transfer": 744603,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-Bbqgwd8K.js",
+          "start": 20.087999939918518,
+          "duration": 6.801999926567078,
+          "transfer": 143728,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DMT30cMY.js",
+          "start": 20.122999906539917,
+          "duration": 6.062000036239624,
+          "transfer": 334187,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-BEHUn5zE.css",
+          "start": 20.163999915122986,
+          "duration": 5.672000050544739,
+          "transfer": 1316,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-B8eovvAt.css",
+          "start": 20.20199990272522,
+          "duration": 2.5290000438690186,
+          "transfer": 374663,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1222994,
+          "gzip": 368305,
+          "brotli": 299807
+        },
+        "css": {
+          "raw": 384695,
+          "gzip": 66719,
+          "brotli": 53767
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/account/cold": {
+      "ready": true,
+      "initial": [
+        "electron/assets/AccountPage-BbGMypGf.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 22.04699993133545,
+          "duration": 0.48399996757507324,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 22.782999992370605,
+          "duration": 129.97199988365173,
+          "transfer": 837,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-rzyWcILr.js",
+          "start": 22.881999969482422,
+          "duration": 5.869999885559082,
+          "transfer": 744603,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-Bbqgwd8K.js",
+          "start": 22.937999844551086,
+          "duration": 2.665000081062317,
+          "transfer": 143728,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DMT30cMY.js",
+          "start": 23.006999969482422,
+          "duration": 7.340000033378601,
+          "transfer": 334187,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-BEHUn5zE.css",
+          "start": 23.05299997329712,
+          "duration": 2.2139999866485596,
+          "transfer": 1316,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-B8eovvAt.css",
+          "start": 23.092999935150146,
+          "duration": 2.75600004196167,
+          "transfer": 374663,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/AccountPage-BbGMypGf.js",
+          "start": 174.00999987125397,
+          "duration": 2.6750000715255737,
+          "transfer": 7262,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/applicationCatalog-Cez8vdJp.js",
+          "start": 174.09799993038177,
+          "duration": 2.9140000343322754,
+          "transfer": 11484,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1241740,
+          "gzip": 374466,
+          "brotli": 305006
+        },
+        "css": {
+          "raw": 384695,
+          "gzip": 66719,
+          "brotli": 53767
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/AccountPage-BbGMypGf.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/account/warm": {
+      "ready": true,
+      "initial": [
+        "electron/assets/AccountPage-BbGMypGf.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 26.049999952316284,
+          "duration": 0.5410001277923584,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 26.878000020980835,
+          "duration": 3.6290000677108765,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-rzyWcILr.js",
+          "start": 26.985000014305115,
+          "duration": 2.7330000400543213,
+          "transfer": 744603,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-Bbqgwd8K.js",
+          "start": 27.050999999046326,
+          "duration": 9.309000015258789,
+          "transfer": 143728,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DMT30cMY.js",
+          "start": 27.123000025749207,
+          "duration": 8.650000095367432,
+          "transfer": 334187,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-BEHUn5zE.css",
+          "start": 27.177000045776367,
+          "duration": 5.365000009536743,
+          "transfer": 1316,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-B8eovvAt.css",
+          "start": 27.217000007629395,
+          "duration": 5.580999970436096,
+          "transfer": 374663,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/AccountPage-BbGMypGf.js",
+          "start": 75.18500006198883,
+          "duration": 1.1209999322891235,
+          "transfer": 7262,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/applicationCatalog-Cez8vdJp.js",
+          "start": 75.28900003433228,
+          "duration": 1.1299999952316284,
+          "transfer": 11484,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1241740,
+          "gzip": 374466,
+          "brotli": 305006
+        },
+        "css": {
+          "raw": 384695,
+          "gzip": 66719,
+          "brotli": 53767
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/AccountPage-BbGMypGf.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/settings/cold": {
+      "ready": true,
+      "initial": [
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/SettingsModal-DHkpYNnj.js",
+        "electron/assets/chatInstructions-Dxyb0ymF.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 23.555999994277954,
+          "duration": 0.5240000486373901,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 24.375999927520752,
+          "duration": 140.83700001239777,
+          "transfer": 837,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-rzyWcILr.js",
+          "start": 24.486999988555908,
+          "duration": 6.226999998092651,
+          "transfer": 744603,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-Bbqgwd8K.js",
+          "start": 24.550000071525574,
+          "duration": 8.169000029563904,
+          "transfer": 143728,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DMT30cMY.js",
+          "start": 24.592999935150146,
+          "duration": 7.517000079154968,
+          "transfer": 334187,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-BEHUn5zE.css",
+          "start": 24.662999987602234,
+          "duration": 5.695000052452087,
+          "transfer": 1316,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-B8eovvAt.css",
+          "start": 24.718000054359436,
+          "duration": 2.6799999475479126,
+          "transfer": 374663,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/SettingsModal-DHkpYNnj.js",
+          "start": 203.70300006866455,
+          "duration": 5.432999849319458,
+          "transfer": 34334,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/chatInstructions-Dxyb0ymF.js",
+          "start": 203.81300008296967,
+          "duration": 4.617999911308289,
+          "transfer": 597,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+          "start": 203.87999999523163,
+          "duration": 7.478000044822693,
+          "transfer": 3225,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1261150,
+          "gzip": 379569,
+          "brotli": 309462
+        },
+        "css": {
+          "raw": 384695,
+          "gzip": 66719,
+          "brotli": 53767
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/SettingsModal-DHkpYNnj.js",
+        "electron/assets/chatInstructions-Dxyb0ymF.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/settings/warm": {
+      "ready": true,
+      "initial": [
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/SettingsModal-DHkpYNnj.js",
+        "electron/assets/chatInstructions-Dxyb0ymF.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 22.799999952316284,
+          "duration": 0.4930000305175781,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 23.596999883651733,
+          "duration": 4.550000071525574,
+          "transfer": 0,
+          "status": 200,
+          "fromCache": true,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-rzyWcILr.js",
+          "start": 23.716000080108643,
+          "duration": 7.681999921798706,
+          "transfer": 744603,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-Bbqgwd8K.js",
+          "start": 23.81499993801117,
+          "duration": 10.110000014305115,
+          "transfer": 143728,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DMT30cMY.js",
+          "start": 23.868000030517578,
+          "duration": 9.516999959945679,
+          "transfer": 334187,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-BEHUn5zE.css",
+          "start": 23.91599988937378,
+          "duration": 3.874000072479248,
+          "transfer": 1316,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-B8eovvAt.css",
+          "start": 23.961999893188477,
+          "duration": 4.199000120162964,
+          "transfer": 374663,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/SettingsModal-DHkpYNnj.js",
+          "start": 68.54999995231628,
+          "duration": 3.6260000467300415,
+          "transfer": 34334,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/chatInstructions-Dxyb0ymF.js",
+          "start": 68.64900004863739,
+          "duration": 3.831999897956848,
+          "transfer": 597,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+          "start": 68.71399998664856,
+          "duration": 3.680999994277954,
+          "transfer": 3225,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1261150,
+          "gzip": 379569,
+          "brotli": 309462
+        },
+        "css": {
+          "raw": 384695,
+          "gzip": 66719,
+          "brotli": 53767
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/SettingsModal-DHkpYNnj.js",
+        "electron/assets/chatInstructions-Dxyb0ymF.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ]
+    },
+    "electron/account/navigation": {
+      "ready": true,
+      "initial": [
+        "electron/assets/AccountPage-BbGMypGf.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 23.00100004673004,
+          "duration": 0.5759999752044678,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 23.872000098228455,
+          "duration": 244.41299998760223,
+          "transfer": 837,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-rzyWcILr.js",
+          "start": 23.980000138282776,
+          "duration": 7.472999930381775,
+          "transfer": 744603,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-Bbqgwd8K.js",
+          "start": 24.046000123023987,
+          "duration": 6.353999972343445,
+          "transfer": 143728,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DMT30cMY.js",
+          "start": 24.128000020980835,
+          "duration": 6.616999983787537,
+          "transfer": 334187,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-BEHUn5zE.css",
+          "start": 24.19600009918213,
+          "duration": 2.999000072479248,
+          "transfer": 1316,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-B8eovvAt.css",
+          "start": 24.242000102996826,
+          "duration": 3.1710000038146973,
+          "transfer": 374663,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/AccountPage-BbGMypGf.js",
+          "start": 5655.195000052452,
+          "duration": 3.617000102996826,
+          "transfer": 7262,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/applicationCatalog-Cez8vdJp.js",
+          "start": 5655.338000059128,
+          "duration": 3.308000087738037,
+          "transfer": 11484,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1241740,
+          "gzip": 374466,
+          "brotli": 305006
+        },
+        "css": {
+          "raw": 384695,
+          "gzip": 66719,
+          "brotli": 53767
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/AccountPage-BbGMypGf.js",
+        "electron/assets/applicationCatalog-Cez8vdJp.js"
+      ]
+    },
+    "electron/settings/navigation": {
+      "ready": true,
+      "initial": [
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/SettingsModal-DHkpYNnj.js",
+        "electron/assets/chatInstructions-Dxyb0ymF.js",
+        "electron/assets/index-B8eovvAt.css",
+        "electron/assets/index-rzyWcILr.js",
+        "electron/assets/markdown-BEHUn5zE.css",
+        "electron/assets/markdown-DMT30cMY.js",
+        "electron/assets/react-Bbqgwd8K.js",
+        "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+        "electron/theme-init.js"
+      ],
+      "waterfall": [
+        {
+          "resource": "electron/theme-init.js",
+          "start": 26.542999982833862,
+          "duration": 0.5609999895095825,
+          "transfer": 476,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/external/266ff3e00fc1de3cd85844aa2e83724d6877f529d05fadc8c81b2bf72db51328.css",
+          "start": 27.396000027656555,
+          "duration": 118.25,
+          "transfer": 837,
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-rzyWcILr.js",
+          "start": 27.48800003528595,
+          "duration": 7.318000078201294,
+          "transfer": 744603,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/react-Bbqgwd8K.js",
+          "start": 27.54100000858307,
+          "duration": 2.8359999656677246,
+          "transfer": 143728,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-DMT30cMY.js",
+          "start": 27.615000009536743,
+          "duration": 6.272000074386597,
+          "transfer": 334187,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/markdown-BEHUn5zE.css",
+          "start": 27.682000041007996,
+          "duration": 2.4469999074935913,
+          "transfer": 1316,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/index-B8eovvAt.css",
+          "start": 27.7260000705719,
+          "duration": 2.944000005722046,
+          "transfer": 374663,
+          "decoded": 0,
+          "initiator": "parser",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/SettingsModal-DHkpYNnj.js",
+          "start": 5436.710000038147,
+          "duration": 3.3820000886917114,
+          "transfer": 34334,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/chatInstructions-Dxyb0ymF.js",
+          "start": 5436.8550000190735,
+          "duration": 3.024999976158142,
+          "transfer": 597,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        },
+        {
+          "resource": "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+          "start": 5436.9240000247955,
+          "duration": 3.0740000009536743,
+          "transfer": 3225,
+          "decoded": 0,
+          "initiator": "script",
+          "status": 200,
+          "fromCache": false,
+          "ok": true
+        }
+      ],
+      "totals": {
+        "js": {
+          "raw": 1261150,
+          "gzip": 379569,
+          "brotli": 309462
+        },
+        "css": {
+          "raw": 384695,
+          "gzip": 66719,
+          "brotli": 53767
+        }
+      },
+      "errors": [],
+      "additionalResources": [
+        "electron/assets/LlmSettingsEditor-o8l8TrT9.js",
+        "electron/assets/SettingsModal-DHkpYNnj.js",
+        "electron/assets/chatInstructions-Dxyb0ymF.js"
+      ]
+    }
+  },
+  "tools": {
+    "web": "151.0.7922.34",
+    "electron": "33.4.11"
+  },
+  "activations": {
+    "web/editor": {
+      "ready": true,
+      "workers": [
+        "ts.worker-Ds4I2Msu.js"
+      ]
+    },
+    "electron/editor": {
+      "ready": true,
+      "workers": [
+        "ts.worker-BQHvlPb0.js"
+      ]
+    }
+  }
+}

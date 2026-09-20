@@ -1,1 +1,1 @@
-import '@testing-library/jest-dom/vitest'
+export * from '@sislexa/web-reader/ui/test/vitest.setup'

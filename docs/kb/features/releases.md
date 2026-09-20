@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-09-17
-checked: a782dc51
+updated: 2026-09-20
+checked: 48ab7ed2
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -35,6 +35,19 @@ areas:
 ---
 
 # Версионные release-ветки и публикация в production
+
+## Source-owned tool releases
+
+Make, Playwright Reader and Web Reader publish their own tagged source archives
+and own their API/UI release metadata. Core pins the archive integrity and source
+commit through adapters; `scripts/external-workspace.mjs` runs their complete
+checks. Isolated application builds copy only reachable locked archives, and
+frontend builds preserve the upstream panel version/commit. The operator flow in
+[deployment](../deploy.md#independent-tool-source-releases) builds the exact three
+repository revisions and uses installed `voicechat-deploy` for replacement while
+preserving the existing Compose override chain. A manual cutover is verified
+through runtime health and artifact metadata; it does not create a synthetic
+Release Center run in the database.
 
 ## Release-ветки
 

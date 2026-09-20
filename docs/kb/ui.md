@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-20
-checked: 7ed88f46
+checked: 48ab7ed2
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -59,6 +59,22 @@ areas:
 `playwright-reader-app`. `WebReaderFrame` остаётся в `web-reader-app`. Общие редакторы,
 ToolFrame, popup, предпочтения и тестовые порты находятся в `ui-foundation`;
 `packages/ui` владеет общим App, чатом, навигацией, стором и транспортными адаптерами.
+
+UI Foundation 0.1.1 exposes `test/uiRender` and the Monaco snippet translator as
+package exports. Shared fixture timestamps live in `test/fixtures/time`; those
+fixtures no longer import host-only Chat test files. The host retains compatibility
+re-exports. Monaco's editor declaration strings are licensed assets under
+`src/components/code/type-libs`, with versions and hashes in `sources.json`.
+Regenerate them using `node packages/ui-foundation/scripts/update-monaco-types.mjs`
+after updating the corresponding type dependencies. Relative imports into the
+monorepo's root `node_modules` fail when UI Foundation is installed from an archive;
+the bundled assets remove that layout dependency without changing editor content.
+
+The Make and Reader workspaces are now adapters for `@sislexa/*` releases.
+Storybook discovers their actual installed CSF files: re-export-only stories are
+not indexable by Storybook. The three axe shards use an exhaustive glob over the
+installed tool packages, and the coverage guard recognizes both local and external
+workspace paths. This keeps all 745 existing story checks in the aggregate suite.
 
 Реальный `App.tsx` подключает четыре панели через `createApplicationPanel`, включая
 surface `shared` у Make; их исходники не импортируются в bundle оболочки.
@@ -2348,7 +2364,7 @@ Toast defaults remain three visible messages, four seconds for ordinary messages
 
 `ConnectionStatus` listens to the common realtime bridge's disconnect/connect events. A disconnection episode preserves its start time across retries; the banner exposes duration and retry, and recovery emits one short toast. The WebSocket client tracks and cancels its reconnect timer to avoid parallel retry loops. Intentional authentication reconnects do not start loss episodes. Individual machine status remains separate.
 
-The shell has a compact toolbar and bottom navigation at widths up to 720px, with safe-area padding. Navigation publishes its measured height as `--vc-shell-bottom`, which the toast viewport adds to its composer offset. More opens the sidebar, or the command palette in full-screen tool layouts without a sidebar. Mobile chat splits use the available parent height instead of `100dvh`, keeping tool content inside the space reserved by the shell. The four-step tour is scoped to a signed-in user's name and persists completion or skipping. Story surfaces are `UI/CommandPalette`, `Shell/NotificationCenter`, `Shell/ConnectionBanner` and `Shell/MobileNavigation`; shared story axe checks cover them. CHAT-457 DOM cases carry TC1–TC9 markers; the real Chromium layout scenario in `e2e/imageStudioLayout.e2e.test.ts` covers 390px and 200% zoom.
+The shell has a compact toolbar and bottom navigation at widths up to 720px, with safe-area padding. Navigation publishes its measured height as `--vc-shell-bottom`, which the toast viewport adds to its composer offset. More opens the sidebar, or the command palette in full-screen tool layouts without a sidebar. Mobile chat splits use the available parent height instead of `100dvh`, keeping tool content inside the space reserved by the shell. The four-step tour is scoped to a signed-in user's name and persists completion or skipping. Story surfaces are `UI/CommandPalette`, `Shell/NotificationCenter`, `Shell/ConnectionBanner` and `Shell/MobileNavigation`; shared story axe checks cover them. CHAT-457 DOM cases carry TC1–TC9 markers; the real Chromium layout scenario in `e2e/imageStudioLayout.e2e.test.ts` covers 390px and 200% zoom. The navigation button width override must also use `!important`: UI Kit sets a global mobile minimum width with that priority. Five 40px minimum columns overflow the 195 CSS-pixel width available at 200% zoom. The navigation keeps the shared minimum target height while allowing its five columns to shrink. Likewise, the mobile Make/Console one-column grid must match the specificity of their collapsed desktop selectors. Otherwise a fixed-position mobile sidebar leaves the content auto-placed in a zero-width desktop column.
 
 Клавиши описаны **картой биндингов** — `lib/useHotkeys.ts` больше не знает жёстко про две клавиши. Биндинг — это `{ combo, onDown, onUp?, inInput?, ignoreModifiers?, enabled? }`; разбор комбинации, сверка с событием и подпись для показа человеку лежат в `lib/hotkeys.ts` (чистые функции, их читают и хук, и шпаргалка, и кнопка «⌘K» в сайдбаре). `mod` в комбинации — «команда платформы»: при сверке подходят и `metaKey`, и `ctrlKey`, при показе — `⌘` на macOS и `Ctrl` на остальных (`formatCombo`). Пробел и Esc сверяются по `event.code` (раскладка на них не влияет), буквы — по `event.key` (⌘K на русской раскладке даёт `key: 'k'`).
 
