@@ -52,6 +52,49 @@ const definition = (
   kind: "service",
   ...options,
 });
+// Distribution peers must remain in isolated compatibility-adapter build contexts.
+const EXTERNAL_TOOL_BUILD_DEPENDENCIES: Record<string, string[]> = {
+  "playwright-reader": [
+    "component-runtime"
+  ],
+  "web-reader": [
+    "browser-contracts",
+    "component-runtime",
+    "playwright-reader-contracts",
+    "web-reader-contracts"
+  ],
+  "make": [
+    "component-runtime"
+  ],
+  "make-contracts": [
+    "component-runtime"
+  ],
+  "playwright-reader-ui": [
+    "browser-contracts",
+    "component-runtime",
+    "playwright-reader-contracts"
+  ],
+  "playwright-reader-contracts": [
+    "browser-contracts",
+    "component-runtime"
+  ],
+  "web-reader-contracts": [
+    "browser-contracts",
+    "component-runtime",
+    "playwright-reader-contracts",
+    "web-reader"
+  ],
+  "make-ui": [
+    "component-runtime"
+  ],
+  "web-reader-ui": [
+    "browser-contracts",
+    "component-runtime",
+    "playwright-reader-contracts",
+    "web-reader-contracts",
+    "web-reader"
+  ]
+};
 export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
   definition("core", "Ядро", "apps/server", {
     optionalRuntimeDependencies: [
@@ -75,6 +118,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     healthPath: "/api/health",
     dataPaths: ["database", "users", "conversations"],
     buildDependencies: [
+      "component-runtime",
       "shared",
       "sessions-core",
       "make-contracts",
@@ -337,6 +381,10 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
         buildDependencies: id === "desktop" ? ["shared", "web"] : ["shared"],
       }),
   ),
+  definition("component-runtime", "Component runtime", "packages/component-runtime", {
+    kind: "library", workspaces: ["@sislexa/component-runtime"],
+    buildDependencies: ["shared"], contractPaths: ["packages/component-runtime"],
+  }),
   ...(
     [
       "shared",
@@ -378,7 +426,9 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       } : {}),
     }),
   ),
-];
+].map(application => ({ ...application, buildDependencies: [...new Set([
+  ...application.buildDependencies, ...(EXTERNAL_TOOL_BUILD_DEPENDENCIES[application.id] ?? [])
+])] }));
 export function validateApplicationCatalog(
   catalog: readonly ApplicationDefinition[],
 ): void {

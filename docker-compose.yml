@@ -26,6 +26,11 @@ services:
     build:
       context: .
       target: server-runtime
+      args:
+        VC_APPLICATION_VERSION: ${VC_APPLICATION_VERSION:-}
+        VC_APPLICATION_API_VERSION: ${VC_APPLICATION_API_VERSION:-}
+        VC_APPLICATION_DATA_VERSION: ${VC_APPLICATION_DATA_VERSION:-}
+        VC_APPLICATION_COMMIT: ${VC_APPLICATION_COMMIT:-}
     image: voicechat-server
     mem_limit: 1g
     ports:

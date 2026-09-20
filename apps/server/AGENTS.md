@@ -62,7 +62,7 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `boundary.test.ts`: ядро импортирует из Make только типы и `createMakeModule`),
 `imageStudioBridge/` (студия живёт в `@voicechat/image-studio`: локальный порт к данным/LLM,
 HTTP-прокси и удалённый `ImageStudioService`; ядро в remote не открывает каталог галерей),
-`routes/internal.ts` (внутренний API `/internal/*` для соседних сервисов под `VC_INTERNAL_TOKEN`),
+`routes/internal.ts` (internal `/internal/*` RPC with exact provider scopes in managed mode; explicit legacy scopes retain `VC_INTERNAL_TOKEN`),
 `util/` (общие утилиты без владельца: `publicHost`).
 
 ## Тесты

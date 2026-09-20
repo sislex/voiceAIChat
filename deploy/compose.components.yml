@@ -1,0 +1,33 @@
+# Append after compose.tools.yml once provider registries and consumer tokens exist.
+services:
+  voicechat:
+    environment:
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/core/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/core/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/core/provider:/run/sislexa/provider
+  make:
+    environment:
+      VC_INTERNAL_TOKEN: ""
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/make/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/make/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/make/provider:/run/sislexa/provider
+  playwright-reader:
+    environment:
+      VC_INTERNAL_TOKEN: ""
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/playwright-reader/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/playwright-reader/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/playwright-reader/provider:/run/sislexa/provider
+  reader:
+    environment:
+      VC_INTERNAL_TOKEN: ""
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/web-reader/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/web-reader/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/web-reader/provider:/run/sislexa/provider

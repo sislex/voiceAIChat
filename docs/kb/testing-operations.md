@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-20
-checked: 48ab7ed2
+checked: f425db09
 areas:
   - package.json
   - scripts
@@ -730,6 +730,18 @@ Route measurements are implemented in `scripts/measure-routes.mjs` and checked b
 `npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a before/after diff, and runs shared-boundary browser QA and the independent-panel artifact/integrity browser suite. The three marked E2E files run sequentially, including the real Web/Electron route-measurement test. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. The optional `VC_MEASURE_REUSE_INVENTORY=1` switch is for remeasuring explicitly retained immutable artifacts; CI does not set it. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after building Web and Desktop.
 
 Группы бюджета сопоставляются по **префиксу** имени файла, и у входного чанка это однажды сработало наоборот замыслу: пакет с точкой входа `index.ts`, вынесенный в **ленивый** чанк, получил имя `index-XXX.js`, попал в группу `index-` — и разгрузка главного чанка (−185 КБ) прочиталась как его рост на 32 КБ. Поэтому группа `index-` теперь меряется по **одному** файлу, на который ссылается `apps/web/dist/index.html`; остальные группы остаются суммой по префиксу (`markdown-` бывает не одним чанком). Оба правила закреплены тестами в `scripts/frontend-quality.test.mjs`. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
+
+The independent-panel upgrade scenario derives a higher patch version from the
+actual manifest instead of hardcoding `1.1.0`. Otherwise releasing that very
+version turns the upgrade into a no-op and invalidates the test fixture. Host
+bundle stability and rejection of corrupted artifacts remain mandatory.
+
+Managed-component integration is covered by the shared schema tests, the
+component-runtime HTTP/registry tests, provider tests in each standalone tool,
+and `makeBridge/component.integration.test.ts`: real Core/Make listeners preserve
+user ownership, reject a component token as user login, observe live revocation,
+and recover after credential-file rotation. The deployment tests also require
+readiness in both directions for managed installations.
 
 ## E2E Make в реальном Chromium (2026-08-27)
 

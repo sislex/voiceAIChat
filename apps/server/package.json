@@ -31,7 +31,8 @@
     "@voicechat/make-contracts": "*",
     "@voicechat/web-reader": "*",
     "@voicechat/web-reader-contracts": "*",
-    "@voicechat/playwright-reader-contracts": "*"
+    "@voicechat/playwright-reader-contracts": "*",
+    "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

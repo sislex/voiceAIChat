@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/web-reader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -31,7 +31,8 @@
     "tough-cookie": "5.1.2",
     "@voicechat/browser-contracts": "*",
     "acorn": "^8.18.0",
-    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.0.0-f65719c07ca1.tgz"
+    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.1.0-ff068915690f.tgz",
+    "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -45,7 +46,7 @@
     "package": "@sislexa/web-reader",
     "workspace": "apps/web-reader",
     "repository": "https://github.com/sislex/webreader",
-    "version": "1.0.0",
-    "commit": "f65719c07ca19f3dea6b20e7409334dd030ab29a"
+    "version": "1.1.0",
+    "commit": "ff068915690f92d857ffb2635682b8c189b7e211"
   }
 }
