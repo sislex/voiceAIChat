@@ -1,3 +1,5 @@
+import { userHasCapability, TARIFF_DENIED } from '../accountAccess.js'
+import { RpcError } from '@voicechat/shared'
 import type { ImageStudioCore, ImageStudioGeneration } from '@voicechat/image-studio'
 import type { VoiceChatDb } from '../db/database.js'
 import type { LlmClient } from '../claude/types.js'
@@ -18,6 +20,7 @@ export class LocalImageStudioCore implements ImageStudioCore {
   readGenerated(userId: string, path: string) { return this.opts.readGenerated(userId, path) }
 
   async generate(userId: string, input: ImageStudioGeneration): Promise<Buffer> {
+    if (!await userHasCapability(this.opts.db, userId, 'image-studio.use')) throw new RpcError(403, TARIFF_DENIED)
     let cancelled = false
     let cancel = () => {}
     input.onCancel?.(() => { cancelled = true; cancel() })

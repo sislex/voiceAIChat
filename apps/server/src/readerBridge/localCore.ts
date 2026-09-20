@@ -1,3 +1,4 @@
+import { userHasCapability, TARIFF_DENIED } from '../accountAccess.js'
 // `ReaderCore` во встроенном режиме: ридер живёт в процессе ядра и берёт relay, ключи Chromium,
 // канбан и шину кадров напрямую. Это единственное место, где ядро знает, что нужно ридеру.
 import type { FastifyInstance } from 'fastify'
@@ -52,7 +53,10 @@ export function createLocalReaderCore(deps: LocalReaderCoreDeps): ReaderCore {
       return deps.machines.http(agentId, request)
     },
     projectResource: (request) => readerProjectResource(deps.app, request),
-    previewAction: (userId, conversationId, action, timeoutMs) => deps.relay.request(userId, conversationId, action, timeoutMs),
+    async previewAction(userId, conversationId, action, timeoutMs) {
+      if (!await userHasCapability(deps.db, userId, 'web-reader.use')) throw new RpcError(403, TARIFF_DENIED)
+      return deps.relay.request(userId, conversationId, action, timeoutMs)
+    },
     issuePreviewRunKey: (userId) => deps.runKeys.issue(userId),
     listPreviews: () => deps.previews(),
     /**

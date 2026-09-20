@@ -383,7 +383,10 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
 } {
   const now = deps.now ?? (() => Date.now())
   const clientFor = async (ctx: CiModelContext): Promise<LlmClient> => {
-    const role = (await deps.db.identity.getUser(ctx.run.triggeredBy))?.role ?? 'developer'
+    const user = await deps.db.identity.getUser(ctx.run.triggeredBy)
+    const access = await deps.db.identity.getAccountAccess(ctx.run.triggeredBy)
+    if (!user || user.blocked || !access?.capabilities.includes('projects.use')) throw new Error('Модуль проектов недоступен в вашем тарифе.')
+    const role = user.role
     const resolved = await deps.db.llm.resolveLlmEngine(ctx.run.llmEngineId, ctx.run.llmProvider, role)
     return resolved.engine && deps.engineClient ? deps.engineClient(resolved.engine) : ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
   }

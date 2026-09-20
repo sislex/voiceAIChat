@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/voice-browser",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,8 +14,8 @@
     "build": "node ../../scripts/external-workspace.mjs build"
   },
   "dependencies": {
-    "@voicechat/shared": "0.1.1",
-    "@sislexa/voice": "file:../../vendor/sislexa-voice-1.0.0-c308f29f70a9.tgz",
+    "@voicechat/shared": "*",
+    "@sislexa/voice": "file:../../vendor/sislexa-voice-1.0.1-996189176d06.tgz",
     "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
@@ -27,7 +27,7 @@
     "package": "@sislexa/voice",
     "workspace": "packages/voice-browser",
     "repository": "https://github.com/sislex/voice",
-    "version": "1.0.0",
-    "commit": "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+    "version": "1.0.1",
+    "commit": "996189176d06f327bda31b71899ef5c83a4360e9"
   }
 }

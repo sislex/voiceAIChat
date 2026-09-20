@@ -27,7 +27,7 @@
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@sislexa/make": "file:../../vendor/sislexa-make-1.1.2-54e96f2a776c.tgz",
+    "@sislexa/make": "file:../../vendor/sislexa-make-1.1.3-41955a601c2f.tgz",
     "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
@@ -52,7 +52,7 @@
     "package": "@sislexa/make",
     "workspace": "packages/make-app",
     "repository": "https://github.com/sislex/make",
-    "version": "1.1.2",
-    "commit": "54e96f2a776c15afca434c3cb06479e365018507"
+    "version": "1.1.3",
+    "commit": "41955a601c2fc8f784263caf22a38b2955ba33a5"
   }
 }

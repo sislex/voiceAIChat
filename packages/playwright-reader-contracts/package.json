@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@voicechat/shared": "*",
-    "@sislexa/playwright-reader": "file:../../vendor/sislexa-playwright-reader-1.1.1-b99203e7123f.tgz",
+    "@sislexa/playwright-reader": "file:../../vendor/sislexa-playwright-reader-1.1.2-159b8bd4a843.tgz",
     "@voicechat/browser-contracts": "*",
     "@sislexa/component-runtime": "*"
   },
@@ -27,7 +27,7 @@
     "package": "@sislexa/playwright-reader",
     "workspace": "packages/playwright-reader-contracts",
     "repository": "https://github.com/sislex/playwrightreader",
-    "version": "1.1.1",
-    "commit": "b99203e7123f54fc659bbe0472b19e339bd62026"
+    "version": "1.1.2",
+    "commit": "159b8bd4a8437f34f54b20b0c11f5fb3b4a81662"
   }
 }

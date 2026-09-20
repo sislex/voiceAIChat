@@ -1,3 +1,4 @@
+import { capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
 // Процесс-глобальный реестр ходов LLM. Ход привязан к разговору, а не к
 // WS-соединению: обновление страницы/обрыв сети его НЕ отменяет — модель
 // доигрывает ответ, сервер сам сохраняет его в БД. События хода рассылаются
@@ -431,6 +432,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
       return
     }
+    const conv = await deps.db.chat.getConversation(userId, conversationId)
+    const entitlements = await deps.db.identity.getAccountAccess(userId)
+    if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
+      broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : 'Разговор недоступен.' }, userId)
+      return
+    }
     // Роль observer (auth-roadmap п.17) — только чтение: ходы модели не запускает.
     if (account.role === 'observer') {
       broadcast({ t: 'claude.error', conversationId, message: 'Роль «наблюдатель» не может запускать ходы модели — попросите администратора выдать роль developer или tester.' }, userId)
@@ -469,7 +476,6 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Явная новая отправка/повтор — реакция пользователя, снимающая паузу после ошибки.
     await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
 
-    const conv = await deps.db.chat.getConversation(userId, conversationId)
     const settings = await deps.db.settings.getSettings(userId)
     // Связанный с проектом чат всегда работает на паре проекта (или на
     // пользовательском дефолте проекта). Для непривязанного чата остаётся
@@ -828,7 +834,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let previewMcpUrl: string | undefined
     // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
     // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
-    if (conv && conv.assistantKind !== 'make' && deps.previewMcpBaseUrl && deps.previewTurns) {
+    if (conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use') && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию

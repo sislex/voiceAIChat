@@ -381,6 +381,7 @@ describe('инфраструктурные ошибки шага', () => {
 
 describe('хук работы модели слушает отмену', () => {
   it('abort гасит процесс CLI и закрывает ход как cancelled', async () => {
+    await db.identity.createUser('admin', '', 'admin')
     const { projectId, taskIds } = await setup()
     const ctl = new AbortController()
     let cancelled = 0
