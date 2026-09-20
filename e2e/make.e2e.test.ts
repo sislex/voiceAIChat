@@ -3,6 +3,7 @@
 // «шаблон → превью → компоненты → редактор → публикация». Проверяет то, что jsdom не умеет:
 // same-origin iframe, транспиляцию TSX в браузере, Monaco, раннер сториз.
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createServer } from 'node:net'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,8 +14,7 @@ import jsQR from 'jsqr'
 
 const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'apps/web/dist')
-const PORT = 8811 + Math.floor(Math.random() * 100)
-const BASE = `http://127.0.0.1:${PORT}`
+let BASE = ''
 const PASSWORD = 'e2e-pass'
 
 let server: ChildProcess | null = null
@@ -24,13 +24,15 @@ let page: Page
 let token = ''
 let conversationId = ''
 const browserDiagnostics: string[] = []
+let serverOutput = ''
 
 async function waitHealth(): Promise<void> {
   for (let i = 0; i < 60; i++) {
+    if (server?.exitCode !== null) throw new Error(`Make fixture exited: ${serverOutput}`)
     try { const r = await fetch(`${BASE}/api/health`); if (r.ok) return } catch { /* ещё не поднялся */ }
     await new Promise((r) => setTimeout(r, 1000))
   }
-  throw new Error('сервер не поднялся за 60 с')
+  throw new Error(`Make fixture did not start within 60 seconds: ${serverOutput}`)
 }
 
 const api = async (path: string, init: RequestInit = {}): Promise<Response> =>
@@ -40,11 +42,20 @@ const api = async (path: string, init: RequestInit = {}): Promise<Response> =>
 describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
   beforeAll(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-'))
-    server = spawn('npx', ['tsx', 'src/index.ts'], {
+    const reservation = createServer()
+    await new Promise<void>(resolve => reservation.listen(0, '127.0.0.1', resolve))
+    const address = reservation.address()
+    if (!address || typeof address === 'string') throw new Error('Free port unavailable')
+    const port = address.port
+    await new Promise<void>((resolve, reject) => reservation.close(error => error ? reject(error) : resolve()))
+    BASE = `http://127.0.0.1:${port}`
+    server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
-      env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: PASSWORD },
-      stdio: 'ignore'
+      env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: PASSWORD },
+      stdio: ['ignore', 'pipe', 'pipe']
     })
+    server.stdout?.on('data', chunk => { serverOutput = (serverOutput + chunk).slice(-8000) })
+    server.stderr?.on('data', chunk => { serverOutput = (serverOutput + chunk).slice(-8000) })
     await waitHealth()
     const login = await fetch(`${BASE}/api/session/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'admin', password: PASSWORD }) })
     token = ((await login.json()) as { token: string }).token
@@ -70,7 +81,11 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
 
   afterAll(async () => {
     await browser?.close()
-    server?.kill('SIGTERM')
+    if (server && server.exitCode === null) {
+      const stopped = new Promise<void>(resolve => server!.once('exit', () => resolve()))
+      server.kill('SIGTERM')
+      await stopped
+    }
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 

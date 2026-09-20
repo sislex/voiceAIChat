@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-16
-checked: bc13d08d
+updated: 2026-09-20
+checked: 48ab7ed2
 areas:
   - package.json
   - scripts
@@ -472,6 +472,20 @@ web-статики с очисткой после закрытия прилож�
 записывать в пользовательские данные. Интеграции нового Playwright Reader используют
 свою временную директорию и БД `:memory:`.
 
+Playwright Reader's panel observes dialog metadata independently of MCP commands.
+In `e2e/playwrightReader.e2e.test.ts`, wait until the model-answered prompt leaves
+the panel and the next alert's exact message is visible before clicking OK.
+Otherwise the test can answer a stale prompt, leave the real alert open, and
+cascade into unrelated download/login/Make-preview failures. The complete
+29-scenario browser suite validates this synchronization.
+
+The Make browser fixture now reserves an OS-selected port and starts the local
+Node/tsx process directly, retains bounded startup output, detects early process
+exit, and waits for shutdown before removing temporary data. This avoids opaque
+`npx` startup failures and abandoning its server child. Image Studio's selection
+fixture scrolls the canvas back into view after checking footer controls; pointer
+coordinates from an offscreen canvas cannot exercise selection.
+
 В песочнице macOS настоящий Chromium может падать на MachPortRendezvous, а тесты
 остановки процессов — на запрете просмотра дерева процессов. Такой гейт нужно
 повторить с разрешением вне песочницы; это ограничение среды, не повод отключать тест.
@@ -794,3 +808,26 @@ React из esm.sh — нужен интернет), «Компоненты» + c
 экран входа при отзыве текущей. Порт e2e берётся у системы (`listen(0)`) — со
 случайным портом из узкого диапазона тест иногда подключался к не добитому
 серверу прошлого прогона и падал на чужих данных.
+
+## Electron route measurement portability
+
+`scripts/measure-routes.mjs` resolves the installed desktop Electron package's
+exported executable path. Do not hardcode `dist/electron`: npm installs a macOS
+application bundle or a Windows executable on those platforms. Route measurement
+must exercise the real installed renderer on every host; OS differences do not
+justify skipping desktop budgets or changing their thresholds.
+
+
+The September 20 Sislexa extraction review found separate, pre-existing numerical
+budget drift: eleven local initial Web files matched deployed 0.1.310 by SHA-256,
+but exceeded the old CHAT-473 limits. The evidence and fresh Web/Electron report
+are retained in `frontend-quality/measurements/sislexa-extraction/`. Reviewed limits
+were reset only where exceeded, with 0.2% plus 100-byte rounding headroom. Optional
+module exclusions and the original CHAT-473 comparison remain enforced; the gate
+still cannot change its own budgets. No production Electron comparison was available.
+
+The historical CHAT-473 comparison is environment-specific (Node/compression
+versions and actual Electron viewport). The route gate selects exactly one
+reviewed report matching all conditions and tool versions: the original Linux
+report or the extraction's macOS report. Unknown/ambiguous environments still
+fail; `artifacts/route-budgets/diff.json` identifies the selected baseline.

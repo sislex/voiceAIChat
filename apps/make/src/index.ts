@@ -1,15 +1,1 @@
-// Public package surface for core: ports, module composition, and helpers needed by core tests.
-// Workshops, the showcase, and imports are internal to Make.
-export type { MakeCore, MakeMachineFs, MakeTaskDesignArgs } from './core.js'
-export type { MakeService } from './service.js'
-export { createMakeModule, type MakeModule, type MakeModuleOptions } from './module.js'
-export { buildTaskMakeSources, signTaskScope, verifyTaskScope, TASK_SCOPE_TTL_MS, type MakeTaskScope, type TaskMakeSourcesArgs } from './taskScope.js'
-export { MAKE_MCP_PATH, registerMakeMcp, type MakeMcpDeps } from './mcp.js'
-export { registerMakeRoutes, type MakeRoutesDeps } from './routes.js'
-export { MakeHub, PRESENCE_TTL_MS } from './hub.js'
-export { MakeWorkspaces, MakeError } from './workspace.js'
-export { MakeLibrary } from './library.js'
-export { formatMakeMetrics } from './metrics.js'
-export * from './internal.js'
-export { HttpMakeCore, type HttpMakeCoreOptions } from './standalone/httpCore.js'
-export type { MakeHubEvent } from './hub.js'
+export * from '@sislexa/make'

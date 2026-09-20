@@ -5,7 +5,7 @@ import type {
   GitBranchList, GitFileChange, GitFileContent, GitFileDiff, GitTreeListing,
   GitWorkspaceRef, GitWorkspaceStatus
 } from '@shared/gitWorkspace'
-import { T0 } from '../../../../ui/src/test/fixtures/chat'
+import { T0 } from './time'
 
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 

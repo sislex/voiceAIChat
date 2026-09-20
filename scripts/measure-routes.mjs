@@ -1,5 +1,6 @@
 
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, createWriteStream, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
@@ -75,7 +76,7 @@ export async function measure({ web, desktop, output }) {
         page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
         await page.goto(base)
       } else {
-        desktopApp = await electron.launch({ executablePath: join(root, 'apps/desktop/node_modules/electron/dist/electron'), args: ['--no-sandbox', join(root, 'scripts/measure-electron.cjs')],
+        desktopApp = await electron.launch({ executablePath: createRequire(join(root, 'apps/desktop/package.json'))('electron'), args: ['--no-sandbox', join(root, 'scripts/measure-electron.cjs')],
           env: { ...process.env, VC_MEASURE_HTML: resolve(directory, 'index.html'), VC_MEASURE_BASE: base, VC_MEASURE_USER_DATA: join(data, 'electron') } })
         page = await desktopApp.firstWindow()
         report.tools.electron = await desktopApp.evaluate(() => process.versions.electron)

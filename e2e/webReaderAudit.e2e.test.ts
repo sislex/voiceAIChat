@@ -4,7 +4,7 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { isPreviewProbeResult, type PreviewAction, type PreviewActionResultMessage, type PreviewAuditOptions, type PreviewAuditResult } from '@voicechat/shared'
-import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
+import { registerPreviewProxy } from '@fixture/web-reader-proxy'
 import { auditFixtures, probeFixtures, probeExpectationFailures, formConstraintExamples, formReadOnlyScene, formReadOnlySetup, formReadOnlyState, focusComparisonExamples, focusReadOnlyScene, focusReadOnlySetup, focusReadOnlyState, focusOrderScene, type FormFixtureEdit } from '@voicechat/browser-contracts/audit/fixtures'
 
 let app: FastifyInstance, browser: Browser, page: Page, base: string, source = ''

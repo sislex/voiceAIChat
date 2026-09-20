@@ -1,0 +1,18 @@
+{
+  "release": "0.1.310",
+  "commit": "48ab7ed2a36952d48f5ca2c68249af4cbde6cf6d",
+  "verifiedAt": "2026-09-20",
+  "sha256": {
+    "web/assets/AccountPage-j-2oCEoK.js": "abf4f70834b1c93a2b76094044c066dfd1ba326fe96072e7f3b39b744100e42c",
+    "web/assets/LlmSettingsEditor-CGkWVXq2.js": "c0fe3d82e57d801afe9dc030c53b6ac874c1123b305c76597f53ddcbfdf66afb",
+    "web/assets/SettingsModal-COQVASpo.js": "d0e5c81e35e76e11d426f1619fe09b7ec9ce0cdb79ce213f6d4f27640c215d9d",
+    "web/assets/applicationCatalog-Cez8vdJp.js": "7dde560c5f4b0cc11cc21bd0187f907b5c5ebf50a33f5b41372535083e08ee94",
+    "web/assets/chatInstructions-8I7vfqnS.js": "819d60272bb2d2f0a3b309b66d16d266dcc5b45643cc47c0e0aaf1b55016dfc8",
+    "web/assets/index-CWZsbnbV.css": "d67547b56637301f37e05f620b285f740a705b8f6ac77486992ab2abc093802d",
+    "web/assets/index-DXkOW38J.js": "5bc8a2d2f007966ff171468d0b4d8e1ca17ab04190f461efdd91075eac5dc76c",
+    "web/assets/markdown-B45geBhu.js": "8594373e29297b088c0893e9dab9f89271644214d65f9fb8878306ce74110bad",
+    "web/assets/markdown-BEHUn5zE.css": "a597b77cebd36d2d2a00f9a3a63322c48a69a0cbc0fdaf59fba0630347ba988e",
+    "web/assets/react-Ztm9MH8b.js": "b0436108cc0cc006deadc36688bdf5ad0600c30dbebf56852545ccb21fd27b78",
+    "web/theme-init.js": "2a996011959a0711f225d9ea1fea8dede11eb16cdea514c3c8ff140bf95322eb"
+  }
+}

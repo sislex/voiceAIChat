@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+import { dirname } from 'node:path'
 // Гейт границы Playwright Reader ↔ ядро со стороны ядра (docs/kb/features/playwright-reader.md). Playwright Reader живёт в
 // отдельном пакете `@voicechat/playwright-reader`; ядро знает его только через порты `PlaywrightReaderCore`/`PlaywrightReaderService`
 // (типы) и сборку `createPlaywrightReaderModule`. Единственные места, где ядро зовёт Playwright Reader по-настоящему, —
@@ -36,7 +38,7 @@ describe('граница Playwright Reader ↔ ядро (сторона ядра
 
   it('REST Chromium и его модельные команды принадлежат приложению', () => {
     expect(coreFiles).not.toContain('routes/browser.ts')
-    const reader = readFileSync(join(srcDir, '../../web-reader/src/module.ts'), 'utf8')
+    const reader = readFileSync(join(dirname(createRequire(import.meta.url).resolve('@sislexa/web-reader/package.json')), 'apps/web-reader/src/module.ts'), 'utf8')
     expect(reader).not.toMatch(/browserRunner|planModelAction|PREVIEW_RUN_COOKIE/)
   })
 })

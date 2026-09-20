@@ -1,5 +1,1 @@
-export * from './contracts'
-export * from './routes'
-export * from './store'
-export * from './PlaywrightReaderApp'
-export * from './module'
+export * from '@sislexa/playwright-reader/ui/index'

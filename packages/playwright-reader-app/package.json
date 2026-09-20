@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/playwright-reader-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -14,10 +14,10 @@
     "./panel.css": "./src/panel.css"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent",
-    "build": "node --import tsx ../../scripts/application-frontend.mjs playwright-reader-ui",
-    "dev": "node --import tsx ../../scripts/application-frontend-dev.mjs playwright-reader-ui"
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "dev": "node ../../scripts/external-workspace.mjs dev"
   },
   "dependencies": {
     "@voicechat/chat-app": "*",
@@ -25,7 +25,8 @@
     "@voicechat/ui-kit": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@voicechat/ui-foundation": "*"
+    "@voicechat/ui-foundation": "*",
+    "@sislexa/playwright-reader": "file:../../vendor/sislexa-playwright-reader-1.0.0-04520f8587ba.tgz"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
@@ -38,5 +39,12 @@
     "vite": "^5.4.11",
     "vitest": "^2.1.8",
     "tsx": "^4.19.2"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/playwright-reader",
+    "workspace": "packages/playwright-reader-app",
+    "repository": "https://github.com/sislex/playwrightreader",
+    "version": "1.0.0",
+    "commit": "04520f8587ba092c977bddcb0c753891d7fb853f"
   }
 }

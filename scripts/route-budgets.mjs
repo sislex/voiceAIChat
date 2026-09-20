@@ -73,6 +73,17 @@ export function totals(resources, ids) {
   }
   return result
 }
+// Baselines are reviewed artifacts, never synthesized by rewriting conditions.
+export function selectRouteBaseline(candidates, report) {
+  const matches = candidates.filter(({ report: baseline }) => {
+    const fields = new Set([...Object.keys(baseline.conditions ?? {}), ...Object.keys(report.conditions ?? {})])
+    return [...fields].every(field => JSON.stringify(baseline.conditions?.[field]) === JSON.stringify(report.conditions?.[field])) &&
+      JSON.stringify(baseline.compression) === JSON.stringify(report.compression) &&
+      JSON.stringify(baseline.tools) === JSON.stringify(report.tools)
+  })
+  if (matches.length !== 1) fail('expected one reviewed baseline for these runtime conditions; found ' + matches.length)
+  return matches[0]
+}
 export function compareRoutes(before, after) {
   if (!object(before) || !object(after) || !object(before.routes) || !object(after.routes) || before.schemaVersion !== 1 || after.schemaVersion !== 1) fail('invalid comparison schema')
   for (const field of new Set([...Object.keys(before.conditions ?? {}), ...Object.keys(after.conditions ?? {})])) {
