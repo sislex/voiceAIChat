@@ -10,20 +10,20 @@ services:
       context: ${SISLEXA_MAKE_SOURCE:?Set the pinned make source checkout}
       target: api
       args:
-        APPLICATION_VERSION: "1.1.0"
-        APPLICATION_COMMIT: "93055744002585c176ab9b1067b9c65653524623"
-    image: sislexa-make:1.1.0-930557440025
+        APPLICATION_VERSION: "1.1.1"
+        APPLICATION_COMMIT: "d76f047e7c2aec233da137941ba66e6c51b3a507"
+    image: sislexa-make:1.1.1-d76f047e7c2a
     environment:
-      VC_RELEASE_VERSION: "1.1.0"
-      VC_APPLICATION_COMMIT: "93055744002585c176ab9b1067b9c65653524623"
+      VC_RELEASE_VERSION: "1.1.1"
+      VC_APPLICATION_COMMIT: "d76f047e7c2aec233da137941ba66e6c51b3a507"
   make-ui:
     build:
       context: ${SISLEXA_MAKE_SOURCE:?Set the pinned make source checkout}
       target: frontend
       args:
-        APPLICATION_VERSION: "1.1.0"
-        APPLICATION_COMMIT: "93055744002585c176ab9b1067b9c65653524623"
-    image: sislexa-make-ui:1.1.0-930557440025
+        APPLICATION_VERSION: "1.1.1"
+        APPLICATION_COMMIT: "d76f047e7c2aec233da137941ba66e6c51b3a507"
+    image: sislexa-make-ui:1.1.1-d76f047e7c2a
     restart: unless-stopped
     mem_limit: 128m
     volumes:
