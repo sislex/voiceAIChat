@@ -100,9 +100,11 @@ const EXTERNAL_TOOL_BUILD_DEPENDENCIES: Record<string, string[]> = {
     "web-reader"
   ]
 };
-export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
+function createApplicationCatalog(): readonly ApplicationDefinition[] {
+  return [
   definition("core", "Ядро", "apps/server", {
     optionalRuntimeDependencies: [
+      "identity",
       "make",
       "image-studio",
       "web-reader",
@@ -123,6 +125,10 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     healthPath: "/api/health",
     dataPaths: ["database", "users", "conversations"],
     buildDependencies: [
+      "identity",
+      "identity-client",
+      "identity-contracts",
+      "storage-sql",
       "component-runtime",
       "shared",
       "sessions-core",
@@ -136,6 +142,16 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       "browser-runner",
       "llm-runner",
     ],
+  }),
+  definition("identity", "Identity", "apps/identity", {
+    workspaces: ["@voicechat/identity-server"],
+    buildDependencies: ["shared", "sessions-core", "identity-client", "identity-contracts", "storage-sql", "component-runtime"],
+    optionalRuntimeDependencies: ["core"],
+    services: ["identity"], entrypoint: "apps/identity/src/index.ts", healthPath: "/v1/health",
+    dataPaths: ["identity"], configuration: ["SISLEXA_COMPONENT_CONFIG", "IDENTITY_DATABASE_URL", "IDENTITY_SESSION_SECRET_FILE"],
+    isolation: {tests:true,build:true,deploy:true},
+    contractPaths: ["apps/identity/src/ports.ts", "apps/identity/component-contract.json"],
+    contractChecks: [{workspace:"@voicechat/server", files:["src/routes/rest.auth.test.ts", "src/routes/internal.component.test.ts", "src/identityBridge.test.ts"]}],
   }),
   definition("make", "Make", "apps/make", {
     browserPaths: ["apps/make/src/routes.ts", "apps/make/src/transpile.ts"],
@@ -299,6 +315,9 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       "web-reader-ui",
       "ui-foundation",
       "voice-browser",
+      "identity-login",
+      "identity-account",
+      "identity-client",
       "make-ui",
       "image-studio-ui",
     ],
@@ -394,6 +413,11 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
   ...(
     [
       "shared",
+      "identity-client",
+      "identity-contracts",
+      "identity-login",
+      "identity-account",
+      "storage-sql",
       "sessions-core",
       "voice-browser",
       "ui-kit",
@@ -415,6 +439,10 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       buildDependencies:
         id === "shared"
           ? ["sessions-core"]
+          : id === "identity-client" ? ["shared", "identity-contracts", "sessions-core", "storage-sql", "component-runtime"]
+          : id === "identity-account" ? ["shared", "ui-kit", "ui-foundation", "profile-app", "sessions-app", "identity-client", "identity-login"]
+          : id === "identity-login" ? ["shared", "ui-kit", "ui-foundation", "profile-app", "sessions-app", "identity-client"]
+          : id === "storage-sql" ? []
           : id === "sessions-core" || id === "ui-kit" || id === "app-shell"
             ? []
             : id.endsWith("-contracts")
@@ -436,6 +464,9 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
 ].map(application => ({ ...application, buildDependencies: [...new Set([
   ...application.buildDependencies, ...(EXTERNAL_TOOL_BUILD_DEPENDENCIES[application.id] ?? [])
 ])] }));
+}
+// Allow clients that only import other shared contracts to omit release tooling metadata.
+export const APPLICATION_CATALOG = /* @__PURE__ */ createApplicationCatalog();
 export function validateApplicationCatalog(
   catalog: readonly ApplicationDefinition[],
 ): void {

@@ -10,7 +10,7 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: 039d956b feat: establish Sislexa operation and usage contracts |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 67 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 3 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-20 | ✓ |
@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 4 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 21 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 3 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1580 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1581 коммит(ов) в areas после сверки: da9f0145 Document verified Voice and Image Studio production rollout … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 45 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 16 коммит(ов) в areas после сверки: 5f98a55c Merge remote-tracking branch 'origin/main' into CHAT-483 … |
@@ -42,7 +42,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 160 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ⚠ 4 коммит(ов) в areas после сверки: 69b2c8d8 Extract Voice and Image Studio into independent applications … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-17, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -80,7 +80,7 @@
 
 ## Журнал сессий
 
-Всего записей: 891. Последние:
+Всего записей: 892. Последние:
 
 - [2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md](log/2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md) — voice-image-extraction
 - [2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md) — sislexa-tool-extraction
@@ -88,10 +88,10 @@
 - [2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md) — sislexa-production-0310
 - [2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md) — sislexa-platform-contract-foundation
 - [2026-09-20-alexeys-macbook-air-2-sislexa-component-config.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-component-config.md) — 2026-09-20-alexeys-macbook-air-2-sislexa-component-config
+- [2026-09-20-alexeys-macbook-air-2-identity-extraction.md](log/2026-09-20-alexeys-macbook-air-2-identity-extraction.md) — identity-extraction
 - [2026-09-17-pc-radvilovich-release-center-cycle-8.md](log/2026-09-17-pc-radvilovich-release-center-cycle-8.md) — release-center-cycle-8
 - [2026-09-17-pc-radvilovich-project-settings-layout-a11y.md](log/2026-09-17-pc-radvilovich-project-settings-layout-a11y.md) — project-settings-layout-a11y
 - [2026-09-17-pc-radvilovich-component-qa-browser-teardown.md](log/2026-09-17-pc-radvilovich-component-qa-browser-teardown.md) — component-qa-browser-teardown
-- [2026-09-17-pc-radvilovich-chat449-task-card-kb.md](log/2026-09-17-pc-radvilovich-chat449-task-card-kb.md) — chat449-task-card-kb
 
 ## Исторические планы
 

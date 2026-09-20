@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "environmentId": "production",
+  "registryDirectory": "/run/sislexa/provider",
+  "grants": [
+    {
+      "consumerId": "core",
+      "scopes": [
+        "identity.verify",
+        "identity.session",
+        "identity.store",
+        "identity.events"
+      ],
+      "maxTtlSeconds": 2592000
+    }
+  ],
+  "legacyScopes": [],
+  "dependencies": [
+    {
+      "applicationId": "core",
+      "url": "http://voicechat:8787",
+      "tokenFile": "/run/sislexa/outgoing/core.token"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import {createIdentityStoreClient, registerRemoteIdentity} from '@sislexa/identity/client/index'
 import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/shared'
 import { fileURLToPath } from 'node:url'
 import { createComponentRuntime } from '@sislexa/component-runtime'
@@ -306,6 +307,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }) : undefined
   component?.register(app)
   const configuredDependency = (id: string) => component?.config.dependencies.some(d => d.applicationId === id) ? component.dependency(id) : undefined
+  const managedIdentity = configuredDependency('identity')
   const managedMake = configuredDependency('make')
   const managedPlaywright = configuredDependency('playwright-reader')
   const managedReader = configuredDependency('web-reader')
@@ -368,7 +370,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const db = opts.db ?? (() => {
     mkdirSync(opts.config.dataDir, { recursive: true })
     // Движок базы: Postgres по VC_DB_URL, иначе SQLite-файл в каталоге данных.
-    return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'), opts.config.dbUrl ? { postgres: { url: opts.config.dbUrl } } : {})
+    return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'), { ...(opts.config.dbUrl ? { postgres: { url: opts.config.dbUrl } } : {}), ...(managedIdentity ? { ports: {identity: () => createIdentityStoreClient(managedIdentity)} } : {}) })
   })()
   // Схема и миграции применяются асинхронно; дальше сервер полагается на готовую базу.
   await db.ready
@@ -396,7 +398,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Адрес сервера, видимый из контейнера browser-runner (в compose — http://voicechat:8787);
   // без него остаёмся на loopback dev-сервера, где раннер и сервер — один хост.
   const runnerFacingBase = opts.config.browserPreviewBase ?? opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
-  const { authenticate } = await registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
+  const authOptions = { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) }
+  const { authenticate } = managedIdentity
+    ? await registerRemoteIdentity(app, db, managedIdentity, sessionSecret, authOptions)
+    : await registerAuth(app, db, sessionSecret, authOptions)
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     application: applicationRuntimeMetadata('core', process.env),
@@ -1190,6 +1195,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     registerInternalRoutes(app, {
       token: opts.config.internalToken ?? '', component, makeCore, authenticate, imageStudio: imageStudioCore,
       ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
+      identityCore: db,
       admin: { ...(deployTrigger ? { deployTrigger } : {}), sessionHub },
       reader: readerCore,
       playwrightReader: { core: playwrightReaderCore, service: playwrightReader },
@@ -1342,13 +1348,41 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const early: Array<[Buffer, boolean]> = []
       const buffer = (data: Buffer, isBinary: boolean): void => { early.push([data, isBinary]) }
       socket.on('message', buffer)
-      const user = await resolveActiveUser(db, token, sessionSecret)
+      const verifySocket = async () => {
+        if (!token) return null
+        if (!managedIdentity) return resolveActiveUser(db, token, sessionSecret)
+        try {
+          const verdict = await authenticate({method:'GET',url:'/ws',headers:{authorization:'Bearer '+token}})
+          return verdict.ok ? verdict.user : null
+        } catch { return null }
+      }
+      const user = await verifySocket()
       socket.off('message', buffer)
       if (!user) {
         socket.close()
         return
       }
-      await attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null), {
+      // A role change requires fresh handlers; an old socket must not retain its former privileges.
+      const socketIdentityCurrent = async () => {
+        const active = await verifySocket()
+        return active?.name === user.name && active.role === user.role
+      }
+      const sid = verifyToken(token, sessionSecret)?.sid ?? null
+      const unsubscribe = sessionHub.onChange(event => {
+        if(event.user!==user.name)return
+        if(event.revokedSid===sid)queueMicrotask(()=>socket.close(4001,'Session revoked'))
+        else if(managedIdentity)void socketIdentityCurrent().then(active=>{if(!active)socket.close(4001,'Session revoked')})
+      })
+      let checkingIdentity=false
+      const identityTimer=managedIdentity?setInterval(()=>{
+        if(checkingIdentity||socket.readyState!==socket.OPEN)return
+        checkingIdentity=true
+        void socketIdentityCurrent().then(active=>{if(!active)socket.close(4001,'Session expired')}).finally(()=>{checkingIdentity=false})
+      },30_000):undefined
+      identityTimer?.unref()
+      socket.once('close',()=>{unsubscribe();if(identityTimer)clearInterval(identityTimer)})
+      await attachWs(socket, makeHandlers(user, sid), {
+        ...(managedIdentity ? {authorizeMessage: socketIdentityCurrent} : {}),
         // Логгер Fastify выключен — пишем в stdout контейнера: по счётчикам видно, какие кадры забили очередь.
         onOverflow: (info) => console.warn('[ws] исходящая очередь переполнена, соединение разорвано:', JSON.stringify({ user: user.name, ...info }))
       })
@@ -1356,6 +1390,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     })
   })
 
+  if(managedIdentity){
+    for(const prefix of ['/login/','/account/']){
+      const proxy=async(req:import('fastify').FastifyRequest,reply:import('fastify').FastifyReply)=>{
+        const response=await managedIdentity.publicFetchImpl(new URL(req.url,managedIdentity.url),{redirect:'error'})
+        return reply.code(response.status).type(response.headers.get('content-type')??'application/octet-stream').header('cache-control',response.headers.get('cache-control')??'no-cache').send(Buffer.from(await response.arrayBuffer()))
+      }
+      app.get(prefix,proxy);app.get(prefix+'*',proxy)
+    }
+  }
   registerApplicationFrontends(app, opts.config.applicationFrontends)
 
   // Два независимых frontend build раздаются тем же сервером и используют общий

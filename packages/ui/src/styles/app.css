@@ -1,3 +1,5 @@
+@import "@sislexa/identity/account/account.css";
+@import "@sislexa/identity/login/login.css";
 /* Стили перенесены 1:1 из прототипа «Голосовой чат.dc.html» (Design Tokens в README). */
 
 /* Семантические токены палитры. Тёмная тема переопределяет их через
@@ -2288,65 +2290,6 @@
   color: #9fbfe0;
 }
 
-/* ---- Экран входа (многопользовательский режим web) ---- */
-.login-screen {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg);
-  color: var(--text);
-  padding: 24px;
-}
-.login-card {
-  width: 100%;
-  max-width: 340px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 28px 24px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
-}
-.login-title {
-  margin: 0 0 4px;
-  font-size: 20px;
-  font-weight: 700;
-}
-.login-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 13px;
-  color: var(--text-dim);
-}
-.login-input {
-  padding: 9px 11px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 14px;
-}
-.login-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.login-error {
-  margin: 0;
-  color: #c0392b;
-  font-size: 13px;
-}
-.login-hint {
-  margin: 0;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
 /* ---- Строка пользователя в сайдбаре ---- */
 .userrow {
   display: flex;
@@ -2412,66 +2355,7 @@
 
 /* The account route keeps its navigation visible while independently loaded
    profile sections settle below it. */
-.account-page {
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-.account-head {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  flex: 0 0 auto;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 94%, transparent);
-  backdrop-filter: blur(12px);
-}
-.account-head__copy { min-width: 0; }
-.account-head__copy h1 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
-.account-head__copy p { margin: 3px 0 0; color: var(--text-dim); font-size: 11px; }
-.account-page > .vcp { width: min(100%, 1180px); margin: 0 auto; }
 
-.account-page__fallback {
-  padding: 22px 24px;
-}
-.account-page__fallback-profile,
-.account-page__fallback-stats > i {
-  display: block;
-  border-radius: 12px;
-  background: linear-gradient(100deg, var(--panel) 30%, var(--surface-hover) 50%, var(--panel) 70%);
-  background-size: 220% 100%;
-  animation: account-placeholder 1.2s ease-in-out infinite;
-}
-.account-page__fallback-profile {
-  width: min(320px, 72%);
-  height: 52px;
-  margin-bottom: 18px;
-}
-.account-page__fallback-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-.account-page__fallback-stats > i { height: 80px; }
-
-@keyframes account-placeholder {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .account-page__fallback-profile,
-  .account-page__fallback-stats > i { animation: none; }
-}
-
-@media (max-width: 720px) {
-  .account-head { align-items: flex-start; padding: 12px 14px; }
-  .account-head__copy { flex: 1 1 100%; }
-  .account-head__copy h1 { font-size: 18px; }
-  .account-head .uadmin-actions { width: 100%; }
-  .account-head .uadmin-actions .vc-btn { min-height: 44px; flex: 1 1 0; }
-  .account-page__fallback { padding: 16px; }
-  .account-page__fallback-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 .uadmin-sec {
   margin-bottom: 16px;
 }
@@ -8077,12 +7961,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .pers-avatar { max-width: 160px; }
 
 /* Экран входа (auth-roadmap пп.14–15) */
-.login-password { position: relative; display: block; }
-.login-password .login-input { width: 100%; padding-right: 36px; box-sizing: border-box; }
-.login-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: none; cursor: pointer; font-size: 14px; }
-.login-caps { display: block; margin-top: 4px; font-size: 12px; color: #b26a00; }
-.login-remember { display: flex; gap: 6px; align-items: baseline; font-size: 13px; margin: 4px 0 8px; }
-.login-remember small { color: var(--text-dim); }
+
 
 .uadmin-limit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .uadmin-limit-input { width: 110px; }

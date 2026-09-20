@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, existsSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -103,4 +103,32 @@ test('archive closure copies only pinned regular vendor archives', () => {
     rmSync(repo, { recursive: true, force: true })
     rmSync(output, { recursive: true, force: true })
   }
+})
+
+
+test('extracted application workspaces contain only import/export adapters',()=>{
+  const roots=['apps/make','apps/playwright-reader','apps/web-reader','apps/web-recorder','apps/image-studio','apps/stt-runner','apps/tts-runner','apps/identity','packages/make-app','packages/image-studio-app','packages/playwright-reader-app','packages/web-reader-app','packages/voice-browser','packages/profile-app','packages/sessions-app','packages/sessions-core','packages/identity-login','packages/identity-account','packages/identity-client','packages/identity-contracts','packages/storage-sql']
+  const walk=directory=>existsSync(directory)?readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?walk(join(directory,entry.name)):[join(directory,entry.name)]):[]
+  for(const root of roots){
+    assert.ok(JSON.parse(readFileSync(join(root,'package.json'),'utf8')).sislexaExternal,root)
+    for(const file of walk(join(root,'src'))){
+      if(!/\.(?:ts|tsx|css)$/.test(file))continue
+      const source=readFileSync(file,'utf8').trim()
+      assert.match(source,/^(?:(?:export (?:\*|\{ default \}) from ["']@sislexa\/[^"']+["']|import ["']@sislexa\/[^"']+["']|@import ["']@sislexa\/[^"']+["'];)[ \t]*;?(?:\r?\n|$))+$/,file)
+    }
+  }
+})
+
+
+test('Identity release context includes its own native build tools and typecheck dependencies', () => {
+  const output = mkdtempSync(join(tmpdir(), 'vc-identity-context-'))
+  try {
+    createApplicationBuildContext('identity', output, {version:'1.0.0', commit:'a'.repeat(40), development:true})
+    const lock = JSON.parse(readFileSync(join(output, 'package-lock.json'), 'utf8'))
+    assert.ok(lock.packages['node_modules/@testing-library/jest-dom'])
+    assert.ok(lock.packages['node_modules/@types/nodemailer'])
+    assert.match(readFileSync(join(output, 'Dockerfile'), 'utf8'), /python3 make g\+\+/)
+    assert.equal(existsSync(join(output, 'apps/server')), false)
+    assert.equal(existsSync(join(output, 'packages/ui')), false)
+  } finally { rmSync(output, {recursive:true, force:true}) }
 })

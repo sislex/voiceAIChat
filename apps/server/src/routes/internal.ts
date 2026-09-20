@@ -1,3 +1,5 @@
+import {IDENTITY_PATHS, IDENTITY_CORE_METHODS} from '@sislexa/identity/contracts/index'
+import type {VoiceChatDb} from '../db/database.js'
 import type { ComponentRuntime } from '@sislexa/component-runtime'
 import { INTERNAL_IMAGE_STUDIO_CORE_PATH, INTERNAL_IMAGE_STUDIO_GENERATE_PATH } from '@voicechat/shared'
 import type { PlaywrightReaderCore, PlaywrightReaderService } from '@voicechat/playwright-reader'
@@ -32,6 +34,7 @@ import { INTERNAL_READER_CORE_PATH, READER_CORE_RPC_METHODS, READER_RPC_BODY_LIM
 /** Exact route mapping prevents a new internal endpoint inheriting a broad service grant. */
 export const INTERNAL_COMPONENT_SCOPES: Readonly<Record<string, string>> = {
   [INTERNAL_WHOAMI_PATH]: 'identity.verify',
+  [IDENTITY_PATHS.core]: 'identity.core',
   [INTERNAL_MAKE_CORE_PATH]: 'make.core',
   [INTERNAL_MAKE_EVENTS_PATH]: 'make.events',
   [INTERNAL_MAKE_SERVICE_PATH]: 'make.service',
@@ -47,6 +50,7 @@ export const INTERNAL_COMPONENT_SCOPES: Readonly<Record<string, string>> = {
 }
 
 export interface InternalRoutesDeps {
+  identityCore?: VoiceChatDb
   component?: ComponentRuntime
   token: string
   /** Данные чата/канбана/машин для Make — тот же порт, что и у встроенного режима. */
@@ -88,6 +92,23 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
       }
       if (!deps.token || req.headers.authorization !== `Bearer ${deps.token}`) return reply.code(401).send({ error: 'unauthorized' })
     })
+    if (deps.identityCore) {
+      const core = deps.identityCore
+      scope.post<{Body:{method:string;args:unknown[]}}>(IDENTITY_PATHS.core,async(req,reply)=>{
+        const {method,args}=req.body??{}
+        if (!(IDENTITY_CORE_METHODS as readonly string[]).includes(method)||!Array.isArray(args))return reply.code(400).send({error:'unknown_method'})
+        if (method === 'settings.getSettings') {
+          const { loginNewDeviceEmails } = await core.settings.getSettings(String(args[0]))
+          return { result: { loginNewDeviceEmails } }
+        }
+        if (method === 'settings.getAppConfig' && !['signup.enabled', 'signup.role', 'sessions.maxPerUser'].includes(String(args[0]))) {
+          return reply.code(403).send({ error: 'identity_config_not_allowed' })
+        }
+        const [domain,name]=method.split('.')
+        const target=core[domain as keyof VoiceChatDb] as Record<string,(...args:unknown[])=>Promise<unknown>>
+        return {result:(await target[name].apply(target,args))??null}
+      })
+    }
     scope.post<{ Body: RpcRequest }>(INTERNAL_MAKE_CORE_PATH, async (req, reply) => {
       try { return { result: await dispatch(req.body ?? { method: '', args: [] }) } } catch (error) { return sendRpcError(reply, error) }
     })

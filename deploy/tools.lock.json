@@ -42,6 +42,13 @@
       "repository": "https://github.com/sislex/voice",
       "version": "1.0.0",
       "commit": "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+    },
+    "identity": {
+      "package": "@sislexa/identity",
+      "workspace": "apps/server",
+      "repository": "https://github.com/sislex/identity",
+      "version": "1.0.0",
+      "commit": "85ee08cdc7e3004a15417a1f86781ec68a0df47b"
     }
   }
 }

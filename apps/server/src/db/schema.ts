@@ -1,5 +1,7 @@
+import {IDENTITY_SCHEMA} from '@sislexa/identity/server/store/schema'
 /** DDL схемы БД. Идемпотентно: безопасно выполнять при каждом старте. */
 export const SCHEMA_SQL = `
+${IDENTITY_SCHEMA}
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
@@ -238,61 +240,21 @@ CREATE TABLE IF NOT EXISTS generated_cleanup_retry (
 );
 CREATE INDEX IF NOT EXISTS idx_generated_cleanup_retry_due ON generated_cleanup_retry(next_attempt_at);
 
-CREATE TABLE IF NOT EXISTS users (
-  name          TEXT PRIMARY KEY,
-  password_hash TEXT NOT NULL,
-  role          TEXT NOT NULL,
-  blocked       INTEGER NOT NULL DEFAULT 0,
-  created_at    INTEGER NOT NULL,
-  failed_logins INTEGER NOT NULL DEFAULT 0,
-  locked_until INTEGER,
-  lock_reason TEXT,
-  totp_secret TEXT,
-  reset_code_hash TEXT,
-  reset_code_expires INTEGER,
-  must_change_password INTEGER NOT NULL DEFAULT 0,
-  last_login INTEGER,
-  notices_seen_at INTEGER NOT NULL DEFAULT 0,
-  llm_limit_usd REAL,
-  email TEXT
-);
+
 
 CREATE TABLE IF NOT EXISTS app_config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS email_verifications (
-  token_hash TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL,
-  password_hash TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_email_verifications_email ON email_verifications(email);
+
+
 
 -- Сброс пароля по подтверждённому email: наружу уходит сырой токен, в БД хранится только sha256.
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-  token_hash TEXT PRIMARY KEY,
-  user_name TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_name);
 
-CREATE TABLE IF NOT EXISTS invites (
-  token TEXT PRIMARY KEY,
-  role TEXT NOT NULL,
-  created_by TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  max_uses INTEGER NOT NULL DEFAULT 1,
-  uses INTEGER NOT NULL DEFAULT 0,
-  note TEXT NOT NULL DEFAULT '',
-  email TEXT,
-  emailed_at INTEGER
-);
+
+
+
 
 CREATE TABLE IF NOT EXISTS machine_commands (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -339,80 +301,27 @@ CREATE TABLE IF NOT EXISTS conversation_context_events (
 );
 CREATE INDEX IF NOT EXISTS idx_context_events_conversation ON conversation_context_events(conversation_id, id DESC);
 
-CREATE TABLE IF NOT EXISTS security_events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  at INTEGER NOT NULL,
-  user_name TEXT NOT NULL,
-  type TEXT NOT NULL,
-  ip TEXT NOT NULL DEFAULT '',
-  user_agent TEXT NOT NULL DEFAULT '',
-  details TEXT NOT NULL DEFAULT '',
-  -- Сессия, к которой относится событие. По ней строится история устройства:
-  -- пара «User-Agent + адрес» рвётся при смене сети и склеивает разные входы.
-  session_sid TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_name, at DESC);
+
+
 -- Индекс по session_sid создаётся в migrate(): на существующей базе схема
 -- выполняется до ALTER TABLE, и индекс по ещё не добавленной колонке падает.
 
-CREATE TABLE IF NOT EXISTS login_device_emails (
-  user_name TEXT NOT NULL,
-  ip TEXT NOT NULL,
-  user_agent TEXT NOT NULL,
-  sent_at INTEGER NOT NULL,
-  PRIMARY KEY (user_name, ip, user_agent)
-);
 
-CREATE TABLE IF NOT EXISTS sessions (
-  sid TEXT PRIMARY KEY,
-  user_name TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  last_seen INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  ip TEXT NOT NULL DEFAULT '',
-  user_agent TEXT NOT NULL DEFAULT '',
-  revoked_at INTEGER,
-  -- Метаданные устройства: имя от пользователя, ключ устройства (доверие и
-  -- распознавание нового входа), место по адресу и грубая мера активности.
-  label TEXT,
-  device_key TEXT,
-  trusted_at INTEGER,
-  platform TEXT,
-  client_version TEXT,
-  geo TEXT,
-  requests INTEGER NOT NULL DEFAULT 0,
-  last_path TEXT,
-  -- Почему сессия закончилась: revoked | evicted | panic | logout_all | admin | stale.
-  end_reason TEXT,
-  -- SHA-256 секрета устройства из cookie vc_device: доверие привязано к нему, а
-  -- не к угадываемым свойствам запроса (User-Agent и подсеть подделываются).
-  device_secret TEXT,
-  -- Подтверждали ли этот вход вторым фактором. Доверять можно только такой
-  -- сессии: иначе доверие выдаётся входу, который сам проверку не проходил.
-  two_factor INTEGER NOT NULL DEFAULT 0
-);
+
+
 -- Индекс по device_key создаётся в migrate(), а не здесь: на старой базе схема
 -- выполняется до ALTER TABLE, и индекс по ещё не добавленной колонке падает.
-CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_name);
+
 -- Активность всех пользователей разом (метрика «активны сейчас» и колонка списка):
 -- без этого индекса агрегат читает всю таблицу сессий на каждое открытие раздела.
-CREATE INDEX IF NOT EXISTS idx_sessions_live ON sessions(revoked_at, expires_at, user_name);
+
 -- Отчёты расхода читают только ai-сообщения за период: без этого индекса каждый
 -- отчёт сканирует таблицу сообщений целиком.
 CREATE INDEX IF NOT EXISTS idx_messages_role_created ON messages(role, created_at);
 
-CREATE TABLE IF NOT EXISTS session_revocations (
-  token_hash TEXT PRIMARY KEY,
-  created_at INTEGER NOT NULL
-);
 
-CREATE TABLE IF NOT EXISTS user_llm_access (
-  user_name TEXT NOT NULL,
-  provider  TEXT NOT NULL,
-  model_id  TEXT NOT NULL,
-  PRIMARY KEY (user_name, provider, model_id),
-  FOREIGN KEY (user_name) REFERENCES users(name) ON DELETE CASCADE
-);
+
+
 
 CREATE TABLE IF NOT EXISTS llm_engines (
   id            TEXT PRIMARY KEY,
