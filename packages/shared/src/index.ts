@@ -128,3 +128,4 @@ export * from './platformUsage'
 export * from './componentConfig'
 
 export * from './accountAccess'
+export * from './billing'
