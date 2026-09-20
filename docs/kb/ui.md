@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-20
-checked: 48ab7ed2
+checked: deb7bc26
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -2480,6 +2480,11 @@ visible refresh only when the host already owns that request.
 
 ## Ленивые чанки главного бандла
 
+The shared application catalog is created through a pure factory. This lets Rollup
+omit release metadata when a client imports only unrelated shared contracts;
+adding an independent service must not force that catalog into the account route.
+The Identity extraction keeps the existing Web/Electron route budget thresholds.
+
 `App.tsx` uses `React.lazy` for SessionsDialogHost, UsersAdmin and the performance
 dashboard, AccountPage, SettingsModal, ProjectPage/ProjectBoard and their empty
 states, TaskModal, ProjectSettings, ReleaseCenter, MachineStatus/MachineUtility,
@@ -4928,6 +4933,16 @@ Bootstrap проверяется в
 завершён успешно.
 
 ## Progressive account page loading
+
+The AccountPage implementation and account-specific CSS are owned by
+`sislex/identity/apps/account`; Core's component injects its existing read cache and
+route-performance callback. Login, signup, invite, recovery and 2FA components,
+styles and their unit tests are also upstream. The session REST/cookie bridge is
+upstream; Core supplies websocket events and desktop migration only. Existing
+`#/account` behavior remains available, while `/login/` and `/account/` are independent
+Identity frontend builds proxied through Core on the same public origin. Profile
+and session Storybook stories are loaded from the pinned upstream archive.
+
 
 The `#/account` route renders its heading and structural placeholder while the
 lazy account chunk loads. `AccountPage` then gates the visible profile only on

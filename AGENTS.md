@@ -25,6 +25,7 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `packages/playwright-reader-app` / `packages/web-reader-app` | Reader UI | Самостоятельные панели Chromium/iframe | [UI KB](docs/kb/ui.md#независимые-артефакты-продуктовых-панелей) |
 | `packages/sessions-core` | `@voicechat/sessions-core` | Переносимое ядро «сессий и устройств»: разбор устройства, политики, порт хранилища с контрактом | [README](packages/sessions-core/README.md) |
 | `packages/sessions-app` | `@voicechat/sessions-app` | UI-модуль «Сессии и устройства» (окно аккаунта + панель в админке) | [AGENTS](packages/sessions-app/AGENTS.md) |
+| `apps/identity` / `packages/identity-*` | Identity adapters | Auth, registration, account UI and SDK from `sislex/identity` | [Auth KB](docs/kb/data-auth.md#identity-repository-and-request-authentication) |
 | `apps/server` | `@voicechat/server` | Fastify: REST + WS, SQLite, Whisper, Piper, claude/codex CLI, реестр машин | [AGENTS](apps/server/AGENTS.md) |
 | `apps/make` | `@voicechat/make` | Make (веб-проект с ассистентом): мастерские, REST/превью/публикация, MCP; модуль ядра или отдельный процесс | [AGENTS](apps/make/AGENTS.md) |
 | `apps/playwright-reader` | `@voicechat/playwright-reader` | Playwright Reader: API сессий и действия модели в Chromium; модуль ядра или отдельный процесс | [AGENTS](apps/playwright-reader/AGENTS.md) |

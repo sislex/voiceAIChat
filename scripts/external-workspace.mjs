@@ -13,7 +13,7 @@ const source = JSON.parse(readFileSync(join(root, 'release-source.json'), 'utf8'
 if (source.commit !== external.commit || source.version !== external.version || source.repository !== external.repository)
   throw new Error('External archive provenance does not match the adapter')
 const workspace = resolve(root, external.workspace)
-if (!workspace.startsWith(root + '/')) throw new Error('Invalid external workspace path')
+if (workspace !== root && !workspace.startsWith(root + '/')) throw new Error('Invalid external workspace path')
 const script = process.argv[2]
 const result = spawnSync('npm', ['--prefix', workspace, 'run', script, '--', ...process.argv.slice(3)], { stdio: 'inherit', env: script === 'build' ? { ...process.env, VC_APPLICATION_VERSION: external.version, VC_APPLICATION_COMMIT: external.commit, VC_RELEASE_COMMIT: external.commit } : process.env })
 if (result.error) throw result.error

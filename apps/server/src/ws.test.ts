@@ -38,3 +38,13 @@ describe('attachWs: очередь исходящих кадров ограни�
     expect(socket.sent.length).toBe(sentBefore) // после разрыва в мёртвый сокет не пишем
   })
 })
+
+it('does not dispatch commands after the external identity check rejects a session',async()=>{
+ const {EventEmitter}=await import('node:events')
+ const socket=Object.assign(new EventEmitter(),{OPEN:1,readyState:1,bufferedAmount:0,send:vi.fn(),terminate:vi.fn(),close:vi.fn()})
+ const onMessage=vi.fn(),authorizeMessage=vi.fn().mockResolvedValue(false)
+ await attachWs(socket as unknown as WebSocket,{onMessage},{authorizeMessage})
+ socket.emit('message',Buffer.from(JSON.stringify({t:'audio.start',sampleRate:16000})),false)
+ await vi.waitFor(()=>expect(socket.close).toHaveBeenCalledWith(4001,'Session expired'))
+ expect(onMessage).not.toHaveBeenCalled()
+})

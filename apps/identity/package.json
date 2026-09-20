@@ -1,0 +1,41 @@
+{
+  "name": "@voicechat/identity-server",
+  "type": "module",
+  "private": true,
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "version": "1.0.0",
+  "dependencies": {
+    "@voicechat/shared": "*",
+    "@voicechat/sessions-core": "*",
+    "@voicechat/storage-sql": "*",
+    "@sislexa/component-runtime": "1.0.1",
+    "fastify": "^5.1.0",
+    "nodemailer": "^6.9.16",
+    "better-sqlite3": "^11.7.0",
+    "pg": "^8.16.3",
+    "tsx": "^4.19.2",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.0.0-85ee08cdc7e3.tgz",
+    "@voicechat/identity-contracts": "*"
+  },
+  "scripts": {
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "dev": "node ../../scripts/external-workspace.mjs dev",
+    "start": "node ../../scripts/external-workspace.mjs start"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/identity",
+    "workspace": "apps/server",
+    "repository": "https://github.com/sislex/identity",
+    "version": "1.0.0",
+    "commit": "85ee08cdc7e3004a15417a1f86781ec68a0df47b"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@types/nodemailer": "^6.4.17"
+  }
+}

@@ -24,7 +24,7 @@ import storybookMain from '../../.storybook/main'
 const modules = import.meta.glob<Record<string, unknown>>([
   '../components/**/*.stories.tsx',
   '../../../{image-studio-app,ui-foundation,app-shell,chat-app,projects-app,operations-app,admin-app,sessions-app,profile-app}/src/**/*.stories.tsx',
-  '../../../../node_modules/@sislexa/{make,playwright-reader,web-reader}/packages/*-app/src/**/*.stories.tsx'
+  '../../../../node_modules/@sislexa/{make,playwright-reader,web-reader,image-studio,identity}/packages/*-app/src/**/*.stories.tsx'
 ], { exhaustive: true })
 
 // Сторож: новый пакет в витрине обязан попасть и под axe. Иначе повторится
