@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-20
-checked: 61da562a
+checked: 7f7d21cd
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -237,3 +237,17 @@ agent, not user registration; it remains with machine/client infrastructure.
 `apps/llm-runner` remains a separate workspace in Core and is not claimed as an
 already extracted repository by this release. Common UI primitives, chat/agents,
 projects, operations and release orchestration also remain Core responsibilities.
+
+
+## Authorized delivery roadmap and next repositories
+
+The owner authorized all fifteen follow-on deliverables, autonomous technical
+choices, PR creation/merge, staged releases and production verification. Track
+acceptance evidence in `docs/plans/sislexa-delivery-roadmap.md`; authorization is
+not evidence that those features are already implemented.
+
+The supplied `sislex/billing`, `sislex/analytics`, `sislex/sdk` and
+`sislex/sielexa-ui` repositories were accessible and empty on 2026-09-20. Preserve
+the exact `sielexa-ui` spelling. Billing will own transactional financial usage;
+Analytics will own reporting/activity projections; SDK and UI are versioned
+libraries. Existing Identity retains user/tenant identity and entitlement policy.

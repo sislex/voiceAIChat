@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-09-20
-checked: 7ed88f46
+checked: 7f7d21cd
 areas:
   - packages/shared/src
 ---
@@ -37,6 +37,14 @@ authorization mechanism. Both contracts are exported by `index.ts`; production
 routes, account migration, and activity collection are not integrated yet.
 The implementation sequence is tracked in the
 [Sislexa platform plan](../plans/sislexa-modular-platform.md).
+
+`billing.ts` adds bounded integer micro-USD limits, explicit unlimited (`null`)
+versus zero policy values, reservation lifecycle types and strict principal/policy
+shape validators. These definitions do not authenticate callers or reserve funds.
+`AccountAccess.userId` and `AuthenticatedAccount.userId` are additive optional
+stable-subject fields for rolling upgrades; billing consumers must reject older
+providers that omit them rather than substitute a login name. Shared 0.1.3 is the
+contract foundation for the independent SDK and Billing repositories.
 
 ### Existing modules
 
