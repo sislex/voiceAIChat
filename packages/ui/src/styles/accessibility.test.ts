@@ -1,3 +1,5 @@
+import {createRequire} from 'node:module'
+const require=createRequire(import.meta.url)
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -19,7 +21,8 @@ it('keeps a visible keyboard ring and 40px touch targets in the shared kit', () 
   expect(mobile).toContain('min-height:40px !important;min-width:40px !important')
 })
 it.each(['./app.css', '../../../ui-kit/src/styles.css', '../../../admin-app/src/styles.css', '../../../profile-app/src/styles.css', '../../../sessions-app/src/styles.css'])('%s uses the shared 720px mobile boundary', path => {
-  const css = readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+  const external = /\.\.\/\.\.\/\.\.\/(profile-app|sessions-app)\//.exec(path)?.[1]
+  const css = readFileSync(external ? require.resolve('@sislexa/identity/'+external+'/styles.css') : fileURLToPath(new URL(path, import.meta.url)), 'utf8')
   const boundaries = [...css.matchAll(/@media\s*\((min|max)-width:\s*(\d+)px\)/g)]
   expect(boundaries.length).toBeGreaterThan(0)
   for (const [, kind, width] of boundaries) expect(Number(width)).toBe(kind === 'max' ? 720 : 721)

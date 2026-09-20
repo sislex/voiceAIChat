@@ -35,3 +35,23 @@ describe('Core component route permissions', () => {
     expect(unknown.statusCode).not.toBe(200)
   })
 })
+
+
+it('exposes only Identity policy settings through its Core grant', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'identity-core-policy-'))
+  cleanups.push(() => rmSync(root, { recursive: true, force: true }))
+  const configFile = join(root, 'config.json')
+  writeFileSync(configFile, JSON.stringify({schemaVersion:1, environmentId:'test', registryDirectory:join(root,'registry'), grants:[{consumerId:'identity',scopes:['identity.core'],maxTtlSeconds:3600}], legacyScopes:[], dependencies:[]}))
+  const component = await createComponentRuntime({contractFile:fileURLToPath(new URL('../../component-contract.json', import.meta.url)),configFile,metadata:{applicationId:'core',version:'0.1.315',apiVersion:'1.1.0',dataVersion:'1.0.0',commit:'a'.repeat(40)}})
+  const app = Fastify();component.register(app);cleanups.push(() => app.close())
+  let configReads = 0
+  registerInternalRoutes(app, {token:'',component,makeCore:{} as MakeCore,authenticate:async()=>({ok:false,status:401,error:'unauthorized'}),identityCore:{settings:{getSettings:async()=>({loginNewDeviceEmails:true,apiKey:'private-fixture',instructions:'private user context'}),getAppConfig:async()=>{configReads++;return '1'}}} as unknown as import('../db/database.js').VoiceChatDb})
+  const token = component.registry!.issue('identity',['identity.core'],60).token
+  const request = (method:string,args:unknown[]) => app.inject({method:'POST',url:'/internal/identity/core',headers:{authorization:'Bearer '+token},payload:{method,args}})
+  const settings = await request('settings.getSettings',['alice'])
+  expect(settings.statusCode).toBe(200)
+  expect(settings.json()).toEqual({result:{loginNewDeviceEmails:true}})
+  for (const key of ['signup.enabled','signup.role','sessions.maxPerUser']) expect((await request('settings.getAppConfig',[key])).statusCode).toBe(200)
+  expect((await request('settings.getAppConfig',['private.config'])).statusCode).toBe(403)
+  expect(configReads).toBe(3)
+})

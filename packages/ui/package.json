@@ -43,7 +43,8 @@
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "@voicechat/ui-foundation": "*",
-    "@voicechat/voice-browser": "*"
+    "@voicechat/voice-browser": "*",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.0.0-85ee08cdc7e3.tgz"
   },
   "devDependencies": {
     "@storybook/addon-a11y": "^8.6.18",

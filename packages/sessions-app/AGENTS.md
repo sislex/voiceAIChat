@@ -1,5 +1,8 @@
 # @voicechat/sessions-app — «Сессии и устройства»
 
+Implementation and tests are owned by https://github.com/sislex/identity. This
+workspace only exports the pinned distribution; edit upstream and update the pin.
+
 UI-модуль: список устройств, с которых выполнен вход, и действия над ними.
 Зависит только от `@voicechat/sessions-core` (логика) и `@voicechat/ui-kit`
 (примитивы). Ни транспорта, ни `window`, ни сторов хоста — это проверяет

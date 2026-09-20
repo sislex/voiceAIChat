@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/sessions-core",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -9,12 +9,23 @@
     ".": "./src/index.ts",
     "./testing": "./src/testing/index.ts"
   },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent"
-  },
   "devDependencies": {
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@sislexa/identity-sessions-core": "file:../../vendor/sislexa-identity-sessions-core-1.0.0-85ee08cdc7e3.tgz"
+  },
+  "scripts": {
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/identity-sessions-core",
+    "workspace": ".",
+    "repository": "https://github.com/sislex/identity",
+    "version": "1.0.0",
+    "commit": "85ee08cdc7e3004a15417a1f86781ec68a0df47b"
   }
 }

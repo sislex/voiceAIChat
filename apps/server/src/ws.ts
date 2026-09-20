@@ -30,6 +30,8 @@ export interface WsContext {
 export const WS_MAX_BUFFERED_BYTES = 8 * 1024 * 1024
 
 export interface AttachWsOptions {
+  /** Recheck the user before accepting an authenticated command. Audio chunks belong to that command. */
+  authorizeMessage?: () => Promise<boolean>
   maxBufferedBytes?: number
   /** Куда сообщить о разрыве: счётчики кадров по типам показывают, что именно переполнило очередь. */
   onOverflow?: (info: { bufferedAmount: number; frames: Array<[string, number]> }) => void
@@ -71,6 +73,8 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
   socket.on('message', (data: Buffer, isBinary: boolean) => {
     queue = queue
       .then(async () => {
+        if (socket.readyState !== socket.OPEN) return
+        if (!isBinary && options.authorizeMessage && !await options.authorizeMessage()) {socket.close(4001, 'Session expired');return}
         if (isBinary) {
           handlers.onBinary?.(data, ctx)
           return

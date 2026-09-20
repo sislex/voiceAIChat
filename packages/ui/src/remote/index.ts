@@ -1,3 +1,4 @@
+import {makeSessionBridge as createIdentitySessionBridge} from '@sislexa/identity/client/sessionBridge'
 import { configureApplicationHost } from '../runtime/applicationHost'
 // Установка мостов window.* поверх REST+WS сервера — удалённый режим.
 // Используется веб-клиентом (same-origin/VITE_SERVER_URL) и десктопом в роли
@@ -26,7 +27,7 @@ import type {
 } from '@shared/ipc'
 import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/protocol'
 import type { FsResult, FsCopyResult } from '@shared/agentProtocol'
-import type { BrowserSessionMetadata, SessionUser, SessionInfo } from '@shared/types'
+import type { BrowserSessionMetadata } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
 import { createVpnBridge } from './vpnBridge'
@@ -34,7 +35,7 @@ import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { createQaRest } from './qaBridge'
-import { authHeaders as sessionHeaders, credentialedFetch, dropLegacyToken, getCsrf, getToken, hasSession, legacyToken, setCsrf, setToken, setUnauthorizedHandler } from './session'
+import { authHeaders as sessionHeaders, credentialedFetch, dropLegacyToken, getCsrf, getToken, legacyToken } from './session'
 import { base64ToArrayBuffer } from './decode'
 
 function makeAuthBridge(ws: WsClient): RendererAuthBridge {
@@ -251,234 +252,8 @@ export async function migrateDesktopLegacy(httpBase: string, token: string): Pro
   await client.markLegacyMigrated()
 }
 
-function assertSafeCredentialUrl(httpBase: string): void {
-  if (!httpBase) return
-  let url: URL
-  try { url = new URL(httpBase) } catch { throw new Error('Некорректный адрес сервера') }
-  if (url.username || url.password) throw new Error('Адрес сервера с данными пользователя запрещён')
-  if (url.protocol === 'https:') return
-  const rawHost = httpBase.match(/^http:\/\/([^/?#]+)/i)?.[1]?.replace(/:\d+$/, '') ?? ''
-  const loopback = url.hostname === 'localhost' || url.hostname === '[::1]' ||
-    (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(rawHost) && rawHost.split('.').every((part) => Number(part) <= 255))
-  if (url.protocol !== 'http:' || !loopback) {
-    throw new Error('Вход с паролем доступен только по HTTPS (HTTP разрешён лишь для localhost)')
-  }
-}
-
-async function loginError(res: Response): Promise<Error> {
-  let detail = ''
-  try {
-    const body = await res.json() as { error?: unknown; retryAfterSec?: unknown }
-    if (typeof body.error === 'string') detail = body.error
-    if (typeof body.retryAfterSec === 'number' && detail && !detail.includes(String(body.retryAfterSec))) {
-      detail += ` (повторите через ${body.retryAfterSec} с)`
-    }
-  } catch {}
-  return Object.assign(new Error(detail || `Ошибка входа: HTTP ${res.status}`), { status: res.status })
-}
-
-/** Мост сессии поверх REST: логин сохраняет токен и перезапускает WS с ним. */
 export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridge {
-  const authHeaders = (): Record<string, string> => sessionHeaders()
-  return {
-    login: async ({ name, password, remember }) => {
-      assertSafeCredentialUrl(httpBase)
-      let res: Response
-      try {
-        res = await credentialedFetch(httpBase + REST.sessionLogin, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name, password, remember: remember !== false })
-        })
-      } catch (cause) {
-        throw new Error('Сервер недоступен или запрос заблокирован сетью/CORS', { cause })
-      }
-      if (!res.ok) throw await loginError(res)
-      const body = (await res.json()) as { token?: string; csrf?: string; user?: SessionUser; requires2fa?: true; ticket?: string }
-      if (body.requires2fa && body.ticket) return { requires2fa: true, ticket: body.ticket }
-      const { token, user, csrf } = body as { token: string; csrf?: string; user: SessionUser }
-      setToken(token)
-      setCsrf(csrf ?? null)
-      ws.reconnect()
-      try {
-        await migrateDesktopLegacy(httpBase, token)
-      } catch (error) {
-        console.warn('[desktop migration] импорт будет повторён после следующего входа', error)
-      }
-      return user
-    },
-    // Второй фактор (auth-roadmap п.6): код по тикету → та же сессия, что и после обычного входа.
-    login2fa: async ({ ticket, code }) => {
-      const res = await credentialedFetch(httpBase + REST.session2fa, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket, code }) })
-      if (!res.ok) return null
-      const { token, user, csrf } = (await res.json()) as { token: string; user: SessionUser; csrf?: string }
-      setToken(token)
-      setCsrf(csrf ?? null)
-      ws.reconnect()
-      return user
-    },
-    securityNotices: async () => {
-      const r = await credentialedFetch(httpBase + REST.sessionMe, { headers: authHeaders() })
-      if (!r.ok) return []
-      const { notices } = (await r.json()) as { notices?: Array<{ at: number; ip: string; userAgent: string; type: string }> }
-      return notices ?? []
-    },
-    securityNoticesSeen: async () => { await credentialedFetch(httpBase + REST.sessionNoticesSeen, { method: 'POST', headers: authHeaders() }) },
-    resetPassword: async ({ name, code, password }) => {
-      const r = await credentialedFetch(httpBase + REST.sessionReset, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, code, password }) })
-      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
-      const { token: t } = (await r.json()) as { token: string }
-      setToken(t)
-      ws.reconnect()
-      return { ok: true }
-    },
-    requestPasswordReset: async (email) => {
-      const r = await credentialedFetch(httpBase + REST.sessionResetRequest, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) })
-      const body = (await r.json().catch(() => ({}))) as { ok?: true; message?: string; error?: string }
-      return r.ok ? { ok: true, message: body.message ?? 'Если адрес подтверждён, письмо со ссылкой отправлено.' } : { error: body.error ?? `Ошибка ${r.status}` }
-    },
-    resetPasswordByEmail: async ({ token, password }) => {
-      const r = await credentialedFetch(httpBase + REST.sessionResetEmail, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) })
-      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
-      return { ok: true }
-    },
-    changePassword: async ({ current, next }) => {
-      const r = await credentialedFetch(httpBase + REST.sessionPassword, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ current, next }) })
-      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
-      return { ok: true }
-    },
-    // Признак cookie-сессии для предупреждения о «входе, который не переживёт F5»:
-    // читаемая CSRF-cookie есть ровно тогда, когда браузер принял пару cookie.
-    hasCookieSession: () => Boolean(getCsrf()),
-    signupEnabled: async () => { try { const r = await credentialedFetch(httpBase + REST.sessionSignup); return r.ok ? Boolean(((await r.json()) as { enabled?: boolean }).enabled) : false } catch { return false } },
-    signup: async ({ name, email, password }) => {
-      const r = await credentialedFetch(httpBase + REST.sessionSignup, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, email, password }) })
-      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
-      return (await r.json()) as { ok: true; mailSent: boolean }
-    },
-    signupResend: async (email) => { await credentialedFetch(httpBase + REST.sessionSignupResend, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) }) },
-    verifyEmail: async (token) => {
-      const r = await credentialedFetch(httpBase + REST.sessionVerify, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) })
-      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
-      const { token: t } = (await r.json()) as { token: string }
-      setToken(t)
-      ws.reconnect()
-      return { ok: true }
-    },
-    onUnauthorized: (cb) => {
-      setUnauthorizedHandler(cb)
-      return () => setUnauthorizedHandler(null)
-    },
-    projectInvitationPreview: async (token) => {
-      const r = await credentialedFetch(httpBase + REST.invitationPreview(token))
-      return r.ok ? ((await r.json()) as import('@shared/projects').ProjectInvitationPreview) : null
-    },
-    inviteInfo: async (token) => {
-      const r = await credentialedFetch(httpBase + REST.sessionInvite(token))
-      return r.ok ? ((await r.json()) as { role: string; expiresAt: number; note: string }) : null
-    },
-    register: async ({ token, name, password }) => {
-      const r = await credentialedFetch(httpBase + REST.sessionRegister, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, name, password }) })
-      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
-      const { token: t } = (await r.json()) as { token: string }
-      setToken(t)
-      ws.reconnect()
-      return { ok: true }
-    },
-    twoFactor: {
-      status: async () => { const r = await credentialedFetch(httpBase + REST.session2fa, { headers: authHeaders() }); if (!r.ok) throw new Error('Не удалось получить статус 2FA'); return (await r.json()) as { enabled: boolean } },
-      setup: async () => { const r = await credentialedFetch(httpBase + REST.session2faSetup, { method: 'POST', headers: authHeaders() }); if (!r.ok) throw new Error('Не удалось создать секрет'); return (await r.json()) as { secret: string; otpauth: string } },
-      enable: async (code) => { const r = await credentialedFetch(httpBase + REST.session2faEnable, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ code }) }); if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Не удалось включить 2FA') },
-      disable: async (code) => { const r = await credentialedFetch(httpBase + REST.session2faDisable, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ code }) }); if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Не удалось выключить 2FA') }
-    },
-    me: async () => {
-      const res = await credentialedFetch(httpBase + REST.sessionMe, { headers: authHeaders() })
-      if (!res.ok) return null
-      const { user, csrf } = (await res.json()) as { user: SessionUser | null; csrf?: string }
-      setCsrf(user ? csrf ?? null : null)
-      if (user) ws.reconnect()
-      return user ?? null
-    },
-    logout: async () => {
-      const res = await credentialedFetch(httpBase + REST.sessionLogout, { method: 'POST', headers: authHeaders() })
-      if (!res.ok) throw new Error('Не удалось завершить сессию. Попробуйте ещё раз.')
-      setToken(null)
-      setCsrf(null)
-      ws.reconnect() // рвём авторизованное соединение
-    },
-    // Сессии (auth-roadmap п.4): список устройств, «выйти везде» (кроме текущей), отзыв одной.
-    sessions: async () => {
-      const res = await credentialedFetch(httpBase + REST.sessionList, { headers: authHeaders() })
-      if (!res.ok) throw new Error('Не удалось получить список сессий')
-      return ((await res.json()) as { sessions: SessionInfo[] }).sessions
-    },
-    logoutAll: async (options) => {
-      const res = await credentialedFetch(httpBase + REST.sessionLogoutAll, {
-        method: 'POST',
-        headers: { ...authHeaders(), 'content-type': 'application/json' },
-        body: JSON.stringify({ includeCurrent: options?.includeCurrent === true })
-      })
-      if (!res.ok) throw new Error(options?.includeCurrent ? 'Не удалось выйти на всех устройствах' : 'Не удалось завершить другие сессии')
-      if (options?.includeCurrent) { setToken(null); ws.reconnect() }
-    },
-    revokeSession: async (sid) => {
-      const res = await credentialedFetch(httpBase + REST.sessionRevoke(sid), { method: 'DELETE', headers: authHeaders() })
-      if (!res.ok) throw new Error('Не удалось завершить сессию')
-    },
-    endedSessions: async () => {
-      const res = await credentialedFetch(`${httpBase + REST.sessionList}?ended=1`, { headers: authHeaders() })
-      if (!res.ok) throw new Error('Не удалось получить завершённые сессии')
-      return ((await res.json()) as { ended?: SessionInfo[] }).ended ?? []
-    },
-    panicSessions: async () => {
-      const res = await credentialedFetch(httpBase + REST.sessionPanic, { method: 'POST', headers: authHeaders() })
-      if (!res.ok) throw new Error('Не удалось закрыть все входы')
-      // Сессия умерла вместе с остальными: держать мёртвый токен незачем.
-      setToken(null)
-      ws.reconnect()
-    },
-    sessionHistory: async (sid) => {
-      const res = await credentialedFetch(httpBase + REST.sessionHistory(sid), { headers: authHeaders() })
-      if (!res.ok) throw new Error('Не удалось получить историю устройства')
-      return ((await res.json()) as { events: Array<{ id: number; at: number; type: string; details: string }> }).events
-    },
-    untrustAllSessions: async () => {
-      const res = await credentialedFetch(httpBase + REST.sessionUntrustAll, { method: 'POST', headers: authHeaders() })
-      if (!res.ok) throw new Error('Не удалось снять доверие с устройств')
-    },
-    renameSession: async (sid, label) => {
-      const res = await credentialedFetch(httpBase + REST.sessionUpdate(sid), {
-        method: 'PATCH',
-        headers: { ...authHeaders(), 'content-type': 'application/json' },
-        body: JSON.stringify({ label })
-      })
-      if (!res.ok) throw new Error('Не удалось переименовать устройство')
-    },
-    trustSession: async (sid, trusted) => {
-      const res = await credentialedFetch(httpBase + REST.sessionUpdate(sid), {
-        method: 'PATCH',
-        headers: { ...authHeaders(), 'content-type': 'application/json' },
-        body: JSON.stringify({ trusted })
-      })
-      if (!res.ok) throw new Error(trusted ? 'Не удалось отметить устройство доверенным' : 'Не удалось снять доверие')
-    },
-    onSessionsChanged: (cb) => {
-      const offUpdate = ws.on('sessions.update', () => cb({ type: 'update' }))
-      const offRevoked = ws.on('session.revoked', (m) => cb({ type: 'revoked', sid: m.sid }))
-      return () => { offUpdate(); offRevoked() }
-    },
-    // Выпускает preview-cookie из текущего Bearer-токена: восстановленная из
-    // localStorage сессия иначе остаётся без cookie и iframe превью ловит 401.
-    ensurePreview: async () => {
-      if (!hasSession()) return false
-      try {
-        const res = await credentialedFetch(httpBase + REST.sessionPreview, { method: 'POST', headers: authHeaders() })
-        return res.ok
-      } catch {
-        return false
-      }
-    }
-  }
+  return createIdentitySessionBridge(httpBase, ws, migrateDesktopLegacy)
 }
 
 /**

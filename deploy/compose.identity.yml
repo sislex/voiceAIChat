@@ -1,0 +1,33 @@
+# Append to the component deployment after preparing the private Identity grant.
+services:
+  identity:
+    build:
+      context: ${SISLEXA_IDENTITY_SOURCE:?Set the pinned Identity source checkout}
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: ${SISLEXA_IDENTITY_COMMIT:?Set the pinned Identity commit}
+    image: sislexa-identity:1.0.0
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8798"
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+      IDENTITY_DATABASE_URL: ${VC_DB_URL:?Identity must use the existing production PostgreSQL database}
+      IDENTITY_SESSION_SECRET_FILE: /run/sislexa/session.secret
+      IDENTITY_PUBLIC_URL: ${VC_PUBLIC_URL:?Set the public application origin}
+      VC_SMTP_URL: ${VC_SMTP_URL:-}
+      VC_MAIL_FROM: ${VC_MAIL_FROM:-}
+      VC_GEOIP_URL: ${VC_GEOIP_URL:-}
+      VC_HIBP_CHECK: ${VC_HIBP_CHECK:-0}
+    volumes:
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/identity/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/identity/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/identity/provider:/run/sislexa/provider
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/identity/session.secret:/run/sislexa/session.secret:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8798/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    mem_limit: 512m
+    cpus: "0.75"

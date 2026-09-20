@@ -36,6 +36,13 @@
         "image-studio.generate"
       ],
       "maxTtlSeconds": 2592000
+    },
+    {
+      "consumerId": "identity",
+      "scopes": [
+        "identity.core"
+      ],
+      "maxTtlSeconds": 2592000
     }
   ],
   "legacyScopes": [
@@ -71,6 +78,11 @@
       "applicationId": "tts-runner",
       "url": "http://tts-runner:8791",
       "tokenFile": "/run/sislexa/outgoing/tts-runner.token"
+    },
+    {
+      "applicationId": "identity",
+      "url": "http://identity:8798",
+      "tokenFile": "/run/sislexa/outgoing/identity.token"
     }
   ]
 }
