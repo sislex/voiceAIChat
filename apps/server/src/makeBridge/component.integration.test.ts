@@ -48,8 +48,8 @@ beforeAll(async () => {
   vi.stubEnv('VC_APPLICATION_VERSION', '0.1.312'); vi.stubEnv('VC_APPLICATION_API_VERSION', '1.1.0'); vi.stubEnv('VC_APPLICATION_COMMIT', 'a'.repeat(40))
   core = await buildServer({ config: loadConfig({ PORT: String(corePort), VC_DATA_DIR: root, VC_MODELS_DIR: join(root, 'models'), VC_PIPER_VOICES_DIR: join(root, 'voices'), SISLEXA_COMPONENT_CONFIG: files.core, VC_INTERNAL_TOKEN: 'legacy', VC_MCP_SECRET: mcp }), db, sessionSecret: secret })
   await core.listen({ host: '127.0.0.1', port: corePort })
-  vi.stubEnv('VC_APPLICATION_VERSION', '1.1.0'); vi.stubEnv('VC_APPLICATION_COMMIT', 'b'.repeat(40))
-  make = (await buildMakeServer({ config: { componentConfigPath: files.make, host: '127.0.0.1', port: makePort, dataDir: root, coreUrl: 'http://unused.invalid', internalToken: '', mcpSecret: mcp, version: '1.1.0' } })).app
+  vi.stubEnv('VC_APPLICATION_VERSION', '1.1.3'); vi.stubEnv('VC_APPLICATION_COMMIT', 'b'.repeat(40))
+  make = (await buildMakeServer({ config: { componentConfigPath: files.make, host: '127.0.0.1', port: makePort, dataDir: root, coreUrl: 'http://unused.invalid', internalToken: '', mcpSecret: mcp, version: '1.1.3' } })).app
   await make.listen({ host: '127.0.0.1', port: makePort })
 }, 60000)
 afterAll(async () => {

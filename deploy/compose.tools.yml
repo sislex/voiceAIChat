@@ -10,20 +10,20 @@ services:
       context: ${SISLEXA_MAKE_SOURCE:?Set the pinned make source checkout}
       target: api
       args:
-        APPLICATION_VERSION: "1.1.1"
-        APPLICATION_COMMIT: "d76f047e7c2aec233da137941ba66e6c51b3a507"
-    image: sislexa-make:1.1.1-d76f047e7c2a
+        APPLICATION_VERSION: "1.1.3"
+        APPLICATION_COMMIT: "41955a601c2fc8f784263caf22a38b2955ba33a5"
+    image: sislexa-make:1.1.3-41955a601c2f
     environment:
-      VC_RELEASE_VERSION: "1.1.1"
-      VC_APPLICATION_COMMIT: "d76f047e7c2aec233da137941ba66e6c51b3a507"
+      VC_RELEASE_VERSION: "1.1.3"
+      VC_APPLICATION_COMMIT: "41955a601c2fc8f784263caf22a38b2955ba33a5"
   make-ui:
     build:
       context: ${SISLEXA_MAKE_SOURCE:?Set the pinned make source checkout}
       target: frontend
       args:
-        APPLICATION_VERSION: "1.1.1"
-        APPLICATION_COMMIT: "d76f047e7c2aec233da137941ba66e6c51b3a507"
-    image: sislexa-make-ui:1.1.1-d76f047e7c2a
+        APPLICATION_VERSION: "1.1.3"
+        APPLICATION_COMMIT: "41955a601c2fc8f784263caf22a38b2955ba33a5"
+    image: sislexa-make-ui:1.1.3-41955a601c2f
     restart: unless-stopped
     mem_limit: 128m
     volumes:
@@ -38,20 +38,20 @@ services:
       context: ${SISLEXA_PLAYWRIGHT_READER_SOURCE:?Set the pinned playwright-reader source checkout}
       target: api
       args:
-        APPLICATION_VERSION: "1.1.0"
-        APPLICATION_COMMIT: "1973eb506b2023a8d06778ca38f85997ded8cb09"
-    image: sislexa-playwright-reader:1.1.0-1973eb506b20
+        APPLICATION_VERSION: "1.1.2"
+        APPLICATION_COMMIT: "159b8bd4a8437f34f54b20b0c11f5fb3b4a81662"
+    image: sislexa-playwright-reader:1.1.2-159b8bd4a843
     environment:
-      VC_RELEASE_VERSION: "1.1.0"
-      VC_APPLICATION_COMMIT: "1973eb506b2023a8d06778ca38f85997ded8cb09"
+      VC_RELEASE_VERSION: "1.1.2"
+      VC_APPLICATION_COMMIT: "159b8bd4a8437f34f54b20b0c11f5fb3b4a81662"
   playwright-reader-ui:
     build:
       context: ${SISLEXA_PLAYWRIGHT_READER_SOURCE:?Set the pinned playwright-reader source checkout}
       target: frontend
       args:
-        APPLICATION_VERSION: "1.1.0"
-        APPLICATION_COMMIT: "1973eb506b2023a8d06778ca38f85997ded8cb09"
-    image: sislexa-playwright-reader-ui:1.1.0-1973eb506b20
+        APPLICATION_VERSION: "1.1.2"
+        APPLICATION_COMMIT: "159b8bd4a8437f34f54b20b0c11f5fb3b4a81662"
+    image: sislexa-playwright-reader-ui:1.1.2-159b8bd4a843
     restart: unless-stopped
     mem_limit: 128m
     volumes:
@@ -66,21 +66,21 @@ services:
       context: ${SISLEXA_WEB_READER_SOURCE:?Set the pinned web-reader source checkout}
       target: api
       args:
-        APPLICATION_VERSION: "1.1.0"
-        APPLICATION_COMMIT: "ff068915690f92d857ffb2635682b8c189b7e211"
-    image: sislexa-web-reader:1.1.0-ff068915690f
+        APPLICATION_VERSION: "1.1.2"
+        APPLICATION_COMMIT: "2d0f30bd50d6662613ede3aa5af15a07e09d0183"
+    image: sislexa-web-reader:1.1.2-2d0f30bd50d6
     environment:
-      VC_RELEASE_VERSION: "1.1.0"
-      VC_APPLICATION_COMMIT: "ff068915690f92d857ffb2635682b8c189b7e211"
+      VC_RELEASE_VERSION: "1.1.2"
+      VC_APPLICATION_COMMIT: "2d0f30bd50d6662613ede3aa5af15a07e09d0183"
     profiles: !reset []
   web-reader-ui:
     build:
       context: ${SISLEXA_WEB_READER_SOURCE:?Set the pinned web-reader source checkout}
       target: frontend
       args:
-        APPLICATION_VERSION: "1.1.0"
-        APPLICATION_COMMIT: "ff068915690f92d857ffb2635682b8c189b7e211"
-    image: sislexa-web-reader-ui:1.1.0-ff068915690f
+        APPLICATION_VERSION: "1.1.2"
+        APPLICATION_COMMIT: "2d0f30bd50d6662613ede3aa5af15a07e09d0183"
+    image: sislexa-web-reader-ui:1.1.2-2d0f30bd50d6
     restart: unless-stopped
     mem_limit: 128m
     volumes:

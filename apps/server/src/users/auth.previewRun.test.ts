@@ -10,14 +10,14 @@ import type { VoiceChatDb } from '../db/database.js'
 const req = (cookie: string): FastifyRequest => ({ headers: { cookie } }) as unknown as FastifyRequest
 
 const dbWith = (user: { name: string; role: string; blocked?: boolean } | null): VoiceChatDb =>
-  ({identity:{getUser: () => user}}) as unknown as VoiceChatDb
+  ({identity:{getUser: () => user, getAccountAccess: () => user && ({ systemRole: user.role, tenant: { id: 'tenant-alice' }, tariff: { id: 'standard', revision: 1 }, capabilities: ['web-reader.use'] })}}) as unknown as VoiceChatDb
 
 describe('пользователь ключа Chromium', () => {
   it('авторизует владельца ключа на пути прокси', async () => {
     const keys = new PreviewRunKeys()
     const key = keys.issue('alice')
     expect(await previewRunUser(dbWith({ name: 'alice', role: 'developer' }), req(`${PREVIEW_RUN_COOKIE}=${key}`), '/api/preview', keys))
-      .toEqual({ name: 'alice', role: 'developer' })
+      .toEqual({ name: 'alice', role: 'developer', account: { tenantId: 'tenant-alice', tariffId: 'standard', tariffRevision: 1, capabilities: ['web-reader.use'] } })
   })
 
   it('на других маршрутах ключ бесполезен', async () => {

@@ -73,12 +73,12 @@ in My Account. Provide tariff management and user assignment for system admins v
 an injected Identity client; components do not access HTTP directly. Load the tariff
 editor only when opened so it does not inflate normal account navigation.
 
-- [ ] Shared contracts and pure capability policy.
-- [ ] Identity schema, idempotent backfill and atomic user provisioning.
-- [ ] Protected tariff APIs and live account context.
-- [ ] Core/tool HTTP, WebSocket and execution enforcement.
-- [ ] Account/admin UI, client bridge and independent application behavior.
-- [ ] SQLite/PostgreSQL migration, isolation and capability regression tests.
-- [ ] Independent Identity gate, immutable release pins and complete Core gates.
+- [x] Shared contracts and pure capability policy.
+- [x] Identity schema, idempotent backfill and atomic user provisioning.
+- [x] Protected tariff APIs and live account context.
+- [x] Core/tool HTTP, WebSocket and execution enforcement.
+- [x] Account/admin UI, client bridge and independent application behavior.
+- [x] SQLite/PostgreSQL migration, isolation and capability regression tests.
+- [x] Independent Identity gate, immutable release pins and complete Core gates.
 - [ ] Backed-up production rollout through installed voicechat-deploy and live checks.
 - [ ] KB ownership, migration and production evidence updated with the code.
