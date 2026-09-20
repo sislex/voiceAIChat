@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: deb7bc26
+checked: 79d54f39
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1142,3 +1142,42 @@ adapter declares the test/type dependencies used by the upstream server check;
 `apps/identity/container.json` supplies native SQLite build tools. The pinned source
 archive includes the separately built login/account assets, so runtime startup
 does not require the Core UI source.
+
+
+### Production 0.1.315 verification
+
+Production 0.1.315 (`79d54f397a3e50ae1b459c2b6dd4cea262cd139b`) completed through
+installed `voicechat-deploy` at 2026-09-20 11:03:22 UTC. Identity 1.0.0
+(`85ee08cdc7e3004a15417a1f86781ec68a0df47b`) runs independently from its published
+repository. All fourteen application containers were running; all configured
+container healthchecks passed, as did Core health and all eight provider readiness
+checks. The installation has thirteen active provider-specific grants.
+
+The first readiness attempt caught a configuration error: the prepared Core
+Web Reader dependency used port 8790 instead of the retained production port 8795.
+The address was corrected, all existing dependency URLs were compared with the
+previous installation, and the canonical deployer recreated Core using a config
+revision label in the invocation-only prebuilt overlay. Future installation
+preflights must preserve actual dependency URLs, not infer ports from application
+names. The final deploy succeeded; readiness was not bypassed.
+
+Private configuration and image rollback references remain under
+`/var/backups/voicechat/sislexa-identity-20260920T085145Z`. A production database
+backup was restored locally and Identity initialization preserved every user and
+session row. A refreshed dump was captured at 10:38 UTC and its archive directory
+validated. Component configuration is `/etc/voicechat/components-0.1.315`;
+the exact prior session signing secret and PostgreSQL connection were retained.
+The invocation-only `/etc/voicechat/prebuilt-0.1.315.yml` selected fourteen verified
+images with zero build targets, while preserving operator networks, mounts,
+external LLM settings and reader recovery configuration.
+
+Live checks passed existing-session continuity, existing-password login, Core and
+Identity agreement, cookie CSRF, HTTP/WebSocket logout revocation, and rejection
+of a component grant as a user session. Mobile HTTPS login, account aggregation
+and device-session UI passed without page errors. Provider metadata, scopes,
+revocation, versioned frontend integrity and every tool-to-Core callback were
+verified. Image Studio upload/read/delete and cross-user isolation passed;
+retained Image Studio 0.1.312 assets and Web Recorder remained available. Piper
+produced a valid WAV and Whisper large-v3-turbo recognized the fixture phrase;
+the external Codex relay completed a bounded response. Temporary user accounts,
+sessions and credential files were removed after verification.
