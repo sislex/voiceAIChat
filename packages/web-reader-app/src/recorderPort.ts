@@ -1,1 +1,1 @@
-export type { WebRecorderPort, RecorderState } from './contracts'
+export * from '@sislexa/web-reader/ui/recorderPort'

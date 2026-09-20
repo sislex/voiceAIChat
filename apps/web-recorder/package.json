@@ -1,20 +1,21 @@
 {
   "name": "@voicechat/web-recorder",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "dev": "node ../../scripts/external-workspace.mjs dev",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "preview": "node ../../scripts/external-workspace.mjs preview",
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test"
   },
   "dependencies": {
     "@voicechat/shared": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@voicechat/ui-kit": "*"
+    "@voicechat/ui-kit": "*",
+    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.0.0-f65719c07ca1.tgz"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
@@ -23,5 +24,12 @@
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/web-reader",
+    "workspace": "apps/web-recorder",
+    "repository": "https://github.com/sislex/webreader",
+    "version": "1.0.0",
+    "commit": "f65719c07ca19f3dea6b20e7409334dd030ab29a"
   }
 }

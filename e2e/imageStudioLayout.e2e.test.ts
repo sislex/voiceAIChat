@@ -264,6 +264,8 @@ describe('Студия картинок: адаптивная раскладка
       await extract.scrollIntoViewIfNeeded()
       await expect.poll(() => extract.isVisible()).toBe(true)
       const stage = selection.locator('.image-studio-selection-stage')
+      // Checking the footer scrolled the canvas away; pointer coordinates need the visible stage.
+      await stage.scrollIntoViewIfNeeded()
       const box = await stage.boundingBox()
       if (!box) throw new Error('Selection stage is not visible')
       await page.mouse.move(box.x + box.width * .3, box.y + box.height * .25)

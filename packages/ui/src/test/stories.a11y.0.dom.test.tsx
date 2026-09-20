@@ -23,18 +23,19 @@ import storybookMain from '../../.storybook/main'
  */
 const modules = import.meta.glob<Record<string, unknown>>([
   '../components/**/*.stories.tsx',
-  '../../../{make-app,image-studio-app,ui-foundation,app-shell,chat-app,web-reader-app,playwright-reader-app,projects-app,operations-app,admin-app,sessions-app,profile-app}/src/**/*.stories.tsx'
-])
+  '../../../{image-studio-app,ui-foundation,app-shell,chat-app,projects-app,operations-app,admin-app,sessions-app,profile-app}/src/**/*.stories.tsx',
+  '../../../../node_modules/@sislexa/{make,playwright-reader,web-reader}/packages/*-app/src/**/*.stories.tsx'
+], { exhaustive: true })
 
 // Сторож: новый пакет в витрине обязан попасть и под axe. Иначе повторится
 // история, из-за которой этот прогон девять пакетов не проверял вовсе —
 // экраны в Storybook есть, проверки нет.
 it('глоб покрывает все пакеты-приложения из .storybook/main.ts', () => {
   const fromStorybook = (storybookMain.stories as string[])
-    .map((pattern) => pattern.match(/^\.\.\/\.\.\/([^/]+)\/src\//)?.[1])
+    .map((pattern) => pattern.match(/^\.\.\/\.\.\/([^/]+)\/src\//)?.[1] ?? pattern.match(/\/packages\/([^/]+)\/src\//)?.[1])
     .filter((name): name is string => Boolean(name))
   const globbed = new Set(
-    Object.keys(modules).map((path) => path.match(/\.\.\/\.\.\/\.\.\/([^/]+)\//)?.[1]).filter(Boolean)
+    Object.keys(modules).map((path) => path.match(/\/packages\/([^/]+)\/src\//)?.[1] ?? path.match(/\.\.\/\.\.\/\.\.\/([^/]+)\//)?.[1]).filter(Boolean)
   )
   expect(fromStorybook.filter((name) => !globbed.has(name))).toEqual([])
 })

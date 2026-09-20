@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/ui-foundation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -10,6 +10,8 @@
     "./*": "./src/*.ts",
     "./components/*": "./src/components/*.tsx",
     "./test/fixtures/*": "./src/test/fixtures/*.ts",
+    "./test/uiRender": "./src/test/uiRender.tsx",
+    "./components/code/monacoSnippets": "./src/components/code/monacoSnippets.ts",
     "./lib/*": "./src/lib/*.ts",
     "./runtime": "./src/runtime.ts",
     "./components/machine": "./src/components/machine.ts",

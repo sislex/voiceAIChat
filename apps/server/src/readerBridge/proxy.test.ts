@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+import { dirname } from 'node:path'
 // Прокси ридера в ядре: (1) полнота — каждый путь, который регистрируют `routes/previewProxy.ts` и
 // `mcp/previewMcp.ts`, попадает под `READER_PROXY_PREFIXES`, иначе в `remote` он получит у ядра 404;
 // (2) приоритет — пути Make под тем же префиксом `/api/preview/make*` уходят в Make, а не в ридер,
@@ -10,7 +12,7 @@ import { PREVIEW_MCP_PATH } from '@voicechat/web-reader-contracts'
 import { registerMakeProxy } from '../makeBridge/proxy.js'
 import { READER_PROXY_PREFIXES, registerReaderProxy } from './proxy.js'
 
-const srcDir = join(__dirname, '../../../web-reader/src')
+const srcDir = join(dirname(createRequire(import.meta.url).resolve('@sislexa/web-reader/package.json')), 'apps/web-reader/src')
 
 function covered(path: string): boolean {
   return READER_PROXY_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))

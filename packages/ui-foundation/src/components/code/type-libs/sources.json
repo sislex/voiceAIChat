@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "packages": {
+    "@types/react": {
+      "version": "18.3.31",
+      "license": "types-react.LICENSE.txt",
+      "files": {
+        "react-index.d.ts.txt": {
+          "source": "index.d.ts",
+          "sha256": "09ddcfcfbe77a8232d155ca1030005106b1328f6210df43629d0be750da07c16"
+        },
+        "react-global.d.ts.txt": {
+          "source": "global.d.ts",
+          "sha256": "eb5b19b86227ace1d29ea4cf81387279d04bb34051e944bc53df69f58914b788"
+        },
+        "react-jsx-runtime.d.ts.txt": {
+          "source": "jsx-runtime.d.ts",
+          "sha256": "b838d4c72740eb0afd284bf7575b74c624b105eff2e8c7b4aeead57e7ac320ff"
+        }
+      }
+    },
+    "@types/react-dom": {
+      "version": "18.3.7",
+      "license": "types-react-dom.LICENSE.txt",
+      "files": {
+        "react-dom-index.d.ts.txt": {
+          "source": "index.d.ts",
+          "sha256": "17ed71200119e86ccef2d96b73b02ce8854b76ad6bd21b5021d4269bec527b5f"
+        },
+        "react-dom-client.d.ts.txt": {
+          "source": "client.d.ts",
+          "sha256": "05321b823dd3781d0b6aac8700bfdc0c9181d56479fe52ba6a40c9196fd661a8"
+        }
+      }
+    },
+    "csstype": {
+      "version": "3.2.3",
+      "license": "csstype.LICENSE.txt",
+      "files": {
+        "csstype-index.d.ts.txt": {
+          "source": "index.d.ts",
+          "sha256": "ac51dd7d31333793807a6abaa5ae168512b6131bd41d9c5b98477fc3b7800f9f"
+        }
+      }
+    }
+  }
+}

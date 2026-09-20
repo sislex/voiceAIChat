@@ -3,10 +3,15 @@
 // своего vite-конфига, поэтому алиасы задаются здесь.
 import type { StorybookConfig } from '@storybook/react-vite'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+
+const require = createRequire(import.meta.url)
+const toolStories = (name: string, workspace: string) => join(dirname(require.resolve(name + '/package.json')), workspace, 'src/**/*.stories.tsx')
 
 const config: StorybookConfig = {
   // Сториз — рядом с компонентами, docs-страницы витрины (Foundations) — .mdx.
-  stories: ['../src/**/*.mdx', '../../make-app/src/**/*.stories.tsx', '../../image-studio-app/src/**/*.stories.tsx', '../src/**/*.stories.tsx', '../../app-shell/src/**/*.stories.tsx', '../../chat-app/src/**/*.stories.tsx', '../../web-reader-app/src/**/*.stories.tsx', '../../playwright-reader-app/src/**/*.stories.tsx', '../../projects-app/src/**/*.stories.tsx', '../../operations-app/src/**/*.stories.tsx', '../../admin-app/src/**/*.stories.tsx', '../../sessions-app/src/**/*.stories.tsx', '../../profile-app/src/**/*.stories.tsx'],
+  stories: ['../src/**/*.mdx', toolStories('@sislexa/make', 'packages/make-app'), '../../image-studio-app/src/**/*.stories.tsx', '../src/**/*.stories.tsx', '../../app-shell/src/**/*.stories.tsx', '../../chat-app/src/**/*.stories.tsx', toolStories('@sislexa/web-reader', 'packages/web-reader-app'), toolStories('@sislexa/playwright-reader', 'packages/playwright-reader-app'), '../../projects-app/src/**/*.stories.tsx', '../../operations-app/src/**/*.stories.tsx', '../../admin-app/src/**/*.stories.tsx', '../../sessions-app/src/**/*.stories.tsx', '../../profile-app/src/**/*.stories.tsx'],
   addons: ['@storybook/addon-essentials', '@storybook/addon-a11y'],
   framework: { name: '@storybook/react-vite', options: {} },
   viteFinal: (cfg) => {

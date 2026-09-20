@@ -100,3 +100,10 @@ test('матрица Web Reader включает remote-прокси и адре
   assert.equal(compose.services['web-reader'].environment.VC_PLAYWRIGHT_READER_URL,'http://playwright-reader:8080')
   assert.equal(compose.services['web-reader'].environment.VC_DB_URL,undefined)
 })
+
+test('extracted tools retain their release-center compatibility drivers', async () => {
+  for (const id of ['make', 'playwright-reader', 'web-reader']) {
+    const driver = await import(`../apps/${id}/compatibility.mjs`)
+    assert.equal(typeof driver.verifyCompatibility, 'function', id)
+  }
+})

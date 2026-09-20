@@ -5,13 +5,15 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  realpathSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   APPLICATION_CATALOG,
@@ -55,6 +57,20 @@ export function applicationBuildPaths(applicationId, repo = root) {
       if (byName.has(dependency)) queue.push(dependency)
   }
   return [...paths].sort()
+}
+// Lockfile archive paths are root-relative; only regular files inside vendor are allowed.
+export function copyDependencyArchives(lock, repo, output) {
+  for (const entry of Object.values(lock.packages)) {
+    if (!entry.resolved?.startsWith('file:') || entry.link) continue
+    const path = entry.resolved.slice(5)
+    if (!/^vendor\/[a-zA-Z0-9._-]+\.tgz$/.test(path))
+      throw new Error('Unsafe dependency archive path: ' + path)
+    const source = join(repo, path)
+    if (!lstatSync(source).isFile() || realpathSync(source) !== join(realpathSync(repo), path))
+      throw new Error('Dependency archives must not traverse symlinks')
+    mkdirSync(dirname(join(output, path)), { recursive: true })
+    cpSync(source, join(output, path))
+  }
 }
 export function createApplicationBuildContext(
   applicationId,
@@ -107,6 +123,10 @@ export function createApplicationBuildContext(
       'application-frontend-server.mjs'
     ])
       cpSync(join(repo, 'scripts', script), join(output, 'scripts', script))
+  }
+  if (paths.some(path => json(join(repo, path, 'package.json')).sislexaExternal)) {
+    mkdirSync(join(output, 'scripts'), { recursive: true })
+    cpSync(join(repo, 'scripts/external-workspace.mjs'), join(output, 'scripts/external-workspace.mjs'))
   }
   const original = json(join(repo, 'package.json'))
   const pkg = {
@@ -176,6 +196,7 @@ export function createApplicationBuildContext(
   }
   for (const path of Object.keys(lock.packages))
     if (!reachable.has(path)) delete lock.packages[path]
+  copyDependencyArchives(lock, repo, output)
   writeFileSync(
     join(output, 'package-lock.json'),
     JSON.stringify(lock, null, 2) + '\n'

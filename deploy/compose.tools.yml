@@ -1,0 +1,96 @@
+# Build independent repositories at the exact commits in tools.lock.json.
+# Append this file after operator overrides; preserve the existing override chain.
+services:
+  voicechat:
+    environment:
+      VC_READER_MODE: remote
+      VC_APPLICATION_FRONTENDS: '{"make-ui":"http://make-ui:8080","playwright-reader-ui":"http://playwright-reader-ui:8080","web-reader-ui":"http://web-reader-ui:8080"}'
+  make:
+    build:
+      context: ${SISLEXA_MAKE_SOURCE:?Set the pinned make source checkout}
+      target: api
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: "7fb6727e9ccf28cdb1ee3d421968e5b82b618ca5"
+    image: sislexa-make:1.0.0-7fb6727e9ccf
+    environment:
+      VC_RELEASE_VERSION: "1.0.0"
+      VC_APPLICATION_COMMIT: "7fb6727e9ccf28cdb1ee3d421968e5b82b618ca5"
+  make-ui:
+    build:
+      context: ${SISLEXA_MAKE_SOURCE:?Set the pinned make source checkout}
+      target: frontend
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: "7fb6727e9ccf28cdb1ee3d421968e5b82b618ca5"
+    image: sislexa-make-ui:1.0.0-7fb6727e9ccf
+    restart: unless-stopped
+    mem_limit: 128m
+    volumes:
+      - make-ui-assets:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+  playwright-reader:
+    build:
+      context: ${SISLEXA_PLAYWRIGHT_READER_SOURCE:?Set the pinned playwright-reader source checkout}
+      target: api
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: "04520f8587ba092c977bddcb0c753891d7fb853f"
+    image: sislexa-playwright-reader:1.0.0-04520f8587ba
+    environment:
+      VC_RELEASE_VERSION: "1.0.0"
+      VC_APPLICATION_COMMIT: "04520f8587ba092c977bddcb0c753891d7fb853f"
+  playwright-reader-ui:
+    build:
+      context: ${SISLEXA_PLAYWRIGHT_READER_SOURCE:?Set the pinned playwright-reader source checkout}
+      target: frontend
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: "04520f8587ba092c977bddcb0c753891d7fb853f"
+    image: sislexa-playwright-reader-ui:1.0.0-04520f8587ba
+    restart: unless-stopped
+    mem_limit: 128m
+    volumes:
+      - playwright-reader-ui-assets:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+  reader:
+    build:
+      context: ${SISLEXA_WEB_READER_SOURCE:?Set the pinned web-reader source checkout}
+      target: api
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: "f65719c07ca19f3dea6b20e7409334dd030ab29a"
+    image: sislexa-web-reader:1.0.0-f65719c07ca1
+    environment:
+      VC_RELEASE_VERSION: "1.0.0"
+      VC_APPLICATION_COMMIT: "f65719c07ca19f3dea6b20e7409334dd030ab29a"
+    profiles: !reset []
+  web-reader-ui:
+    build:
+      context: ${SISLEXA_WEB_READER_SOURCE:?Set the pinned web-reader source checkout}
+      target: frontend
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: "f65719c07ca19f3dea6b20e7409334dd030ab29a"
+    image: sislexa-web-reader-ui:1.0.0-f65719c07ca1
+    restart: unless-stopped
+    mem_limit: 128m
+    volumes:
+      - web-reader-ui-assets:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+volumes:
+  make-ui-assets:
+  playwright-reader-ui-assets:
+  web-reader-ui-assets:

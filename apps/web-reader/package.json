@@ -10,11 +10,11 @@
     "./config": "./src/standalone/config.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc --noEmit -p tsconfig.json && npm run -w @voicechat/web-recorder build",
-    "test": "vitest run --silent",
-    "dev": "tsx watch src/standalone/index.ts",
-    "start": "tsx src/standalone/index.ts"
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "dev": "node ../../scripts/external-workspace.mjs dev",
+    "start": "node ../../scripts/external-workspace.mjs start"
   },
   "dependencies": {
     "@voicechat/shared": "*",
@@ -30,7 +30,8 @@
     "postcss-value-parser": "4.2.0",
     "tough-cookie": "5.1.2",
     "@voicechat/browser-contracts": "*",
-    "acorn": "^8.18.0"
+    "acorn": "^8.18.0",
+    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.0.0-f65719c07ca1.tgz"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -39,5 +40,12 @@
     "tsx": "^4.19.2",
     "jsdom": "^26.1.0",
     "@types/jsdom": "^30.0.0"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/web-reader",
+    "workspace": "apps/web-reader",
+    "repository": "https://github.com/sislex/webreader",
+    "version": "1.0.0",
+    "commit": "f65719c07ca19f3dea6b20e7409334dd030ab29a"
   }
 }

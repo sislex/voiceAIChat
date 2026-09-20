@@ -9,7 +9,7 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ✓ |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: 039d956b feat: establish Sislexa operation and usage contracts |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 65 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: effba481 perf(ui): reduce initial bundles and enforce route budgets |
@@ -23,24 +23,24 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 14 коммит(ов) в areas после сверки: 8e2b9b69 Merge main into CHAT-489 (task d1a926b6-53eb-4122-808f-53104378af4e) … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 2 коммит(ов) в areas после сверки: 9ca54750 Merge branch 'CHAT-491' … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 19 коммит(ов) в areas после сверки: afbca61a Merge main into CHAT-485 (task 99650814-5021-4c64-870d-5c32d929ec7a) … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-17 | ⚠ 3 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1574 коммит(ов) в areas после сверки: 7ed88f46 docs(kb): update after merge a38b261a-9d94-499e-847a-e7349c344cba … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1575 коммит(ов) в areas после сверки: 039d956b feat: establish Sislexa operation and usage contracts … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 42 коммит(ов) в areas после сверки: a6ef2f4d fix(merge): автоисправление упавших проверок задачи a38b261a-9d94-499e-847a-e7349c344cba … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-17 | ⚠ 6 коммит(ов) в areas после сверки: a6ef2f4d fix(merge): автоисправление упавших проверок задачи a38b261a-9d94-499e-847a-e7349c344cba … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 16 коммит(ов) в areas после сверки: 5f98a55c Merge remote-tracking branch 'origin/main' into CHAT-483 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 7 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 375 коммит(ов) в areas после сверки: a782dc51 Merge main into CHAT-452 … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 29 коммит(ов) в areas после сверки: 8e2b9b69 Merge main into CHAT-489 (task d1a926b6-53eb-4122-808f-53104378af4e) … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 30 коммит(ов) в areas после сверки: 039d956b feat: establish Sislexa operation and usage contracts … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-14 | ⚠ 41 коммит(ов) в areas после сверки: a6be15b4 Merge remote-tracking branch 'origin/main' into CHAT-490 … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-16 | ⚠ 16 коммит(ов) в areas после сверки: e5564542 Merge remote-tracking branch 'origin/main' into CHAT-483 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 264 коммит(ов) в areas после сверки: fe6a1b53 feat: improve release center workflow … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-17 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-17 | ⚠ 3 коммит(ов) в areas после сверки: 6fbb65f5 fix: preserve board websocket invalidations during load … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ⚠ 52 коммит(ов) в areas после сверки: e782b417 Merge main into CHAT-493 … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-20 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: 039d956b feat: establish Sislexa operation and usage contracts |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 206 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-15 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-16 | ⚠ 1 коммит(ов) в areas после сверки: 5fe2cdd8 feat(reader): stream frames and enrich action evidence |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-20 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 158 коммит(ов) в areas после сверки: 46bdd433 fix(merge): автоисправление упавших проверок задачи 51889303-0c4d-4f9a-b8ba-3f52e9b09243 … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-17, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -58,6 +58,7 @@
 - [apps/server](../../apps/server/AGENTS.md)
 - [apps/web](../../apps/web/AGENTS.md)
 - [apps/web-reader](../../apps/web-reader/AGENTS.md)
+- [apps/web-recorder](../../apps/web-recorder/AGENTS.md)
 - [packages/browser-contracts](../../packages/browser-contracts/AGENTS.md)
 - [packages/image-studio-app](../../packages/image-studio-app/AGENTS.md)
 - [packages/make-app](../../packages/make-app/AGENTS.md)
@@ -75,9 +76,11 @@
 
 ## Журнал сессий
 
-Всего записей: 887. Последние:
+Всего записей: 889. Последние:
 
+- [2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md) — sislexa-tool-extraction
 - [2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md) — sislexa-project-name
+- [2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md) — sislexa-production-0310
 - [2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md) — sislexa-platform-contract-foundation
 - [2026-09-17-pc-radvilovich-release-center-cycle-8.md](log/2026-09-17-pc-radvilovich-release-center-cycle-8.md) — release-center-cycle-8
 - [2026-09-17-pc-radvilovich-project-settings-layout-a11y.md](log/2026-09-17-pc-radvilovich-project-settings-layout-a11y.md) — project-settings-layout-a11y
@@ -85,8 +88,6 @@
 - [2026-09-17-pc-radvilovich-chat449-task-card-kb.md](log/2026-09-17-pc-radvilovich-chat449-task-card-kb.md) — chat449-task-card-kb
 - [2026-09-17-macbookair-release-center-cycle-8-kb.md](log/2026-09-17-macbookair-release-center-cycle-8-kb.md) — release-center-cycle-8-kb
 - [2026-09-17-macbookair-qa-panels-teardown.md](log/2026-09-17-macbookair-qa-panels-teardown.md) — qa-panels-teardown
-- [2026-09-17-macbookair-grouped-tools-menu.md](log/2026-09-17-macbookair-grouped-tools-menu.md) — grouped-tools-menu
-- [2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-project-settings-component-qa.md](log/2026-09-17-alexeys-macbook-air-tailae39a6-ts-net-project-settings-component-qa.md) — project-settings-component-qa
 
 ## Исторические планы
 

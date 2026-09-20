@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-20
-checked: 7ed88f46
+checked: 48ab7ed2
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -167,3 +167,31 @@ VAD (`lib/vad.ts`) даёт hands-free и barge-in.
 ## Единый контейнер popup
 
 Все модальные поверхности UI используют `PopupFrame`: он владеет overlay, `role=dialog`, кликом по фону и обработкой Escape. `ToolFrame` остаётся надстройкой для тулов и полноэкранного режима, но его modal-вариант также построен на `PopupFrame`.
+
+## Tool repository ownership
+
+Make, Playwright Reader and Web Reader have independent repositories at
+`https://github.com/sislex/make`, `https://github.com/sislex/playwrightreader` and
+`https://github.com/sislex/webreader`. Each owns its API, UI, contracts and tests;
+Web Reader also owns the iframe recorder. Their root distribution packages are
+`@sislexa/make`, `@sislexa/playwright-reader` and `@sislexa/web-reader`.
+
+The corresponding `apps/` and `packages/` workspaces here are compatibility
+adapters. They retain public imports and delegate complete checks to the installed
+upstream workspace through `scripts/external-workspace.mjs`. Do not implement new
+features in these adapters. Update an upstream release, replace its `vendor/*.tgz`
+archive, update every adapter's `sislexaExternal` provenance and npm lockfile, then
+run the application gate. Archives include their source commit in
+`release-source.json`; the adapter runner rejects a mismatch. npm integrity pins
+the archive bytes. Static boundary and CSS checks inspect upstream implementation,
+while Storybook and accessibility checks discover upstream story files directly.
+Reader integration fixtures resolve the pinned proxy through the explicit
+`@fixture/web-reader-proxy` test alias; runtime consumers continue using public
+package exports and service contracts.
+
+Common libraries are still owned by this repository. The independent repositories
+consume immutable source snapshots with version, base commit, content hash and any
+source patch recorded in `dependency-snapshots.json`; they do not maintain forked
+common source directories. This transitional distribution works without a private
+npm registry. API peers belong to the distribution root; UI requirements belong
+to each owned UI workspace, so headless API consumers do not install UI peers.
