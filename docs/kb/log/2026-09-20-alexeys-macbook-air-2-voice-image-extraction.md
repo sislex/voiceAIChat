@@ -16,5 +16,10 @@ are released as source-distribution patches for the existing tools.
 Independent gates, Core gate:fast and the publication gate passed, including 807 browser E2E checks,
 536 host Storybook accessibility cases, and extracted application suites. Voice
 1.0.0 and Image Studio 1.0.1 source releases and linux/amd64 images are prepared.
-Real Piper synthesis produced a valid WAV. Production rollout is pending; deployment evidence will be recorded after completion.
+Real Piper synthesis produced a valid WAV. Production 0.1.314 completed at 06:24:35 UTC through installed voicechat-deploy.
+All seven components are ready. Live checks passed for gallery CRUD/cross-user/CSRF,
+component scopes and revocation, UI integrity and retained assets, HTTPS/browser
+loading, Codex, and exact Piper-to-Whisper transcription. Temporary accounts were
+removed. Deployment inputs, backup, token expiry and an environment-export correction
+are documented in deploy.md.
 Knowledge is recorded in architecture.md, stt-tts.md, deploy.md and the extraction plan.
