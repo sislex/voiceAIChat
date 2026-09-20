@@ -7,7 +7,7 @@ personal tenants and configurable user tariffs without changing existing system
 privileges or silently removing existing product access.
 
 System roles remain the existing admin/developer/tester/observer authorization
-profiles. `SystemRole` will be the explicit name; `UserRole` and the wire `role`
+profiles. `SystemRole` is the explicit name; `UserRole` and the wire `role`
 field remain compatible aliases. A tariff never grants administrative or project
 permissions. Tenant membership is a third, separate relationship: being the owner
 of a personal tenant does not make a user a system administrator.
@@ -80,5 +80,8 @@ editor only when opened so it does not inflate normal account navigation.
 - [x] Account/admin UI, client bridge and independent application behavior.
 - [x] SQLite/PostgreSQL migration, isolation and capability regression tests.
 - [x] Independent Identity gate, immutable release pins and complete Core gates.
-- [ ] Backed-up production rollout through installed voicechat-deploy and live checks.
-- [ ] KB ownership, migration and production evidence updated with the code.
+- [x] Backed-up production rollout through installed voicechat-deploy and live checks.
+- [x] KB ownership, migration and production evidence updated with the code.
+
+Delivered as Core 0.1.316 / Identity 1.1.1 on 2026-09-20. Production evidence and
+backup references are recorded in `docs/kb/deploy.md`.
