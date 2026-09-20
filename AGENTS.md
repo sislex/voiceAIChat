@@ -37,7 +37,8 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `apps/agent-tray` | `@voicechat/agent-tray` | Electron-трей вокруг агента (установка, лог, разрешения) | [AGENTS](apps/agent-tray/AGENTS.md) |
 | `apps/desktop` | `@voicechat/desktop` | Тонкая Electron-оболочка web/server + legacy-импорт БД (вне workspaces) | [AGENTS](apps/desktop/AGENTS.md) |
 
-Make, Playwright Reader, Web Reader, their UI/contracts, and Web Recorder are
+Voice (STT/TTS/browser audio), Image Studio, Make, Playwright Reader, Web Reader,
+their UI/contracts, and Web Recorder are
 compatibility workspaces backed by pinned `@sislexa/*` releases. Implement changes
 in their separate repositories; see `docs/kb/architecture.md#tool-repository-ownership`.
 The adapters delegate full checks to the installed upstream workspaces.

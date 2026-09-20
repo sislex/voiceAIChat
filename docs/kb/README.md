@@ -10,7 +10,7 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: 039d956b feat: establish Sislexa operation and usage contracts |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 66 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 3 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-20 | ✓ |
@@ -24,9 +24,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 3 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 20 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1578 коммит(ов) в areas после сверки: 098f4fb8 fix: pin Make process startup without legacy component token … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1579 коммит(ов) в areas после сверки: fe68d8bf docs: record verified Sislexa 0.1.313 production rollout … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 44 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 16 коммит(ов) в areas после сверки: 5f98a55c Merge remote-tracking branch 'origin/main' into CHAT-483 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 8 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 376 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
@@ -39,7 +39,7 @@
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ⚠ 54 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 207 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
-| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-15 | ✓ |
+| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 159 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ⚠ 3 коммит(ов) в areas после сверки: 098f4fb8 fix: pin Make process startup without legacy component token … |
@@ -56,6 +56,8 @@
 - [apps/make](../../apps/make/AGENTS.md)
 - [apps/playwright-reader](../../apps/playwright-reader/AGENTS.md)
 - [apps/server](../../apps/server/AGENTS.md)
+- [apps/stt-runner](../../apps/stt-runner/AGENTS.md)
+- [apps/tts-runner](../../apps/tts-runner/AGENTS.md)
 - [apps/web](../../apps/web/AGENTS.md)
 - [apps/web-reader](../../apps/web-reader/AGENTS.md)
 - [apps/web-recorder](../../apps/web-recorder/AGENTS.md)
@@ -72,13 +74,15 @@
 - [packages/shared](../../packages/shared/AGENTS.md)
 - [packages/ui](../../packages/ui/AGENTS.md)
 - [packages/ui-foundation](../../packages/ui-foundation/AGENTS.md)
+- [packages/voice-browser](../../packages/voice-browser/AGENTS.md)
 - [packages/web-reader-app](../../packages/web-reader-app/AGENTS.md)
 - [packages/web-reader-contracts](../../packages/web-reader-contracts/AGENTS.md)
 
 ## Журнал сессий
 
-Всего записей: 890. Последние:
+Всего записей: 891. Последние:
 
+- [2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md](log/2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md) — voice-image-extraction
 - [2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md) — sislexa-tool-extraction
 - [2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md) — sislexa-project-name
 - [2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md) — sislexa-production-0310
@@ -88,7 +92,6 @@
 - [2026-09-17-pc-radvilovich-project-settings-layout-a11y.md](log/2026-09-17-pc-radvilovich-project-settings-layout-a11y.md) — project-settings-layout-a11y
 - [2026-09-17-pc-radvilovich-component-qa-browser-teardown.md](log/2026-09-17-pc-radvilovich-component-qa-browser-teardown.md) — component-qa-browser-teardown
 - [2026-09-17-pc-radvilovich-chat449-task-card-kb.md](log/2026-09-17-pc-radvilovich-chat449-task-card-kb.md) — chat449-task-card-kb
-- [2026-09-17-macbookair-release-center-cycle-8-kb.md](log/2026-09-17-macbookair-release-center-cycle-8-kb.md) — release-center-cycle-8-kb
 
 ## Исторические планы
 

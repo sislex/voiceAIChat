@@ -21,6 +21,27 @@
       "repository": "https://github.com/sislex/webreader",
       "version": "1.1.0",
       "commit": "ff068915690f92d857ffb2635682b8c189b7e211"
+    },
+    "image-studio": {
+      "package": "@sislexa/image-studio",
+      "workspace": "apps/image-studio",
+      "repository": "https://github.com/sislex/image-studio",
+      "version": "1.0.1",
+      "commit": "4ca6e99ce0c2afb6ed5248d85cf3ca2893f342de"
+    },
+    "stt-runner": {
+      "package": "@sislexa/voice",
+      "workspace": "apps/stt-runner",
+      "repository": "https://github.com/sislex/voice",
+      "version": "1.0.0",
+      "commit": "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+    },
+    "tts-runner": {
+      "package": "@sislexa/voice",
+      "workspace": "apps/tts-runner",
+      "repository": "https://github.com/sislex/voice",
+      "version": "1.0.0",
+      "commit": "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
     }
   }
 }

@@ -1,1 +1,1 @@
-export { verifyFrontendCompatibility as verifyCompatibility } from '../../scripts/application-frontend-contract.mjs'
+export { verifyCompatibility } from "@sislexa/image-studio/compatibility"

@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/image-studio",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -9,23 +9,32 @@
     "./standalone": "./src/standalone/server.ts"
   },
   "scripts": {
-    "dev": "tsx watch src/standalone/index.ts",
-    "start": "tsx src/standalone/index.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent"
+    "dev": "node ../../scripts/external-workspace.mjs dev",
+    "start": "node ../../scripts/external-workspace.mjs start",
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "test": "node ../../scripts/external-workspace.mjs test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@voicechat/shared": "*",
     "fastify": "^5.1.0",
     "sharp": "^0.34.5",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@sislexa/image-studio": "file:../../vendor/sislexa-image-studio-1.0.1-4ca6e99ce0c2.tgz",
+    "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/image-studio",
+    "workspace": "apps/image-studio",
+    "repository": "https://github.com/sislex/image-studio",
+    "version": "1.0.1",
+    "commit": "4ca6e99ce0c2afb6ed5248d85cf3ca2893f342de"
   }
 }

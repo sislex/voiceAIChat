@@ -42,7 +42,8 @@
     "react-markdown": "^9.1.0",
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "@voicechat/ui-foundation": "*"
+    "@voicechat/ui-foundation": "*",
+    "@voicechat/voice-browser": "*"
   },
   "devDependencies": {
     "@storybook/addon-a11y": "^8.6.18",

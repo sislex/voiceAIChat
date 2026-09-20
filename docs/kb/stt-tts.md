@@ -1,7 +1,7 @@
 ---
 title: Речь: Whisper (STT) и Piper/say (TTS)
-updated: 2026-09-15
-checked: 911e2eb0
+updated: 2026-09-20
+checked: 5f3ca49e
 areas:
   - apps/stt-runner
   - apps/server/src/stt
@@ -94,3 +94,21 @@ instead of skipping required coverage.
 `nodejs-whisper` собирает whisper.cpp нативно: нужен `cmake` в PATH
 (`/opt/homebrew/bin`), иногда — `CPLUS_INCLUDE_PATH` на SDK-хедеры. Piper ставится
 как pip-пакет `piper-tts` в `.venv-piper`. Оба факта уже учтены в `dev-web.sh`.
+
+## Independent Voice repository
+
+STT, TTS and portable browser audio are maintained in `sislex/voice`. Local runner
+workspaces and `packages/voice-browser` delegate checks to its pinned source archive.
+The services retain separate process IDs, ports, data directories and releases within
+one repository. The message composer and conversation orchestration stay in Chat.
+Browser playback reports actual output-clock advancement through an injected observer;
+the host connects it to UI telemetry without a reverse import from Voice into Chat.
+
+Managed speech uses SISLEXA_COMPONENT_CONFIG, provider-owned registries and exact
+read/run/manage scopes. Metadata/readiness are public bootstrap endpoints; health and
+speech operations require a grant. Core verifies version/API/environment/consumer
+before opening an STT WebSocket, buffers audio while verification is pending, and
+cancellation prevents a delayed connection. Each new connection rereads its token
+file, so rotation needs no process restart. Legacy runner URL/token settings remain
+available for migration. Both real runner entrypoints accept managed configuration
+without legacy token variables. TTS also handles SIGTERM/SIGINT through app.close.
