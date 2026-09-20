@@ -1,3 +1,4 @@
+import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/shared'
 import { fileURLToPath } from 'node:url'
 import { createComponentRuntime } from '@sislexa/component-runtime'
 import { registerApplicationFrontends } from './routes/applicationFrontends.js'
@@ -308,6 +309,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const managedMake = configuredDependency('make')
   const managedPlaywright = configuredDependency('playwright-reader')
   const managedReader = configuredDependency('web-reader')
+  const managedStudio = component?.config.dependencies.some(d => d.applicationId === 'image-studio')
+    ? component.dependency('image-studio', { timeoutMs: IMAGE_STUDIO_GENERATION_TIMEOUT_MS }) : undefined
+  const managedStt = configuredDependency('stt-runner')
+  const managedTts = configuredDependency('tts-runner')
+  if (managedStudio) { opts.config.imageStudioMode = 'remote'; opts.config.imageStudioUrl = managedStudio.url }
+  if (managedStt) { opts.config.sttRunnerUrl = managedStt.url; opts.config.sttRunnerToken = managedStt.token }
+  if (managedTts) { opts.config.ttsRunnerUrl = managedTts.url; opts.config.ttsRunnerToken = managedTts.token }
   if (managedMake) { opts.config.makeMode = 'remote'; opts.config.makeUrl = managedMake.url }
   if (managedPlaywright) { opts.config.playwrightReaderMode = 'remote'; opts.config.playwrightReaderUrl = managedPlaywright.url }
   if (managedReader) { opts.config.readerMode = 'remote'; opts.config.readerUrl = managedReader.url }
@@ -645,7 +653,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
   })
   const imageStudioRemote = opts.config.imageStudioMode === 'remote'
-  if (imageStudioRemote && !(opts.config.imageStudioUrl && opts.config.internalToken && opts.config.mcpSecret)) {
+  if (imageStudioRemote && !(opts.config.imageStudioUrl && (managedStudio || opts.config.internalToken) && opts.config.mcpSecret)) {
     throw new Error('VC_IMAGE_STUDIO_MODE=remote требует VC_IMAGE_STUDIO_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
   }
   const imageStudioMcpBaseUrl = imageStudioRemote
@@ -653,10 +661,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     : buildPublicMcpUrl(opts.config, IMAGE_STUDIO_MCP_PATH, mcpSecret)
   // В remote ядро не открывает файлы галерей: единственный владелец — процесс студии.
   const imageStudio = imageStudioRemote
-    ? { service: createRemoteImageStudio({ studioUrl: opts.config.imageStudioUrl!, token: opts.config.internalToken! }) }
+    ? { service: createRemoteImageStudio({ studioUrl: opts.config.imageStudioUrl!, token: managedStudio?.token ?? opts.config.internalToken!, fetchImpl: managedStudio?.fetchImpl }) }
     : createImageStudioModule({ dataDir: opts.config.dataDir, core: imageStudioCore, mcpSecret })
   if ('register' in imageStudio) imageStudio.register(app)
-  if (imageStudioRemote) registerImageStudioProxy(app, { studioUrl: opts.config.imageStudioUrl! })
+  if (imageStudioRemote) registerImageStudioProxy(app, { studioUrl: opts.config.imageStudioUrl!, fetchImpl: managedStudio?.publicFetchImpl })
 
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
@@ -756,7 +764,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const machineWhisperModel = async (): Promise<WhisperModel> => (await db.settings.getSettings('admin')).whisperModel
 
   const sttClient = opts.sttClient ?? (opts.config.sttRunnerUrl && opts.config.sttRunnerToken
-    ? new RemoteSttClient({ baseUrl: opts.config.sttRunnerUrl, token: opts.config.sttRunnerToken, connectTimeoutMs: opts.config.sttRunnerConnectTimeoutMs })
+    ? new RemoteSttClient({ baseUrl: opts.config.sttRunnerUrl, token: opts.config.sttRunnerToken, connectTimeoutMs: opts.config.sttRunnerConnectTimeoutMs, fetchImpl: managedStt?.fetchImpl, connection: managedStt ? () => component!.connection('stt-runner') : undefined })
     : undefined)
   let sttRunnerHealthy = Boolean(opts.sttEngine)
   let runnerModels: import('@voicechat/shared').WhisperModelInfo[] = []
@@ -800,7 +808,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   const sttEngine = opts.sttEngine
   const modelDownload = sttClient ? new ModelDownloadManager(async (onProgress) => sttClient.downloadModel(await machineWhisperModel(), onProgress)) : undefined
-  const ttsClient = opts.ttsClient ?? new RemoteTtsClient({ baseUrl: opts.config.ttsRunnerUrl ?? 'http://127.0.0.1:8791', token: opts.config.ttsRunnerToken ?? '' })
+  const ttsClient = opts.ttsClient ?? new RemoteTtsClient({ baseUrl: opts.config.ttsRunnerUrl ?? 'http://127.0.0.1:8791', token: opts.config.ttsRunnerToken ?? '', fetch: managedTts?.fetchImpl })
   const diarization = new StubDiarizationEngine()
 
   // Вложения разговора с выбранной машиной постоянно хранятся на ней. Сервер

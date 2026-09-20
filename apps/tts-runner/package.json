@@ -1,11 +1,36 @@
 {
   "name": "@voicechat/tts-runner",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
-  "exports": { ".": "./src/server.ts" },
-  "scripts": { "dev": "tsx watch src/index.ts", "start": "tsx src/index.ts", "typecheck": "tsc --noEmit -p tsconfig.json", "build": "tsc --noEmit -p tsconfig.json", "test": "vitest run --silent" },
-  "dependencies": { "@voicechat/shared": "*", "fastify": "^5.1.0" },
-  "devDependencies": { "@types/node": "^22.10.2", "tsx": "^4.19.2", "typescript": "^5.7.2", "vitest": "^2.1.8" }
+  "exports": {
+    ".": "./src/server.ts"
+  },
+  "scripts": {
+    "dev": "node ../../scripts/external-workspace.mjs dev",
+    "start": "node ../../scripts/external-workspace.mjs start",
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "test": "node ../../scripts/external-workspace.mjs test"
+  },
+  "dependencies": {
+    "@voicechat/shared": "*",
+    "fastify": "^5.1.0",
+    "@sislexa/voice": "file:../../vendor/sislexa-voice-1.0.0-c308f29f70a9.tgz",
+    "@sislexa/component-runtime": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/voice",
+    "workspace": "apps/tts-runner",
+    "repository": "https://github.com/sislex/voice",
+    "version": "1.0.0",
+    "commit": "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+  }
 }

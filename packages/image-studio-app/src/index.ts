@@ -1,1 +1,1 @@
-export * from './components/ImageStudioPane'
+export * from "@sislexa/image-studio/ui"

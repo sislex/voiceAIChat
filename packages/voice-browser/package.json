@@ -1,0 +1,33 @@
+{
+  "name": "@voicechat/voice-browser",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./audio/*": "./src/audio/*.ts",
+    "./lib/*": "./src/lib/*.ts"
+  },
+  "scripts": {
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build"
+  },
+  "dependencies": {
+    "@voicechat/shared": "0.1.1",
+    "@sislexa/voice": "file:../../vendor/sislexa-voice-1.0.0-c308f29f70a9.tgz",
+    "@sislexa/component-runtime": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/voice",
+    "workspace": "packages/voice-browser",
+    "repository": "https://github.com/sislex/voice",
+    "version": "1.0.0",
+    "commit": "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+  }
+}

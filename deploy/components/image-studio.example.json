@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "environmentId": "production",
+  "registryDirectory": "/run/sislexa/provider",
+  "grants": [
+    {
+      "consumerId": "core",
+      "scopes": [
+        "image-studio.service"
+      ],
+      "maxTtlSeconds": 2592000
+    }
+  ],
+  "legacyScopes": [],
+  "dependencies": [
+    {
+      "applicationId": "core",
+      "url": "http://voicechat:8787",
+      "tokenFile": "/run/sislexa/outgoing/core.token"
+    }
+  ]
+}

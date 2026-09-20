@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-20
-checked: f425db09
+checked: 5f3ca49e
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -36,7 +36,7 @@ identity, delegated API access, and cross-application usage accounting is tracke
 in the [modular platform design](../plans/sislexa-modular-platform.md). That document
 distinguishes confirmed requirements from proposed mechanisms; it does not describe
 an implemented migration. The first operation/usage contracts are implemented in
-shared, while production integration and service extraction remain pending.
+shared, while immutable user identity and production usage accounting remain pending. Tool extraction and component authorization are documented below.
 It also proposes personal module-level consumption and
 active-time analytics, with explicit attribution and overlap rules.
 
@@ -206,3 +206,15 @@ cycles; readiness and outbound calls enforce compatibility. Provider-local token
 registries are separate from application data and outgoing credentials. This is
 an infrastructure authorization boundary; the immutable user/delegation/billing
 migration in the Sislexa plan remains separate.
+
+### Voice and Image Studio ownership
+
+`https://github.com/sislex/voice` owns STT/TTS services and the browser microphone,
+PCM, VAD and playback implementation. `packages/voice-browser` and speech runner
+workspaces here are adapters; host audio files preserve imports and inject playback
+telemetry. Chat's voice state orchestration and composer remain in the host.
+`https://github.com/sislex/image-studio` owns the Image Studio API and UI panel.
+Its Core bridge retains identity, conversation and model-execution ownership.
+Both repositories install independently using shared snapshots and publish source
+archives with full SHA provenance. Speech/image pure wire contracts remain in shared.
+See [the extraction plan](../plans/voice-image-extraction.md) for boundaries.

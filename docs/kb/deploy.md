@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: 451cf46c
+checked: 5f3ca49e
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -978,11 +978,11 @@ Provider RPC still checks current token revocation, expiry and exact scopes on
 every request. The HTTP client never follows RPC redirects or forwards a service
 credential to another origin.
 
-Image Studio, Browser Runner and external LLM runner retain their existing
-credential mechanisms. Core's sample managed config permits legacy credentials
-only for identity forwarding and Image Studio RPC; the shared legacy token cannot
-call migrated Make/Reader RPC and is removed from the managed tool containers
-by the component override. Remote legacy Kanban/administration need explicit
+Browser Runner and external LLM runner retain their existing credential mechanisms.
+Core's current sample managed config permits legacy credentials only for identity
+forwarding; Image Studio joins the managed grants during the Voice/Image extraction.
+The shared legacy token cannot call migrated tool RPC and is removed from managed
+tool containers by the component override. Remote legacy Kanban/administration need explicit
 migration settings before enabling managed mode. Component grants are not user
 identity delegation or authoritative billing. Existing shared data volumes also
 remain a separate, broader trust boundary.
@@ -1047,3 +1047,27 @@ initial credentials must be rotated before the earliest expiry,
 2026-10-20 02:00:52 UTC. Rotation is currently an operator CLI procedure, not an
 automatic timer. Backup verification checked all seven credential files against
 the live files and integrity-checked the four initial provider registries.
+
+### Voice and Image Studio release inputs
+
+`deploy/compose.voice-image.yml` adds independently built STT/TTS, Image Studio API
+and Image Studio frontend to the existing tool Compose chain. Pin source directories
+with SISLEXA_VOICE_SOURCE and SISLEXA_IMAGE_STUDIO_SOURCE using tools.lock.json.
+Voice targets are stt/tts; Image Studio targets are api/frontend. Preserve existing
+speech model/voice volumes and gallery data. The new frontend stores retained assets
+in image-studio-ui-assets, with host manifest/SRI verification unchanged.
+
+Fresh components:init installations now create eleven directional grants for Core,
+Make, both Readers, Image Studio, STT and TTS. Existing installations must explicitly
+migrate their configs and issue the additional grants before applying the extended
+compose.components.yml; do not overwrite an existing provider registry. Image Studio
+uses its own image-studio.service credential, and a separate Core-issued grant for
+identity.verify/image-studio.core/image-studio.generate. Default installation examples
+remove Image Studio's legacy Core scopes. Speech requires read/run/manage permissions.
+
+Component runtime 1.0.1 adds verified credentials for non-fetch transports and an
+explicit per-dependency timeout. Image generation and its public proxy use the image
+operation timeout, retaining cancellation. Earlier tool source distributions receive
+compatible 1.x peer ranges while standalone lockfiles keep their tested runtime.
+These distribution-only patches do not require replacing otherwise compatible running
+API services. Production deployment remains exclusively through voicechat-deploy.
