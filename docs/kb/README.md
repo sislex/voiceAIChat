@@ -13,7 +13,7 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 68 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 4 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-20 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-20 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 13 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 6 коммит(ов) в areas после сверки: 13c40c4a Merge main into CHAT-452 … |
@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 5 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 22 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 4 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1582 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1583 коммит(ов) в areas после сверки: 68604e68 Record verified Identity production rollout and queued tenant work … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 46 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 17 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
@@ -80,9 +80,10 @@
 
 ## Журнал сессий
 
-Всего записей: 892. Последние:
+Всего записей: 893. Последние:
 
 - [2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md](log/2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md) — voice-image-extraction
+- [2026-09-20-alexeys-macbook-air-2-tenant-tariff-contracts.md](log/2026-09-20-alexeys-macbook-air-2-tenant-tariff-contracts.md) — tenant-tariff-contracts
 - [2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md) — sislexa-tool-extraction
 - [2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md) — sislexa-project-name
 - [2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md) — sislexa-production-0310
@@ -91,7 +92,6 @@
 - [2026-09-20-alexeys-macbook-air-2-identity-extraction.md](log/2026-09-20-alexeys-macbook-air-2-identity-extraction.md) — identity-extraction
 - [2026-09-17-pc-radvilovich-release-center-cycle-8.md](log/2026-09-17-pc-radvilovich-release-center-cycle-8.md) — release-center-cycle-8
 - [2026-09-17-pc-radvilovich-project-settings-layout-a11y.md](log/2026-09-17-pc-radvilovich-project-settings-layout-a11y.md) — project-settings-layout-a11y
-- [2026-09-17-pc-radvilovich-component-qa-browser-teardown.md](log/2026-09-17-pc-radvilovich-component-qa-browser-teardown.md) — component-qa-browser-teardown
 
 ## Исторические планы
 

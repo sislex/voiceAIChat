@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-20
-checked: deb7bc26
+checked: 2887c5b9
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -48,6 +48,20 @@ cleanup callbacks. A failed callback leaves a blocked, retryable account; creden
 are removed last. This is not a cross-service SQL transaction. Embedded mode retains
 its local transaction. Identity currently requires one writer process: login rate
 limits and pending TOTP tickets are held in memory.
+
+## Account entitlement contract (tenant/tariff phase)
+
+`packages/shared/src/accountAccess.ts` defines personal tenant, tariff and effective
+product capability contracts. `SystemRole` names the existing authorization role;
+`UserRole` and the session `role` field remain compatibility aliases. A tariff
+contains only validated product capability IDs, never system privileges or provider
+scopes. Plan updates use optimistic revisions. `SessionUser.account` and the
+optional `RendererSessionBridge.tariffs` client are additive integration points.
+The matching session REST paths are declared in protocol.ts.
+
+This is the contract stage of [the tenant/tariff plan](../plans/tenant-tariffs.md).
+Storage migration, runtime enforcement and UI delivery are pending; adding these
+types alone does not enable tariffs or tenant isolation in production.
 
 ## Development preview data isolation
 
