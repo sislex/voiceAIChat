@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: 48ab7ed2
+checked: f425db09
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -914,3 +914,88 @@ hashed files and reject a same-name/different-content collision; make the cache
 writable by the image's Node user. This retains assets for open tabs while the
 active manifest continues to come from the new image. Later releases reuse the
 same asset volume normally. Verify old entry URLs as well as new manifest SRI.
+
+## Managed component installation
+
+`SISLEXA_COMPONENT_CONFIG` enables release-owned dependency requirements and
+provider-issued component grants. Core's contract is
+`apps/server/component-contract.json`; each independently released tool owns its
+corresponding contract. `deploy/components/*.example.json` contains installation
+settings. Exact implementation/API ranges and required scopes live in release
+contracts; installation JSON can select origins and credentials but cannot lower
+these requirements. Configured Core tool dependencies select remote mode and
+replace their legacy endpoint variables. A remote tool missing from managed config
+is a startup error. No configuration preserves the legacy migration mode.
+
+Initialize a **new** private directory from the pinned host checkout:
+
+```sh
+npm run components:init -- --directory /private/sislexa-components \
+  --environment development --core-url http://127.0.0.1:8799 \
+  --make-url http://127.0.0.1:8788 \
+  --playwright-reader-url http://127.0.0.1:8797 \
+  --web-reader-url http://127.0.0.1:8795
+```
+
+For containers, pass `--container true`; generated runtime paths then use
+`/run/sislexa`. Set `SISLEXA_COMPONENTS_DIR` to the private host directory and append
+`deploy/compose.components.yml` **after** the existing operator and tool overrides.
+Run provider token commands as the service OS user (for Core Docker exec, pass
+`--user 1000`; its root entrypoint otherwise makes exec default to root).
+Assign the generated files to each service's OS user before starting containers
+(the current images use UID 1000). Registry directories and outgoing token files
+are private (0700/0600). Each service mounts only its own registry, config and
+read-only outgoing directory. These mounts are separate from shared workshop data.
+Do not remove existing production overrides or rerun the production installer.
+
+Initialization creates seven distinct credentials: Core grants Make, Playwright
+Reader and Web Reader their required Core scopes; Make grants Core; Playwright
+Reader grants Core and Web Reader; Web Reader grants Core its connection-check
+scope. Existing installation directories are rejected. The default credential
+lifetime is 30 days (`--ttl` is bounded by each provider's configured policy).
+Track the returned expiry metadata and rotate before expiry. The CLI never prints
+secrets. Provider-local `components:token`/tool `token` commands issue, list and
+revoke credentials; transfer a newly issued private file to the consumer, replace
+its outgoing file atomically, then revoke the old token ID. Grant-policy edits
+require a provider restart; revocation takes effect immediately for RPC requests.
+
+The canonical deploy script supplies the full source SHA, release version and
+release-owned API/data versions to the Core Docker build. Bare Node development
+must likewise provide truthful `VC_APPLICATION_VERSION`,
+`VC_APPLICATION_API_VERSION`, `VC_APPLICATION_DATA_VERSION` and the full
+`VC_APPLICATION_COMMIT` when another component depends on it; unidentified builds
+are rejected. Independently built tool images carry their own metadata.
+
+`GET /v1/component` is static metadata. Authenticated
+`POST /v1/component/authorize` verifies requested scopes and returns the consumer,
+provider, environment and expiry. Neither endpoint recursively checks dependencies,
+so Core/Make can start in either order. `GET /v1/ready` returns 503 for incompatible,
+unavailable or unauthorized dependencies, identifying only safe application IDs.
+Outgoing RPC and public proxy requests verify dependency metadata and grants;
+RPC supplies that provider's credential, while public proxies preserve user
+credentials. Successful compatibility checks cache for up to five seconds.
+Provider RPC still checks current token revocation, expiry and exact scopes on
+every request. The HTTP client never follows RPC redirects or forwards a service
+credential to another origin.
+
+Image Studio, Browser Runner and external LLM runner retain their existing
+credential mechanisms. Core's sample managed config permits legacy credentials
+only for identity forwarding and Image Studio RPC; the shared legacy token cannot
+call migrated Make/Reader RPC and is removed from the managed tool containers
+by the component override. Remote legacy Kanban/administration need explicit
+migration settings before enabling managed mode. Component grants are not user
+identity delegation or authoritative billing. Existing shared data volumes also
+remain a separate, broader trust boundary.
+
+The canonical `voicechat-deploy` success condition also runs
+`scripts/component-readiness.mjs` inside Core after basic health succeeds. Managed
+installations require readiness of Core and each configured tool, covering both
+directions of their grants; a static healthy process cannot mask an expired or
+misconfigured dependency. Legacy installations retain their basic health check.
+
+The root Docker context excludes real `.env`/`.env.*` files and local test/build
+output; public `.env.example`/`.env.sample` templates remain available. A real
+Docker context-export check verified the exclusion. Production installation
+credentials must enter through runtime environment or private mounts, never
+through `COPY . .` into an image. Core does not load the checkout `.env` itself;
+Compose supplies its runtime environment.

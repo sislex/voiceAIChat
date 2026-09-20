@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/make-contracts",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@voicechat/shared": "*",
-    "@sislexa/make": "file:../../vendor/sislexa-make-1.0.0-7fb6727e9ccf.tgz"
+    "@sislexa/make": "file:../../vendor/sislexa-make-1.1.0-930557440025.tgz",
+    "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -27,7 +28,7 @@
     "package": "@sislexa/make",
     "workspace": "packages/make-contracts",
     "repository": "https://github.com/sislex/make",
-    "version": "1.0.0",
-    "commit": "7fb6727e9ccf28cdb1ee3d421968e5b82b618ca5"
+    "version": "1.1.0",
+    "commit": "93055744002585c176ab9b1067b9c65653524623"
   }
 }

@@ -1,9 +1,9 @@
 # Sislexa: independent applications, identity, and usage accounting
 
 Status: the first contract foundation is deployed in production 0.1.310.
-The three tool repositories have published 1.0.0 releases; the core extraction
-release is undergoing its final gate before production cutover. Dependency and
-component-permission configuration is the next implementation stage.
+The three tool repositories have published 1.0.0 releases and are deployed through
+core release 0.1.311. Dependency and component-permission configuration is now
+being implemented for their next independent releases.
 Updated: 2026-09-20.
 
 ## Confirmed product requirements
@@ -361,7 +361,9 @@ Implementation checklist:
 - [x] Complete the full selected repository gate for this slice (`gate:fast`, exit 0).
 - [x] Deploy the foundation as production 0.1.310 through the authorized server deploy flow.
 - [x] Publish independent Make, Playwright Reader and Web Reader repositories at 1.0.0.
-- [ ] Complete host integration, the second production release and runtime dependency/token configuration.
+- [x] Complete host integration and deploy production 0.1.311 through `voicechat-deploy`.
+- [x] Complete runtime dependency/token configuration and its integration gate.
+- [ ] Deploy and verify production 0.1.312 with managed component credentials.
 - [ ] Execute the remaining identity, accounting and analytics stages with integration and release evidence.
 
 ### Inspected baseline

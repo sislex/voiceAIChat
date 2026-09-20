@@ -27,7 +27,7 @@
     "kb:index": "node scripts/kb.mjs index",
     "kb:log": "node scripts/kb.mjs log",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "node --import tsx --test scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/application-deploy.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs && node --test scripts/affected-check.test.mjs scripts/frontend-quality.test.mjs scripts/route-budgets.test.mjs scripts/long-run.test.mjs && npm run test --workspaces --if-present",
+    "test": "node --import tsx --test scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/application-deploy.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs && node --test scripts/affected-check.test.mjs scripts/frontend-quality.test.mjs scripts/route-budgets.test.mjs scripts/long-run.test.mjs && npm run test --workspaces --if-present",
     "affected-check": "node --import tsx scripts/application-gate.mjs",
     "frontend:static": "node --test scripts/frontend-quality.test.mjs scripts/route-budgets.test.mjs",
     "frontend:typecheck": "npm run -w @voicechat/ui-foundation typecheck && npm run -w @voicechat/make-app typecheck && npm run -w @voicechat/image-studio-app typecheck && npm run -w @voicechat/ui-kit typecheck && npm run -w @voicechat/sessions-core typecheck && npm run -w @voicechat/sessions-app typecheck && npm run -w @voicechat/profile-app typecheck && npm run -w @voicechat/app-shell typecheck && npm run -w @voicechat/chat-app typecheck && npm run -w @voicechat/web-reader-app typecheck && npm run -w @voicechat/playwright-reader-app typecheck && npm run -w @voicechat/projects-app typecheck && npm run -w @voicechat/operations-app typecheck && npm run -w @voicechat/admin-app typecheck && npm run -w @voicechat/ui typecheck && npm run -w @voicechat/web typecheck && npm --prefix apps/desktop run typecheck:web",
@@ -77,7 +77,9 @@
     "gate:changed": "node --import tsx scripts/application-gate.mjs",
     "build:app": "node --import tsx scripts/application-build.mjs",
     "build:frontends": "node --import tsx scripts/application-frontend.mjs",
-    "dev:frontends": "node --import tsx scripts/application-frontend-dev.mjs"
+    "dev:frontends": "node --import tsx scripts/application-frontend-dev.mjs",
+    "components:init": "node --import tsx scripts/component-installation.mjs",
+    "components:token": "node --import tsx packages/component-runtime/src/cli.ts"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "2.1.9"

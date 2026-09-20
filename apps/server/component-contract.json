@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "core",
+  "provides": [
+    "make.core",
+    "make.events",
+    "make.service",
+    "reader.core",
+    "playwright-reader.core",
+    "playwright-reader.service",
+    "identity.verify",
+    "image-studio.core",
+    "image-studio.generate",
+    "kanban.core",
+    "kanban.events",
+    "kanban.exec",
+    "admin.rpc"
+  ],
+  "legacyScopes": [
+    "identity.verify",
+    "image-studio.core",
+    "image-studio.generate",
+    "kanban.core",
+    "kanban.events",
+    "kanban.exec",
+    "admin.rpc"
+  ],
+  "dependencies": [
+    {
+      "applicationId": "make",
+      "minVersion": "1.1.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.1.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "make.service"
+      ],
+      "optional": true
+    },
+    {
+      "applicationId": "playwright-reader",
+      "minVersion": "1.1.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.1.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "playwright-reader.service"
+      ],
+      "optional": true
+    },
+    {
+      "applicationId": "web-reader",
+      "minVersion": "1.1.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.1.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "web-reader.connect"
+      ],
+      "optional": true
+    }
+  ]
+}
