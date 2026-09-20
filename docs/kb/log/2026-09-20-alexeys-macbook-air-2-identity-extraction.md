@@ -47,5 +47,11 @@ including all 807 application browser tests in each run.
 An earlier route run failed when the required external font stylesheet was unavailable;
 the unchanged isolated route suite and subsequent full gate both passed. No budgets
 or mandatory checks were weakened. A fresh production database dump was also saved privately and its archive directory
-validated. Production delivery is being completed; release evidence will be recorded
-after live verification.
+validated. Core 0.1.315 was published through PR #211 and deployed successfully via installed
+`voicechat-deploy` at 11:03:22 UTC. The initial readiness check caught a Web Reader
+port mismatch in the prepared configuration; preserving the previous port 8795 and
+recreating Core through the canonical deployer resolved it. All readiness checks,
+existing-user/session/password continuity, HTTP/WS revocation, mobile account UI,
+provider isolation, gallery isolation, voice round trip and external Codex checks
+passed. Temporary test users and private credential files were removed. See the
+production 0.1.315 section in deploy.md for immutable release and rollback evidence.

@@ -22,6 +22,13 @@ substitutes for a user session. Cross-service checks fail closed.
 - Run independent and Core gates; publish and deploy with installed voicechat-deploy,
   backups, zero-build-target preflight and live authorization/registration checks.
 
+## Delivery result
+
+Completed in Core 0.1.315 with independent Identity 1.0.0. Both required Core gates,
+the independent Identity gate and production verification passed. Existing accounts
+and sessions were retained. Production evidence is recorded in
+[deploy.md](../kb/deploy.md#production-01315-verification).
+
 ## Next phase requested after this release
 
 After the Identity production rollout is verified, introduce user tariffs and keep
