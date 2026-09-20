@@ -31,3 +31,31 @@ services:
       - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/web-reader/config.json:/run/sislexa/config.json:ro
       - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/web-reader/outgoing:/run/sislexa/outgoing:ro
       - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/web-reader/provider:/run/sislexa/provider
+  image-studio:
+    environment:
+      VC_INTERNAL_TOKEN: ""
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/image-studio/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/image-studio/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/image-studio/provider:/run/sislexa/provider
+  stt-runner:
+    environment:
+      VC_STT_RUNNER_TOKEN: ""
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/stt-runner/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/stt-runner/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/stt-runner/provider:/run/sislexa/provider
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8791/v1/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+  tts-runner:
+    environment:
+      VC_TTS_RUNNER_TOKEN: ""
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/tts-runner/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/tts-runner/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/tts-runner/provider:/run/sislexa/provider
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8791/v1/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]

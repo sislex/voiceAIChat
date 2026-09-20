@@ -34,7 +34,7 @@ export class ComponentRuntime {
   private readonly verified = new Map<string, number>()
   constructor(readonly contract: ComponentContract, readonly config: ComponentConfig, readonly metadata: ApplicationRuntimeMetadata,
     readonly registry: ComponentTokenRegistry | undefined, private readonly transport: typeof fetch, private readonly now: () => number) {}
-  dependency(id: string): { url: string; fetchImpl: typeof fetch; publicFetchImpl: typeof fetch; token: string } {
+  dependency(id: string, options: { timeoutMs?: number } = {}): { url: string; fetchImpl: typeof fetch; publicFetchImpl: typeof fetch; token: string } {
     const target = this.config.dependencies.find(d => d.applicationId === id)
     if (!target) throw new DependencyUnavailable(id)
     const transport = (serviceCredential: boolean): typeof fetch => async (input, init) => {
@@ -47,10 +47,20 @@ export class ComponentRuntime {
         const headers = new Headers(request.headers)
         // Public proxies must preserve the user's credential; component grants never replace it.
         if (serviceCredential) headers.set('authorization', `Bearer ${token}`)
-        return await this.transport(new Request(request, { headers, redirect: serviceCredential ? 'error' : 'manual', signal: AbortSignal.any([request.signal, AbortSignal.timeout(60000)]) }))
+        return await this.transport(new Request(request, { headers, redirect: serviceCredential ? 'error' : 'manual', signal: AbortSignal.any([request.signal, AbortSignal.timeout(options.timeoutMs ?? 60000)]) }))
       } catch { throw new DependencyUnavailable(id) }
     }
     return { url: target.url, token: 'managed-by-component-runtime', fetchImpl: transport(true), publicFetchImpl: transport(false) }
+  }
+  /** Verify the exact grant before a non-fetch transport opens its connection. */
+  async connection(id: string): Promise<{ url: string; token: string }> {
+    const target = this.config.dependencies.find(d => d.applicationId === id)
+    if (!target) throw new DependencyUnavailable(id)
+    try {
+      const token = readSecret(target.tokenFile)
+      await this.verify(id, token)
+      return { url: target.url, token }
+    } catch { throw new DependencyUnavailable(id) }
   }
   private async verify(id: string, token: string): Promise<void> {
     const target = this.config.dependencies.find(d => d.applicationId === id)!

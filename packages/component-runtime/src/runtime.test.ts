@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync, symlinkSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -145,5 +145,27 @@ describe('dependency transport and real provider routes', () => {
     const runtime = await createComponentRuntime({ contractFile, configFile, metadata: { ...f.metadata, applicationId: 'make' } })
     expect((await runtime.readiness()).ok).toBe(true)
     runtime.close()
+  })
+})
+
+describe('non-fetch connections and long operations', () => {
+  it('verifies credentials before exposing them to a WebSocket transport and rereads rotations', async () => {
+    const f = await networkFixture()
+    await expect(f.consumer.connection('core')).resolves.toEqual({ url: f.url, token: f.issued.token })
+    await expect(f.consumer.connection('unknown')).rejects.toThrow('dependency unavailable')
+    writeFileSync(f.tokenFile, 'invalid-token')
+    await expect(f.consumer.connection('core')).rejects.toThrow('dependency unavailable')
+    const rotated = f.registry.issue('make', ['make.core', 'identity.verify'], 60)
+    writeFileSync(f.tokenFile, rotated.token)
+    await expect(f.consumer.connection('core')).resolves.toEqual({ url: f.url, token: rotated.token })
+  })
+  it('honors the operation timeout without changing the metadata verification timeout', async () => {
+    const f = await networkFixture()
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      expect((await f.consumer.dependency('core', { timeoutMs: 300000 }).fetchImpl(f.url + '/rpc')).status).toBe(200)
+      expect(timeout).toHaveBeenCalledWith(300000)
+      expect(timeout).toHaveBeenCalledWith(5000)
+    } finally { timeout.mockRestore() }
   })
 })

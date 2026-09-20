@@ -63,6 +63,11 @@ const EXTERNAL_TOOL_BUILD_DEPENDENCIES: Record<string, string[]> = {
     "playwright-reader-contracts",
     "web-reader-contracts"
   ],
+  "image-studio": ["component-runtime"],
+  "image-studio-ui": ["component-runtime"],
+  "stt-runner": ["component-runtime"],
+  "tts-runner": ["component-runtime"],
+  "voice-browser": ["component-runtime"],
   "make": [
     "component-runtime"
   ],
@@ -293,6 +298,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
       "playwright-reader-ui",
       "web-reader-ui",
       "ui-foundation",
+      "voice-browser",
       "make-ui",
       "image-studio-ui",
     ],
@@ -389,6 +395,7 @@ export const APPLICATION_CATALOG: readonly ApplicationDefinition[] = [
     [
       "shared",
       "sessions-core",
+      "voice-browser",
       "ui-kit",
       "app-shell",
       "sessions-app",
