@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: 5f3ca49e
+checked: 75633d7e
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1071,3 +1071,48 @@ operation timeout, retaining cancellation. Earlier tool source distributions rec
 compatible 1.x peer ranges while standalone lockfiles keep their tested runtime.
 These distribution-only patches do not require replacing otherwise compatible running
 API services. Production deployment remains exclusively through voicechat-deploy.
+
+
+### Production 0.1.314 verification
+
+Production 0.1.314 (`75633d7ea5d87db42563d425a62fc1d807c216e3`) completed through
+installed `voicechat-deploy` at 2026-09-20 06:24:35 UTC. Voice 1.0.0 owns STT/TTS
+and the portable browser audio library; Image Studio API/UI runs 1.0.1. Their full
+source commits remain pinned in `deploy/tools.lock.json`. Core retains compatibility
+adapters. Chat orchestration and authoritative identity remain Core responsibilities.
+
+The operator Compose chain adds `deploy/compose.voice-image.yml` immediately before
+`deploy/compose.components.yml`; existing tool and external LLM overrides remain.
+Source snapshots are `/opt/sislexa/voice-c308f29f70a9` and
+`/opt/sislexa/image-studio-4ca6e99ce0c2`. The active private installation is
+`/etc/voicechat/components-0.1.314`, with seven provider registries and eleven distinct
+outgoing credentials. Rotate them before 2026-10-20 05:45:10 UTC. Rotation still uses
+the operator CLI; no automatic renewal is implied. Old installation state is retained
+for rollback. These grants do not replace user authorization or implement new billing.
+
+Database/configuration backups and the thirteen pinned image IDs are under
+`/var/backups/voicechat/sislexa-voice-image-20260920T055525Z`. The custom-format PostgreSQL
+dump was checked with `pg_restore --list`; all provider registries passed SQLite
+integrity checks. The temporary image-only overlay is
+`/etc/voicechat/prebuilt-0.1.314.yml`, outside the permanent Compose chain. Core reuses
+the verified 0.1.313 image, installs the locked source distributions and rebuilds the
+frontends. Native SQLite loading and the exclusion of `.env` were verified.
+
+When invoking a prepared image-only deployment, export **VC_REPO_DIR** as well as
+COMPOSE_FILE. Sourcing `production.env` alone does not export every assignment. If
+VC_REPO_DIR is missing from the child environment, `voicechat-deploy` reloads the file
+and replaces the temporary COMPOSE_FILE override, unexpectedly rebuilding services.
+During this rollout that first attempt was stopped before container replacement;
+only unused builder cache was removed. The successful invocation exported the loaded
+operator environment, appended the temporary overlay, and verified that the exact
+resulting Compose configuration had zero build targets and all thirteen expected
+image IDs before starting the installed deploy command. Retain this preflight.
+
+Live checks verified readiness for all seven components, full source provenance,
+eleven directional grants, 401/403 rejection, immediate revocation, user-session
+separation, UI manifest/SRI integrity, and retained Image Studio 0.1.312 assets.
+Two temporary accounts verified gallery upload/read/delete, cross-user 404 responses
+and cookie CSRF rejection; both accounts and their sessions were removed. Piper
+`ru_RU-ruslan-medium` produced a 170772-byte WAV which Whisper `large-v3-turbo`
+transcribed exactly. HTTPS certificate verification, the browser login screen with
+zero page errors, Web Recorder and a bounded Codex completion also passed.
