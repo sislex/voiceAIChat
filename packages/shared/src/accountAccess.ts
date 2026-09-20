@@ -34,6 +34,8 @@ export interface TariffPlanInput {
 
 /** Trusted context resolved from current Identity data, never from client claims. */
 export interface AuthenticatedAccount {
+  /** Stable Identity subject; older providers omit it and cannot authorize billing. */
+  userId?: string
   tenantId: string
   tariffId: string
   tariffRevision: number
@@ -41,6 +43,8 @@ export interface AuthenticatedAccount {
 }
 
 export interface AccountAccess {
+  /** Stable across account metadata changes; never derive this from the login name. */
+  userId?: string
   userName: string
   systemRole: SystemRole
   tenant: PersonalTenant

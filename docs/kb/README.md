@@ -10,7 +10,7 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 3 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 69 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 4 коммит(ов) в areas после сверки: db0d72ff Extract Identity into a versioned independent application … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications |
@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 7 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 24 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1585 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1586 коммит(ов) в areas после сверки: 5b578986 docs: record tenant tariff production verification … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 47 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ⚠ 4 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 18 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
@@ -37,7 +37,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-17 | ⚠ 4 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-17 | ⚠ 9 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-15 | ⚠ 57 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-20 | ⚠ 5 коммит(ов) в areas после сверки: b6ca8a9b Define personal tenant and tariff capability contracts … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-20 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 210 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-20 | ⚠ 4 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
@@ -80,7 +80,7 @@
 
 ## Журнал сессий
 
-Всего записей: 895. Последние:
+Всего записей: 896. Последние:
 
 - [2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md](log/2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md) — voice-image-extraction
 - [2026-09-20-alexeys-macbook-air-2-tenant-tariff-runtime.md](log/2026-09-20-alexeys-macbook-air-2-tenant-tariff-runtime.md) — tenant-tariff-runtime
@@ -90,8 +90,8 @@
 - [2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md) — sislexa-project-name
 - [2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md) — sislexa-production-0310
 - [2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md) — sislexa-platform-contract-foundation
+- [2026-09-20-alexeys-macbook-air-2-sislexa-delivery-roadmap.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-delivery-roadmap.md) — sislexa-delivery-roadmap
 - [2026-09-20-alexeys-macbook-air-2-sislexa-component-config.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-component-config.md) — 2026-09-20-alexeys-macbook-air-2-sislexa-component-config
-- [2026-09-20-alexeys-macbook-air-2-identity-extraction.md](log/2026-09-20-alexeys-macbook-air-2-identity-extraction.md) — identity-extraction
 
 ## Исторические планы
 
