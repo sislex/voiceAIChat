@@ -207,7 +207,8 @@
   .app:has(.connection-banner) { padding-top: 100px; }
   .connection-banner { top: 36px; flex-wrap: wrap; }
   .mobile-navigation { position: absolute; inset: auto 0 0; z-index: 35; display: flex; justify-content: space-around; min-height: 52px; padding: 4px 0 calc(4px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--border); }
-  .mobile-navigation .vc-btn { min-width: 0; flex: 1 1 0; padding-inline: 2px; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+  /* Five columns must fit at 200% zoom; the shared minimum target height still applies. */
+  .mobile-navigation .vc-btn { min-width: 0 !important; flex: 1 1 0; padding-inline: 2px; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
   .mobile-navigation [aria-current="page"] { color: var(--accent); background: var(--surface-selected); }
   .app > .side { top: 36px; height: calc(100% - 88px - env(safe-area-inset-bottom)); }
   .release-version { display: none; }
@@ -7205,7 +7206,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-split-tabs { display: none; }
 .chat-split-tabs > div { display: contents; }
 @media (max-width: 720px) {
-  .app--console-reader, .app--make, .app--image-studio { grid-template-columns: minmax(0, 1fr); }
+  /* Match collapsed desktop specificity; the mobile sidebar leaves grid flow. */
+  .app--console-reader, .app--make, .app--image-studio,
+  .app--sidebar-collapsed.app--console-reader, .app--sidebar-collapsed.app--make { grid-template-columns: minmax(0, 1fr); }
   .chat-page { grid-column: 1; height: 100dvh; }
   /* Stay inside the shell's space after its toolbar and bottom navigation. */
   .chat-split { grid-column: 1; height: 100%; flex-direction: column; }

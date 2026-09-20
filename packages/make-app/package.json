@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/make-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -14,10 +14,10 @@
     "./styles.css": "./src/panel.css"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent",
-    "build": "node --import tsx ../../scripts/application-frontend.mjs make-ui",
-    "dev": "node --import tsx ../../scripts/application-frontend-dev.mjs make-ui"
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "dev": "node ../../scripts/external-workspace.mjs dev"
   },
   "dependencies": {
     "@voicechat/make-contracts": "*",
@@ -26,7 +26,8 @@
     "@voicechat/ui-kit": "*",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "@sislexa/make": "file:../../vendor/sislexa-make-1.0.0-7fb6727e9ccf.tgz"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",
@@ -45,5 +46,12 @@
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/make",
+    "workspace": "packages/make-app",
+    "repository": "https://github.com/sislex/make",
+    "version": "1.0.0",
+    "commit": "7fb6727e9ccf28cdb1ee3d421968e5b82b618ca5"
   }
 }

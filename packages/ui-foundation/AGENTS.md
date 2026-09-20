@@ -10,3 +10,9 @@
 `styles.css` содержит общие редактор/окна; новые продуктовые стили — в продукте.
 Изменение общего порта проверяет потребителей (`gate:app -- ui-foundation`);
 пакет не является самостоятельным deploy-сервисом.
+
+Monaco's type declaration assets include upstream licenses and version/hash metadata.
+After changing their dependencies, regenerate with
+`node packages/ui-foundation/scripts/update-monaco-types.mjs` from the repository root.
+Test helpers must remain usable from an installed package: do not import host-only
+fixtures or assume a particular parent `node_modules` layout.

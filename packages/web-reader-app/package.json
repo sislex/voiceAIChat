@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/web-reader-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -12,10 +12,10 @@
     "./panel.css": "./src/panel.css"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent",
-    "build": "node --import tsx ../../scripts/application-frontend.mjs web-reader-ui",
-    "dev": "node --import tsx ../../scripts/application-frontend-dev.mjs web-reader-ui"
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "dev": "node ../../scripts/external-workspace.mjs dev"
   },
   "dependencies": {
     "@voicechat/chat-app": "*",
@@ -23,7 +23,8 @@
     "@voicechat/ui-kit": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@voicechat/ui-foundation": "*"
+    "@voicechat/ui-foundation": "*",
+    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.0.0-f65719c07ca1.tgz"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
@@ -36,5 +37,12 @@
     "vite": "^5.4.11",
     "vitest": "^2.1.8",
     "tsx": "^4.19.2"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/web-reader",
+    "workspace": "packages/web-reader-app",
+    "repository": "https://github.com/sislex/webreader",
+    "version": "1.0.0",
+    "commit": "f65719c07ca19f3dea6b20e7409334dd030ab29a"
   }
 }

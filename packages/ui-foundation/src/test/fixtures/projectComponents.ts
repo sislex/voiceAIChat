@@ -1,7 +1,7 @@
 // Фикстуры режима «Компоненты проекта» в Make: список компонентов рабочей копии и
 // сессия Storybook на машине. Одни и те же данные питают тесты и витрину.
 import type { ProjectComponentsListing, ProjectStorybookSession } from '@shared/projectComponents'
-import { T0 } from '../../../../ui/src/test/fixtures/chat'
+import { T0 } from './time'
 
 export function makeProjectComponents(over: Partial<ProjectComponentsListing> = {}): ProjectComponentsListing {
   return {

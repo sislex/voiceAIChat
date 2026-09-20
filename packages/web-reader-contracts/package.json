@@ -8,16 +8,24 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent"
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "test": "node ../../scripts/external-workspace.mjs test"
   },
   "dependencies": {
-    "@voicechat/shared": "*"
+    "@voicechat/shared": "*",
+    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.0.0-f65719c07ca1.tgz"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/web-reader",
+    "workspace": "packages/web-reader-contracts",
+    "repository": "https://github.com/sislex/webreader",
+    "version": "1.0.0",
+    "commit": "f65719c07ca19f3dea6b20e7409334dd030ab29a"
   }
 }

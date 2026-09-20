@@ -1,1 +1,1 @@
-export { createReaderModule, type ReaderDeps } from './module.js'
+export * from '@sislexa/web-reader'

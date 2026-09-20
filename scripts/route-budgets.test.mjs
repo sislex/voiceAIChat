@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { COMPRESSION, checkRoutes, compareRoutes, resourceSet, totals, sizes, completedResource } from './route-budgets.mjs'
+import { COMPRESSION, checkRoutes, compareRoutes, selectRouteBaseline, resourceSet, totals, sizes, completedResource } from './route-budgets.mjs'
 
 const fixture = () => {
   const resources = {
@@ -19,6 +19,19 @@ const fixture = () => {
   const report = { schemaVersion: 1, commit: 'a'.repeat(40), conditions: { scenario: 'fixture', theme: 'light', transport: 'fixture', node: process.version, zlib: 'fixture', brotli: 'fixture', cpu: 'fixture', network: 'fixture', cache: 'fixture', actualViewports: { web: { width: 1440, height: 900, deviceScaleFactor: 1 }, electron: { width: 1440, height: 875, deviceScaleFactor: 1 } }, viewport: { width: 1440, height: 900 }, settleMs: 5000 }, tools: { web: 'fixture', electron: 'fixture' }, compression: COMPRESSION, resources, routes: { 'web/chat/cold': route } }
   return { report, budget: { schemaVersion: 1, routes: { 'web/chat/cold': totals(resources, initial) } } }
 }
+test('selects a reviewed environment without accepting unknown or ambiguous measurements', () => {
+  const { report } = fixture()
+  const different = structuredClone(report)
+  different.conditions.node = 'another-runtime'
+  const candidates = [{ path: 'other', report: different }, { path: 'current', report }]
+  assert.equal(selectRouteBaseline(candidates, report).path, 'current')
+  assert.throws(() => selectRouteBaseline(candidates.slice(0, 1), report), /found 0/)
+  assert.throws(() => selectRouteBaseline([...candidates, candidates[1]], report), /found 2/)
+  const corrupt = structuredClone(report)
+  corrupt.routes['web/chat/cold'].errors = ['broken renderer']
+  const selected = selectRouteBaseline([{ path: 'corrupt', report: corrupt }], report)
+  assert.throws(() => compareRoutes(selected.report, report), /runtime errors/)
+})
 // @testCase TC-BUNDLE
 test('recognizes completed cache revalidation and file transport without accepting failures', () => {
   for (const status of [200, 304]) assert.equal(completedResource({ url: 'http://localhost/entry.js', status, finished: true }), true)

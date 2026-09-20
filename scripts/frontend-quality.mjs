@@ -1,3 +1,4 @@
+import { implementationPath } from './external-source.mjs'
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -75,8 +76,8 @@ function leaksTransport(source) {
 
 export function checkArchitecture({ root = ROOT, packages = FRONTEND } = {}) {
   const edges = new Map(packages.map((item) => [item.name, new Set()]))
-  for (const item of packages) for (const file of files(join(root, item.dir, 'src'))) {
-    if (/\.(?:test|stories)\.[tj]sx?$/.test(file) || relative(join(root, item.dir, 'src'), file).startsWith('test/')) continue
+  for (const item of packages) for (const file of files(implementationPath(root, join(item.dir, 'src')))) {
+    if (/\.(?:test|stories)\.[tj]sx?$/.test(file) || relative(implementationPath(root, join(item.dir, 'src')), file).startsWith('test/')) continue
     const source = readFileSync(file, 'utf8')
     for (const specifier of imports(source)) {
       const dependency = packageOf(specifier)
@@ -121,14 +122,14 @@ const STORY_MATRIX = {
 }
 export function checkStories({ root = ROOT, matrix = STORY_MATRIX } = {}) {
   for (const [path, stories] of Object.entries(matrix)) {
-    if (!existsSync(join(root, path))) fail('missing module Storybook harness', path)
-    const source = readFileSync(join(root, path), 'utf8')
+    if (!existsSync(implementationPath(root, path))) fail('missing module Storybook harness', path)
+    const source = readFileSync(implementationPath(root, path), 'utf8')
     for (const story of stories) if (!new RegExp(`export\\s+const\\s+${story}\\b`).test(source)) fail('missing required story state', `${path}: ${story}`)
   }
   return { modules: Object.keys(matrix).length, stories: Object.values(matrix).flat().length }
 }
 export function checkCss({ root = ROOT } = {}) {
-  const styles = FRONTEND.filter((item) => ['product', 'shell'].includes(item.layer)).map((item) => [item, join(root, item.dir, 'src', item.stylesheet ?? 'styles.css')])
+  const styles = FRONTEND.filter((item) => ['product', 'shell'].includes(item.layer)).map((item) => [item, implementationPath(root, join(item.dir, 'src', item.stylesheet ?? 'styles.css'))])
   const keyframes = new Map()
   for (const [item, path] of styles) {
     if (!existsSync(path)) fail('missing isolated module stylesheet', item.name)

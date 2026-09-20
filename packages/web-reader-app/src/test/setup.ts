@@ -1,1 +1,1 @@
-export * from '@voicechat/chat-app'
+export * from '@sislexa/web-reader/ui/test/setup'

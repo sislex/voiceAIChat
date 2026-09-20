@@ -1,7 +1,9 @@
 # Sislexa: independent applications, identity, and usage accounting
 
-Status: implementation started; the first contract foundation is implemented locally.
-Service extraction, production integration, and deployment remain pending.
+Status: the first contract foundation is deployed in production 0.1.310.
+The three tool repositories have published 1.0.0 releases; the core extraction
+release is undergoing its final gate before production cutover. Dependency and
+component-permission configuration is the next implementation stage.
 Updated: 2026-09-20.
 
 ## Confirmed product requirements
@@ -59,7 +61,7 @@ Standalone operation may use remote dependencies; it does not imply offline use.
 | `sislexa-platform` | Pinned installation manifests and deployment tooling |
 
 The owner supplied the three tool repositories; they were verified accessible
-and empty on 2026-09-20. Other repository names remain a proposed extraction map,
+and initially empty on 2026-09-20; their first independent 1.0.0 releases are now published. Other repository names remain a proposed extraction map,
 not a list of created remote repositories.
 Each provider publishes its own versioned contract/client artifacts. Common
 operation metadata initially lives in shared; its standalone publishing ownership
@@ -357,7 +359,10 @@ Implementation checklist:
 - [x] Add finalized usage events and module percentage aggregation in shared.
 - [x] Add contract tests for isolation, retries, attribution, and invalid inputs.
 - [x] Complete the full selected repository gate for this slice (`gate:fast`, exit 0).
-- [ ] Execute stages 2–10 with integration and release evidence.
+- [x] Deploy the foundation as production 0.1.310 through the authorized server deploy flow.
+- [x] Publish independent Make, Playwright Reader and Web Reader repositories at 1.0.0.
+- [ ] Complete host integration, the second production release and runtime dependency/token configuration.
+- [ ] Execute the remaining identity, accounting and analytics stages with integration and release evidence.
 
 ### Inspected baseline
 

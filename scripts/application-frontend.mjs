@@ -21,6 +21,11 @@ export async function buildApplicationFrontend(
   const release = JSON.parse(
     readFileSync(join(directory, 'release.json'), 'utf8')
   )
+  // A host release must not relabel an independently versioned tool artifact.
+  if (pkg.sislexaExternal) {
+    version = pkg.sislexaExternal.version
+    commit = pkg.sislexaExternal.commit
+  }
   version ??= process.env.VC_APPLICATION_VERSION ?? pkg.version
   if (commit === undefined) {
     commit = process.env.VC_APPLICATION_COMMIT || process.env.VC_RELEASE_COMMIT

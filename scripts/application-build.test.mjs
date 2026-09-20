@@ -1,10 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, existsSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   applicationBuildPaths,
+  copyDependencyArchives,
   createApplicationBuildContext
 } from './application-build.mjs'
 test('Make получает только собственный код, контракты и shared-замыкание', () => {
@@ -82,5 +83,23 @@ test('Reader API собираются без ядра и реализации Ch
     for (const forbidden of ['apps/server','apps/browser-runner','apps/web','packages/ui']) assert.ok(!paths.includes(forbidden), `${id}: ${forbidden}`)
     assert.equal(paths.includes('apps/web-recorder'), id === 'web-reader')
     if (id === 'web-reader') assert.ok(!paths.includes('apps/playwright-reader'))
+  }
+})
+
+test('archive closure copies only pinned regular vendor archives', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'vc-archive-test-'))
+  const output = mkdtempSync(join(tmpdir(), 'vc-archive-output-'))
+  try {
+    mkdirSync(join(repo, 'vendor'))
+    writeFileSync(join(repo, 'vendor/tool-1.0.0.tgz'), 'archive')
+    const lock = path => ({ packages: { 'node_modules/tool': { resolved: 'file:' + path } } })
+    copyDependencyArchives(lock('vendor/tool-1.0.0.tgz'), repo, output)
+    assert.equal(readFileSync(join(output, 'vendor/tool-1.0.0.tgz'), 'utf8'), 'archive')
+    assert.throws(() => copyDependencyArchives(lock('../secret.tgz'), repo, output))
+    symlinkSync(join(repo, 'vendor/tool-1.0.0.tgz'), join(repo, 'vendor/link.tgz'))
+    assert.throws(() => copyDependencyArchives(lock('vendor/link.tgz'), repo, output))
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(output, { recursive: true, force: true })
   }
 })

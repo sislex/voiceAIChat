@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-09-17
-checked: a5b4718d
+updated: 2026-09-20
+checked: 48ab7ed2
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -31,6 +31,15 @@ areas:
 Saved PNGs use the existing CI browser-shot URL contract. Screenshots remain after environment cleanup; the preview URL becomes inactive. An unavailable browser produces warning under `continue` and blocks success under explicitly selected `block`.
 
 ## Независимый frontend domain
+
+API, UI and contracts are now owned by [`sislex/playwrightreader`](https://github.com/sislex/playwrightreader).
+The matching paths in Core are compatibility adapters over the integrity-pinned
+`@sislexa/playwright-reader` archive. Implementation paths below refer to that
+repository; browser-runner and Core bridges still belong to this repository.
+Adapter gates execute the complete upstream suites, and Storybook indexes the
+installed upstream story sources. See `deploy/tools.lock.json` for the exact
+release revision and [deployment](../deploy.md#independent-tool-source-releases)
+for the separate API/frontend processes.
 
 `@voicechat/playwright-reader-app` владеет route `#/playwright-reader[/conversationId]`, фильтруемым по `assistantKind: 'playwright-reader'` conversation read model, browser-панелью и собственным store/module lifecycle. Chat приходит через `ReaderChatPort`, а сессия — через создаваемый host-адаптером `BrowserSessionPort`; прямых imports host, Web Reader, `chatStore`, transport, browser storage или исходников browser-runner в пакете нет.
 
