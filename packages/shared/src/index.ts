@@ -126,3 +126,5 @@ export * from './platformOperation'
 export * from './platformUsage'
 
 export * from './componentConfig'
+
+export * from './accountAccess'

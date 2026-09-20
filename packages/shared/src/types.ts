@@ -1012,10 +1012,14 @@ export function normalizeClaudeModel(raw: string): ClaudeModel {
 }
 
 /** Роль пользователя приложения (многопользовательский режим web-версии). */
-export type UserRole = 'admin' | 'developer' | 'tester' | 'observer'
+export type SystemRole = 'admin' | 'developer' | 'tester' | 'observer'
+/** Compatibility name for system authorization; a tariff never changes this value. */
+export type UserRole = SystemRole
 
 /** Аутентифицированный пользователь сессии. */
 export interface SessionUser {
+  /** Additive account context; current servers resolve it from live Identity state. */
+  account?: import('./accountAccess').AuthenticatedAccount
   /** Логин (он же идентификатор владельца данных). */
   name: string
   role: UserRole
