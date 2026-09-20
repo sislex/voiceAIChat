@@ -51,3 +51,34 @@ PostgreSQL dump, 1100 restore-list entries, configuration and prior image IDs).
 The final host `npm run gate` for the Make 1.1.1 pin exited 0: typechecks, unit
 and integration suites, builds, route budgets and 31 browser suites (807 tests).
 The 0.1.313 rollout remains pending at this commit.
+
+Final rollout completed at 2026-09-20 03:25:48 UTC through the installed
+`voicechat-deploy`: Core 0.1.313 at `451cf46c9acd759bcf1aa3ffb54745ea04f70550`,
+Make 1.1.1 at `d76f047e7c2aec233da137941ba66e6c51b3a507`, and both Readers at
+1.1.0. The temporary Make bootstrap sentinel is absent; all three managed tools
+run with empty legacy-token environment values. Four component readiness checks,
+all seven authenticated dependency links, exact versions/SHAs, scope denial,
+immediate temporary-token revocation and user/service credential separation passed.
+The temporary probe token was revoked without rotating the seven live credentials.
+
+Verified current UI manifest/entry/style integrity and retained assets from
+0.1.310, 0.1.311 and 0.1.312, plus recorder, Browser Runner and external LLM health.
+Public HTTPS passed with the Caddy CA. The production login form loaded without
+page errors; screenshot: `/private/tmp/sislexa-prod-0.1.313.png`. A bounded,
+execution-disabled Codex request returned the expected marker and exit 0
+(run `2cd806ad-90f4-43d5-bf0e-b09300773a44`). This does not claim a production
+login or complete human workflow under an authenticated account.
+
+The production checkout is clean on release/0.1.313; 14 inspected containers are
+running/healthy and the new Core has zero restarts. Core/PostgreSQL logs contained
+no disk-error lines since final cutover. The image has no `/app/.env`.
+The private backup contains seven matching live credentials and four intact
+initial provider registries; the PostgreSQL backup has 1100 restore-list entries.
+Initial credentials expire starting 2026-10-20 02:00:52 UTC and require manual
+rotation. User identity migration, spending reservations, persistent token-share
+reports and active-time analytics remain unimplemented.
+
+Local private credential staging and the disposable isolated-build fixture were
+removed after backup verification; the temporary production verification tunnel
+was closed. Final documentation gates selected no runtime applications and
+exited 0. The original dirty checkout was preserved throughout this work.
