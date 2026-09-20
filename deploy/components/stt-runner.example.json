@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "environmentId": "production",
+  "registryDirectory": "/run/sislexa/provider",
+  "grants": [
+    {
+      "consumerId": "core",
+      "scopes": [
+        "stt-runner.read",
+        "stt-runner.run",
+        "stt-runner.manage"
+      ],
+      "maxTtlSeconds": 2592000
+    }
+  ],
+  "legacyScopes": [],
+  "dependencies": []
+}

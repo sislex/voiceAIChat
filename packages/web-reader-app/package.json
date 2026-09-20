@@ -24,7 +24,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "@voicechat/ui-foundation": "*",
-    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.1.0-ff068915690f.tgz",
+    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.1.1-9ea66d70b4d7.tgz",
     "@voicechat/web-reader-contracts": "*",
     "@voicechat/playwright-reader-contracts": "*",
     "@voicechat/web-recorder": "*",
@@ -47,7 +47,7 @@
     "package": "@sislexa/web-reader",
     "workspace": "packages/web-reader-app",
     "repository": "https://github.com/sislex/webreader",
-    "version": "1.1.0",
-    "commit": "ff068915690f92d857ffb2635682b8c189b7e211"
+    "version": "1.1.1",
+    "commit": "9ea66d70b4d77b8eea2bcd995c67d3466d5be89f"
   }
 }

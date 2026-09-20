@@ -1,0 +1,65 @@
+# Append after compose.tools.yml. Source paths must match tools.lock.json.
+services:
+  voicechat:
+    environment:
+      VC_IMAGE_STUDIO_MODE: remote
+      VC_APPLICATION_FRONTENDS: '{"make-ui":"http://make-ui:8080","playwright-reader-ui":"http://playwright-reader-ui:8080","web-reader-ui":"http://web-reader-ui:8080","image-studio-ui":"http://image-studio-ui:8080"}'
+  stt-runner:
+    build:
+      context: ${SISLEXA_VOICE_SOURCE:?Set the pinned source checkout}
+      target: stt
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+    image: sislexa-stt-runner:1.0.0-c308f29f70a9
+    environment:
+      VC_RELEASE_VERSION: "1.0.0"
+      VC_APPLICATION_VERSION: "1.0.0"
+      VC_APPLICATION_COMMIT: "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+  tts-runner:
+    build:
+      context: ${SISLEXA_VOICE_SOURCE:?Set the pinned source checkout}
+      target: tts
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+    image: sislexa-tts-runner:1.0.0-c308f29f70a9
+    environment:
+      VC_RELEASE_VERSION: "1.0.0"
+      VC_APPLICATION_VERSION: "1.0.0"
+      VC_APPLICATION_COMMIT: "c308f29f70a9ad1e466e943dc1ed5d32096392e5"
+  image-studio:
+    build:
+      context: ${SISLEXA_IMAGE_STUDIO_SOURCE:?Set the pinned source checkout}
+      target: api
+      args:
+        APPLICATION_VERSION: "1.0.1"
+        APPLICATION_COMMIT: "4ca6e99ce0c2afb6ed5248d85cf3ca2893f342de"
+    image: sislexa-image-studio:1.0.1-4ca6e99ce0c2
+    environment:
+      VC_RELEASE_VERSION: "1.0.1"
+      VC_APPLICATION_VERSION: "1.0.1"
+      VC_APPLICATION_COMMIT: "4ca6e99ce0c2afb6ed5248d85cf3ca2893f342de"
+  image-studio-ui:
+    build:
+      context: ${SISLEXA_IMAGE_STUDIO_SOURCE:?Set the pinned source checkout}
+      target: frontend
+      args:
+        APPLICATION_VERSION: "1.0.1"
+        APPLICATION_COMMIT: "4ca6e99ce0c2afb6ed5248d85cf3ca2893f342de"
+    image: sislexa-image-studio-ui:1.0.1-4ca6e99ce0c2
+    environment:
+      VC_RELEASE_VERSION: "1.0.1"
+      VC_APPLICATION_VERSION: "1.0.1"
+      VC_APPLICATION_COMMIT: "4ca6e99ce0c2afb6ed5248d85cf3ca2893f342de"
+    restart: unless-stopped
+    mem_limit: 128m
+    volumes:
+      - image-studio-ui-assets:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+volumes:
+  image-studio-ui-assets:

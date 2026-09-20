@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@voicechat/shared": "*",
-    "@sislexa/make": "file:../../vendor/sislexa-make-1.1.1-d76f047e7c2a.tgz",
+    "@sislexa/make": "file:../../vendor/sislexa-make-1.1.2-54e96f2a776c.tgz",
     "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
@@ -28,7 +28,7 @@
     "package": "@sislexa/make",
     "workspace": "packages/make-contracts",
     "repository": "https://github.com/sislex/make",
-    "version": "1.1.1",
-    "commit": "d76f047e7c2aec233da137941ba66e6c51b3a507"
+    "version": "1.1.2",
+    "commit": "54e96f2a776c15afca434c3cb06479e365018507"
   }
 }

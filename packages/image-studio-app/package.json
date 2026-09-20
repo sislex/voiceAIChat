@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/image-studio-app",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -14,17 +14,19 @@
     "./styles.css": "./src/panel.css"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --silent",
-    "build": "node --import tsx ../../scripts/application-frontend.mjs image-studio-ui",
-    "dev": "node --import tsx ../../scripts/application-frontend-dev.mjs image-studio-ui"
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "dev": "node ../../scripts/external-workspace.mjs dev"
   },
   "dependencies": {
     "@voicechat/shared": "*",
     "@voicechat/ui-kit": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@voicechat/ui-foundation": "*"
+    "@voicechat/ui-foundation": "*",
+    "@sislexa/image-studio": "file:../../vendor/sislexa-image-studio-1.0.1-4ca6e99ce0c2.tgz",
+    "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",
@@ -42,5 +44,12 @@
     "vitest": "^2.1.8",
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/image-studio",
+    "workspace": "packages/image-studio-app",
+    "repository": "https://github.com/sislex/image-studio",
+    "version": "1.0.1",
+    "commit": "4ca6e99ce0c2afb6ed5248d85cf3ca2893f342de"
   }
 }

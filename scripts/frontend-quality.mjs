@@ -6,6 +6,7 @@ import ts from 'typescript'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const FRONTEND = [
+  { name: '@voicechat/voice-browser', dir: 'packages/voice-browser', layer: 'shared', styles: false },
   { name: '@voicechat/ui-foundation', dir: 'packages/ui-foundation', layer: 'shared' },
   { name: '@voicechat/make-app', dir: 'packages/make-app', layer: 'product', independent: 'make-ui', stylesheet: 'panel.css' },
   { name: '@voicechat/image-studio-app', dir: 'packages/image-studio-app', layer: 'product', independent: 'image-studio-ui', stylesheet: 'panel.css' },
@@ -104,7 +105,7 @@ export function checkExports({ root = ROOT, packages = FRONTEND.filter((item) =>
   for (const item of packages) {
     const json = JSON.parse(readFileSync(join(root, item.dir, 'package.json'), 'utf8'))
     if (!json.exports?.['.']) fail('missing public root export', item.name)
-    if (!json.exports?.['./styles.css']) fail('missing stable styles export', item.name)
+    if (item.styles !== false && !json.exports?.['./styles.css']) fail('missing stable styles export', item.name)
     for (const target of Object.values(json.exports)) if (typeof target === 'string' && !exportExists(join(root, item.dir), target)) fail('export target missing', `${item.name}: ${target}`)
   }
   return { packages: packages.length }

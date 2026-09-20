@@ -58,6 +58,43 @@
         "web-reader.connect"
       ],
       "optional": true
+    },
+    {
+      "applicationId": "image-studio",
+      "minVersion": "1.0.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.1.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "image-studio.service"
+      ],
+      "optional": true
+    },
+    {
+      "applicationId": "stt-runner",
+      "minVersion": "1.0.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.1.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "stt-runner.read",
+        "stt-runner.run",
+        "stt-runner.manage"
+      ],
+      "optional": true
+    },
+    {
+      "applicationId": "tts-runner",
+      "minVersion": "1.0.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.1.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "tts-runner.read",
+        "tts-runner.run",
+        "tts-runner.manage"
+      ],
+      "optional": true
     }
   ]
 }

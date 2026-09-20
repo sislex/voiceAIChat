@@ -27,12 +27,19 @@
         "reader.core"
       ],
       "maxTtlSeconds": 2592000
+    },
+    {
+      "consumerId": "image-studio",
+      "scopes": [
+        "identity.verify",
+        "image-studio.core",
+        "image-studio.generate"
+      ],
+      "maxTtlSeconds": 2592000
     }
   ],
   "legacyScopes": [
-    "identity.verify",
-    "image-studio.core",
-    "image-studio.generate"
+    "identity.verify"
   ],
   "dependencies": [
     {
@@ -49,6 +56,21 @@
       "applicationId": "web-reader",
       "url": "http://reader:8795",
       "tokenFile": "/run/sislexa/outgoing/web-reader.token"
+    },
+    {
+      "applicationId": "image-studio",
+      "url": "http://image-studio:8796",
+      "tokenFile": "/run/sislexa/outgoing/image-studio.token"
+    },
+    {
+      "applicationId": "stt-runner",
+      "url": "http://stt-runner:8791",
+      "tokenFile": "/run/sislexa/outgoing/stt-runner.token"
+    },
+    {
+      "applicationId": "tts-runner",
+      "url": "http://tts-runner:8791",
+      "tokenFile": "/run/sislexa/outgoing/tts-runner.token"
     }
   ]
 }

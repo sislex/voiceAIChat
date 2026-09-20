@@ -1,1 +1,1 @@
-export * from '@shared/imageSelection'
+export * from "@sislexa/image-studio/ui/lib/imageSelection"
