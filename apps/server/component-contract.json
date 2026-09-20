@@ -14,7 +14,8 @@
     "kanban.core",
     "kanban.events",
     "kanban.exec",
-    "admin.rpc"
+    "admin.rpc",
+    "identity.core"
   ],
   "legacyScopes": [
     "identity.verify",
@@ -93,6 +94,20 @@
         "tts-runner.read",
         "tts-runner.run",
         "tts-runner.manage"
+      ],
+      "optional": true
+    },
+    {
+      "applicationId": "identity",
+      "minVersion": "1.0.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.0.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "identity.verify",
+        "identity.session",
+        "identity.store",
+        "identity.events"
       ],
       "optional": true
     }

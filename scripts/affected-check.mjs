@@ -19,6 +19,12 @@ import { pathToFileURL } from 'node:url'
  * правке фронта, потому что путь не распознавался.
  */
 export const PACKAGES = [
+  {"id": "identity", "path": "apps/identity", "workspace": "@voicechat/identity-server", "dependsOn": ["shared", "sessions-core", "storage-sql", "identity-contracts", "component-runtime"]},
+  {"id": "identity-account", "path": "packages/identity-account", "workspace": "@voicechat/identity-account", "dependsOn": ["shared", "ui-kit", "ui-foundation", "profile-app", "identity-client", "identity-login", "sessions-app"]},
+  {"id": "identity-client", "path": "packages/identity-client", "workspace": "@voicechat/identity-client", "dependsOn": ["shared", "identity-contracts"]},
+  {"id": "identity-contracts", "path": "packages/identity-contracts", "workspace": "@voicechat/identity-contracts", "dependsOn": ["shared"]},
+  {"id": "identity-login", "path": "packages/identity-login", "workspace": "@voicechat/identity-login", "dependsOn": ["shared", "ui-kit", "ui-foundation", "profile-app", "identity-client"]},
+  {"id": "storage-sql", "path": "packages/storage-sql", "workspace": "@voicechat/storage-sql", "dependsOn": []},
   { id: 'voice-browser', path: 'packages/voice-browser', workspace: '@voicechat/voice-browser', dependsOn: ['shared', 'component-runtime'] },
   { id: 'component-runtime', path: 'packages/component-runtime', workspace: '@sislexa/component-runtime', dependsOn: ['shared'] },
   { id: 'ui-foundation', path: 'packages/ui-foundation', workspace: '@voicechat/ui-foundation', dependsOn: ['shared', 'ui-kit'] },

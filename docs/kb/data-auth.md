@@ -1,10 +1,13 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-20
-checked: f425db09
+checked: deb7bc26
 areas:
   - apps/server/src/db
   - apps/server/src/users
+  - apps/identity
+  - packages/identity-client
+  - packages/identity-contracts
   - apps/server/src/uploads.ts
   - apps/server/src/routes/admin.ts
   - packages/shared/src/types.ts
@@ -12,6 +15,39 @@ areas:
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## Identity repository and request authentication
+
+`https://github.com/sislex/identity` owns authentication, registration, recovery,
+TOTP, sessions/device trust, the identity SQL repository/schema, login/account UI,
+and profile/session packages. Core's `users/*`, identity repository and SQL driver
+files are compatibility exports from immutable archives, not local implementations.
+`apps/identity` and `packages/identity-*` expose independently gated upstream workspaces.
+The pure session-policy archive is separate so importing shared contracts does not
+pull React or SQL drivers into Make/Reader builds.
+
+A configured `identity` component dependency replaces Core's public identity port
+and `ctx.repos.identity`. Every private HTTP request goes through Identity verify;
+Core retains project/resource permission checks. Session endpoints forward IP,
+user credentials and CSRF to the protected Identity session RPC, then return its
+status/cookies. A service grant authenticates the RPC caller, never the user.
+`/internal/whoami` remains the compatibility facade for existing tools, calling the
+same verifier. Core WebSocket commands recheck identity; revocation events close
+matching sockets. Event cursors include a process epoch to survive Identity restarts.
+
+Production migration preserves the existing PostgreSQL identity tables and signing
+secret. This retains passwords, active cookies, TOTP and foreign keys. Shared DB
+access remains an explicit trust boundary; this extraction does not implement OIDC,
+immutable user IDs, OAuth token exchange or a distributed billing ledger. Without a
+managed Identity dependency, development/tests use the same external implementation
+embedded in Core. Historical SQLite migrations stay in Core; current identity DDL
+is imported from its owner. PostgreSQL initializers share the schema advisory lock.
+
+Remote user deletion blocks the account/revokes sessions before idempotent Core
+cleanup callbacks. A failed callback leaves a blocked, retryable account; credentials
+are removed last. This is not a cross-service SQL transaction. Embedded mode retains
+its local transaction. Identity currently requires one writer process: login rate
+limits and pending TOTP tickets are held in memory.
 
 ## Development preview data isolation
 
@@ -519,3 +555,8 @@ keyed by credential digest. Public proxies retain the user's Authorization heade
 and do not replace it with a component secret. Readiness failures omit secret
 values, private paths and raw upstream response bodies. Installation and rotation
 commands are documented in `deploy.md`.
+
+The `identity.core` callback exposes only `loginNewDeviceEmails` from user settings
+and only `signup.enabled`, `signup.role`, and `sessions.maxPerUser` from application
+configuration. Credentials, model settings and private user instructions are not
+returned through that callback. Contract tests reject other configuration keys.

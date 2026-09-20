@@ -140,6 +140,8 @@ export class VoiceChatDb {
       const factory = deps.ports?.[key]
       if (factory) (ports as Record<keyof Ports, unknown>)[key] = factory(ports)
     }
+    // Domain-to-domain calls must use the same remote identity port as HTTP handlers.
+    if (deps.ports?.identity) this.ctx.repos = {...this.ctx.repos, identity: ports.identity as IdentityRepo}
     // Тот же гейт, но под типами реализаций: подмена метода в тесте уходит в сам репозиторий.
     this.impl = ports as unknown as Repos
     this.sync = this.impl

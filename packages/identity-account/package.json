@@ -1,0 +1,34 @@
+{
+  "name": "@voicechat/identity-account",
+  "type": "module",
+  "private": true,
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "version": "1.0.0",
+  "dependencies": {
+    "@voicechat/shared": "*",
+    "@voicechat/ui-kit": "*",
+    "@voicechat/ui-foundation": "*",
+    "@voicechat/profile-app": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.0.0-85ee08cdc7e3.tgz",
+    "@voicechat/identity-client": "*",
+    "@voicechat/identity-login": "*",
+    "@voicechat/sessions-app": "*"
+  },
+  "scripts": {
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/identity",
+    "workspace": "apps/account",
+    "repository": "https://github.com/sislex/identity",
+    "version": "1.0.0",
+    "commit": "85ee08cdc7e3004a15417a1f86781ec68a0df47b"
+  }
+}

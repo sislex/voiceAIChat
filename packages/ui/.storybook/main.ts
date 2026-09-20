@@ -11,7 +11,7 @@ const toolStories = (name: string, workspace: string) => join(dirname(require.re
 
 const config: StorybookConfig = {
   // Сториз — рядом с компонентами, docs-страницы витрины (Foundations) — .mdx.
-  stories: ['../src/**/*.mdx', toolStories('@sislexa/make', 'packages/make-app'), toolStories('@sislexa/image-studio', 'packages/image-studio-app'), '../src/**/*.stories.tsx', '../../app-shell/src/**/*.stories.tsx', '../../chat-app/src/**/*.stories.tsx', toolStories('@sislexa/web-reader', 'packages/web-reader-app'), toolStories('@sislexa/playwright-reader', 'packages/playwright-reader-app'), '../../projects-app/src/**/*.stories.tsx', '../../operations-app/src/**/*.stories.tsx', '../../admin-app/src/**/*.stories.tsx', '../../sessions-app/src/**/*.stories.tsx', '../../profile-app/src/**/*.stories.tsx'],
+  stories: ['../src/**/*.mdx', toolStories('@sislexa/make', 'packages/make-app'), toolStories('@sislexa/image-studio', 'packages/image-studio-app'), '../src/**/*.stories.tsx', '../../app-shell/src/**/*.stories.tsx', '../../chat-app/src/**/*.stories.tsx', toolStories('@sislexa/web-reader', 'packages/web-reader-app'), toolStories('@sislexa/playwright-reader', 'packages/playwright-reader-app'), '../../projects-app/src/**/*.stories.tsx', '../../operations-app/src/**/*.stories.tsx', '../../admin-app/src/**/*.stories.tsx', toolStories('@sislexa/identity', 'packages/sessions-app'), toolStories('@sislexa/identity', 'packages/profile-app')],
   addons: ['@storybook/addon-essentials', '@storybook/addon-a11y'],
   framework: { name: '@storybook/react-vite', options: {} },
   viteFinal: (cfg) => {

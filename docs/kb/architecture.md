@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-20
-checked: 5f3ca49e
+checked: deb7bc26
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -218,3 +218,21 @@ Its Core bridge retains identity, conversation and model-execution ownership.
 Both repositories install independently using shared snapshots and publish source
 archives with full SHA provenance. Speech/image pure wire contracts remain in shared.
 See [the extraction plan](../plans/voice-image-extraction.md) for boundaries.
+
+### Identity ownership audit
+
+`https://github.com/sislex/identity` now owns login/registration/recovery/2FA,
+account/profile/session UI, browser session transport, auth enforcement, credential
+storage and its schema. Core supplies resource permissions, project invitations,
+account report aggregation, host cache/performance hooks and desktop legacy import.
+`packages/profile-app`, `sessions-app` and `sessions-core` are compatibility adapters.
+`packages/storage-sql` consumes the SQL infrastructure from the same upstream source.
+
+Previously extracted Make, Web Reader, Playwright Reader, Voice and Image Studio
+workspace source remains import-only adapters. Core's speech session handlers own
+chat stream ordering, progress broadcasts and WS translation, not recognition or
+synthesis engines. `apps/login-application` is machine enrollment for the companion
+agent, not user registration; it remains with machine/client infrastructure.
+`apps/llm-runner` remains a separate workspace in Core and is not claimed as an
+already extracted repository by this release. Common UI primitives, chat/agents,
+projects, operations and release orchestration also remain Core responsibilities.

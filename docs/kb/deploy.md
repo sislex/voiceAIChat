@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: 75633d7e
+checked: deb7bc26
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1116,3 +1116,29 @@ and cookie CSRF rejection; both accounts and their sessions were removed. Piper
 `ru_RU-ruslan-medium` produced a 170772-byte WAV which Whisper `large-v3-turbo`
 transcribed exactly. HTTPS certificate verification, the browser login screen with
 zero page errors, Web Recorder and a bounded Codex completion also passed.
+
+
+### Independent Identity deployment
+
+`deploy/compose.identity.yml` adds Identity 1.0.0 from its pinned independent
+checkout. Append it to the existing operator Compose chain; preserve the external
+LLM relay and reader recovery overlays. Set `SISLEXA_IDENTITY_SOURCE`,
+`SISLEXA_IDENTITY_COMMIT`, and the existing PostgreSQL `VC_DB_URL` in the effective
+Compose environment. The eight-provider installation has thirteen directional
+grants. Identity consumes `identity.core`; Core consumes verify/session/store/event
+scopes from Identity. Copy the current `session.secret` into the private Identity
+mount without changing its contents, readable only by the runtime user. Preserve
+existing user rows and hashes; this release shares the existing database.
+
+Core proxies `/login/`, `/account/` and session requests to Identity. Public request
+authentication and WebSocket commands are verified through the component dependency;
+Identity failure denies protected requests. A rollout must verify existing-session
+continuity, login, session revocation, account assets and provider readiness before
+it is considered complete. Use the installed `voicechat-deploy` with the complete
+operator environment and verify that any prebuilt overlay removes all build targets.
+
+The Identity catalog entry produces a separate Release Center build context. Its
+adapter declares the test/type dependencies used by the upstream server check;
+`apps/identity/container.json` supplies native SQLite build tools. The pinned source
+archive includes the separately built login/account assets, so runtime startup
+does not require the Core UI source.

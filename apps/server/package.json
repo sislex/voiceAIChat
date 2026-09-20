@@ -32,7 +32,8 @@
     "@voicechat/web-reader": "*",
     "@voicechat/web-reader-contracts": "*",
     "@voicechat/playwright-reader-contracts": "*",
-    "@sislexa/component-runtime": "*"
+    "@sislexa/component-runtime": "*",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.0.0-85ee08cdc7e3.tgz"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
