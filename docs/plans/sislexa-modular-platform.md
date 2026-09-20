@@ -1,9 +1,10 @@
 # Sislexa: independent applications, identity, and usage accounting
 
 Status: the first contract foundation is deployed in production 0.1.310.
-The three tool repositories have published 1.0.0 releases and are deployed through
-core release 0.1.311. Dependency and component-permission configuration is now
-being implemented for their next independent releases.
+The three tool repositories were extracted in core release 0.1.311. Managed
+dependency and component-permission configuration is deployed in 0.1.312.
+Make 1.1.1 corrects a process-bootstrap guard; the host update for 0.1.313 is
+being validated before its final production rollout.
 Updated: 2026-09-20.
 
 ## Confirmed product requirements
@@ -363,7 +364,7 @@ Implementation checklist:
 - [x] Publish independent Make, Playwright Reader and Web Reader repositories at 1.0.0.
 - [x] Complete host integration and deploy production 0.1.311 through `voicechat-deploy`.
 - [x] Complete runtime dependency/token configuration and its integration gate.
-- [ ] Deploy and verify production 0.1.312 with managed component credentials.
+- [ ] Deploy and verify production 0.1.313 with managed component credentials and the Make startup fix.
 - [ ] Execute the remaining identity, accounting and analytics stages with integration and release evidence.
 
 ### Inspected baseline

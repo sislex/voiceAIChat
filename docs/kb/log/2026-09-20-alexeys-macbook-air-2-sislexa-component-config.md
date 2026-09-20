@@ -28,4 +28,26 @@ Identity delegation, a durable usage ledger and active-time analytics remain
 explicit later stages. Targeted schema/runtime/Core authorization and independent
 tool gates passed. The final canonical `npm run gate` exited 0, including all
 typechecks, unit/integration tests, builds, route budgets and 31 browser suites
-with 807 passing tests. Publication and production deployment are pending.
+with 807 passing tests. Core 0.1.312 and three tool 1.1.0 releases were published.
+Production 0.1.312 reached readiness at 03:03:51 UTC with a temporary Make
+bootstrap sentinel; that public sentinel was explicitly rejected by RPC (401).
+It supplies no authorization and will be removed by the 1.1.1 tool rollout.
+
+The first 0.1.312 cutover exposed a Make entry-point guard that still demanded
+VC_INTERNAL_TOKEN before constructing the managed server. Readiness correctly
+kept the deployment red. Make 1.1.1 fixes that guard; its regression test launches
+the real process with an empty legacy token, checks readiness and rejects legacy
+RPC credentials. Legacy startup still rejects a missing token. The independent
+Make gate passed (101 API, 19 contract and 148 UI tests, typechecks and build).
+The host pins this immutable patch for release 0.1.313.
+
+The actual Make 1.1.1 Docker image was also started in an isolated container
+against the live Core dependency with empty VC_INTERNAL_TOKEN, disposable data
+and provider registry. It reached readiness and reported 1.1.1; the temporary
+container was removed. Fresh final-rollout backup:
+`/var/backups/voicechat/sislexa-managed-final-20260920T030816Z` (381829411-byte
+PostgreSQL dump, 1100 restore-list entries, configuration and prior image IDs).
+
+The final host `npm run gate` for the Make 1.1.1 pin exited 0: typechecks, unit
+and integration suites, builds, route budgets and 31 browser suites (807 tests).
+The 0.1.313 rollout remains pending at this commit.
