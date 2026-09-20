@@ -34,8 +34,9 @@ HTTP access module. Authentication-aware model fixtures now provision users.
 Identity 1.1.1 loads editor CSS only with its lazy dialog and reuses UI-kit account
 summary components; route budget limits remain unchanged.
 Both canonical Core gates (`npm run gate:fast` and `npm run gate`) passed with
-exit code 0; each included all 807 end-to-end browser checks. The backed-up
-production rollout and live verification are the remaining delivery step.
+exit code 0; each included all 807 end-to-end browser checks. Production rollout
+and live verification completed as Core 0.1.316 / Identity 1.1.1; see the
+`tenant-tariff-production` journal entry and `docs/kb/deploy.md`.
 
 ## Knowledge updated
 

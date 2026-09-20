@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: 79d54f39
+checked: 9cb7e7ac
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1181,3 +1181,53 @@ retained Image Studio 0.1.312 assets and Web Recorder remained available. Piper
 produced a valid WAV and Whisper large-v3-turbo recognized the fixture phrase;
 the external Codex relay completed a bounded response. Temporary user accounts,
 sessions and credential files were removed after verification.
+
+
+### Production 0.1.316 verification
+
+Production 0.1.316 (`9cb7e7ac56ea0043d14df7627d697f29b374552f`) completed through
+installed `voicechat-deploy` at 2026-09-20 13:46:21 UTC. Identity 1.1.1
+(`b1fddb949e02fc90fc479f559772136a1cdfd47b`) owns the personal tenant and tariff
+migration. Both canonical Core gates passed with all 807 browser checks each;
+independent application gates also passed before publication. Exact component
+versions and source commits are retained in `deploy/tools.lock.json`.
+
+The existing `/etc/voicechat/components-0.1.315` installation and thirteen grants
+remain active. Dependency URLs, including Web Reader port 8795, PostgreSQL settings
+and the session signing secret were preserved. Immutable sources are under
+`/opt/sislexa/tenant-releases/<repository>/<commit>`. The invocation-only
+`/etc/voicechat/prebuilt-0.1.316.yml` selected fourteen verified images with zero
+build targets. Core image `sislexa-prebuilt-core-app:0.1.316` has image ID
+`sha256:4515d1a8bc5b7415f64369e667c50b28e3eabdd7a4498fb1d83623af50c6d1a7`;
+its native SQLite loading, source provenance and rebuilt frontend integrity were
+checked before deployment. The deploy command launches work in the background;
+completion was verified from the successful terminal entry in the deploy log,
+not merely the launcher exit code.
+
+Private configuration and image rollback references are under
+`/var/backups/voicechat/sislexa-identity-20260920T123042Z`. The fresh 382035955-byte
+PostgreSQL dump was streamed to the private operator backup directory
+`PhpstormProjects/.sislexa-backups/tenant-20260920T123042Z` and its archive directory
+validated. A local restore of production user/session tables retained identical
+rows after migration. The four new tenant/tariff tables are additive; reverting
+application images must not overwrite subsequent user activity with the old dump.
+
+All fourteen application containers were running, every configured healthcheck
+passed, and all eight providers were ready. A session issued before the upgrade
+remained valid. Every existing user has exactly one personal tenant, owner
+membership and tariff assignment; new accounts create these atomically. Live
+checks passed foreign-tenant rejection, admin-only tariff mutation, cookie CSRF,
+optimistic revision conflicts, immediate capability enforcement through all four
+tool APIs, stale WebSocket closure and admin recovery from an empty tariff.
+Changing tariffs preserved the system role. HTTPS mobile login, account display,
+tariff editing and assignment passed without page errors or horizontal overflow.
+Temporary accounts, sessions, tenants, test tariff and credential files were removed;
+final database cardinality and cleanup checks passed.
+
+Provider metadata/scopes, immediate grant revocation, frontend SRI, tool-to-Core
+callbacks and the external LLM/Browser Runner health checks passed. Piper produced
+a valid 179476-byte WAV and Whisper `large-v3-turbo` recognized the fixture phrase.
+After deployment, unused builder cache was removed while retaining runtime and
+rollback images and all volumes. Free root filesystem space was approximately
+1.2 GiB; capacity expansion remains an operational follow-up before another large
+image build.
