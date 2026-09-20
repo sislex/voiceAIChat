@@ -54,13 +54,13 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
   })
 
   await t.test('ядро сессий тянет сервер и UI как потребителей', () => {
     const decision = selectAffected(['packages/sessions-core/src/policy.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
   })
 
   await t.test('правка UI не затрагивает отделённый Web Recorder', () => {
@@ -73,7 +73,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
+      assert.deepEqual(ids(decision), ['component-runtime', 'ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -87,7 +87,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
   })
 })
 
@@ -401,16 +401,19 @@ ${body}
     executable('git', `
 case "$*" in
   "rev-parse --short=12 HEAD") echo abcdef123456 ;;
+  "rev-parse HEAD") echo abcdef123456abcdef123456abcdef123456abcdef ;;
   "rev-parse --short HEAD") echo abcdef1 ;;
   "log -1 --pretty=%s") echo "release test" ;;
 esac
 `)
     // macOS не поставляет GNU setsid; заглушки сохраняют границу exec/env,
     // которую проверяет тест, не привязывая suite к платформе CI.
+    mkdirSync(join(tempRoot, 'apps/server'), { recursive: true })
+    writeFileSync(join(tempRoot, 'apps/server/release.json'), JSON.stringify({ apiVersion: '1.1.0', dataVersion: '1.0.0' }))
     executable('setsid', `exec "$@"`)
     executable('nohup', `exec "$@"`)
     executable('flock', `exit 0`)
-    executable('docker', `printf '%s|%s|%s' "$VC_RELEASE_VERSION" "$VC_RELEASE_VERSION_SOURCE" "$VC_RELEASE_COMMIT" >"$DEPLOY_TEST_MARKER"`)
+    executable('docker', `printf '%s|%s|%s' "$VC_RELEASE_VERSION" "$VC_RELEASE_VERSION_SOURCE" "$VC_RELEASE_COMMIT" >"$DEPLOY_TEST_MARKER"; printf '%s|%s|%s|%s' "$VC_APPLICATION_VERSION" "$VC_APPLICATION_API_VERSION" "$VC_APPLICATION_DATA_VERSION" "$VC_APPLICATION_COMMIT" >"$DEPLOY_TEST_MARKER.application"`)
     executable('curl', `printf '%s\\n' '{"ok":true}'`)
 
     const result = spawnSync('bash', [join(repository, 'scripts/prod/deploy.sh')], {
@@ -435,6 +438,7 @@ esac
       try { metadata = readFileSync(marker, 'utf8') } catch {}
     }
     assert.equal(metadata, '0.1.42|protected-release|abcdef123456')
+    assert.equal(readFileSync(marker + '.application', 'utf8'), '0.1.42|1.1.0|1.0.0|abcdef123456abcdef123456abcdef123456abcdef')
     assert.match(readFileSync(log, 'utf8'), /version=0\.1\.42 .*source=protected-release/)
   } finally {
     rmSync(tempRoot, { recursive: true, force: true })
@@ -451,6 +455,8 @@ test('production deploy безопасно мигрирует постоянны
     const calls = join(tempRoot, 'docker-calls')
     mkdirSync(commandsDirectory)
     mkdirSync(volumesRoot)
+    mkdirSync(join(tempRoot, 'apps/server'), { recursive: true })
+    writeFileSync(join(tempRoot, 'apps/server/release.json'), JSON.stringify({ apiVersion: '1.1.0', dataVersion: '1.0.0' }))
 
     const putVolume = (name, files) => {
       const directory = join(volumesRoot, name)
@@ -473,6 +479,7 @@ ${body}
     executable('git', `
 case "$*" in
   "rev-parse --short=12 HEAD") echo abcdef123456 ;;
+  "rev-parse HEAD") echo abcdef123456abcdef123456abcdef123456abcdef ;;
   "rev-parse --short HEAD") echo abcdef1 ;;
   "log -1 --pretty=%s") echo "volume migration test" ;;
 esac

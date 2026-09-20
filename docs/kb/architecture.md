@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-20
-checked: 48ab7ed2
+checked: f425db09
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -195,3 +195,14 @@ source patch recorded in `dependency-snapshots.json`; they do not maintain forke
 common source directories. This transitional distribution works without a private
 npm registry. API peers belong to the distribution root; UI requirements belong
 to each owned UI workspace, so headless API consumers do not install UI peers.
+
+### Managed component runtime
+
+Core and the independent Make, Playwright Reader and Web Reader services share
+`@sislexa/component-runtime` as a Node library; its pure contract remains in shared.
+Release-owned dependency ranges and scopes are separate from operator endpoint,
+credential-file and grant settings. Static metadata/grant endpoints avoid startup
+cycles; readiness and outbound calls enforce compatibility. Provider-local token
+registries are separate from application data and outgoing credentials. This is
+an infrastructure authorization boundary; the immutable user/delegation/billing
+migration in the Sislexa plan remains separate.

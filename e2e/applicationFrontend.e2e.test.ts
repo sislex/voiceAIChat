@@ -233,9 +233,11 @@ it('смена версии панели не меняет host bundle, повр
     manifestPath = join(location, 'manifest.json')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   const entry = await readFile(join(location, manifest.entry.path), 'utf8')
-  const next = entry.replaceAll(manifest.version, '1.1.0')
+  const [major, minor, patch] = manifest.version.split('.').map(Number)
+  const nextVersion = `${major}.${minor}.${patch + 1}`
+  const next = entry.replaceAll(manifest.version, nextVersion)
   expect(next).not.toBe(entry)
-  manifest.version = '1.1.0'
+  manifest.version = nextVersion
   manifest.entry.path = `panel-${hash(next).slice(0, 20)}.js`
   manifest.entry.integrity =
     'sha384-' + createHash('sha384').update(next).digest('base64')

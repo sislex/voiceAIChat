@@ -22,3 +22,14 @@ apps/agent-tray
 Dockerfile
 .dockerignore
 docker-compose.yml
+
+# Installation credentials and local verification output must never enter images.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+**/.long-runs
+**/coverage
+**/storybook-static
+**/test-results
+artifacts

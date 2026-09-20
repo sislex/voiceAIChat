@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+import { createComponentRuntime } from '@sislexa/component-runtime'
 import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 // Сборка Fastify-приложения (HTTP + WebSocket). Экспортируется отдельно от запуска,
 // чтобы тестировать через fastify.inject / ws-клиент.
@@ -295,6 +297,24 @@ printf 'BASE_SHA=%s\\n' "$local_sha"`
 
 export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
+  opts = { ...opts, config: { ...opts.config } }
+  const component = opts.config.componentConfigPath ? await createComponentRuntime({
+    configFile: opts.config.componentConfigPath,
+    contractFile: fileURLToPath(new URL('../component-contract.json', import.meta.url)),
+    metadata: applicationRuntimeMetadata('core', process.env),
+  }) : undefined
+  component?.register(app)
+  const configuredDependency = (id: string) => component?.config.dependencies.some(d => d.applicationId === id) ? component.dependency(id) : undefined
+  const managedMake = configuredDependency('make')
+  const managedPlaywright = configuredDependency('playwright-reader')
+  const managedReader = configuredDependency('web-reader')
+  if (managedMake) { opts.config.makeMode = 'remote'; opts.config.makeUrl = managedMake.url }
+  if (managedPlaywright) { opts.config.playwrightReaderMode = 'remote'; opts.config.playwrightReaderUrl = managedPlaywright.url }
+  if (managedReader) { opts.config.readerMode = 'remote'; opts.config.readerUrl = managedReader.url }
+  if (component && ((opts.config.makeMode === 'remote' && !managedMake) || (opts.config.playwrightReaderMode === 'remote' && !managedPlaywright) || (opts.config.readerMode === 'remote' && !managedReader))) {
+    component.close()
+    throw new Error('Managed remote tools require declared component dependencies')
+  }
   const corsOrigins = new Set(opts.config.corsOrigins)
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
   const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version'
@@ -591,7 +611,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
   })
   const makeRemote = opts.config.makeMode === 'remote'
-  if (makeRemote && !(opts.config.makeUrl && opts.config.internalToken && opts.config.mcpSecret)) {
+  if (makeRemote && !(opts.config.makeUrl && (managedMake || opts.config.internalToken) && opts.config.mcpSecret)) {
     throw new Error('VC_MAKE_MODE=remote требует VC_MAKE_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
   }
   // В remote MCP Make слушает процесс Make: исполнителю нужен его адрес, а не адрес ядра.
@@ -599,11 +619,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? `${(opts.config.makeMcpPublicBase ?? opts.config.makeUrl!).replace(/\/+$/, '')}${MAKE_MCP_PATH}?k=${mcpSecret}`
     : buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
   const make: { service: MakeService; hub: MakeHub; register?: (app: FastifyInstance) => void } = makeRemote
-    ? createRemoteMake({ makeUrl: opts.config.makeUrl!, token: opts.config.internalToken!, mcpSecret, mcpBaseUrl: makeMcpBaseUrl })
+    ? createRemoteMake({ makeUrl: opts.config.makeUrl!, token: managedMake?.token ?? opts.config.internalToken!, fetchImpl: managedMake?.fetchImpl, mcpSecret, mcpBaseUrl: makeMcpBaseUrl })
     : createMakeModule({ dataDir: opts.config.dataDir, mcpSecret, mcpBaseUrl: makeMcpBaseUrl, core: makeCore })
   make.register?.(app)
   // Стенд доступен и напрямую портом ядра, минуя Caddy, — пути Make ядро переправляет в его процесс само.
-  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl! })
+  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl!, fetchImpl: managedMake?.publicFetchImpl })
   // Канбан отдельным процессом: общая база (Postgres), пути канбана ядро переправляет туда, состояние
   // машин/KB/виджета отдаёт по `/internal/*`, ленты событий принимает обратно (docs/plans/kanban-service.md).
   const kanbanRemote = opts.config.kanbanMode === 'remote'
@@ -702,7 +722,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const ciCommandsMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}` : buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
   // Web Reader отдельным процессом: MCP «browser» слушает он — исполнителю нужен его адрес (docs/plans/web-reader-service.md).
   const readerRemote = opts.config.readerMode === 'remote'
-  if (readerRemote && !(opts.config.readerUrl && opts.config.internalToken && opts.config.mcpSecret)) throw new Error('VC_READER_MODE=remote требует VC_READER_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
+  if (readerRemote && !(opts.config.readerUrl && (managedReader || opts.config.internalToken) && opts.config.mcpSecret)) throw new Error('VC_READER_MODE=remote требует VC_READER_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
   const previewMcpBaseUrl = previewMcpBaseUrlOf(opts.config, mcpSecret)
   const consoleMcpBaseUrl = buildPublicMcpUrl(opts.config, CONSOLE_MCP_PATH, mcpSecret)
   const kanbanMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${KANBAN_MCP_PATH}?k=${mcpSecret}` : buildPublicMcpUrl(opts.config, KANBAN_MCP_PATH, mcpSecret)
@@ -1147,20 +1167,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   let playwrightReader: PlaywrightReaderService
   if (opts.config.playwrightReaderMode === 'remote') {
-    if (!(opts.config.playwrightReaderUrl && opts.config.internalToken)) throw new Error('VC_PLAYWRIGHT_READER_MODE=remote требует VC_PLAYWRIGHT_READER_URL и VC_INTERNAL_TOKEN')
-    playwrightReader = createRemotePlaywrightReader({ baseUrl: opts.config.playwrightReaderUrl, token: opts.config.internalToken })
-    registerPlaywrightReaderProxy(app, { baseUrl: opts.config.playwrightReaderUrl })
+    if (!(opts.config.playwrightReaderUrl && (managedPlaywright || opts.config.internalToken))) throw new Error('VC_PLAYWRIGHT_READER_MODE=remote требует VC_PLAYWRIGHT_READER_URL и VC_INTERNAL_TOKEN')
+    playwrightReader = createRemotePlaywrightReader({ baseUrl: opts.config.playwrightReaderUrl, token: managedPlaywright?.token ?? opts.config.internalToken!, fetchImpl: managedPlaywright?.fetchImpl })
+    registerPlaywrightReaderProxy(app, { baseUrl: opts.config.playwrightReaderUrl, fetchImpl: managedPlaywright?.publicFetchImpl })
   } else {
     const module = createPlaywrightReaderModule({ core: playwrightReaderCore, runner: browserRunner, runnerFacingBase })
     module.register(app)
     playwrightReader = module.service
   }
-  if (readerRemote) registerReaderProxy(app, { readerUrl: opts.config.readerUrl! })
+  if (readerRemote) registerReaderProxy(app, { readerUrl: opts.config.readerUrl!, fetchImpl: managedReader?.publicFetchImpl })
   else createReaderModule({ app, core: readerCore, mcpSecret, browser: playwrightReader })
-  // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
-  if (opts.config.internalToken) {
+  // Register internal RPC only when a managed provider or legacy migration credential is configured.
+  if (opts.config.internalToken || component) {
     registerInternalRoutes(app, {
-      token: opts.config.internalToken, makeCore, authenticate, imageStudio: imageStudioCore,
+      token: opts.config.internalToken ?? '', component, makeCore, authenticate, imageStudio: imageStudioCore,
       ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
       admin: { ...(deployTrigger ? { deployTrigger } : {}), sessionHub },
       reader: readerCore,

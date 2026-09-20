@@ -17,6 +17,7 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | Путь | Пакет | Что это | Детали |
 |---|---|---|---|
 | `packages/shared` | `@voicechat/shared` | Типы, контракт REST/WS, чистая логика (без зависимостей) | [AGENTS](packages/shared/AGENTS.md) |
+| `packages/component-runtime` | `@sislexa/component-runtime` | Provider tokens, dependency compatibility and managed configuration | [AGENTS](packages/component-runtime/AGENTS.md) |
 | `packages/ui` | `@voicechat/ui` | Общая оболочка, чат, стор и host API; продуктовые панели загружаются отдельно | [AGENTS](packages/ui/AGENTS.md) |
 | `packages/ui-foundation` | `@voicechat/ui-foundation` | Общие редакторы, окна, предпочтения и runtime-порты UI | [AGENTS](packages/ui-foundation/AGENTS.md) |
 | `packages/make-app` | `@voicechat/make-app` | Самостоятельный артефакт Make UI | [AGENTS](packages/make-app/AGENTS.md) |

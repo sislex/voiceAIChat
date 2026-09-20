@@ -78,6 +78,12 @@ else
   release_version_source=${release_tag:+git-tag}
   release_version_source=${release_version_source:-none}
 fi
+# Read release-owned API/data metadata without deriving it from the operator environment.
+export VC_APPLICATION_VERSION=$VC_RELEASE_VERSION
+VC_APPLICATION_COMMIT=$(git rev-parse HEAD)
+VC_APPLICATION_API_VERSION=$(python3 -c 'import json; print(json.load(open("apps/server/release.json"))["apiVersion"])')
+VC_APPLICATION_DATA_VERSION=$(python3 -c 'import json; print(json.load(open("apps/server/release.json"))["dataVersion"])')
+export VC_APPLICATION_COMMIT VC_APPLICATION_API_VERSION VC_APPLICATION_DATA_VERSION
 task_ref=$(git log -1 --pretty=%s | grep -Eio 'chat(ai)?[-[:space:]]*[0-9]+' | grep -Eo '[0-9]+' | head -1 || true)
 export VC_RELEASE_TASK=${task_ref:+chat-$task_ref}
 log "метаданные релиза: version=${VC_RELEASE_VERSION:-нет} commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет} source=$release_version_source"
@@ -176,7 +182,8 @@ docker compose up -d --build
 
 log 'ждём /api/health'
 for ((i = 1; i <= HEALTH_TRIES; i++)); do
-  if curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1; then
+  if curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1 &&
+     docker compose exec -T voicechat node /app/scripts/component-readiness.mjs; then
     log "=== деплой успешен: $(curl -fsS -m 5 "$HEALTH_URL") ==="
     exit 0
   fi
