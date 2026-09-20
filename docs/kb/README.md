@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 3 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 20 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1577 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1578 коммит(ов) в areas после сверки: 098f4fb8 fix: pin Make process startup without legacy component token … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 44 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 16 коммит(ов) в areas после сверки: 5f98a55c Merge remote-tracking branch 'origin/main' into CHAT-483 … |
@@ -42,7 +42,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-15 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 159 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: faabf49f feat: configure versioned component dependencies and scoped provider tokens … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ⚠ 3 коммит(ов) в areas после сверки: 098f4fb8 fix: pin Make process startup without legacy component token … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-17, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
