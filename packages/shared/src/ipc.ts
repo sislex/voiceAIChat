@@ -1133,6 +1133,8 @@ export interface RendererBrowserBridge {
 }
 
 export interface RendererSessionBridge {
+  /** Independent Identity account/tariff operations, available on current hosts. */
+  tariffs?: import('./accountAccess').AccountTariffClient
   /** Вход: пользователь, `null` при отказе или вызов второго фактора (auth-roadmap п.6) — тогда нужен `login2fa`. */
   login(creds: { name: string; password: string; remember?: boolean }): Promise<SessionUser | LoginChallenge | null>
   login2fa?(input: { ticket: string; code: string }): Promise<SessionUser | null>

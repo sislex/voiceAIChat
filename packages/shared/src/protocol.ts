@@ -147,6 +147,11 @@ export const REST = {
   projectKbUsage: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb-usage`,
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',
+  sessionAccountAccess: '/api/session/account-access',
+  sessionTariffs: '/api/session/tariffs',
+  sessionTariff: (id: string) => `/api/session/tariffs/${encodeURIComponent(id)}`,
+  sessionTariffAssignments: '/api/session/tariff-assignments',
+  sessionTariffAssignment: (user: string) => `/api/session/tariff-assignments/${encodeURIComponent(user)}`,
   sessionLogout: '/api/session/logout',
   /** Сессии текущего пользователя и «выйти везде» (auth-roadmap п.4). */
   sessionList: '/api/session/list',
