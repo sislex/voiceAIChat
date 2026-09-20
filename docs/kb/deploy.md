@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: f1e2a27d
+checked: 451cf46c
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1029,3 +1029,21 @@ do not append it permanently to the operator's default override chain, which
 must remain able to build the next release. The deploy still performs volume
 validation, release metadata setup, container replacement and component readiness
 checks. Record the resulting image IDs with the release backup.
+
+Production 0.1.313 (`451cf46c9acd759bcf1aa3ffb54745ea04f70550`) completed through
+`voicechat-deploy` at 2026-09-20 03:25:48 UTC. It pins Make 1.1.1 and both Readers
+at 1.1.0; all three managed tool containers have empty `VC_INTERNAL_TOKEN`.
+The Core image was updated from the verified 0.1.312 image with the new release
+source and pinned Make package, followed by frontend builds and native SQLite
+loading checks. The resulting image excludes `.env` and reports the full release
+SHA. The temporary image-only deployment override is
+`/etc/voicechat/prebuilt-0.1.313.yml`; it is not in the permanent Compose chain.
+Image IDs and the pre-release database/configuration backup are under
+`/var/backups/voicechat/sislexa-managed-final-20260920T030816Z`.
+
+Private installation state remains `/etc/sislexa/components-0312`; this directory
+names the initial installation, not the currently deployed release. The seven
+initial credentials must be rotated before the earliest expiry,
+2026-10-20 02:00:52 UTC. Rotation is currently an operator CLI procedure, not an
+automatic timer. Backup verification checked all seven credential files against
+the live files and integrity-checked the four initial provider registries.
