@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-20
-checked: f425db09
+checked: f1e2a27d
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -999,3 +999,33 @@ Docker context-export check verified the exclusion. Production installation
 credentials must enter through runtime environment or private mounts, never
 through `COPY . .` into an image. Core does not load the checkout `.env` itself;
 Compose supplies its runtime environment.
+
+On the 8 GB production host, simultaneous rebuilds exhausted memory and swap during
+0.1.312 preparation. The build client was cancelled before container replacement;
+the existing 0.1.311 Core recovered after automatic restarts. Keep
+`export COMPOSE_PARALLEL_LIMIT=1` and `export COMPOSE_BAKE=false` in
+`/etc/voicechat/production.env`, with matching Compose settings in the checkout
+`.env`. The installed Bake path combined all targets despite `--parallel 1`;
+prepare images with one `docker compose --parallel 1 build <service>` call per
+service in a sequential loop, using the same release/application metadata,
+then replace containers only through `voicechat-deploy`. Monitor memory and free
+disk during the build; prune only unused builder cache when needed. Do not remove
+application volumes, backups or rollback images to make room. Refresh an old
+installed deploy script from the verified release checkout, as ReleaseManager
+does, without rerunning the production installer or overwriting operator env.
+
+For 0.1.312, remaining runner images reused `/app` from the verified Core image
+(`sislexa-prebuilt-core-app:0.1.312`) after the host ran out of space while making
+another full application copy. A temporary Dockerfile replaced only the build
+stage with that image; runner runtime stages remained the release Dockerfile's
+stages. Preserve the source SHA and image ID when reusing this artifact. This is
+an operational build optimization, not a source-code change.
+
+When cache eviction is required after preparation, create a release-specific
+Compose override that removes each prepared service's `build` key with
+`!reset null`, selects a local immutable image tag and sets `pull_policy: never`.
+Pass it only in the environment of the authorized `voicechat-deploy` invocation;
+do not append it permanently to the operator's default override chain, which
+must remain able to build the next release. The deploy still performs volume
+validation, release metadata setup, container replacement and component readiness
+checks. Record the resulting image IDs with the release backup.
