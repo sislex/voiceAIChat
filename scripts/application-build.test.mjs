@@ -11,6 +11,7 @@ import {
 test('Make получает только собственный код, контракты и shared-замыкание', () => {
   assert.deepEqual(applicationBuildPaths('make'), [
     'apps/make',
+    'packages/component-runtime',
     'packages/make-contracts',
     'packages/sessions-core',
     'packages/shared'

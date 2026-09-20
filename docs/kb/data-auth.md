@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-13
-checked: 0b6c1d15
+updated: 2026-09-20
+checked: f425db09
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -491,3 +491,31 @@ cookie `vc_preview_run`, а `previewRunUser` в `auth.ts` принимает е�
 таблица переименовывается, индексы пересоздаются (под `PRAGMA
 foreign_keys=OFF`). Забыть про это — «CHECK constraint failed» только на
 свежесозданных инсталляциях, старые работают как ни в чём не бывало.
+
+## Provider-issued component tokens
+
+`packages/shared/src/componentConfig.ts` owns validated release and installation
+schemas. The Node-only `@sislexa/component-runtime` package implements private
+provider/environment-bound SQLite registries, the issuance/revocation CLI,
+compatibility checks and Fastify metadata/readiness endpoints. Credentials use
+256 random bits; only their SHA-256 digests, public IDs, consumer, scopes, issuance,
+expiry and revocation timestamps persist in the registry. Issuance is bounded by
+the configured consumer grant, and expiry is mandatory. A copied registry cannot
+be opened under another provider/environment. A second CLI connection can revoke
+a token while the service runs. Registry format version mismatches fail closed.
+
+Exact Core RPC paths map to scopes in `routes/internal.ts`. A new route inherits
+no managed permission. Managed Make/Playwright service RPC rejects the old shared
+token. `identity.verify` permits forwarding a user's original credentials to Core;
+it does not authorize a caller-supplied user name. User session/CSRF and resource
+ownership checks remain in their existing entry paths. Managed Make disables its
+legacy read-auth cache so forwarded user authorization is checked each time.
+MCP turn tokens remain a separate boundary. Immutable identity migration,
+delegation, durable usage accounting and budget reservation are still planned,
+not provided by these component tokens.
+
+Private outgoing files are reread for rotation; successful dependency checks are
+keyed by credential digest. Public proxies retain the user's Authorization header
+and do not replace it with a component secret. Readiness failures omit secret
+values, private paths and raw upstream response bodies. Installation and rotation
+commands are documented in `deploy.md`.

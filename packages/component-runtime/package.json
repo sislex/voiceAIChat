@@ -1,0 +1,31 @@
+{
+  "name": "@sislexa/component-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cli": "./src/cli.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --silent"
+  },
+  "peerDependencies": {
+    "@voicechat/shared": ">=0.1.0 <0.2.0",
+    "fastify": "^5.1.0"
+  },
+  "devDependencies": {
+    "@voicechat/shared": "*",
+    "@types/node": "^22.10.2",
+    "fastify": "^5.1.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "tsx": "^4.19.2"
+  }
+}

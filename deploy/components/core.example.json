@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "environmentId": "production",
+  "registryDirectory": "/run/sislexa/provider",
+  "grants": [
+    {
+      "consumerId": "make",
+      "scopes": [
+        "identity.verify",
+        "make.core",
+        "make.events"
+      ],
+      "maxTtlSeconds": 2592000
+    },
+    {
+      "consumerId": "playwright-reader",
+      "scopes": [
+        "identity.verify",
+        "playwright-reader.core"
+      ],
+      "maxTtlSeconds": 2592000
+    },
+    {
+      "consumerId": "web-reader",
+      "scopes": [
+        "identity.verify",
+        "reader.core"
+      ],
+      "maxTtlSeconds": 2592000
+    }
+  ],
+  "legacyScopes": [
+    "identity.verify",
+    "image-studio.core",
+    "image-studio.generate"
+  ],
+  "dependencies": [
+    {
+      "applicationId": "make",
+      "url": "http://make:8788",
+      "tokenFile": "/run/sislexa/outgoing/make.token"
+    },
+    {
+      "applicationId": "playwright-reader",
+      "url": "http://playwright-reader:8797",
+      "tokenFile": "/run/sislexa/outgoing/playwright-reader.token"
+    },
+    {
+      "applicationId": "web-reader",
+      "url": "http://reader:8795",
+      "tokenFile": "/run/sislexa/outgoing/web-reader.token"
+    }
+  ]
+}

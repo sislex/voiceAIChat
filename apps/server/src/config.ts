@@ -104,6 +104,7 @@ export interface ServerConfig {
   /** Адрес ядра для отдельных процессов канбана и машин (`VC_CORE_URL`); самому ядру не нужен. */
   coreUrl?: string
   /** Bearer внутреннего API `/internal/*` между сервисами; без него внутренний API выключен. */
+  componentConfigPath?: string
   internalToken?: string
   /** Секрет MCP-эндпоинтов (`?k=`); в `remote` обязан совпадать у ядра и Make, иначе — случайный на процесс. */
   mcpSecret?: string
@@ -281,6 +282,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     playwrightReaderMode: env.VC_PLAYWRIGHT_READER_MODE === 'remote' ? 'remote' : 'embedded',
     playwrightReaderUrl: env.VC_PLAYWRIGHT_READER_URL,
     coreUrl: env.VC_CORE_URL,
+    componentConfigPath: env.SISLEXA_COMPONENT_CONFIG,
     internalToken: env.VC_INTERNAL_TOKEN,
     mcpSecret: env.VC_MCP_SECRET,
     browserPreviewBase: env.VC_BROWSER_PREVIEW_BASE,

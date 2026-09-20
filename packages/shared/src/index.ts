@@ -124,3 +124,5 @@ export * from './rendererCi'
 export * from './applicationFrontend'
 export * from './platformOperation'
 export * from './platformUsage'
+
+export * from './componentConfig'

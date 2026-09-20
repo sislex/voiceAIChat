@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "environmentId": "production",
+  "registryDirectory": "/run/sislexa/provider",
+  "grants": [
+    {
+      "consumerId": "core",
+      "scopes": [
+        "web-reader.connect"
+      ],
+      "maxTtlSeconds": 2592000
+    }
+  ],
+  "legacyScopes": [],
+  "dependencies": [
+    {
+      "applicationId": "core",
+      "url": "http://voicechat:8787",
+      "tokenFile": "/run/sislexa/outgoing/core.token"
+    },
+    {
+      "applicationId": "playwright-reader",
+      "url": "http://playwright-reader:8797",
+      "tokenFile": "/run/sislexa/outgoing/playwright-reader.token"
+    }
+  ]
+}

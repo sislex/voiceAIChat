@@ -5,22 +5,22 @@
       "package": "@sislexa/make",
       "workspace": "apps/make",
       "repository": "https://github.com/sislex/make",
-      "version": "1.0.0",
-      "commit": "7fb6727e9ccf28cdb1ee3d421968e5b82b618ca5"
+      "version": "1.1.0",
+      "commit": "93055744002585c176ab9b1067b9c65653524623"
     },
     "playwright-reader": {
       "package": "@sislexa/playwright-reader",
       "workspace": "apps/playwright-reader",
       "repository": "https://github.com/sislex/playwrightreader",
-      "version": "1.0.0",
-      "commit": "04520f8587ba092c977bddcb0c753891d7fb853f"
+      "version": "1.1.0",
+      "commit": "1973eb506b2023a8d06778ca38f85997ded8cb09"
     },
     "web-reader": {
       "package": "@sislexa/web-reader",
       "workspace": "apps/web-reader",
       "repository": "https://github.com/sislex/webreader",
-      "version": "1.0.0",
-      "commit": "f65719c07ca19f3dea6b20e7409334dd030ab29a"
+      "version": "1.1.0",
+      "commit": "ff068915690f92d857ffb2635682b8c189b7e211"
     }
   }
 }

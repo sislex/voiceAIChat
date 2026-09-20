@@ -1,9 +1,10 @@
+import type { ComponentRuntime } from '@sislexa/component-runtime'
+import { INTERNAL_IMAGE_STUDIO_CORE_PATH, INTERNAL_IMAGE_STUDIO_GENERATE_PATH } from '@voicechat/shared'
 import type { PlaywrightReaderCore, PlaywrightReaderService } from '@voicechat/playwright-reader'
 import { INTERNAL_PLAYWRIGHT_READER_CORE_PATH, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, PLAYWRIGHT_READER_CORE_METHODS, PLAYWRIGHT_READER_SERVICE_METHODS, PLAYWRIGHT_READER_RPC_BODY_LIMIT } from '@voicechat/shared'
-// Внутренний API ядра для соседних сервисов (отдельные процессы Make и канбана). Не под `/api/`:
-// сюда не действует пользовательская авторизация, действует общий Bearer `VC_INTERNAL_TOKEN`
-// сети compose; наружу Caddy эти пути не проксирует. Без токена в конфиге API не регистрируется —
-// в dev и desktop его просто нет.
+// Internal RPC uses provider-owned component grants in managed mode. Legacy shared
+// credentials are accepted only on explicitly retained migration scopes. Public
+// user credentials are still verified separately through the identity endpoint.
 
 import type { FastifyInstance } from 'fastify'
 import type { ImageStudioCore } from '@voicechat/image-studio'
@@ -28,7 +29,25 @@ import { createRpcDispatcher } from '@voicechat/shared'
 import type { ReaderCore } from '@voicechat/web-reader-contracts'
 import { INTERNAL_READER_CORE_PATH, READER_CORE_RPC_METHODS, READER_RPC_BODY_LIMIT } from '@voicechat/web-reader-contracts'
 
+/** Exact route mapping prevents a new internal endpoint inheriting a broad service grant. */
+export const INTERNAL_COMPONENT_SCOPES: Readonly<Record<string, string>> = {
+  [INTERNAL_WHOAMI_PATH]: 'identity.verify',
+  [INTERNAL_MAKE_CORE_PATH]: 'make.core',
+  [INTERNAL_MAKE_EVENTS_PATH]: 'make.events',
+  [INTERNAL_MAKE_SERVICE_PATH]: 'make.service',
+  [INTERNAL_READER_CORE_PATH]: 'reader.core',
+  [INTERNAL_PLAYWRIGHT_READER_CORE_PATH]: 'playwright-reader.core',
+  [INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH]: 'playwright-reader.service',
+  [INTERNAL_IMAGE_STUDIO_CORE_PATH]: 'image-studio.core',
+  [INTERNAL_IMAGE_STUDIO_GENERATE_PATH]: 'image-studio.generate',
+  [INTERNAL_KANBAN_CORE_PATH]: 'kanban.core',
+  [INTERNAL_KANBAN_EVENTS_PATH]: 'kanban.events',
+  [INTERNAL_KANBAN_EXEC_STREAM_PATH]: 'kanban.exec',
+  [INTERNAL_ADMIN_RPC_PATH]: 'admin.rpc',
+}
+
 export interface InternalRoutesDeps {
+  component?: ComponentRuntime
   token: string
   /** Данные чата/канбана/машин для Make — тот же порт, что и у встроенного режима. */
   makeCore: MakeCore
@@ -58,7 +77,16 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
     reply.code(error instanceof RpcError ? error.status : 500).send({ error: error instanceof Error ? error.message : String(error) })
   app.register(async (scope) => {
     scope.addHook('onRequest', async (req, reply) => {
-      if (req.headers.authorization !== `Bearer ${deps.token}`) { await reply.code(401).send({ error: 'unauthorized' }); return reply }
+      const path = req.url.split('?')[0]
+      const required = INTERNAL_COMPONENT_SCOPES[path]
+      if (deps.component) {
+        const verdict = required ? deps.component.authorize(req.headers.authorization, required) : { ok: false as const, status: 403 }
+        if (verdict.ok) return
+        const legacyAllowed = required && deps.component.config.legacyScopes.includes(required)
+        if (legacyAllowed && deps.token && req.headers.authorization === `Bearer ${deps.token}`) return
+        return reply.code(verdict.status).send({ error: 'component_access_denied' })
+      }
+      if (!deps.token || req.headers.authorization !== `Bearer ${deps.token}`) return reply.code(401).send({ error: 'unauthorized' })
     })
     scope.post<{ Body: RpcRequest }>(INTERNAL_MAKE_CORE_PATH, async (req, reply) => {
       try { return { result: await dispatch(req.body ?? { method: '', args: [] }) } } catch (error) { return sendRpcError(reply, error) }
