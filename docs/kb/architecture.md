@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-20
-checked: deb7bc26
+checked: 61da562a
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -223,7 +223,8 @@ See [the extraction plan](../plans/voice-image-extraction.md) for boundaries.
 
 `https://github.com/sislex/identity` now owns login/registration/recovery/2FA,
 account/profile/session UI, browser session transport, auth enforcement, credential
-storage and its schema. Core supplies resource permissions, project invitations,
+storage, personal tenant provisioning, tariff catalog/assignments and effective
+product capabilities. Core supplies resource permissions, project invitations,
 account report aggregation, host cache/performance hooks and desktop legacy import.
 `packages/profile-app`, `sessions-app` and `sessions-core` are compatibility adapters.
 `packages/storage-sql` consumes the SQL infrastructure from the same upstream source.

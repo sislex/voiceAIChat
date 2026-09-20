@@ -5,5 +5,5 @@ import {uiPerformance} from '../lib/uiPerformance'
 export {periodRange,toProfileUsage,toProfileUser,toProfileEvents} from '@sislexa/identity/account/AccountPage'
 export type {AccountPageProps} from '@sislexa/identity/account/AccountPage'
 export function AccountPage(props: AccountPageProps): JSX.Element {
- return <IdentityAccountPage {...props} reads={readResources(props.api)} isObsoleteRead={isObsoleteRead} onReady={()=>{const p=uiPerformance();p.mark('route','account_ready');p.finish('route','account')}}/>
+ return <IdentityAccountPage {...props} tariffs={props.tariffs ?? window.session?.tariffs} reads={readResources(props.api)} isObsoleteRead={isObsoleteRead} onReady={()=>{const p=uiPerformance();p.mark('route','account_ready');p.finish('route','account')}}/>
 }

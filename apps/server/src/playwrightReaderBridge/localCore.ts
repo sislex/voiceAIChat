@@ -1,3 +1,4 @@
+import { userHasCapability } from '../accountAccess.js'
 import { DEFAULT_CI_BROWSER_CHECK, isChromiumReaderConversation } from '@voicechat/shared'
 import type { PlaywrightReaderCore } from '@voicechat/playwright-reader-contracts'
 import type { VoiceChatDb } from '../db/database.js'
@@ -14,6 +15,7 @@ export function createLocalPlaywrightReaderCore(deps: {
       return conversation ? { assistantKind: conversation.assistantKind, previewEngine: conversation.previewEngine } : null
     },
     async modelTarget(userId, conversationId) {
+      if (!await userHasCapability(deps.db, userId, 'playwright-reader.use')) return null
       const conversation = await deps.db.chat.getConversation(userId, conversationId)
       if (!conversation) return null
       return browserCheckTarget({

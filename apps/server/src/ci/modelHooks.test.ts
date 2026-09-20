@@ -1417,3 +1417,12 @@ describe('parseCiTestFailures', () => {
     expect(parseCiTestFailures('команда завершилась с кодом 2')[0]?.message).toContain('кодом 2')
   })
 })
+
+it('rechecks tariff access before a queued CI model stage runs', async () => {
+  const rec = recorder()
+  const { ctx } = await setup('auto')
+  await db.identity.saveTariffPlan({ id: 'chat-only', name: 'Chat only', capabilities: ['chat.use'] })
+  await db.identity.assignUserTariff(U, 'chat-only')
+  await expect(hooksWith(rec.client).modelSummary(ctx)).rejects.toThrow('недоступен в вашем тарифе')
+  expect(rec.all()).toHaveLength(0)
+})

@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/storage-sql",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,7 +9,7 @@
   "dependencies": {
     "pg": "^8.16.3",
     "better-sqlite3": "^11.7.0",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.0.0-85ee08cdc7e3.tgz"
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.1.1-b1fddb949e02.tgz"
   },
   "devDependencies": {
     "@types/pg": "^8.15.4",
@@ -24,7 +24,7 @@
     "package": "@sislexa/identity",
     "workspace": "packages/storage-sql",
     "repository": "https://github.com/sislex/identity",
-    "version": "1.0.0",
-    "commit": "85ee08cdc7e3004a15417a1f86781ec68a0df47b"
+    "version": "1.1.1",
+    "commit": "b1fddb949e02fc90fc479f559772136a1cdfd47b"
   }
 }
