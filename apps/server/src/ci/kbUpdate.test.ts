@@ -276,6 +276,7 @@ describe('таймаут хука', () => {
   it('модель молчит дольше лимита — шаг возвращает предупреждение, а не виснет', async () => {
     let id = 0
     const memory = new VoiceChatDb(':memory:', { newId: () => `t-${++id}`, now: () => Date.now() })
+    await memory.identity.createUser('admin', '', 'admin')
     let cancelled = false
     const silent: LlmClient = { send: () => ({ cancel: () => { cancelled = true } }) }
     const hooks = createCiModelHooks({
@@ -312,6 +313,7 @@ describe('таймаут хука', () => {
   it('после таймаута сохраняет уже изменённые файловые темы и не ждёт финальный JSON', async () => {
     let id = 0
     const memory = new VoiceChatDb(':memory:', { newId: () => `t-${++id}`, now: () => Date.now() })
+    await memory.identity.createUser('admin', '', 'admin')
     let cancelled = false
     timedOutTopicFiles = 'docs/kb/features/ci-runner.md\ndocs/kb/README.md\n'
     const silent: LlmClient = { send: () => ({ cancel: () => { cancelled = true } }) }

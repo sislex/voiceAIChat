@@ -1,3 +1,6 @@
+import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
+import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
+import { hasProductCapability } from '@voicechat/shared'
 import {createIdentityStoreClient, registerRemoteIdentity} from '@sislexa/identity/client/index'
 import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/shared'
 import { fileURLToPath } from 'node:url'
@@ -43,7 +46,7 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
-import { registerAuth, resolveActiveUser, uid } from './users/auth.js'
+import { registerAuth, uid } from './users/auth.js'
 import { createManagedChatStorage } from './chatStorage.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
@@ -327,7 +330,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   const corsOrigins = new Set(opts.config.corsOrigins)
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version'
+  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id'
   app.decorateRequest('corsAllowed', false)
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
@@ -402,6 +405,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const { authenticate } = managedIdentity
     ? await registerRemoteIdentity(app, db, managedIdentity, sessionSecret, authOptions)
     : await registerAuth(app, db, sessionSecret, authOptions)
+  registerAccountAccess(app, db)
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     application: applicationRuntimeMetadata('core', process.env),
@@ -802,7 +806,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
     return value
   }
-  app.get(REST.systemCapabilities, async (): Promise<SystemCapabilities> => { await refreshSttHealth(); return capabilities() })
+  app.get(REST.systemCapabilities, async (req): Promise<SystemCapabilities> => {
+    await refreshSttHealth()
+    const value = await capabilities()
+    if (!hasProductCapability(req.user?.account, 'voice.stt')) value.stt = { available: false, reason: TARIFF_DENIED }
+    if (!hasProductCapability(req.user?.account, 'voice.tts')) value.tts = { available: false, reason: TARIFF_DENIED }
+    return value
+  })
 
   app.get(REST.sttModels, async () => sttClient ? sttClient.models() : import('@voicechat/shared').then(({ WHISPER_MODELS }) => WHISPER_MODELS.map((model) => ({ model, present: false, sizeBytes: 0 }))))
   app.delete<{ Params: { model: WhisperModel } }>('/api/stt/models/:model', async (req) => {
@@ -1350,9 +1360,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       socket.on('message', buffer)
       const verifySocket = async () => {
         if (!token) return null
-        if (!managedIdentity) return resolveActiveUser(db, token, sessionSecret)
         try {
-          const verdict = await authenticate({method:'GET',url:'/ws',headers:{authorization:'Bearer '+token}})
+          const verdict = await authenticate({method:'GET',url:'/ws',headers:{authorization:'Bearer '+token, ...(request.headers['x-sislexa-tenant-id'] ? {'x-sislexa-tenant-id':request.headers['x-sislexa-tenant-id']} : {})}})
           return verdict.ok ? verdict.user : null
         } catch { return null }
       }
@@ -1365,24 +1374,29 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       // A role change requires fresh handlers; an old socket must not retain its former privileges.
       const socketIdentityCurrent = async () => {
         const active = await verifySocket()
-        return active?.name === user.name && active.role === user.role
+        return sameAccountContext(user, active)
       }
       const sid = verifyToken(token, sessionSecret)?.sid ?? null
       const unsubscribe = sessionHub.onChange(event => {
         if(event.user!==user.name)return
         if(event.revokedSid===sid)queueMicrotask(()=>socket.close(4001,'Session revoked'))
-        else if(managedIdentity)void socketIdentityCurrent().then(active=>{if(!active)socket.close(4001,'Session revoked')})
+        else void socketIdentityCurrent().then(active=>{if(!active)socket.close(4001,'Session revoked')})
       })
       let checkingIdentity=false
-      const identityTimer=managedIdentity?setInterval(()=>{
+      const identityTimer=setInterval(()=>{
         if(checkingIdentity||socket.readyState!==socket.OPEN)return
         checkingIdentity=true
         void socketIdentityCurrent().then(active=>{if(!active)socket.close(4001,'Session expired')}).finally(()=>{checkingIdentity=false})
-      },30_000):undefined
+      },30_000)
       identityTimer?.unref()
       socket.once('close',()=>{unsubscribe();if(identityTimer)clearInterval(identityTimer)})
       await attachWs(socket, makeHandlers(user, sid), {
-        ...(managedIdentity ? {authorizeMessage: socketIdentityCurrent} : {}),
+        authorizeMessage: socketIdentityCurrent,
+        authorizeCommand: async (message, context) => {
+          const error = await commandAccessError(db, user, message)
+          if (error) { context.send(error); return false }
+          return true
+        },
         // Логгер Fastify выключен — пишем в stdout контейнера: по счётчикам видно, какие кадры забили очередь.
         onOverflow: (info) => console.warn('[ws] исходящая очередь переполнена, соединение разорвано:', JSON.stringify({ user: user.name, ...info }))
       })

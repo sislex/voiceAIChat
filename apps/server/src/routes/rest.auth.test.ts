@@ -1,3 +1,4 @@
+import { PRODUCT_CAPABILITIES } from '@voicechat/shared'
 // Аутентификация, регистрация, 2FA и «свои данные» (/api/me/*).
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
@@ -7,6 +8,7 @@ import { totpCode } from '../users/totp'
 import type { FastifyInstance } from 'fastify'
 import { setupRestHarness } from './restHarness.js'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const standardAccount = { tenantId: expect.any(String), tariffId: 'standard', tariffRevision: 1, capabilities: [...PRODUCT_CAPABILITIES] }
 const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
@@ -37,7 +39,7 @@ describe('REST: аутентификация', () => {
       expect(response.headers['access-control-allow-origin']).toBe(origin)
       expect(response.headers['access-control-allow-credentials']).toBe('true')
       expect(response.headers['access-control-allow-methods']).toContain('POST')
-      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version')
+      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id')
       const login = await app.inject({
         method: 'POST',
         url: '/api/session/login',
@@ -81,7 +83,7 @@ describe('REST: аутентификация', () => {
       payload: { name: 'user', password: '' }
     })
     expect(ok.statusCode).toBe(200)
-    expect(ok.json().user).toEqual({ name: 'user', role: 'developer' })
+    expect(ok.json().user).toEqual({ name: 'user', role: 'developer', account: standardAccount })
     expect(typeof ok.json().token).toBe('string')
     expect(String(ok.headers['set-cookie'])).toContain('vc_preview_session=')
     expect(String(ok.headers['set-cookie'])).toContain('Path=/api/preview')
@@ -718,7 +720,7 @@ describe('REST: аутентификация', () => {
     expect((await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: '123456' } })).statusCode).toBe(401)
     const done = await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: totpCode(setup.secret) } })
     expect(done.statusCode).toBe(200)
-    expect(done.json().user).toEqual({ name: 'two', role: 'developer' })
+    expect(done.json().user).toEqual({ name: 'two', role: 'developer', account: standardAccount })
     // Тикет одноразовый.
     expect((await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: totpCode(setup.secret) } })).statusCode).toBe(401)
     expect((await app.inject({ method: 'POST', url: '/api/session/2fa/disable', headers: { authorization: `Bearer ${done.json().token}` }, payload: { code: totpCode(setup.secret) } })).statusCode).toBe(200)
@@ -756,7 +758,7 @@ describe('REST: аутентификация', () => {
     expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'bad name!', password: 'good-long-password-1' } })).statusCode).toBe(400)
     const reg = await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'newbie', password: 'good-long-password-1' } })
     expect(reg.statusCode).toBe(200)
-    expect(reg.json().user).toEqual({ name: 'newbie', role: 'tester' })
+    expect(reg.json().user).toEqual({ name: 'newbie', role: 'tester', account: standardAccount })
     expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${reg.json().token}` } })).statusCode).toBe(200)
     // Лимит 1 использование — второй раз ссылка мертва; список показывает uses=1; удаление.
     expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'second', password: 'good-long-password-2' } })).statusCode).toBe(404)
@@ -770,7 +772,7 @@ describe('REST: аутентификация', () => {
     // Временный пароль при создании.
     await inj({ method: 'POST', url: '/api/admin/users', payload: { name: 'temp', password: 'initial-secret-2026-x', role: 'developer', mustChangePassword: true } })
     const t = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'temp', password: 'initial-secret-2026-x' } })
-    expect(t.json().user).toEqual({ name: 'temp', role: 'developer', mustChangePassword: true })
+    expect(t.json().user).toEqual({ name: 'temp', role: 'developer', mustChangePassword: true, account: standardAccount })
     const auth = { authorization: `Bearer ${t.json().token}` }
     expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: auth, payload: { title: 'x' } })).statusCode).toBe(403)
     expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: auth })).statusCode).toBe(200)
@@ -867,7 +869,7 @@ describe('REST: аутентификация', () => {
     expect(await db.identity.getUser('nina')).toBeNull()
     const ver = await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link[1]!) } })
     expect(ver.statusCode).toBe(200)
-    expect(ver.json().user).toEqual({ name: 'nina', role: 'tester' })
+    expect(ver.json().user).toEqual({ name: 'nina', role: 'tester', account: standardAccount })
     expect((await db.identity.getUser('nina'))!.email).toBe('nina@example.com')
     expect((await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link[1]!) } })).statusCode).toBe(400)
     // Тот же email снова: ответ одинаковый, письма нет; занятый логин — 409.

@@ -8,6 +8,7 @@ import { createPgSql } from './sql/pg.js'
 import type { Sql } from './sql/types.js'
 import { createLane, type Lane } from './sql/lane.js'
 import { PG_SCHEMA, postgresColumnUpgradePlan } from './schemaPg.js'
+import { initializePersonalTenants } from '@sislexa/identity/server/store/tenants'
 
 /** Ключ advisory-замка установки схемы Postgres: произвольная константа, одна на все процессы стенда. */
 const PG_SCHEMA_LOCK_KEY = 7_260_119
@@ -186,6 +187,7 @@ export class VoiceChatDb {
           await this.sql.exec(`UPDATE tasks SET auto_pilot_requires_manual_qa = COALESCE((SELECT autopilot_requires_manual_qa FROM projects WHERE projects.id = tasks.project_id), 0)`)
         }
         await this.sql.exec(PG_SCHEMA.afterColumnsSql)
+        await initializePersonalTenants(this.sql, this.now, this.newId)
       })
       await this.ctx.repos.projects.seedBuiltinProjectTypes()
     } else {
@@ -194,6 +196,7 @@ export class VoiceChatDb {
       await this.migrateModelPriceTiers()
       await this.sql.exec(SCHEMA_SQL)
       await this.migrate()
+      await initializePersonalTenants(this.sql, this.now, this.newId)
     }
     // Legacy Codex replies stored cumulative thread totals as per-message spend;
     // rewrite them once, on both backends (see migrateCodexThreadUsage). The

@@ -573,6 +573,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   useEffect(() => {
     if (!session.currentUser || !window.session?.onSessionsChanged) return
     return window.session.onSessionsChanged((event) => {
+      if (event.type === 'update') { void runtime.refreshUser(); return }
       if (event.type !== 'revoked') return
       toast.error('Вашу сессию завершили на другом устройстве')
       setSessionsOpen(false)
@@ -955,6 +956,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     })
   }, [api])
   const toast = useToast()
+  const moduleAvailable = (capability: import('@shared/accountAccess').ProductCapability): boolean =>
+    !session.currentUser?.account || session.currentUser.account.capabilities.includes(capability)
   const shellUserId = session.currentUser?.name || (session.authRequired ? '' : 'local')
   useEffect(() => { setOnboardingOpen(false); setOnboardingDismissed(false) }, [shellUserId])
   const [shortcuts] = useShortcuts(shellUserId)
@@ -2628,7 +2631,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             : [])
         ]}
         now={now ? now() : Date.now()}
-        onNew={openCreateChat}
+        onNew={() => moduleAvailable('chat.use') ? openCreateChat() : toast.error('Чат недоступен в вашем тарифе. Откройте «Мой аккаунт», чтобы посмотреть доступные модули.')}
         onPick={(id) => {
           setSidebarOpen(false)
           navigate(`/chat/${id}`)
@@ -2663,20 +2666,20 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onAccountIntent={session.authRequired && session.currentUser ? () => { void AccountPage.preload() } : undefined}
         onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
         onOpenSettings={menu(() => navigate('/settings/llm'))}
-        onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
-        onOpenConsole={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('console')) : undefined}
-        onOpenWebReader={session.authRequired ? menu(openWebReaderWorkspace) : undefined}
-        onOpenPlaywrightReader={session.authRequired ? menu(() => navigate('/playwright-reader')) : undefined}
-        onOpenConsoleReader={session.authRequired ? menu(() => navigate('/console-reader')) : undefined}
-        onOpenMake={session.authRequired ? menu(() => navigate('/make')) : undefined}
-        onOpenImageStudio={session.authRequired ? menu(() => navigate('/images')) : undefined}
+        onOpenFiles={session.authRequired && moduleAvailable('machines.use') ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
+        onOpenConsole={session.authRequired && moduleAvailable('machines.use') ? menu(() => operationsActions.openUtilityForActiveChat('console')) : undefined}
+        onOpenWebReader={session.authRequired && moduleAvailable('web-reader.use') ? menu(openWebReaderWorkspace) : undefined}
+        onOpenPlaywrightReader={session.authRequired && moduleAvailable('playwright-reader.use') ? menu(() => navigate('/playwright-reader')) : undefined}
+        onOpenConsoleReader={session.authRequired && moduleAvailable('machines.use') ? menu(() => navigate('/console-reader')) : undefined}
+        onOpenMake={session.authRequired && moduleAvailable('make.use') ? menu(() => navigate('/make')) : undefined}
+        onOpenImageStudio={session.authRequired && moduleAvailable('image-studio.use') ? menu(() => navigate('/images')) : undefined}
         onOpenUsers={session.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenLocalApp={session.authRequired ? menu(() => {
           setMachineConnectStatus('Откройте приложение подключения или скачайте его.')
           setMachineConnectOpen(true)
         }) : undefined}
-        onOpenMachines={session.authRequired ? menu(() => navigate('/machines')) : undefined}
-        onOpenCi={session.authRequired ? menu(() => navigate('/ci')) : undefined}
+        onOpenMachines={session.authRequired && moduleAvailable('machines.use') ? menu(() => navigate('/machines')) : undefined}
+        onOpenCi={session.authRequired && moduleAvailable('projects.use') ? menu(() => navigate('/ci')) : undefined}
         currentUser={session.currentUser}
         onOpenSessions={session.authRequired && window.session?.sessions ? () => setSessionsOpen(true) : undefined}
         onOpenTwoFactor={session.authRequired && window.session?.twoFactor ? () => setTwoFactorOpen(true) : undefined}
@@ -2979,7 +2982,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         // Переключение утилиты из шапки встроенной карточки: та же машина и папка,
         // но окном (в сообщении карточка остаётся такой, какой её прислала модель).
         onSwitchUtility={(kind, agentId, dir) => operationsActions.openUtility(kind, agentId, dir, kind === 'explorer')}
-        onOpenMachines={session.authRequired ? () => navigate('/machines') : undefined}
+        onOpenMachines={session.authRequired && moduleAvailable('machines.use') ? () => navigate('/machines') : undefined}
         onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
         error={shell.error}
         errorFix={shell.errorFix}

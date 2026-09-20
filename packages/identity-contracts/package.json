@@ -7,10 +7,10 @@
     ".": "./src/index.ts",
     "./*": "./src/*.ts"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "dependencies": {
     "@voicechat/shared": "*",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.0.0-85ee08cdc7e3.tgz"
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.1.1-b1fddb949e02.tgz"
   },
   "scripts": {
     "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
@@ -21,7 +21,7 @@
     "package": "@sislexa/identity",
     "workspace": "packages/contracts",
     "repository": "https://github.com/sislex/identity",
-    "version": "1.0.0",
-    "commit": "85ee08cdc7e3004a15417a1f86781ec68a0df47b"
+    "version": "1.1.1",
+    "commit": "b1fddb949e02fc90fc479f559772136a1cdfd47b"
   }
 }

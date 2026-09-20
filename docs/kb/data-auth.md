@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-20
-checked: 2887c5b9
+checked: 61da562a
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -49,7 +49,7 @@ are removed last. This is not a cross-service SQL transaction. Embedded mode ret
 its local transaction. Identity currently requires one writer process: login rate
 limits and pending TOTP tickets are held in memory.
 
-## Account entitlement contract (tenant/tariff phase)
+## Personal tenants, tariffs and product capabilities
 
 `packages/shared/src/accountAccess.ts` defines personal tenant, tariff and effective
 product capability contracts. `SystemRole` names the existing authorization role;
@@ -59,9 +59,36 @@ scopes. Plan updates use optimistic revisions. `SessionUser.account` and the
 optional `RendererSessionBridge.tariffs` client are additive integration points.
 The matching session REST paths are declared in protocol.ts.
 
-This is the contract stage of [the tenant/tariff plan](../plans/tenant-tariffs.md).
-Storage migration, runtime enforcement and UI delivery are pending; adding these
-types alone does not enable tariffs or tenant isolation in production.
+Identity 1.1.0 owns `tenants`, `tenant_memberships`, `tariff_plans` and
+`tenant_tariffs`. Initialization backfills one personal tenant, owner membership
+and Standard assignment per existing user without rewriting credentials, sessions,
+roles or later tariff edits. Bootstrap, regular creation and email verification
+provision these relationships in the user-creation transaction. SQLite foreign keys
+and PostgreSQL advisory-lock initialization protect deletion and concurrent startup.
+Standard initially enables every current product capability.
+
+`GET /api/session/account-access` returns the caller's live context. Tariff catalog
+and assignment routes under `/api/session/tariffs` and
+`/api/session/tariff-assignments` require a system administrator; cookie mutations
+retain CSRF checks. Account/recovery/admin endpoints remain available with an empty
+tariff. A plan cannot grant a role, project access or a provider scope. Existing
+monthly LLM spending limits remain independent. Identity's lazy account editor and
+host-injected tariff client serve both standalone and Core account screens.
+
+Every protected HTTP request resolves live Identity context. Optional
+`x-sislexa-tenant-id` must match the derived personal tenant; it cannot select another
+user's resources. Core checks conversation mutations against the stored assistant
+kind, authenticates every WebSocket command, and checks product capability before
+new turns, queued CI stages and Image Studio model generation. Changed role, tenant,
+tariff or revision closes stale sockets. Work already executing is not cancelled
+solely because a tariff changes. Tool applications forward the original user
+credentials, CSRF and tenant hint; Make no longer caches successful authorization.
+Provider grants remain separate from user identity.
+
+This phase supports personal tenants only: existing resource ownership remains
+user-based. Shared organizations, resource transfer, prices, payments and token
+credit ledgers are outside this release. See the
+[tenant/tariff plan](../plans/tenant-tariffs.md) for the delivery checklist.
 
 ## Development preview data isolation
 
