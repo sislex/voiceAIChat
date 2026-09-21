@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-21
-checked: f69a6c41
+updated: 2026-09-22
+checked: d430423e
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -371,6 +371,16 @@ default-записи одного `kind`. Сам токен хранится в 
 висят только на `requireAdmin` в `apps/server/src/routes/admin.ts`.
 
 Отчёт `usageSummary(from, to)` агрегирует всех пользователей одной SQL-выборкой: на дашборд возвращаются totals и `byModel`, включая нулевые строки пользователей. Админский `GET /api/admin/users/usage-summary` защищён `requireAdmin` и принимает необязательные timestamps `from`/`to`.
+
+The PostgreSQL summary materializes filtered message metadata as JSONB once,
+groups by user/model, and derives user totals from those groups. Repeated casts
+of the original text for every sum, followed by a second aggregate query, caused
+roughly 19-second monthly reports on production data. Because Core repository
+ports share a serialized lane on PostgreSQL too, this also delayed unrelated
+settings, conversation and user-list reads. Keep that ordering for existing
+multi-step mutations; optimize the report rather than globally enabling
+`DbDeps.concurrent`. Large all-history reports can still be expensive and need
+separate reporting projections; the monthly optimization is not such a projection.
 
 Личные API для виджета — `GET /api/me/usage` и `GET /api/me/llm-access`: оба берут владельца только из `uid(req)`, не из query или URL. У первого те же необязательные `unit` (`hour`/`day`/`week`), `from`, `to` и `conversationId`, что у `GET /api/usage`, и он возвращает `UsageReport`; второй возвращает `UserLlmAccess[]`. Старые `GET /api/usage` и `GET /api/llm-access` остаются сессионными алиасами, но web-мост обращается к новым `/api/me/*` путям.
 

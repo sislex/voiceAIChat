@@ -1269,18 +1269,30 @@ export class ChatRepo extends BaseRepo {
       MAX(CASE WHEN ${n('costUsd')} IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const where = `m.role = 'ai' AND m.meta IS NOT NULL ${from !== undefined ? 'AND m.created_at >= @from' : ''} ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const bind = { ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) }
-    const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
+    // PostgreSQL otherwise reparses the text metadata for every aggregate field.
+    // Materialize the filtered JSON once, then derive user totals from model groups.
+    const source = this.sql.engine === 'postgres'
+      ? `WITH usage_messages AS MATERIALIZED (SELECT m.conversation_id, m.engine, m.meta::jsonb AS meta FROM messages m WHERE ${where})`
+      : ''
+    const joins = `FROM ${source ? 'usage_messages' : 'messages'} m JOIN conversations c ON m.conversation_id = c.id
       LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(${j.text('m.meta', 'model')}, c.llm_model)`
     type Row = UsageTotals & { name: string; model?: string; costIncomplete?: number }
     const complete = (row: Row): UsageTotals => ({ inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, costUsd: row.costUsd, costFromPrices: row.costFromPrices, messages: row.messages, interrupted: row.interrupted ?? 0, costIncomplete: Boolean(row.costIncomplete) })
-    const totals = (await this.sql.all(`SELECT c.user_id AS name, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id`, [bind])) as Row[]
-    const models = (await this.sql.all(`SELECT c.user_id AS name, COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') AS model, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id, COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as Row[]
+    const models = (await this.sql.all(`${source} SELECT c.user_id AS name, COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') AS model, ${sums} ${joins} ${source ? '' : `WHERE ${where}`} GROUP BY c.user_id, COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as Row[]
     const byName = new Map<string, import('@voicechat/shared').UserUsageSummary>()
     for (const user of await this.repos.identity.listUsers()) byName.set(user.name, { name: user.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 0, messages: 0, interrupted: 0, costIncomplete: false }, byModel: [] })
     // Строка расхода без учётки в users — след удалённого пользователя; такую
     // сводку показывать некому, но и падать на ней сводке дашборда нельзя.
-    for (const row of totals) { const summary = byName.get(row.name); if (summary) summary.totals = complete(row) }
-    for (const row of models) byName.get(row.name)?.byModel.push({ model: row.model ?? '?', ...complete(row) })
+    for (const row of models) {
+      const summary = byName.get(row.name)
+      if (!summary) continue
+      const totals = complete(row)
+      summary.byModel.push({ model: row.model ?? '?', ...totals })
+      for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'costUsd', 'costFromPrices', 'messages', 'interrupted'] as const) {
+        summary.totals[key] = (summary.totals[key] ?? 0) + (totals[key] ?? 0)
+      }
+      summary.totals.costIncomplete ||= totals.costIncomplete
+    }
     return [...byName.values()]
   }
 
