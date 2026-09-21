@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-21
-checked: c2469456
+updated: 2026-09-22
+checked: d430423e
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1391,3 +1391,28 @@ identity was disabled/demoted again, all sessions revoked, temporary credentials
 deleted and its regenerated CLI profiles removed. Ledger and receipt evidence
 remain intact. This completes the Chat increment, not the wider Make/background,
 Analytics, active-time or payment milestones.
+
+### Production 0.1.320 verification
+
+Core 0.1.320 (`d430423ef0dab1137f456e1c099effa752044bea`, PR #222) deployed
+through installed `voicechat-deploy` at 2026-09-21 21:19:07 UTC. Identity 1.2.1
+(`b90d9471437a06ee2c1a752d4167ce9e0f7c84ad`, Identity PR #4) preserves session
+activity Maps across its JSON RPC boundary. No database migration was required.
+Both canonical Core gates passed, including 807 final browser tests each.
+
+The invocation-only overlay is `/etc/voicechat/prebuilt-0.1.320.yml`. Core image
+ID is `sha256:2008ff802fda4a110b632f594742b8f2df4ad7321d78d3b0b18ca9c65376bdec`;
+Identity image ID is `sha256:ae575f8503f4684201dc521f422b53e456c4be8a3d2c0bbffd351a8c4a7664b7`.
+Only those two containers were replaced; 27 other container IDs were unchanged.
+The backup is `/var/backups/voicechat/sislexa-users-rpc-20260921T195641Z`, copied
+to the workstation's private `.sislexa-backups/users-rpc-20260921T195641Z`.
+Its PostgreSQL archive was checked with `pg_restore --list`, not a full restore.
+
+Fifty-seven component/readiness/authorization/frontend-integrity checks passed.
+Both reported admin user-list URLs returned HTTP 200 (37–96 ms from the server)
+and normal browser sign-in showed the user rows and live session activity without
+JavaScript errors. Signup remained HTTP 200. Browser startup nevertheless took
+19–20 seconds because its separate monthly usage-summary request held Core's
+database lane. This follow-up performance issue remains tracked in
+`log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md`;
+fast individual API probes must not be treated as proof of fast page startup.
