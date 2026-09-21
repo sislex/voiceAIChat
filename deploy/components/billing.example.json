@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "environmentId": "production",
+  "registryDirectory": "/run/sislexa/provider",
+  "legacyScopes": [],
+  "grants": [
+    {
+      "consumerId": "core",
+      "scopes": [
+        "billing.reserve",
+        "billing.execute"
+      ],
+      "maxTtlSeconds": 2592000
+    }
+  ],
+  "dependencies": [
+    {
+      "applicationId": "identity",
+      "url": "http://identity:8798",
+      "tokenFile": "/run/sislexa/outgoing/identity.token"
+    }
+  ]
+}

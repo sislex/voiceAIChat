@@ -14,7 +14,7 @@
     "@voicechat/ui-kit": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.1.1-b1fddb949e02.tgz"
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.2.0-2dc8f5a93fb2.tgz"
   },
   "devDependencies": {
     "@storybook/react": "^8.6.14",
@@ -40,7 +40,7 @@
     "package": "@sislexa/identity",
     "workspace": "packages/sessions-app",
     "repository": "https://github.com/sislex/identity",
-    "version": "1.1.1",
-    "commit": "b1fddb949e02fc90fc479f559772136a1cdfd47b"
+    "version": "1.2.0",
+    "commit": "2dc8f5a93fb21aae502681826145d88a15d78ddb"
   }
 }

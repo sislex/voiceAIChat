@@ -12,6 +12,13 @@
         "identity.events"
       ],
       "maxTtlSeconds": 2592000
+    },
+    {
+      "consumerId": "billing",
+      "scopes": [
+        "identity.verify"
+      ],
+      "maxTtlSeconds": 2592000
     }
   ],
   "legacyScopes": [],

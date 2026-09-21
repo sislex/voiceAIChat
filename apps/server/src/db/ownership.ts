@@ -9,7 +9,7 @@
 export type RepoDomain = 'identity' | 'settings' | 'llm' | 'chat' | 'machines' | 'projects' | 'tasks' | 'ci' | 'qa' | 'releases' | 'kb'
 
 export const TABLE_OWNER: Record<RepoDomain, readonly string[]> = {
-  identity: ['users', 'sessions', 'session_revocations', 'security_events', 'invites', 'email_verifications', 'password_reset_tokens', 'login_device_emails', 'user_llm_access', 'tenants', 'tenant_memberships', 'tariff_plans', 'tenant_tariffs'],
+  identity: ['users', 'identity_subjects', 'sessions', 'session_revocations', 'security_events', 'invites', 'email_verifications', 'password_reset_tokens', 'login_device_emails', 'user_llm_access', 'tenants', 'tenant_memberships', 'tariff_plans', 'tenant_tariffs'],
   settings: ['settings', 'app_config', 'schema_migrations'],
   llm: ['llm_engines', 'model_prices'],
   chat: ['conversations', 'messages', 'messages_fts', 'fts_state', 'speakers', 'conversation_context_events', 'conversation_draft_requests', 'conversation_turn_queue', 'conversation_turn_control', 'conversation_workspaces'],

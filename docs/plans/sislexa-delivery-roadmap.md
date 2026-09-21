@@ -1,7 +1,7 @@
 # Sislexa delivery roadmap
 
-Updated: 2026-09-20.
-Status: authorized roadmap; implementation of the new milestones is pending.
+Updated: 2026-09-21.
+Status: implementation in progress; no new end-to-end milestone is production-complete.
 
 ## Baseline and repository ownership
 
@@ -85,3 +85,16 @@ inputs do not block accounting, analytics, team development or isolated tests.
 
 There is no fixed total-time commitment: estimates should follow completion of
 the first vertical accounting slice and validation against real execution paths.
+
+## Foundation increment
+
+SDK 1.0.0, Identity 1.2.0 and Billing 1.0.0 are published independently. They provide
+portable operation contracts, stable user IDs and a transactionally tested ledger.
+Core integration adds managed dependency configuration and authenticated account
+proxies. This does not complete milestones 1-3: model execution bounds, durable
+usage delivery, reconciliation and production acceptance remain required.
+
+Image Studio 1.0.5 adds an independently owned standalone browser entry and
+bounded API shutdown. Core pins its immutable archive for the same foundation
+increment. Its production frontend remains the host-loaded panel; the standalone
+local UI uses explicit Core and Image Studio origins.

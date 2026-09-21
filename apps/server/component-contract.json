@@ -110,6 +110,18 @@
         "identity.events"
       ],
       "optional": true
+    },
+    {
+      "applicationId": "billing",
+      "minVersion": "1.0.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.0.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "billing.reserve",
+        "billing.execute"
+      ],
+      "optional": true
     }
   ]
 }
