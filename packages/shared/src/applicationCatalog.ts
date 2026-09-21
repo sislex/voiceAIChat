@@ -105,6 +105,7 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
   definition("core", "Ядро", "apps/server", {
     optionalRuntimeDependencies: [
       "identity",
+      "billing",
       "make",
       "image-studio",
       "web-reader",
@@ -152,6 +153,20 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     isolation: {tests:true,build:true,deploy:true},
     contractPaths: ["apps/identity/src/ports.ts", "apps/identity/component-contract.json"],
     contractChecks: [{workspace:"@voicechat/server", files:["src/routes/rest.auth.test.ts", "src/routes/internal.component.test.ts", "src/identityBridge.test.ts"]}],
+  }),
+  definition("billing", "Billing", "apps/billing", {
+    workspaces: ["@voicechat/billing"],
+    buildDependencies: ["shared", "sessions-core", "component-runtime", "platform-sdk"],
+    runtimeDependencies: ["identity"], minimumDependencyApis: { identity: "1.1.0" },
+    services: ["billing"], entrypoint: "apps/billing/src/index.ts", healthPath: "/api/health",
+    dataPaths: ["billing"], configuration: ["SISLEXA_COMPONENT_CONFIG", "BILLING_DATA_DIR"],
+    isolation: { tests: true, build: true, deploy: true },
+    contractPaths: ["apps/billing/component-contract.json", "apps/billing/src/index.ts"],
+    contractChecks: [{ workspace: "@voicechat/server", files: ["src/billingBridge.test.ts"] }],
+  }),
+  definition("platform-sdk", "Platform SDK", "packages/platform-sdk", {
+    kind: "library", workspaces: ["@voicechat/platform-sdk"], buildDependencies: [],
+    contractPaths: ["packages/platform-sdk"], isolation: { tests: true, build: true, deploy: false },
   }),
   definition("make", "Make", "apps/make", {
     browserPaths: ["apps/make/src/routes.ts", "apps/make/src/transpile.ts"],

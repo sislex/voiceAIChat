@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-20
-checked: 9cb7e7ac
+updated: 2026-09-21
+checked: 27644d37
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -948,16 +948,26 @@ are private (0700/0600). Each service mounts only its own registry, config and
 read-only outgoing directory. These mounts are separate from shared workshop data.
 Do not remove existing production overrides or rerun the production installer.
 
-Initialization creates seven distinct credentials: Core grants Make, Playwright
-Reader and Web Reader their required Core scopes; Make grants Core; Playwright
-Reader grants Core and Web Reader; Web Reader grants Core its connection-check
-scope. Existing installation directories are rejected. The default credential
+Initialization now creates fifteen distinct credentials across nine providers,
+including Identity verification for Billing and Billing reserve/execute grants for
+Core. Each consumer receives only its declared provider scopes. Existing installation directories are rejected. The default credential
 lifetime is 30 days (`--ttl` is bounded by each provider's configured policy).
 Track the returned expiry metadata and rotate before expiry. The CLI never prints
 secrets. Provider-local `components:token`/tool `token` commands issue, list and
 revoke credentials; transfer a newly issued private file to the consumer, replace
 its outgoing file atomically, then revoke the old token ID. Grant-policy edits
 require a provider restart; revocation takes effect immediately for RPC requests.
+
+Billing 1.0.0 is an independently pinned service in `deploy/tools.lock.json` and
+the application catalog. Append `deploy/compose.billing.yml` after the Identity
+override, set the immutable Billing source/commit variables, and prepare its
+private provider/outgoing directories. Identity must be at least 1.2.0 to supply
+stable user IDs. The default internal port is 8800. `vc-billing-data` contains the
+financial ledger and must be backed up consistently with reconciliation evidence;
+it is not disposable cache. Existing installations must add the two new grants
+without replacing existing registries or session secrets. Published component
+versions alone do not prove that production has been upgraded; the production
+verification sections record the actual deployment baseline.
 
 The canonical deploy script supplies the full source SHA, release version and
 release-owned API/data versions to the Core Docker build. Bare Node development
@@ -1182,6 +1192,43 @@ produced a valid WAV and Whisper large-v3-turbo recognized the fixture phrase;
 the external Codex relay completed a bounded response. Temporary user accounts,
 sessions and credential files were removed after verification.
 
+
+### Local Image Studio using production Core
+
+The local API can use production Core/Identity through a loopback-only SSH
+forward without changing production routing. This workstation's private launcher
+is `~/.config/sislexa/image-studio-production/start.sh`: API port 18896, tunnel
+port 18787, local gallery data below that private configuration directory. The
+existing process on 8796 was retained. The provider grant is a separate seven-day
+Core token for consumer `image-studio`, with only identity verification, Image
+Studio Core RPC and generation scopes; the active production service token was
+not copied or replaced. `grant.json` records expiry and revocation ID privately.
+The configuration environment is `production` because that is the remote authority.
+The private `tunnel.sh` supervises SSH and reconnects after sleep or network loss.
+A live API process alone does not imply that its remote dependency is reachable;
+check `/v1/ready`. Forced termination of the owned SSH child recovered automatically
+and restored Core readiness. The launcher selects the released 1.0.5 source checkout.
+
+`/v1/ready` returned 200 with Core ready. Anonymous gallery access returned 401,
+a valid production session reached the inaccessible-conversation 404, and a
+foreign tenant hint returned 403. Root `/` returning 404 is expected for this
+API-only process. API clients still supply the production user's credential.
+Gallery files stay local, while conversation metadata and model execution use
+production. See the Image Studio repository's operations guide for generic setup.
+
+The separate browser entry is http://127.0.0.1:18897/, started by private
+`start-ui.sh` in the same configuration directory. Its source is owned by
+`sislex/image-studio`, `apps/studio-web`, currently in the isolated local
+`sislexa-image-studio-web` checkout. This application renders only Image Studio
+and gallery controls, bundles its own runtime, and uses Identity's `/login/`
+page. Identity's `/account/` completion redirect returns to the studio. The local
+gateway serves its own assets, forwards image requests to 18896 and session /
+gallery-metadata requests to 18787, and rejects unrelated API/internal/WS routes.
+No Core chat shell is loaded. Cookies and CSRF retain user attribution; component
+credentials remain in the API configuration. A production Identity sign-in, local
+upload/read, logout and mobile layout were verified in a real browser. No paid
+image generation was run. `npm run studio` builds/serves the standalone UI;
+`npm run dev:studio` enables hot reload with explicit dependency origins.
 
 ### Production 0.1.316 verification
 

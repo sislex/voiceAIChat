@@ -19,7 +19,8 @@
     "apps/web-recorder",
     "apps/agent",
     "apps/web-reader",
-    "apps/identity"
+    "apps/identity",
+    "apps/billing"
   ],
   "scripts": {
     "dev:web": "bash scripts/dev-web.sh",

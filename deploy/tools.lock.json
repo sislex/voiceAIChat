@@ -26,8 +26,8 @@
       "package": "@sislexa/image-studio",
       "workspace": "apps/image-studio",
       "repository": "https://github.com/sislex/image-studio",
-      "version": "1.0.3",
-      "commit": "46ab3a7c8b6940030247aff2de5bbfaf767170dc"
+      "version": "1.0.5",
+      "commit": "08e00d6524c1a21d405ad98340d618cb3d6f92b6"
     },
     "stt-runner": {
       "package": "@sislexa/voice",
@@ -47,8 +47,15 @@
       "package": "@sislexa/identity",
       "workspace": "apps/server",
       "repository": "https://github.com/sislex/identity",
-      "version": "1.1.1",
-      "commit": "b1fddb949e02fc90fc479f559772136a1cdfd47b"
+      "version": "1.2.0",
+      "commit": "2dc8f5a93fb21aae502681826145d88a15d78ddb"
+    },
+    "billing": {
+      "package": "@sislexa/billing",
+      "workspace": ".",
+      "repository": "https://github.com/sislex/billing",
+      "version": "1.0.0",
+      "commit": "42ec364841240d13d1df47cedec036425259fb5b"
     }
   }
 }

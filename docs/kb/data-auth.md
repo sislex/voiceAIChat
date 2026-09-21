@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-20
-checked: 61da562a
+updated: 2026-09-21
+checked: 27644d37
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -38,7 +38,7 @@ matching sockets. Event cursors include a process epoch to survive Identity rest
 Production migration preserves the existing PostgreSQL identity tables and signing
 secret. This retains passwords, active cookies, TOTP and foreign keys. Shared DB
 access remains an explicit trust boundary; this extraction does not implement OIDC,
-immutable user IDs, OAuth token exchange or a distributed billing ledger. Without a
+OAuth token exchange or automatic model-cost settlement. Without a
 managed Identity dependency, development/tests use the same external implementation
 embedded in Core. Historical SQLite migrations stay in Core; current identity DDL
 is imported from its owner. PostgreSQL initializers share the schema advisory lock.
@@ -48,6 +48,57 @@ cleanup callbacks. A failed callback leaves a blocked, retryable account; creden
 are removed last. This is not a cross-service SQL transaction. Embedded mode retains
 its local transaction. Identity currently requires one writer process: login rate
 limits and pending TOTP tickets are held in memory.
+
+Identity 1.2.0 adds `identity_subjects`: an opaque stable user ID linked to the
+legacy login by a unique foreign key. Existing accounts are backfilled and new
+accounts receive the ID in their creation transaction. User deletion cascades;
+recreating the same login creates a different ID. The foreign key supports login
+updates, but there is no new public rename operation. Live account context returns
+`userId`; a changed/missing ID invalidates stale account context. Shared keeps the
+field optional for rolling compatibility; Billing requires it and never treats a
+login string as a stable identity. The SQL translator preserves both update and
+delete foreign-key actions in PostgreSQL.
+
+## Billing reservation service
+
+`sislex/billing` owns the SQLite WAL reservation/settlement ledger. Core's
+`apps/billing` delegates to the immutable upstream release; `packages/platform-sdk`
+delegates portable operation/usage contracts to `sislex/sdk`. Monetary ledger values
+are safe integer micro-USD, separate from raw model tokens. Policies are versioned
+per environment and tenant; null is unlimited and zero denies admission. A single
+`BEGIN IMMEDIATE` transaction applies monthly budget, request and concurrency
+limits before creating a reservation. Request counts include released reservations;
+financial attribution stays in the admission UTC month. Active work from an older
+month still occupies concurrency slots.
+
+Provider scopes authenticate applications; original user credentials are verified
+by Identity at reservation and execution claim time. Billing derives stable user,
+tenant, environment and calling application, rejects foreign tenant hints, and
+checks product capabilities. Only the owning executor can settle, mark uncertain
+or release its operation; settlement remains possible after user logout. Operation
+and settlement keys are durably idempotent. Only unclaimed reservations expire;
+running or uncertain work requires reconciliation. The execution claim returns a
+winner flag, so replay does not authorize a second execution. Actual cost exceeding
+the reservation is still recorded; the executor must enforce its own work bound.
+
+Core exposes `/api/billing/account` and `/api/billing/policy` through the managed
+Billing dependency. Core checks user authentication and cookie CSRF first, then
+forwards a bearer credential without cookies or unrelated headers. Billing policy
+mutation requires a system administrator and initially targets only their own
+tenant. Missing dependencies return a sanitized 503. This foundation does not yet
+connect Chat/Make execution to reservations, implement a durable usage outbox,
+provide account analytics or charge real payments. Existing model spending policy
+continues to govern those execution paths until the accounting integration ships.
+
+The current external runner request contract and CLI adapters do not carry an
+enforceable monetary allocation. Its `LlmRequest.userId` selects an existing CLI
+profile directory, so a stable accounting ID must not silently replace that key.
+Add explicit accounting context, durable execution claims and usage delivery at
+the runner boundary before treating a reservation as an enforced spending limit.
+As checked on 2026-09-21, the [official Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+describes `features.rollout_budget` as token tracking under development; it does
+not establish a strict monetary cap. Treating that feature alone as a prepaid
+spending guarantee would therefore be an unsupported assumption.
 
 ## Personal tenants, tariffs and product capabilities
 
