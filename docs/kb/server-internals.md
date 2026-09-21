@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-15
-checked: 68124e0f
+updated: 2026-09-21
+checked: bbada2df
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -350,6 +350,15 @@ session-cookie от предыдущего входа уже пропала; б�
 полагается на cookie от login — подробности флоу в [ui.md](ui.md#веб-превью).
 
 ## WebSocket `/ws`
+
+`attachWs` installs message and close listeners before awaiting asynchronous
+`onOpen`. A single initialization barrier keeps commands queued until session
+subscriptions and queue recovery finish. Authentication-buffered frames enter
+that same queue first through `initialFrames`; replaying them after `attachWs`
+would reorder them behind frames received during setup. Failed initialization
+closes the socket without dispatching queued commands. A disconnect during setup
+runs cleanup once setup settles, avoiding subscriptions left behind by an early
+close. Regression tests cover ordering, initialization failure and early close.
 
 `ws.ts` отвечает только за framing и routing: JSON управляющие сообщения, binary PCM, lifecycle сокета. `createSession()` создаёт per-connection handlers и владеет STT/TTS session, подписками tail, PTY relay и cleanup.
 
