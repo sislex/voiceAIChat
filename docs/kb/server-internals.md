@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-21
-checked: f69a6c41
+updated: 2026-09-22
+checked: d430423e
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -804,3 +804,10 @@ registered route template, status and duration only; query strings, actual path
 parameters, headers, credentials and bodies are excluded. Inspect container logs
 when an intermittent dependency timeout cannot be reproduced; health endpoints
 alone do not prove admin user-list or signup callback availability.
+
+For slow page startup, measure the complete browser request set. The Users page
+requests `/api/admin/users/usage-summary` for the current month alongside its user
+list and shell initialization. Individual user-list probes missed its database
+queue delay; the response timing logs and a PostgreSQL activity sample identified
+the expensive summary. Public Core/Identity health continued responding quickly
+during that queue, so this was not an event-loop or general network stall.
