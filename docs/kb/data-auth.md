@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-21
-checked: 1b82ffaa
+checked: f69a6c41
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -38,6 +38,13 @@ status/cookies. A service grant authenticates the RPC caller, never the user.
 `/internal/whoami` remains the compatibility facade for existing tools, calling the
 same verifier. Core WebSocket commands recheck identity; revocation events close
 matching sockets. Event cursors include a process epoch to survive Identity restarts.
+
+Identity 1.2.1 preserves `sessionActivity` across RPC as JSON entry tuples; the
+client reconstructs the repository Map. Plain JSON serialization of the former
+Map produced `{}`, causing both admin user-list requests to fail with
+`bulk.activity.get is not a function`. The client rejects malformed or legacy
+activity payloads with 503 instead of inventing empty activity. Deploy the
+provider before updated Core consumers; no storage migration is needed.
 
 Production migration preserves the existing PostgreSQL identity tables and signing
 secret. This retains passwords, active cookies, TOTP and foreign keys. Shared DB
