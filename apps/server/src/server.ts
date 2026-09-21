@@ -1,5 +1,6 @@
 import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
+import { registerBillingProxy } from './billingBridge.js'
 import { hasProductCapability } from '@voicechat/shared'
 import {createIdentityStoreClient, registerRemoteIdentity} from '@sislexa/identity/client/index'
 import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/shared'
@@ -311,6 +312,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   component?.register(app)
   const configuredDependency = (id: string) => component?.config.dependencies.some(d => d.applicationId === id) ? component.dependency(id) : undefined
   const managedIdentity = configuredDependency('identity')
+  const managedBilling = configuredDependency('billing')
   const managedMake = configuredDependency('make')
   const managedPlaywright = configuredDependency('playwright-reader')
   const managedReader = configuredDependency('web-reader')
@@ -406,6 +408,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? await registerRemoteIdentity(app, db, managedIdentity, sessionSecret, authOptions)
     : await registerAuth(app, db, sessionSecret, authOptions)
   registerAccountAccess(app, db)
+  registerBillingProxy(app, managedBilling)
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     application: applicationRuntimeMetadata('core', process.env),

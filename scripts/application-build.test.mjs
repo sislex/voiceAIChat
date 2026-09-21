@@ -107,7 +107,7 @@ test('archive closure copies only pinned regular vendor archives', () => {
 
 
 test('extracted application workspaces contain only import/export adapters',()=>{
-  const roots=['apps/make','apps/playwright-reader','apps/web-reader','apps/web-recorder','apps/image-studio','apps/stt-runner','apps/tts-runner','apps/identity','packages/make-app','packages/image-studio-app','packages/playwright-reader-app','packages/web-reader-app','packages/voice-browser','packages/profile-app','packages/sessions-app','packages/sessions-core','packages/identity-login','packages/identity-account','packages/identity-client','packages/identity-contracts','packages/storage-sql']
+  const roots=['apps/billing','packages/platform-sdk','apps/make','apps/playwright-reader','apps/web-reader','apps/web-recorder','apps/image-studio','apps/stt-runner','apps/tts-runner','apps/identity','packages/make-app','packages/image-studio-app','packages/playwright-reader-app','packages/web-reader-app','packages/voice-browser','packages/profile-app','packages/sessions-app','packages/sessions-core','packages/identity-login','packages/identity-account','packages/identity-client','packages/identity-contracts','packages/storage-sql']
   const walk=directory=>existsSync(directory)?readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?walk(join(directory,entry.name)):[join(directory,entry.name)]):[]
   for(const root of roots){
     assert.ok(JSON.parse(readFileSync(join(root,'package.json'),'utf8')).sislexaExternal,root)
@@ -131,4 +131,17 @@ test('Identity release context includes its own native build tools and typecheck
     assert.equal(existsSync(join(output, 'apps/server')), false)
     assert.equal(existsSync(join(output, 'packages/ui')), false)
   } finally { rmSync(output, {recursive:true, force:true}) }
+})
+
+// Billing can be distributed without copying Identity's implementation or the UI.
+test('Billing release context contains the ledger and SDK without Core or Identity source', () => {
+  const output = mkdtempSync(join(tmpdir(), 'vc-billing-context-'))
+  try {
+    createApplicationBuildContext('billing', output, { version: '1.0.0', commit: 'a'.repeat(40), development: true })
+    const lock = JSON.parse(readFileSync(join(output, 'package-lock.json'), 'utf8'))
+    assert.ok(lock.packages['node_modules/@sislexa/billing'])
+    assert.ok(lock.packages['node_modules/@sislexa/sdk'])
+    for (const path of ['apps/server', 'apps/identity', 'packages/ui']) assert.equal(existsSync(join(output, path)), false)
+    assert.equal(lock.packages['node_modules/@sislexa/identity'], undefined)
+  } finally { rmSync(output, { recursive: true, force: true }) }
 })

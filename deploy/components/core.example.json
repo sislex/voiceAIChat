@@ -83,6 +83,11 @@
       "applicationId": "identity",
       "url": "http://identity:8798",
       "tokenFile": "/run/sislexa/outgoing/identity.token"
+    },
+    {
+      "applicationId": "billing",
+      "url": "http://billing:8800",
+      "tokenFile": "/run/sislexa/outgoing/billing.token"
     }
   ]
 }

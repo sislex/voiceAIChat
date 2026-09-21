@@ -19,6 +19,8 @@ import { pathToFileURL } from 'node:url'
  * правке фронта, потому что путь не распознавался.
  */
 export const PACKAGES = [
+  { id: 'platform-sdk', path: 'packages/platform-sdk', workspace: '@voicechat/platform-sdk', dependsOn: [] },
+  { id: 'billing', path: 'apps/billing', workspace: '@voicechat/billing', dependsOn: ['shared', 'sessions-core', 'component-runtime', 'platform-sdk'] },
   {"id": "identity", "path": "apps/identity", "workspace": "@voicechat/identity-server", "dependsOn": ["shared", "sessions-core", "storage-sql", "identity-contracts", "component-runtime"]},
   {"id": "identity-account", "path": "packages/identity-account", "workspace": "@voicechat/identity-account", "dependsOn": ["shared", "ui-kit", "ui-foundation", "profile-app", "identity-client", "identity-login", "sessions-app"]},
   {"id": "identity-client", "path": "packages/identity-client", "workspace": "@voicechat/identity-client", "dependsOn": ["shared", "identity-contracts"]},

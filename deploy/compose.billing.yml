@@ -1,0 +1,29 @@
+# Append after Identity; its provider grants must include this Billing installation.
+services:
+  billing:
+    build:
+      context: ${SISLEXA_BILLING_SOURCE:?Set the pinned Billing source checkout}
+      args:
+        APPLICATION_VERSION: "1.0.0"
+        APPLICATION_COMMIT: ${SISLEXA_BILLING_COMMIT:?Set the pinned Billing commit}
+    image: sislexa-billing:1.0.0
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8800"
+      BILLING_DATA_DIR: /data
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - vc-billing-data:/data
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/billing/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/billing/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/billing/provider:/run/sislexa/provider
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8800/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    mem_limit: 256m
+    cpus: "0.5"
+volumes:
+  vc-billing-data:

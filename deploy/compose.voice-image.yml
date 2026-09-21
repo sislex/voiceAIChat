@@ -33,25 +33,25 @@ services:
       context: ${SISLEXA_IMAGE_STUDIO_SOURCE:?Set the pinned source checkout}
       target: api
       args:
-        APPLICATION_VERSION: "1.0.3"
-        APPLICATION_COMMIT: "46ab3a7c8b6940030247aff2de5bbfaf767170dc"
-    image: sislexa-image-studio:1.0.3-46ab3a7c8b69
+        APPLICATION_VERSION: "1.0.5"
+        APPLICATION_COMMIT: "08e00d6524c1a21d405ad98340d618cb3d6f92b6"
+    image: sislexa-image-studio:1.0.5-08e00d6524c1
     environment:
-      VC_RELEASE_VERSION: "1.0.3"
-      VC_APPLICATION_VERSION: "1.0.3"
-      VC_APPLICATION_COMMIT: "46ab3a7c8b6940030247aff2de5bbfaf767170dc"
+      VC_RELEASE_VERSION: "1.0.5"
+      VC_APPLICATION_VERSION: "1.0.5"
+      VC_APPLICATION_COMMIT: "08e00d6524c1a21d405ad98340d618cb3d6f92b6"
   image-studio-ui:
     build:
       context: ${SISLEXA_IMAGE_STUDIO_SOURCE:?Set the pinned source checkout}
       target: frontend
       args:
-        APPLICATION_VERSION: "1.0.3"
-        APPLICATION_COMMIT: "46ab3a7c8b6940030247aff2de5bbfaf767170dc"
-    image: sislexa-image-studio-ui:1.0.3-46ab3a7c8b69
+        APPLICATION_VERSION: "1.0.5"
+        APPLICATION_COMMIT: "08e00d6524c1a21d405ad98340d618cb3d6f92b6"
+    image: sislexa-image-studio-ui:1.0.5-08e00d6524c1
     environment:
-      VC_RELEASE_VERSION: "1.0.3"
-      VC_APPLICATION_VERSION: "1.0.3"
-      VC_APPLICATION_COMMIT: "46ab3a7c8b6940030247aff2de5bbfaf767170dc"
+      VC_RELEASE_VERSION: "1.0.5"
+      VC_APPLICATION_VERSION: "1.0.5"
+      VC_APPLICATION_COMMIT: "08e00d6524c1a21d405ad98340d618cb3d6f92b6"
     restart: unless-stopped
     mem_limit: 128m
     volumes:

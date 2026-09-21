@@ -25,7 +25,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "@voicechat/ui-foundation": "*",
-    "@sislexa/image-studio": "file:../../vendor/sislexa-image-studio-1.0.3-46ab3a7c8b69.tgz",
+    "@sislexa/image-studio": "file:../../vendor/sislexa-image-studio-1.0.5-08e00d6524c1.tgz",
     "@sislexa/component-runtime": "*"
   },
   "devDependencies": {
@@ -49,7 +49,7 @@
     "package": "@sislexa/image-studio",
     "workspace": "packages/image-studio-app",
     "repository": "https://github.com/sislex/image-studio",
-    "version": "1.0.3",
-    "commit": "46ab3a7c8b6940030247aff2de5bbfaf767170dc"
+    "version": "1.0.5",
+    "commit": "08e00d6524c1a21d405ad98340d618cb3d6f92b6"
   }
 }

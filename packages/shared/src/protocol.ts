@@ -148,6 +148,8 @@ export const REST = {
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',
   sessionAccountAccess: '/api/session/account-access',
+  billingAccount: '/api/billing/account',
+  billingPolicy: '/api/billing/policy',
   sessionTariffs: '/api/session/tariffs',
   sessionTariff: (id: string) => `/api/session/tariffs/${encodeURIComponent(id)}`,
   sessionTariffAssignments: '/api/session/tariff-assignments',
