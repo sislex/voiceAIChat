@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-20
-checked: f425db09
+updated: 2026-09-21
+checked: 747c8632
 areas:
   - package.json
   - scripts
@@ -465,6 +465,14 @@ Integration QA. Это не «мало покрытые», а «не вызва�
 Вывод дочерних Vitest-процессов остаётся буферизованным, чтобы быстрый успешный гейт был компактным. Если пакетная команда работает дольше 30 секунд, `affected-check` печатает heartbeat с активным пакетом, этапом и длительностью. При fail-fast остановке либо `SIGINT`/`SIGTERM` перед завершением печатается сохранённый хвост вывода. MergeRunManager получает эти строки через потоковый `CommandExecutor`; ReleaseManager также использует `execStream` и по мере поступления обновляет лог шага `regression`, поэтому одинаковая диагностика видна в обеих лентах.
 
 ## Стратегия тестов
+
+A fresh authenticated Core browser profile can show two consecutive first-run
+dialogs: `OnboardingModal` after settings load, then `ShellTour` after onboarding
+completion. Production image-viewer QA must wait for and dismiss these dialogs
+before clicking the gallery. An immediate visibility check can race settings
+loading; file-input assignment can succeed underneath an overlay while an actual
+viewer click remains blocked. The standalone Image Studio UI has neither Core
+onboarding dialog.
 
 `apps/server/src/server.test.ts` задаёт временный `VC_DATA_DIR` для HTTP/WS и
 web-статики с очисткой после закрытия приложения. Без этого `loadConfig({ PORT: '0' })`

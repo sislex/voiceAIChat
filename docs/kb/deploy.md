@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-21
-checked: 27644d37
+checked: 747c8632
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1278,3 +1278,44 @@ After deployment, unused builder cache was removed while retaining runtime and
 rollback images and all volumes. Free root filesystem space was approximately
 1.2 GiB; capacity expansion remains an operational follow-up before another large
 image build.
+
+### Production 0.1.317 verification
+
+Production 0.1.317 (`747c8632478977878b6028939f869d9b68d6c5e9`, PR #217)
+completed through installed `voicechat-deploy` at 2026-09-21 11:06:10 UTC.
+Identity 1.2.0, Billing 1.0.0, SDK 1.0.0 and Image Studio 1.0.5 are pinned to
+their independent releases. The canonical fast and pre-PR gates passed, including
+2,387 Core tests and all 807 browser tests. Fifteen application containers match
+the prepared image IDs, all configured healthchecks pass, and Core plus its
+eight dependencies report ready.
+
+The fresh backup is `/var/backups/voicechat/sislexa-billing-20260921T103534Z`
+with the PostgreSQL dump and retained verification logs in the workstation's
+private `.sislexa-backups/billing-20260921T103534Z` directory. Full restore and
+Identity migration preserved users, sessions, tenants and tariff rows byte-for-byte;
+stable IDs survived repeated initialization. Provider registries were backed up
+through SQLite's backup API. Existing registry entries, session signing material
+and dependency URLs were preserved. New grants allow Billing to verify users with Identity, and Core to reserve
+and claim execution through Billing.
+
+`/etc/voicechat/prebuilt-0.1.317.yml` is the invocation-only overlay selecting
+fifteen immutable application images without build targets. The backup retains
+`rollback-0.1.316.yml` and fourteen prior images; its Compose resolution was
+verified, but an actual rollback was not executed. Rollback retains the Billing
+ledger and additive stable-ID table. The runner admission endpoint paused new
+model work while existing requests finished; both runners returned to their
+previous non-draining state immediately after deployment readiness.
+
+Live acceptance preserved a pre-release user session and verified stable user/tenant
+identity across Core, Identity and Billing. Tests covered tenant isolation,
+component/user token separation, admin-only policy changes, cookie CSRF, revision
+conflicts, budget rejection, a single execution claim, settlement replay and final
+balance. Provider scopes, immediate revocation, actual tool-to-Core RPC, frontend
+SRI and external LLM/Browser Runner health passed. HTTPS browser login/account,
+image upload/read and full-size viewing passed with zero page errors. The separate
+local studio on 18897 also passed production login, gallery creation, local upload,
+viewer, logout and mobile layout. Release-created users, galleries, ledger rows
+and private probe credentials were removed afterwards.
+
+This release does not yet meter real model executions through Billing. No paid
+model/image generation or real payment was submitted during these checks.
