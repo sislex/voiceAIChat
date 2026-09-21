@@ -12,8 +12,8 @@ test('installation issues distinct provider-owned tokens and refuses an existing
   const parent = mkdtempSync(join(tmpdir(), 'sislexa-install-')), directory = join(parent, 'components')
   try {
     const result = await initializeComponents({ directory, environmentId: 'integration', origins: { core: 'http://127.0.0.1:8799' } })
-    assert.equal(result.issued.length, 13)
-    assert.equal(new Set(result.issued.map(p => p.tokenId)).size, 13)
+    assert.equal(result.issued.length, 15)
+    assert.equal(new Set(result.issued.map(p => p.tokenId)).size, 15)
     const configFile = join(directory, 'make/config.json')
     const config = JSON.parse(readFileSync(configFile, 'utf8'))
     assert.equal(config.dependencies[0].url, 'http://127.0.0.1:8799')

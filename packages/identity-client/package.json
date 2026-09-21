@@ -11,7 +11,7 @@
   "dependencies": {
     "@voicechat/shared": "*",
     "fastify": "^5.1.0",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.1.1-b1fddb949e02.tgz",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.2.0-2dc8f5a93fb2.tgz",
     "@voicechat/identity-contracts": "*"
   },
   "scripts": {
@@ -23,7 +23,7 @@
     "package": "@sislexa/identity",
     "workspace": "packages/client",
     "repository": "https://github.com/sislex/identity",
-    "version": "1.1.1",
-    "commit": "b1fddb949e02fc90fc479f559772136a1cdfd47b"
+    "version": "1.2.0",
+    "commit": "2dc8f5a93fb21aae502681826145d88a15d78ddb"
   }
 }

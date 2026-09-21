@@ -1,0 +1,30 @@
+{
+  "name": "@voicechat/billing",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@sislexa/billing": "file:../../vendor/sislexa-billing-1.0.0-42ec36484124.tgz",
+    "@voicechat/shared": "*",
+    "@voicechat/sessions-core": "*",
+    "@sislexa/component-runtime": "1.0.1",
+    "@voicechat/platform-sdk": "*"
+  },
+  "scripts": {
+    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "test": "node ../../scripts/external-workspace.mjs test",
+    "build": "node ../../scripts/external-workspace.mjs build",
+    "start": "node ../../scripts/external-workspace.mjs start"
+  },
+  "sislexaExternal": {
+    "package": "@sislexa/billing",
+    "workspace": ".",
+    "repository": "https://github.com/sislex/billing",
+    "version": "1.0.0",
+    "commit": "42ec364841240d13d1df47cedec036425259fb5b"
+  }
+}

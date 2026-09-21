@@ -44,7 +44,7 @@
     "remark-gfm": "^4.0.1",
     "@voicechat/ui-foundation": "*",
     "@voicechat/voice-browser": "*",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.1.1-b1fddb949e02.tgz"
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.2.0-2dc8f5a93fb2.tgz"
   },
   "devDependencies": {
     "@storybook/addon-a11y": "^8.6.18",
