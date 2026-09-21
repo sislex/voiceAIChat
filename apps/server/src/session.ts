@@ -22,6 +22,7 @@ import type { KbUsageTracker } from './kb/usage.js'
 import type { AuthStatusState } from './auth/statusState.js'
 
 export interface SessionDeps {
+  billingSession?: import('@voicechat/shared').LlmBillingSession
   db: VoiceChatDb
   /** Пользователь этого соединения (изоляция данных/ходов). */
   user: SessionUser
@@ -254,6 +255,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       switch (msg.t) {
         case 'claude.send':
           void deps.turns.start({
+            ...(deps.billingSession ? { billingSession: deps.billingSession } : {}),
             userId: deps.user.name,
             conversationId: msg.conversationId,
             messageId: msg.messageId,

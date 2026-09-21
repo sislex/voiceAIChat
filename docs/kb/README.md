@@ -13,7 +13,7 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ⚠ 1 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 70 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-21 | ⚠ 1 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-21 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-21 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 16 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 7 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 8 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 25 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1588 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1589 коммит(ов) в areas после сверки: 125310e0 Document production 0.1.317 verification and local Studio recovery … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 48 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ⚠ 5 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 18 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
@@ -80,9 +80,10 @@
 
 ## Журнал сессий
 
-Всего записей: 899. Последние:
+Всего записей: 900. Последние:
 
 - [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-release-317-verification.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-release-317-verification.md) — release-317-verification
+- [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-chat-execution-accounting.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-chat-execution-accounting.md) — chat-execution-accounting
 - [2026-09-21-alexeys-macbook-air-2-local-image-studio-production.md](log/2026-09-21-alexeys-macbook-air-2-local-image-studio-production.md) — local-image-studio-production
 - [2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md](log/2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md) — voice-image-extraction
 - [2026-09-20-alexeys-macbook-air-2-tenant-tariff-runtime.md](log/2026-09-20-alexeys-macbook-air-2-tenant-tariff-runtime.md) — tenant-tariff-runtime
@@ -91,7 +92,6 @@
 - [2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md) — sislexa-tool-extraction
 - [2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-project-name.md) — sislexa-project-name
 - [2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-production-0310.md) — sislexa-production-0310
-- [2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-platform-contract-foundation.md) — sislexa-platform-contract-foundation
 
 ## Исторические планы
 

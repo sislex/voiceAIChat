@@ -15,7 +15,8 @@ if (process.platform === 'linux' && !process.env.DISPLAY) {
     const budgetDiff = checkRoutes(budget, report)
     const baseline = selectRouteBaseline([
       'frontend-quality/measurements/CHAT-473/before.json',
-      'frontend-quality/measurements/sislexa-extraction/after.json'
+      'frontend-quality/measurements/sislexa-extraction/after.json',
+      'frontend-quality/measurements/chat-accounting-runtime/before.json'
     ].map(path => ({ path, report: JSON.parse(readFileSync(path, 'utf8')) })), report)
     const comparison = compareRoutes(baseline.report, report)
     writeFileSync(resolve(output, 'diff.json'), JSON.stringify({ baseline: baseline.path, budgetDiff, comparison }, null, 2))

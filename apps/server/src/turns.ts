@@ -54,6 +54,8 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { kbViewOf } from './kb/access.js'
 import { buildKbAutoContext } from './kb/autoContext.js'
 import type { KbUsageTracker } from './kb/usage.js'
+import type { ChatAccounting } from './billing/chatAccounting.js'
+import type { LlmBillingSession } from '@voicechat/shared'
 
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
 export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
@@ -65,6 +67,7 @@ export function enabledContextSkills(skillNames: string[], disabledContext: Iter
 }
 
 export interface TurnManagerDeps {
+  accounting?: ChatAccounting
   db: VoiceChatDb
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
@@ -264,6 +267,7 @@ async function loadAttachment(
 }
 
 export interface StartTurnRequest {
+  billingSession?: LlmBillingSession
   /** Владелец разговора (логин пользователя) — для изоляции данных. */
   userId: string
   conversationId: string
@@ -433,6 +437,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       return
     }
     const conv = await deps.db.chat.getConversation(userId, conversationId)
+    const accountedChat = !!deps.accounting && !!conv && capabilityForConversation(conv) === 'chat.use'
     const entitlements = await deps.db.identity.getAccountAccess(userId)
     if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
       broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : 'Разговор недоступен.' }, userId)
@@ -445,6 +450,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Месячный лимит расхода LLM (п.17): суммируем стоимость ответов пользователя с начала календарного месяца.
     if (account.llmLimitUsd !== null && account.llmLimitUsd >= 0) {
+      if (accountedChat) {
+        broadcast({ t: 'claude.error', conversationId, message: 'Для учётной записи установлен денежный лимит. Текущий CLI не поддерживает жёсткий потолок стоимости запроса.' }, userId)
+        return
+      }
       const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
       const mine = (await deps.db.chat.usageSummary(monthStart.getTime())).find((u) => u.name === userId)
       const spent = mine ? Math.max(mine.totals.costUsd, mine.totals.costFromPrices ?? 0) : 0
@@ -467,7 +476,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         attachments: req.attachments,
         verbose: req.verbose,
         execTarget: req.execTarget,
-        assistantContext: req.assistantContext
+        assistantContext: req.assistantContext,
+        billingSession: req.billingSession
       })
       await emitQueue(userId, conversationId)
       return
@@ -496,9 +506,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const role = account.role
     const wantedEngineId = conv?.llmEngineId ?? projectLlm?.llmEngineId ?? settings.llmEngineId
     const resolvedEngine = await deps.db.llm.resolveLlmEngine(wantedEngineId, provider, role)
-    const client = resolvedEngine.engine && deps.engineClient
+    const selectedClient = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
+    const client = accountedChat ? deps.accounting!.wrap(selectedClient, { login: userId, session: req.billingSession,
+      originModuleId: 'chat', ...(resolvedEngine.engine ? { engineId: resolvedEngine.engine.id } : {}) }) : selectedClient
     const selectedModel = conv?.llmProvider === provider
       ? conv.llmModel
       : (projectLlm?.provider === provider ? projectLlm.model : null)
@@ -1199,10 +1211,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               attachments: req.attachments,
               verbose: req.verbose,
               execTarget: req.execTarget,
-              assistantContext: req.assistantContext
+              assistantContext: req.assistantContext,
+        billingSession: req.billingSession
             }, false)
             await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
-            await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
+            await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedChat)
             await emitQueue(userId, conversationId)
           }
           broadcast({ t: 'claude.error', conversationId, message }, userId)
@@ -1331,7 +1344,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         attachments: turn.source.attachments,
         verbose: turn.source.verbose,
         execTarget: turn.source.execTarget,
-        assistantContext: turn.source.assistantContext
+        assistantContext: turn.source.assistantContext,
+        billingSession: turn.source.billingSession
       }
     )
     if (!merged) {

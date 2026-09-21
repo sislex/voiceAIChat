@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
 import { Readable } from 'node:stream'
+import { LLM_RECEIPTS_PATH, applicationVersionMatches, type LlmAccountingContext, type LlmExecutionReceipt } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import { createSink, type LlmStreamSink } from './sinks.js'
 import {
@@ -138,8 +139,33 @@ function describeHttpError(kind: RunnerKind, url: string, status: number, body: 
 export class RemoteLlmClient implements LlmClient {
   constructor(private readonly opts: RemoteLlmClientOptions) {}
 
+  get accountingTarget(): { kind: RunnerKind; baseUrl: string } {
+    return { kind: this.opts.kind, baseUrl: this.opts.baseUrl }
+  }
+  private async accountingFetch(path: string, body?: unknown): Promise<Response> {
+    return (this.opts.fetchImpl ?? fetch)(new URL(path, this.opts.baseUrl), {
+      method: body === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
+      headers: { ...(this.opts.token ? { authorization: 'Bearer '+this.opts.token } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+  }
+  async accountingReady(): Promise<boolean> {
+    const response = await this.accountingFetch('/v1/health')
+    if (!response.ok) return false
+    const health = await response.json() as { accountingVersion?: unknown; application?: { version?: unknown } }
+    return health.accountingVersion === 1 && typeof health.application?.version === 'string' &&
+      applicationVersionMatches(health.application.version, '0.2.1', '1.0.0')
+  }
+  async executionReceipt(context: LlmAccountingContext): Promise<LlmExecutionReceipt> {
+    const path = LLM_RECEIPTS_PATH+'/'+encodeURIComponent(context.operationId)
+    let response = await this.accountingFetch(path)
+    if (response.status === 404) response = await this.accountingFetch(path+'/fence', { context, kind: this.opts.kind })
+    if (!response.ok) throw Error('execution_receipt_unavailable')
+    return response.json() as Promise<LlmExecutionReceipt>
+  }
+
   send(req: LlmRequest, handlers: LlmStreamHandlers): LlmHandle {
-    const runId = randomUUID()
+    const runId = req.accounting?.operationId ?? randomUUID()
     const sink = createSink(this.opts.kind, handlers)
     const abort = new AbortController()
     let cancelled = false
