@@ -47,8 +47,8 @@
       "package": "@sislexa/identity",
       "workspace": "apps/server",
       "repository": "https://github.com/sislex/identity",
-      "version": "1.2.0",
-      "commit": "2dc8f5a93fb21aae502681826145d88a15d78ddb"
+      "version": "1.2.1",
+      "commit": "b90d9471437a06ee2c1a752d4167ce9e0f7c84ad"
     },
     "billing": {
       "package": "@sislexa/billing",
