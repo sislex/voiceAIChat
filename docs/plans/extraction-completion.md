@@ -59,3 +59,37 @@ without migration, or replacing real integration assertions with mocks.
 
 The existing dirty diagnostics checkout and the user's local development processes
 must remain untouched. The current API repair takes precedence over this cleanup.
+
+## Test ownership increment (2026-09-22)
+
+- Web Reader PR #3 owns 18 unchanged browser suites (688 cases), with owner-local
+  imports and no Core checkout. Core copies and their gate-catalog entries removed.
+- Make, both Readers, Image Studio and Identity own local story discovery and axe
+  checks. Core's story discovery and required-state matrix no longer include them.
+- Five Web Reader scenarios still check Core orchestration and remain in Core.
+- Adapter removal, stopping delegated internal workspace suites and independent
+  artifact consumption remain open; this increment must not be called complete
+  repository extraction. Both canonical Core gates exited 0, including the 119 remaining Core browser cases.
+
+## Consumer cutover decisions
+
+Published libraries retain their existing public package names where this avoids
+needless source compatibility breaks. Core consumes immutable archives directly;
+a local workspace containing only re-exports is not a completed cutover. The
+application catalog must distinguish an external owner from a local workspace so
+Core's gate does not execute that owner's internals or pretend to build its source.
+Consumer checks validate public exports, version/provenance, host ports and runtime
+integration. Owner gates are prerequisites to publishing the pinned artifacts.
+
+UI Kit/Foundation are being established in `sislex/sielexa-ui` (PR #1). Their
+internal tests and pure component stories move with them; examples comparing a
+shared primitive to real Core product content remain Core integration checks.
+Library releases are accepted through their consuming application rollout, not
+by deploying a dummy library service. SDK's compatibility workspace can be
+removed by the same direct-dependency mechanism.
+
+LLM Runner completion requires replacing Core's implicit local CLI spawning and
+profile/MCP inspection with configured runner operations. Existing remote run,
+profile transcript and auth-status ports should be reused; missing operations
+need owner contracts and tests before Core loses its fallback. Preserve Core
+upload/resource authorization and runner profile-volume isolation throughout.
