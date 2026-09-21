@@ -1,6 +1,7 @@
 # Chat execution accounting
 
-Status: implementation in progress. Production baseline is Core 0.1.317.
+Status: Chat accounting deployed and accepted in Core 0.1.318 on 2026-09-21.
+A separately identified WebSocket bootstrap delivery fix is in validation.
 
 ## Acceptance boundary
 
@@ -47,3 +48,19 @@ This increment does not introduce payment collection or silently enable paid API
 accounts. Make/image generation outside the chat turn manager and background
 workflows need their own verified delegation integrations before their milestone
 can be marked complete.
+
+
+## Production acceptance
+
+PR #219 / Core 0.1.318 pins SDK 1.1.0 and Billing 1.1.1; both external executors
+run Runner 0.2.1. Two actual Codex turns, including a resumed session, settled
+exactly once. The runner receipts prove baseline subtraction and disjoint cached
+input. A repeated settlement did not change the balance; a finite monetary policy
+rejected a third request before execution. Cost evidence is explicitly a catalog
+estimate, not a provider invoice. Cross-service authorization, HTTPS account and
+Image Studio flows, and local standalone Image Studio acceptance passed.
+
+The raw acceptance client exposed an older transport gap: the first outgoing
+snapshot preceded completion of asynchronous WebSocket setup, while incoming
+listeners had not yet been attached. That gap is being closed with ordered
+initialization buffering and adjacent regression tests before this delivery ends.
