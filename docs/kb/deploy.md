@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: d430423e
+checked: ec018f20
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1416,3 +1416,29 @@ JavaScript errors. Signup remained HTTP 200. Browser startup nevertheless took
 database lane. This follow-up performance issue remains tracked in
 `log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md`;
 fast individual API probes must not be treated as proof of fast page startup.
+
+### Production 0.1.321 verification
+
+Core 0.1.321 (`ec018f207b7f2ac6004d703694f712dc253b1faa`, PR #223) deployed
+through installed `voicechat-deploy` at 2026-09-21 21:45:53 UTC. Its monthly
+usage-summary query decodes message metadata once and aggregates model groups
+once, avoiding the long shared database-lane blockage on Users page startup.
+No schema migration was needed. Both canonical Core gates passed (2,402 tests
+passed, 42 skipped each), as did the focused SQLite and PostgreSQL checks.
+
+The overlay is `/etc/voicechat/prebuilt-0.1.321.yml`; Core image ID is
+`sha256:823f40c88f1519e2ac9e461ba25af9c2dc8b6bad7b523c2f0bffe78227b58529`.
+Only Core's container changed; all 28 other container IDs were preserved.
+Identity remains 1.2.1. The backup is
+`/var/backups/voicechat/sislexa-users-startup-20260921T213853Z`, with a private
+workstation copy under `.sislexa-backups/users-startup-20260921T213853Z`.
+The PostgreSQL archive passed `pg_restore --list`; this was not a restore drill.
+The previous 0.1.320 image and overlay remain available for rollback.
+
+All 57 component/readiness/authorization/frontend-integrity checks passed. A real
+Chromium sign-in and full Users navigation displayed the rows in 1,800 ms, versus
+19–20 seconds before this query change. Three rounds of both reported user-list
+URLs and signup returned HTTP 200 in 59–112 ms with no JavaScript errors. The
+temporary administrator and sessions were revoked and removed afterwards.
+This verifies the page's bounded monthly query, not unbounded historical reports;
+large-range usage analytics still needs precomputed projections.
