@@ -145,6 +145,7 @@ export async function measure({ web, desktop, output }) {
       }
       await cdp.send('Network.clearBrowserCache')
       for (const scenario of [{ name: 'chat', hash: '/chat/' + conversation.id }, { name: 'account', hash: '/account' }, { name: 'settings', hash: '/settings/ui' }]) for (const cache of ['cold', 'warm']) {
+        await page.mouse.move(0, 0)
         const errors = []
         const onError = e => errors.push(e.message)
         page.on('pageerror', onError)
@@ -158,6 +159,7 @@ export async function measure({ web, desktop, output }) {
           await page.getByLabel('Пользователь', { exact: true }).fill('admin')
           await page.getByLabel('Пароль', { exact: true }).fill('measurement-fixture-password')
           await page.getByRole('button', { name: 'Войти', exact: true }).click()
+          await page.mouse.move(0, 0)
           await page.evaluate(hash => { location.hash = hash }, scenario.hash)
         }
         await page.getByRole('button', { name: /admin/ }).first().waitFor({ timeout: 60000 }).catch(async error => { await page.screenshot({ path: join(output, client + '-failed.png') }); console.error(await page.locator('body').innerText(), errors); throw error })
@@ -169,6 +171,7 @@ export async function measure({ web, desktop, output }) {
         page.off('pageerror', onError)
       }
       for (const target of [{ name: 'account', hash: '/account' }, { name: 'settings', hash: '/settings/ui' }]) {
+        await page.mouse.move(0, 0)
         await cdp.send('Network.clearBrowserCache')
         requests.clear(); externalBodies.length = 0
         const errors = [], onError = error => errors.push(error.message)
@@ -179,6 +182,7 @@ export async function measure({ web, desktop, output }) {
           await page.getByLabel('Пользователь', { exact: true }).fill('admin')
           await page.getByLabel('Пароль', { exact: true }).fill('measurement-fixture-password')
           await page.getByRole('button', { name: 'Войти', exact: true }).click()
+          await page.mouse.move(0, 0)
           await page.evaluate(id => { location.hash = '/chat/' + id }, conversation.id)
         }
         await page.getByRole('textbox', { name: 'Поле ввода сообщения', exact: true }).waitFor({ timeout: 60000 })

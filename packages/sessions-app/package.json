@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/sessions-app",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -14,7 +14,7 @@
     "@voicechat/ui-kit": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.2.0-2dc8f5a93fb2.tgz"
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.2.1-b90d9471437a.tgz"
   },
   "devDependencies": {
     "@storybook/react": "^8.6.14",
@@ -40,7 +40,7 @@
     "package": "@sislexa/identity",
     "workspace": "packages/sessions-app",
     "repository": "https://github.com/sislex/identity",
-    "version": "1.2.0",
-    "commit": "2dc8f5a93fb21aae502681826145d88a15d78ddb"
+    "version": "1.2.1",
+    "commit": "b90d9471437a06ee2c1a752d4167ce9e0f7c84ad"
   }
 }

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-21
-checked: c2469456
+checked: f69a6c41
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -795,3 +795,12 @@ count uses `ChatRepo.conversationCount(userId)` and session activity uses
 build global maps for every user. The response includes machine counts only;
 the existing `/api/agents` route remains the source for versions and telemetry
 when the Machines tab opens.
+
+## Slow and failed API diagnostics
+
+Core logs an `api_request_problem` JSON event for completed `/api` and `/internal`
+requests returning 5xx or taking at least two seconds. Events contain method,
+registered route template, status and duration only; query strings, actual path
+parameters, headers, credentials and bodies are excluded. Inspect container logs
+when an intermittent dependency timeout cannot be reproduced; health endpoints
+alone do not prove admin user-list or signup callback availability.

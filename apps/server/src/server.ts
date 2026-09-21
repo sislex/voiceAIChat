@@ -1,4 +1,5 @@
 import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
+import { registerHttpDiagnostics } from './httpDiagnostics.js'
 import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
 import { registerBillingProxy } from './billingBridge.js'
 import { AccountingStore } from './billing/accountingStore.js'
@@ -306,6 +307,7 @@ printf 'BASE_SHA=%s\\n' "$local_sha"`
 
 export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
+  registerHttpDiagnostics(app)
   opts = { ...opts, config: { ...opts.config } }
   const component = opts.config.componentConfigPath ? await createComponentRuntime({
     configFile: opts.config.componentConfigPath,
