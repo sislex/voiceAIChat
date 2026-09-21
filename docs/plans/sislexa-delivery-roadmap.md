@@ -100,3 +100,14 @@ Image Studio 1.0.5 adds an independently owned standalone browser entry and
 bounded API shutdown. Core pins its immutable archive for the same foundation
 increment. Its production frontend remains the host-loaded panel; the standalone
 local UI uses explicit Core and Image Studio origins.
+
+
+## Chat accounting increment
+
+Core 0.1.318 deployed SDK 1.1.0/Billing 1.1.1 with Runner 0.2.1 on 2026-09-21.
+Production acceptance covered two real Chat turns, resumed-session usage deltas,
+exactly-once settlement, stable attribution and pre-execution finite-policy
+rejection. Existing CLI execution remains unbounded; finite monetary policies
+therefore refuse it. This advances milestones 1-3 but does not complete their
+cross-tool/background or bounded-execution acceptance. Dashboard and active-time
+work remain pending. See `chat-execution-accounting.md` and `docs/kb/deploy.md`.

@@ -48,3 +48,53 @@ it('does not dispatch commands after the external identity check rejects a sessi
  await vi.waitFor(()=>expect(socket.close).toHaveBeenCalledWith(4001,'Session expired'))
  expect(onMessage).not.toHaveBeenCalled()
 })
+
+it('delivers authenticated early frames and frames received during setup once, in order, after initialization', async () => {
+  const { EventEmitter } = await import('node:events')
+  const socket = Object.assign(new EventEmitter(), { OPEN: 1, readyState: 1, bufferedAmount: 0, send: vi.fn(), close: vi.fn() })
+  let complete!: () => void
+  const setup = new Promise<void>(resolve => { complete = resolve })
+  const received: string[] = []
+  const authorizeMessage = vi.fn().mockResolvedValue(true)
+  const attached = attachWs(socket as unknown as WebSocket, {
+    onOpen: async ctx => { ctx.send({ t: 'claude.active', turns: [] }); await setup; received.push('initialized') },
+    onMessage: async message => { received.push(message.t) },
+    onBinary: data => { received.push(data.toString()) }
+  }, { authorizeMessage, initialFrames: [[Buffer.from('{"t":"audio.start","sampleRate":16000}'), false]] })
+  socket.emit('message', Buffer.from('pcm'), true)
+  socket.emit('message', Buffer.from('{"t":"audio.stop"}'), false)
+  await Promise.resolve()
+  expect(received).toEqual([])
+  expect(authorizeMessage).not.toHaveBeenCalled()
+  complete()
+  await attached
+  await vi.waitFor(() => expect(received).toEqual(['initialized', 'audio.start', 'pcm', 'audio.stop']))
+  expect(authorizeMessage).toHaveBeenCalledTimes(2)
+})
+
+it('cleans up a connection closed during initialization without dispatching its queued commands', async () => {
+  const { EventEmitter } = await import('node:events')
+  const socket = Object.assign(new EventEmitter(), { OPEN: 1, readyState: 1, bufferedAmount: 0, send: vi.fn(), close: vi.fn() })
+  let complete!: () => void
+  const setup = new Promise<void>(resolve => { complete = resolve })
+  const onMessage = vi.fn(), onClose = vi.fn()
+  const attached = attachWs(socket as unknown as WebSocket, { onOpen: () => setup, onMessage, onClose })
+  socket.emit('message', Buffer.from('{"t":"audio.stop"}'), false)
+  socket.readyState = 3; socket.emit('close')
+  expect(onClose).not.toHaveBeenCalled()
+  complete(); await attached
+  await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  expect(onMessage).not.toHaveBeenCalled()
+})
+
+it('rejects failed initialization without running buffered commands', async () => {
+  const { EventEmitter } = await import('node:events')
+  const socket = Object.assign(new EventEmitter(), { OPEN: 1, readyState: 1, bufferedAmount: 0, send: vi.fn(), close: vi.fn() })
+  const onMessage = vi.fn()
+  await expect(attachWs(socket as unknown as WebSocket, {
+    onOpen: async () => { throw Error('setup failed') }, onMessage
+  }, { initialFrames: [[Buffer.from('{"t":"audio.stop"}'), false]] })).rejects.toThrow('setup failed')
+  await Promise.resolve()
+  expect(socket.close).toHaveBeenCalledTimes(1)
+  expect(onMessage).not.toHaveBeenCalled()
+})

@@ -36,6 +36,8 @@ export interface AttachWsOptions {
   maxBufferedBytes?: number
   /** Куда сообщить о разрыве: счётчики кадров по типам показывают, что именно переполнило очередь. */
   onOverflow?: (info: { bufferedAmount: number; frames: Array<[string, number]> }) => void
+  /** Frames accepted during authentication must precede frames received during setup. */
+  initialFrames?: ReadonlyArray<readonly [Buffer, boolean]>
 }
 
 /** Регистрирует обработчики на сокете; возвращает контекст. */
@@ -65,16 +67,19 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
     }
   }
 
-  await handlers.onOpen?.(ctx)
+  // Install listeners before asynchronous setup can publish its first snapshot.
+  let initialized!: () => void
+  let openingFailed = false
+  const initialization = new Promise<void>(resolve => { initialized = resolve })
 
   // Сообщения одного сокета обрабатываются строго по очереди: обработчики ходят
   // в БД через асинхронные порты, а порядок «audio.start → чанки → audio.stop» и
   // подобных цепочек — часть контракта. Ошибка одного сообщения очередь не роняет.
-  let queue: Promise<void> = Promise.resolve()
-  socket.on('message', (data: Buffer, isBinary: boolean) => {
+  let queue: Promise<void> = initialization
+  const receive = (data: Buffer, isBinary: boolean): void => {
     queue = queue
       .then(async () => {
-        if (socket.readyState !== socket.OPEN) return
+        if (openingFailed || socket.readyState !== socket.OPEN) return
         if (!isBinary && options.authorizeMessage && !await options.authorizeMessage()) {socket.close(4001, 'Session expired');return}
         if (isBinary) {
           handlers.onBinary?.(data, ctx)
@@ -91,9 +96,22 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
         await handlers.onMessage?.(msg, ctx)
       })
       .catch((err) => console.error('[ws] обработчик сообщения упал:', err instanceof Error ? err.message : err))
+  }
+  socket.on('message', receive)
+  for (const [data, isBinary] of options.initialFrames ?? []) receive(data, isBinary)
+  socket.on('close', () => {
+    void initialization.then(() => handlers.onClose?.(ctx))
+      .catch(err => console.error('[ws] close handler failed:', err instanceof Error ? err.message : String(err)))
   })
-
-  socket.on('close', () => handlers.onClose?.(ctx))
+  try {
+    await handlers.onOpen?.(ctx)
+  } catch (error) {
+    openingFailed = true
+    socket.close()
+    throw error
+  } finally {
+    initialized()
+  }
 
   return ctx
 }

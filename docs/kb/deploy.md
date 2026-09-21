@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-21
-checked: 747c8632
+checked: bbada2df
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1319,3 +1319,48 @@ and private probe credentials were removed afterwards.
 
 This release does not yet meter real model executions through Billing. No paid
 model/image generation or real payment was submitted during these checks.
+
+### Production 0.1.318 verification
+
+Core 0.1.318 (`bbada2df126bbd26e1c06feb1373b59c6efcda9b`, PR #219) completed
+through installed `voicechat-deploy` at 2026-09-21 18:41:57 UTC. Core image ID is
+`sha256:ec1950487611d741b5d22b4cebae62bc0aeed670813ecf6ae15b49d1540a2b71`.
+SDK 1.1.0 and Billing 1.1.1 are pinned by immutable upstream archives. Billing
+image ID is `sha256:8fc4a530b2849f5d789b32e126b25c3437aaf668954ac0136230f529d7889f9a`.
+Both external executors run Runner 0.2.1 from `6e117b2581f663f29ebd6200fbeb4bd9a33d547f`.
+Core and its eight dependencies reported ready; scoped grants, token revocation,
+tool-to-Core RPC and frontend integrity passed. Only Core/Billing container IDs
+changed; the other fifteen Compose containers retained their IDs (automation was
+stopped and restarted in place).
+
+The full pre-change backup is
+`/var/backups/voicechat/sislexa-chat-accounting-20260921T174002Z`, with the local
+copy in `.sislexa-backups/chat-accounting-20260921T174002Z`. It contains the
+PostgreSQL dump, private configuration, image references and a consistent Billing
+SQLite snapshot. The dump table of contents and SQLite integrity were verified;
+the full PostgreSQL restore drill remains the preceding 0.1.317 verification.
+`/etc/voicechat/prebuilt-0.1.318.yml` selects fifteen immutable application images
+with no build targets. Retain Billing 1.1.1 during a Core-only rollback if
+unbounded reservations exist; reverting its accounting semantics is unsafe.
+
+The first attempt failed because Compose cannot start a paused automation
+container; the old Core was restarted and verified before retry. Pause admission
+only for the idle check, drain executors, then unpause and stop Core/automation
+before invoking Compose. Never leave a paused service in an `up` operation.
+A dry run then selected exactly Core and Billing for replacement. Preserve release
+metadata overrides only for keys already present in each service's Compose
+`environment`: adding equivalent image-default values changes its configuration
+hash and causes unnecessary recreation. Server-owned orchestration restores
+runner admission and stopped/paused upstream containers even on failure.
+
+A synthetic account completed two real Codex turns with `gpt-5.6-sol`. Billing
+settled 30,427 and 49,551 micro-USD of explicitly estimated cost (79,978 total).
+Both receipts matched the stable user, tenant and Chat origin; resumed cumulative
+usage had a nonzero baseline and cached input was subtracted exactly once. Replay
+did not debit twice. A finite policy rejected the next request without increasing
+request count or spending. HTTPS login/account, CSRF, saved Chat output and image
+upload/viewing passed; standalone local Image Studio on 18897 passed login,
+gallery creation, upload, viewing, mobile layout and logout with no page errors.
+The synthetic identity was disabled, demoted and all sessions revoked. Temporary
+credentials and its two CLI profiles were removed; real ledger/receipt evidence
+and the fixture conversation remain for audit. No payment integration was enabled.

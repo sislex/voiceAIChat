@@ -1434,6 +1434,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       identityTimer?.unref()
       socket.once('close',()=>{unsubscribe();if(identityTimer)clearInterval(identityTimer)})
       await attachWs(socket, makeHandlers(user, sid, token!), {
+        initialFrames: early,
         authorizeMessage: socketIdentityCurrent,
         authorizeCommand: async (message, context) => {
           const error = await commandAccessError(db, user, message)
@@ -1443,7 +1444,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         // Логгер Fastify выключен — пишем в stdout контейнера: по счётчикам видно, какие кадры забили очередь.
         onOverflow: (info) => console.warn('[ws] исходящая очередь переполнена, соединение разорвано:', JSON.stringify({ user: user.name, ...info }))
       })
-      for (const [data, isBinary] of early) socket.emit('message', data, isBinary)
     })
   })
 
