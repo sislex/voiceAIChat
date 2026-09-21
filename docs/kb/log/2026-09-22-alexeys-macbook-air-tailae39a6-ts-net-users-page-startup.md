@@ -34,3 +34,13 @@ Documented in `data-auth.md`, `server-internals.md` and `deploy.md`.
 Both canonical gates passed 2,402 server tests, typecheck and server build.
 Remaining: next release and production startup acceptance;
 then continue `docs/plans/extraction-completion.md`.
+
+## Production acceptance
+
+Core PR #223 merged and release 0.1.321 deployed through the installed server
+helper at 21:45:53 UTC on September 21. All 57 component checks passed. Full
+browser navigation displayed users in 1,800 ms; all nine reported-API probes
+returned 200 in 59–112 ms without JavaScript errors. Only Core's container
+changed; 28 others retained their IDs. Temporary credentials and the diagnostic
+account were removed. See `deploy.md` for immutable release and backup evidence.
+The API/startup repair is complete; repository extraction work continues.

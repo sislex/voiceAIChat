@@ -1,7 +1,7 @@
 # Complete the started repository extractions
 
-Updated: 2026-09-21.
-Status: queued after the Identity admin API repair and production acceptance.
+Updated: 2026-09-22.
+Status: in progress; Identity API repair and Users startup production acceptance complete.
 
 The owner explicitly requested completion of every started extraction, including
 removal of extracted applications' tests from Core. Delivery remains autonomous:
@@ -26,7 +26,9 @@ isolated worktrees, reviewable PRs, merges, releases and production checks.
 
 ## Sequence
 
-- [ ] Finish Core 0.1.320 / Identity 1.2.1 rollout and verify the reported user APIs.
+- [x] Finish Core 0.1.320 / Identity 1.2.1 rollout and Core 0.1.321 startup
+  optimization; verify the reported APIs and full page navigation in production.
+  Evidence: Core PRs #222/#223, Identity PR #4; `docs/kb/deploy.md`.
 - [ ] Inventory every adapter, remaining implementation import, test, fixture,
   story, build entry and deployment input for Make, both Readers, Voice, Image
   Studio, Identity, Billing, SDK and the independently deployed LLM Runner.
