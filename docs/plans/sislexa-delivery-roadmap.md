@@ -90,8 +90,10 @@ the first vertical accounting slice and validation against real execution paths.
 
 SDK 1.0.0, Identity 1.2.0 and Billing 1.0.0 are published independently. They provide
 portable operation contracts, stable user IDs and a transactionally tested ledger.
-Core integration adds managed dependency configuration and authenticated account
-proxies. This does not complete milestones 1-3: model execution bounds, durable
+Core 0.1.317 deployed this integration on 2026-09-21 with managed dependency
+configuration and authenticated account proxies. Production acceptance passed
+session continuity, tenant isolation, reservation/settlement replay and browser
+checks; see `docs/kb/deploy.md` for evidence. This does not complete milestones 1-3: model execution bounds, durable
 usage delivery, reconciliation and production acceptance remain required.
 
 Image Studio 1.0.5 adds an independently owned standalone browser entry and
