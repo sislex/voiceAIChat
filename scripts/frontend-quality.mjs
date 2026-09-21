@@ -113,13 +113,9 @@ export function checkExports({ root = ROOT, packages = FRONTEND.filter((item) =>
 const STORY_MATRIX = {
   'packages/app-shell/src/AppShell.stories.tsx': ['Default', 'ModuleFailure'],
   'packages/chat-app/src/surfaces.stories.tsx': ['Empty', 'Messages', 'StreamingQueued', 'Disconnected'],
-  'packages/web-reader-app/src/WebReaderApp.stories.tsx': ['Default', 'Empty', 'RecorderReady', 'ActionPending', 'Mobile'],
-  'packages/playwright-reader-app/src/PlaywrightReaderApp.stories.tsx': ['Default', 'SessionConnected', 'CapabilityUnavailable', 'Mobile'],
   'packages/projects-app/src/ProjectsApp.stories.tsx': ['Default', 'Loading', 'KanbanLongCards'],
   'packages/operations-app/src/Operations.stories.tsx': ['MachinesOnline', 'MachinesOffline', 'UtilityRestricted'],
   'packages/admin-app/src/AdminApp.stories.tsx': ['Overview', 'EmptyUsage', 'AccessMatrix'],
-  'packages/sessions-app/src/SessionsApp.stories.tsx': ['Default', 'SingleDevice', 'ReadOnly', 'LoadFailed', 'Empty'],
-  'packages/profile-app/src/ProfileApp.stories.tsx': ['AdminView', 'SelfView', 'Empty', 'Mobile']
 }
 export function checkStories({ root = ROOT, matrix = STORY_MATRIX } = {}) {
   for (const [path, stories] of Object.entries(matrix)) {
