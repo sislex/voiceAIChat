@@ -1,6 +1,6 @@
 {
   "name": "@voicechat/platform-sdk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.0.0-9cce489bed5e.tgz"
+    "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.1.0-bec5fb16db7b.tgz"
   },
   "scripts": {
     "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
@@ -19,7 +19,7 @@
     "package": "@sislexa/sdk",
     "workspace": ".",
     "repository": "https://github.com/sislex/sdk",
-    "version": "1.0.0",
-    "commit": "9cce489bed5e911264486d57466227f8a45ec4aa"
+    "version": "1.1.0",
+    "commit": "bec5fb16db7b96851c90c60ac650d1c4c17dcc89"
   }
 }

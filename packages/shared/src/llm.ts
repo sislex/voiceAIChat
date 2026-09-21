@@ -7,6 +7,7 @@
 
 import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta, TurnUsage } from './types'
 import type { LoginStatusMap } from './auth'
+import type { LlmAccountingContext } from './llmAccounting'
 
 /** Одно вложение, которое сервер передаёт исполнителю байтами вместе с запросом. */
 export interface LlmAttachment {
@@ -40,6 +41,8 @@ export interface LlmMakeSource {
 }
 
 export interface LlmRequest {
+  /** Durable accounting identity is separate from the legacy login-based CLI profile. */
+  accounting?: LlmAccountingContext
   /** Владелец CLI-профиля: история одного пользователя не смешивается с другими. */
   userId?: string
   /** Готовый текст промпта (сборка — на стороне вызывающего: см. session.ts). */

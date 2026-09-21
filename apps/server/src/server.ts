@@ -1,6 +1,9 @@
 import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
 import { registerBillingProxy } from './billingBridge.js'
+import { AccountingStore } from './billing/accountingStore.js'
+import { BillingSessions } from './billing/sessions.js'
+import { ChatAccounting } from './billing/chatAccounting.js'
 import { hasProductCapability } from '@voicechat/shared'
 import {createIdentityStoreClient, registerRemoteIdentity} from '@sislexa/identity/client/index'
 import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/shared'
@@ -397,6 +400,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Хаб сессий один на процесс: его слушают WS-соединения, а публикуют в него
   // и сессионные роуты, и админский отзыв чужой сессии.
   const sessionHub = new SessionHub()
+  const billingSessions = new BillingSessions()
+  const revokeBillingSession = sessionHub.onChange(event => {
+    if (event.revokedSid) billingSessions.revoke(event.user, event.revokedSid)
+  })
+  app.addHook('onClose', async () => revokeBillingSession())
   // Ключи Chromium к прокси превью: изолированный браузер открывает dev-сервер
   // машины от лица владельца задачи, а Bearer-заголовка у навигации нет.
   const previewRunKeys = new PreviewRunKeys()
@@ -1093,7 +1101,35 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   // Один реестр ходов LLM на процесс: ходы переживают обрыв WS-соединения,
   // ответ сохраняется в БД сервером, клиенты получают события broadcast'ом.
+  let accounting: ChatAccounting | undefined
+  let accountingStore: AccountingStore | undefined
+  let accountingTimer: NodeJS.Timeout | undefined
+  if (managedBilling && component) {
+    mkdirSync(opts.config.dataDir, { recursive: true })
+    accountingStore = new AccountingStore(join(opts.config.dataDir, 'chat-accounting.sqlite'))
+    accounting = new ChatAccounting({ store: accountingStore, sessions: billingSessions,
+      billing: managedBilling, environmentId: component.config.environmentId,
+      resolveRunner: async target => {
+        if (target.engineId) {
+          const resolved = await db.llm.resolveLlmEngine(target.engineId, target.kind, 'admin')
+          if (resolved.engine?.id !== target.engineId || resolved.engine.baseUrl !== target.baseUrl) return undefined
+          return new RemoteLlmClient({ kind: resolved.engine.kind, baseUrl: resolved.engine.baseUrl, token: resolved.engine.token })
+        }
+        const client = target.kind === 'codex' ? codex : claude
+        return client instanceof RemoteLlmClient ? client : undefined
+      } })
+    let reconciling = false
+    const reconcile = async () => {
+      if (reconciling) return
+      reconciling = true
+      try { await accounting!.reconcileAll() } finally { reconciling = false }
+    }
+    accountingTimer = setInterval(() => { void reconcile() }, 5000)
+    accountingTimer.unref()
+    void reconcile()
+  }
   const turnManager = createTurnManager({
+    accounting,
     db,
     claude: await claude,
     codex: await codex,
@@ -1262,11 +1298,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.
   app.addHook('onClose', async () => {
+    if (accountingTimer) clearInterval(accountingTimer)
     await turnManager.flushInterrupted()
+    await accounting?.shutdown()
+    accountingStore?.close()
   })
 
-  const makeHandlers = (user: SessionUser, sid: string | null): WsHandlers =>
+  const makeHandlers = (user: SessionUser, sid: string | null, token: string): WsHandlers =>
     createSession({
+      billingSession: billingSessions.register(user, sid, token),
       db,
       turns: turnManager,
       user,
@@ -1393,7 +1433,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       },30_000)
       identityTimer?.unref()
       socket.once('close',()=>{unsubscribe();if(identityTimer)clearInterval(identityTimer)})
-      await attachWs(socket, makeHandlers(user, sid), {
+      await attachWs(socket, makeHandlers(user, sid, token!), {
         authorizeMessage: socketIdentityCurrent,
         authorizeCommand: async (message, context) => {
           const error = await commandAccessError(db, user, message)

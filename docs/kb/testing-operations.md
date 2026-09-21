@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-21
-checked: 747c8632
+checked: 1b82ffaa
 areas:
   - package.json
   - scripts
@@ -849,5 +849,10 @@ still cannot change its own budgets. No production Electron comparison was avail
 The historical CHAT-473 comparison is environment-specific (Node/compression
 versions and actual Electron viewport). The route gate selects exactly one
 reviewed report matching all conditions and tool versions: the original Linux
-report or the extraction's macOS report. Unknown/ambiguous environments still
+report, the extraction's macOS report, or the clean-main macOS measurement under
+`frontend-quality/measurements/chat-accounting-runtime/`. The latter was captured
+on September 21 from clean commit `1b82ffaa` with an actual 1440x872 Electron
+viewport at scale factor 2, after the workstation stopped clamping it to
+1280x774. All 96 size comparisons against the accounting branch were unchanged;
+the absolute budget file was retained. Unknown/ambiguous environments still
 fail; `artifacts/route-budgets/diff.json` identifies the selected baseline.
