@@ -54,8 +54,8 @@
       "package": "@sislexa/billing",
       "workspace": ".",
       "repository": "https://github.com/sislex/billing",
-      "version": "1.0.0",
-      "commit": "42ec364841240d13d1df47cedec036425259fb5b"
+      "version": "1.1.1",
+      "commit": "a575fcdcf6788f01c8dc674356cb0369972c2256"
     }
   }
 }

@@ -1,8 +1,12 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-21
-checked: 27644d37
+checked: 1b82ffaa
 areas:
+  - apps/server/src/billing
+  - apps/billing
+  - packages/platform-sdk
+  - packages/shared/src/llmAccounting.ts
   - apps/server/src/db
   - apps/server/src/users
   - apps/identity
@@ -85,16 +89,41 @@ Core exposes `/api/billing/account` and `/api/billing/policy` through the manage
 Billing dependency. Core checks user authentication and cookie CSRF first, then
 forwards a bearer credential without cookies or unrelated headers. Billing policy
 mutation requires a system administrator and initially targets only their own
-tenant. Missing dependencies return a sanitized 503. This foundation does not yet
-connect Chat/Make execution to reservations, implement a durable usage outbox,
-provide account analytics or charge real payments. Existing model spending policy
-continues to govern those execution paths until the accounting integration ships.
+tenant. Missing dependencies return a sanitized 503. SDK/Billing 1.1 add explicit
+unbounded admission and immutable provider/estimated usage evidence. Monetary
+limits reject unbounded execution, and active unbounded work prevents switching
+to a finite monetary policy. Estimates use captured integer micro-USD rates per
+million tokens; Billing recomputes the amount and rejects changed replay evidence.
+
+With managed Billing configured, Core wraps Chat-capability model turns in
+`billing/chatAccounting.ts`. The authenticated WebSocket supplies stable subject,
+tenant and original session reference; the browser message cannot set them. The
+login-based CLI profile key remains unchanged. Queue payloads persist only the
+session reference. Credentials stay in memory and are rechecked by Identity at
+admission/start. A different login session cannot silently reauthorize old queued
+work; reconnect the original session or explicitly send a new request. Accounting
+errors pause the queue. Existing finite legacy user limits also reject unbounded
+Chat execution instead of being silently discarded.
+
+Core's `chat-accounting.sqlite` is a delivery outbox in its durable data directory,
+not a second spending ledger. It records the operation before admission, a
+pre-dispatch state boundary, target runner, price snapshot and immutable settlement.
+Five-second reconciliation and restart recovery use executor-scoped Billing reads
+and runner receipts. A missing runner receipt is fenced before resolving no-spawn;
+late network delivery cannot execute an already reconciled operation. Running,
+unknown-price or incomplete-usage work retains its hold. Codex usage is the
+per-turn delta from the runner's authoritative pre-spawn cumulative baseline, with
+cached input separated once. Settlements remain deliverable after user logout.
+Back up the outbox together with Core data, Billing's ledger and runner receipts.
+This increment does not add account analytics, real payments, or accounting for
+Make/Image/background paths that bypass Chat-capability turns.
 
 The current external runner request contract and CLI adapters do not carry an
 enforceable monetary allocation. Its `LlmRequest.userId` selects an existing CLI
 profile directory, so a stable accounting ID must not silently replace that key.
-Add explicit accounting context, durable execution claims and usage delivery at
-the runner boundary before treating a reservation as an enforced spending limit.
+Runner >=0.2.1 adds separate accounting context, durable claims, receipts and a
+no-spawn fence. These support accounting recovery but do not establish a monetary
+execution bound; finite policies remain rejected for these CLI executors.
 As checked on 2026-09-21, the [official Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
 describes `features.rollout_budget` as token tracking under development; it does
 not establish a strict monetary cap. Treating that feature alone as a prepaid
