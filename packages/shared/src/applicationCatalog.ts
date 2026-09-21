@@ -124,8 +124,9 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     services: ["voicechat"],
     entrypoint: "apps/server/src/index.ts",
     healthPath: "/api/health",
-    dataPaths: ["database", "users", "conversations"],
+    dataPaths: ["database", "users", "conversations", "chat-accounting.sqlite"],
     buildDependencies: [
+      "platform-sdk",
       "identity",
       "identity-client",
       "identity-contracts",
