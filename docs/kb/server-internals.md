@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-21
-checked: bbada2df
+checked: c2469456
 areas:
   - apps/server/src
   - apps/image-studio/src

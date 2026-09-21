@@ -18,7 +18,8 @@ cleanup after setup. Adjacent regression tests cover all three boundaries.
 ## Validation
 
 The five focused WebSocket tests passed. Canonical `gate:fast` and `gate` passed the complete Core suite: 2398 tests
-passed, with 42 expected skips. Transport patch deployment is pending at this checkpoint. Core 0.1.318 accounting
+passed, with 42 expected skips. Core 0.1.319 deployed at 19:07:31 UTC; live early-frame acceptance passed without
+a new model execution or debit. Core 0.1.318 accounting
 is already deployed and accepted with real initial/resumed Codex turns.
 
 ## Knowledge

@@ -111,3 +111,7 @@ rejection. Existing CLI execution remains unbounded; finite monetary policies
 therefore refuse it. This advances milestones 1-3 but does not complete their
 cross-tool/background or bounded-execution acceptance. Dashboard and active-time
 work remain pending. See `chat-execution-accounting.md` and `docs/kb/deploy.md`.
+
+Core 0.1.319 additionally closes an existing WebSocket initialization gap discovered
+during that acceptance. An immediate post-snapshot command now enters the ordered
+queue, with live exactly-once rejection and balance continuity verified.

@@ -1,7 +1,7 @@
 # Chat execution accounting
 
 Status: Chat accounting deployed and accepted in Core 0.1.318 on 2026-09-21.
-A separately identified WebSocket bootstrap delivery fix is in validation.
+The WebSocket bootstrap follow-up is deployed and accepted in Core 0.1.319.
 
 ## Acceptance boundary
 
@@ -62,5 +62,6 @@ Image Studio flows, and local standalone Image Studio acceptance passed.
 
 The raw acceptance client exposed an older transport gap: the first outgoing
 snapshot preceded completion of asynchronous WebSocket setup, while incoming
-listeners had not yet been attached. That gap is being closed with ordered
-initialization buffering and adjacent regression tests before this delivery ends.
+listeners had not yet been attached. Core 0.1.319 closes that gap with ordered initialization buffering and adjacent
+regression tests. Live acceptance sent a command before the initial agents snapshot,
+observed exactly one Billing refusal before execution and retained the prior balance.

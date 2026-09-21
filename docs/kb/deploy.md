@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-21
-checked: bbada2df
+checked: c2469456
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1364,3 +1364,30 @@ gallery creation, upload, viewing, mobile layout and logout with no page errors.
 The synthetic identity was disabled, demoted and all sessions revoked. Temporary
 credentials and its two CLI profiles were removed; real ledger/receipt evidence
 and the fixture conversation remain for audit. No payment integration was enabled.
+
+### Production 0.1.319 verification
+
+Core 0.1.319 (`c2469456d4ef1c519e61118aea217b1bbe7054dc`, PR #220) completed
+through installed `voicechat-deploy` at 2026-09-21 19:07:31 UTC. Its image ID is
+`sha256:d7bc9047360084e0e7653099ffb82c6ae4f768ddc60678fcdce5ff32f38f65ac`.
+Only the Core container was replaced; sixteen other Compose container IDs were
+preserved. SDK 1.1.0, Billing 1.1.1 and Runner 0.2.1 remain unchanged. Both
+canonical Core gates passed 2,398 tests with 42 expected skips.
+
+The fresh backup is `/var/backups/voicechat/sislexa-ws-bootstrap-20260921T185942Z`
+and `.sislexa-backups/ws-bootstrap-20260921T185942Z` locally. PostgreSQL dump
+listing and consistent SQLite integrity checks passed, including the new Core
+outbox and Billing ledger. `/etc/voicechat/prebuilt-0.1.319.yml` selects the exact
+images; the backup retains the full 0.1.318 overlay for rollback. Dry run selected
+only Core for replacement before the server-owned deployment began.
+
+Live acceptance sent a saved Chat command immediately after `claude.active`,
+before the initial agents snapshot. It was handled exactly once and reached
+Billing, whose finite policy rejected it before executor dispatch. The two earlier
+real settlements remained exactly 79,978 micro-USD with zero active reservations.
+Provider scopes, dependency readiness, tool RPC and frontend integrity passed
+again. Local Image Studio UI/API on 18897/18896 remained ready. The reused synthetic
+identity was disabled/demoted again, all sessions revoked, temporary credentials
+deleted and its regenerated CLI profiles removed. Ledger and receipt evidence
+remain intact. This completes the Chat increment, not the wider Make/background,
+Analytics, active-time or payment milestones.
