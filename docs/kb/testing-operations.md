@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-21
-checked: f69a6c41
+updated: 2026-09-22
+checked: 5d36d282
 areas:
   - package.json
   - scripts
@@ -22,6 +22,27 @@ areas:
 ---
 
 # Разработка, тестирование, диагностика и эксплуатация
+
+## Extracted application test ownership
+
+Core no longer owns the 18 standalone Web Reader proxy/recorder Chromium suites.
+They live in `sislex/webreader/e2e` with the original cases and fixtures, recorded
+in `e2e/migration.json`; the owner's mandatory gate builds its recorder and runs
+all 688 browser cases without a Core checkout. Web Reader PR #3 passed typechecks,
+885 workspace tests, builds and the full browser suite before Core removed copies.
+Core retains the five tests that exercise Core server/WS/project-resource/browser
+orchestration across Reader boundaries. Public bridge tests are Core's responsibility.
+
+Make, Image Studio, both Readers and Identity now discover and check their own UI
+stories in their repository gates. Core's Storybook, axe shards and required-story
+matrix cover Core-owned modules only; they never glob those installed applications'
+stories. Core admin examples still use public Identity widgets and their styles.
+The original three Image Studio story re-export shims are removed. Owner story
+checks preserve the shared serious/critical axe policy and mandatory product states.
+
+This increment does not finish all extraction: transitional workspaces still
+delegate internal unit checks and builds, and the remaining ownership/distribution
+work is tracked in `docs/plans/extraction-completion.md`.
 
 ## Лимит одного теста: 60 секунд во фронтенде
 

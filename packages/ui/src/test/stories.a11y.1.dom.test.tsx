@@ -21,8 +21,7 @@ import { collectShard, describeStoryShard } from './storiesA11yShard'
  */
 const modules = import.meta.glob<Record<string, unknown>>([
   '../components/**/*.stories.tsx',
-  '../../../{image-studio-app,ui-foundation,app-shell,chat-app,projects-app,operations-app,admin-app,sessions-app,profile-app}/src/**/*.stories.tsx',
-  '../../../../node_modules/@sislexa/{make,playwright-reader,web-reader,image-studio,identity}/packages/*-app/src/**/*.stories.tsx'
+  '../../../{ui-foundation,app-shell,chat-app,projects-app,operations-app,admin-app}/src/**/*.stories.tsx'
 ], { exhaustive: true })
 
 describeStoryShard('сториз, шард 1/3', await collectShard(modules, { index: 1, total: 3 }), 40)
