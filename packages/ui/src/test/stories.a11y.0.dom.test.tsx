@@ -23,8 +23,7 @@ import storybookMain from '../../.storybook/main'
  */
 const modules = import.meta.glob<Record<string, unknown>>([
   '../components/**/*.stories.tsx',
-  '../../../{image-studio-app,ui-foundation,app-shell,chat-app,projects-app,operations-app,admin-app,sessions-app,profile-app}/src/**/*.stories.tsx',
-  '../../../../node_modules/@sislexa/{make,playwright-reader,web-reader,image-studio,identity}/packages/*-app/src/**/*.stories.tsx'
+  '../../../{ui-foundation,app-shell,chat-app,projects-app,operations-app,admin-app}/src/**/*.stories.tsx'
 ], { exhaustive: true })
 
 // Сторож: новый пакет в витрине обязан попасть и под axe. Иначе повторится
@@ -38,6 +37,12 @@ it('глоб покрывает все пакеты-приложения из .s
     Object.keys(modules).map((path) => path.match(/\/packages\/([^/]+)\/src\//)?.[1] ?? path.match(/\.\.\/\.\.\/\.\.\/([^/]+)\//)?.[1]).filter(Boolean)
   )
   expect(fromStorybook.filter((name) => !globbed.has(name))).toEqual([])
+})
+
+it('does not discover extracted application stories', () => {
+  const patterns = storybookMain.stories as string[]
+  expect(patterns.filter(pattern => /node_modules|@sislexa|(?:make|image-studio|web-reader|playwright-reader|sessions|profile)-app/.test(pattern))).toEqual([])
+  expect(Object.keys(modules).filter(path => /node_modules|(?:make|image-studio|web-reader|playwright-reader|sessions|profile)-app/.test(path))).toEqual([])
 })
 
 describeStoryShard('сториз, шард 0/3', await collectShard(modules, { index: 0, total: 3 }), 40)

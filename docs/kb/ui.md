@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-20
-checked: deb7bc26
+updated: 2026-09-22
+checked: 5d36d282
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -40,6 +40,16 @@ areas:
 ---
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
+
+## Story ownership after repository extraction
+
+Product story discovery and accessibility checks run in the Make, Image Studio,
+Web Reader, Playwright Reader and Identity repositories. Their UI workspace
+`stories.a11y.dom.test.tsx` composes all local stories with UI providers and uses
+the shared axe serious/critical policy. Core's Storybook and axe shards include
+only Core modules; no `node_modules/@sislexa` story globs or product-story shims.
+Core-owned examples may still embed public external widgets and load their styles.
+See `testing-operations.md` for browser-test transfer and remaining extraction work.
 
 ## Неблокирующий мастер первого запуска
 

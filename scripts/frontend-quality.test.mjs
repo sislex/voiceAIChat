@@ -13,7 +13,7 @@ test('frontend build gate installs standalone Desktop dependencies before build'
 test('current frontend satisfies static quality gates', () => {
   const result = runStatic()
   assert.equal(result.architecture.packages, 16)
-  assert.equal(result.stories.modules, 9)
+  assert.equal(result.stories.modules, 5)
   assert.equal(result.lazyLoading.lazyProducts, 8)
 })
 test('architecture gate rejects deep imports', () => {

@@ -35,10 +35,10 @@ test('application gates reject missing catalog edges before running checks or a 
   }
 })
 
-test('shared audit programs always select both Reader browser suites', () => {
+test('shared audit programs select Core Reader integration without owner-internal suites', () => {
   const plan = planApplicationChecks(['packages/browser-contracts/src/audit/typography.ts'])
   assert.equal(plan.full, false)
-  assert.ok(plan.e2eFiles.includes('e2e/webReaderAudit.e2e.test.ts'))
+  assert.ok(!plan.e2eFiles.includes('e2e/webReaderAudit.e2e.test.ts'))
   assert.ok(plan.e2eFiles.includes('e2e/webReaderNative.e2e.test.ts'))
   for (const id of ['browser-runner', 'web-reader', 'playwright-reader']) assert.ok(plan.applications.some(app => app.id === id))
 })

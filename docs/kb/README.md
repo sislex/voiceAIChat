@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 11 коммит(ов) в areas после сверки: d819f3ee fix(identity): preserve remote admin session activity … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 28 коммит(ов) в areas после сверки: d819f3ee fix(identity): preserve remote admin session activity … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1594 коммит(ов) в areas после сверки: 875dd6cc fix(admin): avoid repeated parsing in usage summaries … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1595 коммит(ов) в areas после сверки: 0d7ba4c8 docs: record Users startup production acceptance … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 51 коммит(ов) в areas после сверки: d819f3ee fix(identity): preserve remote admin session activity … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ⚠ 8 коммит(ов) в areas после сверки: d819f3ee fix(identity): preserve remote admin session activity … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 18 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
@@ -40,9 +40,9 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-20 | ⚠ 3 коммит(ов) в areas после сверки: 6eae0a54 feat: account for Chat execution with durable Billing and Runner receipts … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 214 коммит(ов) в areas после сверки: d819f3ee fix(identity): preserve remote admin session activity … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-21 | ⚠ 1 коммит(ов) в areas после сверки: d819f3ee fix(identity): preserve remote admin session activity |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-22 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 166 коммит(ов) в areas после сверки: d819f3ee fix(identity): preserve remote admin session activity … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ⚠ 8 коммит(ов) в areas после сверки: 875dd6cc fix(admin): avoid repeated parsing in usage summaries … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-22 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-20, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -80,9 +80,10 @@
 
 ## Журнал сессий
 
-Всего записей: 904. Последние:
+Всего записей: 905. Последние:
 
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md) — users-page-startup
+- [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-extracted-test-ownership.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-extracted-test-ownership.md) — Extracted application test ownership
 - [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-ws-bootstrap-delivery.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-ws-bootstrap-delivery.md) — ws-bootstrap-delivery
 - [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-release-317-verification.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-release-317-verification.md) — release-317-verification
 - [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-identity-admin-activity-rpc.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-identity-admin-activity-rpc.md) — identity-admin-activity-rpc
@@ -91,7 +92,6 @@
 - [2026-09-21-alexeys-macbook-air-2-local-image-studio-production.md](log/2026-09-21-alexeys-macbook-air-2-local-image-studio-production.md) — local-image-studio-production
 - [2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md](log/2026-09-20-alexeys-macbook-air-2-voice-image-extraction.md) — voice-image-extraction
 - [2026-09-20-alexeys-macbook-air-2-tenant-tariff-runtime.md](log/2026-09-20-alexeys-macbook-air-2-tenant-tariff-runtime.md) — tenant-tariff-runtime
-- [2026-09-20-alexeys-macbook-air-2-tenant-tariff-production.md](log/2026-09-20-alexeys-macbook-air-2-tenant-tariff-production.md) — tenant-tariff-production
 
 ## Исторические планы
 
