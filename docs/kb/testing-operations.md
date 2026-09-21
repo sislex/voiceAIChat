@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-21
-checked: 1b82ffaa
+checked: f69a6c41
 areas:
   - package.json
   - scripts
@@ -856,3 +856,10 @@ viewport at scale factor 2, after the workstation stopped clamping it to
 1280x774. All 96 size comparisons against the accounting branch were unchanged;
 the absolute budget file was retained. Unknown/ambiguous environments still
 fail; `artifacts/route-budgets/diff.json` identifies the selected baseline.
+
+The Electron measurement window remains visible but opens without taking focus
+and ignores native workstation mouse input. Playwright still drives its real
+renderer through CDP, parking the pointer at a neutral corner before navigation
+and after sign-in. This keeps the no-optional-intent scenario isolated from
+accidental account/settings hover preloads while retaining resource exclusions,
+viewport comparisons and all size limits.

@@ -432,13 +432,16 @@ esac
     })
     assert.equal(result.status, 0, result.stderr)
 
-    let metadata = ''
-    for (let attempt = 0; attempt < 500 && !metadata; attempt += 1) {
+    let metadata = '', applicationMetadata = ''
+    // The detached child writes the two files sequentially. Observing the first
+    // one does not mean the second has been created yet.
+    for (let attempt = 0; attempt < 500 && (!metadata || !applicationMetadata); attempt += 1) {
       await delay(20)
       try { metadata = readFileSync(marker, 'utf8') } catch {}
+      try { applicationMetadata = readFileSync(marker + '.application', 'utf8') } catch {}
     }
     assert.equal(metadata, '0.1.42|protected-release|abcdef123456')
-    assert.equal(readFileSync(marker + '.application', 'utf8'), '0.1.42|1.1.0|1.0.0|abcdef123456abcdef123456abcdef123456abcdef')
+    assert.equal(applicationMetadata, '0.1.42|1.1.0|1.0.0|abcdef123456abcdef123456abcdef123456abcdef')
     assert.match(readFileSync(log, 'utf8'), /version=0\.1\.42 .*source=protected-release/)
   } finally {
     rmSync(tempRoot, { recursive: true, force: true })

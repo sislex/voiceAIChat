@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-09-20
-checked: 7f7d21cd
+updated: 2026-09-21
+checked: f69a6c41
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -234,9 +234,48 @@ workspace source remains import-only adapters. Core's speech session handlers ow
 chat stream ordering, progress broadcasts and WS translation, not recognition or
 synthesis engines. `apps/login-application` is machine enrollment for the companion
 agent, not user registration; it remains with machine/client infrastructure.
-`apps/llm-runner` remains a separate workspace in Core and is not claimed as an
-already extracted repository by this release. Common UI primitives, chat/agents,
-projects, operations and release orchestration also remain Core responsibilities.
+`apps/llm-runner` still contains implementation in Core, and Core imports its CLI
+exports for embedded execution. Deploying an independently released runner does
+not remove these source dependencies. Common UI primitives, chat/agents, projects,
+operations and release orchestration also remain Core responsibilities.
+
+### Final removal of transitional workspaces
+
+Repository extraction is not complete while Core still needs local compatibility
+workspaces to build, run or release another application. The target is direct,
+versioned client/contract dependencies and independently built service/UI artifacts.
+Keep Core integration checks; run each application's internal checks in its owner
+repository. Remove an adapter only after its imports, workspace lists, build/gate
+configuration and release inputs have been migrated together.
+
+The current `sislexaExternal` manifests identify these removal groups:
+
+| Owner | Transitional Core directories |
+| --- | --- |
+| Make | `apps/make`, `packages/make-app`, `packages/make-contracts` |
+| Image Studio | `apps/image-studio`, `packages/image-studio-app` |
+| Playwright Reader | `apps/playwright-reader`, `packages/playwright-reader-app`, `packages/playwright-reader-contracts` |
+| Web Reader | `apps/web-reader`, `apps/web-recorder`, `packages/web-reader-app`, `packages/web-reader-contracts` |
+| Voice | `apps/stt-runner`, `apps/tts-runner`, `packages/voice-browser` |
+| Identity | `apps/identity`, `packages/identity-account`, `packages/identity-client`, `packages/identity-contracts`, `packages/identity-login`, `packages/profile-app`, `packages/sessions-app`, `packages/sessions-core`, `packages/storage-sql` |
+| Billing | `apps/billing` |
+| SDK | `packages/platform-sdk` |
+
+Identity compatibility exports under `apps/server/src/users`, `apps/server/src/db/sql`
+and `apps/server/src/db/repos/identity.ts` can also go once consumers import their
+owner directly. Preserve Core resource authorization and move its integration
+tests to the appropriate Core test locations. Removing `apps/llm-runner` additionally
+requires replacing embedded CLI imports with the independent runner interface.
+
+`packages/ui-kit` and `packages/ui-foundation` are future UI-library extraction work,
+not external adapters today. Split public library contracts from Core-private
+contracts before considering removal of `packages/shared` or
+`packages/component-runtime`. The current `vendor` archives and
+`scripts/external-workspace.mjs` remain required until their distribution and gate
+roles have replacements; deleting directories alone does not establish independence.
+The owner requested completion of these transfers and removal of application-owned
+tests from Core; track the remaining work and acceptance in
+[the extraction completion plan](../plans/extraction-completion.md).
 
 
 ## Authorized delivery roadmap and next repositories

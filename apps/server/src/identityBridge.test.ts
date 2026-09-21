@@ -1,10 +1,38 @@
 import {afterEach,expect,it} from 'vitest'
 import {VoiceChatDb} from './db/database.js'
 import {createIdentityStoreClient} from '@sislexa/identity/client/rpc'
-import {readFileSync,readdirSync} from 'node:fs'
+import {readFileSync,readdirSync,mkdtempSync,rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 const databases:VoiceChatDb[]=[]
 afterEach(async()=>{for(const db of databases.splice(0))await db.close()})
+it('serves both admin user-list queries with live activity from remote Identity',async()=>{
+ const {buildIdentityServer}=await import('@sislexa/identity/server/server')
+ const {buildServer}=await import('./server.js')
+ const {loadConfig}=await import('./config.js')
+ const {signToken}=await import('./users/accounts.js')
+ const source=new VoiceChatDb(':memory:');databases.push(source);await source.ready
+ await source.identity.createUser('admin','','admin')
+ await source.identity.createSession('admin-device','admin',{ip:'127.0.0.1',userAgent:'test',ttlMs:60000})
+ const {app:identity}=await buildIdentityServer({database:source,secret:'rpc-test',authorize:h=>h==='Bearer core-grant'?{ok:true}:{ok:false,status:401}})
+ const remote=createIdentityStoreClient({url:'http://identity.test',token:'core-grant',fetchImpl:async(input,init)=>{
+  const req=new Request(input,init)
+  const res=await identity.inject({method:'POST',url:new URL(req.url).pathname,headers:Object.fromEntries(req.headers),payload:await req.text()})
+  return new Response(res.body,{status:res.statusCode})
+ }})
+ const db=new VoiceChatDb(':memory:',{ports:{identity:()=>remote}});databases.push(db)
+ const dataDir=mkdtempSync(join(tmpdir(),'identity-admin-rpc-'))
+ let core:Awaited<ReturnType<typeof buildServer>>|undefined
+ try{
+  core=await buildServer({db,sessionSecret:'rpc-test',config:loadConfig({PORT:'0',VC_DATA_DIR:dataDir})})
+  const token=signToken({name:'admin',role:'admin'},'rpc-test','admin-device')
+  for(const query of ['limit=30','q=&role=all&state=all&sort=activity&asc=0&limit=40&offset=0']){
+   const response=await core.inject({url:'/api/admin/users?'+query,headers:{authorization:'Bearer '+token}})
+   expect(response.statusCode,response.body).toBe(200)
+   expect(response.json()).toEqual([expect.objectContaining({name:'admin',liveSessions:1,lastSeenAt:expect.any(Number)})])
+  }
+ }finally{await core?.close();await identity.close();rmSync(dataDir,{recursive:true,force:true})}
+})
 it('uses the remote identity port from both public and neighboring repository calls',async()=>{
  const calls:string[]=[]
  const remote=createIdentityStoreClient({url:'http://identity.test',token:'service-token',fetchImpl:async(_input,init)=>{const {method}=JSON.parse(String(init?.body));calls.push(method);return Response.json({result:method==='getUser'?{name:'alice',role:'admin'}:null})}})

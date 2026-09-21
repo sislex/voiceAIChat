@@ -10,10 +10,10 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 3 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-20 | ⚠ 3 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-21 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 72 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 5 коммит(ов) в areas после сверки: 92c0f7e2 Integrate Billing and stable Identity with independent component releases … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-21 | ⚠ 1 коммит(ов) в areas после сверки: 6eae0a54 feat: account for Chat execution with durable Billing and Runner receipts |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-21 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-21 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 18 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 7 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 10 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 27 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1591 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1592 коммит(ов) в areas после сверки: ce54287b docs: record verified Chat accounting and WebSocket production releases … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 50 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-20 | ⚠ 7 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 18 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
@@ -40,7 +40,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-20 | ⚠ 3 коммит(ов) в areas после сверки: 6eae0a54 feat: account for Chat execution with durable Billing and Runner receipts … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 213 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 2 коммит(ов) в areas после сверки: c1e8525b Enforce personal tenant tariffs across applications … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-21 | ⚠ 1 коммит(ов) в areas после сверки: 6eae0a54 feat: account for Chat execution with durable Billing and Runner receipts |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-21 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 165 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: 4a3f76a6 fix: preserve WebSocket commands during session initialization … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-20, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -80,10 +80,11 @@
 
 ## Журнал сессий
 
-Всего записей: 902. Последние:
+Всего записей: 903. Последние:
 
 - [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-ws-bootstrap-delivery.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-ws-bootstrap-delivery.md) — ws-bootstrap-delivery
 - [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-release-317-verification.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-release-317-verification.md) — release-317-verification
+- [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-identity-admin-activity-rpc.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-identity-admin-activity-rpc.md) — identity-admin-activity-rpc
 - [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-chat-execution-accounting.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-chat-execution-accounting.md) — chat-execution-accounting
 - [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-chat-accounting-production.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-chat-accounting-production.md) — chat-accounting-production
 - [2026-09-21-alexeys-macbook-air-2-local-image-studio-production.md](log/2026-09-21-alexeys-macbook-air-2-local-image-studio-production.md) — local-image-studio-production
@@ -91,7 +92,6 @@
 - [2026-09-20-alexeys-macbook-air-2-tenant-tariff-runtime.md](log/2026-09-20-alexeys-macbook-air-2-tenant-tariff-runtime.md) — tenant-tariff-runtime
 - [2026-09-20-alexeys-macbook-air-2-tenant-tariff-production.md](log/2026-09-20-alexeys-macbook-air-2-tenant-tariff-production.md) — tenant-tariff-production
 - [2026-09-20-alexeys-macbook-air-2-tenant-tariff-contracts.md](log/2026-09-20-alexeys-macbook-air-2-tenant-tariff-contracts.md) — tenant-tariff-contracts
-- [2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md](log/2026-09-20-alexeys-macbook-air-2-sislexa-tool-extraction.md) — sislexa-tool-extraction
 
 ## Исторические планы
 
