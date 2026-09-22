@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: 55f5a95b
+checked: ddcd07c3
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1458,3 +1458,91 @@ backup at `/var/backups/voicechat/sislexa-direct-libraries-20260922T001850Z` con
 configuration, live SQLite backups and image references. The PostgreSQL dump is
 stored in the operator's `.sislexa-backups/direct-libraries-20260922T001850Z`; its
 restore listing has 1,145 entries. This checks archive readability, not a restore.
+
+## Owner-artifact cutover 0.1.323 (2026-09-22)
+
+Core PR #227 / `971afbced99e14f1b2411ee48d70a3501882326f` removed the remaining
+application adapters, product internals/tests and embedded CLI runner. The clean
+release image is `sha256:a2c49174f9586ebc6303b58310d605672fe06dbf21f40284c781f12d5429f4d9`.
+Both canonical Core gates passed, including all 126 browser cases. Owner artifacts
+are pinned by full source SHA in `deploy/tools.lock.json`, `vendor/owner-artifacts.json`
+and the npm lockfile. Thirty-one retired source directories are absent; sixteen
+owner-manifest archives were checked for provenance, integrity and exclusion of
+internal tests/stories. UI-library archive ownership was checked separately.
+
+Installed `voicechat-deploy` completed at 04:46:08 UTC with all nine managed
+components ready. It runs Make 1.2.1, Playwright Reader 1.2.2 (including Browser
+Runner), Web Reader 1.2.1, Image Studio 1.1.2, Voice 1.1.0, Identity 1.3.1 and
+Billing 1.1.3. The separate runner host runs LLM Runner 0.3.1. Core consumes SDK
+1.1.2 and UI Kit 0.1.3/Foundation 0.1.6 directly. Owner test-only follow-ups do
+not require replacing an unchanged runtime image.
+
+The persistent controller first checked idle CI/automation/LLM execution, paused
+upstream admission and drained runners. The first runner attempt restored 0.2.1
+because an order-sensitive mount assertion rejected the same mounts in a different
+Docker order. The retry compared complete mount records sorted by destination,
+revalidated the original stopped-writer archive and preserved all six volumes.
+Runner backup details are in `sislex/llm-runner/docs/operations.md` (PR #11).
+Temporary cross-host deployment credentials were verified removed afterwards.
+
+Core's private backup is
+`/var/backups/voicechat/sislexa-owner-artifacts-20260922T031600Z`; the PostgreSQL
+archive is in the operator's `.sislexa-backups/owner-artifacts-20260922T031600Z`.
+This archive was actually restored into an isolated local PostgreSQL database:
+8 users, 987 conversations, 7 projects and 4,167 CI runs matched the snapshot.
+The temporary restore database was deleted. Provider registries and local ledgers
+have consistent SQLite backups; previous images and Compose inputs are retained.
+
+Production checks confirmed provider-specific grants, scope/revocation enforcement,
+user/service credential separation and frontend SRI. Real Codex returned the same
+expected marker before and after the runner upgrade. Piper produced a 128,276-byte
+WAV and Whisper large-v3-turbo completed Russian transcription. The independent
+account loaded access/history/machines and fit 390px without JavaScript errors.
+Claude login was already expired before deployment and still needs interactive
+login; CLI availability is not authenticated provider acceptance.
+
+The first post-deploy login/service probes timed out while account usage reporting
+held Core's shared database lane for roughly 26 seconds. A later Users navigation
+took 2,808 ms and all nine sampled Users/signup requests returned 200 in 136–197 ms,
+but that repeat did not close acceptance: Make could still return 503 behind the
+account report. Core PR #228 / 0.1.324 addresses the remaining account-query cause;
+its rollout and final tool acceptance must be recorded before closing the plan.
+
+## Core 0.1.324 final extraction acceptance (2026-09-22)
+
+PR #228 / `ddcd07c389196bc2b31b92867e58336b9f76e512` materializes account/period
+message metadata before account usage joins. No schema or persisted-data change
+was required. Both canonical gates exited 0 (2,345 server tests passed, 42 skipped)
+and all three report regressions also passed on PostgreSQL. The clean image is
+`sha256:465f1e34a1f7ab191ebaeea4cc0554af0270d2848260e54cd2ce7a6910127dd9`.
+Installed voicechat-deploy completed at 05:05:58 UTC; the persistent controller
+exited 0 and restored admission. Only Core was replaced; all 26 other running
+container IDs and image IDs were preserved.
+
+The first final Users browser run loaded rows in 1,805 ms with no JavaScript
+errors. All nine sampled Users/signup requests returned 200 in 64–101 ms. Parallel
+account usage/profile/Users samples returned 200 in 69–172 ms. Authenticated
+component smoke passed all metadata, readiness, provider grant, scope/revocation,
+frontend-integrity and tool-to-Core RPC checks. Browser checks passed Make file
+write/preview, Image Studio, Web Reader iframe and actual Chromium navigation/frame.
+Studio upload/read/delete preserved the exact bytes. Standalone Account loaded
+its tabs and fit 390px without JavaScript errors. A real Codex completion through
+0.1.324 again returned the expected marker. Voice service images are unchanged
+from the successful 0.1.323 synthesis/transcription check above.
+
+The temporary administrator/sessions were revoked and deleted after acceptance,
+and its isolated profiles were removed from both runners. Test conversations were
+deleted through their API. Production credentials were not copied into source or
+published artifacts. Existing Claude login expiry remains the limitation described
+above; no successful Claude completion is claimed.
+
+The active operator Compose chain in `/etc/voicechat/production.env` now includes
+`/etc/voicechat/prebuilt-0.1.324.yml`. Its effective configuration has fifteen pinned
+application images and zero build targets, so a standard installed deploy reuses
+the accepted artifacts. Replace this active overlay when preparing a later release;
+leaving an older overlay last would override new image inputs. The previous operator
+environment, full effective Compose definition, container inventory, rollback
+0.1.323 overlay and deployment result are in
+`/var/backups/voicechat/sislexa-account-usage-324-20260922T050437Z`.
+It references the actually restored 0.1.323 data backup. Rollback to Core 0.1.323
+retains the same owner images and data format; it also reintroduces the slow report.

@@ -1,7 +1,7 @@
 # Complete the started repository extractions
 
 Updated: 2026-09-22.
-Status: implementation and final Core/owner gates complete; 0.1.323 rollout and production acceptance pending.
+Status: complete; owner cutover 0.1.323 and follow-up 0.1.324 accepted in production.
 
 The owner explicitly requested completion of every started extraction, including
 removal of extracted applications' tests from Core. Delivery remains autonomous:
@@ -44,9 +44,9 @@ isolated worktrees, reviewable PRs, merges, releases and production checks.
   update Core's application catalog, gate selection, Docker/dev scripts and docs.
 - [x] Audit the supplied UI repository and existing UI-library extraction work;
   finish any started transfer of UI Kit/Foundation and their tests there.
-- [ ] Verify clean independent installs and configurable local launches; run owner
+- [x] Verify clean independent installs and configurable local launches; run owner
   gates and Core integration gates, release and deploy each coherent increment.
-- [ ] Perform a final tracked-file/import/test-discovery audit, then mark each
+- [x] Perform a final tracked-file/import/test-discovery audit, then mark each
   component complete with its PR, release and production evidence.
 
 ## Scope boundaries
@@ -232,3 +232,30 @@ its owner gate, PR checks and main checks pass. The source/lock audit confirms
 31 extracted directories are absent, and all 16 owner-manifest archives match
 published SHA/integrity without internal tests or stories. Production acceptance
 must still be recorded before closing the last two checklist items.
+
+
+## Final acceptance (2026-09-22)
+
+Core PR #227 / 0.1.323 completed source, adapter and internal-test removal and
+rolled out all owner artifacts. Core PR #228 / 0.1.324 resolved the account usage
+query that final acceptance exposed. Both releases used installed voicechat-deploy;
+all nine components are ready. See `docs/kb/deploy.md` for exact SHAs, image IDs,
+backups, failure/recovery evidence and production timings.
+
+Final browser/API acceptance covers Users/signup, standalone Account at 390px,
+Make file write/preview, Image Studio upload/read/delete, Web Reader's iframe,
+Playwright Reader's real Chromium frame, provider-specific RPC grants/revocation,
+frontend SRI and parallel account/report requests. Real Codex and STT/TTS completed.
+The diagnostic account/sessions and its runner profiles were removed. Core retains
+host integration checks; product-only suites run in their repositories.
+
+Owner releases: Make 1.2.1, Playwright Reader 1.2.2, Web Reader 1.2.1, Image Studio
+1.1.2, Voice 1.1.0, Identity 1.3.1, Billing 1.1.3, LLM Runner 0.3.1, SDK 1.1.2,
+and UI release 1.0.3 (Kit 0.1.3/Foundation 0.1.6). Exact release provenance lives
+in the lock/manifests rather than floating branch refs. Final test-only follow-ups
+include Reader #10, UI #6 and Identity #16; Runner operations acceptance is PR #11.
+
+Existing Claude authentication expiry remains an interactive-login requirement.
+This is not an unfinished extraction. Future product services and Release Center
+registry/baseline onboarding retain their separately documented scope; this plan
+was accepted through the expressly authorized server-side deployment path.
