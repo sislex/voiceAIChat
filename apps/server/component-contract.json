@@ -113,13 +113,25 @@
     },
     {
       "applicationId": "billing",
-      "minVersion": "1.1.0",
+      "minVersion": "1.2.0",
       "maxVersionExclusive": "2.0.0",
       "minApiVersion": "1.1.0",
       "maxApiVersionExclusive": "2.0.0",
       "scopes": [
         "billing.reserve",
         "billing.execute"
+      ],
+      "optional": true
+    },
+    {
+      "applicationId": "analytics",
+      "minVersion": "1.2.0",
+      "maxVersionExclusive": "2.0.0",
+      "minApiVersion": "1.0.0",
+      "maxApiVersionExclusive": "2.0.0",
+      "scopes": [
+        "analytics.activity",
+        "analytics.report"
       ],
       "optional": true
     }

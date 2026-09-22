@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-22
-checked: 971afbce
+checked: 7c448620
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -102,8 +102,11 @@ limits reject unbounded execution, and active unbounded work prevents switching
 to a finite monetary policy. Estimates use captured integer micro-USD rates per
 million tokens; Billing recomputes the amount and rejects changed replay evidence.
 
-With managed Billing configured, Core wraps Chat-capability model turns in
-`billing/chatAccounting.ts`. The authenticated WebSocket supplies stable subject,
+With managed Billing configured, Core wraps every model turn in
+`billing/chatAccounting.ts`. The stored conversation kind selects the immutable
+origin module (`chat`, `make`, `image-studio`, `web-reader`,
+`playwright-reader`, `projects`, or `machines`); a client cannot override it.
+The authenticated WebSocket supplies stable subject,
 tenant and original session reference; the browser message cannot set them. The
 login-based CLI profile key remains unchanged. Queue payloads persist only the
 session reference. Credentials stay in memory and are rechecked by Identity at
@@ -122,8 +125,12 @@ unknown-price or incomplete-usage work retains its hold. Codex usage is the
 per-turn delta from the runner's authoritative pre-spawn cumulative baseline, with
 cached input separated once. Settlements remain deliverable after user logout.
 Back up the outbox together with Core data, Billing's ledger and runner receipts.
-This increment does not add account analytics, real payments, or accounting for
-Make/Image/background paths that bypass Chat-capability turns.
+Billing 1.2.0 exposes finalized personal usage reports derived from durable
+settlements. Analytics 1.2.0 owns active-time intervals and combines those reports
+with deduplicated module activity. Core forwards `/api/analytics/account` and
+`/api/analytics/activity` with the verified user credential and fails closed when
+Analytics is absent. Analytics outages never bypass accounting or authorize work.
+Real payment collection remains outside this increment.
 
 The current external runner request contract and CLI adapters do not carry an
 enforceable monetary allocation. Its `LlmRequest.userId` selects an existing CLI

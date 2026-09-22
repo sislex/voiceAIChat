@@ -1077,6 +1077,15 @@ without replacing existing registries or session secrets. Published component
 versions alone do not prove that production has been upgraded; the production
 verification sections record the actual deployment baseline.
 
+Analytics 1.2.0 is a separate service on port 8801. Append
+`deploy/compose.analytics.yml` after Identity and Billing. Its installation grants
+Core `analytics.activity` and `analytics.report`, consumes `identity.verify`, and
+consumes `billing.report`; every grant uses a distinct provider-owned token.
+`vc-analytics-data` stores replay keys and activity intervals and must be included
+in retention-aware backups. The default image is pinned to the owner commit, and
+Core's managed dependency requires Analytics 1.2.x so the browser transport and
+server routes share the same owner contract.
+
 The canonical deploy script supplies the full source SHA, release version and
 release-owned API/data versions to the Core Docker build. Bare Node development
 must likewise provide truthful `VC_APPLICATION_VERSION`,
