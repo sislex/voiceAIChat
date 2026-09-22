@@ -1,0 +1,24 @@
+# Append after Identity and Billing; both providers must grant this installation.
+services:
+  analytics:
+    image: ${SISLEXA_ANALYTICS_IMAGE:-ghcr.io/sislex/analytics:7ff6fb8b02f629938e4430683e7c505f423a6de5}
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8801"
+      ANALYTICS_DATA_DIR: /data
+      SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
+    volumes:
+      - vc-analytics-data:/data
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/analytics/config.json:/run/sislexa/config.json:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/analytics/outgoing:/run/sislexa/outgoing:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/analytics/provider:/run/sislexa/provider
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8801/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    mem_limit: 256m
+    cpus: "0.5"
+volumes:
+  vc-analytics-data:

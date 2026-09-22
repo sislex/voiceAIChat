@@ -8,11 +8,23 @@ import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
 import { signToken } from "@sislexa/identity/server/users/accounts"
-import { commandAccessError, TARIFF_DENIED } from './accountAccess.js'
+import { billingOriginForConversation, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { createTurnManager } from './turns.js'
 
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
+
+it.each([
+  [{ assistantKind: null, scope: 'chat' }, 'chat'],
+  [{ assistantKind: 'make', scope: 'make' }, 'make'],
+  [{ assistantKind: 'images', scope: 'images' }, 'image-studio'],
+  [{ assistantKind: 'web-recorder', scope: 'web-reader' }, 'web-reader'],
+  [{ assistantKind: 'playwright-reader', scope: 'playwright-reader' }, 'playwright-reader'],
+  [{ assistantKind: 'console-reader', scope: 'console' }, 'machines'],
+  [{ assistantKind: null, scope: 'kanban' }, 'projects']
+] as const)('maps the stored conversation %j to Billing origin %s', (conversation, expected) => {
+  expect(billingOriginForConversation(conversation)).toBe(expected)
+})
 async function fixture() {
   const db = new VoiceChatDb(':memory:'); cleanup.push(() => db.close())
   await db.identity.createUser('alice', '', 'developer')

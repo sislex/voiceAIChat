@@ -88,6 +88,11 @@
       "applicationId": "billing",
       "url": "http://billing:8800",
       "tokenFile": "/run/sislexa/outgoing/billing.token"
+    },
+    {
+      "applicationId": "analytics",
+      "url": "http://analytics:8801",
+      "tokenFile": "/run/sislexa/outgoing/analytics.token"
     }
   ]
 }

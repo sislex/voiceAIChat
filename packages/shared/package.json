@@ -20,10 +20,10 @@
     "@voicechat/make-contracts": "file:../../vendor/voicechat-make-contracts-1.3.0-e4c5676feeae.tgz",
     "@voicechat/playwright-reader-contracts": "file:../../vendor/voicechat-playwright-reader-contracts-1.2.0-6cd0c54f0f7c.tgz",
     "@voicechat/browser-contracts": "file:../../vendor/voicechat-browser-contracts-1.1.0-6cd0c54f0f7c.tgz",
-    "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.1.2-4bb9b6785b3d.tgz",
+    "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.2.0-b7688964e67c.tgz",
     "@voicechat/web-reader-contracts": "file:../../vendor/voicechat-web-reader-contracts-1.3.0-295807f94d7c.tgz",
     "@voicechat/image-studio-contracts": "file:../../vendor/voicechat-image-studio-contracts-1.0.0-c7a49a428d85.tgz",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.3.1-a8208800181d.tgz",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.3.2-a64928e585c7.tgz",
     "@sislexa/voice": "file:../../vendor/sislexa-voice-1.1.0-7e51e57ebf3b.tgz",
     "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.0.0-5503ff1c0d12.tgz"
   }

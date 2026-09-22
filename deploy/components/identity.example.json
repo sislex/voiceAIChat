@@ -19,6 +19,13 @@
         "identity.verify"
       ],
       "maxTtlSeconds": 2592000
+    },
+    {
+      "consumerId": "analytics",
+      "scopes": [
+        "identity.verify"
+      ],
+      "maxTtlSeconds": 2592000
     }
   ],
   "legacyScopes": [],
