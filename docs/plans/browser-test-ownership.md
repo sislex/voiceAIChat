@@ -36,9 +36,10 @@ owner source or run these detailed scenarios.
 
 ## Validation
 
-Full local Core gate: **321.24 seconds (5m21s)**. Stage timings: typecheck 6.14s,
-workspace/tooling tests 187.75s, panel verification 0.93s, Core UI verification
-0.68s, functional browser integration 125.61s. All 41 functional browser cases
+Two complete local Core gates passed in **321.24s (5m21s)** and **258.12s (4m18s)**.
+Latest stage timings: typecheck 4.71s, workspace/tooling tests 145.08s, panel
+verification 1.21s, Core UI verification 1.15s, functional browser integration
+105.84s. All 41 functional browser cases
 passed; two existing optional resource cases remain skipped. Core server tests:
 2302 passed, 42 existing opt-in skips. The preceding complete run with performance
 included passed in 431.02s; its unchanged Web/Desktop budget stage took 167.97s.
@@ -56,3 +57,10 @@ prove a performance/system failure blocks readiness and cleans the worktree.
 Cold fixture checkout/install/build costs belong to system/release acceptance,
 not the normal Core development gate. `artifacts/gate-timings/system.json` records
 the exact Core and owner commits for the separate installed-artifact matrix.
+
+The first installed-artifact matrix exposed an existing Web Reader queue-test race:
+queue depth was mistaken for proof that evaluation had started. The owner now
+uses an explicit HTTP execution latch, stops panel frame polling for this API
+assertion, and confirms active evaluation completed successfully. All 30 Web
+Reader cases passed against Core's installed packages after the fixture correction.
+No product queue behavior or deadline was changed.

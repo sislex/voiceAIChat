@@ -44,8 +44,8 @@ against the exact dependency artifacts in its own lockfile; `gate:release` runs 
 Caches store installed fixtures, not successful-test results. No sibling checkout
 or production service is required. See `docs/plans/browser-test-ownership.md`.
 
-After the ownership split, a complete local Core gate passed in 321.24 seconds
-(5m21s): 2302 server tests and 41 functional browser cases passed, with existing
+After the ownership split, complete local Core gates passed in 321.24s and 258.12s
+(latest: 4m18s): 2302 server tests and 41 functional browser cases passed, with existing
 opt-in skips preserved. The separately verified Web/Desktop budgets took 167.97s.
 All 67 moved assertions passed in their owners. These workstation timings vary
 with load; no cached success or weakened threshold is used.
