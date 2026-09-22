@@ -34,6 +34,8 @@ export interface ServerConfig {
   desktopAppPath?: string
   /** Отдельный macOS ARM64 DMG приложения безопасного подключения машины. */
   loginApplicationPath?: string
+  /** Owner-built panel directories explicitly selected by deployment configuration. */
+  applicationFrontends?: Record<string, string>
   /** Published Core UI directory served by the API process when VC_WEB_DIR is set. */
   webDir?: string
   /** Каталог standalone Web Recorder, раздаваемый под /web-recorder/. */

@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-09-11
-checked: ec5657cf
+updated: 2026-09-22
+checked: 412b40ee
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -241,11 +241,12 @@ npm run typecheck 2>&1 | grep -E "error TS" | head -3; echo "typecheck ok"
 влияло: ошибка была в тестовом файле, а раннер запускается через `tsx`, который
 не типизирует. Но дыра пропустила бы и настоящую ошибку.
 
-Правильно — **`npm run gate`**: планировщик определяет приложения по диффу ветки,
-запускает их проверки и останавливается при ненулевом коде. `gate:fast` использует
-дифф рабочего дерева от HEAD. `gate:app -- make` явно проверяет Make целиком;
-`gate:all` запускает полный typecheck/test и сборки web/витрины. `verify` дополнительно
-проверяет клиентские дистрибутивы и нужен для общего релиза.
+Use `npm run gate` before PR: it selects complete application suites from the
+branch diff and stops on failure. `gate:fast` uses the working-tree diff;
+`gate:app -- core` selects an explicit Core-owned application. External owners
+run their internal gates in their own repositories. `gate:all` performs full
+Core typecheck/tests, artifact verification, serial route budgets and every
+retained browser integration suite exactly once. It builds no extracted UI source.
 
 Владельцы путей, зависимости сборки, runtime и контрактные наборы раздельно заданы
 в `packages/shared/src/applicationCatalog.ts`. Внутренние изменения отделённого
@@ -264,10 +265,15 @@ entry point remains in the repository.
 embedded-композиции и сравнительных тестов. Сохранённые пользовательские команды
 не переписываются.
 
-E2E приложения запускаются по его каталогу. Для самостоятельных UI-панелей
-`applicationFrontend.e2e.test.ts` использует fixture host и выбирает только их id;
-web-оболочка не пересобирается. Backend E2E использует собранный интеграционный
-web-стенд. Публичный контракт добавляет typecheck потребителя и адресные тесты;
-пустой контрактный набор отклоняется. Полный fallback сохраняет каталоговые E2E
-после широких typecheck/test/build. Самостоятельный Docker backend не включает
-исходники и сборку этого тестового web-стенда.
+Core E2E runs against pinned owner-built UI assets. Product fixture-host/internal
+UI tests belong to the UI owner. Known E2E edits select the full named suite;
+performance budgets retain real Web/Desktop measurement. Reviewed standalone
+tooling selects the full root tooling suite; unknown/gate/build/deploy changes
+remain full checks. Contract consumers typecheck once and retain the union of
+all declared contract tests. Empty or missing contract suites fail before execution.
+
+Only reviewed functional browser suites run in up to two isolated workers.
+Performance/resource measurements, native Electron input and unknown future suites
+stay serial. `VC_E2E_WORKERS=1` forces serial execution. `gate:audit` records 20
+representative plans; `gate:audit -- --run <id>` measures the actual commands.
+This benchmark does not replace the mandatory real-diff gate.

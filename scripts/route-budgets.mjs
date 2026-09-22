@@ -13,6 +13,15 @@ const positive = value => Number.isSafeInteger(value) && value > 0
 export function completedResource(request) {
   return request.finished === true && (request.status === 200 || request.status === 304 || (request.status === 0 && request.url.startsWith('file:')))
 }
+export function externalStylesheet(client, url, body, measureSize = sizes) {
+  const sha256 = createHash('sha256').update(body).digest('hex')
+  const address = createHash('sha256').update(url).digest('hex')
+  // A mutable CDN URL can serve several real versions in one run. Preserve
+  // each observation instead of overwriting the bytes used by earlier routes.
+  return { id: `${client}/external/${address}-${sha256}.css`, resource: {
+    type: 'css', sha256, ...measureSize(body), imports: [], dynamicImports: [], source: new URL(url).origin
+  } }
+}
 export function inventory(directory, measureSize = sizes) {
   const root = resolve(directory), resources = {}
   const walk = path => {
