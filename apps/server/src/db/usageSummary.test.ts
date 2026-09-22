@@ -57,3 +57,30 @@ it('keeps database price estimates and omits usage without a current account', a
   expect(summary[0].totals.costIncomplete).toBe(false)
   expect(summary[0].totals).toEqual((await db.chat.usageReport('alice', 'day')).totals)
 })
+
+it('isolates account reports by owner and period while retaining other conversation choices', async () => {
+  let now = 100
+  const db = new VoiceChatDb(':memory:', { now: () => now })
+  databases.push(db)
+  for (const name of ['alice', 'bob', 'empty']) await db.identity.createUser(name, '', 'developer')
+  const first = await db.chat.createConversation('alice', 'First')
+  const second = await db.chat.createConversation('alice', 'Second')
+  const foreign = await db.chat.createConversation('bob', 'Foreign')
+  await db.chat.addMessage('alice', first.id, 'ai', 'first', '', 'claude', { model: 'reported', inputTokens: 10, outputTokens: 2, costUsd: 0.1 })
+  now = 200
+  await db.chat.addMessage('alice', second.id, 'ai', 'second', '', 'claude', { model: 'unpriced', inputTokens: 20, outputTokens: 3, interrupted: true })
+  await db.chat.addMessage('bob', foreign.id, 'ai', 'foreign', '', 'claude', { model: 'reported', inputTokens: 999, costUsd: 99 })
+  now = 300
+  await db.chat.addMessage('alice', first.id, 'ai', 'outside', '', 'claude', { model: 'reported', inputTokens: 999, costUsd: 99 })
+  const report = await db.chat.usageReport('alice', 'day', 100, 200, first.id)
+  expect(report.totals).toMatchObject({ messages: 1, inputTokens: 10, outputTokens: 2, costUsd: 0.1, costIncomplete: false })
+  expect(report.byModel).toHaveLength(1)
+  expect(report.byBucket).toHaveLength(1)
+  expect(report.byConversation.map(row => row.conversationId).sort()).toEqual([first.id, second.id].sort())
+  expect(report.byConversation.find(row => row.conversationId === second.id)).toMatchObject({ messages: 1, inputTokens: 20, interrupted: 1, costIncomplete: true })
+  const empty = await db.chat.usageReport('empty', 'day', 100, 200)
+  expect(empty.totals).toMatchObject({ messages: 0, inputTokens: 0, costUsd: 0, costIncomplete: false })
+  expect(empty.byModel).toEqual([])
+  expect(empty.byConversation).toEqual([])
+  expect((await db.chat.usageReport('alice', 'day', 100, 200, foreign.id)).totals.messages).toBe(0)
+})
