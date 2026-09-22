@@ -34,6 +34,23 @@ requests. API/authentication, application panels, Recorder and WebSocket routes
 retain their current ownership. A failed install or incompatible candidate leaves
 the active release unchanged. The bundled UI can be selected explicitly.
 
+## Release Center integration
+
+The project Release Center treats the browser UI as its own artifact kind. It
+reads only published releases from `sislexa-core-ui`, resolves the exact tag
+commit through the GitHub API, and selects the deterministic archive name. The
+browser cannot supply a download URL, commit or host command. Core downloads the
+private release asset with its server credential and transfers the bytes to the
+configured production machine without exposing that credential.
+
+An install extracts into disposable storage, runs the existing verifier and
+atomic activation command, and compares the Core container identity and start
+time before and after the switch. Rollback and bundled fallback use the same
+lock and evidence check. Every request has a project-scoped idempotency key and
+a durable operation record containing the actor, requested version, resolved
+release ID, result and bounded log. The live activation file remains the source
+of runtime truth; the database is an audit trail, not a second selector.
+
 ## Verification
 
 Tests must cover compatibility rejection, corruption, traversal/link rejection,

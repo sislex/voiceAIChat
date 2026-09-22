@@ -3,7 +3,8 @@ import {
   APPLICATION_CATALOG,
   type ApplicationReleaseInput,
   type ApplicationEnvironmentName,
-  type ApplicationDeployInput
+  type ApplicationDeployInput,
+  type BrowserUiReleaseActionInput
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from "@sislexa/identity/server/users/auth"
@@ -18,6 +19,7 @@ import {
   releaseCiTarget,
   releaseApplicationTarget
 } from '../releases/targets.js'
+import type { BrowserUiReleaseManager } from '../releases/browserUiReleaseManager.js'
 type Params = { id: string; environment: ApplicationEnvironmentName }
 function environment(value: unknown): ApplicationEnvironmentName {
   if (value !== 'staging' && value !== 'production')
@@ -28,6 +30,7 @@ export function registerApplicationReleaseRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
   manager: ApplicationReleaseManager,
+  browserUi: BrowserUiReleaseManager,
   legacy: ReleaseManager,
   managed: ManagedEnvironmentResolver
 ): void {
@@ -171,6 +174,16 @@ export function registerApplicationReleaseRoutes(
       }
     }
   )
+  app.get<{ Params: { id: string } }>(base + '/browser-ui', guard, async (req, reply) => {
+    try {
+      return await browserUi.overview(uid(req), req.params.id, await target(uid(req), req.params.id, 'production'))
+    } catch (error) { return failure(reply, error) }
+  })
+  app.post<{ Params: { id: string }; Body: BrowserUiReleaseActionInput }>(base + '/browser-ui/actions', guard, async (req, reply) => {
+    try {
+      return reply.code(202).send(await browserUi.act(uid(req), req.params.id, await target(uid(req), req.params.id, 'production'), req.body))
+    } catch (error) { return failure(reply, error) }
+  })
   // Не держим запуск сервера на таймауте offline-машины. Оборванный deploy
   // остаётся заблокированным до подтверждённой сверки или следующей попытки.
   void manager
