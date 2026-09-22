@@ -56,7 +56,8 @@ npm run test                 # все воркспейсы (vitest run)
 npm run gate:fast            # гейт шага: приложения по диффу от HEAD
 npm run gate                 # приложения по диффу ветки перед коммитом/PR
 npm run gate:app -- core     # full gate for a Core-owned application
-npm run gate:all             # full Core gate, including all retained browser integration
+npm run gate:all             # Core checks and short consumer integration
+npm run gate:release         # Core, Web/Desktop performance, owner system scenarios
 npm run gate:audit           # inspect 20 representative change plans; -- --run <id> measures one
 npm run test:coverage        # покрытие shared/server с порогами-трещоткой
 npm run docker               # docker compose up --build -d → http://localhost:8787
@@ -96,11 +97,10 @@ Web/Desktop measurements, and reviewed standalone tooling runs `test:tooling`.
 Mixed diffs preserve all selected application suites; unknown paths still use the
 full gate. Functional browser suites use at most two isolated workers; performance
 and native Electron suites remain serial. `VC_E2E_WORKERS=1` forces serial execution.
-`gate:all` includes every retained browser suite; the affected gate never repeats
+`gate:all` includes Core functional browser suites; performance runs in `gate:performance` before release; the affected gate never repeats
 those suites after a successful full fallback.
 
-`npm run gate:app -- make` — явный полный гейт приложения, в том числе его
-контрактные и браузерные проверки. `npm run gate:all` — общий гейт; он включается
+Run product gates in their owner repositories. `npm run gate:app -- core` checks Core. `npm run gate:all` — общий гейт; он включается
 автоматически при неизвестном влиянии root/config/lock diff. `npm run affected-check`
 оставлен как совместимое имя нового планировщика для сохранённых CI-команд.
 Не заменяй изолированный гейт всех тестов приложения на `vitest related`.
@@ -199,3 +199,8 @@ those suites after a successful full fallback.
 В CI-ране это же делает шаг **«Актуализировать базу знаний»** (слот «после
 модели», перед коммитом): он приносит правки `docs/kb/*` и статьи раздела проекта
 по дифу ветки. Шаг — страховка, а не замена: работаешь руками — заноси сам.
+
+Detailed Reader and shell layout regressions live in owner `system-tests/` directories.
+Core `gate:system` executes their pinned release matrix separately; `gate:all` keeps
+Core functional integration. Web/Desktop performance budgets run before release
+through `gate:performance`, and directly when their measurements/budgets change. See `docs/plans/browser-test-ownership.md`.

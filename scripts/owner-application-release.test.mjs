@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { ownerReleasePlan, ownerSourceRelease, prepareOwnerRelease } from './owner-application-release.mjs'
+import { ownerReleasePlan, ownerSourceRelease, prepareOwnerRelease, ownerGateCommand } from './owner-application-release.mjs'
 const input = { applicationId: 'make', version: '1.1.5', baseBranch: 'main', image: 'registry.test/make', requires: [{ applicationId: 'core', minVersion: '1.0.0', maxVersionExclusive: '2.0.0', minApiVersion: '1.0.0', maxApiVersionExclusive: '2.0.0' }] }
 test('owner plan chooses a catalog repository, never a caller supplied URL or Core source', () => {
   const plan = ownerReleasePlan({ ...input, repository: 'https://attacker.test/source' })
@@ -40,4 +40,10 @@ test('missing owner compatibility evidence stops before gate, publication or rel
   } }), /requires compatibility/)
   assert.equal(calls.some(([command]) => command === 'npm' || command === 'docker'), false)
   assert.equal(calls.some(([, action]) => action === 'push'), false)
+})
+
+test('owner releases include registered system regressions', () => {
+  assert.equal(ownerGateCommand({ scripts: { gate: 'unit', 'gate:release': 'unit && system' } }), 'gate:release')
+  assert.equal(ownerGateCommand({ scripts: { gate: 'unit' } }), 'gate')
+  assert.throws(() => ownerGateCommand({ scripts: { 'gate:release': 'system' } }), /full gate/)
 })

@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-09-20
-checked: 48ab7ed2
+updated: 2026-09-22
+checked: 9b707a9a
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -89,7 +89,7 @@ cookie доступа к прокси через `apps/playwright-reader/src/ses
 
 Живые регрессии раннера — `apps/browser-runner/src/sessionNavigation.test.ts`;
 полная цепочка интерфейс → REST → Chromium и MCP → тот же Chromium —
-`e2e/playwrightReader.e2e.test.ts`. E2E поднимает отдельный стенд с временной БД,
+`sislex/playwrightreader:system-tests/playwrightReader.e2e.test.ts`. E2E поднимает отдельный стенд с временной БД,
 входит локальной тестовой учёткой и открывает chat/Make/Images. Журнал 20 циклов,
 пункты и измеренные интервалы — `docs/plans/playwright-reader-20-cycles.md` и
 соседний JSON; каждый цикл закрывается только после собственного полного гейта.
@@ -161,7 +161,7 @@ REST start устанавливает cookie ключа preview; navigate пре
 Reader сохраняет профиль между открытиями панели; stop завершает процесс, а очистка данных выполняется явно. Одноразовые QA-профили удаляются, как и прежде.
 Переключение движка не переносит cookie между прокси и Chromium.
 
-`e2e/webReaderNative.e2e.test.ts` проверяет настоящий App + API + раннер + MCP,
+`sislex/webreader:system-tests/webReaderNative.e2e.test.ts` проверяет настоящий App + API + раннер + MCP,
 включая сайт с frame-ancestors none. 10 сентября проверены реальные страницы входа
 Gmail и Instagram: навигация, чтение модельным selector-действием и снимки; вход
 в аккаунты не выполнялся. Instagram потребовал дождаться JavaScript после заставки.
@@ -307,7 +307,7 @@ UI показывает ручной режим, отменяет очередь
 не должно сдвигать кадр между событиями двойного клика. После отправки адреса
 фокус переходит кадру; последующие переходы модели снова обновляют адресную строку.
 
-В `e2e/webReaderNative.e2e.test.ts` сессия стенда создаётся через настоящий
+В `sislex/webreader:system-tests/webReaderNative.e2e.test.ts` сессия стенда создаётся через настоящий
 `POST /api/session/cookie` в контексте Playwright. Нельзя восстанавливать
 legacy-токен initScript-ом на каждом reload: приложение удаляет его после
 миграции, а повторное восстановление запускает новую ротацию CSRF параллельно
@@ -562,7 +562,7 @@ keydown игнорируются; полноценный цикл composition э
 
 Регрессии: `sessionInput.test.ts`, `inputActions.test.ts`, `BrowserInput.dom.test.tsx`,
 `browserInput.test.ts`, `pointerRecording.test.ts`, `remote/browserBridge.test.ts` и
-полная цепочка в `e2e/playwrightReader.e2e.test.ts`. Все сайты/письма там искусственные.
+полная цепочка в `sislex/playwrightreader:system-tests/playwrightReader.e2e.test.ts`. Все сайты/письма там искусственные.
 
 Состояние сессии показывается словами (`STATE_LABELS`): раньше в шапке висело
 сырое `ready`. Во время команды поверх кадра появляется отметка «Выполняется…» —
@@ -887,7 +887,7 @@ stop в локальном Chromium заняла975мс. Это ограниче
 
 Проверки: живой `sessionTabs.test.ts`, MCP и `module.test.ts`, три сочетания
 embedded/remote в `playwrightReaderBridge/remote.integration.test.ts`, сквозной
-сценарий вкладок/перезагрузки/popup/восстановления панели в `e2e/playwrightReader.e2e.test.ts`.
+сценарий вкладок/перезагрузки/popup/восстановления панели в `sislex/playwrightreader:system-tests/playwrightReader.e2e.test.ts`.
 
 ### Снимок экрана: единственный инструмент со своим транспортом
 

@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
 updated: 2026-09-22
-checked: 412b40ee
+checked: 9b707a9a
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -245,8 +245,9 @@ Use `npm run gate` before PR: it selects complete application suites from the
 branch diff and stops on failure. `gate:fast` uses the working-tree diff;
 `gate:app -- core` selects an explicit Core-owned application. External owners
 run their internal gates in their own repositories. `gate:all` performs full
-Core typecheck/tests, artifact verification, serial route budgets and every
-retained browser integration suite exactly once. It builds no extracted UI source.
+Core typecheck/tests, artifact verification and retained functional consumer
+integration exactly once. Route budgets run separately in `gate:performance`;
+`gate:release` requires Core, performance and owner-maintained system acceptance. It builds no extracted UI source.
 
 Владельцы путей, зависимости сборки, runtime и контрактные наборы раздельно заданы
 в `packages/shared/src/applicationCatalog.ts`. Внутренние изменения отделённого

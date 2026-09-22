@@ -84,6 +84,32 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect((await db.releases.getProjectRelease('owner',projectId,release.id))?.status).toBe('ready')
   })
 
+  it.each([
+    { testCommand: 'npm run gate:all', failingStage: 'system' },
+    { testCommand: 'npm run gate:all', failingStage: 'performance' },
+    { testCommand: 'npm run gate:release', failingStage: 'system' }
+  ])('enforces $failingStage acceptance after $testCommand without duplication', async ({ testCommand, failingStage }) => {
+    const commands: string[] = []
+    const runtime: ReleaseRuntime = {
+      isOnline: () => true, prepareKnowledgeBase: async () => {},
+      exec: async (_target, command) => {
+        commands.push(command)
+        if (command.includes('ls-remote')) return { exitCode: 0, output: commands.some(x => x.includes('git branch')) ? 'prepared-sha\trefs/heads/release/1.2.3\n' : '' }
+        if (command.includes('git branch')) return { exitCode: 0, output: 'prepared-sha\n' }
+        if (command.includes(`(npm run gate:${failingStage} --if-present)`)) return { exitCode: 1, output: 'release acceptance failed' }
+        return { exitCode: 0, output: 'ok' }
+      }
+    }
+    const target = { ...ci(), testCommand }
+    const release = await new ReleaseManager(db, runtime).createBranch('owner', target, 'release/1.2.3', 'main')
+    await settled(release.id)
+    const stored = await db.releases.getProjectRelease('owner', projectId, release.id)
+    expect(stored?.status).toBe(testCommand.endsWith('gate:release') ? 'ready' : 'failed')
+    expect(commands.filter(command => command.includes('(npm run gate:system --if-present)'))).toHaveLength(testCommand.endsWith('gate:release') || failingStage === 'performance' ? 0 : 1)
+    expect(commands.filter(command => command.includes('(npm run gate:performance --if-present)'))).toHaveLength(testCommand.endsWith('gate:release') ? 0 : 1)
+    expect(commands).toContain(releaseRegressionCleanupCommand(target, release.id))
+  })
+
   it('logs a reproducible dependency installation failure and cleans the isolated worktree',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={

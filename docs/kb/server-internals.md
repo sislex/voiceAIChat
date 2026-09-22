@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-22
-checked: d430423e
+checked: 9b707a9a
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -154,7 +154,7 @@ webReaderOwnProject/webReaderProject.e2e.test.ts (реальный вход бе
 `process.env.VC_BROWSER_HOST_ALIASES` при создании локального модуля. Передача
 похожего поля через `loadConfig({...})` в тесте не меняет эту среду: in-process
 стенд должен явно задать и затем восстановить переменную, как в
-`e2e/webReaderModel.e2e.test.ts`. Созданный Web Reader-разговор имеет scope
+`sislex/webreader:system-tests/webReaderModel.e2e.test.ts`. Созданный Web Reader-разговор имеет scope
 `web-reader`; чтение `/api/conversations/:id` в таком стенде требует
 `?scope=web-reader`, ответ содержит `{conversation, messages}`.
 

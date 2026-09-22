@@ -130,12 +130,16 @@ export function planApplicationChecks(
     e2eFiles = new Set()
   let tooling = false, verifyArtifacts = false
   const browserSuites = new Set([...FRONTEND_E2E_FILES, ...catalog.flatMap(app => app.e2eFiles)])
+  const performancePath = file => FRONTEND_E2E_FILES.includes(file) ||
+    /^frontend-quality\/(?:route-budgets\.json|measurements\/.*\.json)$/.test(file) ||
+    ['scripts/measure-routes.mjs', 'scripts/route-gate.mjs', 'scripts/route-budgets.mjs', 'scripts/route-compression.mjs'].includes(file)
+  const explicitPerformance = files.some(performancePath)
   const full = (reason) => ({
     full: true,
     reasons: [reason],
     applications: [],
     contracts: [],
-    e2eFiles: [...new Set(catalog.flatMap((app) => app.e2eFiles))]
+    e2eFiles: [...new Set([...catalog.flatMap((app) => app.e2eFiles), ...(explicitPerformance ? FRONTEND_E2E_FILES : [])])]
   })
   const add = (app, reason) => {
     selected.set(app.id, app)
@@ -189,7 +193,7 @@ export function planApplicationChecks(
       reasons.push('Browser configuration: all browser suites, no application unit suites')
       continue
     }
-    if (file === 'frontend-quality/route-budgets.json') {
+    if (performancePath(file)) {
       for (const suite of FRONTEND_E2E_FILES) e2eFiles.add(suite)
       tooling = true
       reasons.push('Route budgets: real Web/Desktop measurement')
