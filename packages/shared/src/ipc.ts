@@ -1658,8 +1658,16 @@ export const IPC_CHANNELS: IpcChannel[] = [
  * Форма моста, доступного в renderer как `window.api`.
  * Каждый канал становится методом с типизированным аргументом и Promise-результатом.
  */
-export type RendererApi = {
-  [C in IpcChannel]: IpcArg<C> extends void
+type RendererApiMethod<C extends IpcChannel> = IpcArg<C> extends void
     ? () => Promise<IpcResult<C>>
     : (arg: IpcArg<C>) => Promise<IpcResult<C>>
+
+// Browser-only release controls were added after the shared Desktop host
+// contract. Keeping them optional lets older Desktop shells load a newer UI and
+// report the unavailable capability instead of failing the entire bridge shape.
+type OptionalRendererChannel = 'releases:browserUiOverview' | 'releases:browserUiAction'
+export type RendererApi = {
+  [C in Exclude<IpcChannel, OptionalRendererChannel>]: RendererApiMethod<C>
+} & {
+  [C in OptionalRendererChannel]?: RendererApiMethod<C>
 }
