@@ -43,3 +43,18 @@ lazy screen after switching to another release. Production acceptance must recor
 Core container identity/uptime before and after a UI-only switch and rollback.
 The first deployment that installs this mechanism is distinct from a UI-only
 release and may restart Core through the normal `voicechat-deploy` flow.
+
+## Completed rollout
+
+Core 0.1.327 installs the mechanism; independently published browser UI 1.1.1 is
+active in production. Full local gates, GitHub UI CI, 67 installed-owner scenarios
+and production acceptance passed. Installation/rollback/reactivation preserved
+the Core container and its start time. Old and new browser tabs retained drafts;
+old tabs could still fetch previously unloaded screens. Module boundaries and
+benchmarks are maintained in the Core UI owner's
+`docs/plans/ui-modules-and-browser-releases.md` and `docs/benchmarks/`.
+
+The 1.1.0 browser tarball was rejected without changing the active UI because
+macOS added unlisted metadata. The 1.1.1 publisher prevents that packaging mode
+and checks archive entries against its manifest. See `docs/kb/deploy.md` for
+verified commands, version identities and measured switching times.

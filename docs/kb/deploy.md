@@ -1,8 +1,11 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: 4c6d8bbf
+checked: ba7f3ec5
 areas:
+  - scripts/browser-ui-release.mjs
+  - scripts/prod/ui-deploy.sh
+  - apps/server/src/browserUi
   - Dockerfile
   - docker-compose.yml
   - docker-entrypoint.sh
@@ -20,6 +23,45 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Independent browser release rollout (2026-09-22)
+
+Core 0.1.327 (`38dbc3b5adf81aaa4d952c5135bb490978c30f9c`) was deployed through
+`voicechat-deploy` at 16:01:59 UTC. The initial mechanism deployment replaced only
+Core; a comparison of 27 container identities preserved every other container.
+All nine managed components passed readiness, and provider grants, revocation,
+consumer RPCs and published panel assets passed production probes. The persistent
+Compose chain selects `prebuilt-0.1.327.yml` and retains the existing Desktop/client
+overlay. Core API/data versions remain 1.1.0/1.0.0.
+
+The verified pre-deployment database dump was restored in an isolated local DB;
+rollback configuration/image records are stored under
+`/var/backups/voicechat/sislexa-core-ui-327-20260922T160126Z`. The fallback bundle
+remains Core UI 1.0.0; browser-only activation has its own manifest and lifecycle.
+The first 1.1.0 browser archive was rejected because macOS tar inserted AppleDouble
+files after manifest generation. Active UI state stayed unchanged. The owner
+publisher now disables filesystem metadata and verifies the packed inventory;
+the corrected 1.1.1 archive passed verification after extraction on Linux.
+
+Browser UI 1.1.1 (`28f9fb728cfefbd6dad60e5730fbcf80aae217fb`) is active through
+`voicechat-ui-deploy`. Installation, rollback to the bundle and reactivation kept
+Core container `b3d63a418efd` and its start time `2026-09-22T16:01:53.828534699Z`
+unchanged. Measured server commands took 1.8–2.2 seconds to install, 1.2–1.4 seconds
+to roll back and 1.2–1.7 seconds to activate. These are deployment smoke timings,
+not latency guarantees. Both legacy bundled assets and versioned release assets
+remained available, and root HTML used `no-store`.
+
+Real Chromium acceptance kept an old bundled tab open through the switch: its
+unsent draft survived and a previously unloaded Admin screen opened afterwards.
+A fresh tab loaded the new versioned entry and the same persisted draft. The probe
+must wait for the selected conversation and draft persistence before switching;
+input visibility alone can precede asynchronous chat initialization. Users and
+standalone Account, Make, Image Studio and both Reader panels passed production
+checks without JavaScript errors. Repeated Users/signup API requests returned 200
+in 65–105 ms; the Users page opened in 2.3 seconds in that sample. Temporary users,
+sessions and conversations were removed. The UI release and archive are published
+at https://github.com/sislex/sislexa-core-ui/releases/tag/v1.1.1.
+
 
 ## Core UI owner rollout (2026-09-22)
 
@@ -79,8 +121,8 @@ Verification must compare Core container ID/start time before and after install
 and rollback, check `/ui/runtime.json`, root HTML and versioned assets, and probe
 `/api/health` and authenticated API routes. Unit/CLI tests and a real Chromium
 consumer test cover switching, old-tab lazy imports/drafts, simultaneous HTML
-requests, rollback and API authentication. This section describes the mechanism;
-a new production rollout is recorded separately after verification.
+requests, rollback and API authentication. Production acceptance is recorded
+in the rollout section above.
 
 ## Development preview operation
 
