@@ -2,6 +2,7 @@ import { readdirSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { main, planApplicationChecks, lockChangedApplications, validateApplicationDependencies, applicationCommands } from './application-gate.mjs'
+import { FRONTEND_E2E_FILES, remainingBrowserFiles } from './full-gate.mjs'
 import { PACKAGES } from './affected-check.mjs'
 import { APPLICATION_CATALOG } from '../packages/shared/src/applicationCatalog.ts'
 
@@ -72,9 +73,10 @@ test('an explicitly changed integration scenario remains selected', () => {
 // suites. Route-budget/lazy-boundary cases already run in frontend:route-gates.
 test('every retained Core browser suite has a full-gate owner', () => {
   const plan = planApplicationChecks(['Dockerfile'])
-  const routeGateFiles = new Set(['lazyBoundary.e2e.test.ts', 'routeBudgets.e2e.test.ts'])
+  const scheduled = [...FRONTEND_E2E_FILES, ...remainingBrowserFiles(plan.e2eFiles, true)]
+  assert.equal(new Set(scheduled).size, scheduled.length, 'Full gate repeats browser files')
   for (const file of readdirSync(new URL('../e2e/', import.meta.url))) {
-    if (!file.endsWith('.e2e.test.ts') || routeGateFiles.has(file)) continue
-    assert.ok(plan.e2eFiles.includes('e2e/' + file), `Unscheduled Core browser suite: ${file}`)
+    if (!file.endsWith('.e2e.test.ts')) continue
+    assert.ok(scheduled.includes('e2e/' + file), `Unscheduled Core browser suite: ${file}`)
   }
 })

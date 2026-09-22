@@ -6,6 +6,7 @@
 // то, чего не видят jsdom-тесты: сборка страницы целиком, маршрут с id рабочей копии в
 // адресе, гейт возможностей типа проекта и мобильная раскладка. Сама работа с git
 // покрыта тестами сервиса (`apps/server/src/git`) и панели (`packages/ui/src/components/git`).
+import { freePort } from './free-port'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -16,8 +17,8 @@ import { chromium, type Browser, type Page } from 'playwright'
 
 const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'apps/web/dist')
-const PORT = 9011 + Math.floor(Math.random() * 80)
-const BASE = `http://127.0.0.1:${PORT}`
+let PORT = 0
+let BASE = ''
 const PASSWORD = 'e2e-pass'
 
 let server: ChildProcess | null = null
@@ -40,6 +41,8 @@ const api = async (path: string, init: RequestInit = {}): Promise<Response> =>
 
 describe.skipIf(!existsSync(WEB_DIST))('Панель кода E2E', () => {
   beforeAll(async () => {
+    PORT = await freePort()
+    BASE = `http://127.0.0.1:${PORT}`
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-git-'))
     server = spawn('npx', ['tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),

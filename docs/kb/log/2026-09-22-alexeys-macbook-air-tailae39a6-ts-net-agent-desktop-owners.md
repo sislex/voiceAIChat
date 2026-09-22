@@ -29,11 +29,11 @@ for already published consumer compatibility, and public host/server integration
 Core now serves the prebuilt Agent script and consumes the Desktop renderer artifact.
 The independent chat renderer publisher remains Core-owned with the shared chat UI.
 
-## Acceptance still in progress
+## Acceptance follow-up
 
-Core full gates, production rollout and post-deployment test optimization are
-tracked in docs/plans/agent-desktop-extraction.md. This log does not claim those
-steps passed before their actual completion.
+Core full gates and production rollout passed. Detailed production evidence and
+post-deployment gate optimization are recorded in the gate-optimization-after-extraction
+journal entry and docs/plans/agent-desktop-extraction.md.
 
 The renderer preserves the original Electron chrome126 target and disabled module-preload polyfill. All 96 existing route budget metrics passed without changing thresholds.
 
