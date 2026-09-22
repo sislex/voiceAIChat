@@ -10,42 +10,8 @@ import { personalizationPromptBlock, projectContextBlock, taskContextBlock } fro
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
-import {
-  type ChatStorageBinding,
-  type CodexThreadUsage,
-  appendChatInstructionHints,
-  codexTurnUsage,
-  effectiveChatInstructions,
-  instructionsForAssistantKind,
-  stripDisabledInstructionBlocks,
-  parseTaskLaunchRequest,
-  buildConversationPrompt,
-  resumeSessionIdFor,
-  buildPrompt,
-  designPromptLines,
-  makeDesignPreviewUrl,
-  clampModel,
-  firstAllowedProvider,
-  isProviderAllowed,
-  claudeModelAlias,
-  normalizeClaudeModel,
-  parseImages,
-  type ActiveTurn,
-  type AgentPolicy,
-  type ClaudeInitInfo,
-  type ClaudeLogEntry,
-  type Message,
-  type ServerMessage,
-  type SttSegmentWire,
-  type TurnMeta,
-  type TurnRequestInfo,
-  type TurnUsage,
-  type LlmAttachment,
-  type LlmProvider,
-  type WidgetAssistantContext,
-  toolNameForContextId,
-  isBigMakeRequest,
-} from '@voicechat/shared'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, instructionsForAssistantKind, stripDisabledInstructionBlocks, parseTaskLaunchRequest, buildConversationPrompt, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type AgentPolicy, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId } from '@voicechat/shared'
+import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
 import { resolveManagedChatStorage } from './uploads.js'

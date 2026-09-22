@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { AutomatedQaScenario, AutomatedQaStepResult } from '@voicechat/shared'
 import { firstLine, runScenarioStep, scenarioCommandError, type ScenarioSend } from '@voicechat/shared'
-import type { BrowserRunnerClient } from '../browser/runnerClient.js'
+import type { BrowserRunnerClient } from '@sislexa/playwright-reader/browser-runner/client'
 
 export interface AutomatedQaScenarioInput {
   runId: string

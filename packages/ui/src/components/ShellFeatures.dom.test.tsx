@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, it, expect, vi } from 'vitest'
 import { useToast } from '@voicechat/ui-kit'
 import { act, fireEvent, screen, within } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { addNotification, readNotifications, resetPreferenceCache, userKey } from '../lib/shellPreferences'
 import { NotificationCenter, NotificationHistory } from './NotificationCenter'

@@ -12,10 +12,11 @@ import { join, resolve } from 'node:path'
 import { APPLICATION_CATALOG } from '../packages/shared/src/applicationCatalog.ts'
 import { applicationRuntimeMetadata } from '../packages/shared/src/applicationRelease.ts'
 import { parseApplicationFrontendManifest } from '../packages/shared/src/applicationFrontend.ts'
+import { applicationFrontendDirectory } from './application-frontend.mjs'
 const id = process.env.VC_APPLICATION_ID,
   app = APPLICATION_CATALOG.find((item) => item.id === id && item.frontend)
 if (!app) throw new Error('Не задано frontend-приложение')
-const directory = resolve(import.meta.dirname, '..', app.paths[0], 'dist')
+const directory = applicationFrontendDirectory(id)
 const manifest = parseApplicationFrontendManifest(
   JSON.parse(readFileSync(join(directory, 'manifest.json'), 'utf8')),
   id

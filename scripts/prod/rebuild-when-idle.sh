@@ -23,8 +23,8 @@ fi
 REPO=$VC_REPO_DIR
 LOCK=${VC_REBUILD_LOCK:-/var/lock/voicechat-prod-rebuild.lock}
 LOCK_WAIT=${VC_REBUILD_LOCK_WAIT:-7200}
-BUILD_SERVICES=${VC_REBUILD_BUILD_SERVICES:-"voicechat runner-work runner-personal"}
-UP_SERVICES=${VC_REBUILD_UP_SERVICES:-"voicechat runner-work runner-personal caddy"}
+BUILD_SERVICES=${VC_REBUILD_BUILD_SERVICES:-"voicechat"}
+UP_SERVICES=${VC_REBUILD_UP_SERVICES:-"voicechat caddy"}
 SERVER_CONTAINER=${VC_SERVER_CONTAINER:-voiceaichat-voicechat-1}
 IDLE_TIMEOUT=${VC_REBUILD_IDLE_TIMEOUT:-3600}
 IDLE_POLL=${VC_REBUILD_IDLE_POLL:-10}

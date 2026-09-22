@@ -6,7 +6,7 @@ import {
 } from '@shared/types'
 import type { RendererApi, RendererOnboardingBridge } from '@shared/ipc'
 import { allowedModels, clampModel, isProviderAllowed } from '@shared/llmAccess'
-import { createBrowserAudioController } from '../audio/browserAudio'
+import { createBrowserAudioController } from "@sislexa/voice/browser/audio/browserAudio"
 
 export interface OnboardingModalProps {
   modelPresent: boolean

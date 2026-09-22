@@ -2,7 +2,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@shared/projectTypes'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { fireEvent, screen, within } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import { Sidebar, formatConversationCostUsd, type MessageSearchView } from './Sidebar'
 import type { Conversation, MessageSearchHit, PermissionMode, SessionUser } from '@shared/types'

@@ -9,9 +9,10 @@
 // несколько ранов и чат карточки, а профиль Chromium — файловый каталог в томе.
 // Ключ по рану оставлял бы в томе по каталогу на каждый прогон.
 
-import type { BrowserProfileMode, CiBrowserCheck } from '@voicechat/shared'
+import type { BrowserProfileMode } from '@voicechat/browser-contracts/browserProfile'
+import type { CiBrowserCheck } from '@voicechat/shared'
 import { isMachinePreviewUrl, machinePreviewUrl } from './machinePreview.js'
-import type { PreviewAction } from '@voicechat/shared'
+import type { PreviewAction } from '@voicechat/browser-contracts/previewActions'
 
 export interface BrowserCheckTarget {
   profileMode?: BrowserProfileMode

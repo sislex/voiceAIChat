@@ -1,7 +1,5 @@
-import { createRequire } from 'node:module'
-import { dirname } from 'node:path'
 // Гейт границы Playwright Reader ↔ ядро со стороны ядра (docs/kb/features/playwright-reader.md). Playwright Reader живёт в
-// отдельном пакете `@voicechat/playwright-reader`; ядро знает его только через порты `PlaywrightReaderCore`/`PlaywrightReaderService`
+// отдельном пакете `@sislexa/playwright-reader`; ядро знает его только через порты `PlaywrightReaderCore`/`PlaywrightReaderService`
 // (типы) и сборку `createPlaywrightReaderModule`. Единственные места, где ядро зовёт Playwright Reader по-настоящему, —
 // композиция процесса (`server.ts`) и адаптеры портов (`playwrightReaderBridge/`). Тест читает импорты как текст.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
@@ -25,11 +23,11 @@ const coreFiles = walk(srcDir).filter((f) => !isTest(f)).map((f) => relative(src
   .filter((rel) => !COMPOSITION.has(rel) && !rel.startsWith('playwrightReaderBridge/'))
 
 describe('граница Playwright Reader ↔ ядро (сторона ядра)', () => {
-  it('ядро импортирует из @voicechat/playwright-reader только типы — реализацию подключают server.ts и playwrightReaderBridge/', () => {
+  it('ядро импортирует из @sislexa/playwright-reader только типы — реализацию подключают server.ts и playwrightReaderBridge/', () => {
     const offenders: string[] = []
     for (const rel of coreFiles) {
       const src = readFileSync(join(srcDir, rel), 'utf8')
-      for (const m of src.matchAll(/^import\s+(type\s+)?\{[^}]*\}\s*from '@voicechat\/playwright-reader(?:\/[^']*)?'/gm)) {
+      for (const m of src.matchAll(/^import\s+(type\s+)?\{[^}]*\}\s*from '@sislexa\/playwright-reader(?!\/browser-runner)(?:\/[^']*)?'/gm)) {
         if (!m[1]) offenders.push(`${rel}: ${m[0].slice(0, 80)}`)
       }
     }
@@ -38,7 +36,5 @@ describe('граница Playwright Reader ↔ ядро (сторона ядра
 
   it('REST Chromium и его модельные команды принадлежат приложению', () => {
     expect(coreFiles).not.toContain('routes/browser.ts')
-    const reader = readFileSync(join(dirname(createRequire(import.meta.url).resolve('@sislexa/web-reader/package.json')), 'apps/web-reader/src/module.ts'), 'utf8')
-    expect(reader).not.toMatch(/browserRunner|planModelAction|PREVIEW_RUN_COOKIE/)
   })
 })

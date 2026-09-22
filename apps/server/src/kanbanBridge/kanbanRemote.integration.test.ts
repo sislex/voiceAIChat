@@ -19,7 +19,7 @@ import { INTERNAL_KANBAN_CORE_PATH, KANBAN_HEALTH_PATH, KANBAN_INTERNAL_SERVICE_
 import { HttpKanbanCore } from '../kanban/standalone/httpCore.js'
 import { buildKanbanServer, type KanbanServer } from '../kanban/standalone/server.js'
 import { buildServer } from '../server.js'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'

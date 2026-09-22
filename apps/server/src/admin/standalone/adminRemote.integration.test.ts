@@ -12,7 +12,7 @@ import type { LlmClient } from '../../claude/types.js'
 import { loadConfig } from '../../config.js'
 import { VoiceChatDb } from '../../db/database.js'
 import { buildServer } from '../../server.js'
-import { signToken } from '../../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import { ADMIN_HEALTH_PATH, INTERNAL_ADMIN_RPC_PATH } from '../internal.js'
 import { buildAdminServer, type AdminServer } from './server.js'
 

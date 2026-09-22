@@ -12,8 +12,12 @@ afterEach(async () => {
 it('раздаёт отдельный dist и не подменяет отсутствующее приложение оболочкой', async () => {
   const root = await mkdtemp(join(tmpdir(), 'vc-frontend-'))
   roots.push(root)
-  const directory = join(root, 'packages/make-app/dist')
+  const packageRoot = join(root, 'node_modules/@sislexa/make')
+  const directory = join(packageRoot, 'frontend')
   await mkdir(directory, { recursive: true })
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+    name: '@sislexa/make', exports: { './frontend/*': './frontend/*' }
+  }))
   await writeFile(join(directory, 'panel-abc.js'), 'window.panel=true')
   const app = Fastify()
   registerApplicationFrontends(app, {}, root)

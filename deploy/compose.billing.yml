@@ -1,12 +1,7 @@
 # Append after Identity; its provider grants must include this Billing installation.
 services:
   billing:
-    build:
-      context: ${SISLEXA_BILLING_SOURCE:?Set the pinned Billing source checkout}
-      args:
-        APPLICATION_VERSION: "1.1.1"
-        APPLICATION_COMMIT: ${SISLEXA_BILLING_COMMIT:?Set the pinned Billing commit}
-    image: sislexa-billing:1.1.1
+    image: ${SISLEXA_BILLING_IMAGE:-ghcr.io/sislex/billing:06a337fdab30df2ca5af70e9f3cf5b6c96a5cffe}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0

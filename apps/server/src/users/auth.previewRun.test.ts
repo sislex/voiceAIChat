@@ -3,7 +3,7 @@
 // ни на одном другом маршруте API.
 import { describe, expect, it } from 'vitest'
 import type { FastifyRequest } from 'fastify'
-import { previewRunUser } from './auth.js'
+import { previewRunUser } from "@sislexa/identity/server/users/auth"
 import { PREVIEW_RUN_COOKIE, PreviewRunKeys } from '../browser/machinePreview.js'
 import type { VoiceChatDb } from '../db/database.js'
 

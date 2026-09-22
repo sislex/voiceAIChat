@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { ProjectRelease, ProjectReleaseSummary, ReleaseMachine } from '@voicechat/shared'
 import { ReleaseCenter, githubWebUrl, typicalDurationMs } from './ReleaseCenter'

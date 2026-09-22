@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { REST } from '@voicechat/shared'
-import { readCookie, SESSION_COOKIE } from './users/auth.js'
+import { readCookie, SESSION_COOKIE } from "@sislexa/identity/server/users/auth"
 
 export interface BillingPublicTransport { url: string; publicFetchImpl: typeof fetch }
 

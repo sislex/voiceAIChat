@@ -1,7 +1,7 @@
 import type { AutomatedQaCheckResult, AutomatedQaScenario, AutomatedQaScenarioStep } from '@shared/qa'
 import { automatedQaStartUrlProblem } from '@shared/qa'
 import type { ProjectDetail } from '@shared/projects'
-import type { PreviewAction } from '@shared/previewActions'
+import type { PreviewAction } from '@voicechat/browser-contracts/previewActions'
 import { useState } from 'react'
 import { scenarioLabel } from '@shared/qa'
 import { scenarioSetProblems } from '@shared/scenarioStep'

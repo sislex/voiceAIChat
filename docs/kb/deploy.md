@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: ec018f20
+checked: 55f5a95b
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -14,8 +14,6 @@ areas:
   - scripts/affected-check.test.mjs
   - apps/server/src/config.ts
   - apps/server/src/server.ts
-  - apps/web-reader/src/module.ts
-  - apps/web-reader/src/routes/previewProxy.ts
   - apps/server/src/kb/kbMcp.ts
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
@@ -58,35 +56,30 @@ An opt-in real integration test is available with `VC_TEST_DEVELOPMENT_DOCKER=1 
 
 ## Образ
 
-Многостадийный `Dockerfile` теперь собирает **два runtime-target**: `server-runtime`
-(сервер + production-билды ChatAI и Web Recorder) и `llm-runner-runtime`
-(внутренний HTTP-исполнитель CLI).
-Особенности, которые легко сломать:
+Core's `Dockerfile` builds Core-owned server, Kanban, Machines, Admin,
+Automation and Storybook targets. Extracted services use immutable images built
+in their owner repositories; there are no Core build stages for LLM Runner,
+Chromium, Voice, Make, Readers, Identity, Billing or Image Studio.
 
-- **Ни сервер, ни runner не компилируются в JS** — оба запускаются `tsx` прямо
-  из исходников и резолвят `@voicechat/*` через workspace-симлинки. Поэтому в
-  runtime-слой копируются исходники + `node_modules` + `tsx`, а не `dist/`.
-- **better-sqlite3 нативный** → в build-стадии нужен toolchain (python3/make/g++),
-  база — glibc (`bookworm`), не musl.
-- **whisper-cli** собирается отдельной стадией из whisper.cpp v1.7.5 статически
-  (`BUILD_SHARED_LIBS=OFF`) и с `GGML_NATIVE=OFF`. Последнее обязательно для
-  переносимой ARM64-сборки: под Docker Desktop автоопределение CPU включало
-  неподдерживаемые `i8mm`/`dotprod`/FP16-инструкции и GCC падал с
-  `target specific option mismatch`. Стадия и запуск `whisper-cli --help`
-  проверены на образе `linux/arm64`; бинарник попадает только в серверный target,
-  где нужен STT.
-- **Оба frontend workspace собираются отдельно и работают same-origin**: ChatAI
-  раздаётся из `VC_WEB_DIR=/app/apps/web/dist`, Web Recorder — из
-  `VC_WEB_RECORDER_DIR=/app/apps/web-recorder/dist` под `/web-recorder/`. Его Vite
-  base совпадает с prefix; recorder-маршруты исключены из SPA-fallback ChatAI.
-- Процессы работают под пользователем `node`, не root: claude CLI запрещает
-  `--dangerously-skip-permissions` под root/sudo. `gosu` в entrypoint делает
-  `chown` томов под root и сбрасывает привилегии.
-- **`claude`/`codex` больше нет в образе сервера.** Они ставятся только в
-  `llm-runner-runtime`; `runner-personal` можно собрать без Codex через
-  `INSTALL_CODEX_CLI=0`.
-- `ca-certificates` нужны и серверу (upstream HTTPS), и runner'ам; `bubblewrap`
-  ставится только в runner-target для песочницы Codex.
+The backend runs TypeScript through `tsx`, so the runtime keeps its source,
+installed dependencies and built host UI. Native `better-sqlite3` requires the
+Debian/glibc build toolchain. Product panels and Web Recorder are verified
+owner-built assets, never compiled from a copied owner workspace. Recorder
+assets are served at `/web-recorder/` outside the host SPA fallback.
+
+Core installs no Claude/Codex, Whisper or Piper binaries. Runner images own their
+pinned tools. The Core entrypoint retains `gosu` for data-volume ownership and
+runs the service as `node`. Local `browser-runner:local` consumes
+`SISLEXA_BROWSER_RUNNER_IMAGE` or the pinned Reader image; it no longer invokes a
+removed Core Docker target. Operators can build that image in the Reader repo
+and set the override when private registry credentials are unavailable.
+
+`VC_LLM_RUNNER_CLAUDE_URL`, `VC_LLM_RUNNER_CODEX_URL` and
+`VC_LLM_RUNNER_TOKEN` configure remote execution and management. Runner 0.3.1 is
+the pinned management-compatible release. Core no longer creates local CLI
+profiles when these endpoints are absent. Legacy authentication/volume migration
+notes below describe historical layouts; active production uses the independent
+runner host and owner deployment procedure.
 
 ## Аутентификация CLI живёт в контейнере
 
@@ -1442,3 +1435,26 @@ URLs and signup returned HTTP 200 in 59–112 ms with no JavaScript errors. The
 temporary administrator and sessions were revoked and removed afterwards.
 This verifies the page's bounded monthly query, not unbounded historical reports;
 large-range usage analytics still needs precomputed projections.
+
+## Core 0.1.322 owner-library cutover (2026-09-22)
+
+Core PR #226 and release 0.1.322 use commit
+`55f5a95bd415676cfde85d763dc69a31b61dcb2f`. Both canonical Core gates exited 0,
+including 119 browser cases each. The Linux AMD64 image was built locally from a
+clean Git archive and deployed through installed `voicechat-deploy`; only Core's
+image changed, with all 26 other running container images retained. Owner service
+versions were not upgraded in this rollout. The deployment checked nine managed
+components and the subsequent production smoke checked provider grants, rejection
+of unauthorized requests, frontend integrity and both execution backends.
+
+The first browser acceptance attempt exceeded the ten-second Users-page threshold;
+its cause was not established. A fresh authenticated repeat loaded the users list
+in 1,296 ms, had no JavaScript errors and returned all nine sampled Users/signup
+requests with HTTP 200 in 65–136 ms. This does not establish a cold-start latency
+bound. The temporary diagnostic admin was revoked and deleted after each attempt.
+
+Rollback is release/0.1.321 with its preserved image/configuration. The private
+backup at `/var/backups/voicechat/sislexa-direct-libraries-20260922T001850Z` contains
+configuration, live SQLite backups and image references. The PostgreSQL dump is
+stored in the operator's `.sislexa-backups/direct-libraries-20260922T001850Z`; its
+restore listing has 1,145 entries. This checks archive readability, not a restore.

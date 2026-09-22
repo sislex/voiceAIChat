@@ -1,4 +1,4 @@
-import type { PreviewAction, PreviewActionResult, PreviewReadResult, PreviewStylesResult } from '@voicechat/shared'
+import type { PreviewAction, PreviewActionResult, PreviewReadResult, PreviewStylesResult } from '@voicechat/browser-contracts/previewActions'
 
 type PreviewActionOutcome = { ok: boolean; result?: PreviewActionResult; error?: string }
 

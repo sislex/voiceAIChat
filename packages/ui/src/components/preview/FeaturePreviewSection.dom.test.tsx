@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { render } from '../../test/uiRender'
-import type { PreviewEnvironment, PreviewState } from '@shared/preview'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
+import type { PreviewEnvironment, PreviewState } from '@voicechat/browser-contracts/preview'
 import { FeaturePreviewSection } from './FeaturePreviewSection'
 
 function environment(state: PreviewState): PreviewEnvironment {

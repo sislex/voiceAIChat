@@ -163,10 +163,7 @@ services:
   # Make (веб-проект с ассистентом) отдельным процессом: релизится и перезапускается
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
-    build:
-      context: .
-      target: make-runtime
-    image: voicechat-make
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:e4c5676feeae7efacbe054e920bb7b9b62d80024}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -189,10 +186,7 @@ services:
   # Playwright Reader владеет REST-сессиями и действиями модели. БД и том ему не нужны:
   # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
   playwright-reader:
-    build:
-      context: .
-      target: playwright-reader-runtime
-    image: voicechat-playwright-reader
+    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:6cd0c54f0f7c368c9b63362f2e50e91dd50f272f}
     mem_limit: 256m
     depends_on:
       - browser-runner
@@ -215,10 +209,7 @@ services:
 
   # Студия картинок владеет /data/image-studio; авторизация и LLM остаются у ядра.
   image-studio:
-    build:
-      context: .
-      target: image-studio-runtime
-    image: voicechat-image-studio
+    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:c7a49a428d856e73476c39179ce7044598c4196e}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -360,10 +351,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    build:
-      context: .
-      target: reader-runtime
-    image: voicechat-reader
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:295807f94d7c35d242f79144fd6422b92bd3478d}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
@@ -387,10 +375,7 @@ services:
     restart: unless-stopped
 
   stt-runner:
-    build:
-      context: .
-      target: stt-runner-runtime
-    image: voicechat-stt-runner
+    image: ${SISLEXA_STT_RUNNER_IMAGE:-ghcr.io/sislex/voice-stt:7e51e57ebf3b6b339227c788c7919e44d80b36e4}
     mem_limit: 6g
     cpus: 2
     environment:
@@ -413,10 +398,7 @@ services:
   # Изолированный Chromium: Playwright Reader и этап автотестов. Наружу не
   # публикуется — ходит к нему только сервер по внутренней сети compose.
   browser-runner:
-    build:
-      context: .
-      target: browser-runner-runtime
-    image: voicechat-browser-runner
+    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:6cd0c54f0f7c368c9b63362f2e50e91dd50f272f}
     environment:
       HOST: 0.0.0.0
       PORT: "8792"
@@ -471,13 +453,7 @@ services:
     restart: unless-stopped
 
   runner-work:
-    build:
-      context: .
-      target: llm-runner-runtime
-      args:
-        INSTALL_CLAUDE_CLI: "1"
-        INSTALL_CODEX_CLI: "1"
-    image: voicechat-llm-runner-work
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:8ec5100952c37e478177bc311cf5db2287d5bf63}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
@@ -495,13 +471,7 @@ services:
     restart: unless-stopped
 
   runner-personal:
-    build:
-      context: .
-      target: llm-runner-runtime
-      args:
-        INSTALL_CLAUDE_CLI: "1"
-        INSTALL_CODEX_CLI: "0"
-    image: voicechat-llm-runner-personal
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:8ec5100952c37e478177bc311cf5db2287d5bf63}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
@@ -516,10 +486,7 @@ services:
     restart: unless-stopped
 
   tts-runner:
-    build:
-      context: .
-      target: tts-runner-runtime
-    image: voicechat-tts-runner
+    image: ${SISLEXA_TTS_RUNNER_IMAGE:-ghcr.io/sislex/voice-tts:7e51e57ebf3b6b339227c788c7919e44d80b36e4}
     environment:
       HOST: 0.0.0.0
       PORT: "8791"

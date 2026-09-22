@@ -8,7 +8,7 @@ import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, 
 import { CI_USAGE_KINDS, developmentPreviewValidationError } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
-import { requireProjectPermission, uid } from '../users/auth.js'
+import { requireProjectPermission, uid } from "@sislexa/identity/server/users/auth"
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbid = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })

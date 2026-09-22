@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import { hasProductCapability, type ClientMessage, type Conversation, type ProductCapability, type ServerMessage, type SessionUser } from '@voicechat/shared'
+import { hasProductCapability, type ProductCapability } from '@sislexa/identity/contracts/accountAccess'
+import { type ClientMessage, type Conversation, type ServerMessage, type SessionUser } from '@voicechat/shared'
 import { conversationCapability } from '@sislexa/identity/server/users/productPolicy'
 import type { VoiceChatDb } from './db/database.js'
 

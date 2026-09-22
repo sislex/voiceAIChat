@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AutomatedQaScenario, BrowserCommand } from '@voicechat/shared'
 import { createAutomatedQaScenarioRunner } from './automatedQaScenario.js'
-import type { BrowserRunnerClient } from '../browser/runnerClient.js'
+import type { BrowserRunnerClient } from '@sislexa/playwright-reader/browser-runner/client'
 
 function browser(over: Partial<BrowserRunnerClient> = {}): BrowserRunnerClient {
   return {

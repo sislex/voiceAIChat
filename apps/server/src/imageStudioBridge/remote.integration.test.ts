@@ -1,18 +1,21 @@
+import sharp from 'sharp'
 // Те же пользовательские запросы проходят embedded и remote. В remote каталог
 // студии физически отдельный: тест не может случайно пройти за счёт общего store.
 import { createServer } from 'node:net'
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { buildImageStudioServer } from '@voicechat/image-studio/standalone'
-import { imageBlock, INTERNAL_IMAGE_STUDIO_CORE_PATH, INTERNAL_IMAGE_STUDIO_GENERATE_PATH, INTERNAL_IMAGE_STUDIO_SERVICE_PATH } from '@voicechat/shared'
+import { buildImageStudioServer } from '@sislexa/image-studio/image-studio/standalone/server'
+import { imageBlock } from '@voicechat/shared'
+import { INTERNAL_IMAGE_STUDIO_CORE_PATH, INTERNAL_IMAGE_STUDIO_GENERATE_PATH, INTERNAL_IMAGE_STUDIO_SERVICE_PATH } from '@voicechat/image-studio-contracts/imageStudioInternal'
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
+import { userFilesDirectory } from '../userFiles.js'
 import { buildServer } from '../server.js'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import { createRemoteImageStudio } from './remote.js'
 
 const SECRET = 'studio-session-secret'
@@ -67,11 +70,16 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
     core = await buildServer({
       config: loadConfig({ PORT: '0', VC_DATA_DIR: join(dir, 'core'), VC_MODELS_DIR: join(dir, 'models'), VC_PIPER_VOICES_DIR: join(dir, 'voices'),
         VC_IMAGE_STUDIO_MODE: mode, VC_IMAGE_STUDIO_URL: studioUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP }),
-      db, codex: client, sessionSecret: SECRET
+      db, codex: client, sessionSecret: SECRET,
+      imageGenerationWorkdir(userId) {
+        const path = userFilesDirectory(join(dir, 'core'), userId)
+        mkdirSync(path, { recursive: true })
+        return path
+      }
     })
     coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
     if (mode === 'remote') {
-      studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port: studioPort, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, mcpSecret: MCP, version: 'test' } })).app
+      studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port: studioPort, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, mcpSecret: MCP, version: 'test', trashDays: 30 } })).app
       await studio.listen({ host: '127.0.0.1', port: studioPort })
     } else studioUrl = coreUrl
   }, 60_000)
@@ -168,6 +176,8 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
   if (mode === 'remote') it('контекст и захват результата чата работают по RPC без доступа ядра к каталогу студии', async () => {
     const service = createRemoteImageStudio({ studioUrl, token: INTERNAL })
     expect(await service.promptContext(conv)).toContain('cat.png')
+    // A distinct generated image exercises capture rather than the owner's content deduplication.
+    writeFileSync(generatedPath, await sharp({ create: { width: 2, height: 2, channels: 4, background: '#123456' } }).png().toBuffer())
     await service.captureImages('ann', conv, imageBlock({ path: generatedPath }))
     expect(await service.promptContext(conv)).toContain('from-runner.png')
     await service.captureImages('bob', conv, imageBlock({ path: generatedPath }))
@@ -190,7 +200,7 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
     expect(offline.status).toBe(503)
     expect(await offline.json()).toEqual({ error: 'image_studio_unavailable' })
     const port = Number(new URL(studioUrl).port)
-    studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, mcpSecret: MCP, version: 'test' } })).app
+    studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, mcpSecret: MCP, version: 'test', trashDays: 30 } })).app
     await studio.listen({ host: '127.0.0.1', port })
     expect(await (await fetch(api('run'), { headers: auth })).json()).toEqual({ active: false })
     const read = await fetch(api('file?path=cat.png'), { headers: auth })

@@ -18,13 +18,13 @@ it('ядро не владеет хранилищем и роутами гале
     if (rel === 'server.ts' || rel.startsWith('imageStudioBridge/')) continue
     const source=ts.createSourceFile(file,readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true)
     const visit=(node:ts.Node):void=>{
-      if(ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&node.moduleSpecifier.text.startsWith('@voicechat/image-studio')){
+      if(ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&node.moduleSpecifier.text.startsWith('@sislexa/image-studio/image-studio/index')){
         const clause=node.importClause
         const named=clause?.namedBindings
         const typeOnly=clause?.isTypeOnly||(!clause?.name&&named&&ts.isNamedImports(named)&&named.elements.every(element=>element.isTypeOnly))
         if(!typeOnly)forbidden.push(rel)
       }
-      if(ts.isCallExpression(node)&&node.expression.kind===ts.SyntaxKind.ImportKeyword&&node.arguments[0]&&ts.isStringLiteral(node.arguments[0])&&node.arguments[0].text.startsWith('@voicechat/image-studio'))forbidden.push(rel)
+      if(ts.isCallExpression(node)&&node.expression.kind===ts.SyntaxKind.ImportKeyword&&node.arguments[0]&&ts.isStringLiteral(node.arguments[0])&&node.arguments[0].text.startsWith('@sislexa/image-studio/image-studio/index'))forbidden.push(rel)
       ts.forEachChild(node,visit)
     }
     visit(source)

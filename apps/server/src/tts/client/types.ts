@@ -1,4 +1,5 @@
-import type { TtsRunResource,TtsSynthesisRequest,TtsVoiceInfo } from '@voicechat/shared'
+import type { TtsRunResource, TtsSynthesisRequest } from '@voicechat/voice-contracts/tts'
+import type { TtsVoiceInfo } from '@voicechat/shared'
 export interface TtsClient {
  create(request:TtsSynthesisRequest):Promise<TtsRunResource>
  status(runId:string):Promise<TtsRunResource>

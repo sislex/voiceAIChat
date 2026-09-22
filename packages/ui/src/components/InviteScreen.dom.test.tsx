@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { InviteScreen } from './InviteScreen'
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import type { ProjectInvitationPreview } from '@shared/projects'

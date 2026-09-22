@@ -8,11 +8,12 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 - **Не компилируется в JS.** Запуск — `tsx src/index.ts` прямо из исходников,
   ESM. Поэтому **все относительные импорты пишутся с `.js`** (`./config.js`),
   хотя файлы `.ts`.
-- **CLI claude/codex живут не здесь.** В Docker это контейнеры `runner-work` и
-  `runner-personal`; код `claudeCli.ts`, `codexCli.ts`, `childKill.ts`,
-  `claude mcp list` и профили CLI (`cliProfiles.ts`) живёт в `apps/llm-runner`.
-  Сервер использует `RemoteLlmClient`/`RunnerFsClient`, а прямой импорт
-  `@voicechat/llm-runner/cli` остался только как fallback вне runner URL.
+- **CLI ownership is external.** `sislex/llm-runner` owns process spawning,
+  profiles, login probes, MCP inventory and filesystem history. Core uses
+  `RemoteLlmClient`/`RunnerFsClient`; no local CLI fallback remains. Without
+  configured endpoints, model execution is unavailable while other modules boot.
+  Core output paths use `userFiles.ts`; legacy generated images remain readable
+  without copying or creating CLI credentials.
 - **`buildServer()` отделён от `listen()`** (`server.ts` / `index.ts`), а внешние
   зависимости инъектируются через `BuildOptions`: `db`, `claude`, `codex`,
   `sttEngine`, `ttsEngine`, `createWsHandlers`, `sessionSecret`. Новый внешний
@@ -21,7 +22,7 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
   ответа в БД делает сервер, не клиент.
 - Per-connection состояние (микрофон, озвучка, подписки tail/PTY) — `session.ts`;
   `ws.ts` только разбирает кадры и маршрутизирует.
-- Все `/api/*` закрыты Bearer-токеном (`users/auth.ts`, список публичных путей —
+- Все `/api/*` закрыты Bearer-токеном (`@sislexa/identity/server/users/auth`, список публичных путей —
   `isPublic`); данные фильтруются по `uid(req)`.
 
 ## Раскладка
@@ -29,17 +30,17 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `config.ts` (env → артефакты репо → дефолты), `server.ts`, `index.ts`, `ws.ts`,
 `session.ts`, `turns.ts`, `uploads.ts`;
 `routes/` (`rest.ts`, `agents.ts`, `admin.ts`), `users/`,
-`db/` (ядро `database.ts`, схема, доменные репозитории `repos/<домен>.ts` с манифестом владения таблицами `ownership.ts`; репозитории асинхронны и ходят в базу только через адаптер `sql/` (`types.ts`, `sqlite.ts`, `pg.ts`, транслятор `dialect.ts`, полоса `lane.ts`) — SQL в диалекте SQLite, один код на SQLite и Postgres (`VC_DB_URL`); `schemaPg.ts` выводит DDL Postgres из `schema.ts`, `copyToPostgres.ts` переносит данные; `fts.ts` — экранирование запроса для FTS5-поиска по сообщениям),
+`db/` (ядро `database.ts`, схема, доменные репозитории `repos/<домен>.ts` с манифестом владения таблицами `ownership.ts`; репозитории асинхронны и ходят в базу только через public `@sislexa/identity/storage-sql/*` adapters — SQL в диалекте SQLite, один код на SQLite и Postgres (`VC_DB_URL`); `schemaPg.ts` выводит DDL Postgres из `schema.ts`, `copyToPostgres.ts` переносит данные; `fts.ts` — экранирование запроса для FTS5-поиска по сообщениям),
 `stt/` (whisper, модели, скачивание, wav), `tts/` (piper, say, каталог, голоса),
 `claude/`, `codex/`, `llm/` (`RemoteLlmClient`, `RunnerFsClient`, общий приёмник потока),
-`cc/` (наблюдатель сессий Claude Code),
+`llm/runnerFsClient.ts` (remote Claude/Codex session observation),
 `agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android), `machines/` (сборка модуля машин
 `createMachinesModule(deps)`, порт `MachinesService` для потребителей, контракт `internal.ts`, отдельный процесс `standalone/`,
 гейт границы — потребители не импортируют `AgentRegistry`), `admin/` (контракт `internal.ts` и отдельный процесс админки `standalone/`), `machinesBridge/` (сторона ядра для `VC_MACHINES_MODE=remote`:
 `HttpMachines` с зеркалом по шине событий, прокси REST и WebSocket `/agent`), `internal/` (общее для соседних процессов:
 потоковый exec `execStream.ts`, пересылка авторизации `forwardedAuth.ts`), `chatStorage.ts` (хранилище разговора на машине),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
-`auth/loginStatus.ts`, `diarization/` (заглушка);
+`diarization/` (заглушка);
 `kanban/` (сборка канбан-кластера `createKanbanModule(deps)`; порты `core.ts` — что кластер берёт у процесса ядра
 (узкий фасад машин `KanbanMachines`, KB, вложения, виджет), `service.ts` — что ядро берёт у кластера (ленты ранов,
 доски, уведомлений); гейт границы `boundary.test.ts` с аллоулистом импортов; чистые функции подготовки — `preparation.ts`),
@@ -51,16 +52,16 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `reader/mcpBase.ts` (адрес MCP превью для ходов ядра и канбана),
 `readerBridge/` (локальный `ReaderCore`: данные/права, машины, WS relay, ключи Chromium,
 канбан и кадры; прокси `/api/preview*`, `/mcp/preview`, `/web-recorder*` в remote).
-Реализация Web Reader — `@voicechat/web-reader`, порты и токены —
+Реализация Web Reader — `@sislexa/web-reader`, порты и токены —
 `@voicechat/web-reader-contracts`; приложение не открывает БД ядра.
-`playwrightReaderBridge/` (Playwright Reader живёт в `@voicechat/playwright-reader`: здесь порт данных ядра,
+`playwrightReaderBridge/` (Playwright Reader живёт в `@sislexa/playwright-reader`: здесь порт данных ядра,
 прокси `/api/browser/*` и проверки границы; MCP Web Reader получает `PlaywrightReaderService`,
 выдача кадров CI остаётся в `routes/browserShots.ts`; HTTP-клиент Chromium — публичный экспорт
-`@voicechat/browser-runner/client`, старый `browser/runnerClient.ts` только реэкспортирует его),
-`makeBridge/` (Make живёт в пакете `@voicechat/make`; здесь — реализация его порта `MakeCore`
+`@sislexa/playwright-reader/browser-runner/client`; no local worker implementation remains),
+`makeBridge/` (Make живёт в пакете `@sislexa/make`; здесь — реализация его порта `MakeCore`
 поверх `db.*` (`localCore.ts`), `MakeService` для режима `remote` (`remote.ts`) и гейт границы
 `boundary.test.ts`: ядро импортирует из Make только типы и `createMakeModule`),
-`imageStudioBridge/` (студия живёт в `@voicechat/image-studio`: локальный порт к данным/LLM,
+`imageStudioBridge/` (студия живёт в `@sislexa/image-studio`: локальный порт к данным/LLM,
 HTTP-прокси и удалённый `ImageStudioService`; ядро в remote не открывает каталог галерей),
 `routes/internal.ts` (internal `/internal/*` RPC with exact provider scopes in managed mode; explicit legacy scopes retain `VC_INTERNAL_TOKEN`),
 `util/` (общие утилиты без владельца: `publicHost`).

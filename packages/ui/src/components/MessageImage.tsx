@@ -12,7 +12,7 @@ import { imageMime, imageName, machineImageUrls, type ImageRef } from '@shared/i
 import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { MessageAttachment } from '@shared/types'
-import { ImageRetouchEditor } from './ImageRetouchEditor'
+import { ImageRetouchEditor } from '@sislexa/image-studio/ui/components/ImageRetouchEditor'
 import { copyImage } from '@voicechat/ui-foundation/lib/clipboard'
 import { Dots } from './animations'
 import { IconButton } from '@voicechat/ui-kit'
@@ -286,6 +286,7 @@ export function MessageImage({
     </ToolFrame>
     {retouchOpen && shownSrc && attachment && conversationId && (
       <ImageRetouchEditor
+        api={window.api}
         src={shownSrc}
         source={attachment.retouch?.source ?? attachment}
         conversationId={conversationId}

@@ -1,4 +1,5 @@
-import type { SttRunnerEvent, SttRunnerHealth, WhisperModel, WhisperModelInfo } from '@voicechat/shared'
+import type { SttRunnerEvent, SttRunnerHealth } from '@voicechat/voice-contracts/stt'
+import type { WhisperModel, WhisperModelInfo } from '@voicechat/shared'
 export interface SttRun {
   write(pcm: Int16Array): void
   end(): void

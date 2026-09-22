@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { VPN_ERRORS, VPN_REST, parseVpnChange } from '@voicechat/shared'
-import { uid } from '../../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import { VpnError } from './tailscale.js'
 import type { VpnService } from './service.js'
 

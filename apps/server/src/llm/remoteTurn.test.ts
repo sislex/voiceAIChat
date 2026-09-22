@@ -1,16 +1,11 @@
-// Сквозной тест среза: ход TurnManager через фейкового исполнителя на 127.0.0.1
-// должен дать РОВНО те же события, что ход через локальный spawn — turns.ts и
-// парсеры shared про транспорт не знают.
+// Verify remote stream integration with Core turn persistence and cancellation.
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { EventEmitter } from 'node:events'
-import { PassThrough } from 'node:stream'
 import type { ServerMessage } from '@voicechat/shared'
 import { createTurnManager } from '../turns.js'
 import { VoiceChatDb } from '../db/database.js'
-import { ClaudeCli, type SpawnFn } from '../claude/claudeCli.js'
 import type { LlmClient } from '../claude/types.js'
 import { RemoteLlmClient } from './remoteClient.js'
 import type { RunnerRunBody } from './protocol.js'
@@ -77,26 +72,6 @@ async function startRunner(
   }
 }
 
-/** Локальный CLI на фейковом процессе: печатает те же строки и выходит с 0. */
-async function localClaude(lines: string[]): Promise<LlmClient> {
-  const spawn: SpawnFn = vi.fn(() => {
-    const stdout = new PassThrough()
-    const child = Object.assign(new EventEmitter(), {
-      stdout,
-      stderr: new PassThrough(),
-      stdin: new PassThrough(),
-      kill: vi.fn()
-    })
-    setImmediate(() => {
-      for (const line of lines) stdout.write(`${line}\n`)
-      stdout.end()
-      setImmediate(() => child.emit('close', 0))
-    })
-    return child as never
-  })
-  return new ClaudeCli({ spawn })
-}
-
 /** Ход в свежей БД: возвращает поток событий хода до claude.done/claude.error. */
 async function turnEvents(client: LlmClient): Promise<ServerMessage[]> {
   const db = new VoiceChatDb(':memory:')
@@ -121,28 +96,8 @@ async function turnEvents(client: LlmClient): Promise<ServerMessage[]> {
   return events
 }
 
-/**
- * У двух прогонов свои БД и свои стенные часы: id разговора, id сохранённого
- * сообщения и метки времени записей активности совпасть не могут. Сравниваем всё
- * остальное — тексты, счётчики, метаданные хода.
- */
-function normalize(events: ServerMessage[]): unknown[] {
-  return events.map((m) => {
-    const copy: Record<string, unknown> = { ...m, conversationId: '<conv>' }
-    delete copy.message
-    const meta = copy.meta as { activity?: Array<Record<string, unknown>>; durationMs?: number } | undefined
-    if (meta?.activity) {
-      copy.meta = { ...meta, activity: meta.activity.map((entry) => ({ ...entry, ts: 0 })) }
-    }
-    // Длительность хода — стенные часы: после круга 3 у двух путей разное число
-    // асинхронных шагов, и совпадать она не обязана.
-    if (meta && typeof meta.durationMs === 'number') copy.meta = { ...(copy.meta as object), durationMs: 0 }
-    return copy
-  })
-}
-
 describe('ход модели через исполнителя по HTTP', () => {
-  it('события совпадают с локальным spawn', async () => {
+  it('persists the remote turn and emits the complete host event sequence', async () => {
     const runner = await startRunner((res) => {
       res.writeHead(200, { 'content-type': 'application/x-ndjson' })
       for (const s of LINES) res.write(`${JSON.stringify({ t: 'out', s })}\n`)
@@ -152,8 +107,6 @@ describe('ход модели через исполнителя по HTTP', () =
       const remote = await turnEvents(
         new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url })
       )
-      const local = await turnEvents(await localClaude(LINES))
-      expect(normalize(remote)).toEqual(normalize(local))
       expect(remote.map((m) => m.t)).toEqual([
         'claude.start',
         'claude.usage',
@@ -164,6 +117,8 @@ describe('ход модели через исполнителя по HTTP', () =
       const done = remote.at(-1) as Extract<ServerMessage, { t: 'claude.done' }>
       expect(done.text).toBe('Готово')
       expect(done.meta?.inputTokens).toBe(10)
+      expect(done.meta?.outputTokens).toBe(2)
+      expect(remote.find(m => m.t === 'claude.token')).toMatchObject({ delta: 'Готово' })
       // Промпт ушёл исполнителю, а не в spawn.
       expect(runner.posts[0].prompt).toContain('привет')
     } finally {

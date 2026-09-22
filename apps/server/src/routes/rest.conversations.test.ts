@@ -1,9 +1,6 @@
 // Беседы, сообщения, настройки и полнотекстовый поиск.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
 import { AgentRegistry } from '../agents/registry.js'
@@ -409,76 +406,6 @@ describe('REST: conversations/messages/settings', () => {
     expect((await inj({ method: 'GET', url: `/api/conversations/${chat.id}?${context}` })).json().conversation.id).toBe(chat.id)
     const fromCard = await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/chat` })
     expect(fromCard.json().id).toBe(chat.id)
-  })
-
-  it('cc: projects/sessions/transcript из ~/.claude/projects (VC_CC_DIR)', async () => {
-    const ccDir = mkdtempSync(join(tmpdir(), 'cc-rest-'))
-    const proj = join(ccDir, '-Users-x-demo')
-    mkdirSync(proj, { recursive: true })
-    writeFileSync(
-      join(proj, 'sess.jsonl'),
-      [
-        JSON.stringify({ type: 'user', cwd: '/Users/x/demo', message: { content: 'Помоги с фичей' } }),
-        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Готово' }] } })
-      ].join('\n')
-    )
-    const prev = process.env.VC_CC_DIR
-    process.env.VC_CC_DIR = ccDir
-    try {
-      const projects = (await inj({ method: 'GET', url: '/api/cc/projects' })).json()
-      const demo = projects.find((p: { name: string }) => p.name === 'demo')
-      expect(demo?.path).toBe('/Users/x/demo')
-
-      const sessions = (
-        await inj({ method: 'GET', url: `/api/cc/projects/${demo.slug}/sessions` })
-      ).json()
-      expect(sessions[0].title).toBe('Помоги с фичей')
-
-      const body = (
-        await inj({ method: 'GET', url: `/api/cc/projects/${demo.slug}/sessions/sess` })
-      ).json()
-      expect(body.items.map((i: { kind: string }) => i.kind)).toEqual(['user', 'assistant'])
-      expect(body.usage).toBeDefined()
-    } finally {
-      if (prev === undefined) delete process.env.VC_CC_DIR
-      else process.env.VC_CC_DIR = prev
-      rmSync(ccDir, { recursive: true, force: true })
-    }
-  })
-
-  it('cc:resume создаёт разговор с импортом истории и привязкой session-id', async () => {
-    const ccDir = mkdtempSync(join(tmpdir(), 'cc-resume-'))
-    const proj = join(ccDir, '-Users-x-demo')
-    mkdirSync(proj, { recursive: true })
-    writeFileSync(
-      join(proj, 'sess-42.jsonl'),
-      [
-        JSON.stringify({ type: 'user', cwd: '/Users/x/demo', message: { content: 'Почини баг' } }),
-        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Готово' }] } })
-      ].join('\n')
-    )
-    const prev = process.env.VC_CC_DIR
-    process.env.VC_CC_DIR = ccDir
-    try {
-      const res = await inj({
-        method: 'POST',
-        url: '/api/cc/resume',
-        payload: { slug: '-Users-x-demo', id: 'sess-42' }
-      })
-      expect(res.statusCode).toBe(200)
-      const { conversation, messages } = res.json()
-      // История импортирована в ленту.
-      expect(messages.map((m: { role: string; text: string }) => [m.role, m.text])).toEqual([
-        ['u1', 'Почини баг'],
-        ['ai', 'Готово']
-      ])
-      // Разговор привязан к session-id → следующий ход пойдёт через --resume.
-      expect((await db.chat.getConversation(U, conversation.id))?.claudeSessionId).toBe('sess-42')
-    } finally {
-      if (prev === undefined) delete process.env.VC_CC_DIR
-      else process.env.VC_CC_DIR = prev
-      rmSync(ccDir, { recursive: true, force: true })
-    }
   })
 
   it('cc:resume без slug/id → 400', async () => {

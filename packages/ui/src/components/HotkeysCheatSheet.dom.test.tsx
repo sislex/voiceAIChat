@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { HotkeysCheatSheet } from './HotkeysCheatSheet'
 import type { Command } from '@voicechat/ui-foundation/runtime'
 

@@ -10,7 +10,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { CI_KB_UPDATE_COMMAND_ID, CI_KB_UPDATE_COMMAND_NAME } from '@voicechat/shared'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { CommandExecutor, CiKbUpdateHook, CiModelContext } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { createCiModelHooks } from './modelHooks.js'

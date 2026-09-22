@@ -19,29 +19,20 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `packages/shared` | `@voicechat/shared` | Типы, контракт REST/WS, чистая логика (без зависимостей) | [AGENTS](packages/shared/AGENTS.md) |
 | `packages/component-runtime` | `@sislexa/component-runtime` | Provider tokens, dependency compatibility and managed configuration | [AGENTS](packages/component-runtime/AGENTS.md) |
 | `packages/ui` | `@voicechat/ui` | Общая оболочка, чат, стор и host API; продуктовые панели загружаются отдельно | [AGENTS](packages/ui/AGENTS.md) |
-| `packages/make-app` | `@voicechat/make-app` | Самостоятельный артефакт Make UI | [AGENTS](packages/make-app/AGENTS.md) |
-| `packages/image-studio-app` | `@voicechat/image-studio-app` | Самостоятельный артефакт Image Studio UI | [AGENTS](packages/image-studio-app/AGENTS.md) |
-| `packages/playwright-reader-app` / `packages/web-reader-app` | Reader UI | Самостоятельные панели Chromium/iframe | [UI KB](docs/kb/ui.md#независимые-артефакты-продуктовых-панелей) |
-| `packages/sessions-core` | `@voicechat/sessions-core` | Переносимое ядро «сессий и устройств»: разбор устройства, политики, порт хранилища с контрактом | [README](packages/sessions-core/README.md) |
-| `packages/sessions-app` | `@voicechat/sessions-app` | UI-модуль «Сессии и устройства» (окно аккаунта + панель в админке) | [AGENTS](packages/sessions-app/AGENTS.md) |
-| `apps/identity` / `packages/identity-*` | Identity adapters | Auth, registration, account UI and SDK from `sislex/identity` | [Auth KB](docs/kb/data-auth.md#identity-repository-and-request-authentication) |
-| `apps/server` | `@voicechat/server` | Fastify: REST + WS, SQLite, Whisper, Piper, claude/codex CLI, реестр машин | [AGENTS](apps/server/AGENTS.md) |
-| `apps/make` | `@voicechat/make` | Make (веб-проект с ассистентом): мастерские, REST/превью/публикация, MCP; модуль ядра или отдельный процесс | [AGENTS](apps/make/AGENTS.md) |
-| `apps/playwright-reader` | `@voicechat/playwright-reader` | Playwright Reader: API сессий и действия модели в Chromium; модуль ядра или отдельный процесс | [AGENTS](apps/playwright-reader/AGENTS.md) |
-| `apps/web-reader` | `@voicechat/web-reader` | Web Reader: HTTP-прокси, MCP и отдельный процесс без БД; iframe-рекордер входит в его образ | [AGENTS](apps/web-reader/AGENTS.md) |
-| `apps/image-studio` | `@voicechat/image-studio` | Студия картинок: галереи, REST, публикация; модуль ядра или отдельный процесс | [AGENTS](apps/image-studio/AGENTS.md) |
-| `apps/llm-runner` | `@voicechat/llm-runner` | Исполнитель LLM: единственный, кто делает spawn claude/codex; HTTP `/v1/run` | [AGENTS](apps/llm-runner/AGENTS.md) |
+| `apps/server` | `@voicechat/server` | Fastify: REST/WS, application orchestration, database and machine registry | [AGENTS](apps/server/AGENTS.md) |
 | `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |
-| `apps/web-recorder` | `@voicechat/web-recorder` | Независимый Vite-веб-рекордер; интеграция с ChatAI только через `postMessage`-контракт | [UI KB](docs/kb/ui.md#независимый-веб-рекордер-и-контракт-хоста) |
 | `apps/agent` | `@voicechat/agent` | Компаньон-агент на машине пользователя (exec/fs/pty/телеметрия) | [AGENTS](apps/agent/AGENTS.md) |
 | `apps/agent-tray` | `@voicechat/agent-tray` | Electron-трей вокруг агента (установка, лог, разрешения) | [AGENTS](apps/agent-tray/AGENTS.md) |
 | `apps/desktop` | `@voicechat/desktop` | Тонкая Electron-оболочка web/server + legacy-импорт БД (вне workspaces) | [AGENTS](apps/desktop/AGENTS.md) |
 
-Voice (STT/TTS/browser audio), Image Studio, Make, Playwright Reader, Web Reader,
-their UI/contracts, and Web Recorder are
-compatibility workspaces backed by pinned `@sislexa/*` releases. Implement changes
-in their separate repositories; see `docs/kb/architecture.md#tool-repository-ownership`.
-The adapters delegate full checks to the installed upstream workspaces.
+Make, both Readers (including Browser Runner and Web Recorder), Image Studio,
+Voice, Identity and Billing are direct versioned `@sislexa/*` dependencies, with
+separate owner contract archives. No compatibility workspace remains for them.
+Implement and test their internals in the owner repositories; Core tests its own
+host, authorization and transport integration. Owner-built UI assets are verified,
+not compiled in Core. LLM Runner lives in `sislex/llm-runner`; Core uses its
+authenticated HTTP API and a development-only public server archive for contract
+tests. There is no local CLI fallback. See `docs/kb/architecture.md#tool-repository-ownership`.
 
 UI Kit and UI Foundation are versioned dependencies owned by
 [sislex/sielexa-ui](https://github.com/sislex/sielexa-ui). Their source, internal
@@ -62,7 +53,7 @@ npm run typecheck            # все воркспейсы; отдельно: ty
 npm run test                 # все воркспейсы (vitest run)
 npm run gate:fast            # гейт шага: приложения по диффу от HEAD
 npm run gate                 # приложения по диффу ветки перед коммитом/PR
-npm run gate:app -- make     # полный гейт выбранного приложения
+npm run gate:app -- core     # full gate for a Core-owned application
 npm run gate:all             # полный гейт монорепозитория
 npm run test:coverage        # покрытие shared/server/ui с порогами-трещоткой
 npm run -w @voicechat/ui test        # тесты одного пакета — так быстрее
@@ -124,7 +115,7 @@ npm run kb:check             # что в базе знаний устарело 
   файлы — `.ts`. В `packages/ui`/`shared` — без расширений, алиас `@shared/*`.
 - **Write all new comments and documentation in English**, explaining why decisions
   were made. Make code comments and Markdown are maintained in English across
-  `apps/make`, `packages/make-app`, and `packages/make-contracts`. Keep tests next
+  the separate `sislex/make` repository. Keep tests next
   to their source as `*.test.ts` / `*.dom.test.tsx`.
 - **Communicate with the user in Russian by default in every conversation in this project**, unless the user explicitly requests another language.
 - **В прод-чекауте не работают.** `target.path` (сейчас `/root/ChatAI`) — это корень

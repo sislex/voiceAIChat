@@ -1,6 +1,6 @@
 import { userHasCapability, TARIFF_DENIED } from '../accountAccess.js'
 import { RpcError } from '@voicechat/shared'
-import type { ImageStudioCore, ImageStudioGeneration } from '@voicechat/image-studio'
+import type { ImageStudioCore, ImageStudioGeneration } from '@sislexa/image-studio/image-studio/index'
 import type { VoiceChatDb } from '../db/database.js'
 import type { LlmClient } from '../claude/types.js'
 import { llmImageStudioGenerator } from './generator.js'
@@ -9,7 +9,7 @@ export class LocalImageStudioCore implements ImageStudioCore {
   constructor(private readonly opts: {
     db: VoiceChatDb
     client: LlmClient
-    profileHome(userId: string): string
+    generationCwd?(userId: string): string
     readGenerated(userId: string, path: string): Promise<{ dataBase64: string } | null>
   }) {}
   async conversation(userId: string, id: string) {
@@ -27,7 +27,7 @@ export class LocalImageStudioCore implements ImageStudioCore {
     const settings = await this.opts.db.settings.getSettings(userId)
     if (cancelled) throw new Error('Генерация отменена')
     return llmImageStudioGenerator({
-      client: this.opts.client, userId, model: settings.codexModel, cwd: this.opts.profileHome(userId),
+      client: this.opts.client, userId, model: settings.codexModel, cwd: this.opts.generationCwd?.(userId),
       readGenerated: (path) => this.readGenerated(userId, path)
     })({ ...input, onCancel: (fn) => { cancel = fn; if (cancelled) fn() } })
   }
