@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseToolBlock, toolBlock, detectOpenUtility, toolHint } from './tools'
-import type { AgentInfo } from './agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 
 const agents: AgentInfo[] = [
   {

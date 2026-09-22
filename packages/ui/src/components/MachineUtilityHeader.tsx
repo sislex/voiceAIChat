@@ -12,7 +12,7 @@
 // двусторонний переключатель «консоль/терминал ↔ проводник» и ссылка в раздел
 // «Машины», где политика правится.
 
-import type { AgentInfo, AgentPolicy } from '@shared/agentProtocol'
+import type { AgentInfo, AgentPolicy } from '@sislexa/agent-contracts'
 import { Button } from '@voicechat/ui-kit'
 import type { UtilityKind } from '@voicechat/ui-foundation/components/machine'
 

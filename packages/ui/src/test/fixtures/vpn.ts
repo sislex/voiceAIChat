@@ -1,7 +1,7 @@
-import { initialVpnState, type VpnObservation, type VpnView, type VpnBridge } from '@shared/vpn'
+import { initialVpnState, type VpnObservation, type VpnView, type VpnBridge } from '@sislexa/agent-contracts'
 import { T0 } from './chat'
-import { AGENT_VERSION } from '@shared/version'
-import type { AgentInfo } from '@shared/agentProtocol'
+import { AGENT_VERSION } from '@sislexa/agent-contracts'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import { makeAgent } from './machines'
 export const makeVpnAgent = (over: Partial<AgentInfo> = {}): AgentInfo => makeAgent({ version: AGENT_VERSION, ...over })
 export { T0 as VPN_TIME }

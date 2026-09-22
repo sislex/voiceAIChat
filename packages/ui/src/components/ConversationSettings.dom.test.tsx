@@ -3,7 +3,7 @@ import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@voicechat/sh
 import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { describe, expect, it, vi } from 'vitest'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import { ConversationSettings } from './ConversationSettings'
 import type { ProjectDetail, ProjectSummary } from '@shared/projects'
 import { makeAgent, makeConversation } from '../test/fixtures/index'

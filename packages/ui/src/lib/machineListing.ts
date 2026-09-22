@@ -1,4 +1,4 @@
-import type { FsEntry } from '@shared/agentProtocol'
+import type { FsEntry } from '@sislexa/agent-contracts'
 
 const listings = new Map<string, FsEntry[]>()
 const normalize = (path: string): string => path.replace(/\\/g, '/').replace(/\/+$/, '') || '/'

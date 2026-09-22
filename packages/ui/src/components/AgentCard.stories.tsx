@@ -3,7 +3,7 @@
 // сам по себе, чтобы видеть состояния политики без парка машин.
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
-import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
+import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import { AgentCard } from './AgentCard'
 import { makeAgent, makeAndroidAgent, makeOfflineAgent, makePolicy } from '../test/fixtures/index'
 

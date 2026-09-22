@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { AgentRegistry, type AgentSocket } from './registry'
-import { DEFAULT_AGENT_POLICY, type ServerToAgent } from '@voicechat/shared'
+import { DEFAULT_AGENT_POLICY, type ServerToAgent } from '@sislexa/agent-contracts'
 
 /** Фейковый сокет: копит отправленные сообщения. */
 function fakeSocket(): AgentSocket & { sent: ServerToAgent[]; closed: boolean } {

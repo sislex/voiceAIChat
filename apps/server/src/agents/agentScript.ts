@@ -1,35 +1,7 @@
-// Сборка компаньон-агента в один самодостаточный CommonJS-файл: пользователь
-// скачивает его и запускает `node voicechat-agent.cjs` без клонирования репозитория
-// (ws вшивается в бандл; типы @voicechat/shared стираются как import type).
-
-import { fileURLToPath } from 'node:url'
-import { build } from 'esbuild'
-
-const AGENT_ENTRY = fileURLToPath(new URL('../../../agent/src/index.ts', import.meta.url))
-
-let cached: Promise<string> | null = null
-
-/** Собирает (и кеширует) бандл агента. Формат — CJS, чтобы ws грузился без ESM-возни. */
-export async function buildAgentScript(): Promise<string> {
-  if (cached) return cached
-  cached = build({
-    entryPoints: [AGENT_ENTRY],
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    target: 'node18',
-    write: false,
-    // Опциональные нативные ускорители ws: отсутствуют → ws сам падает на JS-фолбэк.
-    // @lydell/node-pty — нативный (живой терминал): не бандлим, грузим require в
-    // рантайме там, где агент установлен из репозитория/трея. Нет модуля →
-    // startPty ловит ошибку и терминал деградирует (exec остаётся рабочим).
-    external: ['bufferutil', 'utf-8-validate', '@lydell/node-pty'],
-    banner: { js: '#!/usr/bin/env node' }
-  })
-    .then((res) => res.outputFiles[0].text)
-    .catch((err) => {
-      cached = null // дать шанс пересобрать при следующем запросе
-      throw err
-    })
-  return cached
+// Serve the owner-built script; installing Core never compiles companion source.
+import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
+export function buildAgentScript(): Promise<string> {
+  return readFile(require.resolve('@sislexa/agent/voicechat-agent.cjs'), 'utf8')
 }

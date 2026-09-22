@@ -5,7 +5,7 @@ import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { FastifyInstance } from 'fastify'
 import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness, type InjOpts } from './restHarness.js'
-import { AGENT_VERSION } from '@voicechat/shared'
+import { AGENT_VERSION } from '@sislexa/agent-contracts'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach

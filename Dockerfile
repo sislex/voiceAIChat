@@ -8,7 +8,8 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY . .
-RUN npm ci
+# Electron is only a host integration test dependency; its binary is not used by Core services.
+RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 ARG VC_APPLICATION_COMMIT
 RUN VC_APPLICATION_COMMIT="$VC_APPLICATION_COMMIT" npm run build:frontends
 RUN npm run -w @voicechat/web build

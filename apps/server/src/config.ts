@@ -168,10 +168,10 @@ const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const REPO = {
   piperBin: join(REPO_ROOT, '.venv-piper/bin/piper'),
-  piperVoicesDir: join(REPO_ROOT, 'apps/desktop/resources/piper-voices'),
-  agentAppDir: join(REPO_ROOT, 'apps/agent-tray/release'),
-  desktopAppDir: join(REPO_ROOT, 'apps/desktop/release'),
-  loginApplicationDir: join(REPO_ROOT, 'apps/login-application/release')
+  piperVoicesDir: join(REPO_ROOT, 'artifacts/voice/piper-voices'),
+  agentAppDir: join(REPO_ROOT, 'artifacts/agent'),
+  desktopAppDir: join(REPO_ROOT, 'artifacts/desktop'),
+  loginApplicationDir: join(REPO_ROOT, 'artifacts/login-application')
 }
 
 /** Первый .dmg в каталоге (собранный компаньон-агент) или undefined. */
@@ -233,6 +233,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     host: env.HOST ?? '127.0.0.1',
     dataDir,
     corsOrigins: [...new Set([
+      'sislexa://app',
       'http://localhost:5173',
       'http://127.0.0.1:5173',
       ...(env.VC_CORS_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean)

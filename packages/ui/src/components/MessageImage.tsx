@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { imageMime, imageName, machineImageUrls, type ImageRef } from '@shared/images'
 import type { ServerFileInfo } from '@shared/protocol'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { MessageAttachment } from '@shared/types'
 import { ImageRetouchEditor } from '@sislexa/image-studio/ui/components/ImageRetouchEditor'
 import { copyImage } from '@voicechat/ui-foundation/lib/clipboard'

@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve, dirname } from 'node:path'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
 import { measure } from './measure-routes.mjs'
 import { checkRoutes, compareRoutes, selectRouteBaseline } from './route-budgets.mjs'
 if (process.platform === 'linux' && !process.env.DISPLAY) {
@@ -10,7 +12,7 @@ if (process.platform === 'linux' && !process.env.DISPLAY) {
 } else {
   try {
     const output = resolve('artifacts/route-budgets')
-    const report = await measure({ web: 'apps/web/dist', desktop: 'apps/desktop/out/renderer', output })
+    const report = await measure({ web: 'apps/web/dist', desktop: dirname(require.resolve('@sislexa/desktop/renderer/index.html')), output })
     const budget = JSON.parse(readFileSync('frontend-quality/route-budgets.json', 'utf8'))
     const budgetDiff = checkRoutes(budget, report)
     const baseline = selectRouteBaseline([

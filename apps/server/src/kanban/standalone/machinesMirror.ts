@@ -2,7 +2,7 @@
 // телеметрию машины синхронно (21 вызов `isOnline` в горячих путях автопилота и подготовки), поэтому
 // по сети их не спрашиваем: ядро присылает снимок после каждого изменения реестра, здесь он просто
 // заменяет предыдущий. Пропущенный пуш догоняет следующий — состояние всегда полное, не дельта.
-import type { AgentPolicy, AgentTelemetry } from '@voicechat/shared'
+import type { AgentPolicy, AgentTelemetry } from '@sislexa/agent-contracts'
 import type { MachineSnapshot } from '../internal.js'
 
 export class MachinesMirror {

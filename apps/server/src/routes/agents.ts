@@ -6,33 +6,8 @@ import { registerVpnRoutes } from '../machines/vpn/routes.js'
 import { VpnService } from '../machines/vpn/service.js'
 import { createReadStream, existsSync } from 'node:fs'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import {
-  REST,
-  AGENT_VERSION,
-  MACHINE_STORAGE_FORMAT_VERSION,
-  chatStorageDirectories,
-  type ChatStorageView,
-  type FsCopyResult,
-  recommendedChatStoragePath,
-  managedChatAttachmentsPath,
-  managedChatArtifactsPath,
-  managedChatTemporaryPath,
-  MANAGED_ENVIRONMENT_DIRECTORIES,
-  validateStorageRelativePath,
-  isMachineStoragePathAllowed,
-  normalizeMachineStoragePath,
-  agentOsFromPlatform,
-  installCommand,
-  installScriptUrl,
-  type AgentInfo,
-  type AgentPolicy,
-  BATCH_MAX_MACHINES,
-  BATCH_OUTPUT_LIMIT,
-  type BatchExecItem,
-  type BatchExecResult,
-  LOGIN_ENROLLMENT_TTL_MS,
-  loginEnrollmentDeepLink,
-} from '@voicechat/shared'
+import { REST, MACHINE_STORAGE_FORMAT_VERSION, chatStorageDirectories, type ChatStorageView, recommendedChatStoragePath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, isMachineStoragePathAllowed, normalizeMachineStoragePath, agentOsFromPlatform, installCommand, installScriptUrl } from '@voicechat/shared'
+import { AGENT_VERSION, type FsCopyResult, type AgentInfo, type AgentPolicy, BATCH_MAX_MACHINES, BATCH_OUTPUT_LIMIT, type BatchExecItem, type BatchExecResult, LOGIN_ENROLLMENT_TTL_MS, loginEnrollmentDeepLink } from '@sislexa/agent-contracts'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from "@sislexa/identity/server/users/auth"
 import type { AgentRegistry } from '../agents/registry.js'
@@ -40,9 +15,9 @@ import type { MachinesService } from '../machines/service.js'
 import { ensureDefaultStorage } from '../agents/defaultStorage.js'
 import type { CommandGate } from '../agents/commandGate.js'
 import { buildAgentScript } from '../agents/agentScript.js'
-import { buildAndroidInstallScript } from '../agents/androidInstall.js'
-import { buildWindowsInstallScript } from '../agents/windowsInstall.js'
-import { buildUnixInstallScript } from '../agents/unixInstall.js'
+import { buildAndroidInstallScript } from '@sislexa/agent/installers'
+import { buildWindowsInstallScript } from '@sislexa/agent/installers'
+import { buildUnixInstallScript } from '@sislexa/agent/installers'
 
 /** Кавычим строку для одинарных кавычек bash. */
 function shellQuote(s: string): string {
@@ -421,10 +396,10 @@ export async function registerAgentRoutes(
 
   // Собранные .dmg. Собираются заранее (npm --prefix … run dist).
   app.get(REST.agentApp, async (_req, reply) =>
-    sendDmg(reply, artifacts.agentApp, 'voicechat-agent.dmg', 'npm --prefix apps/agent-tray run dist')
+    sendDmg(reply, artifacts.agentApp, 'voicechat-agent.dmg', 'Publish the Agent installer from sislex/agent and configure VC_AGENT_APP')
   )
   app.get(REST.desktopApp, async (_req, reply) =>
-    sendDmg(reply, artifacts.desktopApp, 'voicechat-desktop.dmg', 'npm --prefix apps/desktop run dist')
+    sendDmg(reply, artifacts.desktopApp, 'voicechat-desktop.dmg', 'Publish Desktop from sislex/desktop and configure VC_DESKTOP_APP')
   )
 
   // Реестр расширяем по platform/arch; на первом этапе доступна только macOS ARM64.
@@ -446,7 +421,7 @@ export async function registerAgentRoutes(
     if (req.query.platform !== 'macos' || req.query.arch !== 'arm64') {
       return reply.code(404).send({ error: 'Сборка для этой платформы и архитектуры недоступна' })
     }
-    return sendDmg(reply, artifacts.loginApplication, 'voicechat-login-macos-arm64.dmg', 'npm --prefix apps/login-application run dist')
+    return sendDmg(reply, artifacts.loginApplication, 'voicechat-login-macos-arm64.dmg', 'Publish the enrollment client from sislex/agent and configure VC_LOGIN_APPLICATION')
   })
 
   app.post(REST.loginEnrollmentIssue, async (req) => {

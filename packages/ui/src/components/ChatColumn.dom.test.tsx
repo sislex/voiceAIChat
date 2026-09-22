@@ -5,7 +5,7 @@ import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import { makeAiMessage, makeChatPair, makeMachineOps, makeUserMessage } from '../test/fixtures/index'
 
 import { uiPerformance } from '../lib/uiPerformance'

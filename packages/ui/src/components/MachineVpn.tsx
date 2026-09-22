@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { usePolling } from '@voicechat/ui-kit'
 import './MachineVpn.css'
 import { Button, EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
-import type { AgentInfo } from '@shared/agentProtocol'
-import { isToolAllowed } from '@shared/version'
-import { VPN_ERRORS, isVpnFresh, type VpnBridge, type VpnChange, type VpnMode, type VpnView } from '@shared/vpn'
+import type { AgentInfo } from '@sislexa/agent-contracts'
+import { isToolAllowed } from '@sislexa/agent-contracts'
+import { VPN_ERRORS, isVpnFresh, type VpnBridge, type VpnChange, type VpnMode, type VpnView } from '@sislexa/agent-contracts'
 
 export const VPN_MODE_LABELS = { off: 'Выключен', server: 'Использовать как VPN-сервер', client: 'Подключиться к VPN', unknown: 'Неизвестно' }
 /** No administrative input is persisted in a store, URL, notice, or command history. */

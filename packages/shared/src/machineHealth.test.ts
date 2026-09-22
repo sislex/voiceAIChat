@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { machineHealth, formatBytes, LOW_DISK_BYTES } from './machineHealth'
-import type { AgentInfo } from './agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 
 const base: AgentInfo = {
   id: 'm1', name: 'Мак', online: true, createdAt: 1, lastSeen: 5, version: '0.15.0',

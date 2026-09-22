@@ -4,7 +4,8 @@
 // события PTY приходят той же шиной и раздаются `emit`-подписчикам, зарегистрированным в `ptyStart`.
 // Кадры владельцам (журнал команд, watchdog) процесс машин присылает сюда же — они уходят в шину кадров ядра.
 import { WebSocket } from 'ws'
-import type { AgentPolicy, ServerMessage } from '@voicechat/shared'
+import type { ServerMessage } from '@voicechat/shared'
+import type { AgentPolicy } from '@sislexa/agent-contracts'
 import { AgentFsError } from '../agents/registry.js'
 import { execOverHttp } from '../internal/execStream.js'
 import {

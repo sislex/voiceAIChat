@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MachineCommandLog, commandsToCsv } from './MachineCommandLog'
 import { saveTextFile } from '../lib/saveFile'
 vi.mock('../lib/saveFile', () => ({ saveTextFile: vi.fn() }))
-import type { MachineCommandRecord } from '@shared/agentProtocol'
+import type { MachineCommandRecord } from '@sislexa/agent-contracts'
 
 const rows: MachineCommandRecord[] = [
   { id: 2, machineId: 'm1', userId: 'bob', source: 'chat', command: 'npm test', exitCode: 1, timedOut: false, error: null, durationMs: 2500, startedAt: 1700000000000, conversationId: 'c1', outputExcerpt: 'FAIL' },

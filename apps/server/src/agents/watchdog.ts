@@ -2,7 +2,8 @@
 // владелец получает событие `machine.status` (тост) и запись в machine_events; когда агент вернулся —
 // второе событие «вернулась после N мин». Автоперезапуск самого агента делают launchd/systemd
 // (`unixInstall.ts`: KeepAlive/Restart=always) — сервер лишь замечает, что перезапуск не помог.
-import type { MachineStatusEvent, ServerMessage } from '@voicechat/shared'
+import type { ServerMessage } from '@voicechat/shared'
+import type { MachineStatusEvent } from '@sislexa/agent-contracts'
 
 export interface WatchdogDeps {
   db: {

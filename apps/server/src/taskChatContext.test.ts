@@ -9,7 +9,7 @@ import { VoiceChatDb } from './db/database.js'
 import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { LlmClient, LlmRequest } from './claude/types.js'
 import { createTurnManager } from './turns.js'
-import { DEFAULT_AGENT_POLICY } from '@voicechat/shared'
+import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 
 const SECRET = 'task-ctx-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string

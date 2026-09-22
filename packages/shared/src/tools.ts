@@ -5,7 +5,7 @@
 // добавляет либо само приложение (распознав команду пользователя), либо модель
 // (по инструкции TOOL_HINT). Чистые функции — без DOM и сети.
 
-import type { AgentInfo } from './agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 
 /** Какую утилиту открыть в сообщении и на какой машине. */
 export interface ToolSpec {

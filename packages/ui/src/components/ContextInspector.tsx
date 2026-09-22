@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type SyntheticEvent } from 'react'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import { CONTEXT_LOCK_TEXT, skillNameForContextId } from '@shared/contextGating'
 import { instructionIdForContextId, instructionText } from '@shared/chatInstructions'
 import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'

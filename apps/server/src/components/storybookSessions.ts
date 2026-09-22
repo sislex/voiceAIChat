@@ -10,10 +10,8 @@
 // раньше, ловит 504 от прокси (у моста агента таймаут 10 с). Проба заодно прогревает
 // сервер, чтобы первая загрузка кадра не упиралась в этот таймаут.
 
-import {
-  PROJECT_STORYBOOK_DEFAULT_COMMAND, PROJECT_STORYBOOK_DEFAULT_PORT,
-  type AgentHttpRequest, type AgentHttpResponse, type ProjectStorybookSession, type ProjectStorybookState
-} from '@voicechat/shared'
+import { PROJECT_STORYBOOK_DEFAULT_COMMAND, PROJECT_STORYBOOK_DEFAULT_PORT, type ProjectStorybookSession, type ProjectStorybookState } from '@voicechat/shared'
+import { type AgentHttpRequest, type AgentHttpResponse } from '@sislexa/agent-contracts'
 
 export interface StorybookRegistry {
   ptyStart(agentId: string, ptyId: string, cols: number, rows: number, cwd: string | undefined, emit: (e: { t: string; ptyId: string; data?: string; message?: string }) => void): void

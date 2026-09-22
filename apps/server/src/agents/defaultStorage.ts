@@ -3,11 +3,8 @@
 // файла получает привязку к первому хранилищу машины (рекомендуемый относительный путь). Так любые файлы —
 // картинки, вложения, артефакты — ложатся внутрь ChatAI, а не в корень проводника машины.
 import { randomUUID } from 'node:crypto'
-import {
-  MACHINE_STORAGE_FORMAT_VERSION, isMachineStoragePathAllowed, managedChatArtifactsPath, managedChatAttachmentsPath,
-  managedChatTemporaryPath, normalizeMachineStoragePath, recommendedChatStoragePath, validateStorageRelativePath,
-  type AgentPolicy, type ChatStorageBinding, type MachineStorage
-} from '@voicechat/shared'
+import { MACHINE_STORAGE_FORMAT_VERSION, isMachineStoragePathAllowed, managedChatArtifactsPath, managedChatAttachmentsPath, managedChatTemporaryPath, normalizeMachineStoragePath, recommendedChatStoragePath, validateStorageRelativePath, type ChatStorageBinding, type MachineStorage } from '@voicechat/shared'
+import { type AgentPolicy } from '@sislexa/agent-contracts'
 
 export const DEFAULT_MACHINE_DIR = 'ChatAI'
 

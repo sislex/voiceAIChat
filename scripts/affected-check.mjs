@@ -29,16 +29,9 @@ export const PACKAGES = [
   { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui', dependsOn: ['admin-app', 'app-shell', 'chat-app', 'operations-app', 'projects-app', 'shared'] },
   { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['component-runtime', 'shared'] },
   { id: 'automation-runner', path: 'apps/automation-runner', workspace: '@voicechat/automation-runner', dependsOn: ['shared'] },
-  { id: 'agent', path: 'apps/agent', workspace: '@voicechat/agent', dependsOn: ['shared'] },
   // `ui` тут не из package.json, а из tsconfig `paths` и alias в vite.config.ts.
   { id: 'web', path: 'apps/web', workspace: '@voicechat/web', dependsOn: ['chat-app', 'shared', 'ui'] },
-  // Вне npm-workspaces: свой node_modules с Electron, поэтому запуск через --prefix.
-  // `manualGate` — их не втягивает замыкание потребителей: корневой `npm install`
-  // их не ставит, и на машине без локального install гейт падал бы на чужой правке
-  // UI. Свои гейты у них отдельные (`typecheck:desktop`, `test:desktop` в verify).
-  { id: 'desktop', path: 'apps/desktop', prefix: 'apps/desktop', dependsOn: ['shared', 'ui', 'web'], manualGate: true },
-  { id: 'agent-tray', path: 'apps/agent-tray', prefix: 'apps/agent-tray', dependsOn: ['shared'], manualGate: true },
-  { id: 'login-application', path: 'apps/login-application', prefix: 'apps/login-application', dependsOn: ['shared', 'agent'], manualGate: true }
+  // Extracted clients run their internal gates in the owner repositories.
 ]
 
 const workspacePackages = PACKAGES.filter((pkg) => pkg.workspace)

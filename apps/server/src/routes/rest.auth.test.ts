@@ -22,9 +22,9 @@ beforeEach(() => { ({ app, db } = harness) })
 
 describe('REST: аутентификация', () => {
   // @testCase TC-01
-  it('отвечает credentialed CORS preflight для разрешённых Electron dev origins', async () => {
-    db.identity.createUser('electron', 'electron-pass-2026', 'developer')
-    for (const origin of ['http://localhost:5173', 'http://127.0.0.1:5173']) {
+  it('allows credentialed login from the packaged Desktop and Electron dev origins', async () => {
+    await db.identity.createUser('electron', 'electron-pass-2026', 'developer')
+    for (const origin of ['sislexa://app', 'http://localhost:5173', 'http://127.0.0.1:5173']) {
       const response = await app.inject({
         method: 'OPTIONS',
         url: '/api/session/login',

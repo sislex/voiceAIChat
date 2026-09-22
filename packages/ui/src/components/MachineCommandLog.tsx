@@ -2,7 +2,7 @@
 // Данные приходят через колбэк — компонент транспорт-нейтрален; экспорт CSV собирается на клиенте
 // из загруженных записей, чтобы не зависеть от REST-пути и заголовков авторизации.
 import { useEffect, useState } from 'react'
-import type { MachineCommandRecord, MachineCommandSource } from '@shared/agentProtocol'
+import type { MachineCommandRecord, MachineCommandSource } from '@sislexa/agent-contracts'
 import { Button } from '@voicechat/ui-kit'
 import { saveTextFile } from '../lib/saveFile'
 

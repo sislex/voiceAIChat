@@ -9,7 +9,7 @@
 // снятое в строке разрешение обратно.
 
 import { useState } from 'react'
-import type { AgentInfo, AgentPolicy, AgentSkill } from '@shared/agentProtocol'
+import type { AgentInfo, AgentPolicy, AgentSkill } from '@sislexa/agent-contracts'
 import { IconButton } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 

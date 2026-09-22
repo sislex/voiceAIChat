@@ -1,8 +1,8 @@
 // Бейдж здоровья машины хода в шапке чата: точка состояния + имя, тултип с телеметрией.
 // Предупреждения (offline/устарел/мало места) — отдельной полосой над строкой ввода (MachineHealthWarnings).
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import { machineHealth } from '@shared/machineHealth'
-import { AGENT_VERSION } from '@shared/version'
+import { AGENT_VERSION } from '@sislexa/agent-contracts'
 
 export function MachineHealthBadge({ agent, onClick }: { agent: AgentInfo | undefined; onClick?: () => void }): JSX.Element {
   const health = machineHealth(agent, AGENT_VERSION)

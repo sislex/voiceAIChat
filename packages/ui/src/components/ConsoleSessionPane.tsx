@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { RendererPtyBridge } from '@shared/ipc'
-import { consolePtyId } from '@shared/types'
+import { consolePtyId } from '@sislexa/agent-contracts'
 import { EmptyState } from '@voicechat/ui-kit'
 import { TerminalView } from './MachineTerminal'
 

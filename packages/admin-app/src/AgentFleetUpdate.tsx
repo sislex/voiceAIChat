@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react'
 import { usePolling } from '@voicechat/ui-kit'
 import type { AdminUserInfo } from '@shared/admin'
-import { compareVersions } from '@shared/version'
+import { compareVersions } from '@sislexa/agent-contracts'
 import { Button } from '@voicechat/ui-kit'
 
 export interface AgentFleetUpdateProps {

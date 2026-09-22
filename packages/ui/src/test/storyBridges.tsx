@@ -14,7 +14,7 @@ import type {
   RendererFsBridge,
   RendererPtyBridge
 } from '@shared/ipc'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import { createFakeApi, createFakeCi, type FakeApi, type FakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import { createFakePty, makeMachineOps, PLOT_SVG_BASE64 } from './fixtures/machines'
 

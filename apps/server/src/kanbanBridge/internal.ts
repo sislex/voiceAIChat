@@ -1,6 +1,7 @@
 // Сторона ядра для внутреннего протокола «ядро ↔ канбан» (`kanban/internal.ts`): RPC-диспетчер над
 // локальной реализацией `KanbanCore` и снимок машин из реестра для зеркала канбана.
-import type { AgentPolicy, AgentTelemetry, WidgetSurfaceSnapshot } from '@voicechat/shared'
+import type { WidgetSurfaceSnapshot } from '@voicechat/shared'
+import type { AgentPolicy, AgentTelemetry } from '@sislexa/agent-contracts'
 import { RpcError, type RpcRequest } from '@voicechat/shared'
 import type { KanbanCore } from '../kanban/core.js'
 import { KANBAN_CORE_RPC_METHODS, type KanbanCoreRpcMethod, type MachineSnapshot } from '../kanban/internal.js'

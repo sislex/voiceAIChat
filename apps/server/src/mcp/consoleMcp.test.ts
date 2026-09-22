@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
-import type { PtyContext } from '@voicechat/shared'
+import type { PtyContext } from '@sislexa/agent-contracts'
 import { registerConsoleMcp } from './consoleMcp'
 import type { AgentRegistry } from '../agents/registry'
 
