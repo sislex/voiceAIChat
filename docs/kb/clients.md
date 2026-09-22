@@ -1,17 +1,12 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
 updated: 2026-09-22
-checked: 60c3f73a
+checked: 457b6260
 areas:
-  - apps/web
-  - packages/ui/desktop-client
-  - packages/ui/src/desktopClient.tsx
-  - scripts/chat-client-release.mjs
   - apps/server/src/config.ts
   - apps/server/src/server.ts
-  - apps/server/src/users/auth.ts
-  - packages/ui/src/remote
-  - packages/ui/src/store/domains/sessionStore.ts
+  - scripts/core-ui-artifact.mjs
+  - scripts/dev-ui-proxy.mjs
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
@@ -27,12 +22,12 @@ As of the September 22 extraction, `sislex/agent` owns the companion runtime,
 protocol, installer generators, tray and enrollment application. `sislex/desktop`
 owns Electron main/preload/windows, legacy import and packaging. Their internal
 tests and source directories are removed from Core. Both owners install and gate
-without a sibling Core checkout. Desktop consumes pinned Agent and chat-client
-archives. Core owns the shared chat UI and publishes it through
-`scripts/chat-client-release.mjs`; `packages/ui/src/desktopClient.tsx` is its
-renderer bootstrap. Desktop does not compile Core UI source.
+without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
+archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
+its renderer is no longer selected. Core UI publishes the shared renderer from its
+own repository. Desktop does not compile Core UI source.
 
-Core browser integration uses the published Desktop renderer and its own Electron
+Core browser integration uses the published Core UI renderer, Desktop preload and its own Electron
 test dependency, with no `npm ci --prefix apps/desktop`. Desktop's owner gate
 checks migration/configuration, then launches real Electron and exercises server
 setup, chat login rendering, persisted origin and preload isolation. First-time

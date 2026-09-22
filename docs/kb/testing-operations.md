@@ -1,20 +1,14 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: 60c3f73a
+checked: 457b6260
 areas:
   - package.json
   - scripts
   - apps/server/vitest.config.ts
   - apps/server/src/server.test.ts
   - apps/server/src/playwrightReaderBridge
-  - apps/playwright-reader
-  - apps/browser-runner/vitest.config.ts
-  - apps/llm-runner/vitest.config.ts
-  - apps/agent/vitest.config.ts
   - packages/shared/vitest.config.ts
-  - packages/ui/vitest.config.ts
-  - packages/app-shell
   - Dockerfile
   - docker-compose.yml
   - docker-compose.parallel.yml
@@ -30,13 +24,16 @@ Core UI unit/DOM tests, Storybook, accessibility fixtures, lazy-screen recovery,
 Core retains real API/browser integration (including route read-cache behavior in `e2e/routeResources.e2e.test.ts`) and Web/Desktop route budgets. The full Core gate typechecks/tests Core workspaces, verifies product panels and the pinned Core UI artifact, then measures public browser integration. There is no React, renderer or Storybook source build in Core. `test:storybook` remains a compatibility command that verifies the published artifact; actual component QA runs in the UI owner.
 
 
+Measured on the local MacBook Air M2: the full UI owner gate completed in 225 seconds; the full Core branch gate completed in 505 seconds, including route budgets and 104 API/browser integration cases. These are observed times, not CI SLAs. The fixed-hardware Admin benchmark still requires its Linux/AMD EPYC baseline host; local native Electron integration passed without replacing that baseline.
+
+
 ## Extracted application test ownership
 
 Agent runtime/protocol/installer and device-client tests now belong to `sislex/agent`;
 Desktop migration/configuration/packaging and real Electron setup smoke belong to
 `sislex/desktop`. Core consumes their pinned artifacts and retains host/server
 integration tests. Core no longer installs or builds a local Electron application;
-its browser harness uses its own pinned Electron and the published Desktop renderer.
+its browser harness uses its own pinned Electron, published Desktop preload and the Core UI renderer.
 The Core production installer syntax tests remain here.
 
 Reader integration input uses locator-relative hover/click actions, which wait for
