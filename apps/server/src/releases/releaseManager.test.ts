@@ -205,6 +205,8 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).toContain("+refs/heads/release/1.2.3:refs/voicechat/releases/attempt-7")
     expect(command).toContain("git rev-parse 'refs/voicechat/releases/attempt-7'")
     expect(command).toContain("git update-ref -d 'refs/voicechat/releases/attempt-7'")
+    expect(command).toContain("git config 'branch.release/1.2.3.remote' origin")
+    expect(command).toContain("git config 'branch.release/1.2.3.merge' 'refs/heads/release/1.2.3'")
     // Preconditions explain themselves instead of failing silently.
     expect(command).toContain('Production checkout содержит незакоммиченные изменения')
     expect(command).toContain('смотрит на другой remote.origin.url')

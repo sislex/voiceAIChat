@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: 5b0f646d
+checked: d2ae2ac6
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -98,11 +98,15 @@ is replaced atomically under a writer lock. Activation records its actor, previo
 release and generation. Installation rejects links, unlisted/missing/corrupt
 files, dirty provenance, incompatible APIs and reuse of an ID with a different
 manifest. A failed validation leaves the active release unchanged. Direct CLI
-calls use `npm run ui:release -- <command>` inside the Core environment.
+calls use `npm run ui:release -- <command>` inside the Core environment. The host
+`voicechat-ui-deploy install` command accepts the extracted owner artifact directory,
+not the `.tgz` archive; Release Center performs this extraction in its disposable
+staging directory before invoking the command.
 
 ```bash
 voicechat-ui-deploy status
-voicechat-ui-deploy install /absolute/path/to/owner-browser-artifact
+tar -xzf /absolute/path/to/owner-browser-archive.tgz -C /absolute/path/to/extracted-owner-browser-artifact
+voicechat-ui-deploy install /absolute/path/to/extracted-owner-browser-artifact
 voicechat-ui-deploy rollback
 voicechat-ui-deploy activate --release bundled
 voicechat-ui-deploy activate --release <version>-<full-source-sha>
