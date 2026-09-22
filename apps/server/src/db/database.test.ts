@@ -828,24 +828,6 @@ describe('VoiceChatDb — пользователи и админ-данные', 
   })
   afterEach(() => db.close())
 
-  it('ensureAdmin создаёт admin один раз', async () => {
-    await db.identity.ensureAdmin()
-    await db.identity.ensureAdmin()
-    expect((await db.identity.listUsers()).map((u) => u.name)).toEqual(['admin'])
-    expect((await db.identity.getUser('admin'))?.role).toBe('admin')
-  })
-
-  it('createUser/getUser/verifyUserPassword/блокировка/удаление', async () => {
-    await db.identity.createUser('bob', 'pw', 'developer')
-    expect(await db.identity.getUser('bob')).toMatchObject({ name: 'bob', role: 'developer', blocked: false })
-    expect((await db.identity.verifyUserPassword('bob', 'pw'))?.name).toBe('bob')
-    expect(await db.identity.verifyUserPassword('bob', 'x')).toBeNull()
-    await db.identity.setUserBlocked('bob', true)
-    expect((await db.identity.getUser('bob'))?.blocked).toBe(true)
-    await db.identity.deleteUser('bob')
-    expect(await db.identity.getUser('bob')).toBeNull()
-  })
-
   it('deleteUserData стирает разговоры/агентов/настройки и учётку', async () => {
     await db.identity.createUser('bob', '', 'developer')
     const c = await db.chat.createConversation('bob', 'Чат')

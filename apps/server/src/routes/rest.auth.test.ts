@@ -1,10 +1,10 @@
-import { PRODUCT_CAPABILITIES } from '@voicechat/shared'
-// Аутентификация, регистрация, 2FA и «свои данные» (/api/me/*).
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { PRODUCT_CAPABILITIES } from '@sislexa/identity/contracts/accountAccess'
+// Core integration: CORS, admin orchestration, resource permissions and legacy migration.
+// Identity's internal authentication/device cases run in the Identity repository.
+import { describe, it, expect, beforeEach } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
 import { SCHEMA_SQL } from '../db/schema.js'
-import { signToken } from '../users/accounts.js'
-import { totpCode } from '../users/totp'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { FastifyInstance } from 'fastify'
 import { setupRestHarness } from './restHarness.js'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
@@ -19,7 +19,6 @@ const { inj, sentMails, SECRET } = harness
 let app: FastifyInstance
 let db: VoiceChatDb
 beforeEach(() => { ({ app, db } = harness) })
-
 
 describe('REST: аутентификация', () => {
   // @testCase TC-01
@@ -97,41 +96,6 @@ describe('REST: аутентификация', () => {
     expect(bad.statusCode).toBe(401)
   })
 
-  it('rate-limit входа: 11-я попытка за окно → 429 с Retry-After, по имени и по IP (auth-roadmap п.1)', async () => {
-    await db.identity.createUser('victim', 'secret-pass', 'developer')
-    let last = 0
-    for (let i = 0; i < 10; i++) last = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'victim', password: 'wrong' } })).statusCode
-    expect([401, 423]).toContain(last) // с 5-й неудачи срабатывает замок аккаунта (п.3), но лимит по имени считает и его
-    const blocked = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'victim', password: 'secret-pass' } })
-    expect(blocked.statusCode).toBe(429)
-    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
-    // Лимит по IP шире (30): другие имена с того же адреса проходят, пока окно не заполнится, затем — 429.
-    for (let i = 0; i < 19; i++) await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: `other${i}`, password: '' } })
-    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'other-last', password: '' } })).statusCode).toBe(429)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('блокировка после неудач: 5 неверных → 423 даже с верным паролем, 10 → blocked с причиной auto; успех сбрасывает счётчик (auth-roadmap п.3)', async () => {
-    await db.identity.createUser('locky', 'right-pass-2026', 'developer')
-    for (let i = 0; i < 4; i++) expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'nope' } })).statusCode).toBe(401)
-    // 4 неудачи — ещё можно войти, и счётчик обнуляется.
-    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'right-pass-2026' } })).statusCode).toBe(200)
-    expect((await db.identity.getUser('locky'))!.failedLogins).toBe(0)
-    for (let i = 0; i < 5; i++) await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'nope' } })
-    const locked = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'right-pass-2026' } })
-    expect(locked.statusCode).toBe(423)
-    expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0)
-    // Ручная разблокировка админом снимает замок.
-    await db.identity.setUserBlocked('locky', false)
-    expect((await db.identity.getUser('locky'))!.lockedUntil).toBeNull()
-    // 10 подряд — постоянная блокировка с причиной auto (замок между попытками снимаем напрямую, чтобы не ждать 15 минут).
-    for (let i = 0; i < 10; i++) { await db.identity.recordLoginFailure('locky') }
-    const u = (await db.identity.getUser('locky'))!
-    expect(u.blocked).toBe(true)
-    expect(u.lockReason).toBe('auto')
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
   it('сессии: список с текущей, «выйти везде» отзывает остальные, отзыв одной, админ видит и отзывает (auth-roadmap п.4)', async () => {
     await db.identity.createUser('sess', 'sess-pass-2026-ok', 'developer')
     const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'sess', password: 'sess-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
@@ -154,92 +118,6 @@ describe('REST: аутентификация', () => {
     expect(adminList.sessions).toHaveLength(1)
     expect((await inj({ method: 'DELETE', url: `/api/admin/sessions/${adminList.sessions[0]!.sid}` })).statusCode).toBe(200)
     expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t1}` } })).statusCode).toBe(401)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('cookie-сессия: по https имена с префиксом __Secure-, старая пара гасится, чтение принимает оба имени (инцидент 31.08.2026)', async () => {
-    await db.identity.createUser('scheme', 'scheme-pass-2026', 'developer')
-    const https = { 'x-forwarded-proto': 'https' }
-    const login = await app.inject({ method: 'POST', url: '/api/session/login', headers: https, payload: { name: 'scheme', password: 'scheme-pass-2026' } })
-    const setCookies = ([] as string[]).concat(login.headers['set-cookie'] as string[])
-    const session = setCookies.find((c) => c.startsWith('__Secure-vc_session='))!
-    const csrfCookie = setCookies.find((c) => c.startsWith('__Secure-vc_csrf='))!
-    // Префикс имеет силу только вместе с флагом Secure — без него браузер cookie отвергнет.
-    expect(session).toContain('Secure'); expect(session).toContain('HttpOnly')
-    expect(csrfCookie).toContain('Secure')
-    expect(setCookies.find((c) => c.startsWith('__Secure-vc_preview_session='))).toContain('Secure')
-    expect(setCookies.find((c) => c.startsWith('__Secure-vc_device='))).toBeTruthy()
-    // Обычная пара имён гасится: иначе оставшаяся Secure-cookie со старым именем
-    // навсегда затенила бы http-версию адреса, и вход по http не сохранялся бы.
-    expect(setCookies.find((c) => c.startsWith('vc_session=;'))).toContain('Max-Age=0')
-    expect(setCookies.find((c) => c.startsWith('vc_csrf=;'))).toContain('Max-Age=0')
-    const csrf = login.json().csrf as string
-    const secureCookie = `${session.split(';')[0]}; ${csrfCookie.split(';')[0]}`
-    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { ...https, cookie: secureCookie } })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { ...https, cookie: secureCookie, 'x-vc-csrf': csrf }, payload: { title: 'x' } })).statusCode).not.toBe(403)
-    // Мусорная cookie старого имени рядом с защищённой не мешает: приоритет у __Secure-.
-    const mixed = `vc_session=протухший-токен; vc_csrf=протухший-csrf; ${secureCookie}`
-    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { ...https, cookie: mixed } })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { ...https, cookie: mixed, 'x-vc-csrf': csrf }, payload: { title: 'x' } })).statusCode).not.toBe(403)
-    // По http имена остаются обычными, и гашения старой пары НЕТ — иначе вход по
-    // http удалял бы cookie, которую сам же только что поставил.
-    const plain = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'scheme', password: 'scheme-pass-2026' } })
-    const plainCookies = ([] as string[]).concat(plain.headers['set-cookie'] as string[])
-    expect(plainCookies.find((c) => c.startsWith('vc_session='))).not.toContain('Secure')
-    expect(plainCookies.some((c) => c.startsWith('__Secure-'))).toBe(false)
-    expect(plainCookies.filter((c) => c.startsWith('vc_session=;'))).toHaveLength(0)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('сессия запоминает устройство: ключ, платформу, версию клиента, локальную сеть и активность', async () => {
-    await db.identity.createUser('meta', 'meta-pass-2026-ok', 'developer')
-    const chrome = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
-    const login = await app.inject({
-      method: 'POST',
-      url: '/api/session/login',
-      payload: { name: 'meta', password: 'meta-pass-2026-ok' },
-      headers: { 'user-agent': chrome, 'x-vc-client-version': '0.1.200' }
-    })
-    const token = login.json().token as string
-    const one = (await db.identity.listSessions('meta'))[0]!
-    expect(one.deviceKey).toMatch(/^[0-9a-f]{8}$/)
-    expect(one.platform).toBe('web')
-    expect(one.clientVersion).toBe('0.1.200')
-    // Тесты ходят с loopback: место известно без внешних сервисов.
-    expect(one.geo).toMatchObject({ local: true, label: 'локальная сеть' })
-    expect(one.requests).toBe(0)
-    // Отметка активности не чаще раза в минуту: серия запросов подряд её не двигает.
-    await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${token}` } })
-    expect((await db.identity.listSessions('meta'))[0]!.requests).toBe(0)
-    await db.identity.touchSession(one.sid, 60_000, '/api/conversations', Date.now() + 120_000)
-    const touched = (await db.identity.listSessions('meta'))[0]!
-    expect(touched.requests).toBe(1)
-    expect(touched.lastPath).toBe('/api/conversations')
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('место входа с публичного адреса уточняется в фоне и попадает в список', async () => {
-    await db.identity.createUser('geo', 'geo-pass-2026-okay', 'developer')
-    await app.inject({
-      method: 'POST',
-      url: '/api/session/login',
-      payload: { name: 'geo', password: 'geo-pass-2026-okay' },
-      headers: { 'user-agent': 'Chrome/128 Mac OS X' },
-      remoteAddress: '203.0.113.7'
-    })
-    // Резолвер подменён в beforeEach: реальные тесты в сеть не ходят.
-    await vi.waitFor(async () => expect((await db.identity.listSessions('geo'))[0]!.geo).toMatchObject({ label: 'Москва, RU' }))
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('электронная оболочка и агент опознаются как отдельные платформы', async () => {
-    await db.identity.createUser('plat', 'platform-pass-2026', 'developer')
-    const login = async (ua: string): Promise<void> => {
-      await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'plat', password: 'platform-pass-2026' }, headers: { 'user-agent': ua } })
-    }
-    await login('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Electron/33.0.0 Chrome/130.0.0.0 Safari/537.36')
-    await login('VoiceChatAgent/1.4.2 (darwin)')
-    expect((await db.identity.listSessions('plat')).map((s) => s.platform).sort()).toEqual(['agent', 'desktop'])
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
@@ -285,134 +163,6 @@ describe('REST: аутентификация', () => {
     await legacyDb.close()
   })
 
-  it('переименование и доверие: только своя сессия, пустое имя снимает метку, чужая — 404', async () => {
-    await db.identity.createUser('named', 'named-pass-2026-ok', 'developer')
-    await db.identity.createUser('alien', 'alien-pass-2026-ok', 'developer')
-    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'named', password: 'named-pass-2026-ok' } })).json().token as string
-    const alienToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'alien', password: 'alien-pass-2026-ok' } })).json().token as string
-    const sid = (await db.identity.listSessions('named'))[0]!.sid
-    const patch = (body: Record<string, unknown>, bearer = token) =>
-      app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: body, headers: { authorization: `Bearer ${bearer}` } })
-    expect((await patch({ label: '  Рабочий ноут  ' })).statusCode).toBe(200)
-    expect((await db.identity.listSessions('named'))[0]!.label).toBe('Рабочий ноут')
-    expect((await patch({ label: '' })).statusCode).toBe(200)
-    expect((await db.identity.listSessions('named'))[0]!.label).toBeNull()
-    expect((await patch({ trusted: true })).statusCode).toBe(200)
-    expect((await db.identity.listSessions('named'))[0]!.trustedAt).toBeGreaterThan(0)
-    expect((await patch({ trusted: false })).statusCode).toBe(200)
-    expect((await db.identity.listSessions('named'))[0]!.trustedAt).toBeNull()
-    // Пустое тело менять нечего; чужая сессия неотличима от несуществующей.
-    expect((await patch({})).statusCode).toBe(400)
-    expect((await patch({ label: 'Чужое' }, alienToken)).statusCode).toBe(404)
-    expect((await db.identity.listSecurityEvents({ user: 'named' })).map((e) => e.type)).toContain('session_trusted')
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('«выйти везде» с includeCurrent гасит и текущую сессию вместе с cookie', async () => {
-    await db.identity.createUser('allout', 'allout-pass-2026-ok', 'developer')
-    const login = async () => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'allout', password: 'allout-pass-2026-ok' } })).json().token as string
-    const t1 = await login(), t2 = await login()
-    const res = await app.inject({ method: 'POST', url: '/api/session/logout-all', payload: { includeCurrent: true }, headers: { authorization: `Bearer ${t1}` } })
-    expect(res.json()).toMatchObject({ revoked: 2 })
-    expect(([] as string[]).concat(res.headers['set-cookie'] as string[]).some((c) => c.startsWith('vc_session=;'))).toBe(true)
-    for (const token of [t1, t2]) {
-      expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(401)
-    }
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('лимит одновременных сессий вытесняет самую давнюю и пишет событие', async () => {
-    await db.settings.setAppConfig('sessions.maxPerUser', '2')
-    await db.identity.createUser('limited', 'limited-pass-2026-ok', 'developer')
-    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'limited', password: 'limited-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
-    const first = await login('Phone/1.0')
-    const second = await login('Laptop/2.0')
-    const third = await login('Tablet/3.0')
-    expect((await db.identity.listSessions('limited')).map((s) => s.userAgent).sort()).toEqual(['Laptop/2.0', 'Tablet/3.0'])
-    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${first}` } })).statusCode).toBe(401)
-    for (const token of [second, third]) {
-      expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200)
-    }
-    expect((await db.identity.listSecurityEvents({ user: 'limited' })).map((e) => e.type)).toContain('session_evicted')
-    await db.settings.setAppConfig('sessions.maxPerUser', '')
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('брошенные сессии отзываются по сроку неактивности, свежие остаются', async () => {
-    await db.identity.createUser('stale', 'stale-pass-2026-okay', 'developer')
-    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'stale', password: 'stale-pass-2026-okay' } })).json().token as string
-    expect(await db.identity.revokeStaleSessions(90)).toBe(0)
-    // Сдвигаем «сейчас» на сто дней вперёд вместо правки строки напрямую.
-    expect(await db.identity.revokeStaleSessions(90, Date.now() + 100 * 24 * 60 * 60_000)).toBe(1)
-    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(401)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('сессии: повторный отзыв, чужой sid, мутации по cookie без CSRF и предельный User-Agent', async () => {
-    await db.identity.createUser('edge', 'edge-case-pass-2026', 'developer')
-    await db.identity.createUser('neighbour', 'neighbour-pass-2026', 'developer')
-    const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'edge', password: 'edge-case-pass-2026' }, headers: { 'user-agent': 'X'.repeat(500) } })
-    const token = login.json().token as string
-    // Длинный UA обрезается на записи, а не роняет вставку.
-    expect((await db.identity.listSessions('edge'))[0]!.userAgent.length).toBe(200)
-    const sid = (await db.identity.listSessions('edge'))[0]!.sid
-    const auth = { authorization: `Bearer ${token}` }
-    expect((await app.inject({ method: 'DELETE', url: `/api/session/${sid}`, headers: auth })).statusCode).toBe(200)
-    // Своя сессия уже мертва: и повторный отзыв, и любой запрос по ней — как чужие.
-    expect((await app.inject({ method: 'DELETE', url: `/api/session/${sid}`, headers: auth })).statusCode).toBe(401)
-    const neighbourToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'neighbour', password: 'neighbour-pass-2026' } })).json().token as string
-    const neighbourSid = (await db.identity.listSessions('neighbour'))[0]!.sid
-    const freshToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'edge', password: 'edge-case-pass-2026' } })).json().token as string
-    expect((await app.inject({ method: 'DELETE', url: `/api/session/${neighbourSid}`, headers: { authorization: `Bearer ${freshToken}` } })).statusCode).toBe(404)
-    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${neighbourToken}` } })).statusCode).toBe(200)
-
-    // Cookie-сессия: мутации сессий без заголовка CSRF отвергаются, с ним — проходят.
-    const cookieLogin = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'edge', password: 'edge-case-pass-2026' } })
-    const cookies = ([] as string[]).concat(cookieLogin.headers['set-cookie'] as string[])
-    const cookieHeader = cookies.map((c) => c.split(';')[0]).join('; ')
-    const csrf = cookieLogin.json().csrf as string
-    const cookieSid = (await db.identity.listSessions('edge')).at(-1)!.sid
-    for (const request of [
-      { method: 'POST' as const, url: '/api/session/logout-all' },
-      { method: 'PATCH' as const, url: `/api/session/${cookieSid}`, payload: { label: 'Ноут' } },
-      { method: 'DELETE' as const, url: `/api/session/${cookieSid}` }
-    ]) {
-      const denied = await app.inject({ ...request, headers: { cookie: cookieHeader } })
-      expect(denied.statusCode, `${request.method} ${request.url}`).toBe(403)
-      expect(denied.json()).toMatchObject({ error: 'csrf' })
-    }
-    expect((await app.inject({ method: 'PATCH', url: `/api/session/${cookieSid}`, payload: { label: 'Ноут' }, headers: { cookie: cookieHeader, 'x-vc-csrf': csrf } })).statusCode).toBe(200)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('доверие привязано к секрету устройства: тот же браузер из той же сети без cookie проходит второй фактор', async () => {
-    await db.identity.createUser('secretly', 'secretly-pass-2026', 'developer')
-    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
-    const login = async (cookie?: string) => app.inject({
-      method: 'POST', url: '/api/session/login',
-      payload: { name: 'secretly', password: 'secretly-pass-2026' },
-      headers: { 'user-agent': ua, ...(cookie ? { cookie } : {}) }
-    })
-    const first = await login()
-    const deviceCookie = ([] as string[]).concat(first.headers['set-cookie'] as string[]).find((c) => c.startsWith('vc_device='))!
-    expect(deviceCookie).toContain('HttpOnly')
-    const deviceHeader = deviceCookie.split(';')[0]!
-    const token = first.json().token as string
-    const sid = (await db.identity.listSessions('secretly'))[0]!.sid
-    await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${token}` } })
-    const secret = (await app.inject({ method: 'POST', url: '/api/session/2fa/setup', headers: { authorization: `Bearer ${token}` } })).json().secret as string
-    await app.inject({ method: 'POST', url: '/api/session/2fa/enable', payload: { code: totpCode(secret) }, headers: { authorization: `Bearer ${token}` } })
-
-    // С cookie устройства — второй фактор пропускается.
-    expect((await login(deviceHeader)).json()).toMatchObject({ user: { name: 'secretly' } })
-    // Тот же User-Agent и тот же адрес, но без секрета — код спрашиваем: иначе
-    // сосед по сети, укравший пароль, обошёл бы второй фактор подделкой примет.
-    expect((await login()).json()).toMatchObject({ requires2fa: true })
-    // Чужой секрет тоже не подходит.
-    expect((await login('vc_device=подделанный-секрет-достаточной-длины')).json()).toMatchObject({ requires2fa: true })
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
   it('список сессий не отдаёт хеш секрета устройства ни владельцу, ни админу', async () => {
     await db.identity.createUser('hidden', 'hidden-pass-2026-ok', 'developer')
     const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'hidden', password: 'hidden-pass-2026-ok' } })).json().token as string
@@ -422,41 +172,6 @@ describe('REST: аутентификация', () => {
     expect(own.sessions[0]).not.toHaveProperty('deviceSecret')
     const admin = (await inj({ method: 'GET', url: '/api/admin/users/hidden/sessions' })).json() as { sessions: Array<Record<string, unknown>> }
     expect(admin.sessions[0]).not.toHaveProperty('deviceSecret')
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('завершённые сессии отдаются по запросу и показывают момент завершения', async () => {
-    await db.identity.createUser('history', 'history-pass-2026-ok', 'developer')
-    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'history', password: 'history-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
-    const keep = await login('Laptop/1.0')
-    await login('Phone/2.0')
-    const phoneSid = (await db.identity.listSessions('history')).find((s) => s.userAgent === 'Phone/2.0')!.sid
-    await app.inject({ method: 'DELETE', url: `/api/session/${phoneSid}`, headers: { authorization: `Bearer ${keep}` } })
-
-    const auth = { authorization: `Bearer ${keep}` }
-    const plain = (await app.inject({ method: 'GET', url: '/api/session/list', headers: auth })).json() as { ended?: unknown }
-    // Без запроса завершённых лишнего чтения из базы не делаем.
-    expect(plain.ended).toBeUndefined()
-    const withEnded = (await app.inject({ method: 'GET', url: '/api/session/list?ended=1', headers: auth })).json() as { sessions: unknown[]; ended: Array<{ sid: string; ended: boolean; endedAt: number }> }
-    expect(withEnded.sessions).toHaveLength(1)
-    expect(withEnded.ended[0]).toMatchObject({ sid: phoneSid, ended: true })
-    expect(withEnded.ended[0]!.endedAt).toBeGreaterThan(0)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('«это не я» гасит все сессии и требует смену пароля при следующем входе', async () => {
-    await db.identity.createUser('panicky', 'panicky-pass-2026-ok', 'developer')
-    const login = async () => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'panicky', password: 'panicky-pass-2026-ok' } })).json()
-    const first = (await login()).token as string
-    const second = (await login()).token as string
-    const res = await app.inject({ method: 'POST', url: '/api/session/panic', headers: { authorization: `Bearer ${first}` } })
-    expect(res.json()).toMatchObject({ revoked: 2 })
-    for (const token of [first, second]) {
-      expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(401)
-    }
-    // Следующий вход проходит, но приложение обязано увести на смену пароля.
-    expect((await login()).user).toMatchObject({ name: 'panicky', mustChangePassword: true })
-    expect((await db.identity.listSecurityEvents({ user: 'panicky' })).map((e) => e.type)).toContain('session_panic')
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
@@ -470,60 +185,6 @@ describe('REST: аутентификация', () => {
     expect((await inj({ method: 'PUT', url: '/api/admin/signup', payload: { sessionLimit: 0 } })).json()).toMatchObject({ sessionLimit: 0 })
   })
 
-  it('доверять можно только вход, подтверждённый кодом; признак виден в списке', async () => {
-    await db.identity.createUser('tfa', 'tfa-user-pass-2026', 'developer')
-    const first = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'tfa', password: 'tfa-user-pass-2026' } })
-    const token = first.json().token as string
-    const sid = (await db.identity.listSessions('tfa'))[0]!.sid
-    // Пока второго фактора нет, доверие ставится как обычно.
-    expect((await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200)
-    const secret = (await app.inject({ method: 'POST', url: '/api/session/2fa/setup', headers: { authorization: `Bearer ${token}` } })).json().secret as string
-    await app.inject({ method: 'POST', url: '/api/session/2fa/enable', payload: { code: totpCode(secret) }, headers: { authorization: `Bearer ${token}` } })
-    // Сессия сама код не проходила: доверять ей теперь нельзя.
-    await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: false }, headers: { authorization: `Bearer ${token}` } })
-    const denied = await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${token}` } })
-    expect(denied.statusCode).toBe(409)
-    expect(denied.json().error).toMatch(/подтверждён кодом/)
-
-    // Вход по коду помечается — и его уже можно сделать доверенным.
-    const challenge = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'tfa', password: 'tfa-user-pass-2026' } })).json() as { ticket: string }
-    const second = (await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket: challenge.ticket, code: totpCode(secret) } })).json().token as string
-    const confirmed = (await db.identity.listSessions('tfa')).find((x) => x.twoFactor)!
-    expect(confirmed).toBeDefined()
-    expect((await app.inject({ method: 'PATCH', url: `/api/session/${confirmed.sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${second}` } })).statusCode).toBe(200)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('роль укорачивает срок жизни сессии', async () => {
-    await db.identity.createUser('watcher', 'watcher-pass-2026-ok', 'observer')
-    await db.identity.createUser('worker', 'worker-pass-2026-okay', 'developer')
-    const ttlOf = async (name: string, password: string): Promise<number> => {
-      await app.inject({ method: 'POST', url: '/api/session/login', payload: { name, password } })
-      const s = (await db.identity.listSessions(name))[0]!
-      return s.expiresAt - s.createdAt
-    }
-    const week = 7 * 24 * 60 * 60_000
-    expect(await ttlOf('watcher', 'watcher-pass-2026-ok')).toBeLessThanOrEqual(week + 5000)
-    expect(await ttlOf('worker', 'worker-pass-2026-okay')).toBeGreaterThan(week)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('история устройства отдаёт события этого входа и закрыта для чужих сессий', async () => {
-    await db.identity.createUser('hist', 'hist-user-pass-2026', 'developer')
-    await db.identity.createUser('nosy', 'nosy-user-pass-2026', 'developer')
-    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
-    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'hist', password: 'hist-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string
-    const sid = (await db.identity.listSessions('hist'))[0]!.sid
-    await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: 'Ноут' }, headers: { authorization: `Bearer ${token}`, 'user-agent': ua } })
-    const history = (await app.inject({ method: 'GET', url: `/api/session/${sid}/history`, headers: { authorization: `Bearer ${token}` } })).json() as { events: Array<{ type: string }> }
-    expect(history.events.map((e) => e.type)).toContain('login')
-    expect(history.events.map((e) => e.type)).toContain('session_renamed')
-
-    const alien = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'nosy', password: 'nosy-user-pass-2026' } })).json().token as string
-    expect((await app.inject({ method: 'GET', url: `/api/session/${sid}/history`, headers: { authorization: `Bearer ${alien}` } })).statusCode).toBe(404)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
   it('админ снимает доверие с устройства пользователя', async () => {
     await db.identity.createUser('trusted-user', 'trusted-user-pass-26', 'developer')
     const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'trusted-user', password: 'trusted-user-pass-26' } })).json().token as string
@@ -535,119 +196,6 @@ describe('REST: аутентификация', () => {
     // Сессия при этом остаётся живой: сняли доверие, а не выгнали человека.
     expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200)
     expect((await inj({ method: 'DELETE', url: '/api/admin/sessions/нет-такой/trust' })).statusCode).toBe(404)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('массовое закрытие входов предупреждает письмом на подтверждённый адрес', async () => {
-    // Email появляется только через подтверждение — как у настоящего пользователя.
-    await db.identity.createEmailVerification({ token: 'verified-mailed', name: 'mailed', email: 'mailed@example.com', password: 'mailed-user-pass-2026', ttlMs: 60_000 })
-    expect(await db.identity.redeemEmailVerification('verified-mailed', 'developer')).not.toBeNull()
-    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'mailed', password: 'mailed-user-pass-2026' } })).json().token as string
-    await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'mailed', password: 'mailed-user-pass-2026' } })
-    sentMails.length = 0
-    await app.inject({ method: 'POST', url: '/api/session/logout-all', headers: { authorization: `Bearer ${token}` } })
-    await vi.waitFor(() => expect(sentMails.some((m) => m.to === 'mailed@example.com' && /завершены другие сессии/.test(m.text))).toBe(true))
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('частые операции с сессиями упираются в ограничение', async () => {
-    await db.identity.createUser('spammy', 'spammy-user-pass-2026', 'developer')
-    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'spammy', password: 'spammy-user-pass-2026' } })).json().token as string
-    const sid = (await db.identity.listSessions('spammy'))[0]!.sid
-    let limited = 0
-    for (let i = 0; i < 35; i++) {
-      const res = await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: `имя-${i}` }, headers: { authorization: `Bearer ${token}` } })
-      if (res.statusCode === 429) limited++
-    }
-    expect(limited).toBeGreaterThan(0)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('история устройства держится на sid и переживает смену адреса', async () => {
-    await db.identity.createUser('roamer', 'roamer-pass-2026-ok', 'developer')
-    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
-    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'roamer', password: 'roamer-pass-2026-ok' }, headers: { 'user-agent': ua }, remoteAddress: '203.0.113.7' })).json().token as string
-    const sid = (await db.identity.listSessions('roamer'))[0]!.sid
-    // Тот же вход, но человек уехал в другую сеть — событие пишется с другого адреса.
-    await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: 'Ноут' }, headers: { authorization: `Bearer ${token}`, 'user-agent': ua }, remoteAddress: '198.51.100.9' })
-    const history = (await app.inject({ method: 'GET', url: `/api/session/${sid}/history`, headers: { authorization: `Bearer ${token}` } })).json() as { events: Array<{ type: string }> }
-    expect(history.events.map((e) => e.type)).toEqual(expect.arrayContaining(['login', 'session_renamed']))
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('завершённая сессия помнит причину: отзыв, лимит, тревога и простой', async () => {
-    await db.settings.setAppConfig('sessions.maxPerUser', '2')
-    await db.identity.createUser('reasons', 'reasons-pass-2026-ok', 'developer')
-    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'reasons', password: 'reasons-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
-    const first = await login('Phone/1.0')
-    await login('Laptop/2.0')
-    const keep = await login('Tablet/3.0')
-    const endedByLimit = (await db.identity.listEndedSessions('reasons')).find((s) => s.userAgent === 'Phone/1.0')
-    expect(endedByLimit?.endReason).toBe('evicted')
-    expect(first).toBeTruthy()
-
-    const laptopSid = (await db.identity.listSessions('reasons')).find((s) => s.userAgent === 'Laptop/2.0')!.sid
-    await app.inject({ method: 'DELETE', url: `/api/session/${laptopSid}`, headers: { authorization: `Bearer ${keep}` } })
-    expect((await db.identity.listEndedSessions('reasons')).find((s) => s.sid === laptopSid)?.endReason).toBe('revoked')
-
-    await app.inject({ method: 'POST', url: '/api/session/panic', headers: { authorization: `Bearer ${keep}` } })
-    expect((await db.identity.listEndedSessions('reasons')).find((s) => s.userAgent === 'Tablet/3.0')?.endReason).toBe('panic')
-
-    await db.settings.setAppConfig('sessions.maxPerUser', '')
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('вытесненную лимитом сессию человек видит в уведомлениях', async () => {
-    await db.settings.setAppConfig('sessions.maxPerUser', '1')
-    await db.identity.createUser('noticed', 'noticed-pass-2026-ok', 'developer')
-    await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'noticed', password: 'noticed-pass-2026-ok' }, headers: { 'user-agent': 'Phone/1.0' } })
-    const second = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'noticed', password: 'noticed-pass-2026-ok' }, headers: { 'user-agent': 'Laptop/2.0' } })).json().token as string
-    const me = (await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${second}` } })).json() as { notices: Array<{ type: string }> }
-    // Иначе выход выглядит как сбой: сессия исчезла, а причины нигде нет.
-    expect(me.notices.map((n) => n.type)).toContain('session_evicted')
-    await db.settings.setAppConfig('sessions.maxPerUser', '')
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('имя устройства наследуется новым входом и меняется сразу для всех его сессий', async () => {
-    await db.identity.createUser('namer', 'namer-pass-2026-okay', 'developer')
-    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
-    const login = async () => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'namer', password: 'namer-pass-2026-okay' }, headers: { 'user-agent': ua } })).json().token as string
-    const first = await login()
-    const firstSid = (await db.identity.listSessions('namer'))[0]!.sid
-    await app.inject({ method: 'PATCH', url: `/api/session/${firstSid}`, payload: { label: 'Рабочий ноут' }, headers: { authorization: `Bearer ${first}` } })
-
-    // Второй вход с того же устройства получает имя сам.
-    await login()
-    expect((await db.identity.listSessions('namer')).every((s) => s.label === 'Рабочий ноут')).toBe(true)
-
-    // Переименование по умолчанию меняет все входы устройства…
-    await app.inject({ method: 'PATCH', url: `/api/session/${firstSid}`, payload: { label: 'Домашний ПК' }, headers: { authorization: `Bearer ${first}` } })
-    expect((await db.identity.listSessions('namer')).every((s) => s.label === 'Домашний ПК')).toBe(true)
-    // …а с scope: 'session' — только выбранную.
-    await app.inject({ method: 'PATCH', url: `/api/session/${firstSid}`, payload: { label: 'Только эта', scope: 'session' }, headers: { authorization: `Bearer ${first}` } })
-    const labels = (await db.identity.listSessions('namer')).map((s) => s.label).sort()
-    expect(labels).toEqual(['Домашний ПК', 'Только эта'])
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('доверенных устройств не больше лимита, а «снять доверие со всех» гасит их разом', async () => {
-    await db.identity.createUser('truster', 'truster-pass-2026-ok', 'developer')
-    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'truster', password: 'truster-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
-    const tokens: string[] = []
-    for (let i = 0; i < 6; i++) tokens.push(await login(`Device${i}/1.0`))
-    const sids = (await db.identity.listSessions('truster')).map((s) => s.sid)
-    let denied = 0
-    for (const sid of sids) {
-      const res = await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${tokens[0]}` } })
-      if (res.statusCode === 409) denied++
-    }
-    expect((await db.identity.sessionStats('truster')).trusted).toBe(5)
-    expect(denied).toBe(1)
-
-    const res = await app.inject({ method: 'POST', url: '/api/session/untrust-all', headers: { authorization: `Bearer ${tokens[0]}` } })
-    expect(res.json()).toMatchObject({ affected: 5 })
-    expect((await db.identity.sessionStats('truster')).trusted).toBe(0)
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
@@ -673,58 +221,6 @@ describe('REST: аутентификация', () => {
     await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${token}` } })
     const res = (await inj({ method: 'GET', url: '/api/admin/users/counted/sessions' })).json() as { stats: { total: number; trusted: number } }
     expect(res.stats).toEqual({ total: 2, trusted: 1 })
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('cookie-сессия: login ставит HttpOnly vc_session + vc_csrf; GET по cookie проходит, мутация без CSRF → 403, с заголовком → ок; logout гасит cookie (auth-roadmap п.5)', async () => {
-    await db.identity.createUser('cook', 'cookie-pass-2026', 'developer')
-    const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'cook', password: 'cookie-pass-2026' } })
-    const setCookies = ([] as string[]).concat(login.headers['set-cookie'] as string[])
-    const session = setCookies.find((c) => c.startsWith('vc_session='))!
-    const csrfCookie = setCookies.find((c) => c.startsWith('vc_csrf='))!
-    expect(session).toContain('HttpOnly'); expect(session).toContain('Path=/;')
-    expect(csrfCookie).not.toContain('HttpOnly')
-    expect(login.json().csrf).toBe(csrfCookie.split(';')[0]!.split('=')[1])
-    const cookie = `${session.split(';')[0]}; ${csrfCookie.split(';')[0]}`
-    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { cookie }, payload: { title: 'x' } })).statusCode).toBe(403)
-    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { cookie, 'x-vc-csrf': login.json().csrf }, payload: { title: 'x' } })).statusCode).not.toBe(403)
-    // Перенос Bearer → cookie.
-    const mig = await app.inject({ method: 'POST', url: '/api/session/cookie', headers: { authorization: `Bearer ${login.json().token}` } })
-    expect(mig.statusCode).toBe(200)
-    expect(String(mig.headers['set-cookie'])).toContain('vc_session=')
-    // Logout по cookie без CSRF-заголовка не проходит и cookie не гасит (защита от «выхода» чужой вкладкой/сайтом).
-    expect((await app.inject({ method: 'POST', url: '/api/session/logout', headers: { cookie } })).statusCode).toBe(403)
-    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200)
-    const out = await app.inject({ method: 'POST', url: '/api/session/logout', headers: { cookie, 'x-vc-csrf': login.json().csrf } })
-    expect(out.statusCode).toBe(200)
-    expect(String(out.headers['set-cookie'])).toContain('vc_session=; Path=/')
-    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(401)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('2FA TOTP: setup → enable по коду → логин отдаёт тикет → код даёт сессию; disable по коду (auth-roadmap п.6)', async () => {
-    await db.identity.createUser('two', 'two-factor-pass-2026', 'developer')
-    const first = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })
-    const tok = first.json().token as string
-    const setup = (await app.inject({ method: 'POST', url: '/api/session/2fa/setup', headers: { authorization: `Bearer ${tok}` } })).json() as { secret: string; otpauth: string; enabled: boolean }
-    expect(setup.enabled).toBe(false)
-    expect(setup.otpauth).toContain('otpauth://totp/ChatAI:two')
-    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/enable', headers: { authorization: `Bearer ${tok}` }, payload: { code: '000000' } })).statusCode).toBe(400)
-    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/enable', headers: { authorization: `Bearer ${tok}` }, payload: { code: totpCode(setup.secret) } })).statusCode).toBe(200)
-    // Теперь логин по паролю даёт только тикет.
-    const challenge = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })
-    expect(challenge.json()).toMatchObject({ requires2fa: true })
-    expect(challenge.json().token).toBeUndefined()
-    const ticket = challenge.json().ticket as string
-    expect((await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: '123456' } })).statusCode).toBe(401)
-    const done = await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: totpCode(setup.secret) } })
-    expect(done.statusCode).toBe(200)
-    expect(done.json().user).toEqual({ name: 'two', role: 'developer', account: standardAccount })
-    // Тикет одноразовый.
-    expect((await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: totpCode(setup.secret) } })).statusCode).toBe(401)
-    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/disable', headers: { authorization: `Bearer ${done.json().token}` }, payload: { code: totpCode(setup.secret) } })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })).json().token).toBeTypeOf('string')
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
@@ -790,58 +286,6 @@ describe('REST: аутентификация', () => {
     expect(reset.statusCode).toBe(200)
     expect((await app.inject({ method: 'POST', url: '/api/session/reset', payload: { name: 'temp', code: issued.code, password: 'after-reset-password-2' } })).statusCode).toBe(401)
     expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'temp', password: 'after-reset-password-1' } })).statusCode).toBe(200)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('«запомнить меня»: без флага cookie сессионная (без Max-Age) и TTL 12 ч, с флагом — Max-Age 30 дней (auth-roadmap п.15)', async () => {
-    await db.identity.createUser('rem', 'remember-pass-2026', 'developer')
-    const short = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'rem', password: 'remember-pass-2026', remember: false } })
-    const shortCookie = ([] as string[]).concat(short.headers['set-cookie'] as string[]).find((c) => c.startsWith('vc_session='))!
-    expect(shortCookie).not.toContain('Max-Age')
-    const list = (await app.inject({ method: 'GET', url: '/api/session/list', headers: { authorization: `Bearer ${short.json().token}` } })).json() as { sessions: Array<{ current?: boolean; expiresAt: number; createdAt: number }> }
-    const cur = list.sessions.find((s) => s.current)!
-    expect(cur.expiresAt - cur.createdAt).toBeLessThanOrEqual(12 * 60 * 60_000 + 5000)
-    const long = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'rem', password: 'remember-pass-2026', remember: true } })
-    expect(([] as string[]).concat(long.headers['set-cookie'] as string[]).find((c) => c.startsWith('vc_session='))).toContain(`Max-Age=${30 * 24 * 60 * 60}`)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('новое устройство: уведомляет в приложении и письмом, не чаще раза в сутки для пары UA+IP; настройка отключает письмо (auth-roadmap п.16)', async () => {
-    await db.identity.createEmailVerification({ token: 'verified-dev', name: 'dev', email: 'dev@example.com', password: 'device-pass-2026-x', ttlMs: 60_000 })
-    expect(await db.identity.redeemEmailVerification('verified-dev', 'developer')).not.toBeNull()
-    const a = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Phone/1' } })
-    const b = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Laptop/2', host: 'chat.example.com' } })
-    const me = (await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${a.json().token}` } })).json() as { notices: Array<{ type: string; userAgent: string }> }
-    expect(me.notices.map((n) => n.userAgent)).toEqual(['Laptop/2'])
-    expect(sentMails).toHaveLength(1)
-    expect(sentMails[0]).toMatchObject({ to: 'dev@example.com', subject: 'Новый вход в ChatAI' })
-    expect(sentMails[0]!.text).toContain('Laptop/2')
-    expect(sentMails[0]!.text).toContain('127.0.0.1')
-    expect(sentMails[0]!.text).toContain('chat.example.com/#/security/password')
-    expect(sentMails[0]!.text).toContain('chat.example.com/#/security/sessions')
-
-    await app.inject({ method: 'POST', url: '/api/session/logout', headers: { authorization: `Bearer ${b.json().token}` } })
-    const repeated = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Laptop/2' } })
-    expect(repeated.statusCode).toBe(200)
-    expect(sentMails).toHaveLength(1)
-
-    await db.settings.saveSettings('dev', { ...await db.settings.getSettings('dev'), loginNewDeviceEmails: false })
-    await app.inject({ method: 'POST', url: '/api/session/logout', headers: { authorization: `Bearer ${repeated.json().token}` } })
-    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Tablet/3' } })).statusCode).toBe(200)
-    expect(sentMails).toHaveLength(1)
-
-    await app.inject({ method: 'POST', url: '/api/session/notices/seen', headers: { authorization: `Bearer ${a.json().token}` } })
-    expect(((await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${a.json().token}` } })).json() as { notices: unknown[] }).notices).toEqual([])
-    expect((await db.identity.getUser('dev'))!.lastLogin).toBeGreaterThan(0)
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
-  it('вход нового устройства без подтверждённого email не пытается отправить письмо и не ломает вход', async () => {
-    await db.identity.createUser('local', 'local-device-pass-2026', 'developer')
-    await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'local', password: 'local-device-pass-2026' }, headers: { 'user-agent': 'Phone/1' } })
-    const next = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'local', password: 'local-device-pass-2026' }, headers: { 'user-agent': 'Laptop/2' } })
-    expect(next.statusCode).toBe(200)
-    expect(sentMails).toEqual([])
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 

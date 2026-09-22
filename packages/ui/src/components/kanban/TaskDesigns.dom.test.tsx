@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { TaskDesigns } from './TaskDesigns'
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { TaskTimeline as Timeline } from '@shared/timeline'

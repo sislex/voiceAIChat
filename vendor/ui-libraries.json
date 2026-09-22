@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "release": "https://github.com/sislex/sielexa-ui/releases/tag/v1.0.1",
+  "release": "https://github.com/sislex/sielexa-ui/releases/tag/v1.0.3",
   "packages": [
     {
       "name": "@voicechat/ui-kit",
-      "version": "0.1.2",
-      "asset": "voicechat-ui-kit-0.1.2-63c02ccfe3e6.tgz",
-      "integrity": "sha512-M7vHytQMmkXlnSvPz1AjHmvck+IkQzfeIxkvaFEUBzi7SZb+6HvlEsIsPEvx1FTJV16khK48mWJXUh6sI5Ht0A==",
-      "sha256": "ff16b6def36eb524cdcc4fcb726a477e8ccb97b91a8671f3e118b15d219a37e4",
+      "version": "0.1.3",
+      "asset": "voicechat-ui-kit-0.1.3-ec8ba8f62d43.tgz",
+      "integrity": "sha512-NaHX/ckKIHsGeXzWoX/EQVcE0xLUy3nCOU8FN5ea80MAhm9eLeYDRPOzQU4C3FKswLz496AUJWD0d85zjXsq0Q==",
+      "sha256": "acc40e9187ec3bf5643b4c88f51d8112eeb88cbcbb6b7409d4787513ebad5a4a",
       "source": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/sielexa-ui",
-        "commit": "63c02ccfe3e6089d5192591220e740cfd8b96347",
+        "commit": "ec8ba8f62d43dd626a8a71c65554722b9f84b733",
         "package": "@voicechat/ui-kit",
-        "version": "0.1.2"
+        "version": "0.1.3"
       }
     },
     {
       "name": "@voicechat/ui-foundation",
-      "version": "0.1.4",
-      "asset": "voicechat-ui-foundation-0.1.4-63c02ccfe3e6.tgz",
-      "integrity": "sha512-hzZuBgu852MYB4AYlh4m0O/8C4elhzdCCPi9m8TmpQxinQ/xmLyRbpiDVODws9k/hzMmJArZ2uJmU9NMv0w4Ig==",
-      "sha256": "84dfbe9a5914b5ee29b4eedd0e22034970752e8e7a2663c09f75198af96a8a57",
+      "version": "0.1.6",
+      "asset": "voicechat-ui-foundation-0.1.6-ec8ba8f62d43.tgz",
+      "integrity": "sha512-25NcEg3VOtIiLusgdFSkF7oR94jeUhQKJ++HfyWbcw7m4duBlQE2hcBWKDAfodXkCoO8NAlTNRXE0rWoDa2KdQ==",
+      "sha256": "9996b196bb638977a468063399184ee2bd4c5b3959b488da9265f2ae928eb314",
       "source": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/sielexa-ui",
-        "commit": "63c02ccfe3e6089d5192591220e740cfd8b96347",
+        "commit": "ec8ba8f62d43dd626a8a71c65554722b9f84b733",
         "package": "@voicechat/ui-foundation",
-        "version": "0.1.4"
+        "version": "0.1.6"
       }
     }
   ]

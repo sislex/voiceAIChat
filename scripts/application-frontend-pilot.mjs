@@ -18,7 +18,7 @@ import {
   createDockerRuntime,
   deployApplications
 } from './application-deploy.mjs'
-import { verifyCompatibility } from '../apps/make/compatibility.mjs'
+import { verifyCompatibility } from '@sislexa/make/compatibility'
 const token = 'compatibility-isolated-local-only'
 const docker = (args) =>
   execFileSync('docker', args, {

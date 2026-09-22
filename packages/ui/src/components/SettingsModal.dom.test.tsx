@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 // @testCase tc-regression-global-llm
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { screen, within, waitFor } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import { SettingsModal, type SettingsModalProps } from './SettingsModal'
 import { PersonalizationPage, isValidPersonalizationDate } from './SettingsPage'
@@ -14,10 +14,10 @@ import { OnboardingModal } from './OnboardingModal'
 import { initialOnboarding, ONBOARDING_STATUSES, type OnboardingState } from '@shared/types'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { RendererOnboardingBridge, SttUpdate, IpcEventPayload } from '@shared/ipc'
-import { createBrowserAudioController } from '../audio/browserAudio'
-import { AudioCapture } from '../audio/audioCapture'
+import { createBrowserAudioController } from "@sislexa/voice/browser/audio/browserAudio"
+import { AudioCapture } from "@sislexa/voice/browser/audio/audioCapture"
 
-vi.mock('../audio/browserAudio', () => ({ createBrowserAudioController: vi.fn() }))
+vi.mock("@sislexa/voice/browser/audio/browserAudio", () => ({ createBrowserAudioController: vi.fn() }))
 
 function onboardingFixture() {
   const api = createFakeApi()

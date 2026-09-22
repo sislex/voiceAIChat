@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import type { PreviewEnvironment, PreviewState } from '@shared/preview'
+import type { PreviewEnvironment, PreviewState } from '@voicechat/browser-contracts/preview'
 import { FeaturePreviewSection } from './FeaturePreviewSection'
 
 const makeEnvironment = (state: PreviewState, patch: Partial<PreviewEnvironment> = {}): PreviewEnvironment => ({

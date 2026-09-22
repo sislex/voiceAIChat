@@ -1,6 +1,6 @@
 // Файлы сервера, задачи из предложений, машины настроек разговора и preview-прокси.
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -19,10 +19,8 @@ beforeEach(() => { ({ app, db, dataDir } = harness) })
 
 
 describe('REST: чтение файла с диска сервера (/api/files/read)', () => {
-  // Профиль CLI создаётся при первом обращении к нему; дёргаем любой роут,
-  // который его трогает, а затем кладём туда «сгенерированную» картинку.
+  // Preserve access to existing generated files without creating a CLI profile.
   async function seedImage(): Promise<string> {
-    await inj({ method: 'GET', url: '/api/auth/status' })
     const dir = join(dataDir, 'cli-users', Buffer.from(U).toString('base64url'), '.codex', 'generated_images', 'sess')
     mkdirSync(dir, { recursive: true })
     const file = join(dir, 'pic.png')
@@ -172,4 +170,16 @@ describe('REST: машины настроек разговора', () => {
     expect(denied.statusCode).toBe(403)
     expect((await db.chat.getConversation(U, conversation.id))?.execTarget).toBeNull()
   })
+})
+
+it('boots without a runner and never creates CLI profiles for management requests', async () => {
+  const status = await inj({ method: 'GET', url: '/api/auth/status' })
+  expect(status.statusCode).toBe(200)
+  expect(status.json()).toMatchObject({ claude: { loggedIn: false }, codex: { loggedIn: false } })
+  for (const url of ['/api/mcp/servers', '/api/cc/projects', '/api/cx/projects']) {
+    const response = await inj({ method: 'GET', url })
+    expect(response.statusCode).toBe(503)
+    expect(response.json().error).toBe('runner_not_configured')
+  }
+  expect(existsSync(join(dataDir, 'cli-users'))).toBe(false)
 })

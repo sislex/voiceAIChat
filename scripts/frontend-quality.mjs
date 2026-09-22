@@ -1,5 +1,4 @@
 import { createRequire } from 'node:module'
-import { implementationPath } from './external-source.mjs'
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,20 +6,13 @@ import ts from 'typescript'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const FRONTEND = [
-  { name: '@voicechat/voice-browser', dir: 'packages/voice-browser', layer: 'shared', styles: false },
-  { name: '@voicechat/make-app', dir: 'packages/make-app', layer: 'product', independent: 'make-ui', stylesheet: 'panel.css' },
-  { name: '@voicechat/image-studio-app', dir: 'packages/image-studio-app', layer: 'product', independent: 'image-studio-ui', stylesheet: 'panel.css' },
   // Модуль сессий переносим целиком: он лежит слоем «shared», потому что его
   // берут и хост-приложение, и админка, а собственного маршрута у него нет.
-  { name: '@voicechat/sessions-app', dir: 'packages/sessions-app', layer: 'shared' },
   // Карточка человека: её показывают и админка (чужой профиль), и страница
   // «Мой аккаунт» (свой). Слой shared — потому что product→product импорт
   // запрещён, а общий код нужен обоим.
-  { name: '@voicechat/profile-app', dir: 'packages/profile-app', layer: 'shared' },
   { name: '@voicechat/app-shell', dir: 'packages/app-shell', layer: 'shell' },
   { name: '@voicechat/chat-app', dir: 'packages/chat-app', layer: 'product' },
-  { name: '@voicechat/web-reader-app', dir: 'packages/web-reader-app', layer: 'product' },
-  { name: '@voicechat/playwright-reader-app', dir: 'packages/playwright-reader-app', layer: 'product' },
   { name: '@voicechat/projects-app', dir: 'packages/projects-app', layer: 'product' },
   { name: '@voicechat/operations-app', dir: 'packages/operations-app', layer: 'product' },
   { name: '@voicechat/admin-app', dir: 'packages/admin-app', layer: 'product' },
@@ -77,8 +69,8 @@ function leaksTransport(source) {
 
 export function checkArchitecture({ root = ROOT, packages = FRONTEND } = {}) {
   const edges = new Map(packages.map((item) => [item.name, new Set()]))
-  for (const item of packages) for (const file of files(implementationPath(root, join(item.dir, 'src')))) {
-    if (/\.(?:test|stories)\.[tj]sx?$/.test(file) || relative(implementationPath(root, join(item.dir, 'src')), file).startsWith('test/')) continue
+  for (const item of packages) for (const file of files(resolve(root, join(item.dir, 'src')))) {
+    if (/\.(?:test|stories)\.[tj]sx?$/.test(file) || relative(resolve(root, join(item.dir, 'src')), file).startsWith('test/')) continue
     const source = readFileSync(file, 'utf8')
     for (const specifier of imports(source)) {
       const dependency = packageOf(specifier)
@@ -124,14 +116,14 @@ const STORY_MATRIX = {
 }
 export function checkStories({ root = ROOT, matrix = STORY_MATRIX } = {}) {
   for (const [path, stories] of Object.entries(matrix)) {
-    if (!existsSync(implementationPath(root, path))) fail('missing module Storybook harness', path)
-    const source = readFileSync(implementationPath(root, path), 'utf8')
+    if (!existsSync(resolve(root, path))) fail('missing module Storybook harness', path)
+    const source = readFileSync(resolve(root, path), 'utf8')
     for (const story of stories) if (!new RegExp(`export\\s+const\\s+${story}\\b`).test(source)) fail('missing required story state', `${path}: ${story}`)
   }
   return { modules: Object.keys(matrix).length, stories: Object.values(matrix).flat().length }
 }
 export function checkCss({ root = ROOT } = {}) {
-  const styles = FRONTEND.filter((item) => ['product', 'shell'].includes(item.layer)).map((item) => [item, implementationPath(root, join(item.dir, 'src', item.stylesheet ?? 'styles.css'))])
+  const styles = FRONTEND.filter((item) => ['product', 'shell'].includes(item.layer)).map((item) => [item, resolve(root, join(item.dir, 'src', item.stylesheet ?? 'styles.css'))])
   const keyframes = new Map()
   for (const [item, path] of styles) {
     if (!existsSync(path)) fail('missing isolated module stylesheet', item.name)

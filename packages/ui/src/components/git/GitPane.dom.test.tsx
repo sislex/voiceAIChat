@@ -3,7 +3,7 @@
 // где сервер её всё равно запретит: занятый раном каталог, read-only копия, main.
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { makeGitBranches, makeGitChange, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '@voicechat/ui-foundation/test/fixtures/git'
 import { GitPane, type GitPaneApi } from './GitPane'

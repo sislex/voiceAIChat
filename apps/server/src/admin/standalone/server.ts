@@ -13,7 +13,7 @@ import { HttpMachines } from '../../machinesBridge/httpMachines.js'
 import type { MachinesService } from '../../machines/service.js'
 import { createRemoteMake } from '../../makeBridge/remote.js'
 import { registerAdminRoutes } from '../../routes/admin.js'
-import { createMailer, type Mailer } from '../../users/mailer.js'
+import { createMailer, type Mailer } from "@sislexa/identity/server/users/mailer"
 import { ADMIN_HEALTH_PATH, INTERNAL_ADMIN_RPC_PATH } from '../internal.js'
 
 export interface BuildAdminServerOptions {

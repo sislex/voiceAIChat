@@ -5,7 +5,7 @@ import { QA_RUN_STAGES, type AcceptanceCriterionSnapshot, type QaRunStage } from
 import type { VoiceChatDb } from '../db/database.js'
 import type { KanbanUploads } from '../kanban/core.js'
 import type { CiRunManager } from '../ci/runManager.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 
 type TaskParams = { projectId: string; taskId: string }
 function qaError(reply: FastifyReply, error: unknown): FastifyReply {

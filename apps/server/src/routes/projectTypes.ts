@@ -5,7 +5,7 @@
 //   • утверждение — только admin (роуты под /api/admin/, их гейтит общий hook).
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import {
   isProjectTypeVisible,
   parseProjectFeatureOverride,

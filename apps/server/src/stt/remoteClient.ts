@@ -1,5 +1,6 @@
 import WebSocket from 'ws'
-import { STT_RUNNER, type SttClientControl, type SttRunnerEvent, type SttRunnerHealth, type WhisperModel, type WhisperModelInfo } from '@voicechat/shared'
+import { STT_RUNNER, type SttClientControl, type SttRunnerEvent, type SttRunnerHealth } from '@voicechat/voice-contracts/stt'
+import { type WhisperModel, type WhisperModelInfo } from '@voicechat/shared'
 import type { SttClient, SttRun } from './client.js'
 export interface RemoteSttClientOptions { baseUrl: string; token: string; connectTimeoutMs?: number; fetchImpl?: typeof fetch; connection?: () => Promise<{ url: string; token: string }> }
 export class RemoteSttClient implements SttClient {

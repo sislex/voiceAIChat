@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
-import { signToken } from './users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { LlmClient } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
 import { PreviewActionRelay } from '@voicechat/web-reader-contracts'

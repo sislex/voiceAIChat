@@ -7,8 +7,8 @@ import '../src/styles/global.css'
 import '../src/styles/app.css'
 // Core's admin stories embed public Identity widgets and need their styles.
 import '@voicechat/admin-app/styles.css'
-import '@voicechat/sessions-app/styles.css'
-import '@voicechat/profile-app/styles.css'
+import '@sislexa/identity/sessions-app/styles.css'
+import '@sislexa/identity/profile-app/styles.css'
 import { UiProviders } from '@voicechat/ui-kit'
 
 // Как и в App: тема дублируется на <html>, иначе модальные окна (портал в

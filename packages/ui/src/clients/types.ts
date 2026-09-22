@@ -18,8 +18,8 @@ import type {
 } from '@shared/ipc'
 import type { RendererCiBridge } from '../remote/ciBridge'
 import type { RendererKbBridge } from '../remote/kbBridge'
-import type { AudioController } from '../audio/browserAudio'
-import type { MicDevice } from '../audio/microphones'
+import type { AudioController } from "@sislexa/voice/browser/audio/browserAudio"
+import type { MicDevice } from "@sislexa/voice/browser/audio/microphones"
 
 /**
  * Клиент домена = его собственные порты плюс живая ссылка на общий `RendererApi`.

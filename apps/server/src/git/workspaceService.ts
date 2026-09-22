@@ -25,7 +25,7 @@ import {
 import type { VoiceChatDb } from '../db/database.js'
 import { buildShellCommand } from '../ci/executor.js'
 import type { CommandGate } from '../agents/commandGate.js'
-import { hasProjectPermission } from '../users/auth.js'
+import { hasProjectPermission } from "@sislexa/identity/server/users/auth"
 import {
   branchChangesScript, branchesScript, checkoutScript, commitDetailScript, commitScript,
   conflictStagesScript, createBranchScript, discardScript, fileAtRefScript, gitBaseEnv,

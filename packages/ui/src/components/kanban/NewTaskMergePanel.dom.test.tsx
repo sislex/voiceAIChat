@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { createFakeCi, type FakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { MergeRun } from '@shared/merge'
 import { NewTaskMergePanel } from './NewTaskMergePanel'

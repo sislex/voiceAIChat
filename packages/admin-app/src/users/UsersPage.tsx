@@ -20,7 +20,7 @@ import {
   type ProfileTab,
   type ProfileUsage,
   type ProfileUser
-} from '@voicechat/profile-app'
+} from '@sislexa/identity/profile-app/index'
 import type { AdminUserInfo, SecurityEvent, UsageReport, UserUsageSummary } from '@shared/admin'
 import { monthStart, spendUsd } from '@shared/admin'
 import { ROLE_DESCRIPTIONS } from '@shared/auth'

@@ -1,4 +1,5 @@
-import type { TtsRunResource,TtsSynthesisRequest,TtsVoiceInfo } from '@voicechat/shared'
+import type { TtsRunResource, TtsSynthesisRequest } from '@voicechat/voice-contracts/tts'
+import type { TtsVoiceInfo } from '@voicechat/shared'
 import type { TtsClient } from './types.js'
 export class FakeTtsClient implements TtsClient {
  readonly requests:TtsSynthesisRequest[]=[];readonly cancelled:string[]=[];private n=0

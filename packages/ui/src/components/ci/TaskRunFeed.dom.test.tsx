@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import { TaskRunFeed } from './TaskRunFeed'
 import '../../styles/app.css'

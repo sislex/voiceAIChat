@@ -15,9 +15,10 @@
   },
   "dependencies": {
     "@voicechat/shared": "*",
-    "@voicechat/ui-kit": "file:../../vendor/voicechat-ui-kit-0.1.2-63c02ccfe3e6.tgz",
+    "@voicechat/ui-kit": "file:../../vendor/voicechat-ui-kit-0.1.3-ec8ba8f62d43.tgz",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "@voicechat/browser-contracts": "file:../../vendor/voicechat-browser-contracts-1.1.0-6cd0c54f0f7c.tgz"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

@@ -10,7 +10,7 @@ import { transition, type VoiceEvent } from '@shared/stateMachine'
 import type { VoiceState } from '@shared/types'
 import type { LiveSegment } from '@voicechat/ui-foundation/lib/view'
 import { flushSpeakable, splitSpeakable } from '../../lib/sentences'
-import { VadDetector } from '../../lib/vad'
+import { VadDetector } from "@sislexa/voice/browser/lib/vad"
 import type { SttPort, TtsPort, VoiceInputPort } from '../../clients/types'
 import type { EffectiveVoiceSettings } from '@voicechat/ui-foundation/persistence'
 import { createStoreCore, type Store } from '../createStore'

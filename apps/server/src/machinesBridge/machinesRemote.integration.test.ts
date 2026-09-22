@@ -17,7 +17,7 @@ import { VoiceChatDb } from '../db/database.js'
 import { MACHINES_HEALTH_PATH, MACHINES_INTERNAL_RPC_PATH } from '../machines/internal.js'
 import { buildMachinesServer, type MachinesServer } from '../machines/standalone/server.js'
 import { buildServer } from '../server.js'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'

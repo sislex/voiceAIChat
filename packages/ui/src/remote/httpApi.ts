@@ -32,8 +32,8 @@ import type {
 import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import type { MessageSearchResult } from '@shared/types'
-import { authHeaders, credentialedFetch } from './session'
-import { notifyUnauthorized } from './session'
+import { authHeaders, credentialedFetch } from "@sislexa/identity/client/browser"
+import { notifyUnauthorized } from "@sislexa/identity/client/browser"
 import { serverErrorMessage } from '@shared/serverErrors'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {

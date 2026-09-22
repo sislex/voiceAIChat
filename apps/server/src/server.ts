@@ -5,10 +5,11 @@ import { registerBillingProxy } from './billingBridge.js'
 import { AccountingStore } from './billing/accountingStore.js'
 import { BillingSessions } from './billing/sessions.js'
 import { ChatAccounting } from './billing/chatAccounting.js'
-import { hasProductCapability } from '@voicechat/shared'
+import { hasProductCapability } from '@sislexa/identity/contracts/accountAccess'
 import {createIdentityStoreClient, registerRemoteIdentity} from '@sislexa/identity/client/index'
-import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/shared'
+import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/image-studio-contracts/imageStudioInternal'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { createComponentRuntime } from '@sislexa/component-runtime'
 import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 // Сборка Fastify-приложения (HTTP + WebSocket). Экспортируется отдельно от запуска,
@@ -16,10 +17,11 @@ import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 
 import { mkdirSync, existsSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import { join, extname } from 'node:path'
+import { join, extname, dirname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { applicationRuntimeMetadata, ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { applicationRuntimeMetadata, ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult } from '@voicechat/image-studio-contracts/imageRetouch'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -51,16 +53,16 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
-import { registerAuth, uid } from './users/auth.js'
+import { registerAuth, uid } from "@sislexa/identity/server/users/auth"
 import { createManagedChatStorage } from './chatStorage.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
 import { registerProjectComponentsRoutes } from './routes/projectComponents.js'
 import { StorybookSessions } from './components/storybookSessions.js'
 import { ComponentTicketService } from './components/componentTicket.js'
-import { createMailer, type Mailer } from './users/mailer.js'
-import type { GeoResolver } from '@voicechat/sessions-core'
-import { SessionHub } from './users/sessionHub.js'
+import { createMailer, type Mailer } from "@sislexa/identity/server/users/mailer"
+import type { GeoResolver } from '@sislexa/identity/sessions-core/index'
+import { SessionHub } from "@sislexa/identity/server/users/sessionHub"
 
 /**
  * Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5).
@@ -78,7 +80,7 @@ function cookieToken(header: string | undefined): string | undefined {
   }
   return plain
 }
-import { loadOrCreateSecret, verifyToken } from './users/accounts.js'
+import { loadOrCreateSecret, verifyToken } from "@sislexa/identity/server/users/accounts"
 import type { SessionUser } from '@voicechat/shared'
 import type { AgentRegistry } from './agents/registry.js'
 import { createDbCommandGate, createMachinesModule } from './machines/module.js'
@@ -89,7 +91,7 @@ import { registerServiceProxy } from './makeBridge/proxy.js'
 import type { MachinesService } from './machines/service.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
-import { createImageStudioModule, IMAGE_STUDIO_MCP_PATH } from '@voicechat/image-studio'
+import { createImageStudioModule, IMAGE_STUDIO_MCP_PATH } from '@sislexa/image-studio/image-studio/index'
 import { LocalImageStudioCore } from './imageStudioBridge/localCore.js'
 import { createRemoteImageStudio } from './imageStudioBridge/remote.js'
 import { registerImageStudioProxy } from './imageStudioBridge/proxy.js'
@@ -106,7 +108,7 @@ import { machinesSnapshot } from './kanbanBridge/internal.js'
 import type { KanbanService } from './kanban/service.js'
 import { UserFrameHub } from './frameHub.js'
 export { parseQaPreparationResponse, taskPreparationModel, taskPreparationFailure } from './kanban/preparation.js'
-import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@voicechat/make'
+import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@sislexa/make'
 import { LocalMakeCore } from './makeBridge/localCore.js'
 import { createRemoteMake } from './makeBridge/remote.js'
 import { registerMakeProxy } from './makeBridge/proxy.js'
@@ -117,10 +119,10 @@ import { createTurnManager } from './turns.js'
 import { RemoteLlmClient } from './llm/remoteClient.js'
 import { RunnerFsClient } from './llm/runnerFsClient.js'
 import { PromptSuggester } from './prompt/suggester.js'
-// Локальные spawn-реализации CLI живут в отдельном воркспейсе исполнителя
-// (apps/llm-runner), а buildServer здесь выбирает между ними и HTTP-клиентом
-// RemoteLlmClient по конфигу окружения.
-import { ClaudeCli, CodexCli, ensureCliProfile, getLoginStatus as getRunnerLoginStatus } from '@voicechat/llm-runner/cli'
+// CLI spawning and profiles belong to the independent LLM Runner. Core
+// requires configured HTTP endpoints instead of silently starting a local CLI.
+import { unconfiguredLlmClient, unconfiguredLoginStatus } from './llm/unconfigured.js'
+import { readCoreUserFile, userFilesDirectory } from './userFiles.js'
 import type { LlmClient } from './claude/types.js'
 import type { SttEngine } from './stt/types.js'
 import type { SttClient } from './stt/client.js'
@@ -148,20 +150,19 @@ import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { PreviewActionRelay } from '@voicechat/web-reader-contracts'
 import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
-import { createReaderModule } from '@voicechat/web-reader'
+import { createReaderModule } from '@sislexa/web-reader'
 import { previewMcpBaseUrlOf } from './reader/mcpBase.js'
 import { createLocalReaderCore } from './readerBridge/localCore.js'
 import { registerReaderProxy } from './readerBridge/proxy.js'
 import { registerBrowserShotRoutes } from './routes/browserShots.js'
-import { createPlaywrightReaderModule, createRemotePlaywrightReader, type PlaywrightReaderService } from '@voicechat/playwright-reader'
+import { createPlaywrightReaderModule, createRemotePlaywrightReader, type PlaywrightReaderService } from '@sislexa/playwright-reader'
 import { createLocalPlaywrightReaderCore } from './playwrightReaderBridge/localCore.js'
 import { registerPlaywrightReaderProxy } from './playwrightReaderBridge/proxy.js'
-import { createBrowserRunnerClient, type BrowserRunnerClient } from './browser/runnerClient.js'
+import { createBrowserRunnerClient, type BrowserRunnerClient } from '@sislexa/playwright-reader/browser-runner/client'
 import { PreviewRunKeys } from './browser/machinePreview.js'
-import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 import { AuthStatusState } from './auth/statusState.js'
-import { processImageRetouch, saveRetouchedImage, type RetouchGenerator } from './imageRetouch.js'
+import { processImageRetouch, saveRetouchedImage, type RetouchGenerator } from '@sislexa/image-studio/image-studio/imageRetouch'
 import { llmRetouchGenerator } from './llm/imageRetouchGenerator.js'
 import { GeneratedCleanupService, withGeneratedFileLease, type GeneratedCleanupCounters } from './generatedCleanup.js'
 
@@ -213,6 +214,8 @@ export interface BuildOptions {
   authStatus?: AuthStatusState
   /** Генератор crop для локальной ретуши; тесты инъектируют детерминированный ответ. */
   imageRetouchGenerator?: RetouchGenerator
+  /** Explicit local generation fixture; remote runners choose their own profile directory. */
+  imageGenerationWorkdir?: (userId: string) => string
   /** Sink структурированного итога TTL-очистки. */
   generatedCleanupLog?: (result: GeneratedCleanupCounters) => void
   /** Клиент browser-runner (Playwright Reader). По умолчанию — HTTP, если задан config.browserRunnerUrl. */
@@ -440,7 +443,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   const authStatus = opts.authStatus ?? new AuthStatusState(async (userId) => {
     if (runnerFs) return runnerFs.authStatus(userId)
-    return getRunnerLoginStatus({ home: ensureCliProfile(opts.config.dataDir, userId).home })
+    return unconfiguredLoginStatus()
   })
   // Реестр создаётся до REST: task-chat context обязан показывать ту же effective
   // online-машину, которую затем использует фактический ход.
@@ -527,11 +530,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       )
     }
   })
-  const profileHome = (userId: string): string =>
-    ensureCliProfile(opts.config.dataDir, userId).home
-  // Движок либо запускается рядом (spawn CLI), либо живёт в контейнере-исполнителе
-  // и вызывается по HTTP. Выбор — по наличию адреса в env; реестра исполнителей
-  // пока нет (docs/plans/llm-runners.md, срез 2).
+  // Core orchestrates HTTP clients; CLI profiles and spawning belong to the runner.
   const runner = async (kind: 'claude' | 'codex', baseUrl: string): Promise<LlmClient> =>
     new RemoteLlmClient({
       kind,
@@ -545,12 +544,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     await (opts.claude ??
     (opts.config.llmRunnerClaudeUrl
       ? runner('claude', opts.config.llmRunnerClaudeUrl)
-      : new ClaudeCli({ profileHome })))
+      : unconfiguredLlmClient()))
   const codex =
     await (opts.codex ??
     (opts.config.llmRunnerCodexUrl
       ? runner('codex', opts.config.llmRunnerCodexUrl)
-      : new CodexCli({ profileHome })))
+      : unconfiguredLlmClient()))
   const reranker = opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(await (opts.config.kbRerankProvider === 'claude' ? claude : codex))
@@ -667,10 +666,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const widgetContexts = new WidgetContextStore()
   const widgetUiRelay = new WidgetUiRelay()
   const imageStudioCore = new LocalImageStudioCore({
-    db, client: codex, profileHome,
+    db, client: codex, generationCwd: opts.imageGenerationWorkdir,
     readGenerated: async (userId, path) => {
-      if (runnerFs) return runnerFs.readFile(userId, path)
-      const local = readUserFile(path, [profileHome(userId)])
+      if (runnerFs) {
+        const remote = await runnerFs.readFile(userId, path)
+        if (remote) return remote
+      }
+      const local = readCoreUserFile(path, opts.config.dataDir, userId)
       return local.ok ? local.file : null
     }
   })
@@ -973,7 +975,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           if (result?.dataBase64) return Buffer.from(result.dataBase64, 'base64')
         }
         const settings = await db.settings.getSettings(userId)
-        const local = readUserFile(file.path, [profileHome(userId), join(opts.config.dataDir, 'uploads'), ...(settings.workdir ? [settings.workdir] : [])])
+        const local = readCoreUserFile(file.path, opts.config.dataDir, userId, [join(opts.config.dataDir, 'uploads'), ...(settings.workdir ? [settings.workdir] : [])])
         if (!local.ok) throw new Error(`Файл ${file.name} не найден на сервере`)
         return Buffer.from(local.file.dataBase64, 'base64')
       }
@@ -988,8 +990,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           userId,
           model: (await db.settings.getSettings(userId)).codexModel,
           readGenerated: async (path) => {
-            if (runnerFs) return runnerFs.readFile(userId, path)
-            const local = readUserFile(path, [profileHome(userId)])
+            if (runnerFs) {
+        const remote = await runnerFs.readFile(userId, path)
+        if (remote) return remote
+      }
+            const local = readCoreUserFile(path, opts.config.dataDir, userId)
             return local.ok ? local.file : null
           }
         })
@@ -999,7 +1004,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const path = await saveRetouchedImage({
           image: processed.image,
           name,
-          localRoot: profileHome(userId),
+          localRoot: userFilesDirectory(opts.config.dataDir, userId),
           ...(managed ? { targetDir: managed.generated } : {}),
           ...(outputAgentId ? {
             agentId: outputAgentId,
@@ -1167,14 +1172,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     studioContext: (conversationId) => imageStudio.service.promptContext(conversationId),
     captureStudioImages: (userId, conversationId, finalText) => imageStudio.service.captureImages(userId, conversationId, finalText),
     readServerFile: async (userId, path) => {
-      if (runnerFs) return runnerFs.readFile(userId, path)
+      if (runnerFs) {
+        const remote = await runnerFs.readFile(userId, path)
+        if (remote) return remote
+      }
       const settings = await db.settings.getSettings(userId)
       const roots = [
-        ensureCliProfile(opts.config.dataDir, userId).home,
         join(opts.config.dataDir, 'uploads'),
         ...(settings.workdir ? [settings.workdir] : [])
       ]
-      const res = readUserFile(path, roots)
+      const res = readCoreUserFile(path, opts.config.dataDir, userId, roots)
       return res.ok ? res.file : null
     },
     // MCP для исполнителя должен смотреть либо на loopback dev-сервера, либо на публичную базу из VC_MCP_PUBLIC_BASE.
@@ -1460,24 +1467,19 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   registerApplicationFrontends(app, opts.config.applicationFrontends)
 
-  // Два независимых frontend build раздаются тем же сервером и используют общий
-  // backend. Recorder регистрируется первым под собственным prefix, чтобы его index
-  // и assets никогда не попадали в SPA-fallback основного ChatAI.
+  // The recorder is an owner-built artifact, also available when the host runs in Vite.
+  if (opts.config.readerMode !== 'remote') {
+    const recorderDir = opts.config.webRecorderDir && existsSync(opts.config.webRecorderDir)
+      ? opts.config.webRecorderDir
+      : dirname(createRequire(import.meta.url).resolve('@sislexa/web-reader/recorder/index.html'))
+    const { default: fastifyStatic } = await import('@fastify/static')
+    await app.register(fastifyStatic, {
+      root: recorderDir, prefix: '/web-recorder/', wildcard: false, decorateReply: false
+    })
+  }
   if (opts.config.webDir && existsSync(opts.config.webDir)) {
     const webDir = opts.config.webDir
-    const recorderDir =
-      opts.config.webRecorderDir && existsSync(opts.config.webRecorderDir)
-        ? opts.config.webRecorderDir
-        : null
     const { default: fastifyStatic } = await import('@fastify/static')
-    if (recorderDir && opts.config.readerMode !== 'remote') {
-      await app.register(fastifyStatic, {
-        root: recorderDir,
-        prefix: '/web-recorder/',
-        wildcard: false,
-        decorateReply: false
-      })
-    }
     await app.register(fastifyStatic, { root: webDir, wildcard: false })
     // SPA-fallback относится только к ChatAI. Отсутствующий recorder-артефакт
     // должен дать 404, а не маскироваться index.html другого приложения.

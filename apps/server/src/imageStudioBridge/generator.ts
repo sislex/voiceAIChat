@@ -5,7 +5,7 @@
 import type { LlmClient } from '../claude/types.js'
 import { IMAGE_HINT, parseImages, type LlmAttachment } from '@voicechat/shared'
 
-import type { ImageStudioGenerator } from '@voicechat/image-studio'
+import type { ImageStudioGenerator } from '@sislexa/image-studio/image-studio/index'
 
 export function llmImageStudioGenerator(opts: {
   client: LlmClient

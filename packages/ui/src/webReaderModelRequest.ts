@@ -1,5 +1,5 @@
-import type { PreviewAction } from '@shared/previewActions'
-import type { PreviewActionOutcome, ReaderHostRegistration } from '@voicechat/web-reader-app'
+import type { PreviewAction } from '@voicechat/browser-contracts/previewActions'
+import type { PreviewActionOutcome, ReaderHostRegistration } from '@sislexa/web-reader/ui/index'
 
 /** ID ответа принадлежит регистрации, начавшей команду, даже если вкладка уже сменилась. */
 export async function runReaderModelRequest(options: {

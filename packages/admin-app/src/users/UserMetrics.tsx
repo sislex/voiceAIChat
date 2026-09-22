@@ -1,7 +1,7 @@
 // Полоса метрик над списком: люди, активность, машины, деньги.
 
 import { MetricGrid } from '@voicechat/ui-kit'
-import { formatUsd } from '@voicechat/profile-app'
+import { formatUsd } from '@sislexa/identity/profile-app/index'
 import type { UsersMetrics } from './usersModel'
 
 export interface UserMetricsProps {

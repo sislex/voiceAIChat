@@ -13,7 +13,7 @@
 import { mkdtempSync, existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createBrowserRunnerClient } from '../apps/server/src/browser/runnerClient.js'
+import { createBrowserRunnerClient } from '@sislexa/playwright-reader/browser-runner/client'
 import { createAutomatedQaScenarioRunner } from '../apps/server/src/ci/automatedQaScenario.js'
 import { parseAutomatedQaScenarios, scenarioLabel } from '../packages/shared/src/qa.js'
 import { readFileSync } from 'node:fs'

@@ -9,9 +9,9 @@
 
 import type { AutomatedQaScenarioStep } from './qa'
 import { isBrowserSessionMetadata, type BrowserCommand } from './types'
-import { isPreviewAction } from './previewActions'
+import { isPreviewAction } from '@voicechat/browser-contracts/previewActions'
 import { readScenarioText, type ScenarioText } from './scenarioReading'
-import { planModelAction } from './browserActions'
+import { planModelAction } from '@voicechat/browser-contracts/browserActions'
 
 export interface ScenarioStepOutcome {
   ok: boolean

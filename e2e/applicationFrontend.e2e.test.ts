@@ -6,6 +6,7 @@ import { readFile, writeFile, mkdtemp, cp, rm, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
+import { applicationFrontendDirectory } from '../scripts/application-frontend.mjs'
 let server: ViteDevServer,
   browser: Browser,
   page: Page,
@@ -50,7 +51,7 @@ const selected = definitions.filter(
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'vc-panel-artifacts-'))
   for (const app of selected)
-    await cp(join(root, 'packages', app.pkg, 'dist'), join(directory, app.id), {
+    await cp(applicationFrontendDirectory(app.id), join(directory, app.id), {
       recursive: true
     })
   server = await createServer({

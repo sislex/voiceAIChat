@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { TaskActivityPanel, formatMinutes } from './TaskActivityPanel'
 import type { TaskActivity } from '@shared/projects'
 

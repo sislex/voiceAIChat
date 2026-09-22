@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
-import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
+import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@voicechat/browser-contracts/preview'
 import type { ProjectMachine } from '@shared/projects'
-import { isPreviewBusy, previewActions } from '@shared/preview'
+import { isPreviewBusy, previewActions } from '@voicechat/browser-contracts/preview'
 import { Button } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
-import { browserId } from '@shared/browserId'
+import { browserId } from '@voicechat/browser-contracts/browserId'
 import { CopyCommand } from './CopyCommand'
 
 export const previewIdempotencyKey = browserId

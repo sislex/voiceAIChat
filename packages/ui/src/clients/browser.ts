@@ -5,8 +5,8 @@
 // адаптером те же REST/WS-мосты, что и раньше.
 
 import type { RendererApi } from '@shared/ipc'
-import { createBrowserAudioController } from '../audio/browserAudio'
-import { listMicrophones } from '../audio/microphones'
+import { createBrowserAudioController } from "@sislexa/voice/browser/audio/browserAudio"
+import { listMicrophones } from "@sislexa/voice/browser/audio/microphones"
 import { enqueueTtsAudio, stopTts } from '../lib/ttsPlayer'
 import { VOICE_INPUT_ENABLED } from '../lib/featureFlags'
 import { withApi } from './types'

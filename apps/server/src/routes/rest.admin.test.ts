@@ -1,6 +1,6 @@
 // Админские маршруты и реестр LLM-исполнителей.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
 import { setupRestHarness } from './restHarness.js'

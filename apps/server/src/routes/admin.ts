@@ -3,15 +3,15 @@
 
 import { request } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { readSignupConfig } from '../users/auth.js'
-import { checkPasswordPolicy } from '@voicechat/shared'
-import { hibpEnabled, pwnedCount } from '../users/pwned.js'
+import { readSignupConfig } from "@sislexa/identity/server/users/auth"
+import { checkPasswordPolicy } from '@sislexa/identity/contracts/passwordPolicy'
+import { hibpEnabled, pwnedCount } from "@sislexa/identity/server/users/pwned"
 import type { AdminMakeStats, AdminMachineStats, AdminMachineStat, RoleCommandPolicies } from '@voicechat/shared'
 import { parseRoleCommandPolicies } from '@voicechat/shared'
 import { formatMachineMetrics } from '../agents/metrics.js'
 import type { AgentRecord } from '../db/database.js'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import type { Mailer } from '../users/mailer.js'
+import type { Mailer } from "@sislexa/identity/server/users/mailer"
 import {
   LLM_RUNNER,
   REST,
@@ -35,9 +35,9 @@ import {
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { MachinesService } from '../machines/service.js'
-import { requireAdmin, uid } from '../users/auth.js'
+import { requireAdmin, uid } from "@sislexa/identity/server/users/auth"
 import { updateAgentOnMachine } from './agents.js'
-import type { SessionHub } from '../users/sessionHub.js'
+import type { SessionHub } from "@sislexa/identity/server/users/sessionHub"
 
 const UNITS: UsageUnit[] = ['hour', 'day', 'week']
 const ENGINE_KINDS: LlmEngineKind[] = ['claude', 'codex']

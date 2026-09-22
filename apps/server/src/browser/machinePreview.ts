@@ -12,7 +12,7 @@
 // `previewProxy`).
 
 import { randomBytes } from 'node:crypto'
-export { PREVIEW_RUN_COOKIE, isMachinePreviewUrl, machinePreviewUrl } from '@voicechat/shared'
+export { PREVIEW_RUN_COOKIE, isMachinePreviewUrl, machinePreviewUrl } from '@voicechat/browser-contracts/playwrightReader'
 
 /** Сколько живёт ключ без продления: ран длиннее суток — это уже не ран. */
 export const PREVIEW_RUN_KEY_TTL_MS = 24 * 60 * 60 * 1000

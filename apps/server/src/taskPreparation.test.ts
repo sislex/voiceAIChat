@@ -12,7 +12,7 @@ import { WebSocket } from 'ws'
 import { buildServer, projectMainRefreshScript, taskPreparationFailure, taskPreparationModel } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
-import { signToken } from './users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import { DEFAULT_CODEX_MODEL, DEFAULT_SETTINGS, type Board, type LlmClient, type LlmHandle, type LlmRequest, type ProjectDetail, type Task, type TaskPreparationRun } from '@voicechat/shared'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
 

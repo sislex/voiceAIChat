@@ -7,7 +7,7 @@
 
 import Database from 'better-sqlite3'
 import { PG_SCHEMA } from './schemaPg.js'
-import { createPgSql, type PgSql } from './sql/pg.js'
+import { createPgSql, type PgSql } from "@sislexa/identity/storage-sql/pg"
 
 export interface CopyOptions {
   sqlitePath: string

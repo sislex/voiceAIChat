@@ -103,7 +103,7 @@ test('матрица Web Reader включает remote-прокси и адре
 
 test('extracted tools retain their release-center compatibility drivers', async () => {
   for (const id of ['make', 'playwright-reader', 'web-reader']) {
-    const driver = await import(`../apps/${id}/compatibility.mjs`)
+    const driver = await import(`@sislexa/${id}/compatibility`)
     assert.equal(typeof driver.verifyCompatibility, 'function', id)
   }
 })

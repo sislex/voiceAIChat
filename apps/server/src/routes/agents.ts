@@ -34,7 +34,7 @@ import {
   loginEnrollmentDeepLink,
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import type { AgentRegistry } from '../agents/registry.js'
 import type { MachinesService } from '../machines/service.js'
 import { ensureDefaultStorage } from '../agents/defaultStorage.js'

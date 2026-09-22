@@ -6,7 +6,7 @@
 // мутации в кэш не ходят — у них CSRF-проверка на каждый запрос.
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { INTERNAL_WHOAMI_PATH, type SessionUser, type WhoamiRequest, type WhoamiResponse } from '@voicechat/shared'
-import { isPublic } from '../users/auth.js'
+import { isPublic } from "@sislexa/identity/server/users/auth"
 
 export interface ForwardedAuthOptions {
   /** Имя сервиса — для лога. */

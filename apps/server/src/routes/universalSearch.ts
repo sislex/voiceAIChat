@@ -9,7 +9,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { kbViewOfRequest } from '../kb/access.js'
 import { canSee } from '../kb/scoped.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 
 export interface SearchCandidate {
   key: string

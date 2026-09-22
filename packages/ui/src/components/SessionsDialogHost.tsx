@@ -3,7 +3,7 @@
 // про мосты не знает — здесь единственное место, где они встречаются.
 import { useEffect, useMemo } from 'react'
 import { useConfirm, useToast } from '@voicechat/ui-kit'
-import { SessionsDialog, createSessionsStore, type SessionsClient } from '@voicechat/sessions-app'
+import { SessionsDialog, createSessionsStore, type SessionsClient } from '@sislexa/identity/sessions-app/index'
 
 export interface SessionsDialogHostProps {
   onClose: () => void

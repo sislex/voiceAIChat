@@ -7,7 +7,7 @@ import { calculateKbHit, filesReadFromCiLog } from '../../ci/kbHit.js'
 import { testStages } from '../../ci/testStages.js'
 import { trimHistoricalRunLogs } from '../../ci/qaStateLogs.js'
 import { BaseRepo } from './base.js'
-import { hasProjectPermission } from '../../users/auth.js'
+import { hasProjectPermission } from "@sislexa/identity/server/users/auth"
 import type { ChangeMergeMachineRequest, ChangeMergeMachineResult } from '@voicechat/shared'
 import { parseStringArray, normCiStatus, normKbContextMode, normRunMode, normClarifyLevel, clampClarifyMax, parseJsonValue, parseSlotProgress, mapCiRun, type TaskRow, type CiRunRow } from './support.js'
 

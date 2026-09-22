@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { createFakeCi, type FakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { CiRunReport, CiTaskReport } from '@shared/ci'
 import { EMPTY_CI_USAGE_TOTALS } from '@shared/ci'

@@ -1,6 +1,6 @@
 import type { LlmClient } from '../claude/types.js'
 import { parseImages, type LlmAttachment } from '@voicechat/shared'
-import type { RetouchGenerator } from '../imageRetouch.js'
+import type { RetouchGenerator } from '@sislexa/image-studio/image-studio/imageRetouch'
 
 export function llmRetouchGenerator(opts: {
   client: LlmClient

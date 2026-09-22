@@ -2,7 +2,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { fn } from '@storybook/test'
 import { UsersAdmin } from './UsersAdmin'
-import { makeSessions } from '@voicechat/sessions-app'
+import { makeSessions } from '@sislexa/identity/sessions-app/index'
 import { makeConversation } from './test/fixtures/conversations'
 
 const NOW = Date.now()

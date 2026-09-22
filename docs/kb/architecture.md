@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-22
-checked: 0d5b6eea
+checked: 55f5a95b
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -196,19 +196,23 @@ Make, Playwright Reader and Web Reader have independent repositories at
 Web Reader also owns the iframe recorder. Their root distribution packages are
 `@sislexa/make`, `@sislexa/playwright-reader` and `@sislexa/web-reader`.
 
-The corresponding `apps/` and `packages/` workspaces here are compatibility
-adapters. They retain public imports and validate the provenance of the installed
-upstream workspace through `scripts/external-workspace.mjs`. Do not implement new
-features in these adapters. Update an upstream release, replace its `vendor/*.tgz`
-archive, update every adapter's `sislexaExternal` provenance and npm lockfile, then
-run the application gate. Archives include their source commit in
-`release-source.json`; the adapter runner rejects a mismatch. npm integrity pins
-the archive bytes. Core checks public exports and its own host/style integration.
+Core consumes immutable owner archives directly; the former application, UI and
+contract adapters have been removed. `vendor/owner-artifacts.json` records release
+commits and integrity; npm locks archive bytes. Product contract packages retain
+public names such as `@voicechat/make-contracts` while their source and tests live
+with the owning service. Make lint/search/model helpers and recorder protocol/
+scenario helpers are no longer exported from Core Shared.
+
+Core's frontend preparation resolves each owner's public `frontend/manifest.json`,
+checks source version/commit and entry/style integrity, and consumes the built
+assets unchanged. Core never compiles owner panel or recorder source. The API
+serves configured frontend origins or the installed owner artifact. Local recorder
+assets use the Web Reader package's public `recorder/*` export; standalone owner
+development is configured by endpoint rather than a sibling checkout.
+
 Owner implementation assertions, component stories and accessibility suites run
-in the owner repository; Core does not discover those installed story files.
-Reader integration fixtures resolve the pinned proxy through the explicit
-`@fixture/web-reader-proxy` test alias; runtime consumers continue using public
-package exports and service contracts.
+in the owner repository. Core keeps its own host, resource authorization and
+transport integration checks and imports public fixture/client/contract exports.
 
 Common libraries are still owned by this repository. The independent repositories
 consume immutable source snapshots with version, base commit, content hash and any
@@ -231,9 +235,9 @@ migration in the Sislexa plan remains separate.
 ### Voice and Image Studio ownership
 
 `https://github.com/sislex/voice` owns STT/TTS services and the browser microphone,
-PCM, VAD and playback implementation. `packages/voice-browser` and speech runner
-workspaces here are adapters; host audio files preserve imports and inject playback
-telemetry. Chat's voice state orchestration and composer remain in the host.
+PCM, VAD and playback implementation. Core imports the published browser module
+and injects host playback telemetry; speech runner and browser-audio compatibility
+workspaces are removed. Chat's voice state orchestration and composer remain in the host.
 `https://github.com/sislex/image-studio` owns the Image Studio API and UI panel.
 Its Core bridge retains identity, conversation and model-execution ownership.
 Both repositories install independently using shared snapshots and publish source
@@ -247,11 +251,12 @@ account/profile/session UI, browser session transport, auth enforcement, credent
 storage, personal tenant provisioning, tariff catalog/assignments and effective
 product capabilities. Core supplies resource permissions, project invitations,
 account report aggregation, host cache/performance hooks and desktop legacy import.
-`packages/profile-app`, `sessions-app` and `sessions-core` are compatibility adapters.
-`packages/storage-sql` consumes the SQL infrastructure from the same upstream source.
+Core imports profile/session/account/browser and SQL infrastructure through
+public Identity exports. Their compatibility workspaces and pure Core re-export
+files are removed. Core resource authorization and database integration remain.
 
-Previously extracted Make, Web Reader, Playwright Reader, Voice and Image Studio
-workspace source remains import-only adapters. Core's speech session handlers own
+Browser Runner implementation and its internal suites now belong to Playwright
+Reader; Core imports the worker client and integration fixtures from that owner. Core's speech session handlers own
 chat stream ordering, progress broadcasts and WS translation, not recognition or
 synthesis engines. `apps/login-application` is machine enrollment for the companion
 agent, not user registration; it remains with machine/client infrastructure.
@@ -269,9 +274,9 @@ Keep Core integration checks; run each application's internal checks in its owne
 repository. Remove an adapter only after its imports, workspace lists, build/gate
 configuration and release inputs have been migrated together.
 
-The current `sislexaExternal` manifests identify these removal groups:
+The following former compatibility directories are removed:
 
-| Owner | Transitional Core directories |
+| Owner | Removed Core directories |
 | --- | --- |
 | Make | `apps/make`, `packages/make-app`, `packages/make-contracts` |
 | Image Studio | `apps/image-studio`, `packages/image-studio-app` |
@@ -280,22 +285,20 @@ The current `sislexaExternal` manifests identify these removal groups:
 | Voice | `apps/stt-runner`, `apps/tts-runner`, `packages/voice-browser` |
 | Identity | `apps/identity`, `packages/identity-account`, `packages/identity-client`, `packages/identity-contracts`, `packages/identity-login`, `packages/profile-app`, `packages/sessions-app`, `packages/sessions-core`, `packages/storage-sql` |
 | Billing | `apps/billing` |
+| LLM Runner | `apps/llm-runner`, local CLI/auth/history forwarders |
 
-Identity compatibility exports under `apps/server/src/users`, `apps/server/src/db/sql`
-and `apps/server/src/db/repos/identity.ts` can also go once consumers import their
-owner directly. Preserve Core resource authorization and move its integration
-tests to the appropriate Core test locations. Removing `apps/llm-runner` additionally
-requires replacing embedded CLI imports with the independent runner interface.
+Identity compatibility exports under `apps/server/src/users`, SQL adapters and
+`db/repos/identity.ts` are removed in favor of direct owner imports. Core's own
+schema translation and resource/session integration tests remain. UI Kit,
+Foundation and SDK local workspaces were removed in Core 0.1.322. The old
+`external-workspace.mjs` delegation runner and its tests are no longer needed.
 
-`packages/ui-kit`, `packages/ui-foundation` and `packages/platform-sdk` have
-been removed; their consumers install owner release archives directly. Split
-public library contracts from Core-private contracts before considering removal of `packages/shared` or
-`packages/component-runtime`. The current `vendor` archives and
-`scripts/external-workspace.mjs` remain required until their distribution and gate
-roles have replacements; deleting directories alone does not establish independence.
-The owner requested completion of these transfers and removal of application-owned
-tests from Core; track the remaining work and acceptance in
-[the extraction completion plan](../plans/extraction-completion.md).
+Core now calls configured runner APIs for execution, MCP inventory, authentication
+and transcript history. Retouch processing/editor code belongs to Image Studio;
+Core owns authorization, attachment access and persistence. All pure account,
+session-store and player cases run in their owner repositories. Consumer gates
+and production acceptance remain required before closing this cutover.
+See [the extraction completion plan](../plans/extraction-completion.md).
 
 
 ## Authorized delivery roadmap and next repositories
@@ -310,3 +313,21 @@ The supplied `sislex/billing`, `sislex/analytics`, `sislex/sdk` and
 the exact `sielexa-ui` spelling. Billing will own transactional financial usage;
 Analytics will own reporting/activity projections; SDK and UI are versioned
 libraries. Existing Identity retains user/tenant identity and entitlement policy.
+
+### Canonical product model packages
+
+Core transport DTOs refer to public owner models: Make uses
+`@voicechat/make-contracts/make`, browser and preview interactions use
+`@voicechat/browser-contracts/*`, and Image Studio uses
+`@voicechat/image-studio-contracts/*`. Operation context, usage and monetary
+reservation contracts come from `@sislexa/sdk`. Their implementations and unit
+suites are removed from Core Shared. Core retains its chat/WS/IPC transport,
+resource authorization and host integration tests. Use explicit leaf imports;
+re-exporting product runtime modules through the Core Shared barrel can pull
+unrelated product initialization into the initial chat bundle.
+
+Consumer validation must include a clean install of the published archives.
+Owner npm workspace linking can hide an obsolete distribution peer range; owner
+package gates now check that peer ranges accept the matching contract workspace
+versions. Archive provenance and internal owner gates do not replace the Core
+integration gate.

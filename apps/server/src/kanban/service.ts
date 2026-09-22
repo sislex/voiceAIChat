@@ -3,7 +3,8 @@
 // изменилась» от соседей (Make правит карточки через свой порт). Сегодня реализацию отдаёт
 // `createKanbanModule` в том же процессе; в режиме отдельного сервиса ядро получит те же ленты
 // по SSE, как `MakeHub`.
-import type { PreviewEnvironment, QaRunStage, ReleaseStatus, ServerMessage } from '@voicechat/shared'
+import type { PreviewEnvironment } from '@voicechat/browser-contracts/preview'
+import type { QaRunStage, ReleaseStatus, ServerMessage } from '@voicechat/shared'
 
 export interface KanbanRunFeed {
   /** Кадры ранов (`ci.*`, `qa.*`, …) с владельцем — сессия отдаёт их только своему пользователю. */

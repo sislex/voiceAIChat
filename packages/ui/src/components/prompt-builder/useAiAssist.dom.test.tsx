@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { screen } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { PromptBuilder } from './PromptBuilder'

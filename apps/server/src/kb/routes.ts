@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { REST, isKbScope, type KbDocument, type KbDocumentKind, type KbScope, type KbUsageReport } from '@voicechat/shared'
 import type { KnowledgeBaseService } from './types.js'
 import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import { kbViewOfRequest, kbWriteDenial } from './access.js'
 import type { KbResearchManager } from './research.js'
 

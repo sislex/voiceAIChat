@@ -1,4 +1,5 @@
-import { TTS_RUNNER,isTtsRunResource,ttsRunAudioPath,ttsRunPath,type TtsRunResource,type TtsSynthesisRequest,type TtsVoiceInfo } from '@voicechat/shared'
+import { TTS_RUNNER, isTtsRunResource, ttsRunAudioPath, ttsRunPath, type TtsRunResource, type TtsSynthesisRequest } from '@voicechat/voice-contracts/tts'
+import { type TtsVoiceInfo } from '@voicechat/shared'
 import type { TtsClient } from './types.js'
 export interface RemoteTtsClientOptions {baseUrl:string;token:string;pollMs?:number;fetch?:typeof fetch}
 export class RemoteTtsClient implements TtsClient {

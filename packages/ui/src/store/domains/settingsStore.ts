@@ -19,7 +19,7 @@ import type {
   WhisperModelInfo
 } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import type { MicDevice } from '../../audio/microphones'
+import type { MicDevice } from "@sislexa/voice/browser/audio/microphones"
 import type { SettingsClient, SttPort, TtsPort } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 import type { EffectiveVoiceSettings } from '@voicechat/ui-foundation/persistence'
