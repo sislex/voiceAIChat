@@ -6,7 +6,7 @@ import { createComponentRuntime } from '@sislexa/component-runtime'
 import { parseComponentContract, parseComponentConfig } from '@voicechat/shared'
 const require = createRequire(import.meta.url)
 const repository = fileURLToPath(new URL('../', import.meta.url))
-const ids = ['core', 'make', 'playwright-reader', 'web-reader', 'image-studio', 'stt-runner', 'tts-runner', 'identity', 'billing']
+const ids = ['core', 'make', 'playwright-reader', 'web-reader', 'image-studio', 'stt-runner', 'tts-runner', 'identity', 'billing', 'analytics']
 const contractFile = id => id === 'core' ? join(repository, 'apps/server/component-contract.json') : require.resolve(id.endsWith('-runner') ? `@sislexa/voice/${id}/component-contract` : `@sislexa/${id}/component-contract`)
 
 /** Initialize an entirely new installation; existing registries are never overwritten. */

@@ -150,6 +150,8 @@ export const REST = {
   sessionAccountAccess: '/api/session/account-access',
   billingAccount: '/api/billing/account',
   billingPolicy: '/api/billing/policy',
+  analyticsAccount: '/api/analytics/account',
+  analyticsActivity: '/api/analytics/activity',
   sessionTariffs: '/api/session/tariffs',
   sessionTariff: (id: string) => `/api/session/tariffs/${encodeURIComponent(id)}`,
   sessionTariffAssignments: '/api/session/tariff-assignments',

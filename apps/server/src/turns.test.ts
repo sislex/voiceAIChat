@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { createTurnManager, ProjectMainSnapshotCoordinator } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
 import { imageBlock } from '@voicechat/shared'
@@ -12,6 +12,7 @@ import { loadConfig } from './config.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
+import type { ChatAccounting } from './billing/chatAccounting.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
 
@@ -63,6 +64,30 @@ async function runTurn(client: LlmClient, db: VoiceChatDb, conversationId: strin
     await turns.start({ userId: U, conversationId, segments: [{ speakerId: 1, text: 'привет' }] })
   })
 }
+
+it.each([
+  ['Chat', undefined, 'chat', 'chat'],
+  ['Make', 'make', 'make', 'make'],
+  ['Images', 'images', 'images', 'image-studio'],
+  ['Web Reader', 'web-recorder', 'web-reader', 'web-reader'],
+  ['Playwright Reader', 'playwright-reader', 'playwright-reader', 'playwright-reader'],
+  ['Console', 'console-reader', 'console', 'machines']
+] as const)('attributes %s model execution to %s', async (title, assistantKind, scope, originModuleId) => {
+  const db = await freshDb()
+  const conversation = await db.chat.createConversation(U, title, assistantKind, null, scope)
+  const rec = recorder()
+  const wrap = vi.fn((client: LlmClient) => client)
+  const turns = createTurnManager({ db, claude: rec.client, accounting: { wrap } as unknown as ChatAccounting })
+  await new Promise<void>((resolve) => {
+    const off = turns.subscribe(message => {
+      if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() }
+    })
+    void turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Run' }] })
+  })
+  expect(wrap).toHaveBeenCalledWith(rec.client, expect.objectContaining({ login: U, originModuleId }))
+  await turns.idle()
+  db.close()
+})
 
 describe('turns: канбан-ассистент', () => {
   it('инъектирует безопасный контекст виджета в обычный LLM-ход, но не в историю', async () => {

@@ -365,6 +365,9 @@ Implementation checklist:
 - [x] Complete host integration and deploy production 0.1.311 through `voicechat-deploy`.
 - [x] Complete runtime dependency/token configuration and its integration gate.
 - [x] Deploy and verify production 0.1.313 with managed component credentials and the Make startup fix.
+- [x] Publish SDK 1.2.0, Billing 1.2.0, Identity 1.3.2 and Analytics 1.2.0 with immutable archives and owner gates.
+- [x] Enforce Billing admission and settlement for every stored conversation origin.
+- [x] Add authenticated Analytics report/activity proxies and managed component grants.
 - [ ] Execute the remaining identity, accounting and analytics stages with integration and release evidence.
 
 ### Inspected baseline

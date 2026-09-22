@@ -1,4 +1,4 @@
-import { capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
+import { billingOriginForConversation, capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
 // Процесс-глобальный реестр ходов LLM. Ход привязан к разговору, а не к
 // WS-соединению: обновление страницы/обрыв сети его НЕ отменяет — модель
 // доигрывает ответ, сервер сам сохраняет его в БД. События хода рассылаются
@@ -404,7 +404,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       return
     }
     const conv = await deps.db.chat.getConversation(userId, conversationId)
-    const accountedChat = !!deps.accounting && !!conv && capabilityForConversation(conv) === 'chat.use'
+    const accountedTurn = !!deps.accounting && !!conv
     const entitlements = await deps.db.identity.getAccountAccess(userId)
     if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
       broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : 'Разговор недоступен.' }, userId)
@@ -417,7 +417,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Месячный лимит расхода LLM (п.17): суммируем стоимость ответов пользователя с начала календарного месяца.
     if (account.llmLimitUsd !== null && account.llmLimitUsd >= 0) {
-      if (accountedChat) {
+      if (accountedTurn) {
         broadcast({ t: 'claude.error', conversationId, message: 'Для учётной записи установлен денежный лимит. Текущий CLI не поддерживает жёсткий потолок стоимости запроса.' }, userId)
         return
       }
@@ -476,8 +476,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const selectedClient = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
-    const client = accountedChat ? deps.accounting!.wrap(selectedClient, { login: userId, session: req.billingSession,
-      originModuleId: 'chat', ...(resolvedEngine.engine ? { engineId: resolvedEngine.engine.id } : {}) }) : selectedClient
+    const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: req.billingSession,
+      originModuleId: billingOriginForConversation(conv), ...(resolvedEngine.engine ? { engineId: resolvedEngine.engine.id } : {}) }) : selectedClient
     const selectedModel = conv?.llmProvider === provider
       ? conv.llmModel
       : (projectLlm?.provider === provider ? projectLlm.model : null)
@@ -1182,7 +1182,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         billingSession: req.billingSession
             }, false)
             await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
-            await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedChat)
+            await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedTurn)
             await emitQueue(userId, conversationId)
           }
           broadcast({ t: 'claude.error', conversationId, message }, userId)
