@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: ddcd07c3
+checked: 823ce54a
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -1536,8 +1536,8 @@ deleted through their API. Production credentials were not copied into source or
 published artifacts. Existing Claude login expiry remains the limitation described
 above; no successful Claude completion is claimed.
 
-The active operator Compose chain in `/etc/voicechat/production.env` now includes
-`/etc/voicechat/prebuilt-0.1.324.yml`. Its effective configuration has fifteen pinned
+The 0.1.324 operator Compose chain included
+`/etc/voicechat/prebuilt-0.1.324.yml` (superseded by 0.1.325 below). Its effective configuration has fifteen pinned
 application images and zero build targets, so a standard installed deploy reuses
 the accepted artifacts. Replace this active overlay when preparing a later release;
 leaving an older overlay last would override new image inputs. The previous operator
@@ -1546,3 +1546,23 @@ environment, full effective Compose definition, container inventory, rollback
 `/var/backups/voicechat/sislexa-account-usage-324-20260922T050437Z`.
 It references the actually restored 0.1.323 data backup. Rollback to Core 0.1.323
 retains the same owner images and data format; it also reintroduces the slow report.
+
+
+## Independent device-client deployment (Core 0.1.325)
+
+Core 0.1.325 (`823ce54a94c7cca5e2b65da1a6b9a369fe94be27`) consumes Agent
+0.20.0 and Desktop 1.0.2 owner artifacts. The active operator Compose chain ends
+with `/etc/voicechat/client-artifacts-0.1.325.yml` and
+`/etc/voicechat/prebuilt-0.1.325.yml`. The former mounts
+`/opt/sislexa/client-artifacts` read-only at `/client-artifacts` and sets
+`VC_AGENT_APP`, `VC_DESKTOP_APP` and `VC_LOGIN_APPLICATION` to versioned DMGs.
+Downloads no longer depend on retired Core source/build directories. Only macOS
+ARM64 installers were built in this rollout; other platforms require owner builds.
+
+Desktop uses the secure custom origin `sislexa://app`; Core allows that exact
+origin by default. An operator-provided `VC_CORS_ORIGINS` override must include
+it for Desktop login. Standard HTTPS certificate validation still applies.
+Production acceptance exercised actual Desktop login, published Agent connection
+and exec, installer SHA-256, all managed dependencies and Web tool/account flows.
+Installed `voicechat-deploy` replaced only Core. Backup and rollback to 0.1.324 are
+recorded in `/var/backups/voicechat/sislexa-agent-desktop-325-20260922T080207Z`.

@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os'
 import { resolve, join, relative } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { chromium, _electron as electron } from 'playwright'
-import { COMPRESSION, inventory, totals, resourceSet, sizes, completedResource } from './route-budgets.mjs'
+import { createCachedSizer, sizes } from './route-compression.mjs'
+import { COMPRESSION, inventory, totals, resourceSet, completedResource } from './route-budgets.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -28,6 +29,7 @@ function reportHtml(report) {
 export async function measure({ web, desktop, output }) {
   const data = mkdtempSync(join(tmpdir(), 'vc-route-measure-'))
   mkdirSync(output, { recursive: true })
+  const measureSize = process.env.VC_MEASURE_COMPRESSION_CACHE === '0' ? sizes : createCachedSizer(resolve(root, 'artifacts/route-compression'))
   const port = 19000 + Math.floor(Math.random() * 10000), base = 'http://127.0.0.1:' + port
   const log = createWriteStream(join(output, 'server.log'))
   const server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
@@ -66,8 +68,8 @@ export async function measure({ web, desktop, output }) {
     for (const [client, directory] of [['web', web], ['electron', desktop]]) {
       console.log('Inventory ' + client)
       const cachePath = join(output, client + '-inventory.json')
-      let assets
-      try { if (!process.env.VC_MEASURE_REUSE_INVENTORY) throw new Error('Fresh build inventory required'); assets = JSON.parse(readFileSync(cachePath, 'utf8')) } catch { assets = inventory(directory); writeFileSync(cachePath, JSON.stringify(assets)) }
+      const assets = inventory(directory, measureSize)
+      writeFileSync(cachePath, JSON.stringify(assets))
       for (const [id, value] of Object.entries(assets)) report.resources[client + '/' + id] = { ...value, imports: value.imports.map(x => client + '/' + x), dynamicImports: value.dynamicImports.map(x => client + '/' + x) }
       let page
       if (client === 'web') {
@@ -104,7 +106,7 @@ export async function measure({ web, desktop, output }) {
               // Distinct URLs still cost separate resources even if their bodies match.
               row.resource = client + '/external/' + createHash('sha256').update(row.url).digest('hex') + '.css'
               if (report.resources[row.resource] && report.resources[row.resource].sha256 !== hash) throw new Error('External stylesheet changed during measurement')
-              report.resources[row.resource] = { type: 'css', sha256: hash, ...sizes(body), imports: [], dynamicImports: [], source: new URL(row.url).origin }
+              report.resources[row.resource] = { type: 'css', sha256: hash, ...measureSize(body), imports: [], dynamicImports: [], source: new URL(row.url).origin }
             }).catch(error => { row.bodyError = error.message }))
           }
         }
@@ -221,6 +223,7 @@ export async function measure({ web, desktop, output }) {
     }
     writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2))
     writeFileSync(join(output, 'report.html'), reportHtml(report))
+    if (measureSize.stats) console.log('[route-compression] ' + JSON.stringify(measureSize.stats))
     return report
   } finally {
     await browser?.close(); await desktopApp?.close()

@@ -5,6 +5,7 @@
 //
 // Письма ловим встроенным SMTP-приёмником на свободном порту — Mailpit для
 // прогона не нужен, тест самодостаточен.
+import { freePort } from './free-port'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -17,9 +18,9 @@ import { WebSocket } from 'ws'
 
 const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'apps/web/dist')
-const PORT = 8911 + Math.floor(Math.random() * 80)
-const SMTP_PORT = PORT + 1000
-const BASE = `http://127.0.0.1:${PORT}`
+let PORT = 0
+let SMTP_PORT = 0
+let BASE = ''
 const PASSWORD = 'e2e-pass'
 
 let server: ChildProcess | null = null
@@ -42,7 +43,7 @@ async function waitHealth(): Promise<void> {
 
 /** Минимальный SMTP: отвечает по протоколу и складывает тело письма. */
 function startSmtp(): Promise<Server> {
-  return new Promise((res) => {
+  return new Promise((res, reject) => {
     const srv = createServer((sock: Socket) => {
       let data = false
       let buf = ''
@@ -67,7 +68,11 @@ function startSmtp(): Promise<Server> {
         }
       })
     })
-    srv.listen(SMTP_PORT, '127.0.0.1', () => res(srv))
+    srv.once('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      SMTP_PORT = (srv.address() as import('node:net').AddressInfo).port
+      res(srv)
+    })
   })
 }
 
@@ -96,6 +101,8 @@ const api = async (path: string, init: RequestInit = {}): Promise<Response> =>
 
 describe.skipIf(!existsSync(WEB_DIST))('Проекты E2E', () => {
   beforeAll(async () => {
+    PORT = await freePort()
+    BASE = `http://127.0.0.1:${PORT}`
     smtp = await startSmtp()
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-projects-'))
     server = spawn('npx', ['tsx', 'src/index.ts'], {
