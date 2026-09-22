@@ -1,3 +1,4 @@
+import { registerBrowserUi } from './browserUi/routes.js'
 import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { registerHttpDiagnostics } from './httpDiagnostics.js'
 import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
@@ -1478,25 +1479,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     })
   }
   if (opts.config.webDir && existsSync(opts.config.webDir)) {
-    const webDir = opts.config.webDir
-    const { default: fastifyStatic } = await import('@fastify/static')
-    await app.register(fastifyStatic, { root: webDir, wildcard: false })
-    // SPA-fallback относится только к ChatAI. Отсутствующий recorder-артефакт
-    // должен дать 404, а не маскироваться index.html другого приложения.
-    app.setNotFoundHandler((req, reply) => {
-      const url = req.url.split('?')[0]
-      if (
-        req.method === 'GET' &&
-        !url.startsWith('/api') &&
-        !url.startsWith('/ws') &&
-        !url.startsWith('/agent') &&
-        !url.startsWith('/web-recorder') &&
-        !url.startsWith('/applications/')
-      ) {
-        return reply.type('text/html').sendFile('index.html')
-      }
-      return reply.code(404).send({ error: 'not found' })
-    })
+    await registerBrowserUi(app, opts.config.webDir, opts.config.browserUiDir ?? join(opts.config.dataDir, 'browser-ui'))
   }
 
   app.addHook('onClose', async () => {

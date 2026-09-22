@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-22
-checked: 9b707a9a
+checked: 4c6d8bbf
 areas:
   - scripts/application-frontend.mjs
   - scripts/application-frontend-server.mjs
@@ -26,6 +26,25 @@ areas:
 The browser client, Desktop renderer, shell, chat, projects, operations and administration views are owned by [`sislex/sislexa-core-ui`](https://github.com/sislex/sislexa-core-ui). Core has no UI source workspaces or internal frontend unit tests. Historical `packages/ui`, feature-package and `apps/web` paths below refer to that owner repository.
 
 Core consumes `@sislexa/core-ui` as an immutable archive. `scripts/core-ui-artifact.mjs` validates source provenance, API compatibility and every static asset hash. The Core Docker build verifies the archive and serves its `web` directory; it does not compile React or Storybook. The owner publishes its browser, renderer and Storybook outputs together. UI Kit/Foundation remain independent dependencies owned by `sielexa-ui`.
+
+
+The owner now groups composition views/tests under `packages/ui/src/modules/`
+(Shell, Chat, Projects, Operations, Admin), with explicit public screen entries.
+Portable packages expose separate contract/store/route exports. Common runtime,
+transport and styles remain composition infrastructure. Local edit gates run
+complete selected groups plus Shell integration; detailed timings and selection
+examples live in the owner's `docs/kb/ui.md` and `docs/benchmarks/`.
+
+Core also supports browser-only releases through `src/browserUi/`. A browser
+manifest records clean source provenance, explicit Core API/host version ranges
+and every asset hash. `GET /ui/runtime.json` advertises the running Core API and
+host versions plus effective/configured activation generations. A versioned
+`/ui/releases/<version>-<full-sha>/` asset base keeps old-tab imports valid after
+activation. Root HTML uses `no-store`; immutable asset responses use one-year
+caching. Unknown versioned assets return 404, never SPA HTML. API, authentication,
+Recorder and product panel routing remain separate. See `deploy.md` for rollout
+and recovery commands. The bundled package remains the fallback and is still
+verified during a Core image build.
 
 Core publishes `@voicechat/shared` contracts with `build:core-contracts -- --version <version> --commit <full SHA>`. This exporter reads committed files and locked peer versions, excludes internal tests and records the source SHA. UI installs the contract archive without a Core checkout. Legacy published `@shared/*` imports resolve to that installed contract, not sibling source.
 
