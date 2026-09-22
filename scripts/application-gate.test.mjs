@@ -160,3 +160,7 @@ test('изменение Reader не запускает наборы core и д�
     assert.deepEqual(plan.applications.map(app=>app.id), [file.includes('playwright-reader') ? 'playwright-reader' : 'web-reader'])
   }
 })
+
+test('external SDK is checked in its owner repository, not through an empty local gate', async () => {
+  await assert.rejects(main(['platform-sdk', '--dry-run']), /owned by https:\/\/github.com\/sislex\/sdk/)
+})

@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
 // Сторож цвета в `app.css`.
 //
 // Два класса ошибок, которые не видит ни typecheck, ни jsdom (там нет каскада),
@@ -21,17 +23,17 @@ import { describe, expect, it } from 'vitest'
 const APP_CSS = fileURLToPath(new URL('./app.css', import.meta.url))
 const css = readFileSync(APP_CSS, 'utf8')
 const stylesDir = fileURLToPath(new URL('.', import.meta.url))
-const uiKitDir = fileURLToPath(new URL('../../../ui-kit/src', import.meta.url))
+const uiKitStyles = require.resolve('@voicechat/ui-kit/styles.css')
 const uiSrc = fileURLToPath(new URL('..', import.meta.url))
 
-/** Всё, что объявлено в CSS или ставится из JS (в том числе из ui-kit). */
+/** Public theme tokens and custom properties declared by this consumer. */
 function declaredNames(): Set<string> {
   const names = new Set<string>()
   const addCss = (file: string): void => {
     for (const match of readFileSync(file, 'utf8').matchAll(/(--[a-z0-9-]+)\s*:/g)) names.add(match[1])
   }
   for (const name of readdirSync(stylesDir)) if (name.endsWith('.css')) addCss(join(stylesDir, name))
-  addCss(join(uiKitDir, 'styles.css'))
+  addCss(uiKitStyles)
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name)
@@ -44,7 +46,6 @@ function declaredNames(): Set<string> {
     }
   }
   walk(uiSrc)
-  walk(uiKitDir)
   return names
 }
 

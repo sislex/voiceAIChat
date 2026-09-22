@@ -1,11 +1,10 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-22
-checked: d430423e
+checked: 0d5b6eea
 areas:
   - apps/server/src/billing
   - apps/billing
-  - packages/platform-sdk
   - packages/shared/src/llmAccounting.ts
   - apps/server/src/db
   - apps/server/src/users
@@ -73,8 +72,9 @@ delete foreign-key actions in PostgreSQL.
 ## Billing reservation service
 
 `sislex/billing` owns the SQLite WAL reservation/settlement ledger. Core's
-`apps/billing` delegates to the immutable upstream release; `packages/platform-sdk`
-delegates portable operation/usage contracts to `sislex/sdk`. Monetary ledger values
+`apps/billing` delegates to the immutable upstream release. Core accounting
+imports portable operation/usage contracts directly from the pinned `@sislexa/sdk`
+package owned by `sislex/sdk`; the local SDK re-export workspace is removed. Monetary ledger values
 are safe integer micro-USD, separate from raw model tokens. Policies are versioned
 per environment and tenant; null is unlimited and zero denies admission. A single
 `BEGIN IMMEDIATE` transaction applies monthly budget, request and concurrency

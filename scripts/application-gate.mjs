@@ -299,6 +299,7 @@ export async function main(args = process.argv.slice(2)) {
   if (explicit) {
     const app = APPLICATION_CATALOG.find((app) => app.id === explicit)
     if (!app) throw new Error(`Неизвестное приложение: ${explicit}`)
+    if (app.external) throw new Error(`Application ${app.id} is owned by ${app.external.repository}; run its gate there`)
     plan = {
       full: false,
       applications: [app],

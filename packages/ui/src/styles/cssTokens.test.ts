@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
 // Сторож объявленных переменных: `var(--x)` без фолбэка, у которого нет
 // объявления, браузер отбрасывает вместе со всем свойством — молча.
 //
@@ -12,7 +14,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const stylesDir = fileURLToPath(new URL('.', import.meta.url))
-const uiKitStyles = fileURLToPath(new URL('../../../ui-kit/src/styles.css', import.meta.url))
+const uiKitStyles = require.resolve('@voicechat/ui-kit/styles.css')
 const uiSrc = fileURLToPath(new URL('..', import.meta.url))
 
 function cssSources(): string[] {

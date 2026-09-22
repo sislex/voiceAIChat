@@ -23,7 +23,7 @@ import storybookMain from '../../.storybook/main'
  */
 const modules = import.meta.glob<Record<string, unknown>>([
   '../components/**/*.stories.tsx',
-  '../../../{ui-foundation,app-shell,chat-app,projects-app,operations-app,admin-app}/src/**/*.stories.tsx'
+  '../../../{app-shell,chat-app,projects-app,operations-app,admin-app}/src/**/*.stories.tsx'
 ], { exhaustive: true })
 
 // Сторож: новый пакет в витрине обязан попасть и под axe. Иначе повторится

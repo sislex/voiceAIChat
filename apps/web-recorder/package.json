@@ -7,14 +7,14 @@
     "dev": "node ../../scripts/external-workspace.mjs dev",
     "build": "node ../../scripts/external-workspace.mjs build",
     "preview": "node ../../scripts/external-workspace.mjs preview",
-    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
-    "test": "node ../../scripts/external-workspace.mjs test"
+    "typecheck": "node ../../scripts/external-workspace.mjs verify",
+    "test": "node ../../scripts/external-workspace.mjs verify"
   },
   "dependencies": {
     "@voicechat/shared": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@voicechat/ui-kit": "*",
+    "@voicechat/ui-kit": "file:../../vendor/voicechat-ui-kit-0.1.2-63c02ccfe3e6.tgz",
     "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.1.2-2d0f30bd50d6.tgz",
     "@voicechat/web-reader-contracts": "*",
     "@voicechat/playwright-reader-contracts": "*",

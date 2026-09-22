@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmBillingSession, LlmAccountingContext, LlmClient, LlmStreamHandlers } from '@voicechat/shared'
-import type { BillingReservation } from '@voicechat/platform-sdk'
+import type { BillingReservation } from '@sislexa/sdk'
 import { RemoteLlmClient } from '../llm/remoteClient.js'
 import { AccountingStore, type AccountingJob } from './accountingStore.js'
 import { BillingSessions } from './sessions.js'

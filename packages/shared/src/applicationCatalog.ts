@@ -8,6 +8,7 @@ import {
 export interface ApplicationDefinition {
   id: string;
   name: string;
+  external?: { repository: string; package: string };
   paths: string[];
   workspaces: string[];
   buildDependencies: string[];
@@ -166,8 +167,9 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     contractChecks: [{ workspace: "@voicechat/server", files: ["src/billingBridge.test.ts"] }],
   }),
   definition("platform-sdk", "Platform SDK", "packages/platform-sdk", {
-    kind: "library", workspaces: ["@voicechat/platform-sdk"], buildDependencies: [],
-    contractPaths: ["packages/platform-sdk"], isolation: { tests: true, build: true, deploy: false },
+    kind: "library", paths: [], workspaces: [], buildDependencies: [],
+    external: { repository: "https://github.com/sislex/sdk", package: "@sislexa/sdk" },
+    contractPaths: [], isolation: { tests: false, build: false, deploy: false },
   }),
   definition("make", "Make", "apps/make", {
     browserPaths: ["apps/make/src/routes.ts", "apps/make/src/transpile.ts"],
@@ -319,7 +321,6 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     buildDependencies: [
       "shared",
       "sessions-core",
-      "ui-kit",
       "app-shell",
       "chat-app",
       "admin-app",
@@ -404,16 +405,11 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       isolation: { tests: true, build: true, deploy: true },
     }),
   ),
-  definition(
-    "ui-foundation",
-    "Общие инструменты UI",
-    "packages/ui-foundation",
-    {
-      kind: "library",
-      buildDependencies: ["shared", "ui-kit"],
-      contractPaths: ["packages/ui-foundation/src"],
-    },
-  ),
+  ...(["ui-kit", "ui-foundation"] as const).map(id => definition(id, id, `packages/${id}`, {
+    kind: "library", paths: [], workspaces: [], buildDependencies: [], contractPaths: [],
+    external: { repository: "https://github.com/sislex/sielexa-ui", package: `@voicechat/${id}` },
+    isolation: { tests: false, build: false, deploy: false },
+  })),
   ...(["agent", "desktop", "agent-tray", "login-application"] as const).map(
     (id) =>
       definition(id, id, `apps/${id}`, {
@@ -436,7 +432,6 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "storage-sql",
       "sessions-core",
       "voice-browser",
-      "ui-kit",
       "app-shell",
       "sessions-app",
       "profile-app",
@@ -459,7 +454,7 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
           : id === "identity-account" ? ["shared", "ui-kit", "ui-foundation", "profile-app", "sessions-app", "identity-client", "identity-login"]
           : id === "identity-login" ? ["shared", "ui-kit", "ui-foundation", "profile-app", "sessions-app", "identity-client"]
           : id === "storage-sql" ? []
-          : id === "sessions-core" || id === "ui-kit" || id === "app-shell"
+          : id === "sessions-core" || id === "app-shell"
             ? []
             : id.endsWith("-contracts")
               ? ["shared"]

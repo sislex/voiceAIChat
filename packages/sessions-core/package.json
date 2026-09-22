@@ -17,8 +17,8 @@
     "@sislexa/identity-sessions-core": "file:../../vendor/sislexa-identity-sessions-core-1.1.0-994b2bf644c7.tgz"
   },
   "scripts": {
-    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
-    "test": "node ../../scripts/external-workspace.mjs test",
+    "typecheck": "node ../../scripts/external-workspace.mjs verify",
+    "test": "node ../../scripts/external-workspace.mjs verify",
     "build": "node ../../scripts/external-workspace.mjs build"
   },
   "sislexaExternal": {

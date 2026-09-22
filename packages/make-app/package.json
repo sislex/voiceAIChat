@@ -14,16 +14,16 @@
     "./styles.css": "./src/panel.css"
   },
   "scripts": {
-    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
-    "test": "node ../../scripts/external-workspace.mjs test",
+    "typecheck": "node ../../scripts/external-workspace.mjs verify",
+    "test": "node ../../scripts/external-workspace.mjs verify",
     "build": "node ../../scripts/external-workspace.mjs build",
     "dev": "node ../../scripts/external-workspace.mjs dev"
   },
   "dependencies": {
     "@voicechat/make-contracts": "*",
     "@voicechat/shared": "*",
-    "@voicechat/ui-foundation": "*",
-    "@voicechat/ui-kit": "*",
+    "@voicechat/ui-foundation": "file:../../vendor/voicechat-ui-foundation-0.1.4-63c02ccfe3e6.tgz",
+    "@voicechat/ui-kit": "file:../../vendor/voicechat-ui-kit-0.1.2-63c02ccfe3e6.tgz",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

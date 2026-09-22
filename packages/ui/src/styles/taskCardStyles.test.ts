@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
 // Сторож стилей открытой карточки задачи.
 //
 // Тот же класс аварии, что закреплён в `feedStyles.test.ts`: слияние ветки
@@ -16,10 +18,10 @@ import { describe, expect, it } from 'vitest'
 // рядом с примитивами, всё предметное — в app.css. Сторож смотрит на оба, иначе
 // переезд класса между ними читался бы как его пропажа.
 const css = [
-  new URL('./app.css', import.meta.url),
-  new URL('../../../ui-kit/src/styles.css', import.meta.url)
+  fileURLToPath(new URL('./app.css', import.meta.url)),
+  require.resolve('@voicechat/ui-kit/styles.css')
 ]
-  .map((url) => readFileSync(fileURLToPath(url), 'utf8'))
+  .map((url) => readFileSync(url, 'utf8'))
   .join('\n')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const styled = (cls: string): boolean => new RegExp(`\\.${cls}(?![\\w-])`).test(css)

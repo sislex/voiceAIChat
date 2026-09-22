@@ -12,11 +12,11 @@
     "@voicechat/shared": "*",
     "@voicechat/sessions-core": "*",
     "@sislexa/component-runtime": "1.0.1",
-    "@voicechat/platform-sdk": "*"
+    "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.1.0-bec5fb16db7b.tgz"
   },
   "scripts": {
-    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
-    "test": "node ../../scripts/external-workspace.mjs test",
+    "typecheck": "node ../../scripts/external-workspace.mjs verify",
+    "test": "node ../../scripts/external-workspace.mjs verify",
     "build": "node ../../scripts/external-workspace.mjs build",
     "start": "node ../../scripts/external-workspace.mjs start"
   },

@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: 5d36d282
+checked: 0d5b6eea
 areas:
   - package.json
   - scripts
@@ -40,9 +40,19 @@ stories. Core admin examples still use public Identity widgets and their styles.
 The original three Image Studio story re-export shims are removed. Owner story
 checks preserve the shared serious/critical axe policy and mandatory product states.
 
-This increment does not finish all extraction: transitional workspaces still
-delegate internal unit checks and builds, and the remaining ownership/distribution
-work is tracked in `docs/plans/extraction-completion.md`.
+Transitional `sislexaExternal` workspaces now validate immutable consumer archive
+provenance instead of executing owner unit suites or owner typecheck commands.
+Core compiles its real consumers and tests its public bridges; owner gates run
+before owner releases. `external-workspace.mjs` rejects direct `test`/`typecheck`
+delegation, and its regression checks detect changed source/package versions and
+escaping workspace paths. Build/start delegation remains temporary until the
+owner-built artifact cutover. Wrapper deletion and remaining shared/product/browser
+ownership are tracked in `docs/plans/extraction-completion.md`.
+
+The accessibility browser harness declares its virtual page's actual TSX entry
+for Vite dependency scanning and uses a dedicated optimizer cache. This prevents
+late discovery of installed Foundation DnD code from mixing React optimizer
+versions in a mounted page. The consumer regression retains full page-error stacks.
 
 ## Лимит одного теста: 60 секунд во фронтенде
 
