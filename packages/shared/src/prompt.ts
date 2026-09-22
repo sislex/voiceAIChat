@@ -3,7 +3,7 @@
 import { parseImages } from './images'
 import type { SttSegmentWire } from './protocol'
 import type { EditorContextPayload, MessageRole, TaskLaunchProposal, TaskLaunchRequest, TurnMeta } from './types'
-import type { PreviewElementPayload } from './previewInspector'
+import type { PreviewElementPayload } from '@voicechat/browser-contracts/previewInspector'
 import { normalizeClaudeModel } from './types'
 
 /**

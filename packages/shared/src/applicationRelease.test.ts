@@ -227,7 +227,8 @@ describe("совместимость самостоятельных выпуск
 describe("каталог владельцев", () => {
   it("имеет однозначные пути и разрешимые зависимости", () => {
     expect(() => validateApplicationCatalog(APPLICATION_CATALOG)).not.toThrow();
-    expect(applicationForPath("apps/make/src/routes.ts")?.id).toBe("make");
+    expect(applicationForPath("apps/server/src/routes/rest.ts")?.id).toBe("core");
+    expect(applicationForPath("apps/make/src/routes.ts")).toBeUndefined();
     expect(applicationForPath("packages/ui/src/App.tsx")?.id).toBe("web");
     expect(applicationForPath("e2e/machine-vpn.e2e.test.ts")?.id).toBe("web");
     expect(applicationForPath("e2e/applicationFrontend.e2e.test.ts")).toBeUndefined();
@@ -241,7 +242,7 @@ describe("каталог владельцев", () => {
     expect(() =>
       validateApplicationCatalog([
         ...APPLICATION_CATALOG,
-        { ...APPLICATION_CATALOG[1], id: "other", paths: ["apps/make/src"] },
+        { ...APPLICATION_CATALOG[0], id: "other", paths: ["apps/server/src"] },
       ]),
     ).toThrow(/Пересечение/);
     expect(() =>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dev-режим веб-версии: backend и оба Vite-приложения живут одним lifecycle.
+# Core backend and the host Vite client share one lifecycle.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,13 +18,12 @@ fi
 
 # Порты: значения по умолчанию — прежние, но их перебивает .env выше. Это нужно
 # для второго чекаута монорепо (git worktree), который поднимается параллельно
-# с первым: без развода портов оба сеанса дерутся за 8787/5273/5274.
+# с первым: без развода портов оба сеанса дерутся за 8787/5273.
 API_PORT="${PORT:-8787}"
 WEB_PORT="${VC_WEB_PORT:-5273}"
-RECORDER_PORT="${VC_RECORDER_PORT:-5274}"
 # Vite-прокси читает VC_API_PORT, а backend — PORT; держим их согласованными.
 export PORT="$API_PORT" VC_API_PORT="${VC_API_PORT:-$API_PORT}"
-export VC_WEB_PORT="$WEB_PORT" VC_RECORDER_PORT="$RECORDER_PORT"
+export VC_WEB_PORT="$WEB_PORT"
 
 # cmake в PATH (нужен нативным сборкам на этой машине).
 export PATH="/opt/homebrew/bin:$PATH"
@@ -41,7 +40,7 @@ PIPER_VOICES="$ROOT/apps/desktop/resources/piper-voices"
 [ -f "$PIPER_BIN" ] && export VC_PIPER_BIN="$PIPER_BIN" || true
 [ -d "$PIPER_VOICES" ] && export VC_PIPER_VOICES_DIR="$PIPER_VOICES" || true
 
-# Панели собираются самостоятельно и читаются сервером из своих dist.
+# Verify immutable owner-built panels before starting the host.
 npm run build:frontends
 
 PIDS=()
@@ -63,19 +62,12 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-npm run dev:frontends -- --skip-initial &
-PIDS+=("$!")
-
 echo "[dev-web] стартую сервер (http://127.0.0.1:$API_PORT)…"
 npm run -w @voicechat/server dev &
 PIDS+=("$!")
 
 echo "[dev-web] стартую веб-клиент (http://127.0.0.1:$WEB_PORT)…"
 npm run -w @voicechat/web dev &
-PIDS+=("$!")
-
-echo "[dev-web] стартую Web Recorder (http://127.0.0.1:$RECORDER_PORT/web-recorder/)…"
-npm run -w @voicechat/web-recorder dev &
 PIDS+=("$!")
 
 # Ждём готовности всех трёх портов (до ~30с), одновременно замечая ранний выход
@@ -102,8 +94,7 @@ wait_port() {
 }
 wait_port "backend"      http://127.0.0.1:$API_PORT/api/health
 wait_port "web-клиент"   http://127.0.0.1:$WEB_PORT/
-wait_port "Web Reader"   http://127.0.0.1:$RECORDER_PORT/web-recorder/
-echo "[dev-web] все процессы запущены; Reader dev: http://127.0.0.1:$WEB_PORT/#/web-reader (HMR через прокси /web-recorder/)."
+echo "[dev-web] host ready; installed Reader artifact is served through the API."
 
 # Системный Bash macOS не поддерживает wait -n: переносимо следим за каждым PID.
 while true; do

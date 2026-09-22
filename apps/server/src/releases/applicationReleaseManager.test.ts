@@ -88,7 +88,7 @@ async function setup() {
     manager: new ApplicationReleaseManager(db, runtime)
   }
 }
-it('готовит компонентную ветку, точный worktree и матрицу опубликованного digest', () => {
+it('routes extracted application preparation to the owner repository flow', () => {
   const target = {
     projectId: 'p',
     agentId: 'a',
@@ -100,10 +100,9 @@ it('готовит компонентную ветку, точный worktree и
   }
   const command = applicationPrepareCommand(target, input, 'request-123')
   expect(command).toContain("cd '/tmp/a; echo bad'")
-  expect(command).toContain("npm run gate:app -- 'make'")
-  expect(command).toContain('application-compatibility.mjs --manifest')
-  expect(command).toContain('git worktree add --detach')
-  expect(command).toContain('HEAD:refs/heads/release/make/1.1.0')
+  expect(command).toContain('scripts/owner-application-release.mjs --input')
+  expect(command).not.toContain('npm run gate:app')
+  expect(command).not.toContain('git worktree add')
   expect(command).not.toContain('legacy-must-not-run')
   expect(command).not.toContain('docker compose up')
   for (const baseBranch of [

@@ -3,52 +3,12 @@
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import {
-  REST,
-  CONVERSATION_STATUSES,
-  type ConversationStatus,
-  ccResumeMessages,
-  ccResumeTitle,
-  ccTimeLabel,
-  cxResumeMessages,
-  cxResumeTitle,
-  cxTimeLabel,
-  type AddMessageArgs,
-  type DesktopMigrationBundle,
-  type Settings,
-  type UsageUnit,
-  type UserProfileInfo,
-  type SecurityEvent,
-  type AgentInfo,
-  buildConversationPrompt,
-  effectiveChatInstructions,
-  instructionsForAssistantKind,
-  designPromptLines,
-  taskMakeSources,
-  makeDesignPreviewUrl,
-  instructionContextId,
-  instructionText,
-  resumeSessionIdFor,
-  contextLockReason,
-  isContextToggleable,
-  toolNameForContextId,
-  sanitizeSettingsPatch,
-  claudeModelAlias,
-  kbToolHint,
-  previewToolHint,
-  MAKE_ASSISTANT_HINT,
-  KANBAN_ASSISTANT_HINT,
-  firstAllowedProvider,
-  isProviderAllowed,
-  CLAUDE_MODELS,
-  CODEX_MODELS,
-  filterSecurityGroup
-} from '@voicechat/shared'
+import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, type AgentInfo, buildConversationPrompt, effectiveChatInstructions, instructionsForAssistantKind, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
+import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
 import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
-import { readUserFile } from '../serverFiles.js'
-import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
-import { getLoginStatus } from '../auth/loginStatus.js'
+import { uid } from "@sislexa/identity/server/users/auth"
+import { readCoreUserFile } from '../userFiles.js'
+import { RUNNER_NOT_CONFIGURED, unconfiguredLoginStatus } from '../llm/unconfigured.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
 import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
@@ -783,13 +743,6 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   }
 }
 import type { AuthStatusState } from '../auth/statusState.js'
-import { listProjects, listSessions, readTranscript, readUsage } from '../cc/ccSessions.js'
-import {
-  listCxProjects,
-  listCxSessions,
-  readCxTranscript,
-  readCxUsage
-} from '../codex/codexSessions.js'
 
 /** Флаг из query-строки: `?includeCompleted=1` (или `=true`). */
 function queryFlag(v: string | undefined): boolean {
@@ -835,9 +788,6 @@ export async function registerRest(
     refreshProjectMain?: (userId: string, projectId: string) => void
   } = {}
 ): Promise<void> {
-  const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
-  const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
-  const cxDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CODEX_DIR ?? profile(req).codexSessions
   const runnerFs = opts.runnerFs
   /**
    * Статус индекса БЗ для снимка контекста. Сломанный индекс не должен ронять
@@ -866,8 +816,8 @@ export async function registerRest(
       }
     }
     const workdir = (await db.settings.getSettings(userId)).workdir
-    const roots = [profile(req).home, join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
-    const res = readUserFile(req.query.path ?? '', roots)
+    const roots = [join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
+    const res = readCoreUserFile(req.query.path ?? '', dataDir, userId, roots)
     if (!res.ok) {
       const code = res.reason === 'too-large' ? 413 : 404
       return reply.code(code).send({ error: res.reason }) as never
@@ -1019,7 +969,7 @@ export async function registerRest(
     // Список MCP-серверов спрашиваем у самого движка: он показывает, что видит
     // CLI, а не что подключает приложение. Ошибка или отсутствие движка не
     // должны ломать снимок — тогда список просто пуст.
-    const cliMcp = await listMcpServers().catch(() => [])
+    const cliMcp = await runnerFs?.listMcpServers(uid(req)).catch(() => []) ?? []
     const owner = await contextOwnerFor(req, req.params.id)
     // Контекст Make-проекта (токены темы и открытые комментарии) уходит в ход
     // отдельным блоком. Читается с диска, поэтому здесь, а не внутри снимка:
@@ -1398,20 +1348,24 @@ export async function registerRest(
     }
   )
 
-  app.get(REST.mcpServers, async () => listMcpServers())
+  app.get(REST.mcpServers, async (req, reply) => {
+    if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
+    try { return await runnerFs.listMcpServers(uid(req)) }
+    catch (err) { return proxyError(reply, err) }
+  })
 
   app.get(REST.authStatus, async (req, reply) => {
     if (opts.authStatus) {
       try { return await opts.authStatus.get(uid(req)) }
       catch (err) { return proxyError(reply, err) }
     }
-    if (!runnerFs) return getLoginStatus({ home: profile(req).home })
+    if (!runnerFs) return unconfiguredLoginStatus()
     try { return await runnerFs.authStatus(uid(req)) }
     catch (err) { return proxyError(reply, err) }
   })
 
   app.get(REST.ccProjects, async (req, reply) => {
-    if (!runnerFs) return listProjects(ccDir(req))
+    if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
     try {
       return await runnerFs.listCcProjects(uid(req))
     } catch (err) {
@@ -1421,7 +1375,7 @@ export async function registerRest(
   app.get<{ Params: { slug: string } }>(
     '/api/cc/projects/:slug/sessions',
     async (req, reply) => {
-      if (!runnerFs) return listSessions(req.params.slug, ccDir(req))
+      if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
       try {
         return await runnerFs.listCcSessions(uid(req), req.params.slug)
       } catch (err) {
@@ -1432,13 +1386,7 @@ export async function registerRest(
   app.get<{ Params: { slug: string; id: string }; Querystring: { limit?: string } }>(
     '/api/cc/projects/:slug/sessions/:id',
     async (req, reply) => {
-      if (!runnerFs) {
-        const dir = ccDir(req)
-        const items = readTranscript(req.params.slug, req.params.id, {
-          limit: req.query.limit ? Number(req.query.limit) : undefined
-        }, dir)
-        return { items, usage: readUsage(req.params.slug, req.params.id, dir) }
-      }
+      if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
       try {
         return await runnerFs.readCcTranscript(uid(req), req.params.slug, req.params.id, req.query.limit ? Number(req.query.limit) : undefined)
       } catch (err) {
@@ -1453,9 +1401,8 @@ export async function registerRest(
     if (!slug || !id) return reply.code(400).send({ error: 'slug и id обязательны' })
     let items
     try {
-      items = runnerFs
-        ? (await runnerFs.readCcTranscript(u, slug, id)).items
-        : readTranscript(slug, id, {}, ccDir(req))
+      if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
+      items = (await runnerFs.readCcTranscript(u, slug, id)).items
     } catch (err) {
       return proxyError(reply, err)
     }
@@ -1471,7 +1418,7 @@ export async function registerRest(
 
   // --- Проводник Codex ---------------------------------------------------
   app.get(REST.cxProjects, async (req, reply) => {
-    if (!runnerFs) return listCxProjects(cxDir(req))
+    if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
     try {
       return await runnerFs.listCxProjects(uid(req))
     } catch (err) {
@@ -1479,7 +1426,7 @@ export async function registerRest(
     }
   })
   app.get<{ Querystring: { cwd?: string } }>(REST.cxSessions, async (req, reply) => {
-    if (!runnerFs) return listCxSessions(req.query.cwd ?? '', cxDir(req))
+    if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
     try {
       return await runnerFs.listCxSessions(uid(req), req.query.cwd ?? '')
     } catch (err) {
@@ -1487,14 +1434,7 @@ export async function registerRest(
     }
   })
   app.get<{ Querystring: { id?: string; limit?: string } }>(REST.cxTranscript, async (req, reply) => {
-    if (!runnerFs) {
-      const dir = cxDir(req)
-      const id = req.query.id ?? ''
-      const items = readCxTranscript(id, {
-        limit: req.query.limit ? Number(req.query.limit) : undefined
-      }, dir)
-      return { items, usage: readCxUsage(id, dir) }
-    }
+    if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
     try {
       return await runnerFs.readCxTranscript(uid(req), req.query.id ?? '', req.query.limit ? Number(req.query.limit) : undefined)
     } catch (err) {
@@ -1508,9 +1448,8 @@ export async function registerRest(
     if (!id) return reply.code(400).send({ error: 'id обязателен' })
     let items
     try {
-      items = runnerFs
-        ? (await runnerFs.readCxTranscript(u, id)).items
-        : readCxTranscript(id, {}, cxDir(req))
+      if (!runnerFs) return reply.code(503).send({ error: 'runner_not_configured', message: RUNNER_NOT_CONFIGURED })
+      items = (await runnerFs.readCxTranscript(u, id)).items
     } catch (err) {
       return proxyError(reply, err)
     }

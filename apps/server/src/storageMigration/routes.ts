@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { isMachineStoragePathAllowed, normalizeMachineStoragePath, type MigrationAssignment } from '@voicechat/shared'
 import type { MachinesService } from '../machines/service.js'
 import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import type { StorageMigrationManager } from './manager.js'
 
 interface CreateBody { machineId?: string; storageId?: string; sources?: Array<{ path?: string; assignment?: MigrationAssignment }> }

@@ -1,13 +1,9 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { EventEmitter } from 'node:events'
-import { PassThrough } from 'node:stream'
-import { ClaudeCli, type SpawnFn } from '../claude/claudeCli.js'
-import { CodexCli } from '../codex/codexCli.js'
 import { RemoteLlmClient } from './remoteClient.js'
 import type { RunnerRunBody } from './protocol.js'
-import type { LlmClient, LlmStreamHandlers } from '../claude/types.js'
+import type { LlmStreamHandlers } from '../claude/types.js'
 
 // --- фейковый исполнитель на 127.0.0.1 ------------------------------------
 
@@ -101,36 +97,7 @@ function collect(): Collected {
   }
 }
 
-/** Фейковый дочерний процесс для локального spawn. */
-function fakeChild(): {
-  child: EventEmitter & { stdout: PassThrough; stderr: PassThrough; stdin: PassThrough; kill: () => void }
-  stdout: PassThrough
-} {
-  const stdout = new PassThrough()
-  const stderr = new PassThrough()
-  const stdin = new PassThrough()
-  const child = Object.assign(new EventEmitter(), { stdout, stderr, stdin, kill: vi.fn() })
-  return { child, stdout }
-}
-
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
-
-/** Тот же ход через локальный spawn: эталон событий для сравнения. */
-async function localEvents(
-  make: (spawn: SpawnFn) => LlmClient,
-  lines: string[]
-): Promise<unknown[]> {
-  const { child, stdout } = fakeChild()
-  const spawn: SpawnFn = vi.fn(() => child as never)
-  const c = collect()
-  await make(spawn).send({ prompt: 'привет', sessionId: null, model: 'sonnet' }, c.handlers)
-  for (const line of lines) stdout.write(`${line}\n`)
-  stdout.end()
-  await tick()
-  child.emit('close', 0)
-  await c.finished
-  return c.events
-}
 
 const CLAUDE_LINES = [
   JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1', model: 'sonnet' }),
@@ -167,7 +134,7 @@ const CODEX_LINES = [
 ]
 
 describe('RemoteLlmClient: ход через исполнителя по HTTP', () => {
-  it('даёт те же события, что локальный spawn claude (session/usage/delta/result)', async () => {
+  it('delivers the Claude session, usage, delta and result transport contract', async () => {
     const runner = await startRunner((res) => ndjson(res, CLAUDE_LINES))
     try {
       const c = collect()
@@ -177,7 +144,6 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
       )
       await c.finished
 
-      expect(c.events).toEqual(await localEvents((spawn) => new ClaudeCli({ spawn }), CLAUDE_LINES))
       expect(c.events).toEqual([
         { t: 'session', sessionId: 's1' },
         { t: 'usage', usage: { inputTokens: 12 } },
@@ -196,7 +162,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     }
   })
 
-  it('даёт те же события, что локальный spawn codex', async () => {
+  it('delivers the Codex session, usage and result transport contract', async () => {
     const runner = await startRunner((res) => ndjson(res, CODEX_LINES))
     try {
       const c = collect()
@@ -205,7 +171,12 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
         c.handlers
       )
       await c.finished
-      expect(c.events).toEqual(await localEvents((spawn) => new CodexCli({ spawn }), CODEX_LINES))
+      expect(c.events).toEqual([
+        { t: 'session', sessionId: 'th-1' },
+        { t: 'delta', text: 'Готово' },
+        { t: 'usage', usage: { inputTokens: 7, outputTokens: 3, codexThreadUsage: { inputTokens: 7, outputTokens: 3, cacheReadTokens: 0, cacheCreationTokens: 0 } } },
+        { t: 'done', text: 'Готово', meta: { inputTokens: 7, outputTokens: 3, codexThreadUsage: { inputTokens: 7, outputTokens: 3, cacheReadTokens: 0, cacheCreationTokens: 0 } } }
+      ])
     } finally {
       await runner.close()
     }

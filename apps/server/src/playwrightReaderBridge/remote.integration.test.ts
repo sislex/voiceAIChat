@@ -1,4 +1,4 @@
-import { loadWebReaderConfig } from '@voicechat/web-reader/config'
+import { loadWebReaderConfig } from '@sislexa/web-reader/config'
 // Реальные HTTP-границы: ядро, приложение Playwright Reader и, в одном из режимов, Web Reader.
 // Фейком остаётся только Chromium: проверяем именно доставку, авторизацию и сохранность результатов.
 import { createServer } from 'node:net'
@@ -7,15 +7,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { buildPlaywrightReaderServer } from '@voicechat/playwright-reader/standalone'
-import type { BrowserRunnerClient } from '@voicechat/browser-runner/client'
-import { INTERNAL_PLAYWRIGHT_READER_CORE_PATH, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH } from '@voicechat/shared'
+import { buildPlaywrightReaderServer } from '@sislexa/playwright-reader/standalone'
+import type { BrowserRunnerClient } from '@sislexa/playwright-reader/browser-runner/client'
+import { INTERNAL_PLAYWRIGHT_READER_CORE_PATH, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH } from '@voicechat/browser-contracts/playwrightReader'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { buildServer } from '../server.js'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
-import { buildReaderServer } from '@voicechat/web-reader/standalone'
+import { buildReaderServer } from '@sislexa/web-reader/standalone'
 
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'

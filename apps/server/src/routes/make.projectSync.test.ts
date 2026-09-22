@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
-import { MakeHub, MakeLibrary, MakeWorkspaces, registerMakeRoutes } from '@voicechat/make'
+import { MakeHub, MakeLibrary, MakeWorkspaces, registerMakeRoutes } from '@sislexa/make'
 import { LocalMakeCore } from '../makeBridge/localCore.js'
 
 const U = 'admin'

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createCiRest } from './httpApi'
-import { setToken, setCsrf } from './session'
+import { setToken, setCsrf } from "@sislexa/identity/client/browser"
 import { queuedMergeRun } from '../test/fixtures/queuedMerge'
 
 afterEach(() => { vi.unstubAllGlobals(); setToken(null); setCsrf(null) })

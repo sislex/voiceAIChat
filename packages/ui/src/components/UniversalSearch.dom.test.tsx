@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { expect, it, vi, afterEach } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { CommandPalette } from './CommandPalette'
 import { SEARCH_SOURCES, SEARCH_LABELS, type UniversalSearchResult } from '@shared/universalSearch'

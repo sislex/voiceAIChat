@@ -1,8 +1,8 @@
 import { afterEach, expect, it } from 'vitest'
 import Fastify from 'fastify'
 import { VoiceChatDb } from './db/database.js'
-import { registerAuth } from './users/auth.js'
-import { signToken } from './users/accounts.js'
+import { registerAuth } from "@sislexa/identity/server/users/auth"
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import { registerBillingProxy, type BillingPublicTransport } from './billingBridge.js'
 
 const cleanup: Array<() => Promise<void>> = []

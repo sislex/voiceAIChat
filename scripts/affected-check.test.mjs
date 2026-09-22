@@ -46,21 +46,19 @@ test('selectAffected выбирает пакеты и безопасный fallb
     assert.deepEqual(ids(decision), ['server'])
   })
 
-  await t.test('Playwright Reader проверяет приложение и ядро, а клиент раннера — обоих потребителей', () => {
-    assert.deepEqual(ids(selectAffected(['apps/playwright-reader/src/module.ts'])), ['server', 'playwright-reader-service'])
-    assert.deepEqual(ids(selectAffected(['apps/browser-runner/src/client.ts'])), ['server', 'browser-runner'])
+  await t.test('retired Reader and worker paths select the conservative consumer gate', () => {
+    assert.equal(selectAffected(['apps/playwright-reader/src/module.ts']).full, true)
+    assert.equal(selectAffected(['apps/browser-runner/src/client.ts']).full, true)
   })
 
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['billing', 'identity', 'identity-account', 'identity-client', 'identity-contracts', 'identity-login', 'voice-browser', 'component-runtime', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'agent', 'web'])
   })
 
-  await t.test('ядро сессий тянет сервер и UI как потребителей', () => {
-    const decision = selectAffected(['packages/sessions-core/src/policy.ts'])
-    assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['billing', 'identity', 'identity-account', 'identity-client', 'identity-contracts', 'identity-login', 'voice-browser', 'component-runtime', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
+  await t.test('retired session source paths fail safely to the full consumer gate', () => {
+    assert.equal(selectAffected(['packages/sessions-core/src/policy.ts']).full, true)
   })
 
   await t.test('правка UI не затрагивает отделённый Web Recorder', () => {
@@ -73,7 +71,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['billing', 'identity', 'identity-account', 'identity-client', 'identity-contracts', 'identity-login', 'storage-sql', 'voice-browser', 'component-runtime', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
+      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'app-shell', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'agent', 'web'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -87,7 +85,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['billing', 'identity', 'identity-account', 'identity-client', 'identity-contracts', 'identity-login', 'storage-sql', 'voice-browser', 'component-runtime', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'app-shell', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'agent', 'web'])
   })
 })
 
@@ -113,10 +111,8 @@ test('dependsOn включает каждую workspace-зависимость �
   assert.doesNotThrow(() => validatePackageDependencies(repository))
 })
 
-test('Make contract changes include the panel and its hosts', () => {
-  const affected = ids(selectAffected(['packages/make-contracts/src/localization.ts']))
-  for (const id of ['make-app', 'ui', 'web']) assert.ok(affected.includes(id), id)
-  assert.ok(dependenciesOf('make-app').has('make-contracts'))
+test('owner contract archive updates select the full consumer gate', () => {
+  assert.equal(selectAffected(['vendor/voicechat-make-contracts-1.2.0.tgz']).full, true)
 })
 
 test('consumersOf даёт транзитивное замыкание и не тянет пакеты вне workspaces', () => {
@@ -265,7 +261,7 @@ test('fastCheckForPackage пропускает shared, конфиги и миг�
 test('dependenciesOf даёт транзитивные зависимости пакета', () => {
   assert.equal(dependenciesOf('app-shell').size, 0)
   const ui = dependenciesOf('ui')
-  for (const id of ['shared', 'sessions-core', 'chat-app', 'admin-app', 'profile-app']) {
+  for (const id of ['shared', 'chat-app', 'admin-app']) {
     assert.ok(ui.has(id), `ui должен зависеть от ${id}`)
   }
   assert.equal(ui.has('web'), false)

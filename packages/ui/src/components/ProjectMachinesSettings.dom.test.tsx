@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ProjectMachine } from '@shared/projects'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { makeAgent } from '../test/fixtures/index'
 import { installStoryBridges } from '../test/storyBridges'
 import { ProjectMachinesSettings, machineReadiness } from './ProjectMachinesSettings'

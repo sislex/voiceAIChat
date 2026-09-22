@@ -1,4 +1,4 @@
-import type { BrowserFramePath } from './browserFrames'
+import type { BrowserFramePath } from '@voicechat/browser-contracts/browserFrames'
 import type { BrowserCommand, BrowserSelectorResult } from './types'
 
 /** Полное чтение ограничено: сломанный cursor не должен держать прогон бесконечно. */

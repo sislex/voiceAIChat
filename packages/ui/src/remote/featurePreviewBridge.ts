@@ -1,5 +1,5 @@
-import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
-import { authHeaders, credentialedFetch } from './session'
+import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@voicechat/browser-contracts/preview'
+import { authHeaders, credentialedFetch } from "@sislexa/identity/client/browser"
 
 export interface RendererFeaturePreviewBridge {
   get(projectId: string, taskId: string): Promise<PreviewEnvironment | null>

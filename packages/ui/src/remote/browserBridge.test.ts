@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { makeBrowserBridge } from './index'
-import { setCsrf, setToken } from './session'
+import { setCsrf, setToken } from "@sislexa/identity/client/browser"
 
 afterEach(() => { vi.unstubAllGlobals(); setCsrf(null); setToken(null) })
 it('остановка Reader использует CSRF cookie-сессии', async () => {

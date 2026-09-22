@@ -7,7 +7,7 @@ import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
 import { AgentRegistry } from './agents/registry.js'
-import { signToken } from './users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 
 // Долгие команды (machines-roadmap п.17): команда из чата, дольше порога, сохраняет полный лог в
 // `<хранилище чата>/artifacts/commands/` на машине. Порог здесь 0 — «долгой» считается любая.

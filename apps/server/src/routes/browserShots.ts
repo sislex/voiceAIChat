@@ -1,7 +1,7 @@
 // Кадры CI принадлежат ядру: доступ к ранам и файлы остаются рядом с канбаном.
 import type { FastifyInstance } from 'fastify'
 import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import { readBrowserShot } from '../browser/checkShots.js'
 
 export function registerBrowserShotRoutes(app: FastifyInstance, deps: { db: VoiceChatDb; shotsRoot?: string }): void {

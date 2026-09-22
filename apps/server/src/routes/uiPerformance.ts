@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { REST, UI_PERFORMANCE_POLICY as P, validUiPerformanceBatch, validUiPerformanceQuery, uiPerformanceStats,
   type UiPerformanceBatch, type UiPerformanceSample, type UiPerformanceQuery, type UiPerformanceReport } from '@voicechat/shared'
-import { requireAdmin } from '../users/auth.js'
+import { requireAdmin } from "@sislexa/identity/server/users/auth"
 
 /** Process-local bounded distribution. Restart clears it; server receipt defines periods. */
 export class UiPerformanceStore {

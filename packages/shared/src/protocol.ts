@@ -1,4 +1,4 @@
-import type { MakePresenceClient } from './make'
+import type { MakePresenceClient } from '@voicechat/make-contracts/make'
 // Контракт клиент↔сервер (Ф1). HTTP REST — запрос/ответ; WebSocket — стриминг.
 // Семантика соответствует прежним Electron-IPC каналам (1:1), но транспорт-нейтральна.
 
@@ -20,7 +20,7 @@ import type { AgentInfo, MachineCommandEvent, MachineStatusEvent } from './agent
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
 import type { QaRunStage } from './qa'
-import type { PreviewAction, PreviewActionResult } from './previewActions'
+import type { PreviewAction, PreviewActionResult } from '@voicechat/browser-contracts/previewActions'
 import type { WidgetUiAction, WidgetUiActionResult } from './widgetAssistant'
 import type { LoginStatusMap } from './auth'
 

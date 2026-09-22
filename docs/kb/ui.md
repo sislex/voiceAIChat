@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-22
-checked: 0d5b6eea
+checked: 55f5a95b
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -54,7 +54,7 @@ See `testing-operations.md` for browser-test transfer and remaining extraction w
 
 The authoritative UI Kit/Foundation source and internal test suites are in
 [`sislex/sielexa-ui`](https://github.com/sislex/sielexa-ui), released together as
-v1.0.1 (UI Kit 0.1.2, UI Foundation 0.1.4). Core installs immutable archives and
+v1.0.2 (UI Kit 0.1.3, UI Foundation 0.1.5). Core installs immutable archives and
 has no corresponding source workspaces. Historical paths below identify owner
 package paths, not editable Core directories. Use the public package exports for
 styles, helpers and runtime ports; never reach through a relative sibling path.
@@ -67,8 +67,8 @@ The owner release makes automatic JSX explicit in public TSX files because
 consumer dependency optimizers do not inherit the library repository tsconfig.
 A standalone packed-consumer render check is part of the owner gate.
 Profile/session breakpoint tests live in Identity (PR #6). Core has no local
-copies of these assertions. Transitional Identity workspace adapters validate consumer archive provenance;
-owner checks run only in Identity. UI Kit/Foundation checks likewise run only
+copies of these assertions. Identity is consumed directly through its public
+exports; owner checks run only in Identity. UI Kit/Foundation checks likewise run only
 in the UI owner repository.
 
 ## Неблокирующий мастер первого запуска
@@ -100,11 +100,10 @@ after updating the corresponding type dependencies. Relative imports into the
 monorepo's root `node_modules` fail when UI Foundation is installed from an archive;
 the bundled assets remove that layout dependency without changing editor content.
 
-The Make and Reader workspaces are now adapters for `@sislexa/*` releases.
-Storybook discovers their actual installed CSF files: re-export-only stories are
-not indexable by Storybook. The three axe shards use an exhaustive glob over the
-installed tool packages, and the coverage guard recognizes both local and external
-workspace paths. This keeps all 745 existing story checks in the aggregate suite.
+Make and Reader panels are owner-built artifacts. Core's frontend preparation
+verifies their public manifest, source metadata and integrity without rebuilding
+them. Owner stories/axe suites run only in their repositories; Core's story
+matrix covers Core modules and examples composing public owner widgets.
 
 Реальный `App.tsx` подключает четыре панели через `createApplicationPanel`, включая
 surface `shared` у Make; их исходники не импортируются в bundle оболочки.

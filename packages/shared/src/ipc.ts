@@ -1,12 +1,12 @@
-import type { BrowserDownloadResult } from './browserDownloads'
-import type { BrowserDialogListResult } from './browserDialogs'
-import type { BrowserSiteDataResetResult } from './browserProfile'
-import type { BrowserFramesResult } from './browserFrames'
+import type { BrowserDownloadResult } from '@voicechat/browser-contracts/browserDownloads'
+import type { BrowserDialogListResult } from '@voicechat/browser-contracts/browserDialogs'
+import type { BrowserSiteDataResetResult } from '@voicechat/browser-contracts/browserProfile'
+import type { BrowserFramesResult } from '@voicechat/browser-contracts/browserFrames'
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient, MakeShareRole, MakeTestFile, MakeProjectNotes } from './make'
-import type { MakeReplacePreviewLine } from './makeSearch'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient, MakeShareRole, MakeTestFile, MakeProjectNotes } from '@voicechat/make-contracts/make'
+import type { MakeReplacePreviewLine } from '@voicechat/make-contracts/makeSearch'
 import type {
   BrowserCommand,
   BrowserScreenshotOptions,
@@ -43,7 +43,7 @@ import type {
   GitFileDiff, GitGrepResult, GitPullMode, GitPullResult, GitPushResult,
   GitSaveFileResult, GitTreeListing, GitWorkspaceRef, GitWorkspaceStatus
 } from './gitWorkspace'
-import type { PreviewAction, PreviewActionResult } from './previewActions'
+import type { PreviewAction, PreviewActionResult } from '@voicechat/browser-contracts/previewActions'
 import type {
   ProjectComponentEntry, ProjectComponentTicketResult, ProjectComponentsListing,
   ProjectStorybookAction, ProjectStorybookSession
@@ -327,7 +327,7 @@ export interface IpcInvokeMap {
   'messages:updateMeta': { arg: { conversationId: string; messageId: string; meta: TurnMeta }; result: Message }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string; mimeType?: string; agentId?: string; conversationId?: string }; result: UploadInfo }
-  'images:retouch': { arg: import('./imageRetouch').ImageRetouchRequest; result: import('./imageRetouch').ImageRetouchResult }
+  'images:retouch': { arg: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchRequest; result: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchResult }
   'settings:get': { arg: void; result: Settings }
   'llm:access': { arg: void; result: import('./llmAccess').UserLlmAccess[] }
   /** Свой профиль и свой журнал безопасности: те же данные, что видит админ, но только о себе. */
@@ -766,36 +766,36 @@ export interface IpcInvokeMap {
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
   /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
   /** Студия картинок: галерея разговора, генерация и правка по промпту. */
-  'imgstudio:preview': { arg: { conversationId: string; settings: import('./imageStudio').ImageStudioPublicationSettings }; result: { url: string } }
+  'imgstudio:preview': { arg: { conversationId: string; settings: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioPublicationSettings }; result: { url: string } }
   'imgstudio:archive': { arg: { conversationId: string; paths: string[] }; result: void }
-  'imgstudio:enqueue': { arg: { conversationId: string } & import('./imageStudio').ImageStudioTaskInput; result: import('./imageStudio').ImageStudioTask }
-  'imgstudio:tasks': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioTask[] }
+  'imgstudio:enqueue': { arg: { conversationId: string } & import('@voicechat/image-studio-contracts/imageStudio').ImageStudioTaskInput; result: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioTask }
+  'imgstudio:tasks': { arg: { conversationId: string }; result: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioTask[] }
   'imgstudio:cancelTask': { arg: { conversationId: string; taskId: string }; result: { cancelled: boolean } }
-  'imgstudio:tags': { arg: { conversationId: string; path: string; tags: string[] }; result: import('./imageStudio').ImageStudioFile[] }
-  'imgstudio:list': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:tags': { arg: { conversationId: string; path: string; tags: string[] }; result: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] }
+  'imgstudio:list': { arg: { conversationId: string }; result: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] }
   'imgstudio:read': { arg: { conversationId: string; path: string }; result: { path: string; dataBase64: string } }
-  'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string; source?: string }; result: import('./imageStudio').ImageStudioFile[] }
-  'imgstudio:delete': { arg: { conversationId: string; path: string }; result: import('./imageStudio').ImageStudioFile[] }
-  'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('./imageStudio').ImageStudioFile[] }
-  'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
-  'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
-  'imgstudio:retouch': { arg: { conversationId: string; path: string; prompt: string; selection: import('./imageStudio').ImageStudioSelection; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
-  'imgstudio:extract': { arg: { conversationId: string; path: string; selection: import('./imageStudio').ImageStudioSelection }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
-  'imgstudio:place': { arg: { conversationId: string; basePath: string; objectPath: string; x?: number; y?: number; width?: number; height?: number }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
-  'imgstudio:restoreVersion': { arg: { conversationId: string; currentPath: string; targetPath: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string; source?: string }; result: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] }
+  'imgstudio:delete': { arg: { conversationId: string; path: string }; result: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] }
+  'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] }
+  'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string; references?: string[] }; result: { file: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile; files: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] } }
+  'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile; files: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] } }
+  'imgstudio:retouch': { arg: { conversationId: string; path: string; prompt: string; selection: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioSelection; references?: string[] }; result: { file: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile; files: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] } }
+  'imgstudio:extract': { arg: { conversationId: string; path: string; selection: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioSelection }; result: { file: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile; files: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] } }
+  'imgstudio:place': { arg: { conversationId: string; basePath: string; objectPath: string; x?: number; y?: number; width?: number; height?: number }; result: { file: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile; files: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] } }
+  'imgstudio:restoreVersion': { arg: { conversationId: string; currentPath: string; targetPath: string }; result: { file: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile; files: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] } }
   'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
-  'imgstudio:publish': { arg: { conversationId: string; password?: string | null; settings?: import('./imageStudio').ImageStudioPublicationSettings }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
-  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean; settings?: import('./imageStudio').ImageStudioPublicationSettings } }
+  'imgstudio:publish': { arg: { conversationId: string; password?: string | null; settings?: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioPublicationSettings }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
+  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean; settings?: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioPublicationSettings } }
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
-  'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] } }
   'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number; size: number }> } }
-  'imgstudio:restore': { arg: { conversationId: string; name: string }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:restore': { arg: { conversationId: string; name: string }; result: { name: string; files: import('@voicechat/image-studio-contracts/imageStudio').ImageStudioFile[] } }
   /** Очистка корзины: без `name` — вся, с `name` — только этот файл. */
   'imgstudio:purge': { arg: { conversationId: string; name?: string }; result: { removed: number; items: Array<{ name: string; deletedAt: number }> } }
-  'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('./make').MakeProjectFileEntry[] }
-  'make:projectLinks': { arg: { conversationId: string }; result: import('./make').MakeProjectLinkInfo[] }
-  'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('./make').MakeProjectPullResult }
+  'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('@voicechat/make-contracts/make').MakeProjectFileEntry[] }
+  'make:projectLinks': { arg: { conversationId: string }; result: import('@voicechat/make-contracts/make').MakeProjectLinkInfo[] }
+  'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('@voicechat/make-contracts/make').MakeProjectPullResult }
   'make:taskLinks': { arg: { conversationId: string; path?: string }; result: import('./projects').MakeTaskLink[] }
   'make:linkTask': { arg: { conversationId: string; taskId: string; path?: string; label?: string }; result: import('./projects').MakeTaskLink[] }
   /** Задачи проекта Make-чата — выбор в диалоге «Связать с задачей». */
@@ -1134,7 +1134,7 @@ export interface RendererBrowserBridge {
 
 export interface RendererSessionBridge {
   /** Independent Identity account/tariff operations, available on current hosts. */
-  tariffs?: import('./accountAccess').AccountTariffClient
+  tariffs?: import('@sislexa/identity/contracts/accountAccess').AccountTariffClient
   /** Вход: пользователь, `null` при отказе или вызов второго фактора (auth-roadmap п.6) — тогда нужен `login2fa`. */
   login(creds: { name: string; password: string; remember?: boolean }): Promise<SessionUser | LoginChallenge | null>
   login2fa?(input: { ticket: string; code: string }): Promise<SessionUser | null>

@@ -743,7 +743,7 @@ export const AUTOMATED_QA_MODES: AutomatedQaMode[] = ['command', 'playwright']
 export interface AutomatedQaScenarioStep {
   id: string
   title: string
-  action: import('./previewActions').PreviewAction
+  action: import('@voicechat/browser-contracts/previewActions').PreviewAction
   /** После шага текст обязан присутствовать на странице. */
   expectText?: string
   /** …и обязан отсутствовать (проверка на сообщение об ошибке). */

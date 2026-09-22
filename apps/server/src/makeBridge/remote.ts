@@ -8,7 +8,8 @@ import {
   INTERNAL_MAKE_SERVICE_PATH, MakeHub, buildTaskMakeSources, createRpcClient,
   type MakeService
 } from '@voicechat/make-contracts'
-import type { AdminMakeStats, MakeFileInfo } from '@voicechat/shared'
+import type { AdminMakeStats } from '@voicechat/shared'
+import type { MakeFileInfo } from '@voicechat/make-contracts/make'
 
 export interface RemoteMakeOptions {
   makeUrl: string

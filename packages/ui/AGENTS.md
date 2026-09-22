@@ -23,7 +23,7 @@ Host API версии `APPLICATION_HOST_API_VERSION` предоставляет 
   **Хранилища не импортируют друг друга** — соседа им даёт порт от
   `runtime/appRuntime.ts` (он же ведёт bootstrap, маршрутизацию WS-кадров,
   logout и dispose). Общие ключи localStorage и голосовой срез настроек — в
-  `@voicechat/ui-foundation/persistence` (в `store/contracts.ts` остался реэкспорт). Внешний мир — только через доменные клиенты
+  `@voicechat/ui-foundation/persistence`. Внешний мир — только через доменные клиенты
   (`clients/types.ts`), их адаптеры к `window.*` — `clients/browser.ts` и
   `clients/realtime.ts`. React подключается через `store/react.tsx`
   (`useChat(selector)`, `useVoice(selector)`, … + `use*Actions`); универсального

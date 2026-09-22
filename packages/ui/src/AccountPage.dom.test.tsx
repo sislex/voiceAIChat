@@ -2,7 +2,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { AccountPage, periodRange, toProfileEvents, toProfileUsage, toProfileUser } from './components/AccountPage'
+import { AccountPage } from './components/AccountPage'
+import { periodRange } from '@sislexa/identity/account/AccountPage'
 import { readResources } from './clients/readResources'
 import { UiProviders } from '@voicechat/ui-kit'
 import type { RendererApi } from '@shared/ipc'
@@ -69,30 +70,6 @@ function renderPage(api: RendererApi, tab: 'overview' | 'access' | 'machines' | 
   )
 }
 
-describe('AccountPage — преобразование ответов сервера', () => {
-  it('расход берёт большую из двух оценок и переносит прерванные', () => {
-    const usage = toProfileUsage(report)
-    expect(usage.spendUsd).toBe(12.5)
-    expect(usage.interrupted).toBe(2)
-    expect(usage.byModel[0].spendUsd).toBe(12.5)
-  })
-
-  it('ОС берётся из телеметрии, у офлайн-машины её нет', () => {
-    const user = toProfileUser(profile)
-    expect(user.machines[0]).toMatchObject({ platform: 'darwin', osRelease: '15.6', version: '2.7.4' })
-    expect(user.machines[1].platform).toBeUndefined()
-  })
-
-  it('события получают человеческие подписи', () => {
-    expect(toProfileEvents([{ id: 1, at: 0, user: 'marina', type: 'login_failed', ip: '', userAgent: '', details: '' }])[0].label).toBe('Неверный пароль')
-  })
-
-  it('период «месяц» считается от первого числа, а «всё время» — без границ', () => {
-    expect(new Date(periodRange('month', NOW).from!).getDate()).toBe(1)
-    expect(periodRange('all', NOW)).toEqual({})
-    expect(periodRange('7d', NOW).from).toBe(NOW - 7 * 86_400_000)
-  })
-})
 
 describe('AccountPage — экран', () => {
   // @testCase TC1
@@ -168,105 +145,5 @@ describe('AccountPage — экран', () => {
     expect(api['me:profile']).toHaveBeenCalledTimes(1)
     expect(api['llm:access']).toHaveBeenCalledTimes(1)
     expect(api['me:security']).toHaveBeenCalledTimes(1)
-  })
-
-  it('показывает свой профиль и не показывает административных действий', async () => {
-    renderPage(fakeApi())
-    await waitFor(() => expect(screen.getByTestId('profile-head')).toBeInTheDocument())
-    expect(screen.getByTestId('profile-head')).toHaveTextContent('marina@voicechat.team')
-    expect(screen.queryByLabelText('Роль пользователя')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Заблокировать' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Удалить учётку' })).toBeNull()
-  })
-
-  it('матрица доступа своя и только для чтения', async () => {
-    renderPage(fakeApi(), 'access')
-    await waitFor(() => expect(screen.getByTestId('access-tab')).toBeInTheDocument())
-    expect(screen.getByRole('switch', { name: 'Доступ к OpenAI Codex' })).toHaveAttribute('aria-checked', 'false')
-    expect(screen.getByRole('switch', { name: 'Доступ к OpenAI Codex' })).toBeDisabled()
-    expect(screen.queryByTestId('sticky-action-bar')?.getAttribute('aria-hidden')).toBe('true')
-  })
-
-  it('журнал грузится только когда он нужен', async () => {
-    const api = fakeApi()
-    renderPage(api, 'machines')
-    await waitFor(() => expect(screen.getByTestId('machines-tab')).toBeInTheDocument())
-    expect(api['me:security']).not.toHaveBeenCalled()
-  })
-
-  it('показывает профиль, не дожидаясь тяжёлых данных обзора', async () => {
-    const pending = new Promise<never>(() => {})
-    const api = fakeApi({
-      'llm:access': vi.fn(() => pending),
-      'usage:report': vi.fn(() => pending),
-      'me:security': vi.fn(() => pending)
-    })
-    renderPage(api)
-    expect(await screen.findByTestId('profile-head')).toHaveTextContent('marina')
-    expect(screen.getByTestId('profile-overview-events-skeleton-list')).toBeInTheDocument()
-    expect(screen.getByTestId('profile-overview-usage-skeleton-list')).toBeInTheDocument()
-  })
-
-  it('на вкладке доступа не запрашивает расход, журнал и машины', async () => {
-    const api = fakeApi()
-    renderPage(api, 'access')
-    await screen.findByTestId('access-tab')
-    expect(api['llm:access']).toHaveBeenCalledTimes(1)
-    expect(api['usage:report']).not.toHaveBeenCalled()
-    expect(api['me:security']).not.toHaveBeenCalled()
-    expect(api['agents:list']).not.toHaveBeenCalled()
-  })
-
-  it('полные данные машин запрашивает только после открытия их вкладки', async () => {
-    const me = { ...profile, agents: undefined, machinesTotal: 2, machinesOnline: 1 }
-    const api = fakeApi({ 'me:profile': vi.fn(async () => me) })
-    renderPage(api, 'machines')
-    await waitFor(() => expect(api['agents:list']).toHaveBeenCalledTimes(1))
-    expect(await screen.findByTestId('machines-tab')).toHaveTextContent('MacBook')
-    expect(api['usage:report']).not.toHaveBeenCalled()
-    expect(api['me:security']).not.toHaveBeenCalled()
-    expect(api['llm:access']).not.toHaveBeenCalled()
-  })
-
-  it('ошибка данных вкладки не скрывает уже загруженный профиль', async () => {
-    const api = fakeApi({ 'llm:access': vi.fn(async () => { throw new Error('доступ недоступен') }) })
-    renderPage(api, 'access')
-    expect(await screen.findByTestId('profile-head')).toHaveTextContent('marina')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось загрузить данные вкладки')
-  })
-
-  it('экспорт журнала отдаёт CSV хосту', async () => {
-    const onExportCsv = vi.fn()
-    renderPage(fakeApi(), 'history', vi.fn(), onExportCsv)
-    await waitFor(() => expect(screen.getByTestId('history-tab')).toBeInTheDocument())
-    await userEvent.click(screen.getByRole('button', { name: 'Экспорт CSV' }))
-    expect(onExportCsv.mock.calls[0][0]).toBe('security-marina.csv')
-  })
-
-  it('фильтр журнала перезапрашивает только выбранную группу', async () => {
-    const api = fakeApi()
-    renderPage(api, 'history')
-    await screen.findByTestId('history-tab')
-    await userEvent.selectOptions(screen.getByLabelText('Тип событий'), 'machines')
-    await waitFor(() => expect(api['me:security']).toHaveBeenLastCalledWith({ limit: 200, group: 'machines' }))
-  })
-
-  it('смена периода перезапрашивает расход с новыми границами', async () => {
-    const api = fakeApi()
-    renderPage(api, 'usage')
-    await waitFor(() => expect(screen.getByTestId('usage-tab')).toBeInTheDocument())
-    await userEvent.selectOptions(screen.getByLabelText('Период расхода'), '7d')
-    await waitFor(() => expect((api['usage:report'] as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1))
-    const last = (api['usage:report'] as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]
-    expect(last.from).toBe(NOW - 7 * 86_400_000)
-  })
-
-  it('ошибка профиля видна и повторяется кнопкой', async () => {
-    const failing = fakeApi({ 'me:profile': vi.fn(async () => { throw new Error('нет связи') }) })
-    renderPage(failing)
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Не удалось загрузить профиль')
-    await userEvent.click(within(alert).getByRole('button', { name: 'Повторить' }))
-    expect((failing['me:profile'] as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1)
   })
 })

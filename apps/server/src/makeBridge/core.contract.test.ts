@@ -3,7 +3,7 @@
 // Если реализации расходятся, отдельный процесс Make видит не те данные, что встроенный.
 import Fastify, { type FastifyInstance } from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HttpMakeCore, MakeHub, INTERNAL_MAKE_EVENTS_PATH, INTERNAL_WHOAMI_PATH, type MakeCore } from '@voicechat/make'
+import { HttpMakeCore, MakeHub, INTERNAL_MAKE_EVENTS_PATH, INTERNAL_WHOAMI_PATH, type MakeCore } from '@sislexa/make'
 import { VoiceChatDb } from '../db/database.js'
 import { registerInternalRoutes } from '../routes/internal.js'
 import { LocalMakeCore } from './localCore.js'

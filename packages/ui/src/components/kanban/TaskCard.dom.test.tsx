@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import type { Task } from '@shared/projects'
 import type { CiRun, CiRunSummary } from '@shared/ci'
 import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'

@@ -3,7 +3,7 @@ import { MobileScroll, MobileFilters } from './KanbanBoard.stories'
 import { MOBILE_QUERY } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, fireEvent, screen, within, waitFor, cleanup } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import { formatVisibleBoardList, KanbanBoard, taskPermalink, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'

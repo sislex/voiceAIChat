@@ -30,6 +30,7 @@ export interface RunnerFsClientOptions {
   codexBaseUrl?: string
   token?: string
   fetchImpl?: typeof fetch
+  requestTimeoutMs?: number
   reconnectDelayMs?: number
 }
 
@@ -97,6 +98,10 @@ export class RunnerFsClient {
     const url = claudeUrl ?? codexUrl
     if (!url) throw new Error('адрес исполнителя не настроен')
     return this.getJson<LoginStatusMap>(url, AUTH_STATUS_PATH, { userId })
+  }
+
+  listMcpServers(userId: string): Promise<import('@voicechat/shared').McpServer[]> {
+    return this.getJson(this.requireClaudeUrl(), '/v1/mcp/servers', { userId })
   }
 
   listCcProjects(userId: string): Promise<CcProject[]> {
@@ -209,7 +214,8 @@ export class RunnerFsClient {
 
   private async getJson<T>(base: string, path: string, query: Record<string, string>): Promise<T> {
     const res = await this.fetchImpl(this.buildUrl(base, path, query), {
-      headers: this.headers({ accept: 'application/json' })
+      headers: this.headers({ accept: 'application/json' }),
+      signal: AbortSignal.timeout(this.opts.requestTimeoutMs ?? 10_000)
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
@@ -220,7 +226,8 @@ export class RunnerFsClient {
 
   private async getMaybeJson<T>(base: string, path: string, query: Record<string, string>): Promise<T | null> {
     const res = await this.fetchImpl(this.buildUrl(base, path, query), {
-      headers: this.headers({ accept: 'application/json' })
+      headers: this.headers({ accept: 'application/json' }),
+      signal: AbortSignal.timeout(this.opts.requestTimeoutMs ?? 10_000)
     })
     if (res.status === 404) return null
     if (!res.ok) {

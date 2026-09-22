@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@voicechat/shared'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo } from '@shared/agentProtocol'

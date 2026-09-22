@@ -14,7 +14,7 @@ import {
   isProjectStoryPath, machineOrigin, parseStorybookIndex, storyPathMatches, storybookStoryId, storybookStoryName,
   type ProjectComponentEntry, type ProjectComponentsListing, type ProjectStorybookAccess, type ProjectStorybookAction
 } from '@voicechat/shared'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import { parseStoryFile } from '@voicechat/shared'
 import type { StorybookSessions } from '../components/storybookSessions.js'

@@ -1,7 +1,7 @@
-import type { WebReaderFrameProps } from '@voicechat/web-reader-app/panelContract'
-import type { BrowserSessionPaneProps } from '@voicechat/playwright-reader-app/panelContract'
-import type { ImageStudioPaneProps } from '@voicechat/image-studio-app/panelContract'
-import type { MakePaneProps } from '@voicechat/make-app/panelContract'
+import type { WebReaderFrameProps } from '@sislexa/web-reader/ui/panelContract'
+import type { BrowserSessionPaneProps } from '@sislexa/playwright-reader/ui/panelContract'
+import type { ImageStudioPaneProps } from '@sislexa/image-studio/ui/panelContract'
+import type { MakePaneProps } from '@sislexa/make/ui/panelContract'
 import { createApplicationPanel } from './runtime/applicationHost'
 import { WebReaderEngineSelect } from './components/WebReaderEngineSelect'
 import { runReaderModelRequest, readReaderErrorSummary } from './webReaderModelRequest'
@@ -15,7 +15,7 @@ import type { GitWorkspaceRef } from '@shared/gitWorkspace'
 import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import type { RendererApi } from '@shared/ipc'
 import { summarizeConversationUsage } from '@shared/usageSummary'
-import type { MakeSharedViewProps } from '@voicechat/make-app/panelContract'
+import type { MakeSharedViewProps } from '@sislexa/make/ui/panelContract'
 import type { Conversation, EditorContextPayload, LlmProvider, PermissionMode, Settings, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type ChatStorageView, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
@@ -24,16 +24,16 @@ import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetSurfaceSnapshot, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
-import type { PreviewElementPayload } from '@shared/previewInspector'
-import type { PreviewAction } from '@shared/previewActions'
-import { browserId } from '@shared/browserId'
-import type { ReaderHostRegistration, WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
+import type { PreviewElementPayload } from '@voicechat/browser-contracts/previewInspector'
+import type { PreviewAction } from '@voicechat/browser-contracts/previewActions'
+import { browserId } from '@voicechat/browser-contracts/browserId'
+import type { ReaderHostRegistration, WebRecorderAreaScreenshot } from '@sislexa/web-reader/ui/index'
 const ConsoleSessionPane = lazy(() => import('./components/ConsoleSessionPane').then(module => ({ default: module.ConsoleSessionPane })))
-import { parseUserAgent } from '@voicechat/sessions-core'
-const TwoFactorDialog = lazy(() => import('./components/TwoFactorDialog').then(module => ({ default: module.TwoFactorDialog })), { frame: (content, props) => <Dialog title="Двухфакторная защита" size="sm" onClose={props.onClose}>{content}</Dialog> })
-import { InviteRegister } from './components/InviteRegister'
-import { ChangePasswordDialog } from './components/ChangePasswordDialog'
-import { SignupScreen, VerifyScreen } from './components/SignupScreen'
+import { parseUserAgent } from '@sislexa/identity/sessions-core/index'
+const TwoFactorDialog = lazy(() => import("@sislexa/identity/login/TwoFactorDialog").then(module => ({ default: module.TwoFactorDialog })), { frame: (content, props) => <Dialog title="Двухфакторная защита" size="sm" onClose={props.onClose}>{content}</Dialog> })
+import { InviteRegister } from "@sislexa/identity/login/InviteRegister"
+import { ChangePasswordDialog } from "@sislexa/identity/login/ChangePasswordDialog"
+import { SignupScreen, VerifyScreen } from "@sislexa/identity/login/SignupScreen"
 import { NewProjectDialog } from './components/NewProjectDialog'
 import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
@@ -46,7 +46,7 @@ import { VOICE_INPUT_ENABLED } from './lib/featureFlags'
 import { CHAT_COMPOSER_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
-import { LoginScreen, ResetPasswordScreen } from './components/LoginScreen'
+import { LoginScreen, ResetPasswordScreen } from "@sislexa/identity/login/LoginScreen"
 import type { ObserverEngine } from './components/EnginesObserver'
 const EnginesObserver = lazy(() => import('./components/EnginesObserver').then(module => ({ default: module.EnginesObserver })))
 const PersonalizationPage = lazy(() => import('./components/SettingsPage').then(module => ({ default: module.PersonalizationPage })))
@@ -274,8 +274,8 @@ const MakeSharedView = createApplicationPanel<MakeSharedViewProps>('make-ui', 's
 const MakePane = createApplicationPanel<MakePaneProps>('make-ui')
 
 import './styles/app.css'
-import '@voicechat/sessions-app/styles.css'
-import '@voicechat/profile-app/styles.css'
+import '@sislexa/identity/sessions-app/styles.css'
+import '@sislexa/identity/profile-app/styles.css'
 import '@voicechat/operations-app/styles.css'
 import '@voicechat/admin-app/styles.css'
 
@@ -956,7 +956,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     })
   }, [api])
   const toast = useToast()
-  const moduleAvailable = (capability: import('@shared/accountAccess').ProductCapability): boolean =>
+  const moduleAvailable = (capability: import('@sislexa/identity/contracts/accountAccess').ProductCapability): boolean =>
     !session.currentUser?.account || session.currentUser.account.capabilities.includes(capability)
   const shellUserId = session.currentUser?.name || (session.authRequired ? '' : 'local')
   useEffect(() => { setOnboardingOpen(false); setOnboardingDismissed(false) }, [shellUserId])

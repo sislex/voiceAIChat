@@ -179,6 +179,7 @@ export async function runCompatibilityCase(
   row,
   {
     allowDevelopment = false,
+    driverPath,
     execute = (args) =>
       execFileSync('docker', args, {
         encoding: 'utf8',
@@ -191,7 +192,7 @@ export async function runCompatibilityCase(
   const app = APPLICATION_CATALOG.find(
     (app) => app.id === candidate.applicationId
   )
-  const driver = app && join(root, app.paths[0], 'compatibility.mjs')
+  const driver = driverPath ?? (app?.paths[0] && join(root, app.paths[0], 'compatibility.mjs'))
   if (!driver || !existsSync(driver))
     throw new Error(`Нет контрактного сценария ${candidate.applicationId}`)
   const contract = await import(pathToFileURL(driver).href)
@@ -309,8 +310,8 @@ export async function main(args = process.argv.slice(2)) {
   if (!app) throw new Error('Неизвестное приложение')
   const matrixPath = value('--matrix')
     ? resolve(value('--matrix'))
-    : join(root, app.paths[0], 'release-matrix.json')
-  const source = existsSync(matrixPath)
+    : app.paths[0] ? join(root, app.paths[0], 'release-matrix.json') : null
+  const source = matrixPath && existsSync(matrixPath)
     ? json(matrixPath)
     : candidate.requires.some((item) => !item.optional)
       ? null
@@ -324,7 +325,8 @@ export async function main(args = process.argv.slice(2)) {
   for (const row of cases)
     results.push(
       await runCompatibilityCase(candidate, row, {
-        allowDevelopment: args.includes('--development')
+        allowDevelopment: args.includes('--development'),
+        driverPath: value('--driver') ? resolve(value('--driver')) : undefined
       })
     )
   console.log(

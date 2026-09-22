@@ -2,7 +2,7 @@
 // список, поиск и завершение живут в модуле «сессии и устройства», здесь только
 // свой стор на пользователя и ленивая загрузка при раскрытии.
 import { useEffect, useMemo } from 'react'
-import { SessionsBulkActions, SessionsPanel, createSessionsStore, type SessionsClient } from '@voicechat/sessions-app'
+import { SessionsBulkActions, SessionsPanel, createSessionsStore, type SessionsClient } from '@sislexa/identity/sessions-app/index'
 
 export interface AdminSessionsProps {
   client: SessionsClient
