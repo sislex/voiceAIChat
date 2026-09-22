@@ -3,7 +3,7 @@ import { expect, userEvent, within } from '@storybook/test'
 import { MachineVpn } from './MachineVpn'
 import { makeVpnAgent as makeAgent } from '../test/fixtures/vpn'
 import { makeVpnObservation, makeVpnView, VPN_TIME, vpnFixtureBridge } from '../test/fixtures/vpn'
-import { initialVpnState, type VpnErrorCode } from '@shared/vpn'
+import { initialVpnState, type VpnErrorCode } from '@sislexa/agent-contracts'
 const meta: Meta<typeof MachineVpn> = {
   title: 'Machines/VPN', component: MachineVpn,
   args: { agent: makeAgent(), bridge: vpnFixtureBridge(makeVpnView()), clock: () => VPN_TIME }

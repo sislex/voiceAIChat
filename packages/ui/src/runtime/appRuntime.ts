@@ -7,7 +7,7 @@
 // публичные actions владельца.
 
 import { uiPerformance } from '../lib/uiPerformance'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { CcItem } from '@shared/cc'
 import type { CxItem } from '@shared/codexSessions'
 import type { KbUsageQuery } from '@shared/kb'

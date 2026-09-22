@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AGENT_VERSION, sanitizeVpnObservation } from '@voicechat/shared'
+import { AGENT_VERSION, sanitizeVpnObservation } from '@sislexa/agent-contracts'
 import { AgentRegistry } from './registry.js'
 describe('dedicated VPN transport', () => {
   // @testCase TC-STATE

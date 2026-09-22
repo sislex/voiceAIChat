@@ -21,9 +21,6 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `packages/ui` | `@voicechat/ui` | Общая оболочка, чат, стор и host API; продуктовые панели загружаются отдельно | [AGENTS](packages/ui/AGENTS.md) |
 | `apps/server` | `@voicechat/server` | Fastify: REST/WS, application orchestration, database and machine registry | [AGENTS](apps/server/AGENTS.md) |
 | `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |
-| `apps/agent` | `@voicechat/agent` | Компаньон-агент на машине пользователя (exec/fs/pty/телеметрия) | [AGENTS](apps/agent/AGENTS.md) |
-| `apps/agent-tray` | `@voicechat/agent-tray` | Electron-трей вокруг агента (установка, лог, разрешения) | [AGENTS](apps/agent-tray/AGENTS.md) |
-| `apps/desktop` | `@voicechat/desktop` | Тонкая Electron-оболочка web/server + legacy-импорт БД (вне workspaces) | [AGENTS](apps/desktop/AGENTS.md) |
 
 Make, both Readers (including Browser Runner and Web Recorder), Image Studio,
 Voice, Identity and Billing are direct versioned `@sislexa/*` dependencies, with
@@ -39,17 +36,19 @@ UI Kit and UI Foundation are versioned dependencies owned by
 tests and primitive stories live there. Core tests only public consumer integration.
 The platform SDK is consumed directly from `@sislexa/sdk`; no local wrapper remains.
 
-`apps/desktop`, `apps/agent-tray`, and `apps/login-application` are intentionally
-outside `workspaces`. Each has its own Electron dependencies; install them with
-`npm ci --prefix <app-path>` when selected by the gate. Root `npm install` does
-not install those dependencies.
+Agent runtime, machine contracts, installers, tray and enrollment client belong to
+[sislex/agent](https://github.com/sislex/agent). Electron Desktop belongs to
+[sislex/desktop](https://github.com/sislex/desktop). Core consumes their pinned
+artifacts; run internal gates in the owner repositories. Core keeps machine
+orchestration and public integration tests. Shared compatibility exports preserve
+released consumer APIs and contain no Agent implementation.
 
 ## Команды
 
 ```bash
-npm install                  # root workspaces; Electron apps need separate installs
+npm install                  # Core workspaces; extracted applications install in their own repositories
 npm run dev:web              # сервер :8787 + Vite-клиент вместе (scripts/dev-web.sh)
-npm run typecheck            # все воркспейсы; отдельно: typecheck:desktop, typecheck:agent-tray
+npm run typecheck            # Core workspaces
 npm run test                 # все воркспейсы (vitest run)
 npm run gate:fast            # гейт шага: приложения по диффу от HEAD
 npm run gate                 # приложения по диффу ветки перед коммитом/PR

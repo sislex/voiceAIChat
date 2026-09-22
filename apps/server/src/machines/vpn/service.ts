@@ -1,4 +1,4 @@
-import { initialVpnState, isVpnFresh, type VpnAgentRequest, type VpnChange, type VpnObservation, type VpnState, type VpnView } from '@voicechat/shared'
+import { initialVpnState, isVpnFresh, type VpnAgentRequest, type VpnChange, type VpnObservation, type VpnState, type VpnView } from '@sislexa/agent-contracts'
 import { decryptVpnSecret, encryptVpnSecret, managedPolicy, TailscaleApi, vpnTag, VpnError, type TailDevice } from './tailscale.js'
 
 type Row = { tailnet: string; encryptedSecret: string; generation: number; state: string }

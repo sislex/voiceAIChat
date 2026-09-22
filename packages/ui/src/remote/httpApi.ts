@@ -29,7 +29,7 @@ import type {
   CiLogLine,
   CiConsoleExecResult
 } from '@shared/ci'
-import { encodeAgentConnection } from '@shared/agentProtocol'
+import { encodeAgentConnection } from '@sislexa/agent-contracts'
 import type { RendererApi } from '@shared/ipc'
 import type { MessageSearchResult } from '@shared/types'
 import { authHeaders, credentialedFetch } from "@sislexa/identity/client/browser"

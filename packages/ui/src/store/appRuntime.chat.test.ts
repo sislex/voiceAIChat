@@ -6,7 +6,7 @@ import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { ClaudeLogEntry, Message } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
+import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import { CONVERSATIONS_PAGE } from '@shared/projects'
 
 // Быстрые задержки + фейковые таймеры делают мок-пайплайн детерминированным.

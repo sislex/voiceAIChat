@@ -1,6 +1,6 @@
 // Типы админ-страницы пользователей (только для роли admin).
 
-import type { AgentInfo } from './agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { UserRole } from './types'
 import type { LlmRunKind, LlmRunnerHealth } from './llm'
 

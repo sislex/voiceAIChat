@@ -8,7 +8,8 @@
 // У канбана: `KanbanService` по RPC (снимок рана, `boardChanged` от соседей, обратные вызовы тоннелей)
 // и приём снимка машин: онлайн-статус, имя, платформа, политика и телеметрия читаются кластером
 // синхронно, поэтому в отдельном процессе их даёт зеркало, которое ядро обновляет пушем.
-import type { AgentPolicy, AgentTelemetry, QaRunStage, ServerMessage, ReleaseStatus } from '@voicechat/shared'
+import type { QaRunStage, ServerMessage, ReleaseStatus } from '@voicechat/shared'
+import type { AgentPolicy, AgentTelemetry } from '@sislexa/agent-contracts'
 
 /** У ядра. */
 export const INTERNAL_KANBAN_CORE_PATH = '/internal/kanban/core'

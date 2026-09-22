@@ -3,7 +3,8 @@
 // (а через его порты — канбан и Make) — потребитель. Вызовы идут RPC и потоковым exec к процессу машин;
 // обратно к ядру — одна шина событий на постоянном WebSocket: снимки машин и PTY-сессий для синхронных
 // чтений из зеркала, события PTY, кадры владельцам (журнал команд, watchdog), запросы авторизации тоннелей.
-import type { AgentImageHost, AgentPolicy, AgentTelemetry, PtyContext, ServerMessage } from '@voicechat/shared'
+import type { ServerMessage } from '@voicechat/shared'
+import type { AgentImageHost, AgentPolicy, AgentTelemetry, PtyContext } from '@sislexa/agent-contracts'
 import type { MachineCommandReport, MachinesService, PtyEvent } from './service.js'
 
 /** У процесса, где живёт реестр: отдельного процесса машин или ядра во встроенном режиме (`machines/internalApi.ts`). */

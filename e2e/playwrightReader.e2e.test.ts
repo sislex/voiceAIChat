@@ -67,6 +67,7 @@ async function mcpReply(name: string, args: Record<string, unknown> = {}, expect
   })
   expect(response.status).toBe(200)
   const body = await response.json() as { result?: { isError?: boolean; content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }; error?: unknown }
+  if (body.result?.isError && name === 'evaluate') browserTrace.push({ event: 'evaluate-error', args, result: body.result })
   expect(body.error).toBeUndefined()
   if (expectedError) expect(body.result?.isError, JSON.stringify(body)).toBe(true)
   else expect(body.result?.isError, JSON.stringify(body)).not.toBe(true)
@@ -86,7 +87,8 @@ async function dismissModelShellTour(): Promise<void> {
 async function capture(name: string): Promise<void> {
   if (!artifacts) return
   await mkdir(artifacts, { recursive: true })
-  await page.waitForResponse(response => response.url().endsWith(`/api/browser/${conversationId}/screenshot`) && response.ok())
+  // Frames arrive over WebSocket; diagnostics must not wait for an obsolete HTTP poll.
+  await expect.poll(() => page.locator('img[alt="Кадр Chromium"]').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
   // Поток может уже показать следующий кадр: равенство одному ответу HTTP
   // нестабильно даже при исправном UI. Декодирование проверяется отдельно.
   await page.screenshot({ path: join(artifacts, `${name}.png`), fullPage: true })
@@ -139,7 +141,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     page.on('pageerror', error => browserTrace.push({ at: Date.now(), event: 'pageerror', message: error.message }))
     page.on('request', request => {
       if (!request.url().includes('/api/browser/')) return
-      browserTrace.push({ at: Date.now(), event: 'request', path: new URL(request.url()).pathname, command: request.postDataJSON()?.command?.type })
+      browserTrace.push({ at: Date.now(), event: 'request', path: new URL(request.url()).pathname, command: request.postDataJSON()?.command })
     })
     page.on('response', response => {
       if (response.url().includes('/api/browser/')) void response.json().then(body => {
@@ -162,6 +164,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
   })
 
   afterEach(async context => {
+    const artifacts = process.env.VC_VISUAL_FAILURE_ARTIFACTS ?? process.env.VC_VISUAL_ARTIFACTS
     if (context.task.result?.state !== 'fail' || !artifacts || !page) return
     await mkdir(artifacts, { recursive: true })
     await page.screenshot({ path: join(artifacts, 'failure.png'), fullPage: true })
@@ -568,20 +571,21 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     const point = async (x: number, y: number) => {
       const box = await frame.boundingBox()
       if (!box) throw new Error('Кадр недоступен')
-      return { x: box.x + x * box.width / 1280, y: box.y + y * box.height / 800 }
+      return { x: x * box.width / 1280, y: y * box.height / 800 }
     }
     const wheel = await point(400, 250)
-    await page.mouse.move(wheel.x, wheel.y)
+    // Locator actions wait for the streamed frame layout to settle before input.
+    await frame.hover({ position: wheel })
     await page.mouse.wheel(80, 180)
     await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: '({ left: document.querySelector("#pane").scrollLeft, top: document.querySelector("#pane").scrollTop })' })).value, { timeout: 10000 }).toEqual({ left: 80, top: 180 })
     const field = await point(90, 30)
-    await page.mouse.click(field.x, field.y)
+    await frame.click({ position: field })
     await frame.press('ControlOrMeta+a')
     await frame.press('A')
     await frame.press('Z')
     await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'document.querySelector("#field").value' })).value).toBe('AZ')
     const message = await point(750, 60)
-    await page.mouse.click(message.x, message.y)
+    await frame.click({ position: message })
     await frame.evaluate(element => {
       const data = new DataTransfer(); data.setData('text/plain', 'Письмо\n😀')
       element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: data }))
@@ -589,7 +593,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'document.querySelector("#message").value' })).value).toBe('Письмо\n😀')
     await mcp('evaluate', { code: 'events=[]' })
     const button = await point(330, 40)
-    await page.mouse.dblclick(button.x, button.y)
+    await frame.dblclick({ position: button })
     await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'events.filter(e=>e.type==="click").length' })).value).toBe(2)
     expect(JSON.parse(await mcp('evaluate', { code: 'events.filter(e=>e.type==="dblclick").length' })).value).toBe(1)
     await capture('26-keyboard-paste-doubleclick')

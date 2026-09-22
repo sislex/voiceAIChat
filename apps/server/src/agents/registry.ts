@@ -2,24 +2,8 @@
 // Не зависит от ws: сокет — минимальный интерфейс {send, close} (тестируемо).
 
 import { randomUUID } from 'node:crypto'
-import { sanitizeVpnObservation, type VpnAgentRequest, type VpnObservation } from '@voicechat/shared'
-import {
-  evaluateAgentCommand,
-  isToolAllowed,
-  requiredVersion,
-  AGENT_VERSION,
-  DEFAULT_AGENT_POLICY,
-  type AgentHttpRequest,
-  type AgentHttpResponse,
-  type AgentImageHost,
-  type AgentPolicy,
-  type AgentTelemetry,
-  type AgentToServer,
-  type FsOp,
-  type FsResult,
-  type GitAccessRequest,
-  type GitAccessResult,
-  type ServerToAgent, type MachineCommandRecord, type MachineCommandSource } from '@voicechat/shared'
+import { sanitizeVpnObservation, type VpnAgentRequest, type VpnObservation } from '@sislexa/agent-contracts'
+import { evaluateAgentCommand, isToolAllowed, requiredVersion, AGENT_VERSION, DEFAULT_AGENT_POLICY, type AgentHttpRequest, type AgentHttpResponse, type AgentImageHost, type AgentPolicy, type AgentTelemetry, type AgentToServer, type FsOp, type FsResult, type GitAccessRequest, type GitAccessResult, type ServerToAgent, type MachineCommandRecord, type MachineCommandSource } from '@sislexa/agent-contracts'
 
 /** Минимальный интерфейс сокета агента (реальный ws.WebSocket ему соответствует). */
 export interface AgentSocket {

@@ -6,7 +6,7 @@ import { readResources } from './clients/readResources'
 import App, { openWebReaderWorkspace } from './App'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
+import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@sislexa/agent-contracts'
 
 import { uiPerformance } from './lib/uiPerformance'
 // @testCase T1

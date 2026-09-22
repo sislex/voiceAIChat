@@ -1,4 +1,4 @@
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { ToolSpec } from '@shared/tools'
 import type { RendererPtyBridge } from '@shared/ipc'
 import { EmptyState } from '@voicechat/ui-kit'

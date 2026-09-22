@@ -9,19 +9,8 @@
 // CI- или merge-раном. Два процесса в одной рабочей копии перемешали бы коммиты, а
 // cleanup-шаг рана может снести каталог посреди нашего коммита.
 
-import {
-  GIT_MAX_CHANGES, GIT_TEXT_MAX_BYTES, buildGitWorkspaceId, isProtectedGitBranch,
-  isSafeRepoRelativePath, isValidGitBranchName, isValidGitRef, normalizeCommitMessage,
-  parseAheadBehind, parseGitLog, parseGitLsTree, parseGitRefs, parseGitStatusPorcelain,
-  parseGitWorkspaceId, splitGitSections,
-  GIT_MAX_GREP, GIT_MAX_LOG, parseGitGrep, parseGitNameStatus, isProjectStoryPath,
-  type AgentPolicy, type FsResult, type GitBranchChanges, type GitBranchList,
-  type GitCheckoutResult, type GitCommitDetail, type GitCommitResult, type GitConflictSide,
-  type GitConflictStages, type GitDiscardResult, type GitFileContent, type GitFileDiff,
-  type GitGrepResult, type GitPullMode, type GitPullResult, type GitPushResult,
-  type GitSaveFileResult, type GitTreeListing, type GitWorkspaceProblem,
-  type GitWorkspaceRef, type GitWorkspaceStatus
-} from '@voicechat/shared'
+import { GIT_MAX_CHANGES, GIT_TEXT_MAX_BYTES, buildGitWorkspaceId, isProtectedGitBranch, isSafeRepoRelativePath, isValidGitBranchName, isValidGitRef, normalizeCommitMessage, parseAheadBehind, parseGitLog, parseGitLsTree, parseGitRefs, parseGitStatusPorcelain, parseGitWorkspaceId, splitGitSections, GIT_MAX_GREP, GIT_MAX_LOG, parseGitGrep, parseGitNameStatus, isProjectStoryPath, type GitBranchChanges, type GitBranchList, type GitCheckoutResult, type GitCommitDetail, type GitCommitResult, type GitConflictSide, type GitConflictStages, type GitDiscardResult, type GitFileContent, type GitFileDiff, type GitGrepResult, type GitPullMode, type GitPullResult, type GitPushResult, type GitSaveFileResult, type GitTreeListing, type GitWorkspaceProblem, type GitWorkspaceRef, type GitWorkspaceStatus } from '@voicechat/shared'
+import { type AgentPolicy, type FsResult } from '@sislexa/agent-contracts'
 import type { VoiceChatDb } from '../db/database.js'
 import { buildShellCommand } from '../ci/executor.js'
 import type { CommandGate } from '../agents/commandGate.js'

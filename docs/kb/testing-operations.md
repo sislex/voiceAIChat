@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: 55f5a95b
+checked: e96c10c3
 areas:
   - package.json
   - scripts
@@ -24,6 +24,21 @@ areas:
 # Разработка, тестирование, диагностика и эксплуатация
 
 ## Extracted application test ownership
+
+Agent runtime/protocol/installer and device-client tests now belong to `sislex/agent`;
+Desktop migration/configuration/packaging and real Electron setup smoke belong to
+`sislex/desktop`. Core consumes their pinned artifacts and retains host/server
+integration tests. Core no longer installs or builds a local Electron application;
+its browser harness uses its own pinned Electron and the published Desktop renderer.
+The Core production installer syntax tests remain here.
+
+Reader integration input uses locator-relative hover/click actions, which wait for
+the streamed frame layout to settle. Absolute mouse coordinates raced panel layout
+and caused the wheel check and subsequent stateful cases to fail. Diagnostic captures
+wait for a decoded frame, not the obsolete HTTP screenshot poll.
+`VC_VISUAL_FAILURE_ARTIFACTS` saves failure evidence without adding successful-step
+screenshots or changing their timing.
+
 
 Identity owns 29 authentication/device regressions and the standalone session UI
 filter/390px browser checks. Core retains CORS, legacy Core schema migration,
@@ -60,7 +75,7 @@ Core's full browser gate now includes the retained sessions, settings, projects
 and Git pane suites. A scheduling guard prevents retained `*.e2e.test.ts` files
 from becoming orphaned when an external catalog entry loses its local paths.
 The settings suite resolves Electron's exported executable path and uses Xvfb
-only on Linux without DISPLAY; selected settings gates install desktop dependencies. The Core sessions fixture
+only on Linux without DISPLAY; selected settings gates use the Core Electron dependency. The Core sessions fixture
 sets `onboarded: true` before opening its deep link so delayed first-run overlays
 cannot intercept session-revocation clicks. Missing web assets fail this suite
 explicitly rather than skipping its three integration cases.

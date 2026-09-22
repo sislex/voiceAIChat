@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MachineBatchCommand } from './MachineBatchCommand'
-import type { AgentInfo, BatchExecResult } from '@shared/agentProtocol'
+import type { AgentInfo, BatchExecResult } from '@sislexa/agent-contracts'
 
 const policy = { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [] }
 const agent = (id: string, name: string, online = true): AgentInfo => ({ id, name, online, createdAt: 1, lastSeen: null, policy })

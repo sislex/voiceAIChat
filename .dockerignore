@@ -4,10 +4,6 @@ node_modules
 **/dist
 apps/web/dist
 
-# Electron-приложения не нужны серверному образу (и не воркспейсы).
-apps/desktop
-apps/agent-tray
-
 # Локальные окружения/сборки.
 .venv-piper
 **/release

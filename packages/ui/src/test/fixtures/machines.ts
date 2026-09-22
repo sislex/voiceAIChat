@@ -10,9 +10,9 @@ import type {
   AgentTelemetry,
   FsEntry,
   FsResult
-} from '@shared/agentProtocol'
-import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
-import { AGENT_VERSION } from '@shared/version'
+} from '@sislexa/agent-contracts'
+import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
+import { AGENT_VERSION } from '@sislexa/agent-contracts'
 import type { RendererPtyBridge } from '@shared/ipc'
 import type { MachineOps } from '@voicechat/ui-foundation/components/machine'
 import { T0 } from './chat'

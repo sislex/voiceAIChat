@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { registerVpnRoutes } from './routes.js'
-import { type VpnObservation, type VpnChange } from '@voicechat/shared'
+import { type VpnObservation, type VpnChange } from '@sislexa/agent-contracts'
 import { VpnService, type VpnRepository } from './service.js'
 import { TailscaleApi, type TailPolicy } from './tailscale.js'
 const command = (mode: 'off' | 'server' | 'client', revision = 0): VpnChange => ({

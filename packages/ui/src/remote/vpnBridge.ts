@@ -1,4 +1,4 @@
-import { VPN_ERRORS, VPN_REST, type VpnBridge } from '@shared/vpn'
+import { VPN_ERRORS, VPN_REST, type VpnBridge } from '@sislexa/agent-contracts'
 import { authHeaders, credentialedFetch, notifyUnauthorized } from "@sislexa/identity/client/browser"
 export function createVpnBridge(base: string): VpnBridge {
   async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {

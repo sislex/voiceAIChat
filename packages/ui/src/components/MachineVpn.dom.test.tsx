@@ -4,7 +4,7 @@ import { MachineVpn } from './MachineVpn'
 import { MachineStatus } from './MachineStatus'
 import { makeVpnAgent as makeAgent } from '../test/fixtures/vpn'
 import { makeVpnObservation, makeVpnView, VPN_TIME, vpnFixtureBridge } from '../test/fixtures/vpn'
-import { initialVpnState, VPN_ERRORS } from '@shared/vpn'
+import { initialVpnState, VPN_ERRORS } from '@sislexa/agent-contracts'
 describe('machine VPN flow', () => {
   // @testCase TC-UI
   it('selects its gateway and LAN policy, warns before dispatch, and keeps observed mode distinct', async () => {

@@ -7,7 +7,7 @@ import App, { appendWidgetAction } from './App'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { Board } from '@shared/projects'
-import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
+import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@sislexa/agent-contracts'
 
 const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_000 }
 

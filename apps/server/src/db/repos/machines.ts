@@ -1,8 +1,10 @@
 // Домен «machines»: таблицы agents, machine_commands, machine_events, machine_storages, chat_storage_bindings, generated_cleanup_retry, login_enrollments, machine_project_shares, machine_project_share_audit, project_machines, user_project_machine_defaults, user_project_release_machines, git_workspace_locks.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import type { MachineCommandRecord, MachineCommandSource, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
-import { parseRoleCommandPolicies, DEFAULT_AGENT_POLICY, type AgentCreated, type AgentPolicy, type ProjectDetail, type MachineStorage, type ChatStorageBinding, type ProjectMachineDirectoryAssignments, type ProjectMachineDirectoryKind, recommendedProjectMachineDirectories, validateProjectMachineDirectories, validateStorageRelativePath } from '@voicechat/shared'
+import type { RoleCommandPolicies } from '@voicechat/shared'
+import type { MachineCommandRecord, MachineCommandSource, MachineShareAccess, MachineAccessLevel } from '@sislexa/agent-contracts'
+import { parseRoleCommandPolicies, type ProjectDetail, type MachineStorage, type ChatStorageBinding, type ProjectMachineDirectoryAssignments, type ProjectMachineDirectoryKind, recommendedProjectMachineDirectories, validateProjectMachineDirectories, validateStorageRelativePath } from '@voicechat/shared'
+import { DEFAULT_AGENT_POLICY, type AgentCreated, type AgentPolicy } from '@sislexa/agent-contracts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { BaseRepo } from './base.js'
 
