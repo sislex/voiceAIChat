@@ -24,9 +24,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 15 коммит(ов) в areas после сверки: 38dbc3b5 feat(core): activate compatible browser UI releases without restart … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 32 коммит(ов) в areas после сверки: 38dbc3b5 feat(core): activate compatible browser UI releases without restart … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1608 коммит(ов) в areas после сверки: 38dbc3b5 feat(core): activate compatible browser UI releases without restart … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1609 коммит(ов) в areas после сверки: d3ec6c49 docs: record independent browser UI production acceptance … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 55 коммит(ов) в areas после сверки: 38dbc3b5 feat(core): activate compatible browser UI releases without restart … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 1 коммит(ов) в areas после сверки: 38dbc3b5 feat(core): activate compatible browser UI releases without restart |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 21 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 20 коммит(ов) в areas после сверки: 38dbc3b5 feat(core): activate compatible browser UI releases without restart … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 388 коммит(ов) в areas после сверки: 38dbc3b5 feat(core): activate compatible browser UI releases without restart … |
@@ -54,7 +54,7 @@
 
 ## Журнал сессий
 
-Всего записей: 916. Последние:
+Всего записей: 917. Последние:
 
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md) — users-page-startup
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md) — test-gate-timing-review

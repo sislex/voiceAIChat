@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: ba7f3ec5
+checked: 5b0f646d
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -107,6 +107,14 @@ voicechat-ui-deploy rollback
 voicechat-ui-deploy activate --release bundled
 voicechat-ui-deploy activate --release <version>-<full-source-sha>
 ```
+
+Project owners can perform the same install, rollback and bundled-fallback
+operations from Release Center. The server requires `VC_GITHUB_TOKEN` for the
+private `sislexa-core-ui` release catalog and asset download. Release Center
+accepts a published semantic version rather than a caller-supplied URL, resolves
+the exact tag commit, transfers the archive to the production machine and keeps
+a durable idempotent audit record. A successful operation proves that the Core
+container identity and start timestamp did not change.
 
 Deploy the owner-built directory containing `manifest.json`, `index.html` and its
 assets. The owner builds with the release-specific base, not the legacy `/assets/`

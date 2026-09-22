@@ -1,5 +1,6 @@
 import { registerApplicationReleaseRoutes } from '../routes/applicationReleases.js'
 import { ApplicationReleaseManager, createApplicationReleaseRuntime } from '../releases/applicationReleaseManager.js'
+import { BrowserUiReleaseCatalog, BrowserUiReleaseManager, createBrowserUiReleaseRuntime } from '../releases/browserUiReleaseManager.js'
 // Сборка канбан-кластера: хуки модели, подготовка задач, менеджер ранов CI, QA-стадии, релизы,
 // мерж-раны, автопилот, запуск ранов из MCP и оркестрация планов. Раньше всё это лежало прямо в
 // `buildServer` (~1 000 строк) и замыкалось на его локальные переменные; теперь зависимости от ядра
@@ -844,7 +845,17 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       return { ...result, output }
     }
   }))
-  registerApplicationReleaseRoutes(app, db, applicationReleases, releaseManager, managedEnvironments)
+  const browserUiReleases = new BrowserUiReleaseManager(db, createBrowserUiReleaseRuntime({
+    exec: async (target, command, timeoutMs, onChunk) => {
+      let output = ''
+      const result = await machines.execStream(target.agentId, command, timeoutMs, chunk => { output += chunk; onChunk?.(chunk) })
+      return { ...result, output }
+    }
+  }, {
+    write: (agentId, path, dataBase64) => machines.fsWrite(agentId, path, dataBase64),
+    remove: (agentId, path) => machines.fsDelete(agentId, path)
+  }), new BrowserUiReleaseCatalog(config.githubToken))
+  registerApplicationReleaseRoutes(app, db, applicationReleases, browserUiReleases, releaseManager, managedEnvironments)
 
   const mergeRunManager = new MergeRunManager({ cleanup: deps.ciExecutor ? undefined : temporaryCleanup, db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, testFix: ciModelHooks.testFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => machines.isOnline(id), platformOf: (id) => machines.platformOf(id), policyOf: (id) => machines.policyOf(id), fsRead: (id, path) => machines.fsRead(id, path), fsWrite: (id, path, data) => machines.fsWrite(id, path, data), fsDelete: (id, path) => machines.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectTypeRoutes(app, db)

@@ -201,7 +201,7 @@ export function planApplicationChecks(
     }
     // Narrow only explicitly reviewed tooling. Gate/build/deploy changes and
     // unknown scripts still exercise the full application fallback.
-    if (/^scripts\/(?:long-run|core-ui-artifact|route-budgets|route-compression)(?:\.test)?\.mjs$/.test(file)) {
+    if (/^scripts\/(?:long-run|core-ui-artifact|browser-ui-release|route-budgets|route-compression)(?:\.test)?\.mjs$/.test(file)) {
       tooling = true
       if (file === 'scripts/core-ui-artifact.mjs') verifyArtifacts = true
       if (['scripts/route-budgets.mjs', 'scripts/route-compression.mjs'].includes(file))
