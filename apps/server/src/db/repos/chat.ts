@@ -1229,20 +1229,29 @@ export class ChatRepo extends BaseRepo {
     const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}
       ${conversationId ? 'AND c.id = @conversationId' : ''}`
     const bind = { userId, ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), ...(conversationId ? { conversationId } : {}) }
-    const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
+    // Materialize only this user's period before the price join. PostgreSQL can
+    // otherwise repeatedly decode large text metadata while joining prices, even
+    // for an empty account, monopolizing the shared database request lane.
+    const source = this.sql.engine === 'postgres'
+      ? `WITH usage_messages AS MATERIALIZED (
+          SELECT m.conversation_id, m.engine, m.created_at, m.role, m.meta::jsonb AS meta
+          FROM messages m JOIN conversations c ON m.conversation_id = c.id
+          WHERE c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere})`
+      : ''
+    const joins = `FROM ${source ? 'usage_messages' : 'messages'} m JOIN conversations c ON m.conversation_id = c.id
       LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(${j.text('m.meta', 'model')}, c.llm_model)`
 
     type SqlUsage<T extends UsageTotals> = Omit<T, 'costIncomplete'> & { costIncomplete?: number }
     const complete = <T extends UsageTotals>(row: SqlUsage<T>): T => ({ ...row, costIncomplete: Boolean(row.costIncomplete) } as T)
-    const totals = complete((await this.sql.get(`SELECT ${sums} ${joins} WHERE ${where}`, [bind])) as SqlUsage<UsageTotals>)
-    const byBucket = ((await this.sql.all(`SELECT ${j.bucket('m.created_at', unit)} AS bucket, ${sums}
+    const totals = complete((await this.sql.get(`${source} SELECT ${sums} ${joins} WHERE ${where}`, [bind])) as SqlUsage<UsageTotals>)
+    const byBucket = ((await this.sql.all(`${source} SELECT ${j.bucket('m.created_at', unit)} AS bucket, ${sums}
       ${joins} WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`, [bind])) as SqlUsage<UsageBucket>[]).map((row) => complete<UsageBucket>(row))
-    const byModel = ((await this.sql.all(`SELECT COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') AS model, ${sums}
+    const byModel = ((await this.sql.all(`${source} SELECT COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') AS model, ${sums}
       ${joins} WHERE ${where} GROUP BY COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as SqlUsage<UsageByModel>[]).map((row) => complete<UsageByModel>(row))
     // Фильтр разговоров всегда строится для всего выбранного периода, чтобы после
     // выбора одного разговора остальные варианты не исчезали из селекта.
     const conversationWhere = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}`
-    const byConversation = ((await this.sql.all(`SELECT c.id AS conversationId, c.title, ${sums}
+    const byConversation = ((await this.sql.all(`${source} SELECT c.id AS conversationId, c.title, ${sums}
       ${joins} WHERE ${conversationWhere} GROUP BY c.id, c.title ORDER BY costUsd DESC, c.updated_at DESC`, [bind])) as SqlUsage<UsageByConversation>[]).map((row) => complete<UsageByConversation>(row))
     return { unit, conversationId: conversationId ?? null, totals, byBucket, byModel, byConversation }
   }
