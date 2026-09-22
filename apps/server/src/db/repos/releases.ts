@@ -1,4 +1,4 @@
-import { applicationReleaseIdentity, applicationReleaseBranch, parseApplicationReleaseManifest, parseApplicationEnvironment, validateCatalogRelease, applicationCompatibility, type ApplicationReleaseInput, type ApplicationReleaseManifest, type ApplicationReleaseRecord, type ApplicationDeploymentRecord, type ApplicationEnvironment, type ApplicationEnvironmentName, type ApplicationReleaseOverview, type ApplicationDeployInput } from '@voicechat/shared'
+import { applicationReleaseIdentity, applicationReleaseBranch, parseApplicationReleaseManifest, parseApplicationEnvironment, validateCatalogRelease, applicationCompatibility, type ApplicationReleaseInput, type ApplicationReleaseManifest, type ApplicationReleaseRecord, type ApplicationDeploymentRecord, type ApplicationEnvironment, type ApplicationEnvironmentName, type ApplicationReleaseOverview, type ApplicationDeployInput, type BrowserUiReleaseAction, type BrowserUiReleaseOperation } from '@voicechat/shared'
 // Домен «releases»: таблицы project_releases, project_release_steps, project_release_events.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
@@ -12,6 +12,41 @@ interface ReleaseSummaryRow { id:string;branch:string;commit_sha:string;status:s
 
 interface ReleaseStepRow { id:string;release_id:string;kind:string;position:number;status:string;model:string|null;attempt:number;log:string;started_at:number|null;finished_at:number|null;limit_ms:number|null }
 export class ReleasesRepo extends BaseRepo {
+  async beginBrowserUiReleaseOperation(userId: string, projectId: string, input: { requestId: string; action: BrowserUiReleaseAction; version?: string }): Promise<{ record: BrowserUiReleaseOperation; created: boolean }> {
+    if (!await this.repos.projects.isProjectOwner(userId, projectId)) throw new Error('release permission required')
+    return this.sql.transaction(async () => {
+      const record: BrowserUiReleaseOperation = {
+        id: this.newId(), projectId, requestId: input.requestId, action: input.action,
+        requestedVersion: input.version ?? null, releaseId: null, status: 'running',
+        triggeredBy: userId, createdAt: this.now(), finishedAt: null, log: '', coreContainerUnchanged: null
+      }
+      const inserted = await this.sql.run(`INSERT INTO browser_ui_release_operations (id,project_id,request_id,record_json) VALUES (?,?,?,?) ON CONFLICT(project_id,request_id) DO NOTHING`, [record.id, projectId, input.requestId, JSON.stringify(record)])
+      if (inserted.changes) return { record, created: true }
+      const row = await this.sql.get<{ record_json: string }>(`SELECT record_json FROM browser_ui_release_operations WHERE project_id=? AND request_id=?`, [projectId, input.requestId])
+      const previous = JSON.parse(row!.record_json) as BrowserUiReleaseOperation
+      if (previous.action !== input.action || previous.requestedVersion !== (input.version ?? null)) throw new Error('Request ID already belongs to another browser UI operation')
+      return { record: previous, created: false }
+    })
+  }
+
+  async finishBrowserUiReleaseOperation(id: string, result: { releaseId: string | null; status: 'succeeded' | 'failed'; log: string; coreContainerUnchanged: boolean | null }): Promise<BrowserUiReleaseOperation> {
+    return this.sql.transaction(async () => {
+      const row = await this.sql.get<{ record_json: string }>(`SELECT record_json FROM browser_ui_release_operations WHERE id=?`, [id])
+      if (!row) throw new Error('Browser UI operation not found')
+      const previous = JSON.parse(row.record_json) as BrowserUiReleaseOperation
+      if (previous.status !== 'running') return previous
+      const record: BrowserUiReleaseOperation = { ...previous, ...result, log: result.log.slice(-100_000), finishedAt: this.now() }
+      await this.sql.run(`UPDATE browser_ui_release_operations SET record_json=? WHERE id=?`, [JSON.stringify(record), id])
+      return record
+    })
+  }
+
+  async browserUiReleaseOperations(userId: string, projectId: string): Promise<BrowserUiReleaseOperation[]> {
+    if (!await this.repos.projects.isProjectMember(userId, projectId)) throw new Error('release permission required')
+    const rows = await this.sql.all<{ record_json: string }>(`SELECT record_json FROM browser_ui_release_operations WHERE project_id=? ORDER BY rowid DESC LIMIT 30`, [projectId])
+    return rows.map(row => JSON.parse(row.record_json) as BrowserUiReleaseOperation)
+  }
+
   async createApplicationRelease(userId: string, projectId: string, input: ApplicationReleaseInput): Promise<{ record: ApplicationReleaseRecord; created: boolean }> {
     if (!await this.repos.projects.isProjectOwner(userId, projectId)) throw new Error('release permission required')
     const branch = applicationReleaseBranch(input.applicationId, input.version)

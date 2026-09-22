@@ -128,3 +128,15 @@ export function installBrowserUi(root: string, source: string, compatibility: Br
     return release
   } finally { rmSync(temporary, { recursive: true, force: true }) }
 }
+
+export function listBrowserUiReleases(root: string, compatibility: BrowserUiCompatibility): BrowserUiRelease[] {
+  const directory = join(root, 'releases')
+  if (!existsSync(directory)) return []
+  return readdirSync(directory, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && browserUiReleaseId(entry.name))
+    .flatMap(entry => {
+      try { return [verifyBrowserUi(join(directory, entry.name), compatibility)] }
+      catch { return [] }
+    })
+    .sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))
+}
