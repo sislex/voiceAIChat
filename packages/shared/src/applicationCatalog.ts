@@ -76,6 +76,7 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     "optionalRuntimeDependencies": [
       "identity",
       "billing",
+      "analytics",
       "make",
       "image-studio",
       "web-reader",
@@ -166,6 +167,46 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     "external": {
       "repository": "https://github.com/sislex/billing",
       "package": "@sislexa/billing"
+    }
+  }),
+  definition("analytics", "Analytics", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "identity",
+      "billing"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/analyticsBridge.test.ts"
+        ]
+      }
+    ],
+    "services": [
+      "analytics"
+    ],
+    "dataPaths": [
+      "analytics"
+    ],
+    "configuration": [
+      "SISLEXA_COMPONENT_CONFIG",
+      "ANALYTICS_DATA_DIR"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "minimumDependencyApis": {
+      "identity": "1.1.0",
+      "billing": "1.2.0"
+    },
+    "healthPath": "/api/health",
+    "external": {
+      "repository": "https://github.com/sislex/analytics",
+      "package": "@sislexa/analytics"
     }
   }),
   definition("platform-sdk", "Platform SDK", [], {

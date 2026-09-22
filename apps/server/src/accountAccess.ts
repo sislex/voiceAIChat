@@ -8,6 +8,19 @@ export const TARIFF_DENIED = 'Этот модуль недоступен в ва
 export function capabilityForConversation(conversation: Pick<Conversation, 'assistantKind' | 'scope'>): ProductCapability {
   return conversation.assistantKind ? conversationCapability(conversation.assistantKind) : conversation.scope === 'kanban' ? 'projects.use' : 'chat.use'
 }
+
+/** Billing uses product module IDs while Identity exposes capability names. */
+export function billingOriginForConversation(conversation: Pick<Conversation, 'assistantKind' | 'scope'>): string {
+  const capability = capabilityForConversation(conversation)
+  switch (capability) {
+    case 'image-studio.use': return 'image-studio'
+    case 'web-reader.use': return 'web-reader'
+    case 'playwright-reader.use': return 'playwright-reader'
+    case 'projects.use': return 'projects'
+    case 'machines.use': return 'machines'
+    default: return capability.slice(0, -'.use'.length)
+  }
+}
 export async function userHasCapability(db: VoiceChatDb, name: string, capability: ProductCapability): Promise<boolean> {
   const user = await db.identity.getUser(name)
   if (!user || user.blocked) return false

@@ -90,7 +90,7 @@ test('Core build closure contains no extracted application workspace', () => {
   }
 })
 test('external applications cannot be rebuilt from a Core checkout', () => {
-  for (const id of ['llm-runner','make','image-studio','web-reader','playwright-reader','identity','billing','stt-runner','tts-runner','make-ui','image-studio-ui','web-reader-ui','playwright-reader-ui']) {
+  for (const id of ['llm-runner','make','image-studio','web-reader','playwright-reader','identity','billing','analytics','stt-runner','tts-runner','make-ui','image-studio-ui','web-reader-ui','playwright-reader-ui']) {
     assert.throws(() => applicationBuildPaths(id), /is owned by https:\/\/github.com\/sislex\//)
   }
 })

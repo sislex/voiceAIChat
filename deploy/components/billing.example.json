@@ -11,6 +11,13 @@
         "billing.execute"
       ],
       "maxTtlSeconds": 2592000
+    },
+    {
+      "consumerId": "analytics",
+      "scopes": [
+        "billing.report"
+      ],
+      "maxTtlSeconds": 2592000
     }
   ],
   "dependencies": [

@@ -1,7 +1,7 @@
 # Append to the component deployment after preparing the private Identity grant.
 services:
   identity:
-    image: ${SISLEXA_IDENTITY_IMAGE:-ghcr.io/sislex/identity:a8208800181d5d92053a80d7cd60e26b27e16263}
+    image: ${SISLEXA_IDENTITY_IMAGE:-ghcr.io/sislex/identity:a64928e585c774d139a50fde5c2db1bdaff3c798}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0

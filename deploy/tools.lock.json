@@ -47,15 +47,15 @@
       "package": "@sislexa/identity",
       "workspace": "apps/server",
       "repository": "https://github.com/sislex/identity",
-      "version": "1.3.1",
-      "commit": "a8208800181d5d92053a80d7cd60e26b27e16263"
+      "version": "1.3.2",
+      "commit": "a64928e585c774d139a50fde5c2db1bdaff3c798"
     },
     "billing": {
       "package": "@sislexa/billing",
       "workspace": ".",
       "repository": "https://github.com/sislex/billing",
-      "version": "1.1.3",
-      "commit": "06a337fdab30df2ca5af70e9f3cf5b6c96a5cffe"
+      "version": "1.2.0",
+      "commit": "9ecb733d50ddc96774ddf382268918f6c2f5459e"
     },
     "llm-runner": {
       "package": "@sislex/llm-runner",
@@ -63,6 +63,13 @@
       "repository": "https://github.com/sislex/llm-runner",
       "version": "0.3.1",
       "commit": "8ec5100952c37e478177bc311cf5db2287d5bf63"
+    },
+    "analytics": {
+      "package": "@sislexa/analytics",
+      "workspace": ".",
+      "repository": "https://github.com/sislex/analytics",
+      "version": "1.2.0",
+      "commit": "7ff6fb8b02f629938e4430683e7c505f423a6de5"
     }
   }
 }

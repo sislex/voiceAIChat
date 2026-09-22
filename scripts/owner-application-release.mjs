@@ -22,7 +22,8 @@ export const OWNER_RELEASE_ENTRIES = Object.freeze({
   'stt-runner': ['apps/stt-runner', 'stt'],
   'tts-runner': ['apps/tts-runner', 'tts'],
   identity: ['apps/server', ''],
-  billing: ['.', '']
+  billing: ['.', ''],
+  analytics: ['.', '']
 })
 const json = path => JSON.parse(readFileSync(path, 'utf8'))
 export function ownerReleasePlan({ applicationId, version, image, baseBranch }) {
