@@ -8,6 +8,7 @@ import {
   applicationForPath,
   validateApplicationCatalog
 } from '../packages/shared/src/applicationCatalog.ts'
+import { remainingBrowserFiles } from './full-gate.mjs'
 import { PACKAGES, selectAffected, validatePackageDependencies } from './affected-check.mjs'
 const root = resolve(import.meta.dirname, '..')
 const git = (...args) =>
@@ -231,11 +232,13 @@ function hasContractTests(path) {
 }
 function run(command, args, env = {}) {
   console.log(`[gate:app] ${command} ${args.join(' ')}`)
+  const started = performance.now()
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: 'inherit',
     env: { ...process.env, ...env }
   })
+  console.log(`[gate:timing] ${command} ${args.join(' ')}: ${((performance.now() - started) / 1000).toFixed(2)}s (exit ${result.status ?? result.signal})`)
   if (result.error) throw result.error
   if (result.status !== 0)
     throw Object.assign(
@@ -397,11 +400,13 @@ export async function main(args = process.argv.slice(2)) {
       ...(check.files.length ? ['--', ...check.files] : [])
     ])
   }
-  if (plan.e2eFiles?.length) {
-    for (const file of plan.e2eFiles)
+  // Only a successfully completed full gate can discharge frontend browser work.
+  const browserFiles = remainingBrowserFiles(plan.e2eFiles ?? [], plan.full)
+  if (browserFiles.length) {
+    for (const file of browserFiles)
       if (!existsSync(resolve(root, file)))
         throw new Error(`Не найден E2E ${file}`)
-    const panelOnly = plan.e2eFiles.every(
+    const panelOnly = browserFiles.every(
       (file) => file === 'e2e/applicationFrontend.e2e.test.ts'
     )
     if (!panelOnly && !plan.full) {
@@ -417,7 +422,7 @@ export async function main(args = process.argv.slice(2)) {
         'run',
         '--config',
         'e2e/vitest.config.ts',
-        ...plan.e2eFiles
+        ...browserFiles
       ],
       panelOnly
         ? {

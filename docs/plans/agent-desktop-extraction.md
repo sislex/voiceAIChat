@@ -13,12 +13,16 @@ The chat UI remains Core-owned and is published as a versioned renderer artifact
 - [x] Agent owns runtime/protocol/installer/client tests and independently builds.
 - [x] Desktop consumes released Agent and chat renderer artifacts; no source aliases.
 - [x] Core removes transferred paths and consumes published owner archives.
-- [ ] Owner and Core gates pass, PRs merge and release artifacts are pinned.
-- [ ] Deploy through installed voicechat-deploy and verify production and downloads.
-- [ ] Optimize gates after deployment, preserving integration coverage; measure stages.
+- [x] Owner and Core gates pass, PRs merge and release artifacts are pinned.
+- [x] Deploy through installed voicechat-deploy and verify production and downloads.
+- [x] Optimize gates after deployment, preserving integration coverage; measure stages.
 
-## Gate follow-up
+## Completed gate changes
 
-The full fallback repeats applicationFrontend E2E after gate:all. Desktop npm ci
-is unconditional, and route inventories recompute gzip/Brotli sizes. Remove repeated
-work with content/runtime validation; do not omit integration cases or relax budgets.
+Core no longer installs/builds the retired nested Electron applications. Full
+fallback runs each frontend browser case once. Compression caching validates
+content/runtime and preserves fresh import graphs; warm inventory time fell from
+43.2 to 2.7 seconds for identical reports. Each stage records its duration and
+exit status. Browser suites remain sequential after parallel execution proved
+unstable. Session and Settings fixtures now wait for the actual intended state.
+The final canonical gate passed; evidence is in the gate-optimization journal.

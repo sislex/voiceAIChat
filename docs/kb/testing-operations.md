@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: e96c10c3
+checked: 823ce54a
 areas:
   - package.json
   - scripts
@@ -517,20 +517,20 @@ Integration QA. Это не «мало покрытые», а «не вызва�
 
 **`--root <пакет>` не заменяет запуск из каталога пакета:** он меняет корень Vitest, но не `cwd`. Тесты, читающие файлы относительно рабочего каталога (`packages/ui/src/architecture.test.ts`, `src/store/preferenceKeys.test.ts` — оба сканируют `src` через `readdirSync`), падают с `ENOENT: scandir '<репозиторий>/src'`. Для замеров и покрытия зовите `npm run -w <пакет> test -- --coverage`; `--root` годится только когда в выборке нет cwd-зависимых тестов.
 
-### Гейт шага разработки: `npm run gate:fast`
+### Development gate: `npm run gate:fast`
 
-### Гейт шага разработки: `npm run gate:fast`
+The current command is `node --import tsx scripts/application-gate.mjs --worktree`.
+It selects complete application typecheck/test suites from the diff against HEAD,
+including untracked files. `gate` uses the branch diff against origin/main.
+Public contracts select consumer bridges; unknown root/configuration changes
+select the full fallback described under the frontend gate below. External owner
+applications have no local internal suite; an explicit request identifies their
+repository. `--dry-run` prints selections and reasons without executing checks.
 
-`node scripts/affected-check.mjs --fast --worktree`. Отличия от полного affected-рана:
-
-* база диффа — `HEAD` (плюс untracked), а не `origin/main`; для ветки годится `--base <ref>`. Прежняя жёсткая привязка к `origin/main` в worktree с отставшим remote давала дифф на сотни файлов и снова полный гейт;
-* пакет, до которого правка дошла по графу, тоже проверяется через `related`, а не полным набором: `fastPlanForPackage` отдаёт файлы источника относительно пакета, и Vitest видит исходники соседнего пакета как обычные файлы модульного графа (проверено — из `packages/ui` `related ../ui-kit/src/Button.tsx` находит 85 файлов из 149);
-* полный набор остаётся там, где статический граф не доказателен: правки самого `shared` и всё, что задето через `shared` (контракт WS/REST ходит строковыми литералами через границы процессов), а также конфиг, схема БД и миграция в любом пакете-источнике;
-* сборки адресные: web-сборка только на правках `apps/web`, витрина — только на правках `*.stories.tsx` и `.storybook/`. Полный ран сохраняет прежний `frontend:build-gates`.
-
-Замер: правка одного компонента `packages/ui` — 28 с (`related` 18 с + typecheck 9 с) против ~3,5 мин у `npm run gate`.
-
-Вывод дочерних Vitest-процессов остаётся буферизованным, чтобы быстрый успешный гейт был компактным. Если пакетная команда работает дольше 30 секунд, `affected-check` печатает heartbeat с активным пакетом, этапом и длительностью. При fail-fast остановке либо `SIGINT`/`SIGTERM` перед завершением печатается сохранённый хвост вывода. MergeRunManager получает эти строки через потоковый `CommandExecutor`; ReleaseManager также использует `execStream` и по мере поступления обновляет лог шага `regression`, поэтому одинаковая диагностика видна в обеих лентах.
+Do not replace the selected complete suites with `vitest related`. The older
+`affected-check.mjs --fast` implementation and its historical 28-second UI
+measurement describe the predecessor, not current gate:fast behavior. The public
+`affected-check` npm alias now invokes the application planner too.
 
 ## Стратегия тестов
 
@@ -795,7 +795,29 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 
 ## Единый frontend quality gate
 
-Каноническая команда `npm run verify:frontend` последовательно запускает статический gate, typecheck и Vitest всех frontend-пакетов, Web build, bundle check, Storybook build и build Desktop renderer. Она использует только локальные fake clients/JSDOM fixtures и не требует backend, CLI, production credentials, SQLite, микрофона, машин или сети. Desktop намеренно не входит в корневые npm workspaces, поэтому `frontend:build-gates` перед его сборкой выполняет `npm ci --prefix apps/desktop`; свежий CI-checkout не должен зависеть от ранее созданного `apps/desktop/node_modules`.
+`gate:all` delegates to `scripts/full-gate.mjs`: workspace typechecks/tests,
+frontend artifacts, chat renderer, Web, Storybook and three serial frontend
+browser files. Each stage prints its elapsed time and exit status and records
+`artifacts/gate-timings/full.json` (frontend detail: `frontend.json`). Errors and
+signals stop the gate. `gate`/`gate:fast` use this full fallback for root/config
+changes, then run remaining catalog E2E files once, sequentially.
+Frontend browser files are removed from that second set only after the full gate
+succeeds. Required suite ownership and failure propagation have regression tests.
+Route timing measurements remain serial; budgets, browser readiness waits and
+integration cases are unchanged. Settings/Git/Projects fixtures use OS-assigned
+ports so other local processes or independent gate runs do not share a fixed port range.
+The session-revocation browser fixture locates the exact session ID returned for
+its newly logged-in device; selecting the first available revoke button could
+act on an older session before its realtime list update arrived. Settings QA uses
+the retained settings URL to wait for its lazy dialog after reload; an immediate
+overlay visibility check can otherwise race restoration and click beneath it.
+
+`npm run verify:frontend` runs static checks, frontend typechecks/tests, product
+artifacts, the Core chat renderer, Web, bundle checks, Storybook and browser route
+checks. Agent/Tray/Enrollment and Desktop implementations, builds and internal
+tests belong to `sislex/agent` and `sislex/desktop`; Core consumes pinned archives.
+Core's Electron dependency runs host integration checks against the published
+renderer/preload. No nested Electron application install/build remains in Core.
 
 `scripts/frontend-quality.mjs` проверяет workspace dependency graph и циклы, запрет deep imports и product/host/platform/transport leaks, существование root/styles package exports, обязательную Storybook-матрицу пяти модулей, CSS imports/keyframes/unscoped selectors и dynamic imports всех product modules с role-gated Admin. Негативные fixtures и redaction отчёта покрыты `scripts/frontend-quality.test.mjs`. Безопасный машинный отчёт сохраняется в `artifacts/frontend-quality/report.json`; token, Bearer credentials и credential-bearing URLs редактируются.
 
@@ -803,7 +825,7 @@ Bundle gate сравнивает minified JS chunks Web build с измерен�
 
 Route measurements are implemented in `scripts/measure-routes.mjs` and checked by `scripts/route-budgets.mjs`. Complete initial cost is the deduplicated set of observed JS/CSS requests plus the full static-import closure of those resources; shared dependencies and automatically initiated loads therefore count once, while unobserved or missing closure members make the measurement invalid. The versioned report records each unique JS/CSS resource, SHA-256, raw bytes, gzip level 9, Brotli quality 11, static/dynamic chunk edges and a CDP network waterfall. External font CSS is measured too; unavailable required styles fail the run. Uninventoried JS/CSS requests fail closed, including HTTP resources requested by the file-origin Electron renderer. Electron uses a real process and file-origin production renderer; compressed sizes are calculated sizes, while transport bytes are recorded separately. The fixture server uses temporary data and a seeded Markdown/code conversation, not production accounts. Cold runs clear the browser cache; warm runs reload in the same context. Requested bounds and actual per-client renderer viewports/device scale factors are recorded separately, and comparison requires identical recorded conditions. Direct Chat, Account and Settings routes and navigation from Chat are separate scenarios. Optional editor-worker activation runs after route measurements in a controlled host-API fixture.
 
-`npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a before/after diff, and runs shared-boundary browser QA and the independent-panel artifact/integrity browser suite. The three marked E2E files run sequentially, including the real Web/Electron route-measurement test. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. The optional `VC_MEASURE_REUSE_INVENTORY=1` switch is for remeasuring explicitly retained immutable artifacts; CI does not set it. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after building Web and Desktop.
+`npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a before/after diff, and runs shared-boundary browser QA and the independent-panel artifact/integrity browser suite. The three marked E2E files run sequentially, including the real Web/Electron route-measurement test. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. Inventories always read current build files and parse their import graphs. Compression bytes are cached under `artifacts/route-compression`, keyed by source SHA-256, compression settings and Node/zlib/Brotli versions. Every hit validates compressed fingerprints and decompresses to the current source bytes. Missing, stale, corrupt or unwritable cache entries fall back to recompression. `VC_MEASURE_COMPRESSION_CACHE=0` disables this optimization for reference measurements; the old inventory-reuse switch is removed. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after building Web and the Core chat renderer; Desktop is a pinned owner artifact.
 
 Группы бюджета сопоставляются по **префиксу** имени файла, и у входного чанка это однажды сработало наоборот замыслу: пакет с точкой входа `index.ts`, вынесенный в **ленивый** чанк, получил имя `index-XXX.js`, попал в группу `index-` — и разгрузка главного чанка (−185 КБ) прочиталась как его рост на 32 КБ. Поэтому группа `index-` теперь меряется по **одному** файлу, на который ссылается `apps/web/dist/index.html`; остальные группы остаются суммой по префиксу (`markdown-` бывает не одним чанком). Оба правила закреплены тестами в `scripts/frontend-quality.test.mjs`. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
 

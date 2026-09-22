@@ -108,9 +108,15 @@ describe('Сессии и устройства E2E', () => {
   })
 
   it('завершение чужой сессии убирает карточку и отбирает доступ у того устройства', async () => {
-    const phoneToken = await loginAs(PHONE_UA)
-    await expect.poll(() => page.getByRole('button', { name: 'Завершить' }).count(), { timeout: 30_000 }).toBeGreaterThan(0)
-    await page.getByRole('button', { name: 'Завершить' }).first().click()
+    // A distinct device and its exact session ID prevent revoking a stale row
+    // while the realtime list is still receiving the new login.
+    const phoneToken = await loginAs('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129.0.0.0 Mobile Safari/537.36')
+    const list = await fetch(`${BASE}/api/session/list`, { headers: { authorization: `Bearer ${phoneToken}` } })
+    expect(list.ok).toBe(true)
+    const sessions = (await list.json()) as { sessions: Array<{ sid: string; current?: boolean }> }
+    const own = sessions.sessions.find(session => session.current)
+    expect(own).toBeDefined()
+    await page.getByTestId(`session-${own!.sid}`).getByRole('button', { name: 'Завершить', exact: true }).click()
     await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Продолжить' }).click()
 
     await expect.poll(async () => {
