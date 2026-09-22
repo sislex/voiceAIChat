@@ -1,0 +1,22 @@
+[
+ {"id":"docs","files":["docs/kb/ui.md"]},
+ {"id":"api","files":["apps/server/src/routes/admin.ts"]},
+ {"id":"auth","files":["apps/server/src/auth/statusState.ts"]},
+ {"id":"api-test","files":["apps/server/src/server.test.ts"]},
+ {"id":"shared-contract","files":["packages/shared/src/types.ts"]},
+ {"id":"component-runtime","files":["packages/component-runtime/src/index.ts"]},
+ {"id":"projects-e2e","files":["e2e/projects.e2e.test.ts"]},
+ {"id":"settings-e2e","files":["e2e/settings.e2e.test.ts"]},
+ {"id":"reader-e2e","files":["e2e/webReaderNative.e2e.test.ts"]},
+ {"id":"make-e2e","files":["e2e/make.e2e.test.ts"]},
+ {"id":"route-resources","files":["e2e/routeResources.e2e.test.ts"]},
+ {"id":"route-budgets","files":["frontend-quality/route-budgets.json"]},
+ {"id":"browser-config","files":["e2e/vitest.config.ts"]},
+ {"id":"artifact-verifier","files":["scripts/core-ui-artifact.mjs"]},
+ {"id":"tooling-test","files":["scripts/long-run.test.mjs"]},
+ {"id":"tooling-runner","files":["scripts/long-run.mjs"]},
+ {"id":"gate-planner","files":["scripts/application-gate.mjs"]},
+ {"id":"docker","files":["Dockerfile"]},
+ {"id":"root-config","files":["package.json"]},
+ {"id":"unknown","files":["unclassified-new-file.ts"]}
+]

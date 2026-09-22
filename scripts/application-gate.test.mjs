@@ -1,8 +1,9 @@
 import { readdirSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { main, planApplicationChecks, lockChangedApplications, validateApplicationDependencies, applicationCommands } from './application-gate.mjs'
+import { main, planApplicationChecks, lockChangedApplications, validateApplicationDependencies, applicationCommands, applicationPlanCommands, executeApplicationPlan } from './application-gate.mjs'
 import { FRONTEND_E2E_FILES, remainingBrowserFiles } from './full-gate.mjs'
+import { integrationBrowserFiles } from './browser-gate.mjs'
 import { PACKAGES } from './affected-check.mjs'
 import { APPLICATION_CATALOG } from '../packages/shared/src/applicationCatalog.ts'
 
@@ -73,10 +74,75 @@ test('an explicitly changed integration scenario remains selected', () => {
 // suites. Route-budget/lazy-boundary cases already run in frontend:route-gates.
 test('every retained Core browser suite has a full-gate owner', () => {
   const plan = planApplicationChecks(['Dockerfile'])
-  const scheduled = [...FRONTEND_E2E_FILES, ...remainingBrowserFiles(plan.e2eFiles, true)]
+  const scheduled = [...FRONTEND_E2E_FILES, ...integrationBrowserFiles()]
+  assert.deepEqual(remainingBrowserFiles(plan.e2eFiles, true), [])
+  for (const file of plan.e2eFiles) assert.ok(scheduled.includes(file))
   assert.equal(new Set(scheduled).size, scheduled.length, 'Full gate repeats browser files')
   for (const file of readdirSync(new URL('../e2e/', import.meta.url))) {
     if (!file.endsWith('.e2e.test.ts')) continue
     assert.ok(scheduled.includes('e2e/' + file), `Unscheduled Core browser suite: ${file}`)
   }
+})
+
+
+test('every known browser test selects its complete suite without unrelated application tests', () => {
+  const all = new Set([...FRONTEND_E2E_FILES, ...APPLICATION_CATALOG.flatMap(app => app.e2eFiles)])
+  for (const file of all) {
+    const plan = planApplicationChecks([file])
+    assert.equal(plan.full, false, file)
+    assert.deepEqual(plan.e2eFiles, [file])
+    assert.deepEqual(plan.applications, [])
+    const commands = applicationPlanCommands(plan)
+    assert.ok(commands.some(([, args]) => args.includes('scripts/browser-gate.mjs') && args.includes(file)))
+    assert.ok(!commands.some(([, args]) => args.includes('gate:all') || args.includes('test')))
+  }
+})
+test('browser configuration covers every suite including performance but does not select server units', () => {
+  const plan = planApplicationChecks(['e2e/vitest.config.ts'])
+  assert.equal(plan.full, false)
+  assert.deepEqual(new Set(plan.e2eFiles), new Set([...FRONTEND_E2E_FILES, ...APPLICATION_CATALOG.flatMap(app => app.e2eFiles)]))
+  assert.deepEqual(plan.applications, [])
+  assert.equal(plan.tooling, true)
+})
+test('budget edits preserve real Web/Electron measurements and tooling regressions', () => {
+  const plan = planApplicationChecks(['frontend-quality/route-budgets.json'])
+  assert.equal(plan.full, false)
+  assert.deepEqual(plan.e2eFiles, FRONTEND_E2E_FILES)
+  assert.equal(plan.tooling, true)
+  assert.equal(applicationPlanCommands(plan).filter(([, args]) => args.includes('test:tooling')).length, 1)
+})
+test('narrow tooling scope never hides another changed critical file', () => {
+  for (const file of ['scripts/core-ui-artifact.mjs', 'scripts/long-run.mjs', 'scripts/long-run.test.mjs']) {
+    const plan = planApplicationChecks([file])
+    assert.equal(plan.full, false)
+    assert.equal(plan.tooling, true)
+    for (const critical of ['Dockerfile', 'scripts/application-gate.mjs', 'scripts/new-tool.mjs', 'e2e/new.e2e.test.ts'])
+      assert.equal(planApplicationChecks([file, critical]).full, true)
+  }
+})
+test('mixed application and browser edits retain the entire application suite', () => {
+  const plan = planApplicationChecks(['e2e/projects.e2e.test.ts', 'apps/server/src/routes/rest.ts'])
+  assert.deepEqual(plan.applications.map(a => a.id), ['core'])
+  assert.deepEqual(plan.e2eFiles, ['e2e/projects.e2e.test.ts'])
+  const commands = applicationPlanCommands(plan)
+  assert.ok(commands.some(([, args]) => args.join(' ') === 'run -w @voicechat/server test'))
+  assert.ok(commands.some(([, args]) => args.includes('e2e/projects.e2e.test.ts')))
+})
+test('contract consumers typecheck once and combine full declared contract suites', () => {
+  const plan = { applications: [], contracts: [
+    { workspace: '@voicechat/server', files: ['src/server.test.ts'] },
+    { workspace: '@voicechat/server', files: ['src/routes/rest.admin.test.ts'] }
+  ] }
+  const commands = applicationPlanCommands(plan)
+  assert.equal(commands.filter(([, args]) => args.includes('typecheck')).length, 1)
+  assert.equal(commands.filter(([, args]) => args.includes('test')).length, 1)
+  assert.deepEqual(commands[1][1].slice(-2), ['src/server.test.ts', 'src/routes/rest.admin.test.ts'])
+})
+test('execution stops after a failing command rather than reporting later stages successful', () => {
+  const calls = []
+  const plan = planApplicationChecks(['e2e/projects.e2e.test.ts'])
+  assert.throws(() => executeApplicationPlan(plan, (command, args) => {
+    calls.push(args); throw Object.assign(Error('fixture failure'), { exitCode: 19 })
+  }, 'failure-fixture'), /fixture failure/)
+  assert.equal(calls.length, 1)
 })

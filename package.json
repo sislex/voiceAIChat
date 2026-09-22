@@ -16,7 +16,7 @@
     "kb:index": "node scripts/kb.mjs index",
     "kb:log": "node scripts/kb.mjs log",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "node --import tsx --test scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/owner-application-release.test.mjs scripts/application-frontend.test.mjs scripts/application-deploy.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs && node --test scripts/affected-check.test.mjs scripts/core-ui-artifact.test.mjs scripts/route-budgets.test.mjs scripts/route-compression.test.mjs scripts/full-gate.test.mjs scripts/long-run.test.mjs && npm run test --workspaces --if-present",
+    "test": "npm run test:tooling && npm run test --workspaces --if-present",
     "affected-check": "node --import tsx scripts/application-gate.mjs",
     "frontend:static": "node scripts/core-ui-artifact.mjs",
     "frontend:build-gates": "npm run build:frontends && npm run verify:core-ui && npm run frontend:route-gates",
@@ -56,7 +56,10 @@
     "qa:voice-live": "vitest run --config e2e/vitest.live.config.ts",
     "verify:core-ui": "node scripts/core-ui-artifact.mjs",
     "build:core-contracts": "node scripts/core-contracts-release.mjs",
-    "test:storybook": "npm run verify:core-ui"
+    "test:storybook": "npm run verify:core-ui",
+    "test:tooling": "node --import tsx --test scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/owner-application-release.test.mjs scripts/application-frontend.test.mjs scripts/application-deploy.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs && node --test scripts/affected-check.test.mjs scripts/core-ui-artifact.test.mjs scripts/route-budgets.test.mjs scripts/route-compression.test.mjs scripts/full-gate.test.mjs scripts/browser-gate.test.mjs scripts/long-run.test.mjs",
+    "gate:audit": "node --import tsx scripts/gate-audit.mjs",
+    "test:browser": "node scripts/browser-gate.mjs --integration"
   },
   "devDependencies": {
     "@sislex/runner-contracts": "file:vendor/sislex-runner-contracts-0.1.1-8ec5100952c3.tgz",
