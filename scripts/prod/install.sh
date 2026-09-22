@@ -35,6 +35,13 @@ if [[ ! -x $runtime ]]; then install -m 755 "$source" "$runtime"; fi
 exec env VC_REPO_DIR="$REPO" VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"
 EOF
 chmod 755 /usr/local/bin/voicechat-deploy
+cat >/usr/local/bin/voicechat-ui-deploy <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+source /etc/voicechat/production.env
+exec env VC_REPO_DIR="$VC_REPO_DIR" bash "$VC_REPO_DIR/scripts/prod/ui-deploy.sh" "$@"
+EOF
+chmod 755 /usr/local/bin/voicechat-ui-deploy
 install -m 755 "$SRC/watchdog.sh" /usr/local/bin/voicechat-watchdog
 install -d -m 755 /usr/local/lib/voicechat
 
