@@ -180,8 +180,8 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
 
   // @testCase TC-HOST-1
   it('runs the shared renderer in Electron with persisted progress and an explicit voice check', async () => {
-    const executablePath = createRequire(join(ROOT, 'apps/desktop/package.json'))('electron') as string
-    if (!existsSync(executablePath)) throw new Error('Install apps/desktop dependencies before required Electron QA')
+    const executablePath = createRequire(join(ROOT, 'package.json'))('electron') as string
+    if (!existsSync(executablePath)) throw new Error('Install Core integration dependencies before required Electron QA')
     await mkdir(join(ROOT, 'artifacts/onboarding'), { recursive: true })
     const entry = join(dataDir, 'onboarding-electron.cjs')
     await writeFile(entry, [

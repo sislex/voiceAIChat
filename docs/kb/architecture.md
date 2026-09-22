@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-22
-checked: ddcd07c3
+checked: e96c10c3
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -262,7 +262,7 @@ synthesis engines. `apps/login-application` is machine enrollment for the compan
 agent, not user registration; it remains with machine/client infrastructure.
 The LLM Runner implementation and its internal tests belong to `sislex/llm-runner`;
 Core uses authenticated HTTP clients and no longer has an embedded CLI fallback.
-Chat/agents, projects, operations and release orchestration remain Core responsibilities. Shared UI primitives now belong to `sislex/sielexa-ui`.
+Chat, machine authorization/registry, projects, operations and release orchestration remain Core responsibilities. The companion runtime is owned by `sislex/agent`, and the Electron host by `sislex/desktop`. Shared UI primitives belong to `sislex/sielexa-ui`.
 
 ### Final removal of transitional workspaces
 
@@ -285,6 +285,8 @@ The following former compatibility directories are removed:
 | Identity | `apps/identity`, `packages/identity-account`, `packages/identity-client`, `packages/identity-contracts`, `packages/identity-login`, `packages/profile-app`, `packages/sessions-app`, `packages/sessions-core`, `packages/storage-sql` |
 | Billing | `apps/billing` |
 | LLM Runner | `apps/llm-runner`, local CLI/auth/history forwarders |
+| Agent | `apps/agent`, `apps/agent-tray`, `apps/login-application`; machine protocol and installer implementations/tests |
+| Desktop | `apps/desktop`; Electron host, legacy import and packaging tests |
 
 Identity compatibility exports under `apps/server/src/users`, SQL adapters and
 `db/repos/identity.ts` are removed in favor of direct owner imports. Core's own
@@ -330,3 +332,14 @@ Owner npm workspace linking can hide an obsolete distribution peer range; owner
 package gates now check that peer ranges accept the matching contract workspace
 versions. Archive provenance and internal owner gates do not replace the Core
 integration gate.
+
+### Machine and Desktop artifacts
+
+Core consumes `@sislexa/agent` and `@sislexa/agent-contracts` from the Agent owner.
+The public download route serves the released bundle byte-for-byte. Desktop owns
+Electron main/preload and consumes versioned Agent and Core chat-client artifacts;
+Core publishes the shared chat renderer through `scripts/chat-client-release.mjs`.
+Runtime requirements and source commits are recorded in each archive. Core retains
+only compatibility reexports of machine contracts required by already released
+consumers, plus server/host integration coverage. See [clients.md](clients.md)
+for independent setup and packaging.

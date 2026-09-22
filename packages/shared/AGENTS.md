@@ -4,8 +4,8 @@ Core transport contracts and pure orchestration logic. Product models belong to
 their published owner contract packages, declared as explicit dependencies. No
 DOM, network, filesystem or process access belongs in Shared.
 
-Подключается как `@voicechat/shared` (server, agent) и как `@shared/*` (ui, web,
-desktop — алиас на исходники).
+Core consumes this package as `@voicechat/shared` or `@shared/*`. Independent
+Agent and Desktop clients consume published contracts/artifacts instead.
 
 ## Что где
 
@@ -14,8 +14,6 @@ desktop — алиас на исходники).
 | `types.ts` | `Message`, `Conversation`, `Settings`, `SessionUser`, роли, модели (`isModelAllowed`, `clampModelForRole`) |
 | `protocol.ts` | REST-пути (`REST`), WS-сообщения (`ClientMessage`/`ServerMessage`) + списки типов для тестов контракта |
 | `ipc.ts` | формы мостов `window.*` (`Renderer*Bridge`) — общие для web (REST/WS) и desktop (IPC) |
-| `agentProtocol.ts` | сервер↔машина: сообщения, `AgentPolicy` + `evaluateAgentCommand`, `FsOp`, телеметрия |
-| `version.ts` | `AGENT_VERSION`, `TOOL_MIN_VERSION`, `compareVersions` |
 | `stateMachine.ts` | голосовой цикл `idle→listening→transcribing→thinking→speaking`, barge-in |
 | `streamJson.ts`, `codexStream.ts` | разбор stream-json claude/codex (текст + активность) |
 | `prompt.ts` | сборка промпта, метки спикеров, вложения, подсказки `TOOL_HINT`/questions |
@@ -34,7 +32,7 @@ desktop — алиас на исходники).
   (иначе падает `protocol.test.ts`).
 - Ломающее изменение типа задевает сразу server + ui + desktop + agent: прогоняй
   `npm run typecheck` целиком, а не только свой пакет.
-- Возможность агента → бампни `AGENT_VERSION` и `TOOL_MIN_VERSION`.
+- Agent version and capability minimums are maintained in `sislex/agent/packages/contracts`.
 
 Гейт: `npm run -w @voicechat/shared test` + `npm run typecheck`.
 
@@ -47,3 +45,7 @@ Make, Browser/Preview and Image Studio models are imported from their owner
 contract packages. Operation context, usage and billing models come from the SDK.
 Core does not re-export or test their internal models; it tests its own transport
 and authorization integration with those public contracts.
+
+Agent contracts are implemented and tested in `@sislexa/agent-contracts`. The
+Shared barrel and `agentProtocol.ts` preserve compatibility for already published
+consumers; they only re-export owner definitions and own no duplicate tests.

@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import { isIP } from 'node:net'
-import type { VpnErrorCode } from '@voicechat/shared'
+import type { VpnErrorCode } from '@sislexa/agent-contracts'
 
 export class VpnError extends Error {
   constructor(readonly code: VpnErrorCode) { super(code) }

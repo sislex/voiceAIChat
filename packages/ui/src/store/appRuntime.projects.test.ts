@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createTestStore, type TestStore } from '../test/appHarness'
 import { createProjectsClient } from '../projects/createProjectsClient'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
-import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
+import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import type { RendererBoardBridge } from '@shared/ipc'
 import type { Message } from '@shared/types'
 

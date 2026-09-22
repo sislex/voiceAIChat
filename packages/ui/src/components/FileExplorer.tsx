@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FS_PREVIEW_BYTES, type AgentInfo, type FsEntry } from '@shared/agentProtocol'
+import { FS_PREVIEW_BYTES, type AgentInfo, type FsEntry } from '@sislexa/agent-contracts'
 import type { MachineOps, SwitchUtility, UtilityVariant } from '@voicechat/ui-foundation/components/machine'
 import { MachineUtilityHeader, READ_ONLY_HINT } from './MachineUtilityHeader'
 import { Button, useConfirm, useToast } from '@voicechat/ui-kit'
@@ -12,7 +12,7 @@ import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadStat
 import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { CodeEditor } from '@voicechat/ui-foundation/components/CodeEditor'
 import { CodeDiff } from '@voicechat/ui-foundation/components/CodeDiff'
-import { isToolAllowed } from '@shared/version'
+import { isToolAllowed } from '@sislexa/agent-contracts'
 import { completePath, rememberListing } from '../lib/machineListing'
 
 export interface FileExplorerProps {

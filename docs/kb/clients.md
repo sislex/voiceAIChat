@@ -1,14 +1,12 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-09-07
-checked: e671ba68
+updated: 2026-09-22
+checked: e96c10c3
 areas:
   - apps/web
-  - apps/desktop/src
-  - apps/desktop/electron-builder.yml
-  - apps/agent-tray/src
-  - apps/agent-tray/electron-builder.yml
-  - apps/login-application
+  - packages/ui/desktop-client
+  - packages/ui/src/desktopClient.tsx
+  - scripts/chat-client-release.mjs
   - apps/server/src/config.ts
   - apps/server/src/server.ts
   - apps/server/src/users/auth.ts
@@ -17,6 +15,35 @@ areas:
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
+
+## Independent Agent and Desktop owners
+
+As of the September 22 extraction, `sislex/agent` owns the companion runtime,
+protocol, installer generators, tray and enrollment application. `sislex/desktop`
+owns Electron main/preload/windows, legacy import and packaging. Their internal
+tests and source directories are removed from Core. Both owners install and gate
+without a sibling Core checkout. Desktop consumes pinned Agent and chat-client
+archives. Core owns the shared chat UI and publishes it through
+`scripts/chat-client-release.mjs`; `packages/ui/src/desktopClient.tsx` is its
+renderer bootstrap. Desktop does not compile Core UI source.
+
+Core browser integration uses the published Desktop renderer and its own Electron
+test dependency, with no `npm ci --prefix apps/desktop`. Desktop's owner gate
+checks migration/configuration, then launches real Electron and exercises server
+setup, chat login rendering, persisted origin and preload isolation. First-time
+origin selection reloads the thin client; the obsolete embedded-backend relaunch
+has been removed. DMG builds are explicit and do not implicitly publish releases.
+
+Desktop 1.0.2 serves its packaged renderer from the secure `sislexa://app` scheme.
+Core allows that exact CORS origin by default. HTTP(S) stays in Chromium; the client
+does not intercept remote requests or relax browser security. Owner QA exercises
+real API login transport, HttpOnly cookies and denial of unrelated origins. Older
+Core deployments require `VC_CORS_ORIGINS=sislexa://app`. The native test entry uses
+top-level await so privileged scheme registration finishes before `app.ready`.
+
+The historical monorepo paths in older sections below describe the pre-extraction
+layout. Current sources and internal commands are in the owner READMEs.
+
 
 ## Reader bundles
 

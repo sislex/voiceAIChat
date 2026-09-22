@@ -1,6 +1,6 @@
 // Политика команд поверх политики машины (machines-roadmap п.10): слои проекта и роли пользователя
 // и список «опасных» команд, которым в чате нужно явное подтверждение пользователя.
-import { matchesPattern, type AgentPolicy } from './agentProtocol'
+import { matchesPattern, type AgentPolicy } from '@sislexa/agent-contracts'
 import type { UserRole } from './types'
 
 export interface CommandPolicyLayer {

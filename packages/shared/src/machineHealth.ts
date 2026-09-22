@@ -1,7 +1,7 @@
 // Здоровье машины для шапки чата (machines-roadmap п.2): состояние по последней телеметрии агента
 // и предупреждения, которые стоит показать ДО запуска хода (офлайн, устаревший агент, мало места/памяти).
-import type { AgentInfo } from './agentProtocol'
-import { compareVersions } from './version'
+import type { AgentInfo } from '@sislexa/agent-contracts'
+import { compareVersions } from '@sislexa/agent-contracts'
 
 export type MachineHealthLevel = 'ok' | 'warn' | 'offline'
 

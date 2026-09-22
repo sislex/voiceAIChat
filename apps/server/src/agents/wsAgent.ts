@@ -3,7 +3,7 @@
 // сообщения exec.* уходят в реестр. Ping каждые 30с поддерживает last_seen.
 
 import type { WebSocket } from 'ws'
-import type { AgentToServer, ServerToAgent } from '@voicechat/shared'
+import type { AgentToServer, ServerToAgent } from '@sislexa/agent-contracts'
 import { hashAgentToken, type VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from './registry.js'
 

@@ -28,17 +28,7 @@ export VC_WEB_PORT="$WEB_PORT"
 # cmake в PATH (нужен нативным сборкам на этой машине).
 export PATH="/opt/homebrew/bin:$PATH"
 
-# Переиспользуем whisper-cli и модели, уже собранные/скачанные для desktop.
-WHISPER_CLI="$ROOT/apps/desktop/node_modules/nodejs-whisper/cpp/whisper.cpp/build/bin/whisper-cli"
-MODELS_DIR="$ROOT/apps/desktop/node_modules/nodejs-whisper/cpp/whisper.cpp/models"
-[ -f "$WHISPER_CLI" ] && export VC_WHISPER_CLI="$WHISPER_CLI" || true
-[ -d "$MODELS_DIR" ] && export VC_MODELS_DIR="$MODELS_DIR" || true
-
-# Переиспользуем Piper (pip-венв) и русские голоса desktop (Irina/Dmitri/Ruslan).
-PIPER_BIN="$ROOT/.venv-piper/bin/piper"
-PIPER_VOICES="$ROOT/apps/desktop/resources/piper-voices"
-[ -f "$PIPER_BIN" ] && export VC_PIPER_BIN="$PIPER_BIN" || true
-[ -d "$PIPER_VOICES" ] && export VC_PIPER_VOICES_DIR="$PIPER_VOICES" || true
+# Voice services are configured through their remote endpoints in the environment.
 
 # Verify immutable owner-built panels before starting the host.
 npm run build:frontends

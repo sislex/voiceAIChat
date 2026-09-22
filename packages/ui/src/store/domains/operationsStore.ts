@@ -7,8 +7,8 @@
 // Live-tail и локальные подписки закрываются при уходе со страницы, смене
 // выбранной сущности, logout и dispose.
 
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult } from '@shared/agentProtocol'
-import { AGENT_TOKEN_DEFAULT_TTL_DAYS } from '@shared/agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult } from '@sislexa/agent-contracts'
+import { AGENT_TOKEN_DEFAULT_TTL_DAYS } from '@sislexa/agent-contracts'
 import type { ConversationWithMessages, ServerFileInfo } from '@shared/protocol'
 import type { CcItem, CcProject, CcSession } from '@shared/cc'
 import type { CxItem, CxProject, CxSession } from '@shared/codexSessions'

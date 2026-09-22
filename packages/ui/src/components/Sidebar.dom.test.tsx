@@ -6,7 +6,7 @@ import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import { Sidebar, formatConversationCostUsd, type MessageSearchView } from './Sidebar'
 import type { Conversation, MessageSearchHit, PermissionMode, SessionUser } from '@shared/types'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { TaskChatBadge } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 

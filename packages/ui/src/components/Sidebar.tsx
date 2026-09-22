@@ -8,7 +8,7 @@ import {
   type PermissionMode,
   type SessionUser
 } from '@shared/types'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { ProjectInvitationForUser, ProjectSummary, TaskChatBadge } from '@shared/projects'
 import { localWeekStart } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'

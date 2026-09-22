@@ -5,7 +5,8 @@
 // — единственное, что видят потребители (сессия, ходы, MCP, канбан, Make, админка).
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import type { MachineCommandEvent, ServerMessage } from '@voicechat/shared'
+import type { ServerMessage } from '@voicechat/shared'
+import type { MachineCommandEvent } from '@sislexa/agent-contracts'
 import type { ServerConfig } from '../config.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { AgentRegistry } from '../agents/registry.js'

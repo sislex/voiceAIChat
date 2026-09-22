@@ -36,7 +36,7 @@ import type {
   WhisperModel,
   WhisperModelInfo, SessionInfo, LoginChallenge, UserRole } from './types'
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
-import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
+import type { GitAccessDiagnostics, GitAccessResult } from '@sislexa/agent-contracts'
 import type {
   GitBranchChanges, GitBranchList, GitCheckoutResult, GitCommitDetail, GitCommitInfo,
   GitCommitResult, GitConflictSide, GitConflictStages, GitDiscardResult, GitFileContent,
@@ -59,10 +59,10 @@ import type {
   UsageUnit, SecurityEvent, SecurityGroup, InviteInfo, SignupConfig } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
-import type { EnrollmentIssued, EnrollmentStatusResult, LoginApplicationArtifact } from './enrollment'
+import type { EnrollmentIssued, EnrollmentStatusResult, LoginApplicationArtifact } from '@sislexa/agent-contracts'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent, MachineStatusEvent, BatchExecResult } from './agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent, MachineStatusEvent, BatchExecResult } from '@sislexa/agent-contracts'
 import type {
   Board,
   KanbanColumn,
@@ -268,7 +268,7 @@ export interface IpcInvokeMap {
   /** Что подберёт база знаний для этого черновика (инспектор контекста). */
   'conversations:contextKbPreview': { arg: { id: string; draft: string }; result: import('./types').ContextKbPreview | null }
   /** Доступные текущему пользователю машины в контексте разговора/проекта. */
-  'conversations:listMachines': { arg: { id: string; projectId?: string | null }; result: import('./agentProtocol').AgentInfo[] }
+  'conversations:listMachines': { arg: { id: string; projectId?: string | null }; result: import('@sislexa/agent-contracts').AgentInfo[] }
   /**
    * Поиск разговоров по названию и содержимому сообщений (регистронезависимо).
    * Состав тот же, что у `conversations:list`, включая `includeCompleted`.
@@ -574,7 +574,7 @@ export interface IpcInvokeMap {
   'projects:linkMachine': { arg: { id: string; agentId: string; storageId?: string }; result: ProjectDetail }
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Уровень доступа предоставленной проекту машины (machines-roadmap п.18); только владелец машины. */
-  'projects:setMachineShareAccess': { arg: { id: string; agentId: string; access: import('./agentProtocol').MachineShareAccess }; result: ProjectDetail }
+  'projects:setMachineShareAccess': { arg: { id: string; agentId: string; access: import('@sislexa/agent-contracts').MachineShareAccess }; result: ProjectDetail }
   'projects:configureMachineStorage': { arg: { id: string; agentId: string; storageId: string; directories?: ProjectMachineDirectoryAssignments }; result: ProjectDetail }
   'projects:resetMachineDirectory': { arg: { id: string; agentId: string; kind: ProjectMachineDirectoryKind }; result: ProjectDetail }
   /** Задать папку проекта на конкретной машине (только владелец). */
@@ -1012,7 +1012,7 @@ export interface RendererSttBridge {
  * обновления статуса/списка по WebSocket (web-режим). В desktop отсутствует.
  */
 export interface RendererAgentsBridge {
-  vpn?: import('./vpn').VpnBridge
+  vpn?: import('@sislexa/agent-contracts').VpnBridge
   onChange(cb: (agents: AgentInfo[]) => void): () => void
 }
 

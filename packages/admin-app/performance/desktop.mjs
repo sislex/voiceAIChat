@@ -1,7 +1,8 @@
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { _electron } from 'playwright'
-import { build } from 'esbuild'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
 import { mkdtemp,writeFile,rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -12,10 +13,10 @@ const fixture=await mkdtemp(join(tmpdir(),'ui-performance-desktop-'))
 const server=await createServer({root:resolve(root,'packages/admin-app/performance'),configFile:false,plugins:[react()],resolve:{alias:{'@shared':resolve(root,'packages/shared/src')}},server:{host:'127.0.0.1',port:0,fs:{allow:[root]}}})
 let app
 try {
-  await build({entryPoints:[resolve(root,'apps/desktop/src/preload/index.ts')],outfile:join(fixture,'preload.cjs'),bundle:true,platform:'node',format:'cjs',external:['electron']})
-  await writeFile(join(fixture,'main.cjs'),"const {app,BrowserWindow}=require('electron');app.whenReady().then(()=>{const w=new BrowserWindow({webPreferences:{preload:require('node:path').join(__dirname,'preload.cjs'),contextIsolation:true}});w.loadURL(process.env.UI_PERFORMANCE_URL)});")
+
+  await writeFile(join(fixture,'main.cjs'),"const {app,BrowserWindow}=require('electron');app.whenReady().then(()=>{const w=new BrowserWindow({webPreferences:{preload:"+JSON.stringify(require.resolve('@sislexa/desktop/preload'))+",contextIsolation:true, sandbox:false}});w.loadURL(process.env.UI_PERFORMANCE_URL)});")
   await server.listen()
-  app=await _electron.launch({executablePath:resolve(root,'apps/desktop/node_modules/electron/dist/electron'),args:['--no-sandbox',join(fixture,'main.cjs')],env:{...process.env,UI_PERFORMANCE_URL:server.resolvedUrls.local[0]}})
+  app=await _electron.launch({executablePath:require('electron'),args:['--no-sandbox',join(fixture,'main.cjs')],env:{...process.env,UI_PERFORMANCE_URL:server.resolvedUrls.local[0]}})
   const page=await app.firstWindow()
   await page.getByRole('button',{name:'Apply filters'}).waitFor()
   // @testCase T1

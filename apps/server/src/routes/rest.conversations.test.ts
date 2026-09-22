@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 // Беседы, сообщения, настройки и полнотекстовый поиск.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { signToken } from "@sislexa/identity/server/users/accounts"
@@ -685,7 +687,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toContain('javascript')
     expect(res.headers['content-disposition']).toContain('voicechat-agent.cjs')
-    expect(res.body.startsWith('#!')).toBe(true)
+    expect(res.body).toBe(readFileSync(createRequire(import.meta.url).resolve('@sislexa/agent/voicechat-agent.cjs'), 'utf8'))
   }, 30_000)
 
   it('установщик Termux: GET /api/agents/install-android.sh публичен и отдаёт bash', async () => {
@@ -693,7 +695,7 @@ describe('REST: conversations/messages/settings', () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/install-android.sh' })
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toContain('shellscript')
-    expect(res.body.startsWith('#!')).toBe(true)
+    expect(res.body).toContain('voicechat-agent.cjs')
     expect(res.body).toContain('/api/agents/script')
   })
 
