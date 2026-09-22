@@ -517,6 +517,8 @@ export interface IpcInvokeMap {
   'releases:applicationObserve': { arg: { projectId: string; environment: import('./applicationDeployment').ApplicationEnvironmentName; expectedRevision: number }; result: import('./applicationDeployment').ApplicationReleaseOverview }
   'releases:applicationDeploy': { arg: { projectId: string; environment: import('./applicationDeployment').ApplicationEnvironmentName; input: import('./applicationDeployment').ApplicationDeployInput }; result: import('./applicationDeployment').ApplicationDeploymentRecord }
   'releases:applicationReconcile': { arg: { projectId: string; environment: import('./applicationDeployment').ApplicationEnvironmentName }; result: import('./applicationDeployment').ApplicationReleaseOverview }
+  'releases:browserUiOverview': { arg: { projectId: string }; result: import('./browserUiRelease').BrowserUiReleaseOverview }
+  'releases:browserUiAction': { arg: { projectId: string; input: import('./browserUiRelease').BrowserUiReleaseActionInput }; result: import('./browserUiRelease').BrowserUiReleaseOperation }
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
   'releases:machines': { arg: { projectId: string }; result: import('./release').ReleaseMachineCatalog }
   'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string }; result: import('./release').ProjectRelease }
@@ -1504,7 +1506,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:deriveType',
   'projectTypes:publish',
   'projectTypes:unpublish',
-  'releases:applicationCatalog', 'releases:applicationOverview', 'releases:applicationPrepare', 'releases:applicationObserve', 'releases:applicationDeploy', 'releases:applicationReconcile',
+  'releases:applicationCatalog', 'releases:applicationOverview', 'releases:applicationPrepare', 'releases:applicationObserve', 'releases:applicationDeploy', 'releases:applicationReconcile', 'releases:browserUiOverview', 'releases:browserUiAction',
   'releases:branches',
   'releases:machines',
   'releases:createBranch',

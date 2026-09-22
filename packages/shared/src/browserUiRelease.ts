@@ -36,6 +36,42 @@ export interface BrowserUiRuntime extends BrowserUiCompatibility {
   /** Allows a deployment to recover from an incompatible persisted selection. */
   configuredGeneration: string | null
 }
+export interface BrowserUiPublishedRelease {
+  version: string
+  tag: string
+  commit: string
+  assetName: string
+  size: number
+  publishedAt: string
+}
+export type BrowserUiReleaseAction = 'install' | 'rollback' | 'activate-bundled'
+export interface BrowserUiReleaseOperation {
+  id: string
+  projectId: string
+  requestId: string
+  action: BrowserUiReleaseAction
+  requestedVersion: string | null
+  releaseId: string | null
+  status: 'running' | 'succeeded' | 'failed'
+  triggeredBy: string
+  createdAt: number
+  finishedAt: number | null
+  log: string
+  coreContainerUnchanged: boolean | null
+}
+export interface BrowserUiReleaseOverview {
+  runtime: BrowserUiRuntime | null
+  activation: BrowserUiActivation | null
+  installed: BrowserUiRelease[]
+  published: BrowserUiPublishedRelease[]
+  operations: BrowserUiReleaseOperation[]
+  statusError: string | null
+}
+export interface BrowserUiReleaseActionInput {
+  requestId: string
+  action: BrowserUiReleaseAction
+  version?: string
+}
 export function browserUiReleaseId(value: unknown): value is string {
   return typeof value === 'string' && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-[a-f0-9]{40}$/.test(value) && value.length <= 106
 }

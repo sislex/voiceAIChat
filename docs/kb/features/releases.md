@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-09-22
-checked: 4c6d8bbf
+checked: 5b0f646d
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -310,3 +310,12 @@ the initial Core mechanism is installed through the normal `voicechat-deploy`
 release flow. UI-only rollback retains versioned assets for open tabs and can
 select the bundled fallback. Do not rebuild/restart Core to activate these UI
 artifacts. See `deploy.md` for commands and operational checks.
+
+Release Center exposes this lifecycle to project owners through the browser UI
+section of the component release screen. Core lists official owner releases,
+resolves their tag commits and exact archive names, and downloads private assets
+with `VC_GITHUB_TOKEN` on the server. The token and arbitrary artifact URLs never
+cross into the browser or companion-agent command. Install, rollback and bundled
+fallback operations are idempotent and audited in
+`browser_ui_release_operations`; success also requires an unchanged Core
+container ID and start timestamp.

@@ -1934,6 +1934,15 @@ CREATE TABLE IF NOT EXISTS application_deployments (
   UNIQUE (project_id, environment, request_id)
 );
 
+CREATE TABLE IF NOT EXISTS browser_ui_release_operations (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, request_id TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  UNIQUE (project_id, request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_browser_ui_release_operations_project
+  ON browser_ui_release_operations(project_id, id DESC);
+
 `
 
 /**

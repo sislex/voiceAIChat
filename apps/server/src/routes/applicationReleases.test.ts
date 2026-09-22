@@ -6,6 +6,7 @@ import { registerApplicationReleaseRoutes } from './applicationReleases.js'
 import { ApplicationReleaseManager } from '../releases/applicationReleaseManager.js'
 import { ReleaseManager } from '../releases/releaseManager.js'
 import { ManagedEnvironmentResolver } from '../releases/managedEnvironmentResolver.js'
+import type { BrowserUiReleaseManager } from '../releases/browserUiReleaseManager.js'
 const close: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of close.splice(0)) await cleanup()
@@ -36,6 +37,7 @@ async function setup() {
     })
   }
   const manager = new ApplicationReleaseManager(db, runtime),
+    browserUi = { overview: vi.fn(), act: vi.fn() } as unknown as BrowserUiReleaseManager,
     legacy = new ReleaseManager(db, {
       exec: vi.fn(async () => ({ exitCode: 0, output: '' })),
       prepareKnowledgeBase: async () => {},
@@ -45,6 +47,7 @@ async function setup() {
     app,
     db,
     manager,
+    browserUi,
     legacy,
     new ManagedEnvironmentResolver(db, legacy)
   )
