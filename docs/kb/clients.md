@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
 updated: 2026-09-22
-checked: e96c10c3
+checked: 60c3f73a
 areas:
   - apps/web
   - packages/ui/desktop-client
@@ -15,6 +15,11 @@ areas:
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
+
+## Core UI distribution
+
+Web and Desktop renderer sources belong to `sislex/sislexa-core-ui`. Core serves the pinned `@sislexa/core-ui/web` assets and verifies the owner manifest before building its image. `npm run dev:web` starts Core with that static directory and proxies the familiar port 5273 to Core; UI editing and HMR use `npm run dev` in the UI owner repository. Configure `VITE_SERVER_URL` or `VC_API_PORT` there. Existing Desktop releases remain pinned to their released renderer until an explicit Desktop dependency upgrade.
+
 
 ## Independent Agent and Desktop owners
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Core backend and the host Vite client share one lifecycle.
+# Core backend and the published UI share one lifecycle.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,7 +21,7 @@ fi
 # с первым: без развода портов оба сеанса дерутся за 8787/5273.
 API_PORT="${PORT:-8787}"
 WEB_PORT="${VC_WEB_PORT:-5273}"
-# Vite-прокси читает VC_API_PORT, а backend — PORT; держим их согласованными.
+# Keep the UI proxy target consistent with the backend port.
 export PORT="$API_PORT" VC_API_PORT="${VC_API_PORT:-$API_PORT}"
 export VC_WEB_PORT="$WEB_PORT"
 
@@ -32,6 +32,8 @@ export PATH="/opt/homebrew/bin:$PATH"
 
 # Verify immutable owner-built panels before starting the host.
 npm run build:frontends
+npm run verify:core-ui
+export VC_WEB_DIR="$ROOT/node_modules/@sislexa/core-ui/web"
 
 PIDS=()
 stop_tree() {
@@ -57,7 +59,7 @@ npm run -w @voicechat/server dev &
 PIDS+=("$!")
 
 echo "[dev-web] стартую веб-клиент (http://127.0.0.1:$WEB_PORT)…"
-npm run -w @voicechat/web dev &
+node scripts/dev-ui-proxy.mjs &
 PIDS+=("$!")
 
 # Ждём готовности всех трёх портов (до ~30с), одновременно замечая ранний выход

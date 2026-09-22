@@ -70,7 +70,7 @@ export function previewCompose(input: PreviewRuntimeInput, resource: string, ima
     name: resource,
     services: {
       ...(buildCore ? { build: { ...base, image, profiles:['build'], user:'0:0', working_dir:'/app', network_mode:'none',
-        entrypoint:['/bin/sh','-ec','npm run -w @voicechat/web build'],
+        entrypoint:['/bin/sh','-ec','npm run verify:core-ui'],
         volumes:['./source:/app:rw','dependencies:/app/node_modules'],
         environment:{ NODE_ENV:'production', HOME:'/tmp', npm_config_cache:'/tmp/npm-cache' },
         tmpfs:['/tmp:rw,nosuid,size=128m'], mem_limit:'2g' } } : {}),
@@ -87,7 +87,7 @@ export function previewCompose(input: PreviewRuntimeInput, resource: string, ima
         tmpfs: ['/tmp:rw,nosuid,size=128m'],
         environment: {
           NODE_ENV:'test', HOST:'0.0.0.0', PORT:String(input.settings.containerPort),
-          ...(buildCore ? { VC_WEB_DIR:'/app/apps/web/dist' } : {}),
+          ...(buildCore ? { VC_WEB_DIR:'/app/node_modules/@sislexa/core-ui/web' } : {}),
           VC_DATA_DIR:'/preview-data', VC_DB_PATH:'/preview-data/test.sqlite', VC_ADMIN_PASSWORD:password,
           VC_DEVELOPMENT_PREVIEW:'true', VC_PREVIEW_SEED:input.settings.database.seed,
           VC_CLAUDE_BIN:'/bin/false', VC_CODEX_BIN:'/bin/false', VC_KB_RERANK_PROVIDER:'disabled',

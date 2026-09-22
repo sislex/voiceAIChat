@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium } from 'playwright'
 
 const ROOT = resolve(__dirname, '..')
-const WEB_DIST = join(ROOT, 'apps/web/dist')
+const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
 const PORT = 9091 + Math.floor(Math.random() * 60)
 const BASE = `http://127.0.0.1:${PORT}`
 const PASSWORD = 'e2e-settings-pass'

@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config'
 
 // E2E Make в реальном Chromium (playwright из node_modules). Запуск: `npm run e2e:make`.
-// Не входит в `npm test`: нужны собранный apps/web/dist и установленный браузер.
+// Не входит в `npm test`: нужны собранный node_modules/@sislexa/core-ui/web и установленный браузер.
 export default defineConfig({
   test: {
     include: ['e2e/**/*.e2e.test.ts'],

@@ -111,7 +111,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
-      env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: join(ROOT, 'apps/web/dist'),
+      env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: join(ROOT, 'node_modules/@sislexa/core-ui/web'),
         VC_ADMIN_PASSWORD: PASSWORD, VC_MCP_SECRET: MCP_SECRET, VC_BROWSER_RUNNER_URL: runnerUrl,
         VC_BROWSER_RUNNER_TOKEN: 'reader-e2e-runner', VC_BROWSER_PREVIEW_BASE: base },
       stdio: ['ignore', 'pipe', 'pipe']

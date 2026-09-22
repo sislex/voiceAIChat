@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-22
-checked: 55f5a95b
+checked: 60c3f73a
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -40,6 +40,15 @@ areas:
 ---
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
+
+## Core UI owner and consumer boundary
+
+The browser client, Desktop renderer, shell, chat, projects, operations and administration views are owned by [`sislex/sislexa-core-ui`](https://github.com/sislex/sislexa-core-ui). Core has no UI source workspaces or internal frontend unit tests. Historical `packages/ui`, feature-package and `apps/web` paths below refer to that owner repository.
+
+Core consumes `@sislexa/core-ui` as an immutable archive. `scripts/core-ui-artifact.mjs` validates source provenance, API compatibility and every static asset hash. The Core Docker build verifies the archive and serves its `web` directory; it does not compile React or Storybook. The owner publishes its browser, renderer and Storybook outputs together. UI Kit/Foundation remain independent dependencies owned by `sielexa-ui`.
+
+Core publishes `@voicechat/shared` contracts with `build:core-contracts -- --version <version> --commit <full SHA>`. This exporter reads committed files and locked peer versions, excludes internal tests and records the source SHA. UI installs the contract archive without a Core checkout. Legacy published `@shared/*` imports resolve to that installed contract, not sibling source.
+
 
 ## Story ownership after repository extraction
 

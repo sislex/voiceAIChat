@@ -34,12 +34,7 @@ export interface ServerConfig {
   desktopAppPath?: string
   /** Отдельный macOS ARM64 DMG приложения безопасного подключения машины. */
   loginApplicationPath?: string
-  /**
-   * Каталог собранного web-приложения (apps/web/dist) для раздачи статики тем же
-   * сервером. Задаётся только через env (VC_WEB_DIR) — в dev/тестах не задан, чтобы
-   * не мешать Vite. В Docker указывает на скопированный билд.
-   */
-  applicationFrontends?: Record<string, string>
+  /** Published Core UI directory served by the API process when VC_WEB_DIR is set. */
   webDir?: string
   /** Каталог standalone Web Recorder, раздаваемый под /web-recorder/. */
   webRecorderDir?: string

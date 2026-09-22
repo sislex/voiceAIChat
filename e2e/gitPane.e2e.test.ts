@@ -16,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 
 const ROOT = resolve(__dirname, '..')
-const WEB_DIST = join(ROOT, 'apps/web/dist')
+const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
 let PORT = 0
 let BASE = ''
 const PASSWORD = 'e2e-pass'
