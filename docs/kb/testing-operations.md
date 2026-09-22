@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: 412b40ee
+checked: 9b707a9a
 areas:
   - package.json
   - scripts
@@ -28,6 +28,27 @@ Baseline before the test-gate scope optimization, measured on the local MacBook 
 
 
 ## Extracted application test ownership
+
+Detailed Reader browser scenarios now live in `system-tests/` in `sislex/playwrightreader`
+and `sislex/webreader`. Make/Image Studio shell layout scenarios belong to
+`sislex/sislexa-core-ui/system-tests`, because the shell owns responsive splits,
+navigation and composer geometry. Core's `e2e/toolIntegration.e2e.test.ts` retains
+four authenticated published-panel loading checks. `webReaderProject` and
+`webReaderOwnProject` remain Core consumer checks for remote authentication and
+the Core project-resource bridge. No product scenario is silently skipped.
+
+Owner `test:system` uses a pinned Core commit as an isolated fixture and overlays
+a freshly built owner package. `gate:release`/`pack:release` include it. Core
+`gate:system` uses `system-tests/owners.json` to run those owner-maintained scenarios
+against the exact dependency artifacts in its own lockfile; `gate:release` runs the Core gate, Web/Desktop performance budgets, then that matrix. Development gates never fetch owner source.
+Caches store installed fixtures, not successful-test results. No sibling checkout
+or production service is required. See `docs/plans/browser-test-ownership.md`.
+
+After the ownership split, complete local Core gates passed in 321.24s and 258.12s
+(latest: 4m18s): 2302 server tests and 41 functional browser cases passed, with existing
+opt-in skips preserved. The separately verified Web/Desktop budgets took 167.97s.
+All 67 moved assertions passed in their owners. These workstation timings vary
+with load; no cached success or weakened threshold is used.
 
 Agent runtime/protocol/installer and device-client tests now belong to `sislex/agent`;
 Desktop migration/configuration/packaging and real Electron setup smoke belong to
@@ -570,7 +591,7 @@ web-статики с очисткой после закрытия прилож�
 свою временную директорию и БД `:memory:`.
 
 Playwright Reader's panel observes dialog metadata independently of MCP commands.
-In `e2e/playwrightReader.e2e.test.ts`, wait until the model-answered prompt leaves
+In `sislex/playwrightreader:system-tests/playwrightReader.e2e.test.ts`, wait until the model-answered prompt leaves
 the panel and the next alert's exact message is visible before clicking OK.
 Otherwise the test can answer a stale prompt, leave the real alert open, and
 cascade into unrelated download/login/Make-preview failures. The complete
@@ -817,24 +838,16 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 ## Единый frontend quality gate
 
 `gate:all` delegates to `scripts/full-gate.mjs`: workspace typechecks/tests,
-owner-built product/Core UI artifact verification, the serial
-`e2e/routeBudgets.e2e.test.ts` suite and all remaining API/browser integration. Each stage prints its elapsed time and exit status and records
-`artifacts/gate-timings/full.json` (frontend detail: `frontend.json`). Errors and
-signals stop the gate. `gate`/`gate:fast` use this full fallback for root/config
-changes. The full gate now includes every retained browser suite through
-`test:browser`; the affected gate adds no duplicate browser run after it succeeds. Required suite ownership and failure propagation have regression tests.
-Route timing measurements, resource timing and native Electron input remain
-serial. Reviewed functional E2E use separate ephemeral ports, databases and browser
-contexts, with at most two workers (one on machines with fewer than four available
-CPUs). `VC_E2E_WORKERS=1` forces sequential execution. Unknown future suites default
-to serial until their isolation is reviewed. Budgets and readiness limits are
-unchanged. Settings/Git/Projects fixtures use OS-assigned
-ports so other local processes or independent gate runs do not share a fixed port range.
-The session-revocation browser fixture locates the exact session ID returned for
-its newly logged-in device; selecting the first available revoke button could
-act on an older session before its realtime list update arrived. Settings QA uses
-the retained settings URL to wait for its lazy dialog after reload; an immediate
-overlay visibility check can otherwise race restoration and click beneath it.
+owner-built product/Core UI artifact verification, and retained Core functional
+browser integration. It does not run detailed owner scenarios or Web/Desktop
+performance measurements. `gate:performance` runs the unchanged serial route
+budgets; `gate:system` runs owner-maintained system acceptance. `gate:release`
+requires all three. Known budget/measurement edits still select their real browser
+measurements directly. Errors and signals stop every stage; timing artifacts live
+in `artifacts/gate-timings/`. Functional Core browser suites use at most two workers;
+resource timing and native Electron input remain serial. Successful full Core
+fallbacks suppress duplicate functional suites, but never suppress explicitly
+selected performance suites.
 
 `npm run verify:frontend` runs `frontend:build-gates`: product artifact verification,
 Core UI artifact verification and browser route budgets. React builds, Storybook
@@ -865,15 +878,12 @@ readiness in both directions for managed installations.
 
 ## E2E Make в реальном Chromium (2026-08-27)
 
-`npm run e2e:make` — `e2e/make.e2e.test.ts` под vitest (`e2e/vitest.config.ts`) с `playwright` из корневых
-node_modules (браузер — из кэша `~/Library/Caches/ms-playwright`, ставится `npx playwright install chromium`).
-Тест сам поднимает `apps/server` на случайном порту с временным `VC_DATA_DIR`, логинится по
-`/api/session/login`, выставляет `onboarded: true` через `PUT /api/settings` (иначе оверлей онбординга перекрывает
-панель), создаёт Make-разговор и применяет шаблон `react-ts`. Сценарии: превью React (TSX через esbuild,
-React из esm.sh — нужен интернет), «Компоненты» + controls, Monaco + автосохранение, публикация без входа.
-Ловушка: `page.goto` на URL, отличающийся только хэшем, не перезагружает документ — токен из localStorage
-подхватится только после `page.reload()`. В `npm test`/CI не входит: требует собранный `apps/web/dist`,
-браузер и сеть; `describe.skipIf(!existsSync(dist))`.
+The original Make product scenarios now belong to `sislex/make/e2e`. The remaining
+shell split checks moved to `sislex/sislexa-core-ui/system-tests/make.e2e.test.ts`.
+Run `npm run test:system` in that owner repository. Its pinned Core fixture creates
+a temporary database and chooses a free port; it never uses the user's dev server.
+Core retains `npm run e2e:tools` for authenticated loading of published panels.
+Missing runtime/browser dependencies fail the system gate instead of skipping it.
 
 **Мониторинг диска (roadmap-4 п.40).** `MakeWorkspaces.diskStats()` через `statfs` корня данных даёт `AdminMakeStats.disk { totalBytes, freeBytes, alert }`, порог тревоги — `MAKE_DISK_ALERT_BYTES` (10 ГБ, столько же с запасом требует проверка места перед релизом `RELEASE_MIN_FREE_KB`). В админке (`UsersAdmin`, блок Make) строка «Диск с данными…» краснеет и получает `role=alert`; в `/api/admin/make/metrics` — гауджи `make_disk_free_bytes`, `make_disk_total_bytes`, `make_disk_alert`. fail2ban и SSH-харденинг прод-хоста (btmp показывал брутфорс) не делались: это системная правка сервера вне репозитория — выполнять только по явному подтверждению.
 

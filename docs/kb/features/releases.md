@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-09-22
-checked: 412b40ee
+checked: 9b707a9a
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -149,8 +149,10 @@ Chromium. `application-links.mjs` проверяет связи Web Reader→cor
 in their owner repositories. Public contracts add consumer checks; unknown
 root/configuration or unresolved lock changes retain the full Core fallback.
 `gate:all` now performs Core typecheck/tests, verifies owner-built assets and runs
-every retained browser integration suite, including serial Web/Desktop budgets.
-The affected gate does not repeat browser suites after that full gate succeeds.
+retained functional consumer integration. Serial Web/Desktop budgets run in
+`gate:performance`; owner scenarios run in `gate:system`. `gate:release` requires
+all three. The affected gate suppresses repeated functional suites after a full
+Core gate, while preserving any explicitly selected performance checks.
 Known E2E-only changes select their complete named suites. See
 [testing operations](../testing-operations.md#development-gate-npm-run-gatefast)
 for reviewed tooling scope, concurrency and reproducible timing audits.
@@ -280,3 +282,19 @@ lock сохраняются. После рестарта менеджер не �
 снова проверяет совместимость и не меняет формат данных.
 
 Реализация и границы внедрения: [план](../../plans/application-independent-releases.md).
+
+
+## Owner system acceptance (2026-09-22)
+
+After configured regression commands, ReleaseManager executes the optional
+`npm run gate:performance --if-present` and `npm run gate:system --if-present` stages in the same isolated worktree. Repositories
+without that script preserve their previous behavior. A system failure blocks
+`ready` and still cleans the worktree. An exact configured `npm run gate:release` already includes both stages.
+An exact performance/system command suppresses only its corresponding extra stage. Core registers the owner matrix; ordinary development gates do
+not execute it. This hook becomes active when the updated Core server is deployed;
+`npm run gate:release` provides the complete check directly before that deployment.
+
+The owner application release driver prefers a registered `gate:release` over
+`gate`. Reader and Core UI packaging also require their release gate. Their
+system runners use immutable Core fixtures; Core's release matrix tests the exact
+installed dependency packages, rather than replacing them with owner builds.
