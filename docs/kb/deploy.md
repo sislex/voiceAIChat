@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-22
-checked: 7c448620
+updated: 2026-09-23
+checked: c6c97eb1
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -1733,3 +1733,40 @@ Backups occupy about 3.8 GiB (`voicechat` 2.4 GiB, `llm-runner` 1.3 GiB) and
 `/root/ChatAI/projects` about 4.4 GiB. Backup retention needs an explicit choice of
 recovery points; project directories need the application's tracked cleanup
 workflow. No additional candidates were deleted during this audit.
+
+## Cross-service accounting and independent browser UI (Core 0.1.329)
+
+Core 0.1.329 (`c6c97eb1b1772a156ad5806bdcdb008e28c55c39`) deployed through
+the installed `voicechat-deploy` flow on 2026-09-22. The release adds the managed
+Analytics dependency and the Core proxy for authenticated account reports and
+activity intervals. Production runs Identity 1.3.2
+(`a64928e585c774d139a50fde5c2db1bdaff3c798`), Billing 1.2.0
+(`9ecb733d50ddc96774ddf382268918f6c2f5459e`) and Analytics 1.2.2
+(`5a8a6542b798df351cb876a843452133dc717b14`). All ten managed components
+reported ready after the installed deploy completed.
+
+The first Analytics deployment exposed an incorrect minimum Billing API
+requirement: Billing application 1.2.0 publishes its report route under API 1.1.0.
+Analytics 1.2.1 corrected that compatibility declaration. The authenticated
+browser acceptance then found that the account view recalculated its implicit
+report end time on every render, repeatedly issuing successful report requests
+without leaving the loading state. Analytics 1.2.2 captures one boundary per
+mounted view and includes the regression test.
+
+Core UI 1.3.1 (`0326fa05402bcdf45289cbc1f536e8a76296a695`) was installed
+with `voicechat-ui-deploy` as the active immutable browser release. The previous
+1.3.0 release remains installed for rollback. The Core container ID and start time
+were unchanged by both UI activations. Production Chromium acceptance signed in
+with a temporary developer account, opened `#/account`, rendered cost, token and
+active-time totals, and observed exactly one 200 response from
+`/api/analytics/account` plus a successful activity write. No page or request
+errors occurred. The temporary account and sessions were deleted afterward.
+
+The operator overlay is `/etc/voicechat/prebuilt-0.1.329.yml`; component
+configuration remains under `/etc/voicechat/components-0.1.315`. The private
+workstation backup is
+`.sislexa-backups/cross-service-accounting-20260922T234810`; its PostgreSQL
+archive passed `pg_restore --list`, while this was not a full restore drill.
+Rollback can reactivate Core UI 1.3.0 without restarting Core. A backend rollback
+uses the retained 0.1.328 release checkout/image and must also remove the Analytics
+Compose/config additions as one configuration change.
