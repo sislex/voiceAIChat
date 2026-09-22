@@ -10,9 +10,9 @@
   "scripts": {
     "dev": "node ../../scripts/external-workspace.mjs dev",
     "start": "node ../../scripts/external-workspace.mjs start",
-    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "typecheck": "node ../../scripts/external-workspace.mjs verify",
     "build": "node ../../scripts/external-workspace.mjs build",
-    "test": "node ../../scripts/external-workspace.mjs test"
+    "test": "node ../../scripts/external-workspace.mjs verify"
   },
   "dependencies": {
     "@fastify/websocket": "^11.0.1",

@@ -263,7 +263,11 @@ jsdom стилей нет, а `getBoundingClientRect` возвращает ну�
   `styles/accessibility.test.ts` and `e2e/accessibility.e2e.test.ts`; inspect new
   motion in Foundations → “Фокус и движение”.
 
-Storybook: сториз примитивов — `src/components/ui/{Button,Dialog,Toast,ConfirmDialog,Skeleton,EmptyState,ErrorState}.stories.tsx`,
+Primitive stories and internal UI Kit/Foundation tests are owned by
+[`sislex/sielexa-ui`](https://github.com/sislex/sielexa-ui). Core's Skeleton story
+only compares the public primitive with a real TaskCard. Core Storybook includes
+product integration examples and host stories.
+
 палитры и шпаргалки — `src/components/{CommandPalette,HotkeysCheatSheet}.stories.tsx`
 (у палитры есть `HugeList` на 600 бесед — тот случай, ради которого выдача ограничена),
 (у `Button` — матрица «вариант × размер × состояние» сразу в двух темах),

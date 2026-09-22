@@ -8,9 +8,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
+    "typecheck": "node ../../scripts/external-workspace.mjs verify",
     "build": "node ../../scripts/external-workspace.mjs build",
-    "test": "node ../../scripts/external-workspace.mjs test"
+    "test": "node ../../scripts/external-workspace.mjs verify"
   },
   "dependencies": {
     "@voicechat/shared": "*",

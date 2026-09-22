@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import type { DatabaseSync as SqliteDatabase } from 'node:sqlite'
-import type { BillingReservation, BillingReservationInput, BillingUsageEvidence, BillingTokenPrices } from '@voicechat/platform-sdk'
+import type { BillingReservation, BillingReservationInput, BillingUsageEvidence, BillingTokenPrices } from '@sislexa/sdk'
 import type { LlmBillingSession } from '@voicechat/shared'
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')

@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-09-21
-checked: f69a6c41
+updated: 2026-09-22
+checked: 0d5b6eea
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -21,6 +21,26 @@ areas:
 ---
 
 # Архитектура: кто с кем разговаривает
+
+## Direct external libraries
+
+UI Kit (`@voicechat/ui-kit` 0.1.2) and UI Foundation
+(`@voicechat/ui-foundation` 0.1.4) are maintained in
+[`sislex/sielexa-ui`](https://github.com/sislex/sielexa-ui). Core installs their
+immutable v1.0.1 release archives; `vendor/ui-libraries.json` records owner commit,
+SHA-256 and npm SHA-512 integrity. Their old `packages/ui-kit` and
+`packages/ui-foundation` workspaces are removed. UI Foundation public runtime ports
+still let the host supply one command registry to independent panels.
+
+Core and the transitional Billing consumer import `@sislexa/sdk` directly from
+its pinned 1.1.0 archive. `packages/platform-sdk` no longer exists. The application
+catalog retains external owner/package metadata for all three libraries, with no
+local paths, workspaces or build/test tasks. An explicit Core gate request for an
+external library explains which owner repository runs its gate.
+
+Library internal tests and pure primitive stories run only in their owner. Core
+checks its own stylesheet and real product compositions against public package
+exports. This does not complete the remaining application adapter removals.
 
 ## Project identity
 
@@ -177,14 +197,15 @@ Web Reader also owns the iframe recorder. Their root distribution packages are
 `@sislexa/make`, `@sislexa/playwright-reader` and `@sislexa/web-reader`.
 
 The corresponding `apps/` and `packages/` workspaces here are compatibility
-adapters. They retain public imports and delegate complete checks to the installed
+adapters. They retain public imports and validate the provenance of the installed
 upstream workspace through `scripts/external-workspace.mjs`. Do not implement new
 features in these adapters. Update an upstream release, replace its `vendor/*.tgz`
 archive, update every adapter's `sislexaExternal` provenance and npm lockfile, then
 run the application gate. Archives include their source commit in
 `release-source.json`; the adapter runner rejects a mismatch. npm integrity pins
-the archive bytes. Static boundary and CSS checks inspect upstream implementation,
-while Storybook and accessibility checks discover upstream story files directly.
+the archive bytes. Core checks public exports and its own host/style integration.
+Owner implementation assertions, component stories and accessibility suites run
+in the owner repository; Core does not discover those installed story files.
 Reader integration fixtures resolve the pinned proxy through the explicit
 `@fixture/web-reader-proxy` test alias; runtime consumers continue using public
 package exports and service contracts.
@@ -236,8 +257,8 @@ synthesis engines. `apps/login-application` is machine enrollment for the compan
 agent, not user registration; it remains with machine/client infrastructure.
 `apps/llm-runner` still contains implementation in Core, and Core imports its CLI
 exports for embedded execution. Deploying an independently released runner does
-not remove these source dependencies. Common UI primitives, chat/agents, projects,
-operations and release orchestration also remain Core responsibilities.
+not remove these source dependencies. Chat/agents, projects, operations and release orchestration remain Core
+responsibilities. Shared UI primitives now belong to `sislex/sielexa-ui`.
 
 ### Final removal of transitional workspaces
 
@@ -259,7 +280,6 @@ The current `sislexaExternal` manifests identify these removal groups:
 | Voice | `apps/stt-runner`, `apps/tts-runner`, `packages/voice-browser` |
 | Identity | `apps/identity`, `packages/identity-account`, `packages/identity-client`, `packages/identity-contracts`, `packages/identity-login`, `packages/profile-app`, `packages/sessions-app`, `packages/sessions-core`, `packages/storage-sql` |
 | Billing | `apps/billing` |
-| SDK | `packages/platform-sdk` |
 
 Identity compatibility exports under `apps/server/src/users`, `apps/server/src/db/sql`
 and `apps/server/src/db/repos/identity.ts` can also go once consumers import their
@@ -267,9 +287,9 @@ owner directly. Preserve Core resource authorization and move its integration
 tests to the appropriate Core test locations. Removing `apps/llm-runner` additionally
 requires replacing embedded CLI imports with the independent runner interface.
 
-`packages/ui-kit` and `packages/ui-foundation` are future UI-library extraction work,
-not external adapters today. Split public library contracts from Core-private
-contracts before considering removal of `packages/shared` or
+`packages/ui-kit`, `packages/ui-foundation` and `packages/platform-sdk` have
+been removed; their consumers install owner release archives directly. Split
+public library contracts from Core-private contracts before considering removal of `packages/shared` or
 `packages/component-runtime`. The current `vendor` archives and
 `scripts/external-workspace.mjs` remain required until their distribution and gate
 roles have replacements; deleting directories alone does not establish independence.

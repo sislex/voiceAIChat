@@ -10,11 +10,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PREFERENCE_KEYS } from '@voicechat/ui-foundation/persistence'
 
 const SRC = join(process.cwd(), 'src')
-const CONTRACTS = join(process.cwd(), '../ui-foundation/src/persistence.ts')
-const OWNERS = [SRC, ...['ui-foundation', 'make-app', 'image-studio-app', 'playwright-reader-app', 'web-reader-app'].map(name => join(process.cwd(), '..', name, 'src'))]
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -27,15 +24,9 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('ключи предпочтений', () => {
-  it('уникальны и живут под своим префиксом', () => {
-    expect(new Set(PREFERENCE_KEYS).size).toBe(PREFERENCE_KEYS.length)
-    for (const key of PREFERENCE_KEYS) expect(key).toMatch(/^(vc[.:]|voicechat\.)/)
-  })
-
   it('не задаются литералом мимо contracts.ts', () => {
     const offenders: string[] = []
-    for (const file of OWNERS.flatMap(sourceFiles)) {
-      if (file === CONTRACTS) continue
+    for (const file of sourceFiles(SRC)) {
       const source = readFileSync(file, 'utf8')
       // Литерал ключа рядом с обращением к хранилищу: именно он теряется молча.
       for (const match of source.matchAll(/(?:getItem|setItem|removeItem)\(\s*['"`]((?:vc[.:]|voicechat\.)[^'"`]*)/g)) {
