@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-09-20
-checked: 7f7d21cd
+updated: 2026-09-22
+checked: c1c14ad9
 areas:
   - packages/shared/src
 ---
@@ -117,6 +117,12 @@ selected/required/invalid у описания элемента и узла a11y.
 `ipc.ts` определяет фасады `RendererApi`, `RendererAudioBridge`, `RendererSttBridge`, `RendererClaudeBridge`, `RendererTtsBridge`, `RendererCcBridge`, `RendererCodexBridge`, `RendererAgentsBridge`, `RendererBoardBridge`, `RendererSessionBridge`, `RendererFsBridge` и `RendererPtyBridge`. Они публикуются в глобальном `Window` через `packages/ui/src/global.d.ts`. Web-реализация `RendererBoardBridge` также даёт `onPreparationRunUpdated` и `onReconnect`; последний не срабатывает на первом успешном соединении.
 
 Имена методов исторически похожи на Electron IPC (`conversation:list`, `claude:send`), но это логические команды, не обязательный транспорт. Web реализует их через HTTP/WS, desktop устанавливает те же remote-мосты в renderer. Компонент не должен вызывать `fetch`, `WebSocket` или `ipcRenderer` напрямую.
+
+The `releases:browserUiOverview` and `releases:browserUiAction` methods are
+optional on `RendererApi`: they are browser-only controls introduced after the
+shared Desktop host contract. A newer renderer must show an unavailable state
+when an older Desktop host does not expose them, while the web HTTP bridge always
+provides both methods.
 
 ## Протокол компаньон-агента
 
