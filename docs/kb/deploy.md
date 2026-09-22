@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: d2ae2ac6
+checked: 7c448620
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -1681,3 +1681,46 @@ Production acceptance exercised actual Desktop login, published Agent connection
 and exec, installer SHA-256, all managed dependencies and Web tool/account flows.
 Installed `voicechat-deploy` replaced only Core. Backup and rollback to 0.1.324 are
 recorded in `/var/backups/voicechat/sislexa-agent-desktop-325-20260922T080207Z`.
+
+### Retired work-runner volume removal (2026-09-20)
+
+On core host `89.125.68.35`, `voiceaichat_vc-runner-work-data` contained about
+2.5 GiB of retired `cli-users` profiles. With explicit operator approval, removed
+only this volume using `docker volume rm`. Immediately before deletion, verified
+that no running or stopped container referenced it and no container bind-mounted
+its data directory. Confirmed the volume was absent afterward.
+
+The active work runner on `45.135.182.251` remains healthy and uses the separate
+`llm-runner-work-data` volume on that host. The destination migration backup
+`/var/backups/llm-runner/from-core-20260919/profiles.tar.gz` remains intact
+(1430635304 bytes); a complete archive scan passed and found 3455 work-data entries.
+Rollback now requires the retained backup or current remote profiles rather than
+the deleted historical core-host volume. No current-file checksum comparison
+against the migration archive was performed.
+
+After deletion, Core 0.1.316 health and all seven dependency readiness checks
+passed. The root filesystem reported about 11 GiB available; this is an observed
+free-space snapshot, not an amount attributed entirely to the 2.5 GiB removal.
+
+
+### Production cleanup candidates (2026-09-20 snapshot)
+
+After the retired work-data volume removal, core-host Docker reported no
+reclaimable images and no build cache. Unreferenced `vc-codex` remains about
+357 MiB and `vc-claude` about 24 KiB; these are historical credential/session
+profiles, not generic caches. Three anonymous unreferenced volumes are only
+4 KiB each. Do not infer safe deletion of profile data from an unused flag.
+
+Re-downloadable host caches include npm `_cacache` (149 MiB), apt archives
+(135 MiB directory), Electron (102 MiB) and Playwright browsers (656 MiB).
+No container mounted `/root` or those cache directories, and no process used
+`/root/.cache/ms-playwright` at audit time. Removing browser caches can require
+reinstallation before the next host-side browser test; recheck active work first.
+System journal uses 512 MiB. Reduce archived journal retention if approved;
+compressing rotated `syslog.1` (225 MiB) can retain evidence with less disk use.
+Do not remove active logs indiscriminately.
+
+Backups occupy about 3.8 GiB (`voicechat` 2.4 GiB, `llm-runner` 1.3 GiB) and
+`/root/ChatAI/projects` about 4.4 GiB. Backup retention needs an explicit choice of
+recovery points; project directories need the application's tracked cleanup
+workflow. No additional candidates were deleted during this audit.

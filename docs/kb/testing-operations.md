@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: 9b707a9a
+checked: 7c448620
 areas:
   - package.json
   - scripts
@@ -223,6 +223,36 @@ VC_SHOTS_PROJECT=<id> VC_SHOTS_INVITE=<token> npx tsx scripts/mobile-shots.mts`.
 **Локальная проверка почты** — Mailpit в отдельном контейнере, вне `docker-compose.yml` проекта: `docker run -d --name vc-mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit`, затем `VC_SMTP_URL=smtp://localhost:1025`. Наш минимальный SMTP-клиент проходит реальный путь (EHLO → без STARTTLS → без AUTH → MAIL FROM → DATA), письмо видно на http://localhost:8025 и читается через `GET /api/v1/messages`. Это инструмент гейта: у внешнего провайдера есть лимиты, задержки и спам-фильтры. `VC_PUBLIC_URL` обязателен и указывает на origin **интерфейса** (в dev — порт Vite), потому что ссылка письма — hash-маршрут UI; с портом API она не откроется.
 
 Server запускает исходники через tsx. Основной Web dev proxy сохраняет same-origin семантику API и WebSocket и направляет весь prefix `/web-recorder/`, включая вложенные assets, на Vite recorder-а `http://127.0.0.1:5274`; поэтому recorder доступен через origin `:5273`. Агент для разработки запускается `npx tsx apps/agent/src/index.ts --server ws://host:8787/agent --token ...`.
+
+## Full gate scope after extraction
+
+At Core commit `e96c10c3`, the root `gate:all` script runs workspace typechecks,
+root script tests and workspace tests, owner frontend artifact verification, Web
+build, Core Storybook build, an unconditional `npm ci --prefix apps/desktop`,
+Desktop build, and `frontend:route-gates`, in that order. `build:frontends`
+verifies published owner manifests, provenance and asset integrity; it no longer
+compiles owner applications. Owner unit suites are outside Core workspaces.
+Core keeps bridge and host integration tests for those applications.
+
+A direct `gate:all` invocation differs from the full fallback of `gate` or
+`gate:fast`: `scripts/application-gate.mjs` first runs `gate:all`, then runs the
+catalog E2E union (17 files at this revision). The union overlaps the three-file
+`frontend:route-gates` command in `e2e/applicationFrontend.e2e.test.ts`, so that
+suite runs twice on the full fallback. Direct `gate:all` does not run all catalog
+E2E files. Root workspace commands also exclude the three Electron applications;
+Desktop build/browser checks are present, but their standalone unit/typecheck
+commands are not part of this script.
+
+Route measurement consumes the existing Web/Desktop builds rather than rebuilding
+them. `scripts/measure-routes.mjs` inventories both outputs using synchronous gzip
+level 9 and Brotli quality 11, then measures cold/warm routes and navigation in
+Chromium and Electron. Its explicit five-second settling waits total 100 seconds
+on a successful run, before startup, navigation, compression and other checks.
+These are structural costs, not a measured current total gate duration. Safe
+optimization candidates are removing the overlapping E2E scheduling, validating
+cached Desktop dependencies against the lockfile/runtime, and caching compressed
+asset sizes by content hash and compression settings. Removing Core bridge
+coverage or reusing unvalidated stale route inventories would weaken the gate.
 
 ## Матрица проверок
 
