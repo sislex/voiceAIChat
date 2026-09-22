@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: 457b6260
+checked: 4c6d8bbf
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -39,6 +39,48 @@ restored into an isolated database before rollout; rollback inputs remain under
 Production acceptance verified the exact UI artifact, Users/Account, tool panels,
 image storage, provider grants/revocation, companion execution, installer hashes,
 Desktop login and Codex completion. Temporary probes were cleaned up.
+
+## Independent browser UI installation
+
+The browser release mechanism is installed by a normal Core deployment. After
+that, UI-only changes use `voicechat-ui-deploy`; they do not build or restart Core.
+`scripts/prod/install.sh` installs this launcher. It uses the existing `voicechat`
+container and the same host deployment lock as `voicechat-deploy`. Installation
+copies the owner artifact to temporary storage, assigns it to the server's `node`
+user, and runs the release command as that user so persisted assets remain
+readable by the API process.
+
+Persistent state defaults to `<VC_DATA_DIR>/browser-ui`; `VC_BROWSER_UI_DIR` can
+override it. `releases/<id>/` contains validated immutable files and `active.json`
+is replaced atomically under a writer lock. Activation records its actor, previous
+release and generation. Installation rejects links, unlisted/missing/corrupt
+files, dirty provenance, incompatible APIs and reuse of an ID with a different
+manifest. A failed validation leaves the active release unchanged. Direct CLI
+calls use `npm run ui:release -- <command>` inside the Core environment.
+
+```bash
+voicechat-ui-deploy status
+voicechat-ui-deploy install /absolute/path/to/owner-browser-artifact
+voicechat-ui-deploy rollback
+voicechat-ui-deploy activate --release bundled
+voicechat-ui-deploy activate --release <version>-<full-source-sha>
+```
+
+Deploy the owner-built directory containing `manifest.json`, `index.html` and its
+assets. The owner builds with the release-specific base, not the legacy `/assets/`
+base. The command preflights the live Core compatibility endpoint and requires
+Core to acknowledge the new generation. Existing releases are retained for open
+tabs and rollback. A Core upgrade can reject a previously selected UI; the runtime
+then keeps a verified in-memory selection or the bundled UI. The configured
+activation generation remains visible so the operator can explicitly select a
+compatible release or `bundled` without restarting the API.
+
+Verification must compare Core container ID/start time before and after install
+and rollback, check `/ui/runtime.json`, root HTML and versioned assets, and probe
+`/api/health` and authenticated API routes. Unit/CLI tests and a real Chromium
+consumer test cover switching, old-tab lazy imports/drafts, simultaneous HTML
+requests, rollback and API authentication. This section describes the mechanism;
+a new production rollout is recorded separately after verification.
 
 ## Development preview operation
 

@@ -99,3 +99,5 @@ export * from '@sislexa/agent-contracts/gitAccess'
 export * from '@sislexa/agent-contracts/vpn'
 export * from '@sislexa/agent-contracts/enrollment'
 export * from '@sislexa/agent-contracts/pty'
+
+export * from './browserUiRelease'

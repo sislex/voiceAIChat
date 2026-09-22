@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-09-22
-checked: 9b707a9a
+checked: 4c6d8bbf
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -298,3 +298,15 @@ The owner application release driver prefers a registered `gate:release` over
 `gate`. Reader and Core UI packaging also require their release gate. Their
 system runners use immutable Core fixtures; Core's release matrix tests the exact
 installed dependency packages, rather than replacing them with owner builds.
+
+
+## Independent Core browser UI releases
+
+The UI owner publishes browser artifacts with a full source SHA, explicit API/host
+requirements and file hashes. Core's `browserUiRelease` shared contract and
+`apps/server/src/browserUi/` verify and serve them. The server-side
+`voicechat-ui-deploy` command changes only the persistent browser activation;
+the initial Core mechanism is installed through the normal `voicechat-deploy`
+release flow. UI-only rollback retains versioned assets for open tabs and can
+select the bundled fallback. Do not rebuild/restart Core to activate these UI
+artifacts. See `deploy.md` for commands and operational checks.

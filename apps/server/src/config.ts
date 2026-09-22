@@ -38,6 +38,8 @@ export interface ServerConfig {
   applicationFrontends?: Record<string, string>
   /** Published Core UI directory served by the API process when VC_WEB_DIR is set. */
   webDir?: string
+  /** Persistent immutable browser releases and atomic activation record. */
+  browserUiDir?: string
   /** Каталог standalone Web Recorder, раздаваемый под /web-recorder/. */
   webRecorderDir?: string
   /** Backend входящего Claude gateway: прозрачный upstream или локальный Codex CLI. */
@@ -249,6 +251,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
     loginApplicationPath: env.VC_LOGIN_APPLICATION ?? (AUTODISCOVER ? findDmg(REPO.loginApplicationDir) : undefined),
     webDir: env.VC_WEB_DIR,
+    browserUiDir: env.VC_BROWSER_UI_DIR,
     webRecorderDir: env.VC_WEB_RECORDER_DIR,
     claudeGatewayBackend: env.VC_CLAUDE_GATEWAY_BACKEND === 'codex' ? 'codex' : 'upstream',
     claudeGatewayUpstreamUrl: env.VC_CLAUDE_UPSTREAM_URL,
