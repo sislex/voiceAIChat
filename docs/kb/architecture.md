@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-22
-checked: 55f5a95b
+checked: ddcd07c3
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -260,10 +260,9 @@ Reader; Core imports the worker client and integration fixtures from that owner.
 chat stream ordering, progress broadcasts and WS translation, not recognition or
 synthesis engines. `apps/login-application` is machine enrollment for the companion
 agent, not user registration; it remains with machine/client infrastructure.
-`apps/llm-runner` still contains implementation in Core, and Core imports its CLI
-exports for embedded execution. Deploying an independently released runner does
-not remove these source dependencies. Chat/agents, projects, operations and release orchestration remain Core
-responsibilities. Shared UI primitives now belong to `sislex/sielexa-ui`.
+The LLM Runner implementation and its internal tests belong to `sislex/llm-runner`;
+Core uses authenticated HTTP clients and no longer has an embedded CLI fallback.
+Chat/agents, projects, operations and release orchestration remain Core responsibilities. Shared UI primitives now belong to `sislex/sielexa-ui`.
 
 ### Final removal of transitional workspaces
 
@@ -280,7 +279,7 @@ The following former compatibility directories are removed:
 | --- | --- |
 | Make | `apps/make`, `packages/make-app`, `packages/make-contracts` |
 | Image Studio | `apps/image-studio`, `packages/image-studio-app` |
-| Playwright Reader | `apps/playwright-reader`, `packages/playwright-reader-app`, `packages/playwright-reader-contracts` |
+| Playwright Reader | `apps/playwright-reader`, `apps/browser-runner`, `packages/playwright-reader-app`, `packages/playwright-reader-contracts`, `packages/browser-contracts` |
 | Web Reader | `apps/web-reader`, `apps/web-recorder`, `packages/web-reader-app`, `packages/web-reader-contracts` |
 | Voice | `apps/stt-runner`, `apps/tts-runner`, `packages/voice-browser` |
 | Identity | `apps/identity`, `packages/identity-account`, `packages/identity-client`, `packages/identity-contracts`, `packages/identity-login`, `packages/profile-app`, `packages/sessions-app`, `packages/sessions-core`, `packages/storage-sql` |
@@ -296,8 +295,8 @@ Foundation and SDK local workspaces were removed in Core 0.1.322. The old
 Core now calls configured runner APIs for execution, MCP inventory, authentication
 and transcript history. Retouch processing/editor code belongs to Image Studio;
 Core owns authorization, attachment access and persistence. All pure account,
-session-store and player cases run in their owner repositories. Consumer gates
-and production acceptance remain required before closing this cutover.
+session-store and player cases run in their owner repositories. Canonical consumer gates and production acceptance passed in Core 0.1.323/0.1.324;
+see deploy.md for the independently pinned owner releases and runtime evidence.
 See [the extraction completion plan](../plans/extraction-completion.md).
 
 
