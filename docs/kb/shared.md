@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-09-22
-checked: c1c14ad9
+checked: ded5c894
 areas:
   - packages/shared/src
 ---
@@ -191,6 +191,12 @@ Stream-парсеры принимают строки событий CLI и но
 6. Для agent-протокола обновить версию и проверить старый агент.
 
 Гейт: `npm run -w @voicechat/shared typecheck && npm run -w @voicechat/shared test`.
+
+`RendererApi` remains a complete mapped contract: every current IPC channel is
+required from the active host bridge. Independently versioned UI libraries keep
+their generic test fake forward-compatible with later additive channels instead
+of weakening the application contract. The Core UI release gate then verifies
+that its concrete HTTP bridge implements the full pinned contract.
 
 **Чистые модули Make и auth, добавленные roadmap-4 / auth-roadmap (2026-08-27).** Все без зависимостей, с тестами рядом: `lineDiff` (построчный LCS для подсветки правок), `makeSelection` (мультивыбор в дереве), `makeSearch` (regex/предпросмотр замены), `makeLint` (эвристики JSX/TS/CSS), `makeAutoImport` (импорт компонентов кита в точку входа), `makeTextEdit` и `makeReorder` (запись правок из превью в исходник по уникальным фрагментам), `makeStoriesGen` (CSF по пропсам), `wcagContrast`, `figmaTokens`, `darkTheme`, `mockTable`, `makeMockPrompt`, `jsonSchemaLite` (валидация моков), `makeDeploy` (конфиги Netlify/Vercel), `passwordPolicy` (общая политика пароля сервера и форм). Контракты: `MakeCheckIssue.severity/rule`, `MakePublication.allowComments`, `MakeComment.status/guestName`, `MakePublicComment`, `SessionInfo`, `LoginChallenge`, `SecurityEvent`, `InviteInfo`, `AdminDiskStats`; в `REST` — сессии (`sessionList/logoutAll/revoke/cookie/2fa*/reset/password/notices`), инвайты, `adminSecurity`, `adminSessions`; в IPC — `admin:userSessions/revokeSession/securityEvents/invites*/resetCode/setUserLlmLimit`. `RendererSessionBridge` получил опциональные `sessions/logoutAll/revokeSession/login2fa/twoFactor/inviteInfo/register/resetPassword/changePassword/securityNotices` — desktop-мост их не реализует.
 
