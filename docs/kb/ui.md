@@ -1,8 +1,10 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-22
-checked: 4c6d8bbf
+checked: ba7f3ec5
 areas:
+  - apps/server/src/browserUi
+  - packages/shared/src/browserUiRelease.ts
   - scripts/application-frontend.mjs
   - scripts/application-frontend-server.mjs
   - apps/server/src/routes/applicationFrontends.ts
@@ -35,7 +37,7 @@ transport and styles remain composition infrastructure. Local edit gates run
 complete selected groups plus Shell integration; detailed timings and selection
 examples live in the owner's `docs/kb/ui.md` and `docs/benchmarks/`.
 
-Core also supports browser-only releases through `src/browserUi/`. A browser
+Core also supports browser-only releases through `apps/server/src/browserUi/`. A browser
 manifest records clean source provenance, explicit Core API/host version ranges
 and every asset hash. `GET /ui/runtime.json` advertises the running Core API and
 host versions plus effective/configured activation generations. A versioned

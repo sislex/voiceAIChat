@@ -22,8 +22,15 @@ Targeted contract, static-server, CLI and real Chromium switching tests passed.
 Chromium verified a lazy import and an unchanged draft in an old tab after
 activation, new-tab version selection, rollback, concurrent HTML responses and
 retained API authentication. The full Core gate passed in 267.10 seconds.
-Release performance/system gates and production acceptance remain required
-before declaring rollout complete.
+Web/Electron route budgets passed in 178.28 seconds and all 67 installed-owner
+system scenarios passed against this exact Core commit. Core 0.1.327 deployed
+through the installed server command; component readiness, provider authorization,
+consumer RPCs and panel assets passed production checks. UI 1.1.1 is active;
+install/rollback/reactivation preserved Core container identity and start time.
+Old-tab lazy imports and drafts, new-tab selection, Users/Account and product
+panels passed real Chromium acceptance. The owner fixed a macOS AppleDouble
+packaging failure caught by Core before activation; its complete release gate
+and GitHub CI passed. Detailed evidence is recorded in the deployment article.
 
 Documentation: `docs/kb/ui.md`, `docs/kb/deploy.md`,
 `docs/kb/features/releases.md`, and `docs/plans/independent-browser-ui-releases.md`.
