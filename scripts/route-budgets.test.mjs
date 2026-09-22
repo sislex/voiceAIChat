@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { COMPRESSION, checkRoutes, compareRoutes, selectRouteBaseline, resourceSet, totals, sizes, completedResource } from './route-budgets.mjs'
+import { COMPRESSION, checkRoutes, compareRoutes, selectRouteBaseline, resourceSet, totals, sizes, completedResource, externalStylesheet } from './route-budgets.mjs'
 
 const fixture = () => {
   const resources = {
@@ -114,4 +114,23 @@ test('CLI returns nonzero for violations and incomplete reports', () => {
     assert.notEqual(failed.status, 0)
     assert.match(failed.stderr, /incomplete route set/)
   } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+
+test('mutable external CSS preserves every observed body and its real budget cost', () => {
+  const first = externalStylesheet('web', 'https://fonts.example/css?family=Inter', Buffer.from('body{color:red}'))
+  const changed = externalStylesheet('web', 'https://fonts.example/css?family=Inter', Buffer.from('body{color:green}'))
+  const duplicate = externalStylesheet('web', 'https://fonts.example/css?family=Other', Buffer.from('body{color:red}'))
+  assert.equal(externalStylesheet('web', 'https://fonts.example/css?family=Inter', Buffer.from('body{color:red}')).id, first.id)
+  assert.equal(new Set([first.id, changed.id, duplicate.id]).size, 3)
+  const resources = Object.fromEntries([first, changed, duplicate].map(entry => [entry.id, entry.resource]))
+  assert.notEqual(resources[first.id].sha256, resources[changed.id].sha256)
+  assert.equal(totals(resources, [first.id, changed.id]).css.raw, first.resource.raw + changed.resource.raw)
+  const { report, budget } = fixture()
+  Object.assign(report.resources, resources)
+  const route = report.routes['web/chat/cold']
+  route.initial.push(changed.id)
+  route.waterfall.push({ resource: changed.id, ok: true, start: 0, duration: 1 })
+  route.totals = totals(report.resources, route.initial)
+  assert.throws(() => checkRoutes(budget, report), /css|CSS/)
 })

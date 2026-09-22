@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 7 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 1 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-22 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 10 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-22 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-22 | ⚠ 2 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-22 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 23 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
@@ -24,9 +24,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 14 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 31 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 10 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1603 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1604 коммит(ов) в areas после сверки: 593f7bad docs(ui): record independent UI release and production acceptance … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 54 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 4 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 21 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 19 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 387 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
@@ -54,9 +54,10 @@
 
 ## Журнал сессий
 
-Всего записей: 913. Последние:
+Всего записей: 914. Последние:
 
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md) — users-page-startup
+- [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md) — test-gate-timing-review
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance.md) — 2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-artifact-consumers.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-artifact-consumers.md) — owner-artifact-consumers
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-gate-optimization-after-extraction.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-gate-optimization-after-extraction.md) — gate-optimization-after-extraction
@@ -65,7 +66,6 @@
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-direct-library-dependencies.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-direct-library-dependencies.md) — direct-library-dependencies
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-core-ui-owner.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-core-ui-owner.md) — core-ui-owner
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-agent-desktop-owners.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-agent-desktop-owners.md) — agent-desktop-owners
-- [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-account-usage-query-isolation.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-account-usage-query-isolation.md) — 2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-account-usage-query-isolation
 
 ## Исторические планы
 

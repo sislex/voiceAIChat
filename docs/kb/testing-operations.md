@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: 457b6260
+checked: 412b40ee
 areas:
   - package.json
   - scripts
@@ -24,7 +24,7 @@ Core UI unit/DOM tests, Storybook, accessibility fixtures, lazy-screen recovery,
 Core retains real API/browser integration (including route read-cache behavior in `e2e/routeResources.e2e.test.ts`) and Web/Desktop route budgets. The full Core gate typechecks/tests Core workspaces, verifies product panels and the pinned Core UI artifact, then measures public browser integration. There is no React, renderer or Storybook source build in Core. `test:storybook` remains a compatibility command that verifies the published artifact; actual component QA runs in the UI owner.
 
 
-Measured on the local MacBook Air M2: the full UI owner gate completed in 225 seconds; the full Core branch gate completed in 505 seconds, including route budgets and 104 API/browser integration cases. These are observed times, not CI SLAs. The fixed-hardware Admin benchmark still requires its Linux/AMD EPYC baseline host; local native Electron integration passed without replacing that baseline.
+Baseline before the test-gate scope optimization, measured on the local MacBook Air M2: the full UI owner gate completed in 225 seconds; the full Core branch gate completed in 505 seconds, including route budgets and 104 API/browser integration cases. These are observed times, not CI SLAs. The Core log splits those 505 seconds into 6.11 seconds for typechecking, 115.30 for workspace/root tests, 0.97 for artifact verification, 171.93 for route budgets and 210.14 for remaining API/browser E2E. Browser work therefore accounts for about 76% of this full branch gate. The `gate:all` stage itself took 294.49 seconds; the branch gate added the remaining catalog E2E afterward. This full-fallback sample does not establish the duration or selection of a typical small development diff. The fixed-hardware Admin benchmark still requires its Linux/AMD EPYC baseline host; local native Electron integration passed without replacing that baseline.
 
 
 ## Extracted application test ownership
@@ -531,6 +531,23 @@ select the full fallback described under the frontend gate below. External owner
 applications have no local internal suite; an explicit request identifies their
 repository. `--dry-run` prints selections and reasons without executing checks.
 
+Known browser test paths come from the catalog plus the route-budget suite; an
+E2E-only diff selects the complete named suite without unrelated server units.
+Browser configuration selects every browser suite. Budget changes retain real
+Web/Desktop measurement. An explicit allowlist of long-run, artifact-verifier and
+route-budget/compression tooling runs the entire root tooling regression suite;
+production build/deploy/gate scripts and unknown files still select the full
+fallback. Mixed diffs retain the complete affected application suites. Contract
+checks for the same consumer combine their file lists and typecheck once.
+
+`npm run gate:audit` writes the plans and exact commands for 20 representative
+diffs to `artifacts/gate-timings/audit.json`. `-- --run <id>` executes one through
+the same command planner as a real gate and records actual elapsed times. It is
+an explicit benchmark, not a replacement for the real-diff gate. Normal runs
+record `changed.json`, full stages record `full.json`, and browser batches record
+`browser.json`. Reports include failures and must not be treated as successful
+when the command exited nonzero. No previous test result is reused to skip tests. The selection audit reduced full fallbacks from 12 to 4 of 20 scenarios. Measured scoped checks took 8.08 seconds for a Projects E2E edit and 10.62 seconds for the artifact verifier; the full development gate passed in 341 seconds, including 135.25 seconds for retained browser integration. The mandatory branch gate repeated successfully in 350 seconds with 134.73 seconds of browser integration. Detailed evidence and the unchanged UI-owner selection review are in `docs/plans/test-gate-scope.md`.
+
 Do not replace the selected complete suites with `vitest related`. The older
 `affected-check.mjs --fast` implementation and its historical 28-second UI
 measurement describe the predecessor, not current gate:fast behavior. The public
@@ -800,15 +817,18 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 ## Единый frontend quality gate
 
 `gate:all` delegates to `scripts/full-gate.mjs`: workspace typechecks/tests,
-frontend artifacts, chat renderer, Web, Storybook and three serial frontend
-browser files. Each stage prints its elapsed time and exit status and records
+owner-built product/Core UI artifact verification, the serial
+`e2e/routeBudgets.e2e.test.ts` suite and all remaining API/browser integration. Each stage prints its elapsed time and exit status and records
 `artifacts/gate-timings/full.json` (frontend detail: `frontend.json`). Errors and
 signals stop the gate. `gate`/`gate:fast` use this full fallback for root/config
-changes, then run remaining catalog E2E files once, sequentially.
-Frontend browser files are removed from that second set only after the full gate
-succeeds. Required suite ownership and failure propagation have regression tests.
-Route timing measurements remain serial; budgets, browser readiness waits and
-integration cases are unchanged. Settings/Git/Projects fixtures use OS-assigned
+changes. The full gate now includes every retained browser suite through
+`test:browser`; the affected gate adds no duplicate browser run after it succeeds. Required suite ownership and failure propagation have regression tests.
+Route timing measurements, resource timing and native Electron input remain
+serial. Reviewed functional E2E use separate ephemeral ports, databases and browser
+contexts, with at most two workers (one on machines with fewer than four available
+CPUs). `VC_E2E_WORKERS=1` forces sequential execution. Unknown future suites default
+to serial until their isolation is reviewed. Budgets and readiness limits are
+unchanged. Settings/Git/Projects fixtures use OS-assigned
 ports so other local processes or independent gate runs do not share a fixed port range.
 The session-revocation browser fixture locates the exact session ID returned for
 its newly logged-in device; selecting the first available revoke button could
@@ -816,12 +836,10 @@ act on an older session before its realtime list update arrived. Settings QA use
 the retained settings URL to wait for its lazy dialog after reload; an immediate
 overlay visibility check can otherwise race restoration and click beneath it.
 
-`npm run verify:frontend` runs static checks, frontend typechecks/tests, product
-artifacts, the Core chat renderer, Web, bundle checks, Storybook and browser route
-checks. Agent/Tray/Enrollment and Desktop implementations, builds and internal
-tests belong to `sislex/agent` and `sislex/desktop`; Core consumes pinned archives.
-Core's Electron dependency runs host integration checks against the published
-renderer/preload. No nested Electron application install/build remains in Core.
+`npm run verify:frontend` runs `frontend:build-gates`: product artifact verification,
+Core UI artifact verification and browser route budgets. React builds, Storybook
+and frontend-internal browser suites now belong to the Core UI owner. Agent and
+Desktop implementation tests likewise belong to their owner repositories.
 
 `scripts/frontend-quality.mjs` проверяет workspace dependency graph и циклы, запрет deep imports и product/host/platform/transport leaks, существование root/styles package exports, обязательную Storybook-матрицу пяти модулей, CSS imports/keyframes/unscoped selectors и dynamic imports всех product modules с role-gated Admin. Негативные fixtures и redaction отчёта покрыты `scripts/frontend-quality.test.mjs`. Безопасный машинный отчёт сохраняется в `artifacts/frontend-quality/report.json`; token, Bearer credentials и credential-bearing URLs редактируются.
 
@@ -829,7 +847,7 @@ Bundle gate сравнивает minified JS chunks Web build с измерен�
 
 Route measurements are implemented in `scripts/measure-routes.mjs` and checked by `scripts/route-budgets.mjs`. Complete initial cost is the deduplicated set of observed JS/CSS requests plus the full static-import closure of those resources; shared dependencies and automatically initiated loads therefore count once, while unobserved or missing closure members make the measurement invalid. The versioned report records each unique JS/CSS resource, SHA-256, raw bytes, gzip level 9, Brotli quality 11, static/dynamic chunk edges and a CDP network waterfall. External font CSS is measured too; unavailable required styles fail the run. Uninventoried JS/CSS requests fail closed, including HTTP resources requested by the file-origin Electron renderer. Electron uses a real process and file-origin production renderer; compressed sizes are calculated sizes, while transport bytes are recorded separately. The fixture server uses temporary data and a seeded Markdown/code conversation, not production accounts. Cold runs clear the browser cache; warm runs reload in the same context. Requested bounds and actual per-client renderer viewports/device scale factors are recorded separately, and comparison requires identical recorded conditions. Direct Chat, Account and Settings routes and navigation from Chat are separate scenarios. Optional editor-worker activation runs after route measurements in a controlled host-API fixture.
 
-`npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a before/after diff, and runs shared-boundary browser QA and the independent-panel artifact/integrity browser suite. The three marked E2E files run sequentially, including the real Web/Electron route-measurement test. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. Inventories always read current build files and parse their import graphs. Compression bytes are cached under `artifacts/route-compression`, keyed by source SHA-256, compression settings and Node/zlib/Brotli versions. Every hit validates compressed fingerprints and decompresses to the current source bytes. Missing, stale, corrupt or unwritable cache entries fall back to recompression. `VC_MEASURE_COMPRESSION_CACHE=0` disables this optimization for reference measurements; the old inventory-reuse switch is removed. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after building Web and the Core chat renderer; Desktop is a pinned owner artifact.
+`npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a before/after diff, and runs the real Web/Electron route-measurement test. Shared-boundary and panel-loader browser fixtures belong to the UI owner. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. Inventories always read current build files and parse their import graphs. Mutable external CSS is identified by both URL and actual body SHA-256. Different responses at one CDN URL remain distinct immutable observations; previous routes retain their original byte costs. Missing CSS bodies and budget overruns still fail. Compression bytes are cached under `artifacts/route-compression`, keyed by source SHA-256, compression settings and Node/zlib/Brotli versions. Every hit validates compressed fingerprints and decompresses to the current source bytes. Missing, stale, corrupt or unwritable cache entries fall back to recompression. `VC_MEASURE_COMPRESSION_CACHE=0` disables this optimization for reference measurements; the old inventory-reuse switch is removed. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after verifying owner-built assets; renderer and native preload are pinned owner artifacts.
 
 Группы бюджета сопоставляются по **префиксу** имени файла, и у входного чанка это однажды сработало наоборот замыслу: пакет с точкой входа `index.ts`, вынесенный в **ленивый** чанк, получил имя `index-XXX.js`, попал в группу `index-` — и разгрузка главного чанка (−185 КБ) прочиталась как его рост на 32 КБ. Поэтому группа `index-` теперь меряется по **одному** файлу, на который ссылается `apps/web/dist/index.html`; остальные группы остаются суммой по префиксу (`markdown-` бывает не одним чанком). Оба правила закреплены тестами в `scripts/frontend-quality.test.mjs`. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
 

@@ -1,6 +1,6 @@
 // Выбирает проверки по владельцу кода; контрактная связь не равна импорту реализации.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -8,7 +8,7 @@ import {
   applicationForPath,
   validateApplicationCatalog
 } from '../packages/shared/src/applicationCatalog.ts'
-import { remainingBrowserFiles } from './full-gate.mjs'
+import { FRONTEND_E2E_FILES, remainingBrowserFiles } from './full-gate.mjs'
 import { PACKAGES, selectAffected, validatePackageDependencies } from './affected-check.mjs'
 const root = resolve(import.meta.dirname, '..')
 const git = (...args) =>
@@ -128,6 +128,8 @@ export function planApplicationChecks(
     contracts = new Map(),
     reasons = [],
     e2eFiles = new Set()
+  let tooling = false, verifyArtifacts = false
+  const browserSuites = new Set([...FRONTEND_E2E_FILES, ...catalog.flatMap(app => app.e2eFiles)])
   const full = (reason) => ({
     full: true,
     reasons: [reason],
@@ -176,6 +178,33 @@ export function planApplicationChecks(
   }
   for (const file of files) {
     if (docs(file)) continue
+    if (browserSuites.has(file)) {
+      e2eFiles.add(file)
+      reasons.push(`Browser suite: ${file}`)
+      continue
+    }
+    if (file === 'e2e/vitest.config.ts') {
+      for (const suite of browserSuites) e2eFiles.add(suite)
+      tooling = true
+      reasons.push('Browser configuration: all browser suites, no application unit suites')
+      continue
+    }
+    if (file === 'frontend-quality/route-budgets.json') {
+      for (const suite of FRONTEND_E2E_FILES) e2eFiles.add(suite)
+      tooling = true
+      reasons.push('Route budgets: real Web/Desktop measurement')
+      continue
+    }
+    // Narrow only explicitly reviewed tooling. Gate/build/deploy changes and
+    // unknown scripts still exercise the full application fallback.
+    if (/^scripts\/(?:long-run|core-ui-artifact|route-budgets|route-compression)(?:\.test)?\.mjs$/.test(file)) {
+      tooling = true
+      if (file === 'scripts/core-ui-artifact.mjs') verifyArtifacts = true
+      if (['scripts/route-budgets.mjs', 'scripts/route-compression.mjs'].includes(file))
+        for (const suite of FRONTEND_E2E_FILES) e2eFiles.add(suite)
+      reasons.push(`Tooling regression suite: ${file}`)
+      continue
+    }
     if (file === 'package-lock.json') {
       const affected = lockChangedApplications(lockBefore, lockAfter, catalog)
       if (affected === null)
@@ -189,22 +218,6 @@ export function planApplicationChecks(
     }
     const app = applicationForPath(file, catalog)
     if (!app) {
-      // E2E отдельного приложения принадлежит его гейту; остальные пути требуют общего выбора.
-      const e2e = /^e2e\/(make|playwrightReader|webReader)/.exec(file)
-      if (e2e) {
-        const id =
-          e2e[1] === 'make'
-            ? 'make'
-            : e2e[1] === 'playwrightReader'
-              ? 'playwright-reader'
-              : 'web-reader'
-        add(
-          catalog.find((item) => item.id === id),
-          file
-        )
-        e2eFiles.add(file)
-        continue
-      }
       return full(`Неопределённая область влияния: ${file}`)
     }
     add(app, file)
@@ -223,7 +236,8 @@ export function planApplicationChecks(
     applications: [...selected.values()],
     contracts: [...contracts.values()],
     reasons,
-    e2eFiles: [...e2eFiles]
+    e2eFiles: [...e2eFiles],
+    tooling, verifyArtifacts
   }
 }
 function hasContractTests(path) {
@@ -290,6 +304,65 @@ export function applicationCommands(app) {
     return scripts.map((script) => ['npm', [...prefix, script]])
   })
 }
+// This is shared by normal gates and the audit runner so measured scenarios
+// execute exactly the same commands as a real diff, including failure handling.
+export function applicationPlanCommands(plan) {
+  const commands = []
+  const add = (command, args) => commands.push([command, args])
+  if (plan.full) add('npm', ['run', 'gate:all'])
+  if (plan.tooling && !plan.full) add('npm', ['run', 'test:tooling'])
+  for (const app of plan.applications)
+    for (const command of applicationCommands(app)) commands.push(command)
+  const contracts = new Map()
+  for (const check of plan.contracts) {
+    if (plan.applications.some(app => app.workspaces.includes(check.workspace))) continue
+    const path = workspacePath(check.workspace)
+    if (!path || check.files.some(file => !existsSync(resolve(root, path, file))))
+      throw Error(`Missing contract suite: ${check.workspace}: ${check.files.join(', ')}`)
+    if (check.files.length && !check.files.some(file => hasContractTests(resolve(root, path, file))))
+      throw Error(`Empty contract suite: ${check.workspace}`)
+    const previous = contracts.get(check.workspace)
+    contracts.set(check.workspace, previous === undefined ? check.files :
+      (!previous.length || !check.files.length ? [] : [...new Set([...previous, ...check.files])]))
+  }
+  for (const [workspace, files] of contracts) {
+    add('npm', ['run', '-w', workspace, 'typecheck'])
+    add('npm', ['run', '-w', workspace, 'test', ...(files.length ? ['--', ...files] : [])])
+  }
+  const browserFiles = remainingBrowserFiles(plan.e2eFiles ?? [], plan.full)
+  if ((browserFiles.length || plan.verifyArtifacts) && !plan.full) {
+    add('npm', ['run', 'build:frontends'])
+    add('npm', ['run', 'verify:core-ui'])
+  }
+  if (browserFiles.length) {
+    for (const file of browserFiles) if (!existsSync(resolve(root, file))) throw Error(`Missing E2E: ${file}`)
+    add(process.execPath, ['scripts/browser-gate.mjs', ...browserFiles])
+  }
+  // Several public boundaries can select the same consumer typecheck.
+  return commands.filter(([command, args], index) => commands.findIndex(entry => JSON.stringify(entry) === JSON.stringify([command, args])) === index)
+}
+
+export function executeApplicationPlan(plan, execute = run, output = 'changed') {
+  if (!/^[\w-]+$/.test(output)) throw Error('Invalid timing report name')
+  const results = [], startedAt = new Date().toISOString()
+  const directory = resolve(root, 'artifacts/gate-timings')
+  mkdirSync(directory, { recursive: true })
+  const record = () => writeFileSync(resolve(directory, `${output}.json`), JSON.stringify({ startedAt,
+    plan: { ...plan, applications: plan.applications.map(app => app.id) }, results }, null, 2))
+  record()
+  for (const [command, args] of applicationPlanCommands(plan)) {
+    const started = performance.now()
+    let exitCode = 0
+    try { execute(command, args) }
+    catch (error) { exitCode = error.exitCode || 1; throw error }
+    finally {
+      results.push({ command, args, seconds: Number(((performance.now() - started) / 1000).toFixed(2)), exitCode })
+      record()
+    }
+  }
+  return results
+}
+
 export async function main(args = process.argv.slice(2)) {
   // Package tests do not run the root graph tests; reject drift before choosing a gate.
   validatePackageDependencies(root)
@@ -370,70 +443,8 @@ export async function main(args = process.argv.slice(2)) {
     )
   )
   if (dry) return plan
-  if (plan.full) run('npm', ['run', 'gate:all'])
-  for (const app of plan.applications)
-    for (const [command, args] of applicationCommands(app)) run(command, args)
-  for (const check of plan.contracts) {
-    if (
-      plan.applications.some((app) => app.workspaces.includes(check.workspace))
-    )
-      continue
-    const path = workspacePath(check.workspace)
-    if (
-      !path ||
-      check.files.some((file) => !existsSync(resolve(root, path, file)))
-    )
-      throw new Error(
-        `Не найден контрактный набор ${check.workspace}: ${check.files.join(', ')}`
-      )
-    if (
-      check.files.length &&
-      !check.files.some((file) => hasContractTests(resolve(root, path, file)))
-    )
-      throw new Error(`Пустой контрактный набор ${check.workspace}`)
-    run('npm', ['run', '-w', check.workspace, 'typecheck'])
-    run('npm', [
-      'run',
-      '-w',
-      check.workspace,
-      'test',
-      ...(check.files.length ? ['--', ...check.files] : [])
-    ])
-  }
-  // Only a successfully completed full gate can discharge frontend browser work.
-  const browserFiles = remainingBrowserFiles(plan.e2eFiles ?? [], plan.full)
-  if (browserFiles.length) {
-    for (const file of browserFiles)
-      if (!existsSync(resolve(root, file)))
-        throw new Error(`Не найден E2E ${file}`)
-    const panelOnly = browserFiles.every(
-      (file) => file === 'e2e/applicationFrontend.e2e.test.ts'
-    )
-    if (!panelOnly && !plan.full) {
-      run('npm', ['run', 'build:frontends'])
-      run('npm', ['run', 'verify:core-ui'])
-    }
-    run(
-      'npm',
-      [
-        'exec',
-        '--',
-        'vitest',
-        'run',
-        '--config',
-        'e2e/vitest.config.ts',
-        ...browserFiles
-      ],
-      panelOnly
-        ? {
-            VC_E2E_APPLICATIONS: plan.applications
-              .filter((app) => app.frontend)
-              .map((app) => app.id)
-              .join(',')
-          }
-        : {}
-    )
-  }
+  executeApplicationPlan(plan)
+
   return plan
 }
 if (
