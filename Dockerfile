@@ -12,7 +12,7 @@ COPY . .
 RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 ARG VC_APPLICATION_COMMIT
 RUN VC_APPLICATION_COMMIT="$VC_APPLICATION_COMMIT" npm run build:frontends
-RUN npm run -w @voicechat/web build
+RUN npm run verify:core-ui
 
 FROM node:22-bookworm-slim AS runtime-base
 WORKDIR /app
@@ -43,7 +43,7 @@ ENV VC_APPLICATION_ID=core \
     VC_APPLICATION_DATA_VERSION=$VC_APPLICATION_DATA_VERSION \
     VC_APPLICATION_COMMIT=$VC_APPLICATION_COMMIT
 ENV PORT=8787 \
-    VC_WEB_DIR=/app/apps/web/dist
+    VC_WEB_DIR=/app/node_modules/@sislexa/core-ui/web
 
 RUN mkdir -p /data \
   && chown -R node:node /data
@@ -80,10 +80,10 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/admin/standalone/index.ts"]
 
 FROM build AS storybook-build
-RUN npm run build:storybook
+RUN npm run verify:core-ui
 
 FROM nginx:1.27-alpine AS storybook-runtime
-COPY --from=storybook-build /app/packages/ui/storybook-static /usr/share/nginx/html
+COPY --from=storybook-build /app/node_modules/@sislexa/core-ui/storybook /usr/share/nginx/html
 EXPOSE 80
 
 FROM runtime-base AS automation-runner-runtime

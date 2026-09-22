@@ -55,7 +55,7 @@ beforeAll(async () => {
   base = 'http://127.0.0.1:' + port
   server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: join(ROOT, 'apps/server'),
-    env: { ...process.env, VC_DB_URL: '', PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: join(ROOT, 'apps/web/dist'), VC_ADMIN_PASSWORD: PASSWORD },
+    env: { ...process.env, VC_DB_URL: '', PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: join(ROOT, 'node_modules/@sislexa/core-ui/web'), VC_ADMIN_PASSWORD: PASSWORD },
     stdio: ['ignore', 'pipe', 'pipe']
   })
   let output = ''

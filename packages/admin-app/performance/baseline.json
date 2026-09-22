@@ -1,1 +1,0 @@
-{"schemaVersion":1,"environment":{"platform":"linux","browser":"151.0.7922.34","cpu":"AMD EPYC-Rome Processor","parallelism":4,"nodeMajor":"22"},"repeats":7,"relativeThreshold":0.4,"absoluteThresholdMs":100,"mount":{"medianMs":1284},"filter":{"medianMs":242.1}}

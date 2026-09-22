@@ -49,7 +49,7 @@ describe('Web Reader: история действий модели без secure
     app = await buildServer({ config: loadConfig({
       ...process.env, HOST: '127.0.0.1', PORT: '0', VC_DATA_DIR: data,
       VC_ADMIN_PASSWORD: secret, VC_MCP_SECRET: secret,
-      VC_WEB_DIR: resolve('apps/web/dist')
+      VC_WEB_DIR: resolve('node_modules/@sislexa/core-ui/web')
     }) })
     base = await app.listen({ host: '127.0.0.1', port: 0 })
     const login = await api('/api/session/login', 'POST', { name: 'admin', password: secret })

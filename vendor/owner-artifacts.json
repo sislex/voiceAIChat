@@ -160,6 +160,16 @@
       "repository": "https://github.com/sislex/llm-runner",
       "commit": "8ec5100952c37e478177bc311cf5db2287d5bf63",
       "asset": "sislex-runner-contracts-0.1.1-8ec5100952c3.tgz"
+    },
+    {
+      "name": "@sislexa/core-ui",
+      "version": "1.0.0",
+      "filename": "sislexa-core-ui-1.0.0.tgz",
+      "integrity": "sha512-wKX8yYhBiPTQ5ORvJ62TMwfhUYh5oMzE5Hd83yOFIHSlmOgpxnoxQhCsiYDqgOpw8BmyUousvkizhuT9hdft6Q==",
+      "sha256": "3a0ceb9b4bf28376dcd68290ce8a6e8abfa5a8487aea5ac3103325ed216e17b6",
+      "repository": "https://github.com/sislex/sislexa-core-ui",
+      "commit": "e5f926d300313c9088c78b35f69026daaa3980aa",
+      "asset": "sislexa-core-ui-1.0.0-e5f926d30031.tgz"
     }
   ]
 }

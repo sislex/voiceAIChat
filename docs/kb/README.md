@@ -10,9 +10,9 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 1 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-22 | ⚠ 1 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 8 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ✓ |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-22 | ✓ |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ⚠ 9 коммит(ов) в areas после сверки: 431f4d29 perf: cache validated route sizes and remove duplicate browser checks … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-22 | ⚠ 2 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-22 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 22 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
@@ -24,9 +24,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 13 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 30 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-20 | ⚠ 9 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1601 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1602 коммит(ов) в areas после сверки: 431f4d29 perf: cache validated route sizes and remove duplicate browser checks … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 53 коммит(ов) в areas после сверки: 971afbce refactor: finish consuming extracted owner artifacts (#227) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 2 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 3 коммит(ов) в areas после сверки: 431f4d29 perf: cache validated route sizes and remove duplicate browser checks … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 20 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 18 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 386 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
@@ -42,22 +42,19 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 5 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-22 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 169 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-22 | ⚠ 3 коммит(ов) в areas после сверки: 7d8ad812 refactor: extract Agent and Desktop into independent repositories … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-22 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
 ## Инструкции по пакетам
 
 - [apps/server](../../apps/server/AGENTS.md)
-- [apps/web](../../apps/web/AGENTS.md)
 - [packages/component-runtime](../../packages/component-runtime/AGENTS.md)
-- [packages/projects-app](../../packages/projects-app/AGENTS.md)
 - [packages/shared](../../packages/shared/AGENTS.md)
-- [packages/ui](../../packages/ui/AGENTS.md)
 
 ## Журнал сессий
 
-Всего записей: 912. Последние:
+Всего записей: 913. Последние:
 
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md) — users-page-startup
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance.md) — 2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance
@@ -66,9 +63,9 @@
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-final-owner-test-migration.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-final-owner-test-migration.md) — final-owner-test-migration
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-extracted-test-ownership.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-extracted-test-ownership.md) — Extracted application test ownership
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-direct-library-dependencies.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-direct-library-dependencies.md) — direct-library-dependencies
+- [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-core-ui-owner.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-core-ui-owner.md) — core-ui-owner
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-agent-desktop-owners.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-agent-desktop-owners.md) — agent-desktop-owners
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-account-usage-query-isolation.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-account-usage-query-isolation.md) — 2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-account-usage-query-isolation
-- [2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-ws-bootstrap-delivery.md](log/2026-09-21-alexeys-macbook-air-tailae39a6-ts-net-ws-bootstrap-delivery.md) — ws-bootstrap-delivery
 
 ## Исторические планы
 

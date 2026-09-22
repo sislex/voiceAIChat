@@ -21,16 +21,9 @@ import { pathToFileURL } from 'node:url'
 export const PACKAGES = [
   { id: 'component-runtime', path: 'packages/component-runtime', workspace: '@sislexa/component-runtime', dependsOn: ['shared'] },
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared', dependsOn: [] },
-  { id: 'app-shell', path: 'packages/app-shell', workspace: '@voicechat/app-shell', dependsOn: [] },
-  { id: 'chat-app', path: 'packages/chat-app', workspace: '@voicechat/chat-app', dependsOn: ['shared'] },
-  { id: 'projects-app', path: 'packages/projects-app', workspace: '@voicechat/projects-app', dependsOn: ['shared'] },
-  { id: 'operations-app', path: 'packages/operations-app', workspace: '@voicechat/operations-app', dependsOn: ['shared'] },
-  { id: 'admin-app', path: 'packages/admin-app', workspace: '@voicechat/admin-app', dependsOn: ['shared'] },
-  { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui', dependsOn: ['admin-app', 'app-shell', 'chat-app', 'operations-app', 'projects-app', 'shared'] },
   { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['component-runtime', 'shared'] },
   { id: 'automation-runner', path: 'apps/automation-runner', workspace: '@voicechat/automation-runner', dependsOn: ['shared'] },
   // `ui` тут не из package.json, а из tsconfig `paths` и alias в vite.config.ts.
-  { id: 'web', path: 'apps/web', workspace: '@voicechat/web', dependsOn: ['chat-app', 'shared', 'ui'] },
   // Extracted clients run their internal gates in the owner repositories.
 ]
 
@@ -558,21 +551,11 @@ export function parseOptions(argv) {
  * иначе 46 с сборок съедали бы весь смысл узкого гейта. Сломанные импорты ловит
  * typecheck, сломанные сториз — stories.a11y.dom.test.tsx через related.
  */
-export function buildGates(files, { fast }) {
-  if (!fast) {
-    const frontend = files.some((file) => /^(?:packages\/(?:ui|ui-kit|app-shell|chat-app|projects-app|operations-app|admin-app)|apps\/(?:web|desktop)|frontend-quality\/)/.test(file))
-    return frontend ? ['frontend:build-gates'] : []
-  }
-  const gates = []
-  if (files.some((file) => /^apps\/web\//.test(file))) gates.push('build:web')
-  if (files.some((file) => /\.stories\.tsx$/.test(file) || /^packages\/ui\/\.storybook\//.test(file))) gates.push('build:storybook')
-  return gates
+export function buildGates(files) {
+  return files.some(file => /^(?:vendor\/sislexa-core-ui-|frontend-quality\/|packages\/ui\/|apps\/web\/)/.test(file)) ? ['frontend:build-gates'] : []
 }
-
 const BUILD_GATE_COMMANDS = {
-  'frontend:build-gates': ['run', 'frontend:build-gates'],
-  'build:web': ['run', '-w', '@voicechat/web', 'build'],
-  'build:storybook': ['run', 'build:storybook']
+  'frontend:build-gates': ['run', 'frontend:build-gates']
 }
 
 async function main() {

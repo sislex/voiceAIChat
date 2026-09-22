@@ -23,7 +23,7 @@ describe.skipIf(!enabled)('real development Docker isolation',()=>{
     const serverSource = (value:string) => `const fs=require('node:fs'),http=require('node:http'),Database=require('better-sqlite3');
       const db=new Database('/preview-data/test.sqlite');db.exec("CREATE TABLE IF NOT EXISTS fixture(value TEXT); INSERT INTO fixture VALUES ('seed')");
       http.createServer(async(req,res)=>{if(req.url==='/gateway'){const reply=await fetch('http://gateway:8790/v1/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:'fixture',userId:'other-user',cwd:'/production'})});res.end(await reply.text());return}if(req.url==='/egress'){try{await fetch('http://1.1.1.1',{signal:AbortSignal.timeout(500)});res.end('allowed')}catch{res.end('blocked')}return}
-      res.end(JSON.stringify({value:${JSON.stringify(value)},seed:db.prepare('SELECT value FROM fixture').get().value,envFile:fs.existsSync('/app/.env'),home:fs.existsSync('/root/.ssh'),webBuilt:fs.existsSync('/app/apps/web/dist/index.html')}))}).listen(Number(process.env.PORT),'0.0.0.0');`
+      res.end(JSON.stringify({value:${JSON.stringify(value)},seed:db.prepare('SELECT value FROM fixture').get().value,envFile:fs.existsSync('/app/.env'),home:fs.existsSync('/root/.ssh'),webBuilt:fs.existsSync('/app/node_modules/@sislexa/core-ui/web/index.html')}))}).listen(Number(process.env.PORT),'0.0.0.0');`
     const sourceFile = mode === 'auto' ? 'apps/server/src/index.ts' : 'demo.cjs'
     if (mode === 'auto') {
       mkdirSync(join(workspace,'apps/server/src'),{recursive:true})

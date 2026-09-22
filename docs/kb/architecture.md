@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-09-22
-checked: e96c10c3
+checked: 60c3f73a
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -21,6 +21,11 @@ areas:
 ---
 
 # Архитектура: кто с кем разговаривает
+
+## Core frontend ownership
+
+`sislex/sislexa-core-ui` owns the Core browser client, renderer, UI modules, stories and internal UI gates. Generic UI Kit/Foundation remain in `sislex/sielexa-ui`. Core consumes a versioned static archive with source provenance and per-file hashes; there is no local compatibility workspace. API contracts remain authored in Core and are exported from an exact committed SHA for UI consumption. Changes to an owner package reach consumers only through an explicit pinned archive upgrade and compatibility checks.
+
 
 ## Direct external libraries
 

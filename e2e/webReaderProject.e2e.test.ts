@@ -41,7 +41,7 @@ describe.each(['embedded', 'remote'] as const)('Reader %s: вход на соб�
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
       env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
-        VC_WEB_DIR: join(ROOT, 'apps/web/dist'),
+        VC_WEB_DIR: join(ROOT, 'node_modules/@sislexa/core-ui/web'),
         VC_ADMIN_PASSWORD: PASSWORD, VC_INTERNAL_TOKEN:PASSWORD, VC_MCP_SECRET:PASSWORD, VC_READER_MODE:readerMode, VC_READER_URL:`http://127.0.0.1:${readerPort}`, VC_BROWSER_HOST_ALIASES: '' },
       stdio: 'ignore'
     })
