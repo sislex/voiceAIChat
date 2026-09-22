@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-22
-checked: 5d36d282
+checked: 0d5b6eea
 areas:
   - packages/make-app
   - packages/image-studio-app
@@ -50,6 +50,26 @@ the shared axe serious/critical policy. Core's Storybook and axe shards include
 only Core modules; no `node_modules/@sislexa` story globs or product-story shims.
 Core-owned examples may still embed public external widgets and load their styles.
 See `testing-operations.md` for browser-test transfer and remaining extraction work.
+## External UI library ownership
+
+The authoritative UI Kit/Foundation source and internal test suites are in
+[`sislex/sielexa-ui`](https://github.com/sislex/sielexa-ui), released together as
+v1.0.1 (UI Kit 0.1.2, UI Foundation 0.1.4). Core installs immutable archives and
+has no corresponding source workspaces. Historical paths below identify owner
+package paths, not editable Core directories. Use the public package exports for
+styles, helpers and runtime ports; never reach through a relative sibling path.
+
+Primitive stories, reduced-motion/focus/touch-size assertions and the Foundation
+preference registry checks belong to the UI repository. The Core Skeleton story
+retains only its real TaskCard comparison. Core preference checks inspect Core
+source; Core stylesheet checks use public CSS exports to verify product integration.
+The owner release makes automatic JSX explicit in public TSX files because
+consumer dependency optimizers do not inherit the library repository tsconfig.
+A standalone packed-consumer render check is part of the owner gate.
+Profile/session breakpoint tests live in Identity (PR #6). Core has no local
+copies of these assertions. Transitional Identity workspace adapters validate consumer archive provenance;
+owner checks run only in Identity. UI Kit/Foundation checks likewise run only
+in the UI owner repository.
 
 ## Неблокирующий мастер первого запуска
 

@@ -28,6 +28,7 @@ const root = resolve(import.meta.dirname, '..')
 const json = (path) => JSON.parse(readFileSync(path, 'utf8'))
 export function applicationBuildPaths(applicationId, repo = root) {
   const app = APPLICATION_CATALOG.find((item) => item.id === applicationId)
+  if (app?.external) throw new Error(`Application ${applicationId} is owned by ${app.external.repository}; build it there`)
   if (!app?.entrypoint || !app.isolation.build)
     throw new Error(`Нет самостоятельной сборки ${applicationId}`)
   const lock = json(join(repo, 'package-lock.json')),

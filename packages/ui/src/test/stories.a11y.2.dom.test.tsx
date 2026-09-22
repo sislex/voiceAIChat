@@ -21,7 +21,7 @@ import { collectShard, describeStoryShard } from './storiesA11yShard'
  */
 const modules = import.meta.glob<Record<string, unknown>>([
   '../components/**/*.stories.tsx',
-  '../../../{ui-foundation,app-shell,chat-app,projects-app,operations-app,admin-app}/src/**/*.stories.tsx'
+  '../../../{app-shell,chat-app,projects-app,operations-app,admin-app}/src/**/*.stories.tsx'
 ], { exhaustive: true })
 
 describeStoryShard('сториз, шард 2/3', await collectShard(modules, { index: 2, total: 3 }), 40)

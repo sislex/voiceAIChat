@@ -81,8 +81,8 @@ Core's gate does not execute that owner's internals or pretend to build its sour
 Consumer checks validate public exports, version/provenance, host ports and runtime
 integration. Owner gates are prerequisites to publishing the pinned artifacts.
 
-UI Kit/Foundation are being established in `sislex/sielexa-ui` (PR #1). Their
-internal tests and pure component stories move with them; examples comparing a
+UI Kit/Foundation are released from `sislex/sielexa-ui` (PRs #1–#3, v1.0.1). Their
+internal tests and pure component stories are owned there; examples comparing a
 shared primitive to real Core product content remain Core integration checks.
 Library releases are accepted through their consuming application rollout, not
 by deploying a dummy library service. SDK's compatibility workspace can be
@@ -93,3 +93,24 @@ profile/MCP inspection with configured runner operations. Existing remote run,
 profile transcript and auth-status ports should be reused; missing operations
 need owner contracts and tests before Core loses its fallback. Preserve Core
 upload/resource authorization and runner profile-volume isolation throughout.
+
+## Owner artifacts and consumer validation (2026-09-22)
+
+UI Kit 0.1.2/Foundation 0.1.4 and SDK 1.1.0 replace their Core source/compatibility
+workspaces in the active consumer increment. The 25 remaining external adapters
+validate source/package provenance; they no longer run owner unit or typecheck
+suites. Consumer compilation and bridge tests remain required. Build delegation
+and adapter deletion are still pending and must not be marked complete.
+
+Published owner distribution releases now include Make 1.1.5/contracts 1.2.0,
+Playwright Reader 1.1.3, Web Reader 1.1.3, Image Studio 1.0.6, Identity 1.2.3,
+Voice 1.0.2 and Billing 1.1.2. Make 1.1.5 also owns fourteen pure model modules
+and their 51 regression cases; Core copies await the consumer cutover. These
+release publications do not constitute production rollout. Browser-runner transfer
+to the Playwright Reader repository and Image Studio shutdown/viewer fixes remain
+in review/validation. Core production is still 0.1.321 at this point.
+
+The direct-library consumer increment passed both canonical Core gates (exit 0),
+including 119 browser cases. Its PR/release and rollout are the next acceptance
+steps. Image Studio 1.0.7, Billing 1.1.3 and SDK 1.1.2 supersede the owner versions
+listed above; publication remains distinct from consumer/prod cutover.

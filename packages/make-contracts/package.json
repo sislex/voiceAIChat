@@ -10,8 +10,8 @@
     "./localization": "./src/localization.ts"
   },
   "scripts": {
-    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
-    "test": "node ../../scripts/external-workspace.mjs test"
+    "typecheck": "node ../../scripts/external-workspace.mjs verify",
+    "test": "node ../../scripts/external-workspace.mjs verify"
   },
   "dependencies": {
     "@voicechat/shared": "*",

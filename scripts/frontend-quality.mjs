@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { implementationPath } from './external-source.mjs'
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs'
 import { dirname, extname, join, relative, resolve } from 'node:path'
@@ -7,10 +8,8 @@ import ts from 'typescript'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const FRONTEND = [
   { name: '@voicechat/voice-browser', dir: 'packages/voice-browser', layer: 'shared', styles: false },
-  { name: '@voicechat/ui-foundation', dir: 'packages/ui-foundation', layer: 'shared' },
   { name: '@voicechat/make-app', dir: 'packages/make-app', layer: 'product', independent: 'make-ui', stylesheet: 'panel.css' },
   { name: '@voicechat/image-studio-app', dir: 'packages/image-studio-app', layer: 'product', independent: 'image-studio-ui', stylesheet: 'panel.css' },
-  { name: '@voicechat/ui-kit', dir: 'packages/ui-kit', layer: 'shared' },
   // Модуль сессий переносим целиком: он лежит слоем «shared», потому что его
   // берут и хост-приложение, и админка, а собственного маршрута у него нет.
   { name: '@voicechat/sessions-app', dir: 'packages/sessions-app', layer: 'shared' },
@@ -28,6 +27,7 @@ const FRONTEND = [
   { name: '@voicechat/ui', dir: 'packages/ui', layer: 'host' },
   { name: '@voicechat/web', dir: 'apps/web', layer: 'platform' }
 ]
+const EXTERNAL_LIBRARIES = new Set(['@voicechat/ui-kit', '@voicechat/ui-foundation'])
 const PRODUCT_NAMES = new Set(FRONTEND.filter((item) => item.layer === 'product').map((item) => item.name))
 const SECRET = /(bearer\s+[a-z0-9._-]+|(?:token|password|secret)=([^&\s]+)|https?:\/\/[^/\s:@]+:[^/\s@]+@)/gi
 function files(dir) {
@@ -82,6 +82,11 @@ export function checkArchitecture({ root = ROOT, packages = FRONTEND } = {}) {
     const source = readFileSync(file, 'utf8')
     for (const specifier of imports(source)) {
       const dependency = packageOf(specifier)
+      if (dependency && EXTERNAL_LIBRARIES.has(dependency)) {
+        try { createRequire(join(root, 'package.json')).resolve(specifier) }
+        catch { fail('unavailable public library export', `${relative(root, file)} -> ${specifier}`) }
+        continue
+      }
       if (!dependency || !edges.has(dependency)) continue
       if (!publicImport(root, packages.find(pkg => pkg.name === dependency), specifier)) fail('deep workspace import', `${relative(root, file)} -> ${specifier}`)
       edges.get(item.name).add(dependency)

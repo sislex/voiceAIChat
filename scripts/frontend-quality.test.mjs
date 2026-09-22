@@ -12,7 +12,7 @@ test('frontend build gate installs standalone Desktop dependencies before build'
 
 test('current frontend satisfies static quality gates', () => {
   const result = runStatic()
-  assert.equal(result.architecture.packages, 16)
+  assert.equal(result.architecture.packages, 14)
   assert.equal(result.stories.modules, 5)
   assert.equal(result.lazyLoading.lazyProducts, 8)
 })
@@ -29,6 +29,21 @@ test('architecture gate rejects deep imports', () => {
       { name: '@voicechat/b', dir: 'b', layer: 'shared' }
     ]
   }), /deep workspace import/)
+})
+test('external library consumers must resolve a public export', () => {
+  const root = mkdtempSync(join(tmpdir(), 'frontend-library-'))
+  const owner = join(root, 'node_modules/@voicechat/ui-kit')
+  mkdirSync(join(root, 'app/src'), { recursive: true })
+  mkdirSync(owner, { recursive: true })
+  writeFileSync(join(root, 'package.json'), '{}')
+  writeFileSync(join(owner, 'package.json'), JSON.stringify({ name: '@voicechat/ui-kit', exports: { '.': './index.js' } }))
+  writeFileSync(join(owner, 'index.js'), 'export const Button = null')
+  const entry = join(root, 'app/src/index.ts')
+  const options = { root, packages: [{ name: '@voicechat/app', dir: 'app', layer: 'host' }] }
+  writeFileSync(entry, "import '@voicechat/ui-kit'")
+  assert.doesNotThrow(() => checkArchitecture(options))
+  writeFileSync(entry, "import '@voicechat/ui-kit/src/internal'")
+  assert.throws(() => checkArchitecture(options), /unavailable public library export/)
 })
 test('architecture gate rejects workspace cycles', () => {
   const root = mkdtempSync(join(tmpdir(), 'frontend-cycle-'))

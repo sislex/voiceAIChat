@@ -1,5 +1,5 @@
 import { estimateCostUsd, type LlmExecutionReceipt, type TurnUsage } from '@voicechat/shared'
-import { priceUsageMicroUsd, parseBillingUsageEvidence, type BillingTokenPrices, type BillingUsageEvidence } from '@voicechat/platform-sdk'
+import { priceUsageMicroUsd, parseBillingUsageEvidence, type BillingTokenPrices, type BillingUsageEvidence } from '@sislexa/sdk'
 
 /** Convert a decimal amount once with integer arithmetic; preserve provider precision. */
 export function decimalUsdToMicroUsd(value: string): number {

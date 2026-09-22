@@ -11,19 +11,19 @@
   "dependencies": {
     "@voicechat/shared": "*",
     "fastify": "^5.1.0",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.2.1-b90d9471437a.tgz",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.2.2-c4609b363de2.tgz",
     "@voicechat/identity-contracts": "*"
   },
   "scripts": {
-    "typecheck": "node ../../scripts/external-workspace.mjs typecheck",
-    "test": "node ../../scripts/external-workspace.mjs test",
+    "typecheck": "node ../../scripts/external-workspace.mjs verify",
+    "test": "node ../../scripts/external-workspace.mjs verify",
     "build": "node ../../scripts/external-workspace.mjs build"
   },
   "sislexaExternal": {
     "package": "@sislexa/identity",
     "workspace": "packages/client",
     "repository": "https://github.com/sislex/identity",
-    "version": "1.2.1",
-    "commit": "b90d9471437a06ee2c1a752d4167ce9e0f7c84ad"
+    "version": "1.2.2",
+    "commit": "c4609b363de2ff69a7051430bf18eb80c13a6dd6"
   }
 }

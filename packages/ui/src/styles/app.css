@@ -5,6 +5,8 @@
 /* Семантические токены палитры. Тёмная тема переопределяет их через
    [data-theme="dark"] — остальные правила используют var(--…). */
 :root {
+  /* Public ToastProvider layout port; inline measurement overrides this idle value. */
+  --vc-toast-inset: 0px;
   --bg: #fafaf7;
   --panel: #f2f1ec;
   --surface: #fff;
