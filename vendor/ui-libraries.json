@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "release": "https://github.com/sislex/sielexa-ui/releases/tag/v1.0.1",
+  "packages": [
+    {
+      "name": "@voicechat/ui-kit",
+      "version": "0.1.2",
+      "asset": "voicechat-ui-kit-0.1.2-63c02ccfe3e6.tgz",
+      "integrity": "sha512-M7vHytQMmkXlnSvPz1AjHmvck+IkQzfeIxkvaFEUBzi7SZb+6HvlEsIsPEvx1FTJV16khK48mWJXUh6sI5Ht0A==",
+      "sha256": "ff16b6def36eb524cdcc4fcb726a477e8ccb97b91a8671f3e118b15d219a37e4",
+      "source": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/sielexa-ui",
+        "commit": "63c02ccfe3e6089d5192591220e740cfd8b96347",
+        "package": "@voicechat/ui-kit",
+        "version": "0.1.2"
+      }
+    },
+    {
+      "name": "@voicechat/ui-foundation",
+      "version": "0.1.4",
+      "asset": "voicechat-ui-foundation-0.1.4-63c02ccfe3e6.tgz",
+      "integrity": "sha512-hzZuBgu852MYB4AYlh4m0O/8C4elhzdCCPi9m8TmpQxinQ/xmLyRbpiDVODws9k/hzMmJArZ2uJmU9NMv0w4Ig==",
+      "sha256": "84dfbe9a5914b5ee29b4eedd0e22034970752e8e7a2663c09f75198af96a8a57",
+      "source": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/sielexa-ui",
+        "commit": "63c02ccfe3e6089d5192591220e740cfd8b96347",
+        "package": "@voicechat/ui-foundation",
+        "version": "0.1.4"
+      }
+    }
+  ]
+}

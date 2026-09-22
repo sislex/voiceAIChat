@@ -107,7 +107,7 @@ test('archive closure copies only pinned regular vendor archives', () => {
 
 
 test('extracted application workspaces contain only import/export adapters',()=>{
-  const roots=['apps/billing','packages/platform-sdk','apps/make','apps/playwright-reader','apps/web-reader','apps/web-recorder','apps/image-studio','apps/stt-runner','apps/tts-runner','apps/identity','packages/make-app','packages/image-studio-app','packages/playwright-reader-app','packages/web-reader-app','packages/voice-browser','packages/profile-app','packages/sessions-app','packages/sessions-core','packages/identity-login','packages/identity-account','packages/identity-client','packages/identity-contracts','packages/storage-sql']
+  const roots=['apps/billing','apps/make','apps/playwright-reader','apps/web-reader','apps/web-recorder','apps/image-studio','apps/stt-runner','apps/tts-runner','apps/identity','packages/make-app','packages/image-studio-app','packages/playwright-reader-app','packages/web-reader-app','packages/voice-browser','packages/profile-app','packages/sessions-app','packages/sessions-core','packages/identity-login','packages/identity-account','packages/identity-client','packages/identity-contracts','packages/storage-sql']
   const walk=directory=>existsSync(directory)?readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?walk(join(directory,entry.name)):[join(directory,entry.name)]):[]
   for(const root of roots){
     assert.ok(JSON.parse(readFileSync(join(root,'package.json'),'utf8')).sislexaExternal,root)
@@ -144,4 +144,10 @@ test('Billing release context contains the ledger and SDK without Core or Identi
     for (const path of ['apps/server', 'apps/identity', 'packages/ui']) assert.equal(existsSync(join(output, path)), false)
     assert.equal(lock.packages['node_modules/@sislexa/identity'], undefined)
   } finally { rmSync(output, { recursive: true, force: true }) }
+})
+
+test('external library build requests identify the independent owner', () => {
+  for (const id of ['platform-sdk', 'ui-kit', 'ui-foundation']) {
+    assert.throws(() => applicationBuildPaths(id), /is owned by https:\/\/github.com\/sislex\//)
+  }
 })

@@ -19,34 +19,31 @@ import { pathToFileURL } from 'node:url'
  * правке фронта, потому что путь не распознавался.
  */
 export const PACKAGES = [
-  { id: 'platform-sdk', path: 'packages/platform-sdk', workspace: '@voicechat/platform-sdk', dependsOn: [] },
-  { id: 'billing', path: 'apps/billing', workspace: '@voicechat/billing', dependsOn: ['shared', 'sessions-core', 'component-runtime', 'platform-sdk'] },
+  { id: 'billing', path: 'apps/billing', workspace: '@voicechat/billing', dependsOn: ['shared', 'sessions-core', 'component-runtime'] },
   {"id": "identity", "path": "apps/identity", "workspace": "@voicechat/identity-server", "dependsOn": ["shared", "sessions-core", "storage-sql", "identity-contracts", "component-runtime"]},
-  {"id": "identity-account", "path": "packages/identity-account", "workspace": "@voicechat/identity-account", "dependsOn": ["shared", "ui-kit", "ui-foundation", "profile-app", "identity-client", "identity-login", "sessions-app"]},
+  {"id": "identity-account", "path": "packages/identity-account", "workspace": "@voicechat/identity-account", "dependsOn": ["shared", "profile-app", "identity-client", "identity-login", "sessions-app"]},
   {"id": "identity-client", "path": "packages/identity-client", "workspace": "@voicechat/identity-client", "dependsOn": ["shared", "identity-contracts"]},
   {"id": "identity-contracts", "path": "packages/identity-contracts", "workspace": "@voicechat/identity-contracts", "dependsOn": ["shared"]},
-  {"id": "identity-login", "path": "packages/identity-login", "workspace": "@voicechat/identity-login", "dependsOn": ["shared", "ui-kit", "ui-foundation", "profile-app", "identity-client"]},
+  {"id": "identity-login", "path": "packages/identity-login", "workspace": "@voicechat/identity-login", "dependsOn": ["shared", "profile-app", "identity-client"]},
   {"id": "storage-sql", "path": "packages/storage-sql", "workspace": "@voicechat/storage-sql", "dependsOn": []},
   { id: 'voice-browser', path: 'packages/voice-browser', workspace: '@voicechat/voice-browser', dependsOn: ['shared', 'component-runtime'] },
   { id: 'component-runtime', path: 'packages/component-runtime', workspace: '@sislexa/component-runtime', dependsOn: ['shared'] },
-  { id: 'ui-foundation', path: 'packages/ui-foundation', workspace: '@voicechat/ui-foundation', dependsOn: ['shared', 'ui-kit'] },
-  { id: 'make-app', path: 'packages/make-app', workspace: '@voicechat/make-app', dependsOn: ['shared', 'ui-kit', 'ui-foundation', 'make-contracts', 'component-runtime'] },
-  { id: 'image-studio-app', path: 'packages/image-studio-app', workspace: '@voicechat/image-studio-app', dependsOn: ['component-runtime', 'shared', 'ui-kit', 'ui-foundation'] },
+  { id: 'make-app', path: 'packages/make-app', workspace: '@voicechat/make-app', dependsOn: ['shared', 'make-contracts', 'component-runtime'] },
+  { id: 'image-studio-app', path: 'packages/image-studio-app', workspace: '@voicechat/image-studio-app', dependsOn: ['component-runtime', 'shared'] },
   { id: 'make-contracts', path: 'packages/make-contracts', workspace: '@voicechat/make-contracts', dependsOn: ['shared', 'component-runtime'] },
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared', dependsOn: ['sessions-core'] },
   { id: 'sessions-core', path: 'packages/sessions-core', workspace: '@voicechat/sessions-core', dependsOn: [] },
-  { id: 'ui-kit', path: 'packages/ui-kit', workspace: '@voicechat/ui-kit', dependsOn: [] },
   { id: 'app-shell', path: 'packages/app-shell', workspace: '@voicechat/app-shell', dependsOn: [] },
-  { id: 'sessions-app', path: 'packages/sessions-app', workspace: '@voicechat/sessions-app', dependsOn: ['sessions-core', 'ui-kit'] },
-  { id: 'profile-app', path: 'packages/profile-app', workspace: '@voicechat/profile-app', dependsOn: ['sessions-app', 'ui-kit'] },
-  { id: 'chat-app', path: 'packages/chat-app', workspace: '@voicechat/chat-app', dependsOn: ['shared', 'ui-kit'] },
-  { id: 'projects-app', path: 'packages/projects-app', workspace: '@voicechat/projects-app', dependsOn: ['shared', 'ui-kit'] },
-  { id: 'operations-app', path: 'packages/operations-app', workspace: '@voicechat/operations-app', dependsOn: ['shared', 'ui-kit'] },
-  { id: 'admin-app', path: 'packages/admin-app', workspace: '@voicechat/admin-app', dependsOn: ['profile-app', 'sessions-app', 'shared', 'ui-kit'] },
-  { id: 'web-reader', path: 'packages/web-reader-app', workspace: '@voicechat/web-reader-app', dependsOn: ['ui-foundation', 'chat-app', 'shared', 'ui-kit', 'web-reader-contracts', 'playwright-reader-contracts', 'web-recorder', 'browser-contracts', 'component-runtime'] },
-  { id: 'playwright-reader', path: 'packages/playwright-reader-app', workspace: '@voicechat/playwright-reader-app', dependsOn: ['ui-foundation', 'chat-app', 'shared', 'ui-kit', 'playwright-reader-contracts', 'browser-contracts', 'component-runtime'] },
-  { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui', dependsOn: ['voice-browser', 'ui-foundation', 'make-app', 'image-studio-app', 'admin-app', 'app-shell', 'chat-app', 'operations-app', 'playwright-reader', 'projects-app', 'sessions-app', 'sessions-core', 'shared', 'ui-kit', 'web-reader'] },
-  { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['platform-sdk', 'component-runtime', 'web-reader-service', 'web-reader-contracts', 'playwright-reader-contracts', 'make-contracts', 'browser-runner', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'sessions-core', 'shared'] },
+  { id: 'sessions-app', path: 'packages/sessions-app', workspace: '@voicechat/sessions-app', dependsOn: ['sessions-core'] },
+  { id: 'profile-app', path: 'packages/profile-app', workspace: '@voicechat/profile-app', dependsOn: ['sessions-app'] },
+  { id: 'chat-app', path: 'packages/chat-app', workspace: '@voicechat/chat-app', dependsOn: ['shared'] },
+  { id: 'projects-app', path: 'packages/projects-app', workspace: '@voicechat/projects-app', dependsOn: ['shared'] },
+  { id: 'operations-app', path: 'packages/operations-app', workspace: '@voicechat/operations-app', dependsOn: ['shared'] },
+  { id: 'admin-app', path: 'packages/admin-app', workspace: '@voicechat/admin-app', dependsOn: ['profile-app', 'sessions-app', 'shared'] },
+  { id: 'web-reader', path: 'packages/web-reader-app', workspace: '@voicechat/web-reader-app', dependsOn: ['chat-app', 'shared', 'web-reader-contracts', 'playwright-reader-contracts', 'web-recorder', 'browser-contracts', 'component-runtime'] },
+  { id: 'playwright-reader', path: 'packages/playwright-reader-app', workspace: '@voicechat/playwright-reader-app', dependsOn: ['chat-app', 'shared', 'playwright-reader-contracts', 'browser-contracts', 'component-runtime'] },
+  { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui', dependsOn: ['voice-browser', 'make-app', 'image-studio-app', 'admin-app', 'app-shell', 'chat-app', 'operations-app', 'playwright-reader', 'projects-app', 'sessions-app', 'sessions-core', 'shared', 'web-reader'] },
+  { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['component-runtime', 'web-reader-service', 'web-reader-contracts', 'playwright-reader-contracts', 'make-contracts', 'browser-runner', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'sessions-core', 'shared'] },
   { id: 'image-studio', path: 'apps/image-studio', workspace: '@voicechat/image-studio', dependsOn: ['component-runtime', 'shared'] },
   { id: 'make', path: 'apps/make', workspace: '@voicechat/make', dependsOn: ['shared', 'make-contracts', 'component-runtime'] },
   { id: 'playwright-reader-service', path: 'apps/playwright-reader', workspace: '@voicechat/playwright-reader', dependsOn: ['browser-contracts', 'playwright-reader-contracts', 'shared', 'component-runtime'] },
@@ -58,7 +55,7 @@ export const PACKAGES = [
   { id: 'agent', path: 'apps/agent', workspace: '@voicechat/agent', dependsOn: ['shared'] },
   // `ui` тут не из package.json, а из tsconfig `paths` и alias в vite.config.ts.
   { id: 'web', path: 'apps/web', workspace: '@voicechat/web', dependsOn: ['chat-app', 'shared', 'ui'] },
-  { id: 'web-recorder', path: 'apps/web-recorder', workspace: '@voicechat/web-recorder', dependsOn: ['shared', 'ui-kit', 'web-reader-contracts', 'playwright-reader-contracts', 'browser-contracts', 'component-runtime'] },
+  { id: 'web-recorder', path: 'apps/web-recorder', workspace: '@voicechat/web-recorder', dependsOn: ['shared', 'web-reader-contracts', 'playwright-reader-contracts', 'browser-contracts', 'component-runtime'] },
   { id: 'browser-contracts', path: 'packages/browser-contracts', workspace: '@voicechat/browser-contracts', dependsOn: ['shared'] },
   { id: 'playwright-reader-contracts', path: 'packages/playwright-reader-contracts', workspace: '@voicechat/playwright-reader-contracts', dependsOn: ['shared', 'browser-contracts', 'component-runtime'] },
   { id: 'web-reader-contracts', path: 'packages/web-reader-contracts', workspace: '@voicechat/web-reader-contracts', dependsOn: ['shared', 'playwright-reader-contracts', 'web-recorder', 'browser-contracts', 'component-runtime'] },
@@ -321,7 +318,7 @@ export function fastCheckForPackage(pkg, files) {
  * План гейта шага для одного пакета. Отличие от `fastCheckForPackage`: пакет,
  * которого задело по графу зависимостей, тоже проверяется через related — Vitest
  * видит исходники соседнего пакета как обычные файлы модульного графа (проверено:
- * из `packages/ui` related на `../ui-kit/src/Button.tsx` находит 85 файлов из 149).
+ * changes in a local dependency must include its affected consumers).
  * Раньше такой пакет получал полный набор, и правка одного компонента тянула за
  * собой 42-секундный прогон всего `ui`.
  *

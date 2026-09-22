@@ -24,7 +24,12 @@ let server: ViteDevServer, browser: Browser, base: string
 beforeAll(async () => {
   const root = resolve(__dirname, '..')
   server = await createServer({
-    configFile: false, root, plugins: [react(), {
+    configFile: false, root,
+    // The HTML is virtual, so Vite needs the real entry to discover lazy-screen
+    // dependencies before React mounts; late optimization can mix React chunks.
+    cacheDir: 'node_modules/.vite/accessibility',
+    optimizeDeps: { entries: ['packages/ui/src/test/accessibilityBrowser.tsx'] },
+    plugins: [react(), {
       name: 'accessibility-fixture',
       configureServer(server) {
         server.middlewares.use('/', async (req, res, next) => {
@@ -88,7 +93,7 @@ it.each(['queuedMerge', 'queuedMergeCard'])('%s supports the complete theme/view
 it.each(['shell', 'chat', 'board', 'task', 'releases', 'settings', 'projectSettings', 'admin'])('%s fits 390px and exposes visible keyboard focus', async screen => {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
   const errors: string[] = []
-  page.on('pageerror', error => errors.push(error.message))
+  page.on('pageerror', error => errors.push(error.stack ?? error.message))
   try {
     await page.goto(base + '?screen=' + screen)
     await page.waitForSelector('body[data-ready=true]')

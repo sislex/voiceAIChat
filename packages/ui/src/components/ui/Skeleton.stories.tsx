@@ -1,8 +1,6 @@
-// Сториз скелетона: варианты, геометрия «как у контента» и переключение на
-// статичную подложку при `prefers-reduced-motion: reduce` (в браузере оно
-// проверяется системной настройкой, поэтому здесь — только напоминание в docs).
+// Compare the public Skeleton primitive with real Core task content.
+import { Skeleton } from '@voicechat/ui-kit'
 import type { Meta, StoryObj } from '@storybook/react'
-import { RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
 import { TaskCard } from '../kanban/TaskCard'
 import { makeTask } from '../kanban/fixtures'
 
@@ -38,42 +36,6 @@ const meta: Meta<typeof Skeleton> = {
 }
 export default meta
 type Story = StoryObj<typeof Skeleton>
-
-function Row({ title, children }: { title: string; children: JSX.Element }): JSX.Element {
-  return (
-    <section style={{ marginBottom: 24, maxWidth: 420 }}>
-      <p style={{ font: '600 12px/1.4 inherit', textTransform: 'uppercase', letterSpacing: '0.4px', opacity: 0.7 }}>{title}</p>
-      {children}
-    </section>
-  )
-}
-
-/** Все варианты рядом: строка, блок, карточка, список. */
-export const Variants: Story = {
-  render: () => (
-    <div>
-      <Row title="line — строка текста">
-        <div style={{ display: 'grid', gap: 8 }}>
-          <Skeleton variant="line" width="64%" height={12} />
-          <Skeleton variant="line" />
-          <Skeleton variant="line" width="40%" />
-        </div>
-      </Row>
-      <Row title="block — прямоугольник заданной высоты">
-        <Skeleton variant="block" height={54} />
-      </Row>
-      <Row title="card — карточка со строками">
-        <Skeleton variant="card" height={76} lines={3} />
-      </Row>
-      <Row title="list — n одинаковых элементов">
-        <Skeleton variant="list" count={3} height={76} />
-      </Row>
-      <Row title="RefreshIndicator — повторная загрузка">
-        <RefreshIndicator label="Обновляем список…" />
-      </Row>
-    </div>
-  )
-}
 
 /**
  * Геометрия совпадает с контентом: слева косточки, справа настоящие карточки

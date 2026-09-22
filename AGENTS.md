@@ -19,7 +19,6 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `packages/shared` | `@voicechat/shared` | Типы, контракт REST/WS, чистая логика (без зависимостей) | [AGENTS](packages/shared/AGENTS.md) |
 | `packages/component-runtime` | `@sislexa/component-runtime` | Provider tokens, dependency compatibility and managed configuration | [AGENTS](packages/component-runtime/AGENTS.md) |
 | `packages/ui` | `@voicechat/ui` | Общая оболочка, чат, стор и host API; продуктовые панели загружаются отдельно | [AGENTS](packages/ui/AGENTS.md) |
-| `packages/ui-foundation` | `@voicechat/ui-foundation` | Общие редакторы, окна, предпочтения и runtime-порты UI | [AGENTS](packages/ui-foundation/AGENTS.md) |
 | `packages/make-app` | `@voicechat/make-app` | Самостоятельный артефакт Make UI | [AGENTS](packages/make-app/AGENTS.md) |
 | `packages/image-studio-app` | `@voicechat/image-studio-app` | Самостоятельный артефакт Image Studio UI | [AGENTS](packages/image-studio-app/AGENTS.md) |
 | `packages/playwright-reader-app` / `packages/web-reader-app` | Reader UI | Самостоятельные панели Chromium/iframe | [UI KB](docs/kb/ui.md#независимые-артефакты-продуктовых-панелей) |
@@ -43,6 +42,11 @@ their UI/contracts, and Web Recorder are
 compatibility workspaces backed by pinned `@sislexa/*` releases. Implement changes
 in their separate repositories; see `docs/kb/architecture.md#tool-repository-ownership`.
 The adapters delegate full checks to the installed upstream workspaces.
+
+UI Kit and UI Foundation are versioned dependencies owned by
+[sislex/sielexa-ui](https://github.com/sislex/sielexa-ui). Their source, internal
+tests and primitive stories live there. Core tests only public consumer integration.
+The platform SDK is consumed directly from `@sislexa/sdk`; no local wrapper remains.
 
 `apps/desktop`, `apps/agent-tray`, and `apps/login-application` are intentionally
 outside `workspaces`. Each has its own Electron dependencies; install them with
