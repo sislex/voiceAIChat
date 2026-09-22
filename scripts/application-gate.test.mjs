@@ -62,12 +62,12 @@ test('root or unowned lock changes expand the consumer gate', () => {
 })
 test('Core Reader/browser scenarios remain executable in the full fallback', () => {
   const plan = planApplicationChecks(['Dockerfile'])
-  for (const file of ['e2e/make.e2e.test.ts','e2e/webReaderNative.e2e.test.ts'])
+  for (const file of ['e2e/toolIntegration.e2e.test.ts','e2e/webReaderProject.e2e.test.ts'])
     assert.ok(plan.e2eFiles.includes(file), file)
   assert.ok(!plan.e2eFiles.includes('e2e/webReaderAudit.e2e.test.ts'))
 })
 test('an explicitly changed integration scenario remains selected', () => {
-  assert.deepEqual(planApplicationChecks(['e2e/make.e2e.test.ts']).e2eFiles,['e2e/make.e2e.test.ts'])
+  assert.deepEqual(planApplicationChecks(['e2e/toolIntegration.e2e.test.ts']).e2eFiles,['e2e/toolIntegration.e2e.test.ts'])
 })
 
 // Removing an external catalog entry must not orphan retained host integration
@@ -145,4 +145,19 @@ test('execution stops after a failing command rather than reporting later stages
     calls.push(args); throw Object.assign(Error('fixture failure'), { exitCode: 19 })
   }, 'failure-fixture'), /fixture failure/)
   assert.equal(calls.length, 1)
+})
+
+
+test('performance edits still run real measurements, including mixed full-Core diffs', () => {
+  for (const file of ['scripts/measure-routes.mjs', 'scripts/route-gate.mjs', 'frontend-quality/measurements/CHAT-473/before.json']) {
+    const scoped = planApplicationChecks([file])
+    assert.equal(scoped.full, false)
+    assert.deepEqual(scoped.e2eFiles, FRONTEND_E2E_FILES)
+    for (const files of [[file, 'package.json'], ['package.json', file]]) {
+      const full = planApplicationChecks(files)
+      assert.equal(full.full, true)
+      assert.deepEqual(remainingBrowserFiles(full.e2eFiles, true), FRONTEND_E2E_FILES)
+      assert.ok(applicationPlanCommands(full).some(([, args]) => args.includes('e2e/routeBudgets.e2e.test.ts')))
+    }
+  }
 })
