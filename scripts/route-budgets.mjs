@@ -1,23 +1,19 @@
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve, relative, dirname, extname } from 'node:path'
-import { gzipSync, brotliCompressSync, constants } from 'node:zlib'
+import { COMPRESSION, sizes } from './route-compression.mjs'
+export { COMPRESSION, sizes } from './route-compression.mjs'
 import { createHash } from 'node:crypto'
 import { parse } from 'acorn'
 import { fileURLToPath } from 'node:url'
 
-export const COMPRESSION = { gzip: { level: 9 }, brotli: { quality: 11 } }
 const fail = message => { throw new Error('[route-budget] ' + message) }
 const object = value => value && typeof value === 'object' && !Array.isArray(value)
 const positive = value => Number.isSafeInteger(value) && value > 0
 export function completedResource(request) {
   return request.finished === true && (request.status === 200 || request.status === 304 || (request.status === 0 && request.url.startsWith('file:')))
 }
-export function sizes(bytes) {
-  return { raw: bytes.length, gzip: gzipSync(bytes, { level: 9 }).length,
-    brotli: brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length }
-}
-export function inventory(directory) {
+export function inventory(directory, measureSize = sizes) {
   const root = resolve(directory), resources = {}
   const walk = path => {
     for (const item of readdirSync(path, { withFileTypes: true })) {
@@ -25,7 +21,7 @@ export function inventory(directory) {
       if (item.isDirectory()) walk(full)
       else if (/\.(?:js|css)$/.test(item.name)) {
         const bytes = readFileSync(full), id = relative(root, full).replaceAll('\\', '/')
-        resources[id] = { type: extname(id).slice(1), sha256: createHash('sha256').update(bytes).digest('hex'), ...sizes(bytes), imports: [], dynamicImports: [] }
+        resources[id] = { type: extname(id).slice(1), sha256: createHash('sha256').update(bytes).digest('hex'), ...measureSize(bytes), imports: [], dynamicImports: [] }
         if (id.endsWith('.js')) {
           const ast = parse(bytes.toString(), { ecmaVersion: 'latest', sourceType: 'module' })
           const visit = node => {

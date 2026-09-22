@@ -5,6 +5,7 @@
 // связка целиком на живом сервере: настройка сохраняется, падение сервера не
 // превращает её в дефолт, а вернувшийся сервер подхватывается сам, без
 // перезагрузки страницы.
+import { freePort } from './free-port'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -16,8 +17,8 @@ import { chromium, _electron, type Browser, type Page } from 'playwright'
 
 const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'apps/web/dist')
-const PORT = 8991 + Math.floor(Math.random() * 60)
-const BASE = `http://127.0.0.1:${PORT}`
+let PORT = 0
+let BASE = ''
 const PASSWORD = 'e2e-settings-pass'
 
 let server: ChildProcess | null = null
@@ -58,7 +59,11 @@ const savedTheme = async (): Promise<string> => ((await (await api('/api/setting
 
 /** Меню аккаунта → «Настройки» → раздел «Интерфейс». */
 async function openInterfaceSettings(): Promise<void> {
-  if (!(await page.getByTestId('overlay').isVisible().catch(() => false))) {
+  // The URL survives reload before React restores the lazy settings dialog.
+  // An immediate visibility check can click the account button underneath it.
+  if (/^#\/settings(?:\/|$)/.test(new URL(page.url()).hash)) {
+    await page.getByTestId('overlay').waitFor({ state: 'visible', timeout: 30_000 })
+  } else {
     // Кнопка меню подписана ролью пользователя; ждём её появления — сразу
     // после загрузки страница ещё проверяет сессию.
     const account = page.getByRole('button', { name: new RegExp('admin') })
@@ -71,6 +76,8 @@ async function openInterfaceSettings(): Promise<void> {
 
 describe('Настройки E2E: релиз не сбрасывает выбор', () => {
   beforeAll(async () => {
+    PORT = await freePort()
+    BASE = `http://127.0.0.1:${PORT}`
     if (!existsSync(WEB_DIST)) throw new Error('Build apps/web before running required settings/onboarding E2E')
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-settings-'))
     server = startServer()
