@@ -54,7 +54,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'web'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
   })
 
   await t.test('retired session source paths fail safely to the full consumer gate', () => {
@@ -63,15 +63,15 @@ test('selectAffected выбирает пакеты и безопасный fallb
 
   await t.test('правка UI не затрагивает отделённый Web Recorder', () => {
     const decision = selectAffected(['packages/ui/src/App.tsx'])
-    assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['ui', 'web'])
+    assert.equal(decision.full, true)
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
   })
 
   for (const file of ['package-lock.json', 'package.json', 'scripts/kb.mjs', '.github/workflows/ci.yml', 'unknown/critical.ts']) {
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'app-shell', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'web'])
+      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -85,7 +85,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'app-shell', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'web'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
   })
 })
 
@@ -116,8 +116,9 @@ test('owner contract archive updates select the full consumer gate', () => {
 })
 
 test('consumersOf даёт транзитивное замыкание и не тянет пакеты вне workspaces', () => {
-  const appShell = consumersOf('app-shell')
-  for (const id of ['ui', 'web']) assert.ok(appShell.has(id))
+  const appShell = consumersOf('shared')
+  for (const id of ['server', 'automation-runner']) assert.ok(appShell.has(id))
+  for (const id of ['ui', 'web']) assert.equal(appShell.has(id), false)
   assert.equal(appShell.has('desktop'), false)
   assert.equal(consumersOf('shared').has('agent-tray'), false)
 })
@@ -147,14 +148,10 @@ test('workersPerJob делит пул и не опускается ниже од
   assert.equal(workersPerJob(16, 8), 1)
 })
 
-test('buildGates в fast-режиме адресны, в полном — прежние', () => {
-  assert.deepEqual(buildGates(['packages/ui/src/App.tsx'], { fast: false }), ['frontend:build-gates'])
+test('artifact updates retain frontend integration without building extracted sources', () => {
+  assert.deepEqual(buildGates(['vendor/sislexa-core-ui-1.0.0.tgz'], { fast: true }), ['frontend:build-gates'])
   assert.deepEqual(buildGates(['apps/server/src/server.ts'], { fast: false }), [])
-  // Правка компонента не требует ни web-сборки, ни витрины: импорты ловит
-  // typecheck, сториз — stories.a11y.dom.test.tsx через related.
-  assert.deepEqual(buildGates(['packages/ui/src/App.tsx'], { fast: true }), [])
-  assert.deepEqual(buildGates(['apps/web/src/main.tsx'], { fast: true }), ['build:web'])
-  assert.deepEqual(buildGates(['packages/ui/src/components/Badge.stories.tsx'], { fast: true }), ['build:storybook'])
+  assert.deepEqual(buildGates(['packages/ui/src/App.tsx'], { fast: false }), ['frontend:build-gates'])
 })
 
 test('gitHistoryPaths исключает генерируемый индекс БЗ из широких areas', () => {
@@ -259,23 +256,15 @@ test('fastCheckForPackage пропускает shared, конфиги и миг�
 })
 
 test('dependenciesOf даёт транзитивные зависимости пакета', () => {
-  assert.equal(dependenciesOf('app-shell').size, 0)
-  const ui = dependenciesOf('ui')
-  for (const id of ['shared', 'chat-app', 'admin-app']) {
-    assert.ok(ui.has(id), `ui должен зависеть от ${id}`)
-  }
-  assert.equal(ui.has('web'), false)
+  assert.ok(dependenciesOf('server').has('shared'))
+  assert.equal(dependenciesOf('server').has('ui'), false)
 })
 
 test('fastPlanForPackage гоняет related и по правкам зависимостей, а не только своим', () => {
   const byId = new Map(PACKAGES.map((pkg) => [pkg.id, pkg]))
   const plan = (id, files) => fastPlanForPackage(byId.get(id), files)
 
-  // Правка компонента ui: потребители проверяются related по исходнику ui,
-  // а не полным набором — раньше это стоило целого прогона пакета.
-  assert.deepEqual(plan('ui', ['packages/ui/src/components/ChatColumn.tsx']).files, ['src/components/ChatColumn.tsx'])
-  assert.deepEqual(plan('web', ['packages/ui/src/components/ChatColumn.tsx']).files, ['../../packages/ui/src/components/ChatColumn.tsx'])
-  assert.deepEqual(plan('ui', ['packages/chat-app/src/ChatApp.tsx']).files, ['../chat-app/src/ChatApp.tsx'])
+  assert.deepEqual(plan('server', ['apps/server/src/routes/rest.ts']).files, ['src/routes/rest.ts'])
 
   // Пакет, до которого правка не доходит, не проверяется вовсе.
   assert.deepEqual(plan('server', ['packages/ui/src/App.tsx']), {
@@ -285,9 +274,7 @@ test('fastPlanForPackage гоняет related и по правкам завис�
   })
 
   // Контракт shared и конфиги/схемы/миграции любого источника — полный набор.
-  assert.equal(plan('ui', ['packages/shared/src/protocol.ts']).reason, 'shared-контракт')
   assert.equal(plan('server', ['packages/shared/src/protocol.ts']).reason, 'shared-контракт')
-  assert.match(plan('web', ['packages/ui/vitest.config.ts']).reason, /^конфиг, схема или миграция/)
   assert.match(plan('server', ['apps/server/src/db/migrations/001.sql']).reason, /^конфиг, схема или миграция/)
 })
 

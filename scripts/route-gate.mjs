@@ -12,7 +12,7 @@ if (process.platform === 'linux' && !process.env.DISPLAY) {
 } else {
   try {
     const output = resolve('artifacts/route-budgets')
-    const report = await measure({ web: 'apps/web/dist', desktop: dirname(require.resolve('@sislexa/desktop/renderer/index.html')), output })
+    const report = await measure({ web: 'node_modules/@sislexa/core-ui/web', desktop: dirname(require.resolve('@sislexa/core-ui/renderer/index.html')), output })
     const budget = JSON.parse(readFileSync('frontend-quality/route-budgets.json', 'utf8'))
     const budgetDiff = checkRoutes(budget, report)
     const baseline = selectRouteBaseline([

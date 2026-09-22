@@ -229,8 +229,9 @@ describe("каталог владельцев", () => {
     expect(() => validateApplicationCatalog(APPLICATION_CATALOG)).not.toThrow();
     expect(applicationForPath("apps/server/src/routes/rest.ts")?.id).toBe("core");
     expect(applicationForPath("apps/make/src/routes.ts")).toBeUndefined();
-    expect(applicationForPath("packages/ui/src/App.tsx")?.id).toBe("web");
-    expect(applicationForPath("e2e/machine-vpn.e2e.test.ts")?.id).toBe("web");
+    expect(applicationForPath("packages/ui/src/App.tsx")).toBeUndefined();
+    expect(APPLICATION_CATALOG.find(app => app.id === "web")?.external).toEqual({ repository: "https://github.com/sislex/sislexa-core-ui", package: "@sislexa/core-ui" });
+    expect(applicationForPath("e2e/machine-vpn.e2e.test.ts")).toBeUndefined();
     expect(applicationForPath("e2e/applicationFrontend.e2e.test.ts")).toBeUndefined();
     expect(applicationForPath("e2e/make.e2e.test.ts")).toBeUndefined();
     expect(

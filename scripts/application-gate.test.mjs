@@ -61,7 +61,7 @@ test('root or unowned lock changes expand the consumer gate', () => {
 })
 test('Core Reader/browser scenarios remain executable in the full fallback', () => {
   const plan = planApplicationChecks(['Dockerfile'])
-  for (const file of ['e2e/make.e2e.test.ts','e2e/applicationFrontend.e2e.test.ts','e2e/applicationReleases.e2e.test.ts','e2e/webReaderNative.e2e.test.ts'])
+  for (const file of ['e2e/make.e2e.test.ts','e2e/webReaderNative.e2e.test.ts'])
     assert.ok(plan.e2eFiles.includes(file), file)
   assert.ok(!plan.e2eFiles.includes('e2e/webReaderAudit.e2e.test.ts'))
 })

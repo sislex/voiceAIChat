@@ -23,7 +23,7 @@ test('signals and missing executables cannot report success', () => {
 test('full stage order keeps all original checks and builds before browser measurement', () => {
   const calls = []
   const result = runStages(FULL_GATE_STAGES, (command, args) => { calls.push(args.join(' ')); return { status: 0 } })
-  assert.deepEqual(calls, ['run typecheck','run test','run build:frontends','run build:chat-client','run -w @voicechat/web build','run build:storybook','run frontend:route-gates'])
-  assert.equal(result.length, 7)
+  assert.deepEqual(calls, ['run typecheck','run test','run build:frontends','run verify:core-ui','run frontend:route-gates'])
+  assert.equal(result.length, 5)
   assert.ok(result.every(row => row.exitCode === 0 && row.seconds >= 0))
 })

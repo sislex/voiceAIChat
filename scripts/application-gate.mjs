@@ -411,7 +411,7 @@ export async function main(args = process.argv.slice(2)) {
     )
     if (!panelOnly && !plan.full) {
       run('npm', ['run', 'build:frontends'])
-      run('npm', ['run', '-w', '@voicechat/web', 'build'])
+      run('npm', ['run', 'verify:core-ui'])
     }
     run(
       'npm',

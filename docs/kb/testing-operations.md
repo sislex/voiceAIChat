@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: 823ce54a
+checked: 60c3f73a
 areas:
   - package.json
   - scripts
@@ -22,6 +22,13 @@ areas:
 ---
 
 # Разработка, тестирование, диагностика и эксплуатация
+
+## Core UI test ownership
+
+Core UI unit/DOM tests, Storybook, accessibility fixtures, lazy-screen recovery, panel-loader fixtures, VPN component QA and release-center component QA belong to `sislex/sislexa-core-ui`. Its affected gate runs complete ownership groups plus reverse-import consumers and shell integration; common host state, CSS and dependency changes select all groups. Generic library tests remain in `sielexa-ui`.
+
+Core retains real API/browser integration (including route read-cache behavior in `e2e/routeResources.e2e.test.ts`) and Web/Desktop route budgets. The full Core gate typechecks/tests Core workspaces, verifies product panels and the pinned Core UI artifact, then measures public browser integration. There is no React, renderer or Storybook source build in Core. `test:storybook` remains a compatibility command that verifies the published artifact; actual component QA runs in the UI owner.
+
 
 ## Extracted application test ownership
 

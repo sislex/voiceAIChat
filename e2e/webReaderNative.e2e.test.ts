@@ -45,7 +45,7 @@ describe('Web Reader: единый разговор в полном Chromium', (
     const siteAddress = site.server.address(); if (!siteAddress || typeof siteAddress === 'string') throw new Error('Нет адреса сайта')
     runner = await buildBrowserRunner({ token: secret, profilesRoot: join(data, 'profiles'), hostAliases: new Map([['93.184.216.34:8080', '127.0.0.1:' + siteAddress.port]]), previewOrigin: '127.0.0.1:' + port, idleMs: 0 })
     const runnerBase = await runner.listen({ host: '127.0.0.1', port: 0 })
-    app = await buildServer({ config: loadConfig({ ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: data, VC_ADMIN_PASSWORD: secret, VC_WEB_DIR: resolve('apps/web/dist'), VC_MCP_SECRET: secret, VC_BROWSER_RUNNER_URL: runnerBase, VC_BROWSER_RUNNER_TOKEN: secret, VC_BROWSER_PREVIEW_BASE: base }) })
+    app = await buildServer({ config: loadConfig({ ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: data, VC_ADMIN_PASSWORD: secret, VC_WEB_DIR: resolve('node_modules/@sislexa/core-ui/web'), VC_MCP_SECRET: secret, VC_BROWSER_RUNNER_URL: runnerBase, VC_BROWSER_RUNNER_TOKEN: secret, VC_BROWSER_PREVIEW_BASE: base }) })
     await app.listen({ host: '127.0.0.1', port })
     const login = await fetch(base + '/api/session/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'admin', password: secret }) }); token = (await login.json()).token
     await api('/api/settings', 'PUT', { onboarded: true, theme: 'green' }); browser = await chromium.launch()

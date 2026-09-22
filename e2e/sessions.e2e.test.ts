@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 
 const ROOT = resolve(__dirname, '..')
-const WEB_DIST = join(ROOT, 'apps/web/dist')
+const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
 // Порт спрашиваем у системы, а не берём случайный из диапазона: не добитый
 // прошлым прогоном сервер иначе перехватывает подключение вместе со своими
 // старыми данными, и тест падает с загадочными «лишними» сессиями.
