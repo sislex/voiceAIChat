@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-22
-checked: 0d5b6eea
+checked: 971afbce
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -381,6 +381,15 @@ settings, conversation and user-list reads. Keep that ordering for existing
 multi-step mutations; optimize the report rather than globally enabling
 `DbDeps.concurrent`. Large all-history reports can still be expensive and need
 separate reporting projections; the monthly optimization is not such a projection.
+
+`usageReport` also materializes PostgreSQL message metadata, filtering by account
+and period before the price join. Its four views retain inclusive dates, model
+prices, incomplete/interrupted flags and the full period's conversation choices
+even when one conversation is selected. Account reports previously occupied the
+shared lane for about 26 seconds during the owner-artifact acceptance. Read-only
+production probes of the new monthly queries took 2–8 ms for an empty account and
+633–1,034 ms per view for the largest account. SQLite keeps the same query path;
+both engines run the owner/date/conversation regression in `usageSummary.test.ts`.
 
 Личные API для виджета — `GET /api/me/usage` и `GET /api/me/llm-access`: оба берут владельца только из `uid(req)`, не из query или URL. У первого те же необязательные `unit` (`hour`/`day`/`week`), `from`, `to` и `conversationId`, что у `GET /api/usage`, и он возвращает `UsageReport`; второй возвращает `UserLlmAccess[]`. Старые `GET /api/usage` и `GET /api/llm-access` остаются сессионными алиасами, но web-мост обращается к новым `/api/me/*` путям.
 
