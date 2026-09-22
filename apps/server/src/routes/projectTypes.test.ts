@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import { BUILTIN_PROJECT_TYPE_IDS, type ProjectTypeNode } from '@voicechat/shared'
 
 const SECRET = 'test-secret'

@@ -2,7 +2,7 @@
 // @voicechat/sessions-core здесь только в devDependencies: shared остаётся без
 // зависимостей в рантайме, но расхождение типов и констант ловится на гейте.
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { DEFAULT_SESSION_POLICY, SESSION_SHORT_TTL_MS as CORE_SHORT_TTL, SESSION_TTL_MS as CORE_TTL, type DeviceSession } from '@voicechat/sessions-core'
+import { DEFAULT_SESSION_POLICY, SESSION_SHORT_TTL_MS as CORE_SHORT_TTL, SESSION_TTL_MS as CORE_TTL, type DeviceSession } from '@sislexa/identity/sessions-core/index'
 import { SESSION_SHORT_TTL_MS, SESSION_TTL_MS, type SessionInfo } from './types'
 
 describe('SessionInfo ↔ DeviceSession', () => {

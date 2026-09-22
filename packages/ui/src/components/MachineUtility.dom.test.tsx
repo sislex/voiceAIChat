@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import { MachineUtility } from './MachineUtility'
 import { makeAgent, makeMachineOps, makePolicy } from '../test/fixtures/index'
@@ -90,7 +90,7 @@ describe('MachineUtility — общая шапка у всех трёх видж
 
 describe('MachineUtility: панель кода', () => {
   it('с целью рабочей копии открывает панель кода, без цели — объясняет, откуда её открыть', async () => {
-    const { render } = await import('../test/uiRender')
+    const { render } = await import("@voicechat/ui-foundation/test/uiRender")
     const { screen } = await import('@testing-library/react')
     const withTarget = render(
       <MachineUtility

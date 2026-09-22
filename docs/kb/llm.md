@@ -1,11 +1,10 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-14
-checked: 3fcc921c
+updated: 2026-09-22
+checked: 55f5a95b
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
-  - apps/llm-runner/src
   - apps/server/src/turns.ts
   - apps/server/src/auth/statusState.ts
   - apps/server/src/session.ts
@@ -13,7 +12,6 @@ areas:
   - apps/server/src/anthropic
   - apps/server/src/cc
   - apps/server/src/mcp/remoteBashMcp.ts
-  - apps/llm-runner/src/cli/cliProfiles.ts
   - packages/shared/src/streamJson.ts
   - packages/shared/src/codexStream.ts
   - packages/shared/src/prompt.ts
@@ -32,6 +30,26 @@ areas:
 ---
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
+
+## Independent runner boundary
+
+Core consumes LLM Runner 0.3.1 from `sislex/llm-runner`. The `apps/llm-runner`
+workspace, local CLI/profile wrappers and their internal suites are removed.
+`RemoteLlmClient` executes turns; `RunnerFsClient` reads login state, history,
+files and `/v1/mcp/servers` with the authenticated user namespace and configured
+provider credential. Management requests have a ten-second deadline; SSE tails
+keep their reconnect behavior. A Core instance without runner URLs can serve
+other modules, but reports model execution unavailable and history/MCP as 503.
+It never silently spawns a local CLI or seeds a credential profile.
+
+New Core-owned outputs are stored under `user-files/<base64url-user>`. Existing
+non-hidden profile outputs and `.generated_images`/`.codex/generated_images`
+remain readable under the same user, after realpath authorization. Hidden CLI
+configuration and links into another user's directory remain inaccessible.
+The public runner server export is a development-only consumer dependency used
+for actual HTTP compatibility tests. CLI/history implementation tests run in the
+runner repository; old paths in the historical sections below describe that
+owner's original source layout.
 
 ## Scoped preview generation
 

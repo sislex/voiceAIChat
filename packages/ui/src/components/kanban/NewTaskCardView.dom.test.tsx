@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { MOBILE_QUERY } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { describe, expect, it, vi } from 'vitest'

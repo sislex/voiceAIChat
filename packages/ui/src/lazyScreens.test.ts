@@ -73,7 +73,7 @@ describe('тяжёлые экраны не возвращаются в глав�
  * профиля — из-за одного `parseAdminRoute`, взятого из индекса пакета.
  * `import type` безопасен: типы в рантайм не попадают.
  */
-const LAZY_PACKAGES = ['@voicechat/admin-app', '@voicechat/web-reader-app']
+const LAZY_PACKAGES = ['@voicechat/admin-app', '@sislexa/web-reader/ui/index']
 
 describe('пакеты ленивых экранов не тянутся статически', () => {
   it.each(LAZY_PACKAGES)('%s подключается только через import()', (pkg) => {

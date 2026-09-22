@@ -1,5 +1,5 @@
 // Контракт «сервер ↔ исполнитель»: RemoteLlmClient ходит в НАСТОЯЩИЙ buildRunner
-// из @voicechat/llm-runner, а не в фейковый HTTP-сервер теста. Фейк повторяет
+// from the published @sislex/llm-runner/server entrypoint. A fake would repeat
 // форму тела за клиентом и поэтому пропустил рассинхрон: клиент слал конверт
 // `{ id, kind, request }`, исполнитель ждал поля запроса плоско и отвечал
 // `400 prompt обязателен` — ходы не запускались вовсе.
@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest'
 import type { AddressInfo } from 'node:net'
-import { buildRunner } from '@voicechat/llm-runner'
+import { buildRunner } from '@sislex/llm-runner/server'
 import type { FastifyInstance } from 'fastify'
 import type { LlmRunBody } from '@voicechat/shared'
 import { RemoteLlmClient } from './remoteClient.js'

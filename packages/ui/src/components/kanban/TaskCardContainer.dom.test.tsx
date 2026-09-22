@@ -3,7 +3,7 @@
 // (`NewTaskCardView.dom.test.tsx`) — здесь именно связка с API.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { createFakeApi, createFakeCi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { makeBoard, makeDefaultColumns, makeTask } from './fixtures'
 import { TaskCardContainer } from './TaskCardContainer'

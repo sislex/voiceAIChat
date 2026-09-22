@@ -1,23 +1,23 @@
 import {IDENTITY_PATHS, IDENTITY_CORE_METHODS} from '@sislexa/identity/contracts/index'
 import type {VoiceChatDb} from '../db/database.js'
 import type { ComponentRuntime } from '@sislexa/component-runtime'
-import { INTERNAL_IMAGE_STUDIO_CORE_PATH, INTERNAL_IMAGE_STUDIO_GENERATE_PATH } from '@voicechat/shared'
-import type { PlaywrightReaderCore, PlaywrightReaderService } from '@voicechat/playwright-reader'
-import { INTERNAL_PLAYWRIGHT_READER_CORE_PATH, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, PLAYWRIGHT_READER_CORE_METHODS, PLAYWRIGHT_READER_SERVICE_METHODS, PLAYWRIGHT_READER_RPC_BODY_LIMIT } from '@voicechat/shared'
+import { INTERNAL_IMAGE_STUDIO_CORE_PATH, INTERNAL_IMAGE_STUDIO_GENERATE_PATH } from '@voicechat/image-studio-contracts/imageStudioInternal'
+import type { PlaywrightReaderCore, PlaywrightReaderService } from '@sislexa/playwright-reader'
+import { INTERNAL_PLAYWRIGHT_READER_CORE_PATH, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, PLAYWRIGHT_READER_CORE_METHODS, PLAYWRIGHT_READER_SERVICE_METHODS, PLAYWRIGHT_READER_RPC_BODY_LIMIT } from '@voicechat/browser-contracts/playwrightReader'
 // Internal RPC uses provider-owned component grants in managed mode. Legacy shared
 // credentials are accepted only on explicitly retained migration scopes. Public
 // user credentials are still verified separately through the identity endpoint.
 
 import type { FastifyInstance } from 'fastify'
-import type { ImageStudioCore } from '@voicechat/image-studio'
+import type { ImageStudioCore } from '@sislexa/image-studio/image-studio/index'
 import { registerImageStudioInternal } from '../imageStudioBridge/internal.js'
 import {
   INTERNAL_MAKE_CORE_PATH, INTERNAL_MAKE_EVENTS_PATH, INTERNAL_MAKE_SERVICE_PATH, INTERNAL_WHOAMI_PATH, RpcError,
   createCoreRpcDispatcher, createServiceRpcDispatcher,
   type MakeCore, type MakeEventsRequest, type MakeHub, type MakeService, type RpcRequest, type WhoamiRequest, type WhoamiResponse
 } from '@voicechat/make-contracts'
-import type { AuthenticateFn } from '../users/auth.js'
-import type { SessionHub } from '../users/sessionHub.js'
+import type { AuthenticateFn } from "@sislexa/identity/server/users/auth"
+import type { SessionHub } from "@sislexa/identity/server/users/sessionHub"
 import type { DeployTrigger } from './admin.js'
 import { ADMIN_RPC_METHODS, INTERNAL_ADMIN_RPC_PATH, type AdminRpcMethod } from '../admin/internal.js'
 import type { KanbanCore } from '../kanban/core.js'

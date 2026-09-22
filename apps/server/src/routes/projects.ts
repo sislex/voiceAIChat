@@ -35,7 +35,7 @@ import {
 } from '@voicechat/shared'
 
 import type { VoiceChatDb } from '../db/database.js'
-import { requireProjectPermission, uid } from '../users/auth.js'
+import { requireProjectPermission, uid } from "@sislexa/identity/server/users/auth"
 import type { BoardHub } from '../projects/boardHub.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { kbUsageFlags } from '../kb/routes.js'

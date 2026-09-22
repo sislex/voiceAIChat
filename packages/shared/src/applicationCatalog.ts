@@ -28,105 +28,19 @@ export interface ApplicationDefinition {
   isolation: { tests: boolean; build: boolean; deploy: boolean };
   kind: "service" | "frontend" | "client" | "library";
 }
-const definition = (
-  id: string,
-  name: string,
-  path: string,
-  options: Partial<Omit<ApplicationDefinition, "id" | "name" | "paths">> & {
-    paths?: string[];
-  } = {},
-): ApplicationDefinition => ({
-  id,
-  name,
-  paths: [path],
-  workspaces: [`@voicechat/${id}`],
-  buildDependencies: ["shared"],
-  runtimeDependencies: [],
-  browserPaths: [],
-  e2eFiles: [],
-  contractPaths: [],
-  contractChecks: [],
-  services: [],
-  dataPaths: [],
-  configuration: [],
-  isolation: { tests: false, build: false, deploy: false },
-  kind: "service",
-  ...options,
+const definition = (id: string, name: string, paths: string[], options: Partial<ApplicationDefinition> = {}): ApplicationDefinition => ({
+  id, name, paths, workspaces: [`@voicechat/${id}`], buildDependencies: ['shared'],
+  runtimeDependencies: [], browserPaths: [], e2eFiles: [], contractPaths: [], contractChecks: [],
+  services: [], dataPaths: [], configuration: [], kind: 'service',
+  isolation: { tests: false, build: false, deploy: false }, ...options
 });
-// Distribution peers must remain in isolated compatibility-adapter build contexts.
-const EXTERNAL_TOOL_BUILD_DEPENDENCIES: Record<string, string[]> = {
-  "playwright-reader": [
-    "component-runtime"
-  ],
-  "web-reader": [
-    "browser-contracts",
-    "component-runtime",
-    "playwright-reader-contracts",
-    "web-reader-contracts"
-  ],
-  "image-studio": ["component-runtime"],
-  "image-studio-ui": ["component-runtime"],
-  "stt-runner": ["component-runtime"],
-  "tts-runner": ["component-runtime"],
-  "voice-browser": ["component-runtime"],
-  "make": [
-    "component-runtime"
-  ],
-  "make-contracts": [
-    "component-runtime"
-  ],
-  "playwright-reader-ui": [
-    "browser-contracts",
-    "component-runtime",
-    "playwright-reader-contracts"
-  ],
-  "playwright-reader-contracts": [
-    "browser-contracts",
-    "component-runtime"
-  ],
-  "web-reader-contracts": [
-    "browser-contracts",
-    "component-runtime",
-    "playwright-reader-contracts",
-    "web-reader"
-  ],
-  "make-ui": [
-    "component-runtime"
-  ],
-  "web-reader-ui": [
-    "browser-contracts",
-    "component-runtime",
-    "playwright-reader-contracts",
-    "web-reader-contracts",
-    "web-reader"
-  ]
-};
 function createApplicationCatalog(): readonly ApplicationDefinition[] {
   return [
-  definition("core", "Ядро", "apps/server", {
-    optionalRuntimeDependencies: [
-      "identity",
-      "billing",
-      "make",
-      "image-studio",
-      "web-reader",
-      "playwright-reader",
-      "browser-runner",
-      "llm-runner",
-      "stt-runner",
-      "tts-runner",
-      "make-ui",
-      "image-studio-ui",
-      "playwright-reader-ui",
-      "web-reader-ui",
+  definition("core", "Ядро", ["apps/server"], {
+    "workspaces": [
+      "@voicechat/server"
     ],
-    isolation: { tests: false, build: true, deploy: false },
-    workspaces: ["@voicechat/server"],
-    services: ["voicechat"],
-    entrypoint: "apps/server/src/index.ts",
-    healthPath: "/api/health",
-    dataPaths: ["database", "users", "conversations", "chat-accounting.sqlite"],
-    buildDependencies: [
+    "buildDependencies": [
       "platform-sdk",
       "identity",
       "identity-client",
@@ -143,182 +57,358 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "web-reader",
       "playwright-reader",
       "browser-runner",
-      "llm-runner",
+      "llm-runner"
     ],
+    "services": [
+      "voicechat"
+    ],
+    "dataPaths": [
+      "database",
+      "users",
+      "conversations",
+      "chat-accounting.sqlite"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": true,
+      "deploy": false
+    },
+    "optionalRuntimeDependencies": [
+      "identity",
+      "billing",
+      "make",
+      "image-studio",
+      "web-reader",
+      "playwright-reader",
+      "browser-runner",
+      "llm-runner",
+      "stt-runner",
+      "tts-runner",
+      "make-ui",
+      "image-studio-ui",
+      "playwright-reader-ui",
+      "web-reader-ui"
+    ],
+    "entrypoint": "apps/server/src/index.ts",
+    "healthPath": "/api/health"
   }),
-  definition("identity", "Identity", "apps/identity", {
-    workspaces: ["@voicechat/identity-server"],
-    buildDependencies: ["shared", "sessions-core", "identity-client", "identity-contracts", "storage-sql", "component-runtime"],
-    optionalRuntimeDependencies: ["core"],
-    services: ["identity"], entrypoint: "apps/identity/src/index.ts", healthPath: "/v1/health",
-    dataPaths: ["identity"], configuration: ["SISLEXA_COMPONENT_CONFIG", "IDENTITY_DATABASE_URL", "IDENTITY_SESSION_SECRET_FILE"],
-    isolation: {tests:true,build:true,deploy:true},
-    contractPaths: ["apps/identity/src/ports.ts", "apps/identity/component-contract.json"],
-    contractChecks: [{workspace:"@voicechat/server", files:["src/routes/rest.auth.test.ts", "src/routes/internal.component.test.ts", "src/identityBridge.test.ts"]}],
+  definition("identity", "Identity", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/routes/rest.auth.test.ts",
+          "src/routes/internal.component.test.ts",
+          "src/identityBridge.test.ts"
+        ]
+      }
+    ],
+    "services": [
+      "identity"
+    ],
+    "dataPaths": [
+      "identity"
+    ],
+    "configuration": [
+      "SISLEXA_COMPONENT_CONFIG",
+      "IDENTITY_DATABASE_URL",
+      "IDENTITY_SESSION_SECRET_FILE"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "optionalRuntimeDependencies": [
+      "core"
+    ],
+    "healthPath": "/v1/health",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
   }),
-  definition("billing", "Billing", "apps/billing", {
-    workspaces: ["@voicechat/billing"],
-    buildDependencies: ["shared", "sessions-core", "component-runtime", "platform-sdk"],
-    runtimeDependencies: ["identity"], minimumDependencyApis: { identity: "1.1.0" },
-    services: ["billing"], entrypoint: "apps/billing/src/index.ts", healthPath: "/api/health",
-    dataPaths: ["billing"], configuration: ["SISLEXA_COMPONENT_CONFIG", "BILLING_DATA_DIR"],
-    isolation: { tests: true, build: true, deploy: true },
-    contractPaths: ["apps/billing/component-contract.json", "apps/billing/src/index.ts"],
-    contractChecks: [{ workspace: "@voicechat/server", files: ["src/billingBridge.test.ts"] }],
+  definition("billing", "Billing", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "identity"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/billingBridge.test.ts"
+        ]
+      }
+    ],
+    "services": [
+      "billing"
+    ],
+    "dataPaths": [
+      "billing"
+    ],
+    "configuration": [
+      "SISLEXA_COMPONENT_CONFIG",
+      "BILLING_DATA_DIR"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "minimumDependencyApis": {
+      "identity": "1.1.0"
+    },
+    "healthPath": "/api/health",
+    "external": {
+      "repository": "https://github.com/sislex/billing",
+      "package": "@sislexa/billing"
+    }
   }),
-  definition("platform-sdk", "Platform SDK", "packages/platform-sdk", {
-    kind: "library", paths: [], workspaces: [], buildDependencies: [],
-    external: { repository: "https://github.com/sislex/sdk", package: "@sislexa/sdk" },
-    contractPaths: [], isolation: { tests: false, build: false, deploy: false },
+  definition("platform-sdk", "Platform SDK", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/sdk",
+      "package": "@sislexa/sdk"
+    }
   }),
-  definition("make", "Make", "apps/make", {
-    browserPaths: ["apps/make/src/routes.ts", "apps/make/src/transpile.ts"],
-    e2eFiles: ["e2e/make.e2e.test.ts"],
-    runtimeDependencies: ["core"],
-    services: ["make"],
-    entrypoint: "apps/make/src/standalone/index.ts",
-    healthPath: "/v1/health",
-    dataPaths: ["make"],
-    configuration: [
+  definition("make", "Make", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "core"
+    ],
+    "e2eFiles": [
+      "e2e/make.e2e.test.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/makeBridge"
+        ]
+      }
+    ],
+    "services": [
+      "make"
+    ],
+    "dataPaths": [
+      "make"
+    ],
+    "configuration": [
       "VC_CORE_URL",
       "VC_INTERNAL_TOKEN",
       "VC_MCP_SECRET",
-      "VC_DATA_DIR",
+      "VC_DATA_DIR"
     ],
-    buildDependencies: ["shared", "make-contracts"],
-    contractPaths: [
-      "apps/make/src/core.ts",
-      "apps/make/src/service.ts",
-      "apps/make/src/internal.ts",
-      "apps/make/src/taskScope.ts",
-      "apps/make/src/hub.ts",
-      "apps/make/src/index.ts",
-      "apps/make/src/routes.ts",
-      "apps/make/src/mcp.ts",
-    ],
-    contractChecks: [
-      { workspace: "@voicechat/server", files: ["src/makeBridge"] },
-    ],
-    isolation: { tests: true, build: true, deploy: true },
-  }),
-  definition("image-studio", "Студия картинок", "apps/image-studio", {
-    runtimeDependencies: ["core"],
-    services: ["image-studio"],
-    entrypoint: "apps/image-studio/src/standalone/index.ts",
-    healthPath: "/v1/health",
-    dataPaths: ["image-studio"],
-    contractPaths: [
-      "apps/image-studio/src/core.ts",
-      "apps/image-studio/src/service.ts",
-      "apps/image-studio/src/internal.ts",
-      "apps/image-studio/src/index.ts",
-    ],
-    contractChecks: [
-      { workspace: "@voicechat/server", files: ["src/imageStudioBridge"] },
-    ],
-    isolation: { tests: true, build: true, deploy: true },
-  }),
-  definition(
-    "playwright-reader",
-    "Playwright Reader API",
-    "apps/playwright-reader",
-    {
-      browserPaths: ["apps/playwright-reader/src"],
-      e2eFiles: ["e2e/playwrightReader.e2e.test.ts"],
-      runtimeDependencies: ["core", "browser-runner"],
-      services: ["playwright-reader"],
-      entrypoint: "apps/playwright-reader/src/standalone/index.ts",
-      healthPath: "/v1/health",
-      buildDependencies: ["shared", "browser-contracts", "playwright-reader-contracts"],
-      contractPaths: [
-        "apps/playwright-reader/src/core.ts",
-        "apps/playwright-reader/src/service.ts",
-        "apps/playwright-reader/src/internal.ts",
-        "apps/playwright-reader/src/index.ts",
-      ],
-      contractChecks: [
-        {
-          workspace: "@voicechat/server",
-          files: ["src/playwrightReaderBridge"],
-        },
-      ],
-      isolation: { tests: true, build: true, deploy: true },
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
     },
-  ),
-  definition("browser-runner", "Chromium", "apps/browser-runner", {
-    browserPaths: ["apps/browser-runner/src"],
-    e2eFiles: ["e2e/playwrightReader.e2e.test.ts"],
-    services: ["browser-runner"],
-    entrypoint: "apps/browser-runner/src/index.ts",
-    healthPath: "/v1/health",
-    dataPaths: ["browser-profiles"],
-    buildDependencies: ["shared", "browser-contracts"],
-    contractPaths: [
-      "apps/browser-runner/src/client.ts",
-      "apps/browser-runner/src/server.ts",
-    ],
-    contractChecks: [
-      { workspace: "@voicechat/playwright-reader", files: [] },
-      {
-        workspace: "@voicechat/server",
-        files: ["src/browser", "src/playwrightReaderBridge"],
-      },
-    ],
-    isolation: { tests: true, build: true, deploy: true },
+    "healthPath": "/v1/health",
+    "external": {
+      "repository": "https://github.com/sislex/make",
+      "package": "@sislexa/make"
+    }
   }),
-  ...(
-    ["llm-runner", "stt-runner", "tts-runner", "automation-runner"] as const
-  ).map((id) =>
-    definition(id, id, `apps/${id}`, {
-      runtimeDependencies:
-        id === "automation-runner" ? ["core", "llm-runner"] : [],
-      services: id === "llm-runner" ? ["runner-work", "runner-personal"] : [id],
-      entrypoint: `apps/${id}/src/index.ts`,
-      healthPath: "/v1/health",
-      contractPaths: [
-        `apps/${id}/src/client.ts`,
-        `apps/${id}/src/types.ts`,
-        `apps/${id}/src/server.ts`,
-      ],
-      contractChecks: [
-        {
-          workspace: "@voicechat/server",
-          files:
-            id === "llm-runner"
-              ? ["src/llm"]
-              : id === "automation-runner"
-                ? ["src/automationClient.test.ts"]
-                : [`src/${id.slice(0, 3)}`],
-        },
-      ],
-      isolation: {
-        tests: true,
-        build: true,
-        deploy: id !== "automation-runner",
-      },
-    }),
-  ),
-  definition("web", "Веб-оболочка", "apps/web", {
-    e2eFiles: ["e2e/applicationReleases.e2e.test.ts", "e2e/accessibility.e2e.test.ts", "e2e/machine-vpn.e2e.test.ts", "e2e/universalSearch.e2e.test.ts"],
-    browserPaths: [
-      "packages/ui/src/runtime",
-      "packages/ui/src/App.tsx",
-      "packages/ui/src/styles",
-      "e2e/accessibility.e2e.test.ts",
-      "packages/ui/src/test/accessibilityBrowser.tsx",
-      "packages/ui/src/components/releases/ApplicationReleaseCenter.tsx",
-      "packages/ui/src/components/MachineVpn.tsx",
-      "packages/ui/src/components/MachineVpn.css",
-      "packages/ui/src/components/MachineVpn.stories.tsx",
-      "packages/ui/src/test/fixtures/vpn.ts",
-      "e2e/machine-vpn.e2e.test.ts",
-      "e2e/universalSearch.e2e.test.ts",
-      "packages/ui/src/components/CommandPalette.tsx",
-      "packages/ui/src/lib/useUniversalSearch.ts",
+  definition("image-studio", "Студия картинок", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "core"
     ],
-    paths: ["apps/web", "packages/ui"],
-    workspaces: ["@voicechat/ui", "@voicechat/web"],
-    buildDependencies: [
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/imageStudioBridge"
+        ]
+      }
+    ],
+    "services": [
+      "image-studio"
+    ],
+    "dataPaths": [
+      "image-studio"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "healthPath": "/v1/health",
+    "external": {
+      "repository": "https://github.com/sislex/image-studio",
+      "package": "@sislexa/image-studio"
+    }
+  }),
+  definition("playwright-reader", "Playwright Reader API", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "core",
+      "browser-runner"
+    ],
+    "e2eFiles": [
+      "e2e/playwrightReader.e2e.test.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/playwrightReaderBridge"
+        ]
+      }
+    ],
+    "services": [
+      "playwright-reader"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "healthPath": "/v1/health",
+    "external": {
+      "repository": "https://github.com/sislex/playwrightreader",
+      "package": "@sislexa/playwright-reader"
+    }
+  }),
+  definition("browser-runner", "Chromium", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "e2eFiles": [
+      "e2e/playwrightReader.e2e.test.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/playwright-reader",
+        "files": []
+      },
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/browser",
+          "src/playwrightReaderBridge"
+        ]
+      }
+    ],
+    "services": [
+      "browser-runner"
+    ],
+    "dataPaths": [
+      "browser-profiles"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "healthPath": "/v1/health",
+    "external": {
+      "repository": "https://github.com/sislex/playwrightreader",
+      "package": "@sislexa/playwright-reader"
+    }
+  }),
+  definition("llm-runner", "LLM Runner", [], {
+    workspaces: [], buildDependencies: [], contractPaths: [],
+    contractChecks: [{ workspace: '@voicechat/server', files: ['src/llm'] }],
+    services: ['runner-work', 'runner-personal'],
+    isolation: { tests: false, build: false, deploy: true },
+    healthPath: '/v1/health',
+    external: { repository: 'https://github.com/sislex/llm-runner', package: '@sislex/llm-runner' }
+  }),
+  definition("stt-runner", "stt-runner", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/stt"
+        ]
+      }
+    ],
+    "services": [
+      "stt-runner"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "healthPath": "/v1/health",
+    "external": {
+      "repository": "https://github.com/sislex/voice",
+      "package": "@sislexa/voice"
+    }
+  }),
+  definition("tts-runner", "tts-runner", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/tts"
+        ]
+      }
+    ],
+    "services": [
+      "tts-runner"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "healthPath": "/v1/health",
+    "external": {
+      "repository": "https://github.com/sislex/voice",
+      "package": "@sislexa/voice"
+    }
+  }),
+  definition("automation-runner", "automation-runner", ["apps/automation-runner"], {
+    "runtimeDependencies": [
+      "core",
+      "llm-runner"
+    ],
+    "contractPaths": [
+      "apps/automation-runner/src/client.ts",
+      "apps/automation-runner/src/types.ts",
+      "apps/automation-runner/src/server.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/automationClient.test.ts"
+        ]
+      }
+    ],
+    "services": [
+      "automation-runner"
+    ],
+    "isolation": {
+      "tests": true,
+      "build": true,
+      "deploy": false
+    },
+    "entrypoint": "apps/automation-runner/src/index.ts",
+    "healthPath": "/v1/health"
+  }),
+  definition("web", "Веб-оболочка", ["apps/web","packages/ui"], {
+    "workspaces": [
+      "@voicechat/ui",
+      "@voicechat/web"
+    ],
+    "buildDependencies": [
       "shared",
       "sessions-core",
       "app-shell",
@@ -336,145 +426,481 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "identity-account",
       "identity-client",
       "make-ui",
-      "image-studio-ui",
+      "image-studio-ui"
     ],
-    kind: "frontend",
+    "browserPaths": [
+      "e2e/sessions.e2e.test.ts",
+      "e2e/settings.e2e.test.ts",
+      "e2e/projects.e2e.test.ts",
+      "e2e/gitPane.e2e.test.ts",
+      "packages/ui/src/runtime",
+      "packages/ui/src/App.tsx",
+      "packages/ui/src/styles",
+      "e2e/accessibility.e2e.test.ts",
+      "packages/ui/src/test/accessibilityBrowser.tsx",
+      "packages/ui/src/components/releases/ApplicationReleaseCenter.tsx",
+      "packages/ui/src/components/MachineVpn.tsx",
+      "packages/ui/src/components/MachineVpn.css",
+      "packages/ui/src/components/MachineVpn.stories.tsx",
+      "packages/ui/src/test/fixtures/vpn.ts",
+      "e2e/machine-vpn.e2e.test.ts",
+      "e2e/universalSearch.e2e.test.ts",
+      "packages/ui/src/components/CommandPalette.tsx",
+      "packages/ui/src/lib/useUniversalSearch.ts"
+    ],
+    "e2eFiles": [
+      "e2e/sessions.e2e.test.ts",
+      "e2e/settings.e2e.test.ts",
+      "e2e/projects.e2e.test.ts",
+      "e2e/gitPane.e2e.test.ts",
+      "e2e/applicationReleases.e2e.test.ts",
+      "e2e/accessibility.e2e.test.ts",
+      "e2e/machine-vpn.e2e.test.ts",
+      "e2e/universalSearch.e2e.test.ts"
+    ],
+    "kind": "frontend"
   }),
-  definition("web-reader", "Web Reader", "apps/web-reader", {
-    paths: ["apps/web-reader", "apps/web-recorder"],
-    workspaces: ["@voicechat/web-reader", "@voicechat/web-recorder"],
-    runtimeDependencies: ["core", "playwright-reader"],
-    minimumDependencyApis: { core: "1.1.0" },
-    buildDependencies: ["shared", "browser-contracts", "web-reader-contracts", "playwright-reader-contracts", "ui-kit"],
-    browserPaths: ["apps/web-reader/src", "apps/web-recorder/src"],
-    e2eFiles: ["e2e/webReaderHttp.e2e.test.ts", "e2e/webReaderModel.e2e.test.ts", "e2e/webReaderNative.e2e.test.ts", "e2e/webReaderOwnProject.e2e.test.ts", "e2e/webReaderProject.e2e.test.ts"],
-    services: ["web-reader"],
-    entrypoint: "apps/web-reader/src/standalone/index.ts",
-    healthPath: "/v1/health",
-    configuration: ["VC_CORE_URL", "VC_INTERNAL_TOKEN", "VC_MCP_SECRET", "VC_PLAYWRIGHT_READER_URL", "VC_BROWSER_HOST_ALIASES"],
-    contractPaths: ["apps/web-reader/src/index.ts", "apps/web-reader/src/standalone", "apps/web-reader/src/mcp/previewMcp.ts"],
-    contractChecks: [{ workspace: "@voicechat/server", files: ["src/readerBridge", "src/playwrightReaderBridge"] }],
-    isolation: { tests: true, build: true, deploy: true },
+  definition("web-reader", "Web Reader", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "core",
+      "playwright-reader"
+    ],
+    "e2eFiles": [
+      "e2e/webReaderHttp.e2e.test.ts",
+      "e2e/webReaderModel.e2e.test.ts",
+      "e2e/webReaderNative.e2e.test.ts",
+      "e2e/webReaderOwnProject.e2e.test.ts",
+      "e2e/webReaderProject.e2e.test.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/server",
+        "files": [
+          "src/readerBridge",
+          "src/playwrightReaderBridge"
+        ]
+      }
+    ],
+    "services": [
+      "web-reader"
+    ],
+    "configuration": [
+      "VC_CORE_URL",
+      "VC_INTERNAL_TOKEN",
+      "VC_MCP_SECRET",
+      "VC_PLAYWRIGHT_READER_URL",
+      "VC_BROWSER_HOST_ALIASES"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "minimumDependencyApis": {
+      "core": "1.1.0"
+    },
+    "healthPath": "/v1/health",
+    "external": {
+      "repository": "https://github.com/sislex/webreader",
+      "package": "@sislexa/web-reader"
+    }
   }),
-  ...(
-    [
-      ["make-ui", "Make UI", "make-app", "make"],
-      [
-        "image-studio-ui",
-        "Студия картинок UI",
-        "image-studio-app",
-        "image-studio",
-      ],
-      [
-        "playwright-reader-ui",
-        "Playwright Reader UI",
-        "playwright-reader-app",
-        "playwright-reader",
-      ],
-      ["web-reader-ui", "Web Reader UI", "web-reader-app", "web-reader"],
-    ] as const
-  ).map(([id, name, pkg, backend]) =>
-    definition(id, name, `packages/${pkg}`, {
-      workspaces: [`@voicechat/${pkg}`],
-      kind: "frontend",
-      buildDependencies: [
-        "shared",
-        "ui-kit",
-        "ui-foundation",
-        ...(id === "make-ui" ? ["make-contracts"] : []),
-        ...(id.includes("reader") ? ["chat-app"] : []),
-      ],
-      runtimeDependencies: [...new Set(["core", backend])],
-      services: [id],
-      entrypoint: "scripts/application-frontend-server.mjs",
-      healthPath: "/v1/health",
-      dataPaths: ["frontend-assets"],
-      configuration: ["VC_DATA_DIR"],
-      frontend: { entry: "src/frontend.tsx" },
-      browserPaths: [`packages/${pkg}/src`],
-      e2eFiles: id === "image-studio-ui"
-        ? ["e2e/applicationFrontend.e2e.test.ts", "e2e/imageStudioLayout.e2e.test.ts"]
-        : ["e2e/applicationFrontend.e2e.test.ts"],
-      contractPaths: [`packages/${pkg}/src/panelContract.ts`],
-      contractChecks: [
-        {
-          workspace: "@voicechat/ui",
-          files: ["src/runtime/applicationHost.dom.test.tsx"],
-        },
-      ],
-      isolation: { tests: true, build: true, deploy: true },
-    }),
-  ),
-  ...(["ui-kit", "ui-foundation"] as const).map(id => definition(id, id, `packages/${id}`, {
-    kind: "library", paths: [], workspaces: [], buildDependencies: [], contractPaths: [],
-    external: { repository: "https://github.com/sislex/sielexa-ui", package: `@voicechat/${id}` },
-    isolation: { tests: false, build: false, deploy: false },
-  })),
-  ...(["agent", "desktop", "agent-tray", "login-application"] as const).map(
-    (id) =>
-      definition(id, id, `apps/${id}`, {
-        workspaces: id === "agent" ? ["@voicechat/agent"] : [],
-        kind: "client",
-        buildDependencies: id === "desktop" ? ["shared", "web"] : ["shared"],
-      }),
-  ),
-  definition("component-runtime", "Component runtime", "packages/component-runtime", {
-    kind: "library", workspaces: ["@sislexa/component-runtime"],
-    buildDependencies: ["shared"], contractPaths: ["packages/component-runtime"],
+  definition("make-ui", "Make UI", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "core",
+      "make"
+    ],
+    "e2eFiles": [
+      "e2e/applicationFrontend.e2e.test.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/ui",
+        "files": [
+          "src/runtime/applicationHost.dom.test.tsx"
+        ]
+      }
+    ],
+    "services": [
+      "make-ui"
+    ],
+    "dataPaths": [
+      "frontend-assets"
+    ],
+    "configuration": [
+      "VC_DATA_DIR"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "kind": "frontend",
+    "healthPath": "/v1/health",
+    "frontend": {
+      "entry": "src/frontend.tsx"
+    },
+    "external": {
+      "repository": "https://github.com/sislex/make",
+      "package": "@sislexa/make"
+    }
   }),
-  ...(
-    [
+  definition("image-studio-ui", "Студия картинок UI", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "core",
+      "image-studio"
+    ],
+    "e2eFiles": [
+      "e2e/applicationFrontend.e2e.test.ts",
+      "e2e/imageStudioLayout.e2e.test.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/ui",
+        "files": [
+          "src/runtime/applicationHost.dom.test.tsx"
+        ]
+      }
+    ],
+    "services": [
+      "image-studio-ui"
+    ],
+    "dataPaths": [
+      "frontend-assets"
+    ],
+    "configuration": [
+      "VC_DATA_DIR"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "kind": "frontend",
+    "healthPath": "/v1/health",
+    "frontend": {
+      "entry": "src/frontend.tsx"
+    },
+    "external": {
+      "repository": "https://github.com/sislex/image-studio",
+      "package": "@sislexa/image-studio"
+    }
+  }),
+  definition("playwright-reader-ui", "Playwright Reader UI", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "core",
+      "playwright-reader"
+    ],
+    "e2eFiles": [
+      "e2e/applicationFrontend.e2e.test.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/ui",
+        "files": [
+          "src/runtime/applicationHost.dom.test.tsx"
+        ]
+      }
+    ],
+    "services": [
+      "playwright-reader-ui"
+    ],
+    "dataPaths": [
+      "frontend-assets"
+    ],
+    "configuration": [
+      "VC_DATA_DIR"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "kind": "frontend",
+    "healthPath": "/v1/health",
+    "frontend": {
+      "entry": "src/frontend.tsx"
+    },
+    "external": {
+      "repository": "https://github.com/sislex/playwrightreader",
+      "package": "@sislexa/playwright-reader"
+    }
+  }),
+  definition("web-reader-ui", "Web Reader UI", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "runtimeDependencies": [
+      "core",
+      "web-reader"
+    ],
+    "e2eFiles": [
+      "e2e/applicationFrontend.e2e.test.ts"
+    ],
+    "contractChecks": [
+      {
+        "workspace": "@voicechat/ui",
+        "files": [
+          "src/runtime/applicationHost.dom.test.tsx"
+        ]
+      }
+    ],
+    "services": [
+      "web-reader-ui"
+    ],
+    "dataPaths": [
+      "frontend-assets"
+    ],
+    "configuration": [
+      "VC_DATA_DIR"
+    ],
+    "isolation": {
+      "tests": false,
+      "build": false,
+      "deploy": true
+    },
+    "kind": "frontend",
+    "healthPath": "/v1/health",
+    "frontend": {
+      "entry": "src/frontend.tsx"
+    },
+    "external": {
+      "repository": "https://github.com/sislex/webreader",
+      "package": "@sislexa/web-reader"
+    }
+  }),
+  definition("ui-kit", "ui-kit", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/sielexa-ui",
+      "package": "@voicechat/ui-kit"
+    }
+  }),
+  definition("ui-foundation", "ui-foundation", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/sielexa-ui",
+      "package": "@voicechat/ui-foundation"
+    }
+  }),
+  definition("agent", "agent", ["apps/agent"], {
+    "kind": "client"
+  }),
+  definition("desktop", "desktop", ["apps/desktop"], {
+    "workspaces": [],
+    "buildDependencies": [
       "shared",
-      "identity-client",
-      "identity-contracts",
-      "identity-login",
-      "identity-account",
-      "storage-sql",
-      "sessions-core",
-      "voice-browser",
-      "app-shell",
-      "sessions-app",
+      "web"
+    ],
+    "kind": "client"
+  }),
+  definition("agent-tray", "agent-tray", ["apps/agent-tray"], {
+    "workspaces": [],
+    "kind": "client"
+  }),
+  definition("login-application", "login-application", ["apps/login-application"], {
+    "workspaces": [],
+    "kind": "client"
+  }),
+  definition("component-runtime", "Component runtime", ["packages/component-runtime"], {
+    "workspaces": [
+      "@sislexa/component-runtime"
+    ],
+    "contractPaths": [
+      "packages/component-runtime"
+    ],
+    "kind": "library"
+  }),
+  definition("shared", "shared", ["packages/shared"], {
+    "buildDependencies": [
+      "sessions-core"
+    ],
+    "contractPaths": [
+      "packages/shared"
+    ],
+    "kind": "library"
+  }),
+  definition("identity-client", "identity-client", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
+  }),
+  definition("identity-contracts", "identity-contracts", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
+  }),
+  definition("identity-login", "identity-login", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
+  }),
+  definition("identity-account", "identity-account", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
+  }),
+  definition("storage-sql", "storage-sql", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
+  }),
+  definition("sessions-core", "sessions-core", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
+  }),
+  definition("voice-browser", "voice-browser", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/voice",
+      "package": "@sislexa/voice"
+    }
+  }),
+  definition("app-shell", "app-shell", ["packages/app-shell"], {
+    "buildDependencies": [],
+    "contractPaths": [
+      "packages/app-shell"
+    ],
+    "kind": "library"
+  }),
+  definition("sessions-app", "sessions-app", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
+  }),
+  definition("profile-app", "profile-app", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/identity",
+      "package": "@sislexa/identity"
+    }
+  }),
+  definition("chat-app", "chat-app", ["packages/chat-app"], {
+    "buildDependencies": [
+      "shared",
+      "ui-kit"
+    ],
+    "contractPaths": [
+      "packages/chat-app"
+    ],
+    "kind": "library"
+  }),
+  definition("projects-app", "projects-app", ["packages/projects-app"], {
+    "buildDependencies": [
+      "shared",
+      "ui-kit"
+    ],
+    "contractPaths": [
+      "packages/projects-app"
+    ],
+    "kind": "library"
+  }),
+  definition("operations-app", "operations-app", ["packages/operations-app"], {
+    "buildDependencies": [
+      "shared",
+      "ui-kit"
+    ],
+    "contractPaths": [
+      "packages/operations-app"
+    ],
+    "kind": "library"
+  }),
+  definition("admin-app", "admin-app", ["packages/admin-app"], {
+    "buildDependencies": [
+      "shared",
+      "ui-kit",
       "profile-app",
-      "chat-app",
-      "projects-app",
-      "operations-app",
-      "admin-app",
-      "make-contracts",
-      "browser-contracts",
-      "web-reader-contracts",
-      "playwright-reader-contracts",
-    ] as const
-  ).map((id) =>
-    definition(id, id, `packages/${id}`, {
-      kind: "library",
-      buildDependencies:
-        id === "shared"
-          ? ["sessions-core"]
-          : id === "identity-client" ? ["shared", "identity-contracts", "sessions-core", "storage-sql", "component-runtime"]
-          : id === "identity-account" ? ["shared", "ui-kit", "ui-foundation", "profile-app", "sessions-app", "identity-client", "identity-login"]
-          : id === "identity-login" ? ["shared", "ui-kit", "ui-foundation", "profile-app", "sessions-app", "identity-client"]
-          : id === "storage-sql" ? []
-          : id === "sessions-core" || id === "app-shell"
-            ? []
-            : id.endsWith("-contracts")
-              ? ["shared"]
-              : id === "sessions-app"
-                ? ["sessions-core", "ui-kit"]
-                : id === "profile-app"
-                  ? ["sessions-app", "ui-kit"]
-                  : id === "admin-app"
-                    ? ["shared", "ui-kit", "profile-app", "sessions-app"]
-                    : ["shared", "ui-kit"],
-      contractPaths: [`packages/${id}`],
-      ...(id === "browser-contracts" ? {
-        browserPaths: ["packages/browser-contracts/src/audit"],
-        e2eFiles: ["e2e/webReaderNative.e2e.test.ts"],
-      } : {}),
-    }),
-  ),
-].map(application => ({ ...application, buildDependencies: [...new Set([
-  ...application.buildDependencies, ...(EXTERNAL_TOOL_BUILD_DEPENDENCIES[application.id] ?? [])
-])] }));
+      "sessions-app"
+    ],
+    "contractPaths": [
+      "packages/admin-app"
+    ],
+    "kind": "library"
+  }),
+  definition("make-contracts", "make-contracts", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/make",
+      "package": "@voicechat/make-contracts"
+    }
+  }),
+  definition("browser-contracts", "browser-contracts", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "e2eFiles": [
+      "e2e/webReaderNative.e2e.test.ts"
+    ],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/playwrightreader",
+      "package": "@voicechat/browser-contracts"
+    }
+  }),
+  definition("web-reader-contracts", "web-reader-contracts", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/webreader",
+      "package": "@voicechat/web-reader-contracts"
+    }
+  }),
+  definition("playwright-reader-contracts", "playwright-reader-contracts", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+      "repository": "https://github.com/sislex/playwrightreader",
+      "package": "@voicechat/playwright-reader-contracts"
+    }
+  })
+  ];
 }
 // Allow clients that only import other shared contracts to omit release tooling metadata.
 export const APPLICATION_CATALOG = /* @__PURE__ */ createApplicationCatalog();

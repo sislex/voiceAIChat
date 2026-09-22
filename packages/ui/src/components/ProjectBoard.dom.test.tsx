@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import { ProjectBoard, type ProjectBoardProps } from './ProjectBoard'
 import type { Board, Task } from '@shared/projects'

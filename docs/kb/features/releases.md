@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-09-20
-checked: 5f3ca49e
+updated: 2026-09-22
+checked: 55f5a95b
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -40,9 +40,11 @@ areas:
 
 Make, Playwright Reader, Web Reader, Voice and Image Studio publish their own tagged source archives
 and own their API/UI release metadata. Core pins the archive integrity and source
-commit through adapters; `scripts/external-workspace.mjs` runs their complete
-checks. Isolated application builds copy only reachable locked archives, and
-frontend builds preserve the upstream panel version/commit. The operator flow in
+commit through direct immutable archives. Owner repositories run complete checks
+and publish service/frontend images; Core verifies installed frontend artifacts
+without rebuilding source. Core build requests for an external owner fail with
+the owner URL. Release Center source preparation must use the owner build flow;
+its remaining integration is tracked in the extraction completion plan. The operator flow in
 [deployment](../deploy.md#independent-tool-source-releases) builds the exact pinned
 repository revisions and uses installed `voicechat-deploy` for replacement while
 preserving the existing Compose override chain. A manual cutover is verified
@@ -171,6 +173,18 @@ Runtime-требование содержит минимальную и искл
 замену: отдельную миграцию данных этот исполнитель не выполняет.
 
 ### Подготовка и матрица совместимости
+
+External catalog applications use `scripts/owner-application-release.mjs`:
+clone the catalog's trusted owner repository, fix its SHA, require matching owner
+version and a full owner gate, build and verify image metadata, run the owner's
+compatibility driver/matrix, then publish the release branch. Core never delegates
+to a removed workspace or rebuilds extracted source. Missing drivers/baselines
+fail before publication; this scaffold is not evidence of production acceptance.
+Owner baseline matrices, managed dependency fixtures and registry access still
+need acceptance for Release Center's complete external preparation path. The
+currently authorized operator rollout uses installed `voicechat-deploy` with
+verified owner images and an exact previous-image rollback overlay.
+
 
 В Release Center вкладка «Приложения» добавляет выбор приложения/окружения,
 собственную версию, образ registry и диапазоны зависимостей. Owner готовит выпуск;

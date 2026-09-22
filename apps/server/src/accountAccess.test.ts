@@ -7,7 +7,7 @@ import { accountContext } from '@sislexa/identity/server/users/productPolicy'
 import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
-import { signToken } from './users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import { commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { createTurnManager } from './turns.js'
 
@@ -87,7 +87,7 @@ it('closes an already authenticated socket after a tariff change before acceptin
 
 it('rechecks image generation after work has been queued in the independent application', async () => {
   const { db, send } = await fixture()
-  const core = new LocalImageStudioCore({ db, client: { send }, profileHome: () => '/unused', readGenerated: async () => null })
+  const core = new LocalImageStudioCore({ db, client: { send }, generationCwd: () => '/unused', readGenerated: async () => null })
   await expect(core.generate('alice', { prompt: 'Generate' })).rejects.toThrow(TARIFF_DENIED)
   expect(send).not.toHaveBeenCalled()
 })

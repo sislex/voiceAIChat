@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { NewProjectDialog, typeCascadeLevels } from './NewProjectDialog'
 import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, type ProjectTypeNode } from '@shared/projectTypes'
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'

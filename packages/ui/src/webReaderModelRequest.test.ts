@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runReaderModelRequest, readReaderErrors } from './webReaderModelRequest'
-import type { PreviewErrorsResult } from '@shared/previewActions'
-import type { PreviewActionOutcome } from '@voicechat/web-reader-app'
-import type { ReaderHostRegistration } from '@voicechat/web-reader-app'
+import type { PreviewErrorsResult } from '@voicechat/browser-contracts/previewActions'
+import type { PreviewActionOutcome } from '@sislexa/web-reader/ui/index'
+import type { ReaderHostRegistration } from '@sislexa/web-reader/ui/index'
 const registration = (run: ReaderHostRegistration['run']): ReaderHostRegistration => ({ conversationId: 'qa', registrationId: 'first', capabilities: [], run, beginDiagnostics() {}, endDiagnostics() {} })
 const errorsResult = (messages: string[]): PreviewErrorsResult => ({ page: { url: 'https://test.example/', title: 'QA' }, total: messages.length, errors: messages.map(message => ({ kind: 'error', message, at: 0 })) })
 const request = (reg: ReaderHostRegistration | null) => ({ conversationId: 'qa', activeConversationId: 'qa', registration: reg, activeRegistrationId: 'first', readerRoute: true, action: { kind: 'read' as const } })

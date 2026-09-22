@@ -1,12 +1,7 @@
 # Append to the component deployment after preparing the private Identity grant.
 services:
   identity:
-    build:
-      context: ${SISLEXA_IDENTITY_SOURCE:?Set the pinned Identity source checkout}
-      args:
-        APPLICATION_VERSION: "1.2.1"
-        APPLICATION_COMMIT: ${SISLEXA_IDENTITY_COMMIT:?Set the pinned Identity commit}
-    image: sislexa-identity:1.2.1
+    image: ${SISLEXA_IDENTITY_IMAGE:-ghcr.io/sislex/identity:a8208800181d5d92053a80d7cd60e26b27e16263}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0

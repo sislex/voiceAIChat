@@ -1,6 +1,15 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // Vite 5 predates Node's sqlite builtin; keep this owner runtime import native.
+  plugins: [{
+    name: 'native-node-sqlite',
+    enforce: 'pre',
+    resolveId(id) { if (id === 'node:sqlite' || id === 'sqlite') return '\0native-node-sqlite' },
+    load(id) {
+      if (id === '\0native-node-sqlite') return "const sqlite = process.getBuiltinModule('node:sqlite'); export const DatabaseSync = sqlite.DatabaseSync; export const StatementSync = sqlite.StatementSync; export const constants = sqlite.constants; export default sqlite;"
+    }
+  }],
   test: {
     globals: true,
     environment: 'node',

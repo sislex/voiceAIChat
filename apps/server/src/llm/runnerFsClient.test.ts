@@ -98,3 +98,10 @@ describe('RunnerFsClient', () => {
     expect(seenLastIds).toEqual(['', '10'])
   })
 })
+
+it('bounds management requests when an authenticated runner does not respond', async () => {
+  const srv = await start(() => {})
+  started.push(srv)
+  const client = new RunnerFsClient({ claudeBaseUrl: srv.url, token: 'private-token', requestTimeoutMs: 30 })
+  await expect(client.listMcpServers('alice')).rejects.toThrow(/timeout|aborted/i)
+})

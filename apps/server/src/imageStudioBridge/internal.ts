@@ -1,9 +1,7 @@
 import type { FastifyInstance } from 'fastify'
-import type { ImageStudioCore } from '@voicechat/image-studio'
-import {
-  createRpcDispatcher, RpcError, IMAGE_STUDIO_CORE_METHODS, INTERNAL_IMAGE_STUDIO_CORE_PATH,
-  INTERNAL_IMAGE_STUDIO_GENERATE_PATH, IMAGE_STUDIO_RPC_BODY_LIMIT, isImageStudioGenerateRequest, type RpcRequest
-} from '@voicechat/shared'
+import type { ImageStudioCore } from '@sislexa/image-studio/image-studio/index'
+import { createRpcDispatcher, RpcError, type RpcRequest } from '@voicechat/shared'
+import { IMAGE_STUDIO_CORE_METHODS, INTERNAL_IMAGE_STUDIO_CORE_PATH, INTERNAL_IMAGE_STUDIO_GENERATE_PATH, IMAGE_STUDIO_RPC_BODY_LIMIT, isImageStudioGenerateRequest } from '@voicechat/image-studio-contracts/imageStudioInternal'
 
 /** Регистрируется только в scope внутреннего API с проверкой VC_INTERNAL_TOKEN. */
 export function registerImageStudioInternal(app: FastifyInstance, core: ImageStudioCore): void {

@@ -30,7 +30,13 @@ async function api(path: string, method = 'GET', body?: unknown) {
   return response
 }
 async function open(query = 'PaletteNeedle') {
-  if (!await page.getByRole('dialog', { name: 'Командная палитра' }).isVisible()) await page.keyboard.press('Control+k')
+  // Wait for the authenticated host and focus its document after each navigation;
+  // keyboard shortcuts belong to the host even when the sidebar is collapsed.
+  if (!await page.getByRole('dialog', { name: 'Командная палитра' }).isVisible()) {
+    await page.locator('.cmdk-open').waitFor({ state: 'attached' })
+    await page.locator('#app-content').focus()
+    await page.keyboard.press('Control+k')
+  }
   const dialog = page.getByRole('dialog', { name: 'Командная палитра' })
   await dialog.waitFor()
   await dialog.getByRole('combobox').fill(query)

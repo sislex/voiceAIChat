@@ -1,21 +1,15 @@
 export * from './uiPerformance'
-export * from './previewAccessibility'
-export * from './browserEvaluation'
-export * from './previewAudit'
-export * from './previewProbe'
-export * from './browserDiagnostics'
-export * from './browserDownloads'
+
 // @voicechat/shared — общие типы, контракт протокола и чистая логика,
 // переиспользуемые desktop/server/web.
 
 export * from './universalSearch'
 export * from './types'
-export * from './browserLimits'
-export * from './browserWaiting'
+
 export * from './protocol'
 export * from './stateMachine'
 export * from './sentences'
-export * from './pcm'
+
 export * from './prompt'
 export * from './streamJson'
 export * from './codexStream'
@@ -34,35 +28,24 @@ export * from './version'
 export * from './admin'
 export * from './tools'
 export * from './chatInstructions'
-export * from './make'
-export * from './imageStudio'
+
 export * from './plural'
-export * from './makeMock'
-export * from './makePwa'
-export * from './makeGit'
-export * from './makeNextSteps'
+
 export * from './lineDiff'
-export * from './makeSelection'
-export * from './makeSearch'
-export * from './makeLint'
-export * from './makeAutoImport'
-export * from './makeTextEdit'
-export * from './makeReorder'
-export * from './makeStoriesGen'
+
 export * from './wcagContrast'
 export * from './figmaTokens'
 export * from './darkTheme'
 export * from './mockTable'
 export * from './internalRpc'
-export * from './makeMockPrompt'
+
 export * from './jsonSchemaLite'
-export * from './makeDeploy'
-export * from './passwordPolicy'
-export * from './makeTokens'
+
+
+
 export * from './usageSummary'
 export * from './images'
-export * from './imageRetouch'
-export * from './imageSelection'
+
 export * from './agentInstall'
 export * from './questions'
 export * from './projects'
@@ -82,15 +65,11 @@ export * from './temporaryResources'
 export * from './timeline'
 export * from './qa'
 export * from './llm'
-export * from './stt'
+
 export * from './llmAccess'
-export * from './tts'
+
 export * from './automation'
-export * from './previewInspector'
-export * from './previewActions'
-export * from './preview'
-export * from './webRecorder'
-export * from './browserId'
+
 export * from './widgetAssistant'
 export * from './kanbanSimilarity'
 export * from './orchestration'
@@ -101,20 +80,11 @@ export * from './kbGaps'
 export * from './contextGating'
 export * from './machineHealth'
 export * from './commandPolicy'
-export * from './browserActions'
+
 export * from './scenarioStep'
 export * from './rateLimit'
 export * from './storyParse'
 
-export * from './playwrightReader'
-export * from './imageStudioInternal'
-
-export * from './browserFrames'
-export * from './browserProfile'
-export * from './browserDialogs'
-export * from './webRecorderScenario'
-
-export * from './previewProject'
 export * from './applicationRelease'
 export * from './applicationDeployment'
 export * from './applicationCatalog'
@@ -122,11 +92,9 @@ export * from './applicationCatalog'
 export * from './rendererCi'
 
 export * from './applicationFrontend'
-export * from './platformOperation'
-export * from './platformUsage'
 
 export * from './componentConfig'
 
-export * from './accountAccess'
-export * from './billing'
+
+
 export * from './llmAccounting'

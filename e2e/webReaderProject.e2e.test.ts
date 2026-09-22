@@ -32,16 +32,16 @@ describe.each(['embedded', 'remote'] as const)('Reader %s: вход на соб�
     const readerPort = (readerReservation.address() as {port:number}).port
     await new Promise<void>(resolve => readerReservation.close(() => resolve()))
     if (readerMode === 'remote') {
-      readerServer = spawn(process.execPath, ['--import','tsx','src/standalone/index.ts'], {
-        cwd: join(ROOT, 'apps/web-reader'),
-        env: { ...process.env, HOST:'127.0.0.1', PORT:String(readerPort), VC_CORE_URL:base, VC_INTERNAL_TOKEN:PASSWORD, VC_MCP_SECRET:PASSWORD, VC_DB_URL:'', VC_WEB_RECORDER_DIR:join(ROOT,'apps/web-recorder/dist') }, stdio:'ignore'
+      readerServer = spawn(process.execPath, ['--import','tsx','--input-type=module','-e',"await import('@sislexa/web-reader/start')"], {
+        cwd: ROOT,
+        env: { ...process.env, HOST:'127.0.0.1', PORT:String(readerPort), VC_CORE_URL:base, VC_INTERNAL_TOKEN:PASSWORD, VC_MCP_SECRET:PASSWORD, VC_DB_URL:'' }, stdio:'ignore'
       })
       await vi.waitFor(async () => { expect(readerServer?.exitCode).toBeNull(); expect((await fetch(`http://127.0.0.1:${readerPort}/v1/health`)).ok).toBe(true) }, {timeout:30_000,interval:200})
     }
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
       env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
-        VC_WEB_DIR: join(ROOT, 'apps/web/dist'), VC_WEB_RECORDER_DIR: join(ROOT, 'apps/web-recorder/dist'),
+        VC_WEB_DIR: join(ROOT, 'apps/web/dist'),
         VC_ADMIN_PASSWORD: PASSWORD, VC_INTERNAL_TOKEN:PASSWORD, VC_MCP_SECRET:PASSWORD, VC_READER_MODE:readerMode, VC_READER_URL:`http://127.0.0.1:${readerPort}`, VC_BROWSER_HOST_ALIASES: '' },
       stdio: 'ignore'
     })

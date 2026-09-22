@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import { randomUUID } from 'node:crypto'
 import { ManagedEnvironmentResolver } from '../releases/managedEnvironmentResolver.js'
 import type { ProductionTarget, ReleaseManager, ReleaseProjectTarget } from '../releases/releaseManager.js'

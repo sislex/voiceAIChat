@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, fireEvent, waitFor, within } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import type { CiCommand, CiGlobalSettings } from '@shared/ci'
 import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
 import { CiCommands, type CiCommandsProps } from './CiCommands'

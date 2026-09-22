@@ -35,7 +35,7 @@ import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { createQaRest } from './qaBridge'
-import { authHeaders as sessionHeaders, credentialedFetch, dropLegacyToken, getCsrf, getToken, legacyToken } from './session'
+import { authHeaders as sessionHeaders, credentialedFetch, dropLegacyToken, getCsrf, getToken, legacyToken } from "@sislexa/identity/client/browser"
 import { base64ToArrayBuffer } from './decode'
 
 function makeAuthBridge(ws: WsClient): RendererAuthBridge {

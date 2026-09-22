@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PreviewAction, PreviewActionResult } from '@voicechat/shared'
+import type { PreviewAction, PreviewActionResult } from '@voicechat/browser-contracts/previewActions'
 import { isWebReaderDiagnosticsCommand, runWebReaderDiagnostics, WEB_READER_DIAGNOSTICS_CAPABILITIES } from './webReaderDiagnostics'
 
 describe('Web Reader diagnostics', () => {

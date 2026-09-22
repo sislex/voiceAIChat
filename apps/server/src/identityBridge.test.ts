@@ -1,7 +1,7 @@
 import {afterEach,expect,it} from 'vitest'
 import {VoiceChatDb} from './db/database.js'
 import {createIdentityStoreClient} from '@sislexa/identity/client/rpc'
-import {readFileSync,readdirSync,mkdtempSync,rmSync} from 'node:fs'
+import {existsSync,readdirSync,mkdtempSync,rmSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 const databases:VoiceChatDb[]=[]
@@ -10,7 +10,7 @@ it('serves both admin user-list queries with live activity from remote Identity'
  const {buildIdentityServer}=await import('@sislexa/identity/server/server')
  const {buildServer}=await import('./server.js')
  const {loadConfig}=await import('./config.js')
- const {signToken}=await import('./users/accounts.js')
+ const {signToken}=await import("@sislexa/identity/server/users/accounts")
  const source=new VoiceChatDb(':memory:');databases.push(source);await source.ready
  await source.identity.createUser('admin','','admin')
  await source.identity.createSession('admin-device','admin',{ip:'127.0.0.1',userAgent:'test',ttlMs:60000})
@@ -43,19 +43,19 @@ it('uses the remote identity port from both public and neighboring repository ca
  expect(await context.repos.identity.getUser('alice')).toMatchObject({role:'admin'})
  expect(calls).toEqual(['getUser','getUser'])
 })
-it('keeps relocated authentication and storage source as compatibility exports only',()=>{
- for(const dir of ['users','db/sql'])for(const name of readdirSync(join(__dirname,dir))){
-  if(!name.endsWith('.ts')||name.includes('.test.'))continue
-  expect(readFileSync(join(__dirname,dir,name),'utf8').trim(),dir+'/'+name).toMatch(/^export \* from ["']@sislexa\/identity\/[\w/-]+["']$/)
+it('contains no local authentication or SQL adapter implementations',()=>{
+ for(const dir of ['users','db/sql']) {
+  const path=join(__dirname,dir)
+  if(existsSync(path)) expect(readdirSync(path).filter(name=>name.endsWith('.ts')&&!name.includes('.test.'))).toEqual([])
  }
- expect(readFileSync(join(__dirname,'db/repos/identity.ts'),'utf8').trim()).toMatch(/^export \* from/)
+ expect(existsSync(join(__dirname,'db/repos/identity.ts'))).toBe(false)
 })
 
 it('enforces live tariff and tenant context across the real Identity RPC boundary', async () => {
  const {default: Fastify} = await import('fastify')
  const {buildIdentityServer} = await import('@sislexa/identity/server/server')
  const {registerRemoteIdentity} = await import('@sislexa/identity/client/server')
- const {signToken} = await import('./users/accounts.js')
+ const {signToken} = await import("@sislexa/identity/server/users/accounts")
  const {registerAccountAccess} = await import('./accountAccess.js')
  const db = new VoiceChatDb(':memory:'); databases.push(db); await db.ready
  await db.identity.createUser('alice', '', 'developer')

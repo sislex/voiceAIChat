@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, cleanup } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { lazyScreen, sharedLoad } from './lazyScreen'
 import { useState } from 'react'
 import { Dialog } from '@voicechat/ui-kit'

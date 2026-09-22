@@ -10,8 +10,8 @@
 // этот префикс целиком — расширять список публичных URL не потребовалось.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { VoiceChatDb } from '../db/database.js'
-import type { Mailer } from '../users/mailer.js'
-import { uid } from '../users/auth.js'
+import type { Mailer } from "@sislexa/identity/server/users/mailer"
+import { uid } from "@sislexa/identity/server/users/auth"
 import { SlidingWindowLimiter } from '@voicechat/shared'
 import type { ProjectRole } from '@voicechat/shared'
 

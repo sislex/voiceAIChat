@@ -1,17 +1,17 @@
-import type { PreviewAccessibilityOptions, PreviewAccessibilityResult } from './previewAccessibility'
-import type { BrowserEvaluateOptions, BrowserEvaluationSummary } from './browserEvaluation'
-import type { BrowserConsoleOptions, BrowserDiagnosticValue, BrowserLogContext, BrowserLogSummary, BrowserNetworkOptions, BrowserNetworkState } from './browserDiagnostics'
-import type { BrowserDownloadCommand, BrowserDownloadInfo } from './browserDownloads'
-import type { BrowserDialogAnswer, BrowserDialogInfo } from './browserDialogs'
+import type { PreviewAccessibilityOptions, PreviewAccessibilityResult } from '@voicechat/browser-contracts/previewAccessibility'
+import type { BrowserEvaluateOptions, BrowserEvaluationSummary } from '@voicechat/browser-contracts/browserEvaluation'
+import type { BrowserConsoleOptions, BrowserDiagnosticValue, BrowserLogContext, BrowserLogSummary, BrowserNetworkOptions, BrowserNetworkState } from '@voicechat/browser-contracts/browserDiagnostics'
+import type { BrowserDownloadCommand, BrowserDownloadInfo } from '@voicechat/browser-contracts/browserDownloads'
+import type { BrowserDialogAnswer, BrowserDialogInfo } from '@voicechat/browser-contracts/browserDialogs'
 import type { CodexThreadUsage } from './codexUsage'
-import type { BrowserProfileMode, BrowserSiteDataResetOptions } from './browserProfile'
+import type { BrowserProfileMode, BrowserSiteDataResetOptions } from '@voicechat/browser-contracts/browserProfile'
 // Общие типы, разделяемые между main, preload и renderer.
 
-import type { BrowserFrameContext, BrowserFrameTarget } from './browserFrames'
-import type { BrowserWaitOptions } from './browserWaiting'
-import type { PreviewElementPayload } from './previewInspector'
-import type { PreviewAuditOptions, PreviewAuditResult } from './previewAudit'
-import type { PreviewProbeOptions, PreviewProbeResult } from './previewProbe'
+import type { BrowserFrameContext, BrowserFrameTarget } from '@voicechat/browser-contracts/browserFrames'
+import type { BrowserWaitOptions } from '@voicechat/browser-contracts/browserWaiting'
+import type { PreviewElementPayload } from '@voicechat/browser-contracts/previewInspector'
+import type { PreviewAuditOptions, PreviewAuditResult } from '@voicechat/browser-contracts/previewAudit'
+import type { PreviewProbeOptions, PreviewProbeResult } from '@voicechat/browser-contracts/previewProbe'
 
 /** Состояния голосового пайплайна. */
 export type VoiceState = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking'
@@ -54,7 +54,7 @@ export interface MessageAttachment {
   agentId?: string
   caption?: string
   /** Параметры локальной ретуши результата; позволяют восстановить выделение из истории. */
-  retouch?: import('./imageRetouch').ImageRetouchRecord
+  retouch?: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchRecord
 }
 
 export interface Message {
@@ -1019,7 +1019,7 @@ export type UserRole = SystemRole
 /** Аутентифицированный пользователь сессии. */
 export interface SessionUser {
   /** Additive account context; current servers resolve it from live Identity state. */
-  account?: import('./accountAccess').AuthenticatedAccount
+  account?: import('@sislexa/identity/contracts/accountAccess').AuthenticatedAccount
   /** Логин (он же идентификатор владельца данных). */
   name: string
   role: UserRole

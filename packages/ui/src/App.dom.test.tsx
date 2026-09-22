@@ -8,9 +8,9 @@ import App, { machineCommandNoticePolicy } from './App'
 import { readNotifications, resetPreferenceCache, type ShellNotification } from './lib/shellPreferences'
 import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import type { PreviewAction } from '@shared/previewActions'
+import type { PreviewAction } from '@voicechat/browser-contracts/previewActions'
 import type { RendererPreviewBridge } from '@shared/ipc'
-import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
+import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@voicechat/web-reader-contracts/webRecorder'
 
 // Большие задержки пайплайна: асинхронные этапы не срабатывают за время теста,
 // а таймеры гасятся при размонтировании (dispose). Проверяем синхронные переходы

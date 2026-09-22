@@ -36,18 +36,22 @@ async function api(path: string, body?: unknown) {
 beforeAll(async () => {
   await mkdir(artifacts, { recursive: true })
   dataDir = await mkdtemp(join(tmpdir(), 'chat468-'))
-  // Read-only runner fixture: exercise the real HTTP adapter without external speech services.
+  // Read-only provider fixture: exercise real HTTP adapters without external services.
   ttsFixture = createServer((request, response) => {
     response.setHeader('content-type', 'application/json')
     if (request.method === 'GET' && request.url === '/v1/voices') {
       response.end(JSON.stringify([{ id: 'ru_RU-ruslan-medium', label: 'Fixture voice' }]))
+    } else if (request.method === 'GET' && request.url?.startsWith('/v1/mcp/servers?')) {
+      response.end('[]')
+    } else if (request.method === 'GET' && request.url?.startsWith('/v1/auth/status?')) {
+      response.end(JSON.stringify({ claude: { provider: 'claude', loggedIn: false }, codex: { provider: 'codex', loggedIn: false } }))
     } else { response.statusCode = 404; response.end('{}') }
   })
   await new Promise<void>(resolve => ttsFixture.listen(0, '127.0.0.1', resolve))
   const ttsUrl = 'http://127.0.0.1:' + (ttsFixture.address() as AddressInfo).port
   server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: join(root, 'apps/server'), stdio: 'ignore', detached: true,
-    env: { ...process.env, PORT: String(apiPort), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_TTS_RUNNER_URL: ttsUrl, VC_TTS_RUNNER_TOKEN: 'fixture-token', VC_ADMIN_PASSWORD: 'chat468-fixture-password', VC_WEB_DIR: join(root, 'apps/web/dist') }
+    env: { ...process.env, PORT: String(apiPort), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_LLM_RUNNER_CLAUDE_URL: ttsUrl, VC_LLM_RUNNER_CODEX_URL: ttsUrl, VC_LLM_RUNNER_TOKEN: 'fixture-token', VC_TTS_RUNNER_URL: ttsUrl, VC_TTS_RUNNER_TOKEN: 'fixture-token', VC_ADMIN_PASSWORD: 'chat468-fixture-password', VC_WEB_DIR: join(root, 'apps/web/dist') }
   })
   await waitReady(apiBase + '/api/health')
   token = (await api('/api/session/login', { name: 'admin', password: 'chat468-fixture-password' })).token

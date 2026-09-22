@@ -115,6 +115,22 @@ export function applicationPrepareCommand(
   const requirements = Buffer.from(JSON.stringify(input.requires)).toString(
     'base64'
   )
+  const external = APPLICATION_CATALOG.find(app => app.id === input.applicationId)?.external
+  if (external) {
+    const encoded = Buffer.from(JSON.stringify(input)).toString('base64')
+    // Core supplies orchestration tools; the selected branch belongs to the owner repository.
+    return [
+      'set -eu',
+      ...(target.prepareCheckout ? [releaseCheckoutCommand(target)] : []),
+      `cd ${shellQuote(target.path)}`,
+      `test "$(git config --get remote.origin.url)" = ${shellQuote(target.gitUrl)}`,
+      'application_tmp=$(mktemp -d)',
+      `trap 'rm -rf "$application_tmp"' EXIT`,
+      `node -e ${shellQuote(`require('node:fs').writeFileSync(process.argv[1],Buffer.from('${encoded}','base64'))`)} "$application_tmp/input.json"`,
+      'node --import tsx scripts/owner-application-release.mjs --input "$application_tmp/input.json" --output "$application_tmp/release.json"',
+      `node -e ${shellQuote(`console.log('VOICECHAT_APPLICATION_RESULT='+require('node:fs').readFileSync(process.argv[1],'utf8').trim())`)} "$application_tmp/release.json"`
+    ].join('\n')
+  }
   const lines = [
     'set -eu',
     ...(target.prepareCheckout ? [releaseCheckoutCommand(target)] : []),

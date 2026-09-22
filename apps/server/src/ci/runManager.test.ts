@@ -8,13 +8,13 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT, VoiceChatDb } from '../db/database.js'
 import { CI_KB_UPDATE_COMMAND_ID, DEFAULT_CI_STAGE_MODELS, DEFAULT_SETTINGS, issueKey } from '@voicechat/shared'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { createCiRunManager } from './runManager.js'
 import type { TemporaryCleanup } from '../cleanup/service.js'
-import type { BrowserRunnerClient } from '../browser/runnerClient.js'
+import type { BrowserRunnerClient } from '@sislexa/playwright-reader/browser-runner/client'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
 

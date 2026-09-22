@@ -3,10 +3,10 @@
 // владельцу на таблицу (./ownership.ts); правила разреза — docs/plans/db-repositories.md.
 import { DEFAULT_PROJECT_TYPE_ID, type KanbanColumnSemanticType, DEFAULT_CI_CLAUDE_MODEL, CI_KB_UPDATE_COMMAND_ID, DEFAULT_DONE_RETENTION_DAYS, DEFAULT_CI_GLOBAL_SETTINGS, isVerificationCommand } from '@voicechat/shared'
 import Database from 'better-sqlite3'
-import { createSqliteSql } from './sql/sqlite.js'
-import { createPgSql } from './sql/pg.js'
-import type { Sql } from './sql/types.js'
-import { createLane, type Lane } from './sql/lane.js'
+import { createSqliteSql } from "@sislexa/identity/storage-sql/sqlite"
+import { createPgSql } from "@sislexa/identity/storage-sql/pg"
+import type { Sql } from "@sislexa/identity/storage-sql/types"
+import { createLane, type Lane } from "@sislexa/identity/storage-sql/lane"
 import { PG_SCHEMA, postgresColumnUpgradePlan } from './schemaPg.js'
 import { initializePersonalTenants } from '@sislexa/identity/server/store/tenants'
 
@@ -14,7 +14,7 @@ import { initializePersonalTenants } from '@sislexa/identity/server/store/tenant
 const PG_SCHEMA_LOCK_KEY = 7_260_119
 import { randomUUID } from 'node:crypto'
 import { SCHEMA_SQL } from './schema.js'
-import { IdentityRepo } from './repos/identity.js'
+import { IdentityRepo } from "@sislexa/identity/server/store/identity"
 import { SettingsRepo } from './repos/settings.js'
 import { LlmRepo } from './repos/llm.js'
 import { ChatRepo } from './repos/chat.js'
@@ -29,8 +29,8 @@ import { asyncPort, type AsyncPort, type Ports, type RepoContext, type Repos } f
 import { TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT, RANK_STEP, type DbDeps } from './repos/support.js'
 export { TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT } from './repos/support.js'
 export type { DbDeps } from './repos/support.js'
-export { LOGIN_LOCK_FAILS, LOGIN_LOCK_MS, LOGIN_HARD_LOCK_FAILS } from './repos/identity.js'
-export type { UserRow } from './repos/identity.js'
+export { LOGIN_LOCK_FAILS, LOGIN_LOCK_MS, LOGIN_HARD_LOCK_FAILS } from "@sislexa/identity/server/store/identity"
+export type { UserRow } from "@sislexa/identity/server/store/identity"
 export { hashAgentToken } from './repos/machines.js'
 export type { AgentRecord } from './repos/machines.js'
 export { PROD_REBUILD_TASK_TITLE, PROD_REBUILD_TASK_INTRO } from './repos/tasks.js'

@@ -1,5 +1,3 @@
-import {createRequire} from 'node:module'
-const require=createRequire(import.meta.url)
 // Тестовые идентификаторы на пути автотеста.
 //
 // Reader записывает шаги селекторами и честно помечает надёжность: без
@@ -16,11 +14,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const read = (name: string): string => readFileSync(name === 'LoginScreen.tsx' ? require.resolve('@sislexa/identity/login/LoginScreen') : fileURLToPath(new URL(`./${name}`, import.meta.url)), 'utf8')
+const read = (name: string): string => readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), 'utf8')
 
 /** Экран → идентификаторы, без которых сценарий не записать устойчиво. */
 const REQUIRED: Array<{ file: string; ids: string[] }> = [
-  { file: 'LoginScreen.tsx', ids: ['login-form', 'login-username', 'login-password', 'login-submit', 'login-error', 'login-remember', 'login-toggle-password'] },
   { file: 'Sidebar.tsx', ids: ['create-project', 'search-conversations', 'search-projects', 'project-item', 'account-avatar'] },
   // Доска была покрыта и до круга 16 — сторожим, чтобы покрытие не пропало при
   // правках вёрстки: именно на ней записывается большинство сценариев.

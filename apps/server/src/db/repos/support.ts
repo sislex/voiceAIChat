@@ -3,7 +3,8 @@
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
 import type { PortOverrides } from './base.js'
 import type { AutomatedQaScenario, AutomatedQaScenarioStep } from '@voicechat/shared'
-import { EMPTY_AUTOMATED_QA_SCENARIO, isPreviewAction, type KanbanColumn, type KanbanColumnSemanticType, type KbContextMode, DEFAULT_CI_CLAUDE_MODEL, type CiRunMode, type CiClarifyLevel, CI_CLARIFY_MAX_LIMIT, type CiRun, type CiStatus, type CiSlotProgress, type CiFixDiagnosticContext } from '@voicechat/shared'
+import { EMPTY_AUTOMATED_QA_SCENARIO, type KanbanColumn, type KanbanColumnSemanticType, type KbContextMode, DEFAULT_CI_CLAUDE_MODEL, type CiRunMode, type CiClarifyLevel, CI_CLARIFY_MAX_LIMIT, type CiRun, type CiStatus, type CiSlotProgress, type CiFixDiagnosticContext } from '@voicechat/shared'
+import { isPreviewAction } from '@voicechat/browser-contracts/previewActions'
 
 
 /** Сценарий приходит из настроек проекта, то есть извне: отбрасываем шаги с

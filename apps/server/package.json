@@ -15,12 +15,6 @@
     "@fastify/static": "^10.1.2",
     "@fastify/websocket": "^11.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@voicechat/browser-runner": "*",
-    "@voicechat/image-studio": "*",
-    "@voicechat/llm-runner": "*",
-    "@voicechat/make": "*",
-    "@voicechat/playwright-reader": "*",
-    "@voicechat/sessions-core": "*",
     "@voicechat/shared": "*",
     "better-sqlite3": "^11.10.0",
     "esbuild": "^0.21.5",
@@ -28,13 +22,19 @@
     "pg": "^8.23.0",
     "sharp": "^0.34.5",
     "zod": "^4.4.3",
-    "@voicechat/make-contracts": "*",
-    "@voicechat/web-reader": "*",
-    "@voicechat/web-reader-contracts": "*",
-    "@voicechat/playwright-reader-contracts": "*",
+    "@voicechat/make-contracts": "file:../../vendor/voicechat-make-contracts-1.3.0-e4c5676feeae.tgz",
+    "@voicechat/web-reader-contracts": "file:../../vendor/voicechat-web-reader-contracts-1.3.0-295807f94d7c.tgz",
+    "@voicechat/playwright-reader-contracts": "file:../../vendor/voicechat-playwright-reader-contracts-1.2.0-6cd0c54f0f7c.tgz",
     "@sislexa/component-runtime": "*",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.2.2-c4609b363de2.tgz",
-    "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.1.0-bec5fb16db7b.tgz"
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.3.1-a8208800181d.tgz",
+    "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.1.2-4bb9b6785b3d.tgz",
+    "@sislexa/image-studio": "file:../../vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
+    "@sislexa/make": "file:../../vendor/sislexa-make-1.2.1-e4c5676feeae.tgz",
+    "@sislexa/playwright-reader": "file:../../vendor/sislexa-playwright-reader-1.2.2-6cd0c54f0f7c.tgz",
+    "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.2.1-295807f94d7c.tgz",
+    "@voicechat/browser-contracts": "file:../../vendor/voicechat-browser-contracts-1.1.0-6cd0c54f0f7c.tgz",
+    "@voicechat/image-studio-contracts": "file:../../vendor/voicechat-image-studio-contracts-1.0.0-c7a49a428d85.tgz",
+    "@voicechat/voice-contracts": "file:../../vendor/voicechat-voice-contracts-1.0.0-7e51e57ebf3b.tgz"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -45,6 +45,8 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@sislex/llm-runner": "file:../../vendor/sislex-llm-runner-0.3.1-8ec5100952c3.tgz",
+    "@sislex/runner-contracts": "file:../../vendor/sislex-runner-contracts-0.1.1-8ec5100952c3.tgz"
   }
 }

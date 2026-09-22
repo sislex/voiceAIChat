@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, screen, fireEvent, within, waitFor } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import userEvent from '@testing-library/user-event'
 import type { Board, Task } from '@shared/projects'
 import type { CiRunSummary, CiTaskReport, TaskImprovement } from '@shared/ci'

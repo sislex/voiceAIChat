@@ -5,10 +5,10 @@ import {
   configureApplicationHost,
   createApplicationPanel
 } from '../../packages/ui/src/runtime/applicationHost'
-import type { ImageStudioPaneProps } from '@voicechat/image-studio-app/panelContract'
-import type { WebReaderFrameProps } from '@voicechat/web-reader-app/panelContract'
-import type { MakePaneProps } from '@voicechat/make-app/panelContract'
-import type { BrowserSessionPaneProps } from '@voicechat/playwright-reader-app/panelContract'
+import type { ImageStudioPaneProps } from '@sislexa/image-studio/ui/panelContract'
+import type { WebReaderFrameProps } from '@sislexa/web-reader/ui/panelContract'
+import type { MakePaneProps } from '@sislexa/make/ui/panelContract'
+import type { BrowserSessionPaneProps } from '@sislexa/playwright-reader/ui/panelContract'
 import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import '@voicechat/ui/styles.css'
 import '../../packages/ui/src/styles/app.css'

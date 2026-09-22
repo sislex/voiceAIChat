@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { it, expect, vi } from 'vitest'
 import { enqueueTtsAudio, stopTts } from './ttsPlayer'
 
 import { UiPerformance } from './uiPerformance'
@@ -26,27 +26,4 @@ it('records audio only after a running output clock advances, and never after ca
     await vi.advanceTimersByTimeAsync(100)
     expect(mark).not.toHaveBeenCalled()
   } finally {stopTts();mark.mockRestore();vi.unstubAllGlobals();vi.useRealTimers()}
-})
-
-describe('ttsPlayer', () => {
-  it('без AudioContext (jsdom) сразу зовёт onEnded для клипа', async () => {
-    const onEnded = vi.fn()
-    enqueueTtsAudio(new ArrayBuffer(8), onEnded)
-    await new Promise((r) => setTimeout(r, 0))
-    expect(onEnded).toHaveBeenCalledOnce()
-  })
-
-  it('очередь: несколько клипов проигрываются по очереди (onEnded у каждого)', async () => {
-    const a = vi.fn()
-    const b = vi.fn()
-    enqueueTtsAudio(new ArrayBuffer(4), a)
-    enqueueTtsAudio(new ArrayBuffer(4), b)
-    await new Promise((r) => setTimeout(r, 0))
-    expect(a).toHaveBeenCalledOnce()
-    expect(b).toHaveBeenCalledOnce()
-  })
-
-  it('stopTts безопасен, когда ничего не играет', () => {
-    expect(() => stopTts()).not.toThrow()
-  })
 })

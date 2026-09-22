@@ -6,7 +6,7 @@ import {
   screen,
   waitFor
 } from '@testing-library/react'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import {
   APPLICATION_CATALOG,
   type ApplicationReleaseManifest,

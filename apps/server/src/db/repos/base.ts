@@ -1,11 +1,11 @@
 // Основа доменных репозиториев: общее соединение, генераторы id/времени и доступ к соседям.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import type { Sql } from '../sql/types.js'
-import type { Lane } from '../sql/lane.js'
+import type { Sql } from "@sislexa/identity/storage-sql/types"
+import type { Lane } from "@sislexa/identity/storage-sql/lane"
 
 const TRACE = process.env.VC_SQL_TRACE === '1'
-import type { IdentityRepo } from './identity.js'
+import type { IdentityRepo } from "@sislexa/identity/server/store/identity"
 import type { SettingsRepo } from './settings.js'
 import type { LlmRepo } from './llm.js'
 import type { ChatRepo } from './chat.js'

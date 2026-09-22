@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render } from '../../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { queuedMergeCi, queuedMergeRun, queuedMergeMachines } from '../../test/fixtures/queuedMerge'
 import { MergePanel } from './MergePanel'

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import type { ReaderProjectRequest, ReaderProjectResponse } from '@voicechat/shared'
-import { isReaderProjectPath } from '@voicechat/shared'
+import type { ReaderProjectRequest, ReaderProjectResponse } from '@voicechat/browser-contracts/previewProject'
+import { isReaderProjectPath } from '@voicechat/browser-contracts/previewProject'
 
 /** Доставляем только пути своего Fastify; авторизацию вложенного приложения проверяют обычные routes. */
 export async function readerProjectResource(app: FastifyInstance, request: ReaderProjectRequest): Promise<ReaderProjectResponse> {

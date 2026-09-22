@@ -26,11 +26,11 @@ export function manualPreviewCommand(localPort: number, remotePort: number, sshU
   if (!/^[a-zA-Z0-9._-]+$/.test(user) || !/^(?:[a-zA-Z0-9.-]+|\[[0-9a-fA-F:]+\])$/.test(host)) return null
   return `ssh -N -L ${localPort}:127.0.0.1:${remotePort} ${user}@${host}`
 }
-import type { PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@voicechat/shared'
+import type { PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@voicechat/browser-contracts/preview'
 import type { FeaturePreviewManager } from '../preview/manager.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { KanbanMachines } from '../kanban/core.js'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 
 export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: FeaturePreviewManager, db: VoiceChatDb, agents: KanbanMachines): void {
   const base = '/api/projects/:projectId/tasks/:taskId/preview'

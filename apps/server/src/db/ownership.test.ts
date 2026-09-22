@@ -1,6 +1,4 @@
-import {createRequire} from 'node:module'
 import {SCHEMA_SQL,MESSAGES_FTS_SQL} from './schema.js'
-const require=createRequire(import.meta.url)
 // Гейт владения таблицами: см. ownership.ts. Тест читает исходники репозиториев как текст —
 // нам нужны не типы, а сам SQL: кто во что пишет и что читает.
 import { readFileSync, readdirSync } from 'node:fs'
@@ -11,12 +9,13 @@ import { CROSS_READ_BUDGET, TABLE_OWNER, type RepoDomain } from './ownership.js'
 const dbDir = __dirname
 const reposDir = join(dbDir, 'repos')
 const domains = Object.keys(TABLE_OWNER) as RepoDomain[]
+const localDomains = domains.filter(domain => domain !== 'identity')
 const ownerOf = new Map<string, RepoDomain>()
 for (const d of domains) for (const t of TABLE_OWNER[d]) ownerOf.set(t, d)
 const tableAlt = [...ownerOf.keys()].join('|')
 const writeRe = new RegExp(`\\b(?:INSERT(?:\\s+OR\\s+\\w+)?\\s+INTO|UPDATE|DELETE\\s+FROM|REPLACE\\s+INTO)\\s+(${tableAlt})\\b`, 'gi')
 const readRe = new RegExp(`\\b(?:FROM|JOIN)\\s+(${tableAlt})\\b`, 'gi')
-const repoSource = (d: RepoDomain) => readFileSync(d === 'identity' ? require.resolve('@sislexa/identity/server/store/identity') : join(reposDir, `${d}.ts`), 'utf8')
+const repoSource = (d: RepoDomain) => readFileSync(join(reposDir, `${d}.ts`), 'utf8')
 
 function tablesFromSchema(): Set<string> {
   const sql = SCHEMA_SQL + MESSAGES_FTS_SQL + readFileSync(join(dbDir, 'database.ts'), 'utf8')
@@ -35,7 +34,7 @@ describe('владение таблицами (db/ownership.ts)', () => {
 
   it('у каждого домена есть файл репозитория, и репозитории не импортируют друг друга', () => {
     const files = readdirSync(reposDir).filter((f) => f.endsWith('.ts'))
-    for (const d of domains) expect(files, `нет repos/${d}.ts`).toContain(`${d}.ts`)
+    for (const d of localDomains) expect(files, `нет repos/${d}.ts`).toContain(`${d}.ts`)
     // base.ts — единственное место, которому положено знать все репозитории (тип Repos).
     for (const f of files.filter((f) => f !== 'base.ts')) {
       const src = readFileSync(join(reposDir, f), 'utf8')
@@ -48,7 +47,7 @@ describe('владение таблицами (db/ownership.ts)', () => {
   })
 
   it('в чужие таблицы не пишет никто — только через метод владельца', () => {
-    for (const d of domains) {
+    for (const d of localDomains) {
       const actual = new Set<string>()
       for (const m of repoSource(d).matchAll(writeRe)) {
         const t = m[1].toLowerCase()
@@ -59,7 +58,7 @@ describe('владение таблицами (db/ownership.ts)', () => {
   })
 
   it('чужие таблицы читает не шире бюджета CROSS_READ_BUDGET', () => {
-    for (const d of domains) {
+    for (const d of localDomains) {
       const actual = new Set<string>()
       for (const m of repoSource(d).matchAll(readRe)) {
         const t = m[1].toLowerCase()

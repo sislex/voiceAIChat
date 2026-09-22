@@ -38,8 +38,8 @@ import { MergeRunManager } from '../merge/runManager.js'
 import { createCiModelHooks } from '../ci/modelHooks.js'
 import type { CommandExecutor, CiKbUpdateHook } from '../ci/types.js'
 import { BoardHub, NotificationHub } from '../projects/boardHub.js'
-import { uid } from '../users/auth.js'
-import { type Mailer } from '../users/mailer.js'
+import { uid } from "@sislexa/identity/server/users/auth"
+import { type Mailer } from "@sislexa/identity/server/users/mailer"
 import { preparationDesignNote } from '../ci/preparationNotes.js'
 import { registerKanbanMcp, type KanbanRunLaunchers } from '../mcp/kanbanMcp.js'
 import { registerCiCommandsMcp } from '../ci/ciCommandsMcp.js'
@@ -53,7 +53,7 @@ import type { LlmClient } from '../claude/types.js'
 import { type KbUsageTracker } from '../kb/usage.js'
 import { kbToolBroker } from '../kb/kbMcp.js'
 import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
-import { type BrowserRunnerClient } from '../browser/runnerClient.js'
+import { type BrowserRunnerClient } from '@sislexa/playwright-reader/browser-runner/client'
 import { taskPreparationModel, taskPreparationFailure, parseQaPreparationResponse, preparationJsonObject, preparationEnvelope } from './preparation.js'
 
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */

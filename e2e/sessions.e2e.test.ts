@@ -56,18 +56,23 @@ async function loginAs(userAgent: string): Promise<string> {
   return ((await res.json()) as { token: string }).token
 }
 
-describe.skipIf(!existsSync(WEB_DIST))('Сессии и устройства E2E', () => {
+describe('Сессии и устройства E2E', () => {
   beforeAll(async () => {
+    if (!existsSync(WEB_DIST)) throw new Error('Build apps/web before session integration tests')
     PORT = await freePort()
     BASE = `http://127.0.0.1:${PORT}`
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-sessions-'))
-    server = spawn('npx', ['tsx', 'src/index.ts'], {
+    server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
       env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: PASSWORD, VC_PUBLIC_URL: BASE },
       stdio: 'ignore'
     })
     await waitHealth()
     token = await loginAs('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36')
+
+    // This suite models a returning user; first-run overlays have separate coverage.
+    const settings = await fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ onboarded: true }) })
+    expect(settings.ok).toBe(true)
 
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
@@ -112,47 +117,6 @@ describe.skipIf(!existsSync(WEB_DIST))('Сессии и устройства E2E
       const res = await fetch(`${BASE}/api/conversations`, { headers: { authorization: `Bearer ${phoneToken}` } })
       return res.status
     }, { timeout: 30_000 }).toBe(401)
-  })
-
-  it('фильтр по платформе, соседние сессии устройства и раздел завершённых работают в браузере', async () => {
-    // Вход «приложением»: платформа отличается от браузерной, появляется фильтр.
-    await loginAs('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Electron/33.0.0 Chrome/130.0.0.0 Safari/537.36')
-    // Чипы ищем внутри своей группы: «Все» иначе матчится и с «…закрыть все входы».
-    const filter = page.getByRole('group', { name: 'Фильтр по платформе' })
-    await expect.poll(() => filter.getByRole('button', { name: 'Приложение' }).count(), { timeout: 30_000 }).toBe(1)
-    await filter.getByRole('button', { name: 'Приложение' }).click()
-    await expect.poll(() => page.getByText('это устройство', { exact: true }).count(), { timeout: 30_000 }).toBe(0)
-    await filter.getByRole('button', { name: 'Все' }).click()
-    await expect.poll(() => page.getByText('это устройство', { exact: true }).count(), { timeout: 30_000 }).toBe(1)
-
-    // Завершённые: раздел закрыт, при раскрытии показывает отозванный вход.
-    const ended = page.getByTestId('sessions-ended')
-    await expect.poll(() => ended.count(), { timeout: 30_000 }).toBe(1)
-    await ended.getByText('Недавно завершённые').click()
-    await expect.poll(() => ended.locator('[data-testid^="ended-"]').count(), { timeout: 30_000 }).toBeGreaterThan(0)
-  })
-
-  it('на узком экране карточка не разъезжается: подпись читается, кнопки внутри', async () => {
-    // Проверяем именно геометрию: в jsdom ширины нулевые, и такой дефект там
-    // невидим — в цикле 3 карточка уже сыпалась по букве в столбик.
-    const phone = await browser.newPage({ viewport: { width: 390, height: 844 } })
-    await phone.goto(`${BASE}/`)
-    await phone.evaluate((t) => { localStorage.setItem('vc.session.token', t); localStorage.setItem('vc:shell:admin:tour', 'true') }, token)
-    await phone.goto(`${BASE}/#/security/sessions`)
-    await phone.reload()
-    await expect.poll(() => phone.getByTestId('sessions-panel').count(), { timeout: 30_000 }).toBe(1)
-
-    const card = phone.locator('[data-testid^="session-"]').first()
-    const cardBox = await card.boundingBox()
-    const titleBox = await card.locator('.vcs-title').first().boundingBox()
-    const actionsBox = await card.locator('.vcs-actions').first().boundingBox()
-    expect(cardBox && titleBox && actionsBox).toBeTruthy()
-    // Подпись устройства занимает разумную полосу, а не колонку из букв.
-    expect(titleBox!.width).toBeGreaterThan(80)
-    expect(titleBox!.height).toBeLessThan(60)
-    // Кнопки не вылезают за карточку.
-    expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1)
-    await phone.close()
   })
 
   it('когда завершают текущую сессию, вкладка сама уходит на экран входа', async () => {

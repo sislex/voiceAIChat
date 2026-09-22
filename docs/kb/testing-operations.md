@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-22
-checked: 0d5b6eea
+checked: 55f5a95b
 areas:
   - package.json
   - scripts
@@ -25,6 +25,15 @@ areas:
 
 ## Extracted application test ownership
 
+Identity owns 29 authentication/device regressions and the standalone session UI
+filter/390px browser checks. Core retains CORS, legacy Core schema migration,
+admin orchestration, resource isolation and WebSocket session propagation checks.
+Reader UI owns address-scheme normalization and BrowserInput DOM tests (PRs #9/#10).
+Identity PR #13 owns the plain login accessibility case; UI repository PR #6 owns
+the eight generic accessibility-helper cases. A public function imported
+from an owner archive does not make an internal unit test a Core integration test.
+
+
 Core no longer owns the 18 standalone Web Reader proxy/recorder Chromium suites.
 They live in `sislex/webreader/e2e` with the original cases and fixtures, recorded
 in `e2e/migration.json`; the owner's mandatory gate builds its recorder and runs
@@ -40,19 +49,32 @@ stories. Core admin examples still use public Identity widgets and their styles.
 The original three Image Studio story re-export shims are removed. Owner story
 checks preserve the shared serious/critical axe policy and mandatory product states.
 
-Transitional `sislexaExternal` workspaces now validate immutable consumer archive
-provenance instead of executing owner unit suites or owner typecheck commands.
-Core compiles its real consumers and tests its public bridges; owner gates run
-before owner releases. `external-workspace.mjs` rejects direct `test`/`typecheck`
-delegation, and its regression checks detect changed source/package versions and
-escaping workspace paths. Build/start delegation remains temporary until the
-owner-built artifact cutover. Wrapper deletion and remaining shared/product/browser
-ownership are tracked in `docs/plans/extraction-completion.md`.
+Compatibility workspaces and their delegation runner are removed. Core compiles
+its actual consumers and tests public bridges; owner unit/typecheck/browser gates
+run before owner releases. Browser Runner's 978 cases, its 10 contract cases,
+Make's 51 pure-helper cases and Recorder's 18 protocol/scenario cases remain in
+the owner repositories before their Core copies are removed. Core artifact checks
+reject altered manifest provenance or entry/style bytes and preserve owner versions.
 
-The accessibility browser harness declares its virtual page's actual TSX entry
-for Vite dependency scanning and uses a dedicated optimizer cache. This prevents
-late discovery of installed Foundation DnD code from mixing React optimizer
-versions in a mounted page. The consumer regression retains full page-error stacks.
+Core's full browser gate now includes the retained sessions, settings, projects
+and Git pane suites. A scheduling guard prevents retained `*.e2e.test.ts` files
+from becoming orphaned when an external catalog entry loses its local paths.
+The settings suite resolves Electron's exported executable path and uses Xvfb
+only on Linux without DISPLAY; selected settings gates install desktop dependencies. The Core sessions fixture
+sets `onboarded: true` before opening its deep link so delayed first-run overlays
+cannot intercept session-revocation clicks. Missing web assets fail this suite
+explicitly rather than skipping its three integration cases.
+
+`npm run qa:voice-live` runs the preserved real microphone → Whisper → LLM → TTS
+acceptance and degraded-speech/text recovery scenario separately. Build the Core
+web client first; provide `VC_QA_STT_URL/TOKEN`, `VC_QA_TTS_URL/TOKEN` and
+`VC_QA_LLM_URL/TOKEN` for authorized services with an installed Whisper model and
+logged-in CLI provider. On a deployment host it can discover local runner
+containers instead. Missing services fail explicitly; the ordinary gate does not
+claim live-provider acceptance. Artifacts live in `artifacts/onboarding/`.
+
+The embedded LLM Runner remains tracked in the extraction completion plan;
+this increment is not final completion.
 
 ## Лимит одного теста: 60 секунд во фронтенде
 
@@ -894,3 +916,23 @@ renderer through CDP, parking the pointer at a neutral corner before navigation
 and after sign-in. This keeps the no-optional-intent scenario isolated from
 accidental account/settings hover preloads while retaining resource exclusions,
 viewport comparisons and all size limits.
+
+The Core web-host gate owns the retained sessions, settings, projects and Git-pane
+browser suites. A catalog regression check enumerates every remaining Core E2E
+file and requires full-gate scheduling; route-budget and lazy-boundary suites run
+through `frontend:route-gates`. Reader input component and Foundation accessibility
+helper regressions run only in their owner repositories.
+
+
+The final consumer audit additionally moved retouch engine/editor suites to Image
+Studio 1.1.2, SQLite session-store and fifteen account cases to Identity 1.3.1,
+and CLI/history suites to Runner 0.3.1. Core retains account-cache/performance,
+TTS metric observation and HTTP/WS/resource integration checks. Its Vite 5 test
+loader maps Node's newer `node:sqlite` builtin to the actual native module for
+published Runner contract checks; no database fake replaces that owner runtime.
+
+The final Shared audit removes 24 persisted-CLI parser cases and their unused
+implementations from Core. The original files match Runner's contract tests
+verbatim; Core retains five conversation-resume mapping cases using runner DTOs.
+Two account-store lifecycle cases move from Core's mixed database suite to
+Identity's store suite; cross-domain deletion remains a Core integration check.

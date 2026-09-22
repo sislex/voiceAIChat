@@ -1,34 +1,31 @@
-import { createRequire } from 'node:module'
-import { dirname } from 'node:path'
 // Прокси ридера в ядре: (1) полнота — каждый путь, который регистрируют `routes/previewProxy.ts` и
 // `mcp/previewMcp.ts`, попадает под `READER_PROXY_PREFIXES`, иначе в `remote` он получит у ядра 404;
 // (2) приоритет — пути Make под тем же префиксом `/api/preview/make*` уходят в Make, а не в ридер,
 // и во встроенном Make, и когда оба соседа за прокси.
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import Fastify from 'fastify'
 import { describe, expect, it } from 'vitest'
 import { PREVIEW_MCP_PATH } from '@voicechat/web-reader-contracts'
 import { registerMakeProxy } from '../makeBridge/proxy.js'
 import { READER_PROXY_PREFIXES, registerReaderProxy } from './proxy.js'
 
-const srcDir = join(dirname(createRequire(import.meta.url).resolve('@sislexa/web-reader/package.json')), 'apps/web-reader/src')
+import { registerPreviewProxy } from '@sislexa/web-reader/proxy'
 
 function covered(path: string): boolean {
   return READER_PROXY_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
 }
 
 describe('READER_PROXY_PREFIXES', () => {
-  it('покрывает каждый роут прокси превью и MCP «browser»', () => {
-    const missing: string[] = []
-    for (const file of ['routes/previewProxy.ts', 'mcp/previewMcp.ts']) {
-      const text = readFileSync(join(srcDir, file), 'utf8')
-      for (const m of text.matchAll(/\.(?:get|post|put|delete|patch|all)(?:<[^(]*?>)?\(\s*[`'"](\/[^`'"$]*)/g)) {
-        if (!covered(m[1]!)) missing.push(`${file}: ${m[1]}`)
-      }
-    }
-    expect(missing).toEqual([])
-    expect(covered(PREVIEW_MCP_PATH)).toBe(true)
+  it('covers every route registered by the public proxy and the MCP contract', async () => {
+    const reader = Fastify()
+    const routes: string[] = []
+    reader.addHook('onRoute', route => { routes.push(route.url) })
+    try {
+      registerPreviewProxy(reader)
+      await reader.ready()
+      expect(routes.length).toBeGreaterThan(0)
+      expect(routes.filter(path => !covered(path))).toEqual([])
+      expect(covered(PREVIEW_MCP_PATH)).toBe(true)
+    } finally { await reader.close() }
   })
 
   it('пути Make под /api/preview/make* конкретнее и уходят в Make, остальное превью — в ридер', async () => {

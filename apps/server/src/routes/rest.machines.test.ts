@@ -1,7 +1,7 @@
 // Машины: хранилище, журнал команд, доступ участников, политика, токены, метрики, утилиты.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { VoiceChatDb, hashAgentToken } from '../db/database.js'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { FastifyInstance } from 'fastify'
 import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness, type InjOpts } from './restHarness.js'

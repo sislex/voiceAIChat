@@ -15,7 +15,6 @@ const num = (value: string | undefined, fallback: number): number => {
 }
 const WEB_PORT = num(process.env.VC_WEB_PORT, 5273)
 const API_PORT = num(process.env.VC_API_PORT, 8787)
-const RECORDER_PORT = num(process.env.VC_RECORDER_PORT, 5274)
 
 // Веб-клиент: тонкая оболочка вокруг общего UI (@voicechat/ui) + мосты REST+WS.
 export default defineConfig({
@@ -64,8 +63,8 @@ export default defineConfig({
     host: '127.0.0.1',
     port: WEB_PORT,
     proxy: {
-      // ws: true — HMR-сокет Reader тоже идёт через same-origin путь /web-recorder/.
-      '/web-recorder/': { target: `http://127.0.0.1:${RECORDER_PORT}`, changeOrigin: true, ws: true },
+      // Resolve recorder assets through the configured Core/Reader integration.
+      '/web-recorder/': { target: `http://127.0.0.1:${API_PORT}`, changeOrigin: true, ws: true },
       // Host не переписываем: previewProxy сверяет host диагностической страницы
       // с Host запроса — с changeOrigin=true самодиагностика в dev получала SSRF-отказ.
       '/applications/': { target: `http://127.0.0.1:${API_PORT}` },

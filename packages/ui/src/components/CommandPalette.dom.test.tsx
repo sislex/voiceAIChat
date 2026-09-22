@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { render } from '../test/uiRender'
+import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { CommandPalette } from './CommandPalette'
 import { rememberCommand, type Command } from '@voicechat/ui-foundation/runtime'
 

@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@voicechat/shared": "*",
-    "@voicechat/ui-kit": "file:../../vendor/voicechat-ui-kit-0.1.2-63c02ccfe3e6.tgz",
+    "@voicechat/ui-kit": "file:../../vendor/voicechat-ui-kit-0.1.3-ec8ba8f62d43.tgz",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -1,7 +1,8 @@
 // Домен «chat»: таблицы conversations, messages, messages_fts, fts_state, speakers, conversation_context_events, conversation_draft_requests, conversation_turn_queue, conversation_turn_control, conversation_workspaces.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, MAKE_KIND, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
+import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
+import { MAKE_KIND } from '@voicechat/make-contracts/make'
 import { MESSAGES_FTS_SQL } from '../schema.js'
 import { toFtsMatchQuery, toPgTsQuery } from '../fts.js'
 import { BaseRepo } from './base.js'

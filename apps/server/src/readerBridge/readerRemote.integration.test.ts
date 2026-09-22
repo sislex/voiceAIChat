@@ -1,4 +1,4 @@
-import { loadWebReaderConfig } from '@voicechat/web-reader/config'
+import { loadWebReaderConfig } from '@sislexa/web-reader/config'
 import { vi } from 'vitest'
 // Ядро в режиме `VC_READER_MODE=remote` и отдельный процесс Web Reader без общей базы. Проверяем: пути
 // превью идут через прокси ядра с его авторизацией и перепроверкой whoami у ридера; dev-сервер машины
@@ -16,12 +16,12 @@ import type { LlmClient } from '../claude/types.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { buildServer } from '../server.js'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 import { AgentRegistry } from '../agents/registry.js'
 import { PREVIEW_MCP_PATH } from '@voicechat/web-reader-contracts'
 import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { INTERNAL_READER_CORE_PATH, READER_HEALTH_PATH } from '@voicechat/web-reader-contracts'
-import { buildReaderServer, type ReaderServer } from '@voicechat/web-reader/standalone'
+import { buildReaderServer, type ReaderServer } from '@sislexa/web-reader/standalone'
 
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'

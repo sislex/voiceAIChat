@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { resolve, join, extname } from 'node:path'
+import { createRequire } from 'node:module'
+import { join, extname } from 'node:path'
 import {
   APPLICATION_CATALOG,
   parseApplicationFrontendManifest
@@ -23,6 +24,7 @@ export function registerApplicationFrontends(
   sources: Record<string, string> = {},
   localRoot = repo
 ): void {
+  const require = createRequire(join(localRoot, 'package.json'))
   for (const id of Object.keys(sources))
     if (!APPLICATION_CATALOG.some((item) => item.id === id && item.frontend))
       throw new Error(`Неизвестный frontend ${id}`)
@@ -63,10 +65,10 @@ export function registerApplicationFrontends(
               .code(response.status === 404 ? 404 : 502)
               .send({ error: 'Приложение недоступно' })
           content = Buffer.from(await response.arrayBuffer())
-        } else
-          content = await readFile(
-            join(resolve(localRoot, definition.paths[0], 'dist'), path)
-          )
+        } else {
+          if (!definition.external) throw new Error('Missing frontend owner')
+          content = await readFile(require.resolve(`${definition.external.package}/frontend/${path}`))
+        }
         if (path === 'manifest.json')
           parseApplicationFrontendManifest(
             JSON.parse(content.toString('utf8')),

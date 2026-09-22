@@ -125,10 +125,6 @@ export function createApplicationBuildContext(
     ])
       cpSync(join(repo, 'scripts', script), join(output, 'scripts', script))
   }
-  if (paths.some(path => json(join(repo, path, 'package.json')).sislexaExternal)) {
-    mkdirSync(join(output, 'scripts'), { recursive: true })
-    cpSync(join(repo, 'scripts/external-workspace.mjs'), join(output, 'scripts/external-workspace.mjs'))
-  }
   const original = json(join(repo, 'package.json'))
   const pkg = {
     name: original.name,
@@ -325,6 +321,7 @@ export function main(args = process.argv.slice(2)) {
     : []
   const app = APPLICATION_CATALOG.find((app) => app.id === id)
   if (!app) throw new Error('Неизвестное приложение')
+  if (app.external) throw new Error(`Application ${id} is owned by ${app.external.repository}; build it there`)
   const metadataPath = join(root, app.paths[0], 'release.json'),
     metadata = existsSync(metadataPath)
       ? json(metadataPath)

@@ -11,7 +11,7 @@
 // Поэтому обработчики здесь тонкие: разобрать запрос и перевести `GitError` в код.
 
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 
 /** Ошибка сервиса → ответ с кодом: UI показывает по коду своё состояние. */

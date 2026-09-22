@@ -1,8 +1,8 @@
 # @voicechat/shared — контракт и чистая логика
 
-Единственный источник истины для типов и протокола; **без внешних зависимостей**
-и без обращений к DOM, сети, файлам и процессам. Всё, что тут лежит, обязано
-тестироваться юнит-тестом без моков.
+Core transport contracts and pure orchestration logic. Product models belong to
+their published owner contract packages, declared as explicit dependencies. No
+DOM, network, filesystem or process access belongs in Shared.
 
 Подключается как `@voicechat/shared` (server, agent) и как `@shared/*` (ui, web,
 desktop — алиас на исходники).
@@ -37,3 +37,13 @@ desktop — алиас на исходники).
 - Возможность агента → бампни `AGENT_VERSION` и `TOOL_MIN_VERSION`.
 
 Гейт: `npm run -w @voicechat/shared test` + `npm run typecheck`.
+
+Product implementation helpers belong to their owner contract packages. Shared
+retains Core wire contracts; type-only references may name a published product
+contract (for example Make replacement previews in IPC), without runtime imports
+or barrel re-exports that create a Shared-to-product runtime cycle.
+
+Make, Browser/Preview and Image Studio models are imported from their owner
+contract packages. Operation context, usage and billing models come from the SDK.
+Core does not re-export or test their internal models; it tests its own transport
+and authorization integration with those public contracts.

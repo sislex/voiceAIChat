@@ -33,7 +33,7 @@ describe('Reader: модель управляет настоящим App чер�
     const port = address.port; await new Promise<void>(resolve => reservation.close(() => resolve()))
     base = 'http://127.0.0.1:' + port
     vi.stubEnv('VC_BROWSER_HOST_ALIASES', '93.184.216.34:8787=127.0.0.1:' + port)
-    app = await buildServer({ config: loadConfig({ ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_ADMIN_PASSWORD: 'reader-model-fixture-only', VC_WEB_DIR: resolve('apps/web/dist'), VC_WEB_RECORDER_DIR: resolve('apps/web-recorder/dist'), VC_BROWSER_HOST_ALIASES: '93.184.216.34:8787=127.0.0.1:' + port }), previewRelay: relay })
+    app = await buildServer({ config: loadConfig({ ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_ADMIN_PASSWORD: 'reader-model-fixture-only', VC_WEB_DIR: resolve('apps/web/dist'), VC_BROWSER_HOST_ALIASES: '93.184.216.34:8787=127.0.0.1:' + port }), previewRelay: relay })
     app.get('/reader-qa/page', async (_req, reply) => {
       pageLoads++
       return reply.type('text/html').send('<!doctype html><title>Model QA</title><h1>Model QA</h1><label>Имя<input id="name"></label><button id="next" onclick="document.querySelector(\'output\').textContent=\'changed\';history.pushState({},\'\',\'?step=2#/next\')">Дальше</button><output>initial</output><script>window.qaMarker=Math.random()</script>')

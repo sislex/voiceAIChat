@@ -11,7 +11,7 @@ import { createHttpApi } from './httpApi'
 import { createQaRest } from './qaBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { base64ToArrayBuffer } from './decode'
-import { getCsrf, setCsrf, setToken } from './session'
+import { getCsrf, setCsrf, setToken } from "@sislexa/identity/client/browser"
 import { makeOnboardingBridge, makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy, makeFsBridge } from './index'
 
 // @testCase TC-CONSISTENCY

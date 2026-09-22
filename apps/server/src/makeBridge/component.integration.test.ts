@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url'
 import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createComponentRuntime, type ComponentRuntime } from '@sislexa/component-runtime'
-import { buildMakeServer } from '@voicechat/make/standalone'
+import { buildMakeServer } from '@sislexa/make/standalone'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { buildServer } from '../server.js'
-import { signToken } from '../users/accounts.js'
+import { signToken } from "@sislexa/identity/server/users/accounts"
 const require = createRequire(import.meta.url)
 const repository = fileURLToPath(new URL('../../../../', import.meta.url))
 const secret = 'managed-integration-session', mcp = 'managed-integration-mcp'

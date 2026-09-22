@@ -3,7 +3,8 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo, Board, PreviewActionResult, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem, WidgetSurfaceSnapshot, WidgetUiActionResult } from '@voicechat/shared'
+import type { AgentInfo, Board, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem, WidgetSurfaceSnapshot, WidgetUiActionResult } from '@voicechat/shared'
+import type { PreviewActionResult } from '@voicechat/browser-contracts/previewActions'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
@@ -15,8 +16,6 @@ import { createSttSession, type SttSession } from './stt/sttSession.js'
 import type { DownloadEvent } from './stt/downloadManager.js'
 import type { TtsClient } from './tts/client/types.js'
 import { createTtsSession, type TtsSession } from './tts/ttsSession.js'
-import { watchTranscript } from './cc/ccSessions.js'
-import { watchCxTranscript } from './codex/codexSessions.js'
 import type { KanbanRunFeed } from './kanban/service.js'
 import type { KbUsageTracker } from './kb/usage.js'
 import type { AuthStatusState } from './auth/statusState.js'
@@ -67,7 +66,7 @@ export interface SessionDeps {
     canAccess(projectId: string): Promise<boolean>
     subscribe(cb: (event: { projectId: string; userId?: string; kind?: 'membership' }) => Promise<void>): () => void
   }
-  /** Live-tail проводника CC/Codex: локальный fs.watch или SSE исполнителя. */
+  /** Authenticated per-user SSE subscriptions to the configured runner. */
   observerTail?: {
     watchCc(userId: string, slug: string, id: string, onItems: (items: CcItem[]) => void): () => void
     watchCx(userId: string, id: string, onItems: (items: CxItem[]) => void): () => void
@@ -342,13 +341,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
         case 'cc.tail.start': {
           ccTailStop?.()
           const { slug, id } = msg
-          const watchCc =
-            deps.observerTail?.watchCc ??
-            ((_: string, s: string, sessId: string, onItems: (items: CcItem[]) => void) =>
-              watchTranscript(s, sessId, onItems))
-          ccTailStop = watchCc(deps.user.name, slug, id, (items) =>
+          ccTailStop = deps.observerTail?.watchCc(deps.user.name, slug, id, (items) =>
             ctx.send({ t: 'cc.tail', slug, id, items })
-          )
+          ) ?? null
           break
         }
         case 'cc.tail.stop':
@@ -359,11 +354,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
         case 'cx.tail.start': {
           cxTailStop?.()
           const { id } = msg
-          const watchCx =
-            deps.observerTail?.watchCx ??
-            ((_: string, sessId: string, onItems: (items: CxItem[]) => void) =>
-              watchCxTranscript(sessId, onItems))
-          cxTailStop = watchCx(deps.user.name, id, (items) => ctx.send({ t: 'cx.tail', id, items }))
+          cxTailStop = deps.observerTail?.watchCx(deps.user.name, id, (items) => ctx.send({ t: 'cx.tail', id, items })) ?? null
           break
         }
         case 'cx.tail.stop':

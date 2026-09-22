@@ -4,7 +4,7 @@ import type { KanbanMachines } from '../kanban/core.js'
 import type { FeaturePreviewManager } from '../preview/manager.js'
 import { isTerminalCiStatus, ACTIVE_MERGE_STATUSES, QA_RUN_STAGES, isMachineStoragePathAllowed } from '@voicechat/shared'
 import { join, dirname } from 'node:path'
-import { uid } from '../users/auth.js'
+import { uid } from "@sislexa/identity/server/users/auth"
 import { CleanupStore, CleanupBusy } from './store.js'
 import { TemporaryCleanup, cleanupDuration } from './service.js'
 import { RemoteResourceBackend } from './remote.js'

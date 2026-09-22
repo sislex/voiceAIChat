@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useConfirm, Avatar, Badge, Button, EmptyState, ErrorState, RefreshIndicator, SearchField, Skeleton, Toolbar } from '@voicechat/ui-kit'
 import type { AdminUserInfo, UserUsageSummary } from '@shared/admin'
-import { formatAgo } from '@voicechat/profile-app'
+import { formatAgo } from '@sislexa/identity/profile-app/index'
 import { filterUsers, isActive, LIST_PAGE, pageUsers, pluralUsers, userSpend, type UsersFilter } from './usersModel'
-import { formatUsd } from '@voicechat/profile-app'
+import { formatUsd } from '@sislexa/identity/profile-app/index'
 import type { LoadStatus } from '../loadState'
 import { loadView } from '../loadState'
 

@@ -1,6 +1,6 @@
 import { REST } from '@shared/protocol'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, ComponentQaRun, ComponentQaTaskState, IntegrationTestRun, IntegrationTestTaskState, QaCriterionResult, QaSession, QaTaskState } from '@shared/qa'
-import { authHeaders, credentialedFetch } from './session'
+import { authHeaders, credentialedFetch } from "@sislexa/identity/client/browser"
 
 type StartSessionInput = { branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }
 export interface RendererQaBridge {
