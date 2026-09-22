@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-22
-checked: 823ce54a
+checked: 457b6260
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -20,6 +20,25 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Core UI owner rollout (2026-09-22)
+
+Core 0.1.326 (`457b62607cba9162cae27f97cb78be3969deaa41`) consumes Core UI 1.0.0
+from `sislex/sislexa-core-ui`, source `e5f926d300313c9088c78b35f69026daaa3980aa`.
+`VC_WEB_DIR` is `/app/node_modules/@sislexa/core-ui/web`. The runtime image contains
+no former Core UI/browser source workspaces. Desktop 1.0.3 consumes the same
+renderer; its downloadable installer is pinned in `client-artifacts-0.1.326.yml`.
+
+The installed `voicechat-deploy` completed successfully. Only the Core container
+was replaced; the other service container IDs and images were preserved. The
+persistent Compose configuration selects `prebuilt-0.1.326.yml` and the matching
+client overlay. Core API/data contracts remain 1.1.0/1.0.0. A verified backup was
+restored into an isolated database before rollout; rollback inputs remain under
+`/var/backups/voicechat/sislexa-core-ui-326-20260922T112218Z`.
+
+Production acceptance verified the exact UI artifact, Users/Account, tool panels,
+image storage, provider grants/revocation, companion execution, installer hashes,
+Desktop login and Codex completion. Temporary probes were cleaned up.
 
 ## Development preview operation
 

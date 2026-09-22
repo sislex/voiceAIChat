@@ -1,42 +1,22 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-22
-checked: 60c3f73a
+checked: 457b6260
 areas:
-  - packages/make-app
-  - packages/image-studio-app
-  - packages/ui-foundation
   - scripts/application-frontend.mjs
   - scripts/application-frontend-server.mjs
   - apps/server/src/routes/applicationFrontends.ts
-  - packages/admin-app/src
-  - packages/admin-app/performance
   - packages/shared/src/uiPerformance.ts
   - apps/server/src/routes/uiPerformance.ts
-  - packages/app-shell
-  - packages/ui/src
-  - packages/ui-kit/src
-  - packages/ui-kit/package.json
-  - packages/chat-app/src
-  - packages/chat-app/package.json
-  - packages/web-reader-app
-  - packages/playwright-reader-app
-  - packages/projects-app/src
-  - packages/projects-app/package.json
-  - apps/web/src
-  - apps/web-recorder/src
-  - apps/web-reader/src/routes/previewProxy.ts
-  - apps/web-reader/src/mcp/previewMcp.ts
   - apps/server/src/server.ts
   - packages/shared/src/protocol.ts
-  - apps/server/src/users/auth.ts
   - apps/server/src/turns.ts
-  - packages/shared/src/previewInspector.ts
-  - packages/shared/src/webRecorder.ts
   - packages/shared/src/types.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/repos
   - apps/server/src/routes/rest.ts
+  - scripts/core-ui-artifact.mjs
+  - scripts/core-contracts-release.mjs
 ---
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
