@@ -1,5 +1,4 @@
 
-import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, createWriteStream, readFileSync } from 'node:fs'
@@ -9,7 +8,7 @@ import { resolve, join, relative } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { chromium, _electron as electron } from 'playwright'
 import { createCachedSizer, sizes } from './route-compression.mjs'
-import { COMPRESSION, inventory, totals, resourceSet, completedResource } from './route-budgets.mjs'
+import { COMPRESSION, inventory, totals, resourceSet, completedResource, externalStylesheet } from './route-budgets.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -102,11 +101,9 @@ export async function measure({ web, desktop, output }) {
           if (row.mime === 'text/css' && row.url.startsWith('https://')) {
             externalBodies.push(cdp.send('Network.getResponseBody', { requestId: event.requestId }).then(result => {
               const body = Buffer.from(result.body, result.base64Encoded ? 'base64' : 'utf8')
-              const hash = createHash('sha256').update(body).digest('hex')
-              // Distinct URLs still cost separate resources even if their bodies match.
-              row.resource = client + '/external/' + createHash('sha256').update(row.url).digest('hex') + '.css'
-              if (report.resources[row.resource] && report.resources[row.resource].sha256 !== hash) throw new Error('External stylesheet changed during measurement')
-              report.resources[row.resource] = { type: 'css', sha256: hash, ...measureSize(body), imports: [], dynamicImports: [], source: new URL(row.url).origin }
+              const observed = externalStylesheet(client, row.url, body, measureSize)
+              row.resource = observed.id
+              report.resources[observed.id] = observed.resource
             }).catch(error => { row.bodyError = error.message }))
           }
         }

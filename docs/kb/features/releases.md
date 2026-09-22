@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-09-22
-checked: 55f5a95b
+checked: 412b40ee
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -144,14 +144,16 @@ Chromium. `application-links.mjs` проверяет связи Web Reader→cor
 
 ### Проверки и артефакты
 
-`gate:app -- make` проверяет Make и его адресные контракты; `gate:changed` выбирает
-область от merge-base `origin/main`, `gate:fast` — изменения рабочего дерева от HEAD.
-Изменение внутреннего файла приложения не втягивает полные тесты его хоста.
-Изменение публичного контракта добавляет typecheck и контрактные тесты потребителей;
-общие библиотеки, неизвестные пути и неразрешимый lock diff расширяют проверку.
-Браузерные пути добавляют каталоговый E2E; общий fallback сохраняет эти E2E после
-`gate:all`. `gate:all` сам выполняет все typecheck/тесты и сборки панелей/web/Storybook.
-Адреса браузерных наборов находятся в каталоге, а не в правилах префикса `apps/`.
+`gate:changed` selects complete application suites from the branch diff;
+`gate:fast` uses the working-tree diff. Extracted applications run internal gates
+in their owner repositories. Public contracts add consumer checks; unknown
+root/configuration or unresolved lock changes retain the full Core fallback.
+`gate:all` now performs Core typecheck/tests, verifies owner-built assets and runs
+every retained browser integration suite, including serial Web/Desktop budgets.
+The affected gate does not repeat browser suites after that full gate succeeds.
+Known E2E-only changes select their complete named suites. See
+[testing operations](../testing-operations.md#development-gate-npm-run-gatefast)
+for reviewed tooling scope, concurrency and reproducible timing audits.
 
 `npm run build:app -- make --version X.Y.Z --image REGISTRY/MAKE --requires FILE --push --output FILE`
 работает из чистого checkout: отдельный временный контекст содержит npm-замыкание

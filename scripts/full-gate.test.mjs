@@ -5,8 +5,8 @@ import { FRONTEND_E2E_FILES, FULL_GATE_STAGES, remainingBrowserFiles, runStages 
 test('frontend work is removed only after a full successful gate', () => {
   const files = [...FRONTEND_E2E_FILES, 'e2e/settings.e2e.test.ts']
   assert.deepEqual(remainingBrowserFiles(files, false), files)
-  assert.deepEqual(remainingBrowserFiles(files, true), ['e2e/settings.e2e.test.ts'])
-  assert.deepEqual(new Set([...FRONTEND_E2E_FILES, ...remainingBrowserFiles(files, true)]), new Set(files))
+  assert.deepEqual(remainingBrowserFiles(files, true), [])
+  assert.deepEqual(remainingBrowserFiles([...files, files[0]], false), files)
 })
 test('full gate fails immediately, preserves exit status and records the failed stage', () => {
   const calls = [], records = []
@@ -23,7 +23,7 @@ test('signals and missing executables cannot report success', () => {
 test('full stage order keeps all original checks and builds before browser measurement', () => {
   const calls = []
   const result = runStages(FULL_GATE_STAGES, (command, args) => { calls.push(args.join(' ')); return { status: 0 } })
-  assert.deepEqual(calls, ['run typecheck','run test','run build:frontends','run verify:core-ui','run frontend:route-gates'])
-  assert.equal(result.length, 5)
+  assert.deepEqual(calls, ['run typecheck','run test','run build:frontends','run verify:core-ui','run frontend:route-gates','run test:browser'])
+  assert.equal(result.length, 6)
   assert.ok(result.every(row => row.exitCode === 0 && row.seconds >= 0))
 })

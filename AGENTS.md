@@ -50,13 +50,14 @@ released consumer APIs and contain no Agent implementation.
 
 ```bash
 npm install                  # Core workspaces; extracted applications install in their own repositories
-npm run dev:web              # сервер :8787 + Vite-клиент вместе (scripts/dev-web.sh)
+npm run dev:web              # Core :8787 + published UI proxy :5273
 npm run typecheck            # Core workspaces
 npm run test                 # все воркспейсы (vitest run)
 npm run gate:fast            # гейт шага: приложения по диффу от HEAD
 npm run gate                 # приложения по диффу ветки перед коммитом/PR
 npm run gate:app -- core     # full gate for a Core-owned application
-npm run gate:all             # полный гейт монорепозитория
+npm run gate:all             # full Core gate, including all retained browser integration
+npm run gate:audit           # inspect 20 representative change plans; -- --run <id> measures one
 npm run test:coverage        # покрытие shared/server с порогами-трещоткой
 npm run docker               # docker compose up --build -d → http://localhost:8787
 npm run kb:check             # что в базе знаний устарело относительно кода
@@ -89,6 +90,14 @@ npm run kb:check             # что в базе знаний устарело 
 внутренняя правка отделённого приложения запускает его typecheck и полный test,
 публичный контракт добавляет адресные проверки мостов. UI/браузерные изменения
 добавляют сборку и принадлежащие приложению E2E. Причины выбора печатаются.
+
+Known E2E-only changes run that complete browser suite, budget changes run real
+Web/Desktop measurements, and reviewed standalone tooling runs `test:tooling`.
+Mixed diffs preserve all selected application suites; unknown paths still use the
+full gate. Functional browser suites use at most two isolated workers; performance
+and native Electron suites remain serial. `VC_E2E_WORKERS=1` forces serial execution.
+`gate:all` includes every retained browser suite; the affected gate never repeats
+those suites after a successful full fallback.
 
 `npm run gate:app -- make` — явный полный гейт приложения, в том числе его
 контрактные и браузерные проверки. `npm run gate:all` — общий гейт; он включается
