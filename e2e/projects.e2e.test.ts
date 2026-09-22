@@ -17,7 +17,7 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { WebSocket } from 'ws'
 
 const ROOT = resolve(__dirname, '..')
-const WEB_DIST = join(ROOT, 'apps/web/dist')
+const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
 let PORT = 0
 let SMTP_PORT = 0
 let BASE = ''

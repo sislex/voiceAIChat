@@ -77,7 +77,7 @@ describe('managed development preview',()=>{
     expect(c.networks.private.internal).toBe(true)
     expect(c.services.build.network_mode).toBe('none')
     expect(c.services.build.environment.SCOPED_TOKEN).toBeUndefined()
-    expect(c.services.app.environment.VC_WEB_DIR).toBe('/app/apps/web/dist')
+    expect(c.services.app.environment.VC_WEB_DIR).toBe('/app/node_modules/@sislexa/core-ui/web')
     expect(c.services.app.cap_drop).toEqual(['ALL'])
     expect(c.services.app.network_mode).toBe('service:guard')
     expect(c.services.app.environment.HOME).toBeUndefined()

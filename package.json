@@ -2,13 +2,12 @@
   "name": "voicechat-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Голосовой чат-бот: desktop (Electron), server (STT/TTS/Claude), web-клиент",
+  "description": "\u0413\u043e\u043b\u043e\u0441\u043e\u0432\u043e\u0439 \u0447\u0430\u0442-\u0431\u043e\u0442: desktop (Electron), server (STT/TTS/Claude), web-\u043a\u043b\u0438\u0435\u043d\u0442",
   "//": "Electron applications are released by sislex/agent and sislex/desktop; Core consumes pinned artifacts.",
   "workspaces": [
     "packages/*",
     "apps/automation-runner",
-    "apps/server",
-    "apps/web"
+    "apps/server"
   ],
   "scripts": {
     "dev:web": "bash scripts/dev-web.sh",
@@ -17,27 +16,20 @@
     "kb:index": "node scripts/kb.mjs index",
     "kb:log": "node scripts/kb.mjs log",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "node --import tsx --test scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/owner-application-release.test.mjs scripts/application-frontend.test.mjs scripts/application-deploy.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs && node --test scripts/affected-check.test.mjs scripts/frontend-quality.test.mjs scripts/route-budgets.test.mjs scripts/route-compression.test.mjs scripts/full-gate.test.mjs scripts/long-run.test.mjs && npm run test --workspaces --if-present",
+    "test": "node --import tsx --test scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/owner-application-release.test.mjs scripts/application-frontend.test.mjs scripts/application-deploy.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs && node --test scripts/affected-check.test.mjs scripts/core-ui-artifact.test.mjs scripts/route-budgets.test.mjs scripts/route-compression.test.mjs scripts/full-gate.test.mjs scripts/long-run.test.mjs && npm run test --workspaces --if-present",
     "affected-check": "node --import tsx scripts/application-gate.mjs",
-    "frontend:static": "node --test scripts/frontend-quality.test.mjs scripts/route-budgets.test.mjs",
-    "frontend:typecheck": "npm run -w @voicechat/app-shell typecheck && npm run -w @voicechat/chat-app typecheck && npm run -w @voicechat/projects-app typecheck && npm run -w @voicechat/operations-app typecheck && npm run -w @voicechat/admin-app typecheck && npm run -w @voicechat/ui typecheck && npm run -w @voicechat/web typecheck",
-    "frontend:test": "npm run -w @voicechat/app-shell test && npm run -w @voicechat/chat-app test && npm run -w @voicechat/projects-app test && npm run -w @voicechat/operations-app test && npm run -w @voicechat/admin-app test && npm run -w @voicechat/ui test && npm run -w @voicechat/web test",
-    "frontend:build-gates": "npm run build:frontends && npm run build:chat-client && npm run -w @voicechat/web build && node scripts/frontend-quality.mjs --bundle && npm run build:storybook && npm run frontend:route-gates",
+    "frontend:static": "node scripts/core-ui-artifact.mjs",
+    "frontend:build-gates": "npm run build:frontends && npm run verify:core-ui && npm run frontend:route-gates",
     "frontend:route-gates": "node scripts/full-gate.mjs --routes",
-    "verify:frontend": "npm run frontend:static && npm run frontend:typecheck && npm run frontend:test && npm run frontend:build-gates",
-    "build": "npm run build --workspaces --if-present",
-    "//storybook": "Смоук-сборка витрины: единственное, что ловит сломанную сториз — tsc её JSX проверяет, а рендер нет.",
-    "build:storybook": "npm run -w @voicechat/ui build-storybook",
-    "//test:storybook": "Фолбэк Component QA при пустой настройке test_command: смоук-сборка Storybook.",
-    "test:storybook": "npm run build:storybook",
-    "verify": "npm run typecheck && npm run test && npm run build && npm run build:storybook",
+    "verify:frontend": "npm run frontend:build-gates",
+    "build": "npm run verify:core-ui",
+    "verify": "npm run typecheck && npm test && npm run verify:frontend",
     "gate": "npm run gate:changed",
-    "//gate:fast": "Проверки изменённых приложений рабочего дерева; общие контракты и неизвестные пути расширяют выбор. gate:all — полный гейт.",
+    "//gate:fast": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u0438\u0437\u043c\u0435\u043d\u0451\u043d\u043d\u044b\u0445 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0439 \u0440\u0430\u0431\u043e\u0447\u0435\u0433\u043e \u0434\u0435\u0440\u0435\u0432\u0430; \u043e\u0431\u0449\u0438\u0435 \u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442\u044b \u0438 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0435 \u043f\u0443\u0442\u0438 \u0440\u0430\u0441\u0448\u0438\u0440\u044f\u044e\u0442 \u0432\u044b\u0431\u043e\u0440. gate:all \u2014 \u043f\u043e\u043b\u043d\u044b\u0439 \u0433\u0435\u0439\u0442.",
     "gate:fast": "node --import tsx scripts/application-gate.mjs --worktree",
     "gate:fast:logged": "node scripts/long-run.mjs start -- npm run gate:fast",
     "gate:status": "node scripts/long-run.mjs status",
-    "//test:coverage": "Покрытие трёх пакетов, где живёт 76% тестов. Пороги-трещотка заданы в их vitest.config.ts и падают по коду возврата.",
-    "test:coverage": "npm run -w @voicechat/shared test -- --coverage && npm run -w @voicechat/server test -- --coverage && npm run -w @voicechat/ui test -- --coverage",
+    "test:coverage": "npm run -w @voicechat/shared test -- --coverage && npm run -w @voicechat/server test -- --coverage",
     "docker": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "kb:prepare": "node scripts/kb-search.mjs prepare",
@@ -62,7 +54,9 @@
     "components:init": "node --import tsx scripts/component-installation.mjs",
     "components:token": "node --import tsx packages/component-runtime/src/cli.ts",
     "qa:voice-live": "vitest run --config e2e/vitest.live.config.ts",
-    "build:chat-client": "node scripts/chat-client-release.mjs"
+    "verify:core-ui": "node scripts/core-ui-artifact.mjs",
+    "build:core-contracts": "node scripts/core-contracts-release.mjs",
+    "test:storybook": "npm run verify:core-ui"
   },
   "devDependencies": {
     "@sislex/runner-contracts": "file:vendor/sislex-runner-contracts-0.1.1-8ec5100952c3.tgz",
@@ -83,10 +77,10 @@
     "@voicechat/ui-kit": "file:vendor/voicechat-ui-kit-0.1.3-ec8ba8f62d43.tgz",
     "@voicechat/voice-contracts": "file:vendor/voicechat-voice-contracts-1.0.0-7e51e57ebf3b.tgz",
     "@voicechat/web-reader-contracts": "file:vendor/voicechat-web-reader-contracts-1.3.0-295807f94d7c.tgz",
-    "rollup-plugin-dts": "^6.4.1",
     "@sislexa/agent-contracts": "file:vendor/sislexa-agent-contracts-1.0.0-5503ff1c0d12.tgz",
     "@sislexa/agent": "file:vendor/sislexa-agent-0.20.0-741682375796.tgz",
     "electron": "33.4.11",
-    "@sislexa/desktop": "file:vendor/sislexa-desktop-1.0.2-05f2d6c971d2.tgz"
+    "@sislexa/desktop": "file:vendor/sislexa-desktop-1.0.2-05f2d6c971d2.tgz",
+    "@sislexa/core-ui": "file:vendor/sislexa-core-ui-1.0.0-e5f926d30031.tgz"
   }
 }

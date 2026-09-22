@@ -4,17 +4,13 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export const FRONTEND_E2E_FILES = Object.freeze([
-  'e2e/routeBudgets.e2e.test.ts',
-  'e2e/lazyBoundary.e2e.test.ts',
-  'e2e/applicationFrontend.e2e.test.ts'
+  'e2e/routeBudgets.e2e.test.ts'
 ])
 export const FULL_GATE_STAGES = Object.freeze([
   ['typecheck', ['run', 'typecheck']],
   ['tests', ['run', 'test']],
   ['frontends', ['run', 'build:frontends']],
-  ['chat-renderer', ['run', 'build:chat-client']],
-  ['web', ['run', '-w', '@voicechat/web', 'build']],
-  ['storybook', ['run', 'build:storybook']],
+  ['core-ui-artifact', ['run', 'verify:core-ui']],
   ['frontend-browser', ['run', 'frontend:route-gates']]
 ])
 export function remainingBrowserFiles(files, fullGatePassed) {

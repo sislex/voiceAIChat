@@ -403,63 +403,28 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     "entrypoint": "apps/automation-runner/src/index.ts",
     "healthPath": "/v1/health"
   }),
-  definition("web", "Веб-оболочка", ["apps/web","packages/ui"], {
-    "workspaces": [
-      "@voicechat/ui",
-      "@voicechat/web"
-    ],
+  definition("web", "web", [], {
+    "workspaces": [],
     "buildDependencies": [
-      "shared",
-      "sessions-core",
-      "app-shell",
-      "chat-app",
-      "admin-app",
-      "projects-app",
-      "operations-app",
-      "profile-app",
-      "sessions-app",
-      "playwright-reader-ui",
-      "web-reader-ui",
-      "ui-foundation",
-      "voice-browser",
-      "identity-login",
-      "identity-account",
-      "identity-client",
-      "make-ui",
-      "image-studio-ui"
+        "shared"
     ],
-    "browserPaths": [
-      "e2e/sessions.e2e.test.ts",
-      "e2e/settings.e2e.test.ts",
-      "e2e/projects.e2e.test.ts",
-      "e2e/gitPane.e2e.test.ts",
-      "packages/ui/src/runtime",
-      "packages/ui/src/App.tsx",
-      "packages/ui/src/styles",
-      "e2e/accessibility.e2e.test.ts",
-      "packages/ui/src/test/accessibilityBrowser.tsx",
-      "packages/ui/src/components/releases/ApplicationReleaseCenter.tsx",
-      "packages/ui/src/components/MachineVpn.tsx",
-      "packages/ui/src/components/MachineVpn.css",
-      "packages/ui/src/components/MachineVpn.stories.tsx",
-      "packages/ui/src/test/fixtures/vpn.ts",
-      "e2e/machine-vpn.e2e.test.ts",
-      "e2e/universalSearch.e2e.test.ts",
-      "packages/ui/src/components/CommandPalette.tsx",
-      "packages/ui/src/lib/useUniversalSearch.ts"
-    ],
+    "kind": "frontend",
+    "external": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "package": "@sislexa/core-ui"
+    },
     "e2eFiles": [
-      "e2e/sessions.e2e.test.ts",
-      "e2e/settings.e2e.test.ts",
-      "e2e/projects.e2e.test.ts",
-      "e2e/gitPane.e2e.test.ts",
-      "e2e/applicationReleases.e2e.test.ts",
-      "e2e/accessibility.e2e.test.ts",
-      "e2e/machine-vpn.e2e.test.ts",
-      "e2e/universalSearch.e2e.test.ts"
+        "e2e/sessions.e2e.test.ts",
+        "e2e/settings.e2e.test.ts",
+        "e2e/projects.e2e.test.ts",
+        "e2e/gitPane.e2e.test.ts",
+        "e2e/universalSearch.e2e.test.ts",
+        "e2e/routeResources.e2e.test.ts"
     ],
-    "kind": "frontend"
-  }),
+    "runtimeDependencies": [
+        "core"
+    ]
+}),
   definition("web-reader", "Web Reader", [], {
     "workspaces": [],
     "buildDependencies": [],
@@ -515,13 +480,12 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "make"
     ],
     "e2eFiles": [
-      "e2e/applicationFrontend.e2e.test.ts"
     ],
     "contractChecks": [
       {
-        "workspace": "@voicechat/ui",
+        "workspace": "@voicechat/server",
         "files": [
-          "src/runtime/applicationHost.dom.test.tsx"
+          "src/routes/applicationFrontends.test.ts"
         ]
       }
     ],
@@ -557,14 +521,13 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "image-studio"
     ],
     "e2eFiles": [
-      "e2e/applicationFrontend.e2e.test.ts",
       "e2e/imageStudioLayout.e2e.test.ts"
     ],
     "contractChecks": [
       {
-        "workspace": "@voicechat/ui",
+        "workspace": "@voicechat/server",
         "files": [
-          "src/runtime/applicationHost.dom.test.tsx"
+          "src/routes/applicationFrontends.test.ts"
         ]
       }
     ],
@@ -600,13 +563,12 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "playwright-reader"
     ],
     "e2eFiles": [
-      "e2e/applicationFrontend.e2e.test.ts"
     ],
     "contractChecks": [
       {
-        "workspace": "@voicechat/ui",
+        "workspace": "@voicechat/server",
         "files": [
-          "src/runtime/applicationHost.dom.test.tsx"
+          "src/routes/applicationFrontends.test.ts"
         ]
       }
     ],
@@ -642,13 +604,12 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "web-reader"
     ],
     "e2eFiles": [
-      "e2e/applicationFrontend.e2e.test.ts"
     ],
     "contractChecks": [
       {
-        "workspace": "@voicechat/ui",
+        "workspace": "@voicechat/server",
         "files": [
-          "src/runtime/applicationHost.dom.test.tsx"
+          "src/routes/applicationFrontends.test.ts"
         ]
       }
     ],
@@ -791,13 +752,15 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "package": "@sislexa/voice"
     }
   }),
-  definition("app-shell", "app-shell", ["packages/app-shell"], {
+  definition("app-shell", "app-shell", [], {
+    "workspaces": [],
     "buildDependencies": [],
-    "contractPaths": [
-      "packages/app-shell"
-    ],
-    "kind": "library"
-  }),
+    "kind": "library",
+    "external": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "package": "@sislexa/core-ui"
+    }
+}),
   definition("sessions-app", "sessions-app", [], {
     "workspaces": [],
     "buildDependencies": [],
@@ -816,48 +779,42 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "package": "@sislexa/identity"
     }
   }),
-  definition("chat-app", "chat-app", ["packages/chat-app"], {
-    "buildDependencies": [
-      "shared",
-      "ui-kit"
-    ],
-    "contractPaths": [
-      "packages/chat-app"
-    ],
-    "kind": "library"
-  }),
-  definition("projects-app", "projects-app", ["packages/projects-app"], {
-    "buildDependencies": [
-      "shared",
-      "ui-kit"
-    ],
-    "contractPaths": [
-      "packages/projects-app"
-    ],
-    "kind": "library"
-  }),
-  definition("operations-app", "operations-app", ["packages/operations-app"], {
-    "buildDependencies": [
-      "shared",
-      "ui-kit"
-    ],
-    "contractPaths": [
-      "packages/operations-app"
-    ],
-    "kind": "library"
-  }),
-  definition("admin-app", "admin-app", ["packages/admin-app"], {
-    "buildDependencies": [
-      "shared",
-      "ui-kit",
-      "profile-app",
-      "sessions-app"
-    ],
-    "contractPaths": [
-      "packages/admin-app"
-    ],
-    "kind": "library"
-  }),
+  definition("chat-app", "chat-app", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "package": "@sislexa/core-ui"
+    }
+}),
+  definition("projects-app", "projects-app", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "package": "@sislexa/core-ui"
+    }
+}),
+  definition("operations-app", "operations-app", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "package": "@sislexa/core-ui"
+    }
+}),
+  definition("admin-app", "admin-app", [], {
+    "workspaces": [],
+    "buildDependencies": [],
+    "kind": "library",
+    "external": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "package": "@sislexa/core-ui"
+    }
+}),
   definition("make-contracts", "make-contracts", [], {
     "workspaces": [],
     "buildDependencies": [],

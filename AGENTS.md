@@ -18,9 +18,7 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 |---|---|---|---|
 | `packages/shared` | `@voicechat/shared` | Типы, контракт REST/WS, чистая логика (без зависимостей) | [AGENTS](packages/shared/AGENTS.md) |
 | `packages/component-runtime` | `@sislexa/component-runtime` | Provider tokens, dependency compatibility and managed configuration | [AGENTS](packages/component-runtime/AGENTS.md) |
-| `packages/ui` | `@voicechat/ui` | Общая оболочка, чат, стор и host API; продуктовые панели загружаются отдельно | [AGENTS](packages/ui/AGENTS.md) |
 | `apps/server` | `@voicechat/server` | Fastify: REST/WS, application orchestration, database and machine registry | [AGENTS](apps/server/AGENTS.md) |
-| `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |
 
 Make, both Readers (including Browser Runner and Web Recorder), Image Studio,
 Voice, Identity and Billing are direct versioned `@sislexa/*` dependencies, with
@@ -30,6 +28,11 @@ host, authorization and transport integration. Owner-built UI assets are verifie
 not compiled in Core. LLM Runner lives in `sislex/llm-runner`; Core uses its
 authenticated HTTP API and a development-only public server archive for contract
 tests. There is no local CLI fallback. See `docs/kb/architecture.md#tool-repository-ownership`.
+
+Core UI, browser client, renderer and their internal tests belong to
+[sislex/sislexa-core-ui](https://github.com/sislex/sislexa-core-ui). Core verifies
+and serves pinned `@sislexa/core-ui` assets. Make UI changes and run their gates
+in that owner repository; Core retains public API/browser integration checks.
 
 UI Kit and UI Foundation are versioned dependencies owned by
 [sislex/sielexa-ui](https://github.com/sislex/sielexa-ui). Their source, internal
@@ -54,8 +57,7 @@ npm run gate:fast            # гейт шага: приложения по ди
 npm run gate                 # приложения по диффу ветки перед коммитом/PR
 npm run gate:app -- core     # full gate for a Core-owned application
 npm run gate:all             # полный гейт монорепозитория
-npm run test:coverage        # покрытие shared/server/ui с порогами-трещоткой
-npm run -w @voicechat/ui test        # тесты одного пакета — так быстрее
+npm run test:coverage        # покрытие shared/server с порогами-трещоткой
 npm run docker               # docker compose up --build -d → http://localhost:8787
 npm run kb:check             # что в базе знаний устарело относительно кода
 ```
