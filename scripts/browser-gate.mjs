@@ -7,9 +7,8 @@ import { pathToFileURL } from 'node:url'
 // These suites use separate ephemeral ports, databases and browser contexts.
 // New suites stay serial until their isolation has been reviewed.
 const parallelFiles = new Set([
-  'make', 'playwrightReader', 'sessions', 'projects', 'gitPane',
-  'universalSearch', 'webReaderHttp', 'webReaderModel', 'webReaderNative',
-  'webReaderOwnProject', 'webReaderProject', 'imageStudioLayout'
+  'sessions', 'projects', 'gitPane', 'universalSearch',
+  'webReaderOwnProject', 'webReaderProject', 'toolIntegration'
 ].map(name => `e2e/${name}.e2e.test.ts`))
 
 export function integrationBrowserFiles(root = resolve(import.meta.dirname, '..')) {

@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-22
-checked: 457b6260
+checked: 9b707a9a
 areas:
   - scripts/application-frontend.mjs
   - scripts/application-frontend-server.mjs
@@ -241,7 +241,7 @@ Playwright Reader владеет отдельным `BrowserSessionState` и ж�
 исправляет найденные при аудите v0.1.264 пустые 264 px на десктопе и около
 94 px на мобильной вкладке «Чат»: прежний `grid-column: 2` создавал неявную
 колонку и побеждал менее специфичное мобильное правило. Браузерная регрессия
-`e2e/imageStudioLayout.e2e.test.ts` проверяет обе настройки Sidebar, ширины
+`sislex/sislexa-core-ui:system-tests/imageStudioLayout.e2e.test.ts` проверяет обе настройки Sidebar, ширины
 1440/1024/769/390/320 px, сохранённые доли чата 25%/75%, непересечение панелей
 и видимость подсказки композера. Ей нужна свежая web-сборка; она поднимает
 свой сервер на свободном порту с временными данными. `VC_VISUAL_ARTIFACTS`
@@ -1536,7 +1536,7 @@ At widths <=720 px, Files/Code/Preview segments choose the visible workspace pan
 Phones use the existing highlighted textarea editor; reported device memory <=2 GB
 also selects that editor. Missing memory information is allowed. Package DOM tests
 cover tabs, save failures, historical files, and low-memory read-only input.
-`e2e/make.e2e.test.ts` exercises the complete 390 px flow, 720/721 boundaries,
+`sislex/sislexa-core-ui:system-tests/make.e2e.test.ts` exercises the complete 390 px flow, 720/721 boundaries,
 computed CSS and matchMedia, single and bulk replacement, and decoding the QR back
 to the publication URL without external QR requests. The required checks are
 `npm run gate:app -- make`, `npm run gate:app -- make-ui`, and `npm run gate:fast`.
@@ -1602,7 +1602,7 @@ that API before the new Make UI; older panels still work with the new host.
 снимков. На ширине до 768 px desktop minimum снимается, split становится вертикальным, divider
 исчезает и табы «Чат»/«Проект» отдают всю область только активной панели. Контракт вместе с
 адаптивным композером и однострочным заголовком защищают
-`packages/ui/src/styles/chatMakeLayout.test.ts` и browser-сценарии в `e2e/make.e2e.test.ts`.
+`packages/ui/src/styles/chatMakeLayout.test.ts` и browser-сценарии в `sislex/sislexa-core-ui:system-tests/make.e2e.test.ts`.
 
 Правая панель — `MakePane` (`packages/make-app/src/components/MakePane.tsx`, сториз `Make/MakePane`,
 тест `MakePane.dom.test.tsx`). Данные — `window.api['make:*']` (REST) и `window.make.onChanged`
@@ -1612,7 +1612,7 @@ that API before the new Make UI; older panels still work with the new host.
   (`sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"`).
   `allow-downloads` с2026-09-10 разрешает кнопкам HTTP/Blob-экспорта работать внутри
   интерактивных превью, включая открытие Make через Playwright Reader.
-  Проверка: `e2e/playwrightReader.e2e.test.ts` скачивает и читает экспорт проекта.
+  Проверка: `sislex/playwrightreader:system-tests/playwrightReader.e2e.test.ts` скачивает и читает экспорт проекта.
   Перед первой загрузкой — cookie-гейт `ensurePreview` (тот же `session:ensurePreview`,
   что у Web Reader: iframe не шлёт Bearer). Пресеты ширины ПК/Планшет/Телефон, ⟳, открыть в
   новой вкладке, ⛶ на весь экран, **⌖ «Выбрать элемент»**: сервер инъецирует в HTML скрипт
@@ -2382,7 +2382,7 @@ Toast defaults remain three visible messages, four seconds for ordinary messages
 
 `ConnectionStatus` listens to the common realtime bridge's disconnect/connect events. A disconnection episode preserves its start time across retries; the banner exposes duration and retry, and recovery emits one short toast. The WebSocket client tracks and cancels its reconnect timer to avoid parallel retry loops. Intentional authentication reconnects do not start loss episodes. Individual machine status remains separate.
 
-The shell has a compact toolbar and bottom navigation at widths up to 720px, with safe-area padding. Navigation publishes its measured height as `--vc-shell-bottom`, which the toast viewport adds to its composer offset. More opens the sidebar, or the command palette in full-screen tool layouts without a sidebar. Mobile chat splits use the available parent height instead of `100dvh`, keeping tool content inside the space reserved by the shell. The four-step tour is scoped to a signed-in user's name and persists completion or skipping. Story surfaces are `UI/CommandPalette`, `Shell/NotificationCenter`, `Shell/ConnectionBanner` and `Shell/MobileNavigation`; shared story axe checks cover them. CHAT-457 DOM cases carry TC1–TC9 markers; the real Chromium layout scenario in `e2e/imageStudioLayout.e2e.test.ts` covers 390px and 200% zoom. The navigation button width override must also use `!important`: UI Kit sets a global mobile minimum width with that priority. Five 40px minimum columns overflow the 195 CSS-pixel width available at 200% zoom. The navigation keeps the shared minimum target height while allowing its five columns to shrink. Likewise, the mobile Make/Console one-column grid must match the specificity of their collapsed desktop selectors. Otherwise a fixed-position mobile sidebar leaves the content auto-placed in a zero-width desktop column.
+The shell has a compact toolbar and bottom navigation at widths up to 720px, with safe-area padding. Navigation publishes its measured height as `--vc-shell-bottom`, which the toast viewport adds to its composer offset. More opens the sidebar, or the command palette in full-screen tool layouts without a sidebar. Mobile chat splits use the available parent height instead of `100dvh`, keeping tool content inside the space reserved by the shell. The four-step tour is scoped to a signed-in user's name and persists completion or skipping. Story surfaces are `UI/CommandPalette`, `Shell/NotificationCenter`, `Shell/ConnectionBanner` and `Shell/MobileNavigation`; shared story axe checks cover them. CHAT-457 DOM cases carry TC1–TC9 markers; the real Chromium layout scenario in `sislex/sislexa-core-ui:system-tests/imageStudioLayout.e2e.test.ts` covers 390px and 200% zoom. The navigation button width override must also use `!important`: UI Kit sets a global mobile minimum width with that priority. Five 40px minimum columns overflow the 195 CSS-pixel width available at 200% zoom. The navigation keeps the shared minimum target height while allowing its five columns to shrink. Likewise, the mobile Make/Console one-column grid must match the specificity of their collapsed desktop selectors. Otherwise a fixed-position mobile sidebar leaves the content auto-placed in a zero-width desktop column.
 
 Клавиши описаны **картой биндингов** — `lib/useHotkeys.ts` больше не знает жёстко про две клавиши. Биндинг — это `{ combo, onDown, onUp?, inInput?, ignoreModifiers?, enabled? }`; разбор комбинации, сверка с событием и подпись для показа человеку лежат в `lib/hotkeys.ts` (чистые функции, их читают и хук, и шпаргалка, и кнопка «⌘K» в сайдбаре). `mod` в комбинации — «команда платформы»: при сверке подходят и `metaKey`, и `ctrlKey`, при показе — `⌘` на macOS и `Ctrl` на остальных (`formatCombo`). Пробел и Esc сверяются по `event.code` (раскладка на них не влияет), буквы — по `event.key` (⌘K на русской раскладке даёт `key: 'k'`).
 
@@ -2845,7 +2845,7 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 Исключение runner превращается в отрицательный результат. Сохранение и cookie-гейт
 open принадлежат адаптеру WebReaderFrame; App не запускает конкурирующее обновление
 URL перед командой. Регрессии — `modelRequest.test.ts` и настоящий relay/WS/App
-в `e2e/webReaderModel.e2e.test.ts`.
+в `sislex/webreader:system-tests/webReaderModel.e2e.test.ts`.
 
 Reader hash-маршрут служит источником истины и для монтирования поверхности. Пока асинхронный `selectConversation` не привёл `chat.activeId` к ID из `#/web-reader/:id` или `#/playwright-reader/:id` и выбранный разговор не подтверждён соответствующим типизированным списком, `AppBody` показывает статус «Открываем выбранный Reader-разговор…» и не монтирует старые `ChatColumn`, композер, divider и `WebReaderHost`. Это закрывает гонку, при которой пользователь уже видел новый Reader URL, но успевал отправить сообщение и MCP-ход в предыдущий активный чат. DOM-регрессия задерживает ответ `conversations:get`, проверяет отсутствие интерактивного композера/host-а до согласования и затем подтверждает, что отправленная реплика получает ID Reader-разговора.
 
@@ -3188,7 +3188,7 @@ auditing while the user owns control.
 
 Общий синхронный генератор клиентских идентификаторов — `browserId()` из `packages/shared/src/browserId.ts`, экспортированный публичным barrel `packages/shared/src/index.ts`. Он сначала использует нативный `crypto.randomUUID()`, при его отсутствии формирует UUID v4 из `crypto.getRandomValues()`, а без обоих Web Crypto API возвращает непустой локально уникальный идентификатор из времени, последовательного счётчика и безопасной от исключений псевдослучайной части. Поэтому генерация не зависит от secure context и работает как на HTTP, так и на HTTPS. Один генератор используют request ID и регистрация preview/MCP-моста через `WebReaderFrame`, записи истории действий модели в `AppBody`, idempotency key Feature Preview и Kanban Assistant, а также request ID повторяемых шагов Web Recorder. ID записи истории создаётся до обновления React-state: повторный вызов updater не генерирует другой ключ.
 
-На HTTP по IP или обычному имени хоста `crypto.randomUUID` может отсутствовать, хотя `crypto.getRandomValues` доступен. Прямой вызов в обработчике `window.preview.onChanged` раньше обрушал весь `AppBody` после первого успешного действия модели (`reader.changed`), а первоначальное открытие Reader могло проходить успешно. Регрессия в `App.dom.test.tsx` проверяет историю и повтор действия без `randomUUID` и без Web Crypto. Браузерный набор `e2e/webReaderHttp.e2e.test.ts` проверяет вход, MCP open/read, историю и reload на `http://reader-http.test` с локальным DNS-алиасом, а также на loopback. Проверять только `http://localhost` недостаточно: браузер считает loopback доверенным контекстом и оставляет `randomUUID` доступным.
+На HTTP по IP или обычному имени хоста `crypto.randomUUID` может отсутствовать, хотя `crypto.getRandomValues` доступен. Прямой вызов в обработчике `window.preview.onChanged` раньше обрушал весь `AppBody` после первого успешного действия модели (`reader.changed`), а первоначальное открытие Reader могло проходить успешно. Регрессия в `App.dom.test.tsx` проверяет историю и повтор действия без `randomUUID` и без Web Crypto. Браузерный набор `sislex/webreader:system-tests/webReaderHttp.e2e.test.ts` проверяет вход, MCP open/read, историю и reload на `http://reader-http.test` с локальным DNS-алиасом, а также на loopback. Проверять только `http://localhost` недостаточно: браузер считает loopback доверенным контекстом и оставляет `randomUUID` доступным.
 
 Reader history labels can include an aria-hidden action icon before their text;
 browser assertions match the action wording without assuming it starts at the
@@ -3860,7 +3860,7 @@ padding includes safe-area insets. New stories include
 `imagestudio-imagestudiopane--virtual-gallery-500`,
 `imagestudio-imagestudiopane--queue-states`, and
 `imagestudio-imagestudiopane--publication-editor`. Browser regression coverage
-lives in `e2e/imageStudioLayout.e2e.test.ts`; test-case markers associate checks
+lives in `sislex/sislexa-core-ui:system-tests/imageStudioLayout.e2e.test.ts`; test-case markers associate checks
 with the task's QA workflow.
 
 
@@ -3905,7 +3905,7 @@ editable for arbitrary people and product work.
 At phone widths the viewer title may shrink, object controls wrap, and secondary
 actions move into the scrollable More menu. The viewer body, version strip, and
 selection controls have independent vertical or horizontal scroll containment.
-`e2e/imageStudioLayout.e2e.test.ts` exercises the complete upload → selection →
+`sislex/sislexa-core-ui:system-tests/imageStudioLayout.e2e.test.ts` exercises the complete upload → selection →
 extract → history restore flow at 390 px and 320 px in Chromium and checks that
 the page never gains horizontal overflow.
 

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "owners": [
+    {
+      "repository": "playwrightreader",
+      "commit": "c69ed9911af962f80813da82c109cbda5011f485"
+    },
+    {
+      "repository": "webreader",
+      "commit": "ca9c49a8d08499094743c370a7c85a34fcf833cb"
+    },
+    {
+      "repository": "sislexa-core-ui",
+      "commit": "1e1e4442a0ec5693a3ca06c7608528cd83330f0d"
+    }
+  ]
+}

@@ -59,3 +59,5 @@ scrins/
 **/.claude/settings.local.json
 storybook-static/
 .mobile-shots/
+
+.cache/

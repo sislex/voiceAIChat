@@ -184,7 +184,6 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "core"
     ],
     "e2eFiles": [
-      "e2e/make.e2e.test.ts"
     ],
     "contractChecks": [
       {
@@ -256,7 +255,6 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "browser-runner"
     ],
     "e2eFiles": [
-      "e2e/playwrightReader.e2e.test.ts"
     ],
     "contractChecks": [
       {
@@ -284,7 +282,6 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     "workspaces": [],
     "buildDependencies": [],
     "e2eFiles": [
-      "e2e/playwrightReader.e2e.test.ts"
     ],
     "contractChecks": [
       {
@@ -419,7 +416,8 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
         "e2e/projects.e2e.test.ts",
         "e2e/gitPane.e2e.test.ts",
         "e2e/universalSearch.e2e.test.ts",
-        "e2e/routeResources.e2e.test.ts"
+        "e2e/routeResources.e2e.test.ts",
+        "e2e/toolIntegration.e2e.test.ts"
     ],
     "runtimeDependencies": [
         "core"
@@ -433,9 +431,6 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "playwright-reader"
     ],
     "e2eFiles": [
-      "e2e/webReaderHttp.e2e.test.ts",
-      "e2e/webReaderModel.e2e.test.ts",
-      "e2e/webReaderNative.e2e.test.ts",
       "e2e/webReaderOwnProject.e2e.test.ts",
       "e2e/webReaderProject.e2e.test.ts"
     ],
@@ -521,7 +516,6 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "image-studio"
     ],
     "e2eFiles": [
-      "e2e/imageStudioLayout.e2e.test.ts"
     ],
     "contractChecks": [
       {
@@ -828,7 +822,6 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     "workspaces": [],
     "buildDependencies": [],
     "e2eFiles": [
-      "e2e/webReaderNative.e2e.test.ts"
     ],
     "kind": "library",
     "external": {

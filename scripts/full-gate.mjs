@@ -11,11 +11,10 @@ export const FULL_GATE_STAGES = Object.freeze([
   ['tests', ['run', 'test']],
   ['frontends', ['run', 'build:frontends']],
   ['core-ui-artifact', ['run', 'verify:core-ui']],
-  ['frontend-browser', ['run', 'frontend:route-gates']],
   ['browser-integration', ['run', 'test:browser']]
 ])
 export function remainingBrowserFiles(files, fullGatePassed) {
-  return fullGatePassed ? [] : [...new Set(files)]
+  return [...new Set(files)].filter(file => !fullGatePassed || FRONTEND_E2E_FILES.includes(file))
 }
 export function runStages(stages, execute, record = () => {}) {
   const results = []

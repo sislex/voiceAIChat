@@ -43,6 +43,10 @@ export function ownerSourceRelease(plan, source, commit, requires) {
   validateCatalogRelease(parseApplicationReleaseManifest({ ...release, artifacts: plan.app.services.map(service => ({ kind: 'oci', service, reference: plan.image + '@sha256:' + '0'.repeat(64) })) }))
   return release
 }
+export function ownerGateCommand(pkg) {
+  if (!pkg.scripts?.gate) throw new Error('Owner must provide a full gate')
+  return pkg.scripts['gate:release'] ? 'gate:release' : 'gate'
+}
 export async function prepareOwnerRelease(input, { execute = (command, args, cwd, capture = false) => {
   if (capture) return execFileSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim()
   const result = spawnSync(command, args, { cwd, stdio: 'inherit' })
@@ -63,7 +67,7 @@ export async function prepareOwnerRelease(input, { execute = (command, args, cwd
     const placeholder = { ...release, artifacts: plan.app.services.map(service => ({ kind: 'oci', service, reference: plan.image + '@sha256:' + '0'.repeat(64) })) }
     planCompatibilityMatrix(placeholder, matrix)
     execute('npm', ['ci', '--no-audit', '--no-fund'], source)
-    execute('npm', ['run', 'gate'], source)
+    execute('npm', ['run', ownerGateCommand(json(join(source, 'package.json')))], source)
     if (execute('git', ['status', '--porcelain'], source, true)) throw new Error('Owner gate changed tracked release inputs')
     const tag = `${plan.image}:${plan.version}-${commit.slice(0, 12)}`
     execute('docker', ['build', '--platform', 'linux/amd64', ...(plan.target ? ['--target', plan.target] : []), '--build-arg', `APPLICATION_VERSION=${plan.version}`, '--build-arg', `APPLICATION_COMMIT=${commit}`, '--label', `com.voicechat.application=${plan.app.id}`, '--label', `com.voicechat.release=${JSON.stringify(release)}`, '-t', tag, '.'], source)

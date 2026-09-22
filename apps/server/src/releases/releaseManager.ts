@@ -293,6 +293,14 @@ export class ReleaseManager {
           // Группировка удерживает всю составную shell-стадию (включая `&`/`wait`) внутри временного worktree.
           await runRegressionCommand(commands[index]!,`Regression, стадия ${index+1}/${commands.length}`)
         }
+        // Repositories may keep cross-application acceptance outside their development gate.
+        // Exact release/system commands already include it; custom commands retain an explicit final stage.
+        if(!commands.some(command=>command.trim()==='npm run gate:release')) {
+          if(!commands.some(command=>command.trim()==='npm run gate:performance'))
+            await runRegressionCommand('npm run gate:performance --if-present','Performance regression')
+          if(!commands.some(command=>command.trim()==='npm run gate:system'))
+            await runRegressionCommand('npm run gate:system --if-present','System regression')
+        }
       }finally{
         await this.runtime.exec(target,releaseRegressionCleanupCommand(target,release.id),30_000)
       }
