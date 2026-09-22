@@ -22,3 +22,8 @@ reload, causing competing cookie/CSRF sessions. Seed it once per browser session
 all eight geometry/navigation assertions then pass without weakened expectations.
 
 Validation and timings are recorded in docs/plans/browser-test-ownership.md.
+
+Installed-artifact acceptance found a second pre-existing fixture race: queue size
+did not prove the active evaluation had begun. The owner cancellation test now
+uses an HTTP latch and checks successful completion, preserving cancellation and
+final user-input assertions. All 30 Web Reader system cases then passed.

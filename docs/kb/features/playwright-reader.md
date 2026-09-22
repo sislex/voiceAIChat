@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-09-22
-checked: 9b707a9a
+checked: 31b38601
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -320,6 +320,14 @@ legacy-токен initScript-ом на каждом reload: приложение
 Полный IME composition и вход в пользовательские Gmail/Instagram не проверены.
 Набор E2E покрывает сценарии проекта, но не доказывает работу каждой страницы
 приложения во всех ролях или авторизованных сценариев внешних сервисов.
+
+The owner system cancellation regression uses an HTTP fixture latch to confirm
+that evaluation has actually started; queue size also includes background polling
+and cannot establish that state. The panel is closed for this API queue assertion
+to stop frame polling. Pending entries reject only when they reach the queue head,
+so the fixture releases active evaluation before awaiting cancellation. It checks
+successful evaluation explicitly, preventing an unnoticed evaluate timeout from
+making the test pass.
 
 ## Тип разговора, scope и legacy-миграция
 
