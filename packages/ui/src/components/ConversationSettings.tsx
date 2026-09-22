@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'
 import type { ChatInstruction, ContextPreset, Conversation, KbContextMode, PermissionMode, Settings, UserRole } from '@shared/types'
-import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
+import type { AgentInfo, AgentSkill, FsEntry } from '@sislexa/agent-contracts'
 import type { ChatStorageView, MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { LlmEngineOption } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'

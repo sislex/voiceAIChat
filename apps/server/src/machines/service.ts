@@ -7,10 +7,7 @@
 // Синхронные чтения (`isOnline`, `nameOf`, `versionOf`, `telemetryOf`, `imageHostOf`, `onlineIds`,
 // `ptyLive`, `ptyBufferText`, `ptyContextOf`) нарочно остаются синхронными: их десятки в горячих путях, и
 // удалённая реализация отвечает из зеркала, которое процесс машин обновляет пушем.
-import type {
-  AgentHttpRequest, AgentHttpResponse, AgentImageHost, AgentPolicy, AgentTelemetry, FsResult, GitAccessRequest, GitAccessResult,
-  MachineCommandRecord, PtyContext
-} from '@voicechat/shared'
+import type { AgentHttpRequest, AgentHttpResponse, AgentImageHost, AgentPolicy, AgentTelemetry, FsResult, GitAccessRequest, GitAccessResult, MachineCommandRecord, PtyContext } from '@sislexa/agent-contracts'
 import type { ExecMeta, ExecResult, PtyEvent } from '../agents/registry.js'
 
 export type { ExecMeta, ExecResult, PtyEvent }

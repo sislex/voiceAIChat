@@ -6,7 +6,7 @@ import {
   installScriptUrl,
   serverBaseFromConnection
 } from './agentInstall'
-import { encodeAgentConnection } from './agentProtocol'
+import { encodeAgentConnection } from '@sislexa/agent-contracts'
 
 const CONN = encodeAgentConnection({ server: 'wss://host.example/agent', token: 'tok123' })
 

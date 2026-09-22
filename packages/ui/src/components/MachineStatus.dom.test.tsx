@@ -7,7 +7,7 @@ import {
   makeTelemetry as telemetry,
   makeWindowsDegradedAgent
 } from '../test/fixtures/index'
-import { AGENT_VERSION } from '@shared/version'
+import { AGENT_VERSION } from '@sislexa/agent-contracts'
 
 describe('MachineStatus', () => {
   // @testCase T7

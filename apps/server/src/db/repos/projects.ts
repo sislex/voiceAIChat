@@ -1,7 +1,8 @@
 // Домен «projects»: таблицы projects, project_members, project_member_role_audit, project_invitations, project_types, project_type_review_audit, kanban_columns, board_views.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import type { ProjectCommandPolicy, MachineShareAccess, AutomatedQaMode, AutomatedQaScenario, ProjectInvitation, ProjectInvitationForUser, ProjectInvitationPreview, ProjectInvitationStatus, ProjectRole } from '@voicechat/shared'
+import type { ProjectCommandPolicy, AutomatedQaMode, AutomatedQaScenario, ProjectInvitation, ProjectInvitationForUser, ProjectInvitationPreview, ProjectInvitationStatus, ProjectRole } from '@voicechat/shared'
+import type { MachineShareAccess } from '@sislexa/agent-contracts'
 import { parseProjectCommandPolicy, parseAutomatedQaScenarios, DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView, BUILTIN_PROJECT_TYPES, DEFAULT_PROJECT_TYPE_ID, MAX_PROJECT_TYPE_DEPTH, canPublishProjectType, isProjectTypeVisible, projectTypeChainLabel, resolveProjectTypeDefaults, resolveProjectTypeFeatures, type ProjectFeatureOverride, type ProjectFeatureSet, type ProjectTypeChain, type ProjectTypeDefaults, type ProjectTypeNode, type ProjectTypeStatus, type KanbanColumn, type ProjectDetail, type ProjectMember, type ProjectSummary, type WorkItemType, type WorkItemDefaultSkills, type KanbanColumnSemanticType, type ProjectMachineDirectoryAssignments, recommendedProjectMachineDirectories, type KbContextMode, type ReleaseTimeouts, DEFAULT_RELEASE_TIMEOUTS, validateReleaseTimeouts } from '@voicechat/shared'
 import { createHash, randomBytes } from 'node:crypto'
 import { BaseRepo } from './base.js'

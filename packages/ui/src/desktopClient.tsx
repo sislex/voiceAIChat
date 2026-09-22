@@ -1,7 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App, { installRemoteBridges } from '@voicechat/ui'
-import '@voicechat/ui/styles.css'
+import App from './App'
+import { installRemoteBridges } from './remote'
+import './styles/global.css'
 
 // Desktop всегда работает тонким клиентом. URL обязателен: main-процесс
 // показывает окно настройки до запуска renderer.

@@ -8,7 +8,7 @@ import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { consolePtyId } from '@voicechat/shared'
+import { consolePtyId } from '@sislexa/agent-contracts'
 import type { MachinesService } from '../machines/service.js'
 
 export const CONSOLE_MCP_PATH = '/mcp/console'

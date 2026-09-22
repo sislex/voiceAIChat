@@ -10,7 +10,7 @@
 //
 // Чистые функции — без DOM, сети и файлов.
 
-import { decodeAgentConnection } from './agentProtocol'
+import { decodeAgentConnection } from '@sislexa/agent-contracts'
 import { REST } from './protocol'
 
 /** ОС, для которых есть готовая команда. */

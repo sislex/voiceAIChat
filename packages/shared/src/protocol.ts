@@ -16,7 +16,7 @@ import type {
 } from './types'
 import type { CcItem } from './cc'
 import type { CxItem } from './codexSessions'
-import type { AgentInfo, MachineCommandEvent, MachineStatusEvent } from './agentProtocol'
+import type { AgentInfo, MachineCommandEvent, MachineStatusEvent } from '@sislexa/agent-contracts'
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
 import type { QaRunStage } from './qa'

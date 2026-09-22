@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os'
 import test from 'node:test'
 import { checkArchitecture, checkBundle, redact, runStatic } from './frontend-quality.mjs'
 
-test('frontend build gate installs standalone Desktop dependencies before build', () => {
+test('Core consumes Desktop artifacts without installing or building owner source', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-  assert.match(pkg.scripts['frontend:build-gates'], /npm ci --prefix apps\/desktop && npm --prefix apps\/desktop run build/)
+  for (const command of Object.values(pkg.scripts)) assert.doesNotMatch(command, /apps\/desktop|apps\/agent-tray|apps\/login-application/)
+  assert.ok(pkg.devDependencies['@sislexa/desktop'])
 })
 
 test('current frontend satisfies static quality gates', () => {

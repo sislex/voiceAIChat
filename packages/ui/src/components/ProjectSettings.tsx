@@ -16,7 +16,7 @@ import type { ManagedPreflightConfirmation } from '@shared/release'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { RendererApi } from '@shared/ipc'
 import { Button, StickyActionBar } from '@voicechat/ui-kit'
 import { IconButton, useConfirm } from '@voicechat/ui-kit'

@@ -3,7 +3,7 @@ import { render } from "@voicechat/ui-foundation/test/uiRender"
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FileExplorer } from './FileExplorer'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { MachineOps } from '@voicechat/ui-foundation/components/machine'
 
 const policy = (allowWrite: boolean) => ({

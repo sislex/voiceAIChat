@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@voicechat/ui-kit'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import { PROJECT_MACHINE_DIRECTORY_KINDS } from '@shared/projects'
 import type { ProjectMachine, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 

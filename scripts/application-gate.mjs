@@ -408,9 +408,6 @@ export async function main(args = process.argv.slice(2)) {
       run('npm', ['run', 'build:frontends'])
       run('npm', ['run', '-w', '@voicechat/web', 'build'])
     }
-    // The settings suite exercises the real desktop renderer as well as Chromium.
-    if (!plan.full && plan.e2eFiles.includes('e2e/settings.e2e.test.ts'))
-      run('npm', ['ci', '--prefix', 'apps/desktop'])
     run(
       'npm',
       [

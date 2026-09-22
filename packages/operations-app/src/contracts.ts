@@ -1,4 +1,4 @@
-import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
+import type { AgentExecResult, FsResult } from '@sislexa/agent-contracts'
 import type { CcItem, CcProject, CcSession } from '@shared/cc'
 import type { CxItem, CxProject, CxSession } from '@shared/codexSessions'
 import type { SessionUsage } from '@shared/types'

@@ -694,24 +694,21 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "package": "@voicechat/ui-foundation"
     }
   }),
-  definition("agent", "agent", ["apps/agent"], {
-    "kind": "client"
+  definition("agent", "agent", [], {
+    workspaces: [], buildDependencies: [], kind: "client",
+    external: { repository: "https://github.com/sislex/agent", package: "@sislexa/agent" }
   }),
-  definition("desktop", "desktop", ["apps/desktop"], {
-    "workspaces": [],
-    "buildDependencies": [
-      "shared",
-      "web"
-    ],
-    "kind": "client"
+  definition("desktop", "desktop", [], {
+    workspaces: [], buildDependencies: [], kind: "client",
+    external: { repository: "https://github.com/sislex/desktop", package: "@sislexa/desktop" }
   }),
-  definition("agent-tray", "agent-tray", ["apps/agent-tray"], {
-    "workspaces": [],
-    "kind": "client"
+  definition("agent-tray", "agent-tray", [], {
+    workspaces: [], buildDependencies: [], kind: "client",
+    external: { repository: "https://github.com/sislex/agent", package: "@sislexa/agent" }
   }),
-  definition("login-application", "login-application", ["apps/login-application"], {
-    "workspaces": [],
-    "kind": "client"
+  definition("login-application", "login-application", [], {
+    workspaces: [], buildDependencies: [], kind: "client",
+    external: { repository: "https://github.com/sislex/agent", package: "@sislexa/agent" }
   }),
   definition("component-runtime", "Component runtime", ["packages/component-runtime"], {
     "workspaces": [

@@ -22,9 +22,7 @@ export * from './mcp'
 export * from './auth'
 export * from './cc'
 export * from './codexSessions'
-export * from './agentProtocol'
-export * from './vpn'
-export * from './version'
+
 export * from './admin'
 export * from './tools'
 export * from './chatInstructions'
@@ -41,8 +39,6 @@ export * from './internalRpc'
 
 export * from './jsonSchemaLite'
 
-
-
 export * from './usageSummary'
 export * from './images'
 
@@ -55,7 +51,7 @@ export * from './serverErrors'
 export * from './dateFormat'
 export * from './migration'
 export * from './manifests'
-export * from './gitAccess'
+
 export * from './gitWorkspace'
 export * from './developmentPreview'
 export * from './ci'
@@ -73,7 +69,6 @@ export * from './automation'
 export * from './widgetAssistant'
 export * from './kanbanSimilarity'
 export * from './orchestration'
-export * from './enrollment'
 
 export * from './kb'
 export * from './kbGaps'
@@ -95,6 +90,12 @@ export * from './applicationFrontend'
 
 export * from './componentConfig'
 
-
-
 export * from './llmAccounting'
+
+// Preserve the published Core contract while existing owner releases migrate.
+export * from '@sislexa/agent-contracts/agentProtocol'
+export * from '@sislexa/agent-contracts/version'
+export * from '@sislexa/agent-contracts/gitAccess'
+export * from '@sislexa/agent-contracts/vpn'
+export * from '@sislexa/agent-contracts/enrollment'
+export * from '@sislexa/agent-contracts/pty'

@@ -1,5 +1,5 @@
 import type { RendererApi, SttSegmentWire } from '@shared/ipc'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { KbUsageReport, KbProjectUsageReport } from '@shared/kb'
 import type { Settings } from '@shared/types'
 

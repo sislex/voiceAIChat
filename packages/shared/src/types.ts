@@ -124,20 +124,6 @@ export function conversationScopeForAssistantKind(kind: AssistantKind | null | u
   return 'chat'
 }
 
-/**
- * Живой контекст PTY-сессии консоли: агент периодически сообщает, где сейчас
- * находится терминал, чтобы ассистент знал, слать shell-команды или клавиши.
- * Всё best-effort: на не-Linux/Android-агентах поля могут быть неизвестны.
- */
-export interface PtyContext {
-  /** Рабочий каталог shell в фокусе (из /proc/<pid>/cwd), если удалось прочитать. */
-  cwd: string | null
-  /** Имя процесса в фокусе терминала (shell/nano/vim/ssh/top), если определено. */
-  foreground: string | null
-  /** Активен ли альтернативный экран (полноэкранный TUI: nano/vim/less/top). */
-  altScreen: boolean
-}
-
 export type BrowserSessionState = 'idle' | 'starting' | 'ready' | 'reconnecting' | 'stopping' | 'stopped' | 'failed'
 
 export interface BrowserViewport {
@@ -848,12 +834,6 @@ export function isMakeConversation(value: Pick<Conversation, 'assistantKind'>): 
 }
 export function isConsoleReaderConversation(value: Pick<Conversation, 'assistantKind'>): boolean {
   return value.assistantKind === CONSOLE_READER_KIND
-}
-
-/** Детерминированный ptyId сессии консоли разговора: и UI, и MCP-инструменты
- *  ассистента адресуют один и тот же живой терминал без отдельной регистрации. */
-export function consolePtyId(conversationId: string): string {
-  return `console:${conversationId}`
 }
 
 export function shouldApplyBrowserFrame(current: Pick<BrowserSessionMetadata, 'incarnation' | 'activeTabId'>, lastSequence: number, frame: BrowserFrameMetadata): boolean {

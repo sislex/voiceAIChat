@@ -26,7 +26,7 @@ import type {
   RendererMakeBridge
 } from '@shared/ipc'
 import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/protocol'
-import type { FsResult, FsCopyResult } from '@shared/agentProtocol'
+import type { FsResult, FsCopyResult } from '@sislexa/agent-contracts'
 import type { BrowserSessionMetadata } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'

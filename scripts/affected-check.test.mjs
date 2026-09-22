@@ -54,7 +54,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'agent', 'web'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'web'])
   })
 
   await t.test('retired session source paths fail safely to the full consumer gate', () => {
@@ -71,7 +71,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'app-shell', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'agent', 'web'])
+      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'app-shell', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'web'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -85,7 +85,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'app-shell', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'agent', 'web'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'app-shell', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'ui', 'server', 'automation-runner', 'web'])
   })
 })
 

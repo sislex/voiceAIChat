@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { MachineTerminal } from './MachineTerminal'
 import { createPtySessionStore } from '../store/ptySessions'
 import type { RendererPtyBridge } from '@shared/ipc'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 
 const policy = { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [] }
 const mac: AgentInfo = { id: 'm1', name: 'Мак', online: true, createdAt: 1, lastSeen: null, policy }

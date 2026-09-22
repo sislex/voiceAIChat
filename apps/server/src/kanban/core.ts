@@ -6,7 +6,8 @@
 //
 // Локальная реализация — `kanbanBridge/localCore.ts` (ядро отдаёт свои объекты как есть);
 // в отдельном процессе тот же контракт реализует HTTP-клиент к `/internal/*` ядра.
-import type { AgentPolicy, AgentTelemetry, FsResult, GitAccessRequest, GitAccessResult, WidgetSurfaceSnapshot } from '@voicechat/shared'
+import type { WidgetSurfaceSnapshot } from '@voicechat/shared'
+import type { AgentPolicy, AgentTelemetry, FsResult, GitAccessRequest, GitAccessResult } from '@sislexa/agent-contracts'
 import type { ExecMeta, ExecResult } from '../agents/registry.js'
 
 /** Результат и метка команды машины — часть поверхности порта, кластер берёт их отсюда. */

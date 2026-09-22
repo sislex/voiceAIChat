@@ -2,7 +2,8 @@
 // машине, поэтому тесты здесь про безопасность, а не про удобство: инъекция,
 // запрещённые политикой конструкции и опасные формы git.
 import { describe, expect, it } from 'vitest'
-import { isDangerousCommand, evaluateAgentCommand, DEFAULT_AGENT_POLICY } from '@voicechat/shared'
+import { isDangerousCommand } from '@voicechat/shared'
+import { evaluateAgentCommand, DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import { buildShellCommand } from '../ci/executor.js'
 import {
   branchesScript, checkoutScript, commitScript, createBranchScript, discardScript,

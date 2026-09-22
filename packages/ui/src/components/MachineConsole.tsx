@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import type { AgentExecResult, AgentInfo } from '@shared/agentProtocol'
+import type { AgentExecResult, AgentInfo } from '@sislexa/agent-contracts'
 import type { ConsoleHistoryStore, SwitchUtility, UtilityVariant } from '@voicechat/ui-foundation/components/machine'
 import { MachineUtilityHeader } from './MachineUtilityHeader'
 import { copyText } from '@voicechat/ui-foundation/lib/clipboard'

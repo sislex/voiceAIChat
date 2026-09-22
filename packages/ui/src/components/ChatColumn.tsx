@@ -7,7 +7,7 @@ import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
 import type { ServerFileInfo, TurnTarget } from '@shared/protocol'
-import type { AgentInfo } from '@shared/agentProtocol'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import { lazyScreen } from '../runtime/lazyScreen'
 const MachineUtility = lazyScreen(() => import('./MachineUtility').then(module => ({ default: module.MachineUtility })))
 import { MessageImage } from './MessageImage'

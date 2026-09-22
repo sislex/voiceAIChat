@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MessageImage } from './MessageImage'
-import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
+import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@sislexa/agent-contracts'
 
 // 1×1 png — достаточно, чтобы проверить путь «base64 → data-URL → <img src>».
 const PNG_B64 =

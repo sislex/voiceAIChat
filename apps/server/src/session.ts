@@ -3,7 +3,8 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo, Board, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem, WidgetSurfaceSnapshot, WidgetUiActionResult } from '@voicechat/shared'
+import type { Board, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem, WidgetSurfaceSnapshot, WidgetUiActionResult } from '@voicechat/shared'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 import type { PreviewActionResult } from '@voicechat/browser-contracts/previewActions'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'

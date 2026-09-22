@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatDateTime } from '../lib/dateFormat'
-import type { GitAccessResult, GitAccessStatus } from '@shared/gitAccess'
+import type { GitAccessResult, GitAccessStatus } from '@sislexa/agent-contracts'
 import type { RendererApi } from '@shared/ipc'
 import type { ProjectMachine } from '@shared/projects'
 import { Button } from '@voicechat/ui-kit'

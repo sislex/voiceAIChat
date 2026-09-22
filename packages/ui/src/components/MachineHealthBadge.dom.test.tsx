@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MachineHealthBadge, MachineHealthWarnings } from './MachineHealthBadge'
-import { AGENT_VERSION } from '@shared/version'
-import type { AgentInfo } from '@shared/agentProtocol'
+import { AGENT_VERSION } from '@sislexa/agent-contracts'
+import type { AgentInfo } from '@sislexa/agent-contracts'
 
 const agent: AgentInfo = {
   id: 'm1', name: 'Мак', online: true, createdAt: 1, lastSeen: 5, version: AGENT_VERSION,

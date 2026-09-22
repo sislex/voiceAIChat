@@ -1,7 +1,7 @@
 // Групповая команда (machines-roadmap п.15): одна команда на несколько машин и сводная таблица результатов.
 // Транспорт — через колбэк родителя (`agents:execBatch`); компонент только выбирает машины и показывает сводку.
 import { useState } from 'react'
-import type { AgentInfo, BatchExecResult } from '@shared/agentProtocol'
+import type { AgentInfo, BatchExecResult } from '@sislexa/agent-contracts'
 import { Button } from '@voicechat/ui-kit'
 
 export interface MachineBatchCommandProps {
