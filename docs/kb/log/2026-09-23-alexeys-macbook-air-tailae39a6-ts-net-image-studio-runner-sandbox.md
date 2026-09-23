@@ -12,12 +12,14 @@ author: alexeyrozhnov
 - Diagnosed the production Image Studio failure in the LLM Runner sandbox.
 - Released and deployed LLM Runner 0.3.2 for the Ubuntu AppArmor user-namespace policy.
 - Released and deployed LLM Runner 0.3.3 with Pillow and ImageMagick.
-- Verified a real Codex `acceptEdits` run that created and exposed a PNG.
+- Released and deployed LLM Runner 0.3.4 with the isolated profile as the default workspace.
+- Verified a real Codex `acceptEdits` run without `cwd` that created a PNG readable through the Runner file API.
 
 ## New facts
 
 - Docker's default policy and Ubuntu 24.04 AppArmor blocked Codex Bubblewrap namespaces.
 - The previous runner image did not include either renderer named in the Image Studio prompt.
+- Runs without a project directory inherited read-only `/app` instead of the user's profile.
 
 ## Recorded in
 

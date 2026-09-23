@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-23
-checked: 63ae28c0
+checked: 0b183357
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -1823,7 +1823,7 @@ Billing snapshot hashes match their server copies. This validated archive
 readability, not a restore drill. The 0.1.329 Core image, Identity 1.3.2 image,
 Billing 1.2.1 image and UI 1.3.1 release remain available as rollback inputs.
 
-## Image Studio executor repair (LLM Runner 0.3.3)
+## Image Studio executor repair (LLM Runner 0.3.4)
 
 Image Studio generation failed on the separate runner host with `bwrap: No
 permissions to create new namespace`. Ubuntu 24.04 AppArmor restricted the
@@ -1834,17 +1834,22 @@ unconfined seccomp policy. The production container has no added capabilities an
 does not use privileged mode. A real Bubblewrap namespace probe passes there.
 
 The same investigation found that the image lacked the rendering tools named by
-the Image Studio prompt. LLM Runner 0.3.3
-(`5aeba0134aaf40cddc6db90898cc331a5bfc2c48`) adds Python Pillow and ImageMagick.
-PRs #12 and #13, their release workflows, and both local gates passed. Production
-runs image `sislexa-llm-runner:0.3.3-5aeba0134aaf`; all three runner containers
-are healthy. Pillow and ImageMagick produced valid PNGs, and a real Codex
-`acceptEdits` run created a 32×32 PNG inside the workspace sandbox and returned
-its absolute path. The temporary profile and generated file were removed.
+the Image Studio prompt. LLM Runner 0.3.3 adds Python Pillow and ImageMagick.
+Version 0.3.4 (`63514a5eda882272100c7cb426aabc72f85cdd56`) also defaults a
+user-scoped run without a project `cwd` to the user's isolated profile home. This
+is writable by Codex and is the same root exposed through the authenticated
+Runner file API. PRs #12 through #14, their release workflows, and all local
+gates passed.
+
+Production runs image `sislexa-llm-runner:0.3.4-63514a5eda88`; all three runner
+containers are healthy. Pillow and ImageMagick produced valid PNGs. A real Codex
+`acceptEdits` run with no `cwd`, matching Image Studio, created a 32×32 PNG in the
+user profile; `/v1/files/read` returned the valid PNG to the caller. The temporary
+profile and generated file were removed.
 
 The deployment preserved the six runner volumes. Its stopped-writer archive is
 `/var/backups/llm-runner/0.3.2-fdec065ed501/profiles.tar.gz`, with SHA-256
 `6925c7afef09cb9621303a3dbfc1c52d9110bda46912751f4a96b71c0bc64fc9`.
-The 0.3.3 configuration and rollback inventory are in
-`/var/backups/llm-runner/0.3.3-5aeba0134aaf`; the previous 0.3.2 image remains
+The final 0.3.4 configuration and rollback inventory are in
+`/var/backups/llm-runner/0.3.4-63514a5eda88`; the previous 0.3.3 image remains
 available for rollback.
