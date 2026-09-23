@@ -12,7 +12,7 @@ it('forwards bearer identity, query and activity without exposing a component cr
   expect((await app.inject({ url: REST.analyticsAccount + '?from=1&to=2' })).statusCode).toBe(401)
   expect((await app.inject({ url: REST.analyticsAccount + '?from=1&to=2', headers: { authorization: 'Bearer user' } })).statusCode).toBe(200)
   expect(String(request.mock.calls[0]![0])).toBe('https://analytics.test/api/analytics/account?from=1&to=2')
-  expect(request.mock.calls[0]![1]?.headers).toEqual({ authorization: 'Bearer user' })
+  expect(request.mock.calls[0]![1]?.headers).toMatchObject({ authorization: 'Bearer user', 'x-request-id': expect.any(String) })
   const payload = { intervals: [{ version: 1 }] }
   expect((await app.inject({ method: 'POST', url: REST.analyticsActivity, headers: { authorization: 'Bearer user' }, payload })).statusCode).toBe(200)
   expect(request.mock.calls[1]![1]).toMatchObject({ method: 'POST', body: JSON.stringify(payload) })

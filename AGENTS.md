@@ -1,206 +1,98 @@
-# voiceAIChat — инструкции для агента
+# voiceAIChat agent instructions
 
-The project name is **Sislexa**. The owner confirmed purchasing a `sislexa`
-domain; its TLD has not been specified. See [project identity](docs/kb/architecture.md#project-identity)
-for the naming decision and its relationship to existing technical identifiers.
+The product is **Sislexa**. This repository is its Core service. Read this file
+at the start of every session; load package instructions and `docs/kb/` only when
+the task needs them. Keep this file small.
 
-Голосовой чат-бот: браузер/десктоп говорит с Claude или Codex CLI, речь распознаётся
-Whisper, ответ озвучивается Piper. Плюс «машины» — компаньон-агенты на чужих
-хостах, на которых модель выполняет команды и держит живой терминал.
+## Start every task
 
-**Этот файл читается в начале каждой сессии — он должен остаться коротким.**
-Детали живут в `docs/kb/` и в `AGENTS.md` внутри пакетов; читай их по мере надобности,
-а не заранее. **Перед завершением работы обнови базу знаний — см. «Обновление KB».**
+1. Run `git status --short --branch` and `git fetch origin`.
+2. If a clean `main` only trails `origin/main`, fast-forward it. With local
+   changes, diverged history, or another branch, do not switch or overwrite;
+   report the state and ask the user how to proceed. Read-only inspection may use
+   `origin/main` when the checkout is stale.
+3. Before code research, run `npm run kb:context -- "<task>"` and open only the
+   returned topics and relevant package `AGENTS.md` files.
 
-## Карта монорепо (npm workspaces)
+Do not commit or push without a direct user request.
 
-| Путь | Пакет | Что это | Детали |
-|---|---|---|---|
-| `packages/shared` | `@voicechat/shared` | Типы, контракт REST/WS, чистая логика (без зависимостей) | [AGENTS](packages/shared/AGENTS.md) |
-| `packages/component-runtime` | `@sislexa/component-runtime` | Provider tokens, dependency compatibility and managed configuration | [AGENTS](packages/component-runtime/AGENTS.md) |
-| `apps/server` | `@voicechat/server` | Fastify: REST/WS, application orchestration, database and machine registry | [AGENTS](apps/server/AGENTS.md) |
+## Repository ownership
 
-Make, both Readers (including Browser Runner and Web Recorder), Image Studio,
-Voice, Identity and Billing are direct versioned `@sislexa/*` dependencies, with
-separate owner contract archives. No compatibility workspace remains for them.
-Implement and test their internals in the owner repositories; Core tests its own
-host, authorization and transport integration. Owner-built UI assets are verified,
-not compiled in Core. LLM Runner lives in `sislex/llm-runner`; Core uses its
-authenticated HTTP API and a development-only public server archive for contract
-tests. There is no local CLI fallback. See `docs/kb/architecture.md#tool-repository-ownership`.
+| Path | Package | Responsibility |
+|---|---|---|
+| `packages/shared` | `@voicechat/shared` | REST/WS contracts, types, pure logic ([instructions](packages/shared/AGENTS.md)) |
+| `packages/component-runtime` | `@sislexa/component-runtime` | Component tokens, grants, compatibility and managed configuration ([instructions](packages/component-runtime/AGENTS.md)) |
+| `apps/server` | `@voicechat/server` | Fastify Core, persistence and orchestration ([instructions](apps/server/AGENTS.md)) |
 
-Core UI, browser client, renderer and their internal tests belong to
-[sislex/sislexa-core-ui](https://github.com/sislex/sislexa-core-ui). Core verifies
-and serves pinned `@sislexa/core-ui` assets. Make UI changes and run their gates
-in that owner repository; Core retains public API/browser integration checks.
+Product apps, Core UI, UI libraries, SDK, Identity, Billing, LLM Runner, Agent
+and Desktop are versioned dependencies owned by separate repositories. Their
+implementation and internal tests do not belong here. Core keeps public contract,
+authorization, transport and browser integration checks. See
+[repository ownership](docs/kb/architecture.md#tool-repository-ownership),
+[Core UI distribution](docs/kb/clients.md#core-ui-distribution) and
+[test ownership](docs/kb/testing-operations.md#core-ui-test-ownership).
 
-UI Kit and UI Foundation are versioned dependencies owned by
-[sislex/sielexa-ui](https://github.com/sislex/sielexa-ui). Their source, internal
-tests and primitive stories live there. Core tests only public consumer integration.
-The platform SDK is consumed directly from `@sislexa/sdk`; no local wrapper remains.
-
-Agent runtime, machine contracts, installers, tray and enrollment client belong to
-[sislex/agent](https://github.com/sislex/agent). Electron Desktop belongs to
-[sislex/desktop](https://github.com/sislex/desktop). Core consumes their pinned
-artifacts; run internal gates in the owner repositories. Core keeps machine
-orchestration and public integration tests. Shared compatibility exports preserve
-released consumer APIs and contain no Agent implementation.
-
-## Команды
+## Commands
 
 ```bash
-npm install                  # Core workspaces; extracted applications install in their own repositories
-npm run dev:web              # Core :8787 + published UI proxy :5273
-npm run typecheck            # Core workspaces
-npm run test                 # все воркспейсы (vitest run)
-npm run gate:fast            # гейт шага: приложения по диффу от HEAD
-npm run gate                 # приложения по диффу ветки перед коммитом/PR
-npm run gate:app -- core     # full gate for a Core-owned application
-npm run gate:all             # Core checks and short consumer integration
-npm run gate:release         # Core, Web/Desktop performance, owner system scenarios
-npm run gate:audit           # inspect 20 representative change plans; -- --run <id> measures one
-npm run test:coverage        # покрытие shared/server с порогами-трещоткой
-npm run docker               # docker compose up --build -d → http://localhost:8787
-npm run kb:check             # что в базе знаний устарело относительно кода
+npm install                  # Core workspaces only
+npm run dev:web              # Core :8787 and published UI proxy :5273
+npm run gate:fast            # changed worktree since HEAD; use during a step
+npm run gate                 # branch diff from origin/main; use before commit/PR
+npm run gate:app -- core     # complete Core application gate
+npm run gate:all             # complete Core checks and consumer integration
+npm run gate:release         # Core + performance + owner system acceptance
+npm run test:coverage        # shared/server coverage ratchet
+npm run docker               # compose stack at http://localhost:8787
+npm run kb:check             # report stale knowledge topics
 ```
 
-**Dev-сервер запускает пользователь, а не агент.** Не оставляй свой процесс на
-:8787 — он ловит `EADDRINUSE` у пользователя. Нужен запуск — попроси, или подними
-на другом порту (`PORT=8799`).
+The user owns the development server. Do not leave a process on port `8787`;
+when execution is necessary, ask the user or use another port such as `8799`.
 
-## Актуальность рабочего дерева
+## Required gate
 
-Перед анализом или разработкой проверь `git status --short --branch` и выполни
-`git fetch origin`. Если чистая текущая ветка `main` только отстаёт от
-`origin/main`, обнови её через `git pull --ff-only origin main`; не начинай работу
-по устаревшему checkout. При локальных изменениях, расхождении историй или другой
-текущей ветке ничего не переключай и не перезаписывай — сообщи пользователю и
-запроси решение. Для read-only анализа до обновления допустимо читать
-`origin/main`, явно отметив, что рабочее дерево устарело. Commit и push без прямой
-просьбы пользователя по-прежнему запрещены.
+A step is complete only after the selected packages pass typecheck and tests;
+UI/build changes also require their selected build. Add tests in the same step as
+the implementation.
 
-## Гейт (обязателен для каждого шага)
+Use the gate planner rather than assembling commands manually. `gate:fast` selects
+complete owner suites from the worktree diff; `gate` uses the whole branch diff.
+Public contracts add consumer checks, browser changes add owned E2E, and unknown
+root/config/lock changes fall back to `gate:all`. Run product-internal gates in
+their owner repositories. Never replace an application suite with `vitest related`.
+Trust the command exit code, not filtered output. Full details and long-run support:
+[testing conventions](docs/kb/conventions.md) and
+[testing operations](docs/kb/testing-operations.md#development-gate-npm-run-gatefast).
 
-Шаг не считается сделанным, пока не зелёные: `typecheck` затронутых пакетов +
-`test` затронутых пакетов. Где менялся UI/сборка — плюс `build`. Тесты пишутся
-в том же шаге, что и код, а не «потом».
+## Core invariants
 
-**На шаге разработки — `npm run gate:fast`** (дифф от `HEAD`), перед коммитом
-и PR — **`npm run gate`** / `gate:changed` (дифф от merge-base с `origin/main`).
-Планировщик `scripts/application-gate.mjs` читает каталог приложений shared:
-внутренняя правка отделённого приложения запускает его typecheck и полный test,
-публичный контракт добавляет адресные проверки мостов. UI/браузерные изменения
-добавляют сборку и принадлежащие приложению E2E. Причины выбора печатаются.
+- `packages/shared` is the source of truth for public contracts. Change the
+  contract first, then server and consumers. Keep message-type registries in sync.
+- The server runs TypeScript through `tsx`; relative imports in `apps/server`
+  therefore use `.js` extensions even though the source files are `.ts`.
+- Write new documentation and code comments in English. Keep tests beside source
+  as `*.test.ts` or `*.dom.test.tsx`.
+- Communicate with the user in Russian unless they explicitly request otherwise.
+- Never edit the production data checkout. Development happens in this clone;
+  release automation manages `VC_REPO_DIR`. See [deployment](docs/kb/deploy.md).
 
-Known E2E-only changes run that complete browser suite, budget changes run real
-Web/Desktop measurements, and reviewed standalone tooling runs `test:tooling`.
-Mixed diffs preserve all selected application suites; unknown paths still use the
-full gate. Functional browser suites use at most two isolated workers; performance
-and native Electron suites remain serial. `VC_E2E_WORKERS=1` forces serial execution.
-`gate:all` includes Core functional browser suites; performance runs in `gate:performance` before release; the affected gate never repeats
-those suites after a successful full fallback.
+## Knowledge base
 
-Run product gates in their owner repositories. `npm run gate:app -- core` checks Core. `npm run gate:all` — общий гейт; он включается
-автоматически при неизвестном влиянии root/config/lock diff. `npm run affected-check`
-оставлен как совместимое имя нового планировщика для сохранённых CI-команд.
-Не заменяй изолированный гейт всех тестов приложения на `vitest related`.
+Use the generated [KB index](docs/kb/README.md) to find a topic. Frequent entry
+points are [architecture](docs/kb/architecture.md),
+[contracts](docs/kb/protocol.md), [server](docs/kb/server-internals.md),
+[auth/data](docs/kb/data-auth.md), [testing](docs/kb/testing-operations.md),
+[deployment](docs/kb/deploy.md) and [conventions](docs/kb/conventions.md).
+Historical plans in `docs/plans/` are context, not current truth.
 
-Не собирай гейт из кусков руками: конструкция вида
-`npm run typecheck | grep error; echo "ok"` печатает «ok» всегда — `echo`
-выполняется независимо от результата, а `grep` в конвейере подменяет код
-возврата. Так однажды пять кругов подряд прятался красный typecheck. Гейт
-объявляется зелёным **по коду возврата**, а не по отсутствию строк в выводе.
+If KB lookup was incomplete and code research established the answer, update the
+existing relevant topic. After any behavior or KB change:
 
-## Что нужно знать до первой правки
+1. Run `node scripts/kb.mjs touch <topic>`.
+2. Run `npm run kb:log -- <short-slug>`.
+3. Run `npm run kb:index`.
+4. Keep KB changes with the implementation commit.
 
-- **Единый источник контракта — `packages/shared`.** Новое поле/сообщение/роут
-  добавляется сначала там (`protocol.ts`, `agentProtocol.ts`, `ipc.ts`, `types.ts`),
-  потом на сервере и в UI. Списки `CLIENT_MESSAGE_TYPES` / `SERVER_MESSAGE_TYPES`
-  проверяются тестами контракта — пополняй их.
-- **UI один на всех.** Общий host из `packages/ui` и отдельные панели работают и в web, и в desktop. Прямых
-  обращений к транспорту в компонентах нет: только `window.api/audio/stt/claude/tts/
-  cc/codex/agents/session/fs/pty` (формы — в `@shared/ipc`).
-- **Сервер не компилируется в JS** — запускается `tsx` прямо из исходников, поэтому
-  в импортах внутри `apps/server` пишутся расширения `.js` (`./config.js`), хотя
-  файлы — `.ts`. В `packages/ui`/`shared` — без расширений, алиас `@shared/*`.
-- **Write all new comments and documentation in English**, explaining why decisions
-  were made. Make code comments and Markdown are maintained in English across
-  the separate `sislex/make` repository. Keep tests next
-  to their source as `*.test.ts` / `*.dom.test.tsx`.
-- **Communicate with the user in Russian by default in every conversation in this project**, unless the user explicitly requests another language.
-- **В прод-чекауте не работают.** `target.path` (сейчас `/root/ChatAI`) — это корень
-  **данных** прода, git-репозитория там нет. Деплой-чекаут задаёт `VC_REPO_DIR` в
-  `/etc/voicechat/production.env`, он лежит внутри данных проекта и стоит на ветке
-  релиза, а не на `main`; им управляет релизный поток. Правки и гейт — только в
-  своём клоне ([deploy.md](docs/kb/deploy.md)).
-
-## База знаний (`docs/kb/`)
-
-Читай нужный файл по теме — не весь каталог:
-
-| Файл | Когда открывать |
-|---|---|
-| [architecture.md](docs/kb/architecture.md) | как связаны клиент, сервер, CLI и машины; где чей стейт |
-| [shared.md](docs/kb/shared.md) | типы, REST/WS/agent-контракты, мосты и чистые парсеры |
-| [ui.md](docs/kb/ui.md) | React-компоненты, store, remote-мосты, voice/TTS UX |
-| [server-internals.md](docs/kb/server-internals.md) | внутренности Fastify, маршруты, сессии, DB и сервисы |
-| [clients.md](docs/kb/clients.md) | web, Electron desktop, legacy-миграция и agent-tray |
-| [testing-operations.md](docs/kb/testing-operations.md) | тестовая матрица, диагностика, backup и эксплуатация |
-| [protocol.md](docs/kb/protocol.md) | добавляешь/меняешь REST-роут, WS-сообщение, мост `window.*` |
-| [llm.md](docs/kb/llm.md) | claude/codex CLI, stream-json, ходы, наблюдатели сессий, Anthropic-gateway |
-| [stt-tts.md](docs/kb/stt-tts.md) | Whisper, Piper/say, голоса, скачивание моделей, лимиты по памяти |
-| [machines.md](docs/kb/machines.md) | компаньон-агент, политика команд, PTY, проводник, телеметрия, версии |
-| [data-auth.md](docs/kb/data-auth.md) | SQLite-схема, пользователи, роли, токены, права |
-| [projects.md](docs/kb/projects.md) | проекты + канбан: членство, доска, порядок задач, живой board.update |
-| [deploy.md](docs/kb/deploy.md) | Docker, Caddy/HTTPS, прод-сервер, переменные окружения |
-| [conventions.md](docs/kb/conventions.md) | стиль кода, тесты, как устроены гейты и коммиты |
-| [features/feature-preview.md](docs/kb/features/feature-preview.md) | feature-preview задачи: состояния, Docker/Storybook, seed, UI и Playwright-гейт |
-| [features/manual-qa.md](docs/kb/features/manual-qa.md) | критерии, версии, QA sessions, результаты, скриншоты и допуск к merge |
-| [features/merge-runner.md](docs/kb/features/merge-runner.md) | отдельный merge-ран: безопасное слияние в main, проверки, reconcile и realtime-лента |
-| [features/releases.md](docs/kb/features/releases.md) | release/x.y.z, фиксация SHA, обязательные ворота и публикация в production |
-| [kb-workflow.md](docs/kb/kb-workflow.md) | правила ведения самой базы знаний |
-
-Историю решений по фичам — только если нужен контекст «почему так»: `docs/plans/`
-(живые планы с чек-листами), `docs/kb/log/` (журнал сессий), `docs/docker.md`.
-
-## Поиск знаний перед разработкой
-
-Перед исследованием кода сформулируй запрос и выполни `npm run kb:context -- "задача"`.
-Сначала открывай найденные `areas` и символы; расширяй поиск только если KB не
-ответила или устарела. После изменений `npm run kb:impact` покажет рекомендуемые
-статьи. Это рекомендация, а не блокирующий гейт; строгость можно повышать в CI.
-
-## Обновление KB (делает каждый агент, на любой машине)
-
-Узнал факт, которого не было в KB, или изменил поведение, описанное в KB, —
-занеси. Иначе следующая сессия снова платит за исследование.
-
-**Спросил базу знаний и не получил ответа (или получил неполный) — это долг.**
-Нашёл ответ в коде или получил его по итогам разработки → занеси недостающее в
-тот раздел, где искал: дополни существующий раздел (не заводи второй про то же),
-сверив факт по коду. Неподтверждённое не записывай — незакрытый пробел лучше
-записанной догадки. В CI-ране это же правило работает через блок `kb-gaps` и шаг
-«Актуализировать базу знаний» ([kb-workflow.md](docs/kb/kb-workflow.md)).
-
-1. Правь **тематический файл** в `docs/kb/` (или `AGENTS.md` пакета, если факт
-   локален для пакета) и поставь сегодняшнюю дату: `node scripts/kb.mjs touch <файл>`.
-2. Заведи запись журнала: `npm run kb:log -- <короткий-slug>` — создаст
-   `docs/kb/log/<дата>-<машина>-<slug>.md`. **Один файл на запись** — поэтому
-   параллельные агенты на разных машинах никогда не конфликтуют в журнале.
-3. `npm run kb:index` — перегенерирует `docs/kb/README.md`.
-4. Коммить правки KB **вместе с кодом** одним коммитом.
-
-Конфликты: `docs/kb/README.md` генерируемый — не разрешай его руками, возьми любую
-версию и прогони `npm run kb:index`. В тематических файлах пиши абзацами по теме
-(а не одним растущим списком) — так параллельные правки ложатся в разные места файла.
-
-В Claude Code для шагов 1–3 есть `/kb-update`.
-
-В CI-ране это же делает шаг **«Актуализировать базу знаний»** (слот «после
-модели», перед коммитом): он приносит правки `docs/kb/*` и статьи раздела проекта
-по дифу ветки. Шаг — страховка, а не замена: работаешь руками — заноси сам.
-
-Detailed Reader and shell layout regressions live in owner `system-tests/` directories.
-Core `gate:system` executes their pinned release matrix separately; `gate:all` keeps
-Core functional integration. Web/Desktop performance budgets run before release
-through `gate:performance`, and directly when their measurements/budgets change. See `docs/plans/browser-test-ownership.md`.
+Do not hand-edit generated `docs/kb/README.md`. The complete workflow is in
+[kb-workflow.md](docs/kb/kb-workflow.md).

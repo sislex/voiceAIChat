@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-22
-checked: 9b707a9a
+updated: 2026-09-23
+checked: 964cd5de
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -10,6 +10,12 @@ areas:
 # Backend изнутри: сборка, маршруты, сессии и сервисы
 
 Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-артефакт: production и development запускают `tsx src/index.ts`, поэтому относительные импорты в исходниках имеют расширение `.js`, несмотря на физические `.ts`.
+
+`httpDiagnostics.ts` assigns and returns a validated `x-request-id`, records
+bounded counters by Fastify route template and emits structured slow/5xx events
+with that correlation ID. Admin-only status and Prometheus routes are registered
+after authentication in `server.ts`. Service proxies replace any raw forwarded
+request ID with the validated Core value.
 
 ## Запуск и dependency injection
 

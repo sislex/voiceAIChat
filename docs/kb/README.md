@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 10 коммит(ов) в areas после сверки: 60b95a53 fix(shared): keep renderer bridge contract complete … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 4 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-22 | ⚠ 4 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-22 | ⚠ 4 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-23 | ⚠ 1 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-23 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 27 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
@@ -24,19 +24,19 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 18 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 35 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 4 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1622 коммит(ов) в areas после сверки: e323dc41 docs: note runner package publish block (#250) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1624 коммит(ов) в areas после сверки: 964cd5de docs: reduce always-loaded agent context … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 58 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 25 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 393 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 41 коммит(ов) в areas после сверки: 31b38601 test: separate Core gates from owner system regressions … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-09-23 | ⚠ 1 коммит(ов) в areas после сверки: 964cd5de docs: reduce always-loaded agent context |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-22 | ⚠ 7 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-23 | ⚠ 1 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-23 | ⚠ 1 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-23 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-23 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-22 | ⚠ 3 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 222 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
@@ -54,18 +54,18 @@
 
 ## Журнал сессий
 
-Всего записей: 930. Последние:
+Всего записей: 932. Последние:
 
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md) — team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md) — server-owned-runner-release
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md) — production-0-1-330-team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md) — production-0-1-329-analytics-ui
+- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-operations-correlation-recovery.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-operations-correlation-recovery.md) — operations-correlation-recovery
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-image-studio-runner-sandbox.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-image-studio-runner-sandbox.md) — image-studio-runner-sandbox
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md) — gate-all-readonly-artifacts
+- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-agent-context-compression.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-agent-context-compression.md) — agent-context-compression
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md) — users-page-startup
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md) — test-gate-timing-review
-- [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-renderer-fake-forward-compat.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-renderer-fake-forward-compat.md) — Renderer fake forward compatibility
-- [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-release-checkout-upstream.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-release-checkout-upstream.md) — Release checkout upstream
 
 ## Исторические планы
 

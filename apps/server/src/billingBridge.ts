@@ -14,7 +14,7 @@ export function registerBillingProxy(app: FastifyInstance, transport: BillingPub
         readCookie(req, SESSION_COOKIE) ? 'Bearer '+readCookie(req, SESSION_COOKIE) : undefined
       if (!token) return reply.code(401).send({ error: 'user_session_required' })
       try {
-        const headers: Record<string, string> = { authorization: token }
+        const headers: Record<string, string> = { authorization: token, 'x-request-id': req.id }
         if (typeof req.headers['x-sislexa-tenant-id'] === 'string') headers['x-sislexa-tenant-id'] = req.headers['x-sislexa-tenant-id']
         if (method === 'PUT') headers['content-type'] = 'application/json'
         const response = await transport.publicFetchImpl(transport.url+url, { method, headers,

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "postgres": [
+    {
+      "name": "core",
+      "archive": "/var/backups/voicechat/current/core.dump",
+      "expectedTables": [
+        "public.users",
+        "public.projects",
+        "public.conversations"
+      ]
+    }
+  ],
+  "sqlite": [
+    {
+      "name": "billing",
+      "database": "/var/backups/voicechat/current/billing.sqlite",
+      "expectedTables": [
+        "reservations"
+      ]
+    }
+  ],
+  "archives": [
+    {
+      "name": "runner-receipts",
+      "archive": "/var/backups/voicechat/current/runner-receipts.tar.gz",
+      "requiredEntries": []
+    }
+  ]
+}
