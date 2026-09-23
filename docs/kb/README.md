@@ -24,13 +24,13 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 18 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 35 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 4 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1622 коммит(ов) в areas после сверки: e323dc41 docs: note runner package publish block (#250) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1623 коммит(ов) в areas после сверки: d59fcff6 docs: record server-owned runner releases (#251) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 58 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 25 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 393 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 41 коммит(ов) в areas после сверки: 31b38601 test: separate Core gates from owner system regressions … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-09-23 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-22 | ⚠ 7 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
@@ -54,7 +54,7 @@
 
 ## Журнал сессий
 
-Всего записей: 930. Последние:
+Всего записей: 931. Последние:
 
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md) — team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md) — server-owned-runner-release
@@ -62,10 +62,10 @@
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md) — production-0-1-329-analytics-ui
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-image-studio-runner-sandbox.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-image-studio-runner-sandbox.md) — image-studio-runner-sandbox
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md) — gate-all-readonly-artifacts
+- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-agent-context-compression.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-agent-context-compression.md) — agent-context-compression
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md) — users-page-startup
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md) — test-gate-timing-review
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-renderer-fake-forward-compat.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-renderer-fake-forward-compat.md) — Renderer fake forward compatibility
-- [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-release-checkout-upstream.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-release-checkout-upstream.md) — Release checkout upstream
 
 ## Исторические планы
 
