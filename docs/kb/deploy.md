@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-23
-checked: 8f744434
+checked: 63ae28c0
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -1822,3 +1822,29 @@ archive passed `pg_restore --list` with 1,155 entries, and the copied archive an
 Billing snapshot hashes match their server copies. This validated archive
 readability, not a restore drill. The 0.1.329 Core image, Identity 1.3.2 image,
 Billing 1.2.1 image and UI 1.3.1 release remain available as rollback inputs.
+
+## Image Studio executor repair (LLM Runner 0.3.3)
+
+Image Studio generation failed on the separate runner host with `bwrap: No
+permissions to create new namespace`. Ubuntu 24.04 AppArmor restricted the
+unprivileged user namespace that Codex `workspace-write` uses. LLM Runner 0.3.2
+introduced the repository-owned `llm-runner-bwrap` AppArmor profile and applies
+it only to the Codex-enabled work runner together with `no-new-privileges` and an
+unconfined seccomp policy. The production container has no added capabilities and
+does not use privileged mode. A real Bubblewrap namespace probe passes there.
+
+The same investigation found that the image lacked the rendering tools named by
+the Image Studio prompt. LLM Runner 0.3.3
+(`5aeba0134aaf40cddc6db90898cc331a5bfc2c48`) adds Python Pillow and ImageMagick.
+PRs #12 and #13, their release workflows, and both local gates passed. Production
+runs image `sislexa-llm-runner:0.3.3-5aeba0134aaf`; all three runner containers
+are healthy. Pillow and ImageMagick produced valid PNGs, and a real Codex
+`acceptEdits` run created a 32×32 PNG inside the workspace sandbox and returned
+its absolute path. The temporary profile and generated file were removed.
+
+The deployment preserved the six runner volumes. Its stopped-writer archive is
+`/var/backups/llm-runner/0.3.2-fdec065ed501/profiles.tar.gz`, with SHA-256
+`6925c7afef09cb9621303a3dbfc1c52d9110bda46912751f4a96b71c0bc64fc9`.
+The 0.3.3 configuration and rollback inventory are in
+`/var/backups/llm-runner/0.3.3-5aeba0134aaf`; the previous 0.3.2 image remains
+available for rollback.
