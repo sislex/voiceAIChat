@@ -23,6 +23,11 @@ export default defineConfig({
     // минутам незачем: они маскировали зависший listen/ws вместо быстрого
     // падения, и это соображение остаётся верным.
     testTimeout: 60_000,
+    // Hooks поднимают тот же Fastify/SQLite test harness, но Vitest ограничивает
+    // их отдельным дефолтом в 10 с. На восьмиядерной release-машине полный gate
+    // насыщает CPU и валит несвязанные beforeEach/afterEach ещё до тела теста.
+    // Держим для hooks тот же ограниченный запас, что и для самих тестов.
+    hookTimeout: 60_000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
