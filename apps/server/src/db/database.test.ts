@@ -388,6 +388,19 @@ describe('VoiceChatDb — разговоры', () => {
     expect(first.messages[0].text).toBe('Первая реплика')
   })
 
+  it('атомарно создаёт Make handoff и не дублирует его при повторе', async () => {
+    const project = await db.projects.createProject(U, { name: 'Витрина' })
+    const args = { role: 'u1' as const, text: 'Собери лендинг', time: '10:00' }
+    const first = await db.chat.createConversationDraft(U, 'make-handoff-1', 'Лендинг', project.id, args, undefined, 'make')
+    const replay = await db.chat.createConversationDraft(U, 'make-handoff-1', 'Дубликат', project.id, args, undefined, 'make')
+
+    expect(first.created).toBe(true)
+    expect(replay.created).toBe(false)
+    expect(replay.conversation.id).toBe(first.conversation.id)
+    expect(first.conversation).toMatchObject({ assistantKind: 'make', scope: 'make', projectId: project.id, messageCount: 1 })
+    expect(await db.chat.listConversations(U, { scope: 'make' })).toHaveLength(1)
+  })
+
   it('поиск находит по названию и по тексту сообщения (регистронезависимо)', async () => {
     const a = await db.chat.createConversation(U, 'Поездка в Лиссабон')
     const b = await db.chat.createConversation(U, 'Рецепты')
