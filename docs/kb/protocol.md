@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-23
-checked: 964cd5de
+checked: b63dfa0c
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -186,6 +186,15 @@ and all attached conversations move atomically. A tenant mismatch returns 404.
 же пользователя возвращает ранее созданные разговор и сообщения. Формы контракта
 находятся в `packages/shared/src/ipc.ts`, маршрут — в
 `apps/server/src/routes/rest.ts`.
+
+The same endpoint is the atomic Chat-to-Make handoff when the request carries
+`assistantKind: 'make'`. The created conversation has Make scope, inherits the
+authorized project and tenant, and stores the first Make request before the model
+turn starts. Replaying the idempotency key returns the same conversation with
+`created: false`; only the first creation schedules the best-effort project-main
+refresh. The subsequent `claude.send` reuses the stored message ID, so the normal
+turn queue and Billing origin provide retry, cancellation, and exactly-once
+charging without a second execution path.
 
 `REST.preview(url)` строит `GET /api/preview?url=…` для same-origin iframe-превью
 внешнего HTTP/HTTPS-сайта. Ручка также проходит общий Bearer-гейт; некорректная

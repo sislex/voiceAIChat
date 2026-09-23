@@ -913,17 +913,24 @@ export async function registerRest(
   })
 
   app.post<{
-    Body: { idempotencyKey?: string; title?: string; projectId?: string | null; message?: Omit<AddMessageArgs, 'conversationId'> }
+    Body: { idempotencyKey?: string; title?: string; projectId?: string | null; assistantKind?: 'make'; message?: Omit<AddMessageArgs, 'conversationId'> }
   }>(REST.conversationDraft, async (req, reply) => {
-    const { idempotencyKey, title, projectId, message } = req.body ?? {}
+    const { idempotencyKey, title, projectId, assistantKind, message } = req.body ?? {}
     if (!idempotencyKey?.trim() || !title?.trim() || !message) {
       return reply.code(400).send({ error: 'idempotencyKey, title and message are required' })
+    }
+    if (assistantKind !== undefined && assistantKind !== 'make') {
+      return reply.code(400).send({ error: 'assistantKind must be make' })
     }
     if (projectId && !await db.projects.getProject(uid(req), projectId, req.user!.account!.tenantId, req.user!.account!.tenantKind)) {
       return reply.code(404).send({ error: 'project not found' })
     }
     try {
-      return await db.chat.createConversationDraft(uid(req), idempotencyKey, title, projectId ?? null, message, req.user!.account!.tenantId)
+      const result = await db.chat.createConversationDraft(uid(req), idempotencyKey, title, projectId ?? null, message, req.user!.account!.tenantId, assistantKind ?? null)
+      if (result.created && assistantKind === 'make' && result.conversation.projectId) {
+        opts.refreshProjectMain?.(uid(req), result.conversation.projectId)
+      }
+      return result
     } catch (err) {
       return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
     }

@@ -234,10 +234,13 @@ export interface IpcInvokeMap {
   /** Импорт страницы по URL: HTML + same-origin css/js/картинки. */
   'make:importUrl': { arg: { conversationId: string; url: string; mode: MakeImportMode }; result: MakeProjectState }
   'conversations:create': { arg: { title?: string; scope?: ConversationScope; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' }; result: Conversation }
-  /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
+  /**
+   * Atomically saves a new conversation and its first user message.
+   * `assistantKind: 'make'` is the idempotent Chat -> Make handoff path.
+   */
   'conversations:createDraft': {
-    arg: { idempotencyKey: string; title: string; projectId?: string | null; message: Omit<AddMessageArgs, 'conversationId'> }
-    result: ConversationWithMessages
+    arg: { idempotencyKey: string; title: string; projectId?: string | null; assistantKind?: 'make'; message: Omit<AddMessageArgs, 'conversationId'> }
+    result: ConversationWithMessages & { created: boolean }
   }
   /** Создать или получить приватный проектный чат канбан-ассистента. */
   'kanbanAssistant:get': {
