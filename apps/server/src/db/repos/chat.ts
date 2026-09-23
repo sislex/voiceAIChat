@@ -267,19 +267,25 @@ export class ChatRepo extends BaseRepo {
       execTarget?: string | null
       attachments?: MessageAttachment[]
     },
-    tenantId?: string
-  ): Promise<{ conversation: Conversation; messages: Message[] }> {
+    tenantId?: string,
+    assistantKind: 'make' | null = null
+  ): Promise<{ conversation: Conversation; messages: Message[]; created: boolean }> {
     const run = () => this.sql.transaction(async () => {
       const replay = (await this.sql.get(`SELECT conversation_id FROM conversation_draft_requests WHERE user_id = ? AND idempotency_key = ?`, [userId, idempotencyKey])) as { conversation_id: string } | undefined
       if (replay) {
         const conversation = await this.getConversation(userId, replay.conversation_id)
         if (!conversation) throw new Error('idempotent conversation not found')
-        return { conversation, messages: await this.listMessages(userId, conversation.id) }
+        return { conversation, messages: await this.listMessages(userId, conversation.id), created: false }
       }
 
-      const created = await this.createConversation(userId, title, null, null, undefined, tenantId)
-      const conversation = projectId ? await this.setConversationProject(userId, created.id, projectId) : created
-      if (!conversation) throw new Error('project not found')
+      const conversation = await this.createConversation(
+        userId,
+        title,
+        assistantKind,
+        projectId,
+        assistantKind === 'make' ? 'make' : 'chat',
+        tenantId
+      )
       await this.addMessage(
         userId,
         conversation.id,
@@ -292,7 +298,7 @@ export class ChatRepo extends BaseRepo {
         message.attachments
       )
       await this.sql.run(`INSERT INTO conversation_draft_requests (user_id, idempotency_key, conversation_id) VALUES (?, ?, ?)`, [userId, idempotencyKey, conversation.id])
-      return { conversation: (await this.getConversation(userId, conversation.id))!, messages: await this.listMessages(userId, conversation.id) }
+      return { conversation: (await this.getConversation(userId, conversation.id))!, messages: await this.listMessages(userId, conversation.id), created: true }
     })
     return await run()
   }

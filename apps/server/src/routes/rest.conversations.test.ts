@@ -41,6 +41,8 @@ describe('REST: conversations/messages/settings', () => {
     const replay = await inj({ method: 'POST', url: '/api/conversations/draft', payload })
 
     expect(first.statusCode).toBe(200)
+    expect(first.json().created).toBe(true)
+    expect(replay.json().created).toBe(false)
     expect(replay.json().conversation.id).toBe(first.json().conversation.id)
     expect(first.json().conversation).toMatchObject({ title: 'Файл README.md', projectId: project.id, skillNames: ['ts'], messageCount: 1 })
     expect(first.json().messages).toHaveLength(1)
@@ -65,6 +67,23 @@ describe('REST: conversations/messages/settings', () => {
     for (let i = 0; i < 200 && exec.mock.calls.length === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 5))
     expect(exec.mock.calls[0]?.[0]).toBe(agent.id)
     expect(String(exec.mock.calls[0]?.[1])).toContain('merge --ff-only')
+
+    // Chat -> Make handoff uses the atomic draft endpoint. A replay returns the
+    // same Make conversation and must not refresh the shared checkout twice.
+    exec.mockClear()
+    const handoff = {
+      idempotencyKey: 'make-handoff-1',
+      title: 'Лендинг',
+      projectId: project.id,
+      assistantKind: 'make',
+      message: { role: 'u1', text: 'Собери лендинг', time: '10:00' }
+    }
+    const firstHandoff = await inj({ method: 'POST', url: '/api/conversations/draft', payload: handoff })
+    const replayHandoff = await inj({ method: 'POST', url: '/api/conversations/draft', payload: handoff })
+    expect(firstHandoff.json()).toMatchObject({ created: true, conversation: { assistantKind: 'make', scope: 'make', projectId: project.id } })
+    expect(replayHandoff.json()).toMatchObject({ created: false, conversation: { id: firstHandoff.json().conversation.id } })
+    for (let i = 0; i < 200 && exec.mock.calls.length === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(exec).toHaveBeenCalledTimes(1)
 
     // Обычный чат того же проекта копию при создании не трогает: его ход
     // проходит системный preflight сам.
