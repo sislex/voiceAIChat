@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 19 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 36 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1625 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1626 коммит(ов) в areas после сверки: 36c5f041 docs(kb): clarify Make handoff replay … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 59 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 8 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
@@ -40,7 +40,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 223 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-23 | ⚠ 1 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-23 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 175 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -54,10 +54,11 @@
 
 ## Журнал сессий
 
-Всего записей: 934. Последние:
+Всего записей: 935. Последние:
 
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md) — team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md) — server-owned-runner-release
+- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-route-budget-font-css.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-route-budget-font-css.md) — release-route-budget-font-css
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md) — production-0-1-330-team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md) — production-0-1-329-analytics-ui
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-operations-correlation-recovery.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-operations-correlation-recovery.md) — operations-correlation-recovery
@@ -65,7 +66,6 @@
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md) — gate-all-readonly-artifacts
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-chat-to-make-replay.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-chat-to-make-replay.md) — chat-to-make-replay
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-chat-to-make-handoff.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-chat-to-make-handoff.md) — chat-to-make-handoff
-- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-agent-context-compression.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-agent-context-compression.md) — agent-context-compression
 
 ## Исторические планы
 
