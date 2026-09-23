@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-17
-checked: a6ef2f4d
+updated: 2026-09-23
+checked: 8f06c3a6
 
 areas:
   - packages/shared/src/projects.ts
@@ -59,6 +59,28 @@ areas:
 метки (`labels`), стори-поинты, срок (`dueDate`), флаг «внимание» (`flagged`) и
 сквозной номер в проекте (`seq`) — из него UI строит ключ вида `PRJ-42`
 (счётчик `projects.task_seq`, номера удалённых задач не переиспользуются).
+
+## Tenant ownership
+
+Every project belongs to one Identity tenant through `projects.tenant_id`, with
+`projects.tenant_kind` preserving whether ownership is personal or team based.
+New projects use the active request tenant, so the same UI creates either personal
+or team work depending on the workspace selected in My Account. Team project
+lists, detail routes, quota checks, all nested `/api/projects/:id/*` routes and
+their live WebSocket commands require the matching selected team. Explicitly
+shared personal projects remain available to their project members while a
+personal workspace is selected; selecting a team hides all personal projects.
+A mismatch is reported as 404 to avoid confirming another workspace's resource
+IDs.
+
+`PUT /api/projects/:id/tenant` is the explicit transfer boundary. It requires the
+caller's project owner role and owner/admin authority in the destination tenant.
+The project and its project-bound conversations move together in one SQL
+transaction. Standalone conversations stay in their original tenant. Tenant
+membership does not replace `project_members`: teams can contain private subsets
+of projects, and project invitations continue to grant explicit project roles.
+Legacy rows are assigned to the creator's personal tenant at startup before they
+can be listed.
 
 ## Квота собственных проектов
 

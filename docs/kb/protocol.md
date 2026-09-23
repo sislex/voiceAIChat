@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-17
-checked: a782dc51
+updated: 2026-09-23
+checked: 8f06c3a6
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -87,6 +87,19 @@ URL руками. Параметризованные пути — функции
 (там же, функция `isPublic`): `/api/health`, `/api/session/*`, скачивание
 агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
 и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
+
+### Tenant selection
+
+An authenticated REST client selects one of its current Identity memberships
+with `x-sislexa-tenant-id`. Omitting the header selects the personal tenant.
+Identity rejects foreign or removed memberships before Core handles the request.
+Browser WebSockets carry the same selection as the encoded `tenantId` query
+parameter because the browser WebSocket API cannot set a custom header.
+
+Core stores tenant ownership on projects and conversations. The public transfer
+boundary is `PUT REST.projectTenant(id)` with `{ tenantId }`; only a project
+owner who is also owner/admin of the destination tenant may use it. The project
+and all attached conversations move atomically. A tenant mismatch returns 404.
 
 **Список бесед пагинируется.** `GET /api/conversations` понимает `limit` (сайдбар
 берёт последние 20 и добавляет по 20 при прокрутке), курсор `beforeAt` + `beforeId`

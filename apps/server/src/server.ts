@@ -1407,7 +1407,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
       // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
-      const token = (request.query as { token?: string } | undefined)?.token ?? cookieToken(request.headers.cookie)
+      const wsQuery = request.query as { token?: string; tenantId?: string } | undefined
+      const token = wsQuery?.token ?? cookieToken(request.headers.cookie)
       // Кадры, пришедшие пока идёт проверка сессии (запросы к базе), нельзя терять: клиент шлёт
       // первое сообщение сразу после open, а слушатель появится только в attachWs. С SQLite проверка
       // укладывалась в микрозадачи и окно было незаметно; с Postgres оно — миллисекунды сети.
@@ -1417,7 +1418,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const verifySocket = async () => {
         if (!token) return null
         try {
-          const verdict = await authenticate({method:'GET',url:'/ws',headers:{authorization:'Bearer '+token, ...(request.headers['x-sislexa-tenant-id'] ? {'x-sislexa-tenant-id':request.headers['x-sislexa-tenant-id']} : {})}})
+          const tenantId = wsQuery?.tenantId ?? request.headers['x-sislexa-tenant-id']
+          const verdict = await authenticate({method:'GET',url:'/ws',headers:{authorization:'Bearer '+token, ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
           return verdict.ok ? verdict.user : null
         } catch { return null }
       }

@@ -124,7 +124,7 @@ export function registerProjectRoutes(
     return project
   }
   const member = async (req: FastifyRequest, id: string): Promise<ProjectDetail | null> =>
-    withMachineStatus(await db.projects.getProject(uid(req), id), uid(req))
+    withMachineStatus(await db.projects.getProject(uid(req), id, req.user!.account!.tenantId, req.user!.account!.tenantKind), uid(req))
 
   const materializeProjectMachine = async (userId: string, projectId: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments): Promise<void> => {
     if (!agents) return
@@ -141,14 +141,14 @@ export function registerProjectRoutes(
 
   // --- Проекты ---------------------------------------------------------
 
-  app.get(REST.projects, async (req): Promise<ProjectSummary[]> => await db.projects.listProjects(uid(req)))
+  app.get(REST.projects, async (req): Promise<ProjectSummary[]> => await db.projects.listProjects(uid(req), req.user!.account!.tenantId, req.user!.account!.tenantKind))
 
   const projectQuota = async (req: FastifyRequest): Promise<ProjectQuota> => {
     const userId = uid(req)
     const unlimited = (await db.identity.getUser(userId))?.role === 'admin'
     const configured = Number(await db.settings.getAppConfig('projects.ownedLimit'))
     const limit = Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_OWNED_PROJECT_LIMIT
-    return { owned: await db.projects.countOwnedProjects(userId), limit, unlimited }
+    return { owned: await db.projects.countOwnedProjects(userId, req.user!.account!.tenantId, req.user!.account!.tenantKind), limit, unlimited }
   }
   app.get(REST.projectsQuota, async (req): Promise<ProjectQuota> => projectQuota(req))
 
@@ -169,6 +169,8 @@ export function registerProjectRoutes(
     }
     return await db.projects.createProject(uid(req), {
       name,
+      tenantId: req.user!.account!.tenantId,
+      tenantKind: req.user!.account!.tenantKind ?? 'personal',
       typeId: b.typeId,
       description: b.description,
       gitUrl: b.gitUrl,
@@ -185,6 +187,15 @@ export function registerProjectRoutes(
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     const p = await member(req, req.params.id)
     return p ?? nf(reply)
+  })
+
+  app.put<{ Params: { id: string }; Body: { tenantId?: string } }>('/api/projects/:id/tenant', async (req, reply) => {
+    const targetTenantId = req.body?.tenantId
+    if (typeof targetTenantId !== 'string' || !targetTenantId) return badReq(reply, 'tenantId required')
+    const access = await db.identity.getAccountAccess(uid(req), targetTenantId)
+    if (!access || (access.membershipRole !== 'owner' && access.membershipRole !== 'admin')) return forbidden(reply)
+    const project = await db.projects.transferTenant(uid(req), req.params.id, req.user!.account!.tenantId, targetTenantId, access.tenant.kind)
+    return project ?? nf(reply)
   })
 
   app.patch<{

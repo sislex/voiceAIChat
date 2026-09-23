@@ -68,7 +68,7 @@
   "devDependencies": {
     "@sislex/runner-contracts": "file:vendor/sislex-runner-contracts-0.1.1-8ec5100952c3.tgz",
     "@sislexa/billing": "file:vendor/sislexa-billing-1.2.0-9ecb733d50dd.tgz",
-    "@sislexa/identity": "file:vendor/sislexa-identity-1.3.2-a64928e585c7.tgz",
+    "@sislexa/identity": "file:vendor/sislexa-identity-1.4.2-c7aaebd15a60.tgz",
     "@sislexa/image-studio": "file:vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
     "@sislexa/make": "file:vendor/sislexa-make-1.2.1-e4c5676feeae.tgz",
     "@sislexa/playwright-reader": "file:vendor/sislexa-playwright-reader-1.2.2-6cd0c54f0f7c.tgz",

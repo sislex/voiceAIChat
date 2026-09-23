@@ -7,6 +7,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS conversations (
   id                TEXT PRIMARY KEY,
+  tenant_id         TEXT,
   title             TEXT NOT NULL,
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL,
@@ -414,6 +415,8 @@ CREATE INDEX IF NOT EXISTS idx_project_type_review_audit_type ON project_type_re
 
 CREATE TABLE IF NOT EXISTS projects (
   id           TEXT PRIMARY KEY,
+  tenant_id    TEXT,
+  tenant_kind  TEXT CHECK(tenant_kind IN ('personal', 'team')),
   project_type_id TEXT REFERENCES project_types(id),
   name         TEXT NOT NULL,
   description  TEXT NOT NULL DEFAULT '',

@@ -10,6 +10,7 @@ import { parseJsonValue } from './support.js'
 
 interface ConversationRow {
   id: string
+  tenant_id: string | null
   title: string
   created_at: number
   updated_at: number
@@ -219,16 +220,21 @@ export class ChatRepo extends BaseRepo {
     return row?.user_id ?? null
   }
 
-  async createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' | null = null, projectId: string | null = null, requestedScope?: ConversationScope): Promise<Conversation> {
+  async createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' | null = null, projectId: string | null = null, requestedScope?: ConversationScope, requestedTenantId?: string): Promise<Conversation> {
     const scope = requestedScope ?? (assistantKind === 'make' ? 'make' : assistantKind === 'images' ? 'images' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'web-recorder' ? 'web-reader' : 'chat')
     if (scope === 'kanban' && !projectId) throw new Error('projectId is required for kanban')
     const project = projectId ? await this.repos.projects.getProject(userId, projectId) : null
     if (projectId && !project) throw new Error('project not found')
+    // Request handlers provide requestedTenantId. The null fallback keeps direct
+    // repository fixtures compatible; persisted legacy rows are backfilled at startup.
+    const personalTenantId = requestedTenantId ?? (await this.repos.identity.getAccountAccess(userId))?.tenant.id ?? null
+    const tenantId = project?.tenantKind === 'team' ? project.tenantId ?? null : personalTenantId ?? project?.tenantId ?? null
+    if (requestedTenantId && project?.tenantKind === 'team' && requestedTenantId !== project.tenantId) throw new Error('tenant unavailable')
     const skillNames = project?.skills ?? []
     const id = this.newId()
     const ts = this.now()
-    await this.sql.run(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names, scope)
-         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)`, [id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames), scope])
+    await this.sql.run(`INSERT INTO conversations (id, tenant_id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names, scope)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)`, [id, tenantId, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames), scope])
     // Дефолтный пресет контекста: применяется сразу при создании, иначе
     // «минимальный контекст» действует только после того, как человек вспомнит
     // про кнопку. Пункты безопасности пресет не трогает — их фильтрует запись.
@@ -240,7 +246,7 @@ export class ChatRepo extends BaseRepo {
     if (disabledContext.length) {
       await this.sql.run(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), id, userId])
     }
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+    return { id, ...(tenantId ? { tenantId } : {}), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -260,7 +266,8 @@ export class ChatRepo extends BaseRepo {
       meta?: TurnMeta
       execTarget?: string | null
       attachments?: MessageAttachment[]
-    }
+    },
+    tenantId?: string
   ): Promise<{ conversation: Conversation; messages: Message[] }> {
     const run = () => this.sql.transaction(async () => {
       const replay = (await this.sql.get(`SELECT conversation_id FROM conversation_draft_requests WHERE user_id = ? AND idempotency_key = ?`, [userId, idempotencyKey])) as { conversation_id: string } | undefined
@@ -270,7 +277,7 @@ export class ChatRepo extends BaseRepo {
         return { conversation, messages: await this.listMessages(userId, conversation.id) }
       }
 
-      const created = await this.createConversation(userId, title)
+      const created = await this.createConversation(userId, title, null, null, undefined, tenantId)
       const conversation = projectId ? await this.setConversationProject(userId, created.id, projectId) : created
       if (!conversation) throw new Error('project not found')
       await this.addMessage(
@@ -291,16 +298,20 @@ export class ChatRepo extends BaseRepo {
   }
 
   /** Один приватный сохраняемый чат канбан-ассистента на пользователя и проект. */
-  async ensureKanbanAssistantConversation(userId: string, projectId: string): Promise<Conversation | null> {
+  async ensureKanbanAssistantConversation(userId: string, projectId: string, requestedTenantId?: string): Promise<Conversation | null> {
     if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
     const existing = (await this.sql.get(`SELECT id FROM conversations WHERE user_id = ? AND project_id = ? AND assistant_kind = 'kanban' LIMIT 1`, [userId, projectId])) as { id: string } | undefined
-    if (existing) return await this.getConversation(userId, existing.id)
+    if (existing) {
+      if (requestedTenantId) await this.sql.run('UPDATE conversations SET tenant_id = ? WHERE id = ?', [requestedTenantId, existing.id])
+      return await this.getConversation(userId, existing.id)
+    }
     const project = await this.repos.projects.getProject(userId, projectId)
     if (!project) return null
     const id = this.newId()
     const ts = this.now()
-    await this.sql.run(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind, scope)
-       VALUES (?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban', 'kanban')`, [id, `Ассистент · ${project.name}`, ts, ts, userId, projectId])
+    const tenantId = project.tenantKind === 'team' ? project.tenantId : requestedTenantId ?? (await this.repos.identity.getAccountAccess(userId))?.tenant.id ?? project.tenantId
+    await this.sql.run(`INSERT INTO conversations (id, tenant_id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind, scope)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban', 'kanban')`, [id, tenantId ?? null, `Ассистент · ${project.name}`, ts, ts, userId, projectId])
     return await this.getConversation(userId, id)
   }
 
@@ -324,6 +335,7 @@ export class ChatRepo extends BaseRepo {
     since?: number
     before?: { updatedAt: number; id: string }
     limit?: number
+    tenantId?: string
   }): Promise<Conversation[]> {
     const scope = opts?.scope ?? 'chat'
     if (scope === 'kanban' && !opts?.projectId) return []
@@ -335,6 +347,7 @@ export class ChatRepo extends BaseRepo {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = @userId
+           AND (@tenantId IS NULL OR c.tenant_id = @tenantId)
            AND c.scope = @scope
            AND (@scope <> 'kanban' OR c.project_id = @projectId)
            AND ${NOT_CANCELLED_TASK_CHAT}
@@ -344,6 +357,7 @@ export class ChatRepo extends BaseRepo {
          ORDER BY c.updated_at DESC, c.id DESC
          LIMIT @limit`, [{
         userId,
+        tenantId: opts?.tenantId ?? null,
         scope,
         projectId: opts?.projectId ?? null,
         includeCompleted: opts?.includeCompleted ? 1 : 0,
@@ -356,12 +370,13 @@ export class ChatRepo extends BaseRepo {
     return await Promise.all(rows.map(async (r) => await this.mapConversation(r, r.message_count, costs.get(r.id))))
   }
 
-  async getConversation(userId: string, id: string, context?: { scope: ConversationScope; projectId?: string }): Promise<Conversation | null> {
+  async getConversation(userId: string, id: string, context?: { scope: ConversationScope; projectId?: string; tenantId?: string }): Promise<Conversation | null> {
     const row = (await this.sql.get(`SELECT c.*,
                        (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
                         ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
                 FROM conversations c WHERE c.id = ? AND c.user_id = ?`, [id, userId])) as ConversationRow | undefined
     if (!row) return null
+    if (context?.tenantId && row.tenant_id !== context.tenantId) return null
     if (context && (row.scope !== context.scope || (context.scope === 'kanban' && row.project_id !== context.projectId))) return null
     const count = (
       (await this.sql.get(`SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?`, [id])) as {
@@ -377,13 +392,32 @@ export class ChatRepo extends BaseRepo {
     return row !== undefined
   }
 
+  async moveProjectToTenant(projectId: string, tenantId: string): Promise<void> {
+    await this.sql.run('UPDATE conversations SET tenant_id = ? WHERE project_id = ?', [tenantId, projectId])
+  }
+
+  async backfillTenantIds(resolve: (userName: string) => Promise<string | null>): Promise<void> {
+    await this.sql.run(`UPDATE conversations SET tenant_id = (SELECT tenant_id FROM projects WHERE projects.id = conversations.project_id)
+      WHERE project_id IS NOT NULL AND EXISTS (SELECT 1 FROM projects WHERE projects.id = conversations.project_id AND projects.tenant_kind = 'team')
+      AND (tenant_id IS NULL OR tenant_id = '')`)
+    const rows = await this.sql.all<{ user_id: string }>(`SELECT DISTINCT user_id FROM conversations
+      WHERE (project_id IS NULL OR EXISTS (SELECT 1 FROM projects WHERE projects.id = conversations.project_id AND projects.tenant_kind = 'personal'))
+      AND (tenant_id IS NULL OR tenant_id = '') AND user_id IS NOT NULL`)
+    for (const row of rows) {
+      const tenantId = await resolve(row.user_id)
+      if (tenantId) await this.sql.run(`UPDATE conversations SET tenant_id = ? WHERE user_id = ?
+        AND (project_id IS NULL OR EXISTS (SELECT 1 FROM projects WHERE projects.id = conversations.project_id AND projects.tenant_kind = 'personal'))
+        AND (tenant_id IS NULL OR tenant_id = '')`, [tenantId, row.user_id])
+    }
+  }
+
   /**
    * Поиск по названию разговора и тексту его сообщений (регистронезависимо).
    * Состав тот же, что у `listConversations`: чаты завершённых задач приходят
    * только с `includeCompleted` — иначе выключенный фильтр возвращал бы их
    * через строку поиска.
    */
-  async searchConversations(userId: string, query: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }): Promise<Conversation[]> {
+  async searchConversations(userId: string, query: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean; tenantId?: string }): Promise<Conversation[]> {
     const scope = opts?.scope ?? 'chat'
     if (scope === 'kanban' && !opts?.projectId) return []
     const q = query.trim()
@@ -395,6 +429,7 @@ export class ChatRepo extends BaseRepo {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
+           AND (? IS NULL OR c.tenant_id = ?)
            AND c.scope = ?
            AND (? <> 'kanban' OR c.project_id = ?)
            AND ${NOT_CANCELLED_TASK_CHAT}
@@ -402,7 +437,7 @@ export class ChatRepo extends BaseRepo {
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
                        WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\'))
-         ORDER BY c.updated_at DESC`, [userId, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0, like, like])) as Array<ConversationRow & { message_count: number }>
+         ORDER BY c.updated_at DESC`, [userId, opts?.tenantId ?? null, opts?.tenantId ?? null, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0, like, like])) as Array<ConversationRow & { message_count: number }>
     const costs = await this.conversationCosts(rows)
     return await Promise.all(rows.map(async (r) => await this.mapConversation(r, r.message_count, costs.get(r.id))))
   }
@@ -1421,6 +1456,7 @@ export class ChatRepo extends BaseRepo {
     const cost = prefetchedCost ?? await this.conversationCost(row)
     return {
       id: row.id,
+      tenantId: row.tenant_id ?? undefined,
       title: row.title,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -1479,7 +1515,8 @@ export class ChatRepo extends BaseRepo {
     }
     const project = await this.repos.projects.getProject(userId, projectId)
     if (!project) return null // не участник / проект не найден
-    await this.sql.run(`UPDATE conversations SET project_id = ?, exec_target = NULL, workdir = NULL, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`, [projectId, JSON.stringify(project.skills), convId, userId])
+    const tenantId = project.tenantKind === 'team' ? project.tenantId : (await this.repos.identity.getAccountAccess(userId))?.tenant.id ?? current.tenantId ?? project.tenantId
+    await this.sql.run(`UPDATE conversations SET project_id = ?, tenant_id = ?, exec_target = NULL, workdir = NULL, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`, [projectId, tenantId ?? null, JSON.stringify(project.skills), convId, userId])
     return await this.getConversation(userId, convId)
   }
 
@@ -1495,18 +1532,21 @@ export class ChatRepo extends BaseRepo {
     if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
     const task = await this.repos.tasks.getTask(projectId, taskId)
     if (!task) return null
+    const project = await this.repos.projects.getProject(userId, projectId)
+    if (!project) return null
+    const tenantId = project.tenantKind === 'team' ? project.tenantId : (await this.repos.identity.getAccountAccess(userId))?.tenant.id ?? project.tenantId
     // Связанный чат хранит только собственное переопределение; null означает
     // динамическое наследование эффективной настройки проекта.
     const existing = (await this.sql.get(`SELECT id FROM conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1`, [taskId, userId])) as { id: string } | undefined
     if (existing) {
-      await this.sql.run(`UPDATE conversations SET updated_at = ?, scope = 'kanban', project_id = ? WHERE id = ? AND user_id = ?`, [this.now(), projectId, existing.id, userId])
+      await this.sql.run(`UPDATE conversations SET updated_at = ?, scope = 'kanban', project_id = ?, tenant_id = ? WHERE id = ? AND user_id = ?`, [this.now(), projectId, tenantId ?? null, existing.id, userId])
       return await this.getConversation(userId, existing.id)
     }
     const id = this.newId()
     const ts = this.now()
     const title = task.title.trim() ? `Задача ${task.title.trim()}` : 'Задача'
-    await this.sql.run(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id, scope)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'kanban')`, [id, title, ts, ts, userId, null, null, JSON.stringify(task.skills), null, null, null, projectId, taskId])
+    await this.sql.run(`INSERT INTO conversations (id, tenant_id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id, scope)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'kanban')`, [id, tenantId ?? null, title, ts, ts, userId, null, null, JSON.stringify(task.skills), null, null, null, projectId, taskId])
     return await this.getConversation(userId, id)
   }
 
