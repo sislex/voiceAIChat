@@ -556,6 +556,10 @@ export interface ProjectQuota {
 
 export interface ProjectSummary {
   id: string
+  /** Identity tenant that owns the project and its shared budget. */
+  tenantId?: string
+  /** Personal projects retain explicit cross-user project sharing; team projects require the selected team. */
+  tenantKind?: 'personal' | 'team'
   name: string
   description: string
   /** Узел дерева типов (`project_types.id`); определяет доступные подсистемы. */

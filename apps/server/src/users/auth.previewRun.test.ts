@@ -17,7 +17,7 @@ describe('пользователь ключа Chromium', () => {
     const keys = new PreviewRunKeys()
     const key = keys.issue('alice')
     expect(await previewRunUser(dbWith({ name: 'alice', role: 'developer' }), req(`${PREVIEW_RUN_COOKIE}=${key}`), '/api/preview', keys))
-      .toEqual({ name: 'alice', role: 'developer', account: { tenantId: 'tenant-alice', tariffId: 'standard', tariffRevision: 1, capabilities: ['web-reader.use'] } })
+      .toEqual({ name: 'alice', role: 'developer', account: { tenantId: 'tenant-alice', tenantKind: undefined, membershipRole: 'owner', tariffId: 'standard', tariffRevision: 1, capabilities: ['web-reader.use'] } })
   })
 
   it('на других маршрутах ключ бесполезен', async () => {

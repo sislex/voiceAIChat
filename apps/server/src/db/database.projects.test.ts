@@ -97,6 +97,33 @@ describe('projects: миграция владельцев', () => {
   })
 })
 
+describe('projects: tenant ownership migration', () => {
+  it.skipIf(ON_POSTGRES)('backfills legacy projects and their conversations into the creator personal tenant', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-project-tenant-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file)
+    await first.ready
+    await first.identity.createUser('alice', '', 'developer')
+    const tenantId = (await first.identity.getAccountAccess('alice'))!.tenant.id
+    const project = await first.projects.createProject('alice', { name: 'Legacy tenant' })
+    const projectChat = await first.chat.createConversation('alice', 'Project chat', null, project.id)
+    const personalChat = await first.chat.createConversation('alice', 'Personal chat')
+    await first.close()
+    const raw = new Database(file)
+    raw.prepare('UPDATE projects SET tenant_id = NULL WHERE id = ?').run(project.id)
+    raw.prepare('UPDATE conversations SET tenant_id = NULL WHERE id IN (?, ?)').run(projectChat.id, personalChat.id)
+    raw.close()
+
+    const migrated = new VoiceChatDb(file)
+    await migrated.ready
+    expect((await migrated.projects.getProject('alice', project.id))?.tenantId).toBe(tenantId)
+    expect((await migrated.chat.getConversation('alice', projectChat.id))?.tenantId).toBe(tenantId)
+    expect((await migrated.chat.getConversation('alice', personalChat.id))?.tenantId).toBe(tenantId)
+    await migrated.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
 describe('projects: миграция канонического workflow', () => {
   it.skipIf(ON_POSTGRES)('досоздаёт недостающие системные колонки на существующей БД (инцидент 2026-08-18)', async () => {
     // Регрессия: миграция вызывала this.newId() до его присвоения в конструкторе

@@ -56,6 +56,38 @@ it('keeps account/history accessible while refusing product creation, mutation a
   expect(capabilities.tts).toMatchObject({ available: false, reason: TARIFF_DENIED })
 })
 
+it('isolates projects and conversations by the selected team tenant and transfers owned projects explicitly', async () => {
+  const { app, db, headers } = await fixture()
+  await db.identity.assignUserTariff('alice', 'standard')
+  const personalTenantId = (await db.identity.getAccountAccess('alice'))!.tenant.id
+  const personalProject = await app.inject({ method: 'POST', url: '/api/projects', headers, payload: { name: 'Move me' } })
+  expect(personalProject.statusCode).toBe(200)
+  const projectChat = await app.inject({ method: 'POST', url: '/api/conversations', headers, payload: { title: 'Project chat', projectId: personalProject.json().id } })
+  expect(projectChat.statusCode).toBe(200)
+  const team = await db.identity.createTeamTenant('alice', 'Product')
+  const teamHeaders = { ...headers, 'x-sislexa-tenant-id': team.tenant.id }
+  expect((await app.inject({ url: `/api/projects/${personalProject.json().id}`, headers: teamHeaders })).statusCode).toBe(404)
+  expect((await app.inject({ url: '/api/projects', headers: teamHeaders })).json()).toEqual([])
+  const transferred = await app.inject({ method: 'PUT', url: `/api/projects/${personalProject.json().id}/tenant`, headers, payload: { tenantId: team.tenant.id } })
+  expect(transferred.statusCode).toBe(200)
+  expect(transferred.json()).toMatchObject({ tenantId: team.tenant.id })
+  expect((await app.inject({ url: `/api/projects/${personalProject.json().id}`, headers })).statusCode).toBe(404)
+  expect((await app.inject({ url: `/api/projects/${personalProject.json().id}`, headers: teamHeaders })).statusCode).toBe(200)
+  expect((await app.inject({ url: `/api/conversations/${projectChat.json().id}`, headers })).statusCode).toBe(404)
+  expect((await app.inject({ url: `/api/conversations/${projectChat.json().id}`, headers: teamHeaders })).statusCode).toBe(200)
+
+  const conversation = await app.inject({ method: 'POST', url: '/api/conversations', headers: teamHeaders, payload: { title: 'Team chat' } })
+  expect(conversation.statusCode).toBe(200)
+  expect(conversation.json()).toMatchObject({ tenantId: team.tenant.id })
+  expect((await app.inject({ url: '/api/conversations', headers })).json()).toEqual([])
+  expect((await app.inject({ url: `/api/conversations/${conversation.json().id}`, headers })).statusCode).toBe(404)
+  expect((await app.inject({ url: '/api/conversations', headers: teamHeaders })).json()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: projectChat.json().id, tenantId: team.tenant.id }),
+    expect.objectContaining({ id: conversation.json().id, tenantId: team.tenant.id }),
+  ]))
+  expect(personalTenantId).not.toBe(team.tenant.id)
+})
+
 it('checks owned conversation kind and speech capability before dispatching WebSocket work', async () => {
   const { db } = await fixture()
   const account = (await db.identity.getAccountAccess('alice'))!
@@ -67,6 +99,37 @@ it('checks owned conversation kind and speech capability before dispatching WebS
   expect(await commandAccessError(db, user, { t: 'claude.send', conversationId: own.id, segments: [] })).toMatchObject({ message: TARIFF_DENIED })
   expect(await commandAccessError(db, user, { t: 'claude.cancel', conversationId: foreign.id })).toMatchObject({ message: 'Разговор недоступен.' })
   expect(await commandAccessError(db, user, { t: 'claude.cancel', conversationId: own.id })).toBeNull()
+})
+
+it('binds a browser WebSocket to the selected team tenant from its query string', async () => {
+  const { app, db, token, send } = await fixture()
+  const team = await db.identity.createTeamTenant('alice', 'Realtime')
+  const conversation = await db.chat.createConversation('alice', 'Team socket', null, null, 'chat', team.tenant.id)
+  await app.listen({ port: 0, host: '127.0.0.1' })
+  const port = (app.server.address() as AddressInfo).port
+  const connect = async (tenantId?: string): Promise<WebSocket> => {
+    const suffix = tenantId ? `&tenantId=${encodeURIComponent(tenantId)}` : ''
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(token)}${suffix}`)
+    cleanup.push(async () => socket.terminate())
+    await new Promise<void>((resolve, reject) => {
+      socket.on('error', reject)
+      socket.on('message', data => { if (JSON.parse(data.toString()).t === 'claude.active') resolve() })
+      socket.on('close', () => reject(new Error('Closed before authentication')))
+    })
+    return socket
+  }
+
+  const personal = await connect()
+  const denied = new Promise<Record<string, unknown>>(resolve => personal.on('message', data => {
+    const message = JSON.parse(data.toString()) as Record<string, unknown>
+    if (message.t === 'claude.error') resolve(message)
+  }))
+  personal.send(JSON.stringify({ t: 'claude.cancel', conversationId: conversation.id }))
+  await expect(denied).resolves.toMatchObject({ conversationId: conversation.id, message: 'Разговор недоступен.' })
+
+  const selected = await connect(team.tenant.id)
+  selected.send(JSON.stringify({ t: 'claude.send', conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Run' }] }))
+  await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
 })
 
 it('rechecks current entitlements at LLM execution even without an HTTP or WebSocket handler', async () => {

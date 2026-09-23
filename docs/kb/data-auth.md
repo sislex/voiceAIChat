@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-22
-checked: 7c448620
+updated: 2026-09-23
+checked: 8f06c3a6
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -170,8 +170,8 @@ monthly LLM spending limits remain independent. Identity's lazy account editor a
 host-injected tariff client serve both standalone and Core account screens.
 
 Every protected HTTP request resolves live Identity context. Optional
-`x-sislexa-tenant-id` must match the derived personal tenant; it cannot select another
-user's resources. Core checks conversation mutations against the stored assistant
+`x-sislexa-tenant-id` selects one of the caller's current personal or team
+memberships; Identity rejects a tenant that the caller cannot use. Core checks conversation mutations against the stored assistant
 kind, authenticates every WebSocket command, and checks product capability before
 new turns, queued CI stages and Image Studio model generation. Changed role, tenant,
 tariff or revision closes stale sockets. Work already executing is not cancelled
@@ -179,10 +179,39 @@ solely because a tariff changes. Tool applications forward the original user
 credentials, CSRF and tenant hint; Make no longer caches successful authorization.
 Provider grants remain separate from user identity.
 
-This phase supports personal tenants only: existing resource ownership remains
-user-based. Shared organizations, resource transfer, prices, payments and token
-credit ledgers are outside this release. See the
-[tenant/tariff plan](../plans/tenant-tariffs.md) for the delivery checklist.
+Identity 1.4.2 adds team tenants without changing personal tenant IDs. A team has
+owner, admin and member roles, a shared tariff assignment, explicit memberships,
+and invitations addressed to a normalized login or verified email. Identity stores
+only an invitation token hash, applies a seven-day expiry, and resolves membership
+again on every request. The browser stores only the selected tenant ID; login and
+logout clear that selection. REST requests add `x-sislexa-tenant-id`, while browser
+WebSockets use the `tenantId` query because the WebSocket constructor cannot set a
+custom header. A selection change reloads the shell so every REST client, socket,
+and independently loaded panel starts with one consistent tenant context.
+
+Core stores `tenant_id` and the immutable ownership kind on projects, and
+`tenant_id` on conversations. Startup backfills legacy projects to the creator's
+personal tenant, project conversations from their project, and standalone
+conversations from their creator. Team projects and conversations require the
+matching selected team. Explicitly shared personal projects remain visible to
+their project members in personal context, preserving the established cross-user
+collaboration flow; selecting any team hides them. Conversation lists/search,
+direct REST access, WebSocket commands and turn-time entitlement checks use the
+selected tenant. A project owner may transfer a project only to a tenant where
+that owner has tenant owner/admin authority; the project and all attached
+conversations move in one database transaction. Project membership remains
+explicit and independent from tenant membership: joining a tenant does not
+silently expose every project. Losing the tenant membership makes team resources
+unselectable even if an old project membership row still exists.
+
+Billing policies and admission are already keyed by `(environment, tenant)`. Team
+members therefore consume the same request, concurrency and monetary allowance,
+while settlement evidence keeps the stable individual `userId` for personal usage
+reports and percentage attribution. The browser cannot choose a foreign shared
+budget because Billing accepts only the tenant returned by live Identity
+verification. Prices, payment collection and a token-credit wallet remain outside
+this release. See the [tenant/tariff plan](../plans/tenant-tariffs.md) for the
+delivery checklist.
 
 ## Development preview data isolation
 

@@ -850,6 +850,8 @@ export function scaleBrowserCoordinates(x: number, y: number, renderedWidth: num
 
 export interface Conversation {
   id: string
+  /** Identity tenant that owns this conversation and pays for its operations. */
+  tenantId?: string
   title: string
   createdAt: number
   updatedAt: number

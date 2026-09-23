@@ -30,8 +30,20 @@ export async function userHasCapability(db: VoiceChatDb, name: string, capabilit
 /** Product policy complements Identity's route checks with Core-owned resource context. */
 export function registerAccountAccess(app: FastifyInstance, db: VoiceChatDb): void {
   app.addHook('preHandler', async (req, reply) => {
-    if (!req.user || ['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(req.method)) return
+    if (!req.user) return
     const url = req.url.split('?')[0]!
+    const selectedTenant = req.user.account?.tenantId
+    const projectMatch = /^\/api\/projects\/([^/]+)/.exec(url)
+    if (selectedTenant && projectMatch) {
+      const tenant = await db.projects.projectTenant(decodeURIComponent(projectMatch[1]!))
+      if (tenant && tenant.id !== selectedTenant && !(tenant.kind === 'personal' && req.user.account?.tenantKind !== 'team')) return reply.code(404).send({ error: 'not found' })
+    }
+    const resourceMatch = /^\/api\/conversations\/([^/]+)(?:\/|$)/.exec(url)
+    if (selectedTenant && resourceMatch) {
+      const conversation = await db.chat.getConversation(req.user.name, decodeURIComponent(resourceMatch[1]!))
+      if (conversation?.tenantId && conversation.tenantId !== selectedTenant) return reply.code(404).send({ error: 'not found' })
+    }
+    if (['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(req.method)) return
     let capability: ProductCapability | null = null
     let projectCapability = false
     if (url === '/api/conversations') {
@@ -40,7 +52,7 @@ export function registerAccountAccess(app: FastifyInstance, db: VoiceChatDb): vo
       projectCapability = body?.scope === 'kanban'
     } else if (url === '/api/conversations/draft' || /^\/api\/(cc|cx)\/.*resume/.test(url)) capability = 'chat.use'
     else {
-      const match = /^\/api\/conversations\/([^/]+)(?:\/|$)/.exec(url)
+      const match = resourceMatch
       if (match) {
         const conversation = await db.chat.getConversation(req.user.name, decodeURIComponent(match[1]!))
         if (conversation) { capability = capabilityForConversation(conversation); projectCapability = conversation.scope === 'kanban' }
@@ -61,9 +73,14 @@ export async function commandAccessError(db: VoiceChatDb, user: SessionUser, msg
   else if (msg.t.startsWith('claude.') && 'conversationId' in msg && typeof msg.conversationId === 'string') {
     const conversation = await db.chat.getConversation(user.name, msg.conversationId)
     if (!conversation) return { t: 'claude.error', conversationId: msg.conversationId, message: 'Разговор недоступен.' }
+    if (conversation.tenantId && conversation.tenantId !== user.account?.tenantId) return { t: 'claude.error', conversationId: msg.conversationId, message: 'Разговор недоступен.' }
     if (msg.t === 'claude.send' || msg.t === 'claude.queue.now' || msg.t === 'claude.queue.edit') {
       capability = conversation.scope === 'kanban' && !hasProductCapability(user.account, 'projects.use') ? 'projects.use' : capabilityForConversation(conversation)
     }
+  }
+  if ('projectId' in msg && typeof msg.projectId === 'string') {
+    const tenant = await db.projects.projectTenant(msg.projectId)
+    if (tenant && tenant.id !== user.account?.tenantId && !(tenant.kind === 'personal' && user.account?.tenantKind !== 'team')) return { t: 'claude.error', conversationId: '', message: 'Проект недоступен.' }
   }
   if (!capability || hasProductCapability(user.account, capability)) return null
   if (capability === 'voice.stt') return { t: 'stt.error', message: TARIFF_DENIED }
