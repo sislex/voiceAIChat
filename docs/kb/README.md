@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 18 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 35 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 4 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1618 коммит(ов) в areas после сверки: 12b309d9 docs: record production team tenant rollout (#246) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1619 коммит(ов) в areas после сверки: 63ae28c0 fix(test): keep full gate visual artifacts read-only (#247) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 58 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
@@ -54,18 +54,18 @@
 
 ## Журнал сессий
 
-Всего записей: 928. Последние:
+Всего записей: 929. Последние:
 
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md) — team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md) — production-0-1-330-team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md) — production-0-1-329-analytics-ui
+- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-image-studio-runner-sandbox.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-image-studio-runner-sandbox.md) — image-studio-runner-sandbox
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md) — gate-all-readonly-artifacts
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-users-page-startup.md) — users-page-startup
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-test-gate-timing-review.md) — test-gate-timing-review
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-renderer-fake-forward-compat.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-renderer-fake-forward-compat.md) — Renderer fake forward compatibility
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-release-checkout-upstream.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-release-checkout-upstream.md) — Release checkout upstream
 - [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance.md) — 2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-extraction-production-acceptance
-- [2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-artifact-consumers.md](log/2026-09-22-alexeys-macbook-air-tailae39a6-ts-net-owner-artifact-consumers.md) — owner-artifact-consumers
 
 ## Исторические планы
 
