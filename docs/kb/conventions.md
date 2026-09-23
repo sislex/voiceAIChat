@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-09-22
-checked: 9b707a9a
+updated: 2026-09-23
+checked: 964cd5de
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -272,6 +272,9 @@ performance budgets retain real Web/Desktop measurement. Reviewed standalone
 tooling selects the full root tooling suite; unknown/gate/build/deploy changes
 remain full checks. Contract consumers typecheck once and retain the union of
 all declared contract tests. Empty or missing contract suites fail before execution.
+The reviewed standalone tooling allowlist includes the restore-drill and backup
+retention utilities and their adjacent tests; changing their planner or root npm
+command still selects the full fallback.
 
 Only reviewed functional browser suites run in up to two isolated workers.
 Performance/resource measurements, native Electron input and unknown future suites

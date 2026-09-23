@@ -8,6 +8,7 @@
 // заголовки и тело целиком; потоков у Make нет (файлы проекта ≤ 2 МБ, ZIP-экспорт — в памяти).
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { REQUEST_ID_HEADER } from '../httpDiagnostics.js'
 
 /** Пути, которые в режиме `remote` обслуживает процесс Make. `/mcp/make` исполнитель зовёт напрямую. */
 export const MAKE_PROXY_PREFIXES = ['/api/make', '/api/preview/make', '/api/preview/make-shared', '/p', '/s'] as const
@@ -52,6 +53,7 @@ export function registerServiceProxy(app: FastifyInstance, opts: ServiceProxyOpt
     headers.set('x-forwarded-for', req.ip)
     headers.set('x-forwarded-host', String(req.headers.host ?? ''))
     headers.set('x-forwarded-proto', String(req.headers['x-forwarded-proto'] ?? req.protocol))
+    headers.set(REQUEST_ID_HEADER, req.id)
     const body = req.body as Buffer | undefined
     const hasBody = Boolean(body && body.length) && !['GET', 'HEAD'].includes(req.method)
     // DELETE без тела браузер шлёт с `content-type: application/json` и `content-length: 0`; fetch

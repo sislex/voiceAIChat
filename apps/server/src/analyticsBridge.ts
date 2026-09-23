@@ -17,7 +17,7 @@ export function registerAnalyticsProxy(app: FastifyInstance, transport: Analytic
       const query = method === 'GET' && request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : ''
       try {
         const response = await transport.publicFetchImpl(transport.url + url + query, { method, redirect: 'error', signal: AbortSignal.timeout(10_000),
-          headers: { authorization: token, ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+          headers: { authorization: token, 'x-request-id': request.id, ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
           ...(method === 'POST' ? { body: JSON.stringify(request.body) } : {}) })
         if (response.status >= 300 && response.status < 400) return reply.code(503).send({ error: 'analytics_unavailable' })
         return reply.code(response.status).send(await response.json())

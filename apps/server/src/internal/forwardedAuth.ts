@@ -7,6 +7,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { INTERNAL_WHOAMI_PATH, type SessionUser, type WhoamiRequest, type WhoamiResponse } from '@voicechat/shared'
 import { isPublic } from "@sislexa/identity/server/users/auth"
+import { REQUEST_ID_HEADER } from '../httpDiagnostics.js'
 
 export interface ForwardedAuthOptions {
   /** Имя сервиса — для лога. */
@@ -35,7 +36,7 @@ export function registerForwardedAuth(app: FastifyInstance, opts: ForwardedAuthO
     }
     const res = await fetchImpl(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${opts.token}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${opts.token}`, [REQUEST_ID_HEADER]: req.id },
       body: JSON.stringify({ method: req.method, url: req.url, headers } satisfies WhoamiRequest),
       signal: AbortSignal.timeout(10_000)
     })

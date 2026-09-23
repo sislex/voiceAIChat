@@ -368,7 +368,7 @@ Implementation checklist:
 - [x] Publish SDK 1.2.0, Billing 1.2.0, Identity 1.3.2 and Analytics 1.2.0 with immutable archives and owner gates.
 - [x] Enforce Billing admission and settlement for every stored conversation origin.
 - [x] Add authenticated Analytics report/activity proxies and managed component grants.
-- [ ] Execute the remaining identity, accounting and analytics stages with integration and release evidence.
+- [x] Execute the remaining identity, accounting and analytics stages with integration and release evidence (Core 0.1.329-0.1.330).
 
 ### Inspected baseline
 
@@ -379,12 +379,16 @@ limit behavior is documented in `docs/kb/data-auth.md`. This proposal adds immut
 identity and distributed accounting; these mechanisms are not present merely
 because a module has a separate package or deployment.
 
-- [ ] Introduce immutable IDs and migrate ownership references while retaining login aliases.
-- [ ] Define Identity, delegation, resource-permission, and request-context contracts.
-- [ ] Define Usage/Billing units, reservations, settlement, and recovery contracts.
-- [ ] Integrate one complete Chat -> AI Runtime -> Billing flow.
-- [ ] Integrate Make with the same user and payer, including concurrent operation tests.
-- [ ] Require these contracts in each extracted standalone application.
+- [x] Introduce immutable IDs and migrate ownership references while retaining login aliases.
+- [x] Define Identity, delegation, resource-permission, and request-context contracts.
+- [x] Define Usage/Billing units, reservations, settlement, and recovery contracts.
+- [x] Integrate one complete Chat -> AI Runtime -> Billing flow.
+- [x] Integrate Make and every stored conversation origin with the same verified user and payer.
+- [x] Require these contracts in each extracted standalone application.
+
+This architecture document is historical design context. Current milestone status
+and ordering live in `sislexa-delivery-roadmap.md`; production facts live in the
+thematic KB.
 
 Acceptance scenarios include cross-application sign-in, rename without ownership
 loss, forged-user rejection, audience/scope rejection, simultaneous budget

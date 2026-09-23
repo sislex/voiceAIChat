@@ -112,7 +112,7 @@ test('budget edits preserve real Web/Electron measurements and tooling regressio
   assert.equal(applicationPlanCommands(plan).filter(([, args]) => args.includes('test:tooling')).length, 1)
 })
 test('narrow tooling scope never hides another changed critical file', () => {
-  for (const file of ['scripts/core-ui-artifact.mjs', 'scripts/browser-ui-release.mjs', 'scripts/browser-ui-release.test.mjs', 'scripts/long-run.mjs', 'scripts/long-run.test.mjs']) {
+  for (const file of ['scripts/core-ui-artifact.mjs', 'scripts/browser-ui-release.mjs', 'scripts/browser-ui-release.test.mjs', 'scripts/long-run.mjs', 'scripts/long-run.test.mjs', 'scripts/operations-restore-drill.mjs', 'scripts/operations-restore-drill.test.mjs', 'scripts/operations-backup-retention.mjs']) {
     const plan = planApplicationChecks([file])
     assert.equal(plan.full, false)
     assert.equal(plan.tooling, true)
