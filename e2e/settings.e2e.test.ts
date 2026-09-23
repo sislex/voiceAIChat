@@ -17,6 +17,8 @@ import { chromium, _electron, type Browser, type Page } from 'playwright'
 
 const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
+const VISUAL_ARTIFACTS = process.env.VC_VISUAL_ARTIFACTS ? resolve(ROOT, process.env.VC_VISUAL_ARTIFACTS) : null
+const FAILURE_ARTIFACTS = process.env.VC_VISUAL_FAILURE_ARTIFACTS ? resolve(ROOT, process.env.VC_VISUAL_FAILURE_ARTIFACTS) : null
 let PORT = 0
 let BASE = ''
 const PASSWORD = 'e2e-settings-pass'
@@ -135,8 +137,8 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
 
   // @testCase TC-UI-1
   it('keeps onboarding navigation and actions reachable across themes, touch and keyboard', async () => {
-    const artifacts = join(ROOT, 'artifacts/onboarding')
-    await mkdir(artifacts, { recursive: true })
+    if (VISUAL_ARTIFACTS) await mkdir(VISUAL_ARTIFACTS, { recursive: true })
+    if (FAILURE_ARTIFACTS) await mkdir(FAILURE_ARTIFACTS, { recursive: true })
     const sizes = [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 700]]
     for (const theme of ['light', 'dark']) for (const [width, height] of sizes) {
       await api('/api/settings', { method: 'PUT', body: JSON.stringify({ theme, onboarded: true }) })
@@ -166,20 +168,20 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
         const box = await exit.boundingBox()
         expect(box).not.toBeNull()
         expect(box!.y + box!.height).toBeLessThanOrEqual(height)
-        await screen.screenshot({ path: join(artifacts, theme + '-' + width + 'x' + height + '.png') })
+        if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, theme + '-' + width + 'x' + height + '.png') })
         // Reduced visual viewport models keyboard occlusion; this is not a physical OS keyboard test.
         if (width <= 390) {
           await screen.setViewportSize({ width, height: Math.floor(height * 0.6) })
           await exit.scrollIntoViewIfNeeded()
           const reduced = await exit.boundingBox()
           expect(reduced!.y + reduced!.height).toBeLessThanOrEqual(Math.floor(height * 0.6))
-          await screen.screenshot({ path: join(artifacts, theme + '-' + width + '-reduced-viewport.png') })
+          if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, theme + '-' + width + '-reduced-viewport.png') })
         }
         await exit.focus()
         await screen.keyboard.press('Escape')
         await dialog.waitFor({ state: 'hidden' })
       } catch (error) {
-        await screen.screenshot({ path: join(artifacts, theme + '-' + width + '-failure.png') })
+        if (FAILURE_ARTIFACTS) await screen.screenshot({ path: join(FAILURE_ARTIFACTS, theme + '-' + width + '-failure.png') })
         throw error
       } finally { await context.close() }
     }
@@ -189,7 +191,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
   it('runs the shared renderer in Electron with persisted progress and an explicit voice check', async () => {
     const executablePath = createRequire(join(ROOT, 'package.json'))('electron') as string
     if (!existsSync(executablePath)) throw new Error('Install Core integration dependencies before required Electron QA')
-    await mkdir(join(ROOT, 'artifacts/onboarding'), { recursive: true })
+    if (VISUAL_ARTIFACTS) await mkdir(VISUAL_ARTIFACTS, { recursive: true })
     const entry = join(dataDir, 'onboarding-electron.cjs')
     await writeFile(entry, [
       "const { app, BrowserWindow, session } = require('electron')",
@@ -223,7 +225,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
       await renderer.goto(BASE + '/#/settings/ui')
       await renderer.getByRole('button', { name: 'Мастер первого запуска' }).click()
       await renderer.getByText(/Пропущено: Пропущено пользователем/).waitFor()
-      await renderer.screenshot({ path: join(ROOT, 'artifacts/onboarding/electron-resumed.png') })
+      if (VISUAL_ARTIFACTS) await renderer.screenshot({ path: join(VISUAL_ARTIFACTS, 'electron-resumed.png') })
       await renderer.reload()
       await renderer.goto(BASE + '/#/settings/ui')
       await renderer.getByRole('button', { name: 'Мастер первого запуска' }).click()
