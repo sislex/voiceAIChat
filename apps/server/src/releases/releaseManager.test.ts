@@ -1,7 +1,7 @@
 import { DEFAULT_RELEASE_TIMEOUTS } from '@voicechat/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { knowledgeBaseTimeoutMs, RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionInstallCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { knowledgeBaseTimeoutMs, RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseDeleteCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionInstallCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тест опирается на порядок событий синхронного драйвера.
 
 let db:VoiceChatDb
@@ -51,6 +51,18 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).toContain('другой remote.origin.url')
     expect(command).toContain("find '/repos/.release_repo' -mindepth 1 -maxdepth 1 -print -quit")
     expect(command).not.toContain('rm -rf')
+  })
+
+  it('deletes a release branch locally after origin and refuses an active worktree first',()=>{
+    const command=releaseDeleteCommand(ci(),'release/1.2.3')
+    const worktreeGuard=command.indexOf('git worktree list --porcelain')
+    const remoteDelete=command.indexOf("git push origin --delete 'release/1.2.3'")
+    const localDelete=command.indexOf("git branch -D 'release/1.2.3'")
+    expect(worktreeGuard).toBeGreaterThanOrEqual(0)
+    expect(command).toContain("grep -Fqx 'branch refs/heads/release/1.2.3'")
+    expect(command).toContain("git show-ref --verify --quiet 'refs/heads/release/1.2.3'")
+    expect(worktreeGuard).toBeLessThan(remoteDelete)
+    expect(remoteDelete).toBeLessThan(localDelete)
   })
 
   // @testCase TC-REG-1

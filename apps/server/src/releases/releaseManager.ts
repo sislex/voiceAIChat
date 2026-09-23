@@ -25,6 +25,12 @@ export function releaseCheckoutCommand(target:ReleaseProjectTarget):string {
   return `if [ ! -e ${quote(target.path)} ]; then mkdir -p ${quote(parent)} && git clone -- ${quote(target.gitUrl)} ${quote(target.path)}; elif [ -d ${quote(target.path)} ] && [ -z "$(find ${quote(target.path)} -mindepth 1 -maxdepth 1 -print -quit)" ]; then git clone -- ${quote(target.gitUrl)} ${quote(target.path)}; elif [ ! -d ${quote(`${target.path}/.git`)} ]; then echo 'Каталог release checkout уже существует, но не является пустым каталогом или Git-репозиторием'; exit 1; elif [ "$(git -C ${quote(target.path)} config --get remote.origin.url)" != ${quote(target.gitUrl)} ]; then echo 'Каталог release checkout содержит другой remote.origin.url и не будет перезаписан'; git -C ${quote(target.path)} config --get remote.origin.url; exit 1; else echo 'Release checkout уже подготовлен, повторный clone не требуется'; fi`
 }
 
+/** Remove both the remote branch and its reusable local ref. */
+export function releaseDeleteCommand(target:ReleaseProjectTarget,branch:string):string {
+  const ref=`refs/heads/${branch}`
+  return git(target,`if git worktree list --porcelain | grep -Fqx ${quote(`branch ${ref}`)}; then echo ${quote(`Release-ветка ${branch} используется worktree и не будет удалена`)}; exit 1; fi && git push origin --delete ${quote(branch)} && if git show-ref --verify --quiet ${quote(ref)}; then git branch -D ${quote(branch)}; fi`)
+}
+
 /**
  * Изолирует kb:index от общего checkout и не перезаписывает конкурентно сдвинутую
  * release-ветку. Identity коммита задаётся флагами: на машине агента глобальный
@@ -201,7 +207,7 @@ export class ReleaseManager {
     const release=await this.db.releases.getProjectRelease(userId,target.projectId,releaseId)
     if(!release||release.branch!==branch||release.previousReleaseId)throw new Error('Release не найден')
     if(!['ready','failed'].includes(release.status))throw new Error('Активный релиз удалить нельзя')
-    const deleted=await this.runtime.exec(target,git(target,`push origin --delete ${quote(branch)}`),120_000)
+    const deleted=await this.runtime.exec(target,releaseDeleteCommand(target,branch),120_000)
     this.forgetBranches(target)
     if(deleted.exitCode!==0||deleted.timedOut)throw new Error(deleted.output||'Не удалось удалить release-ветку из origin')
     await this.db.releases.softDeleteProjectRelease(userId,target.projectId,releaseId)
