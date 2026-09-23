@@ -8,7 +8,7 @@ import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { FastifyInstance } from 'fastify'
 import { setupRestHarness } from './restHarness.js'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
-const standardAccount = { userId: expect.any(String), tenantId: expect.any(String), tariffId: 'standard', tariffRevision: 1, capabilities: [...PRODUCT_CAPABILITIES] }
+const standardAccount = { userId: expect.any(String), tenantId: expect.any(String), tenantKind: 'personal', membershipRole: 'owner', tariffId: 'standard', tariffRevision: 1, capabilities: [...PRODUCT_CAPABILITIES] }
 const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.

@@ -198,6 +198,10 @@ export class VoiceChatDb {
       await this.migrate()
       await initializePersonalTenants(this.sql, this.now, this.newId)
     }
+    const personalTenant = async (userName: string): Promise<string | null> =>
+      (await this.ctx.repos.identity.getAccountAccess(userName))?.tenant.id ?? null
+    await this.ctx.repos.projects.backfillTenantIds(personalTenant)
+    await this.ctx.repos.chat.backfillTenantIds(personalTenant)
     // Legacy Codex replies stored cumulative thread totals as per-message spend;
     // rewrite them once, on both backends (see migrateCodexThreadUsage). The
     // key is `v2`: `v1` was marked done by hand on production to stop the boot
@@ -351,6 +355,9 @@ export class VoiceChatDb {
       DROP TRIGGER IF EXISTS trg_messages_cost_dirty_del;
     `)
     const convCols = (await this.sql.all(`PRAGMA table_info(conversations)`)) as Array<{ name: string }>
+    if (!convCols.some((c) => c.name === 'tenant_id')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN tenant_id TEXT`)
+    }
     if (!convCols.some((c) => c.name === 'user_id')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN user_id TEXT`)
     }
@@ -481,6 +488,12 @@ export class VoiceChatDb {
     }
     // Проекты (итерация 2): папка на машину + машина по умолчанию.
     const projCols = (await this.sql.all(`PRAGMA table_info(projects)`)) as Array<{ name: string }>
+    if (projCols.length && !projCols.some((c) => c.name === 'tenant_id')) {
+      await this.sql.exec(`ALTER TABLE projects ADD COLUMN tenant_id TEXT`)
+    }
+    if (projCols.length && !projCols.some((c) => c.name === 'tenant_kind')) {
+      await this.sql.exec(`ALTER TABLE projects ADD COLUMN tenant_kind TEXT`)
+    }
     if (projCols.length && !projCols.some((c) => c.name === 'default_agent_id')) {
       await this.sql.exec(`ALTER TABLE projects ADD COLUMN default_agent_id TEXT`)
     }

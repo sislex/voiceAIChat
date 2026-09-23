@@ -841,6 +841,7 @@ export async function registerRest(
       }
       const beforeAt = num(req.query.beforeAt)
       return await db.chat.listConversations(uid(req), {
+        tenantId: req.user!.account!.tenantId,
         scope,
         projectId: req.query.projectId,
         includeCompleted: queryFlag(req.query.includeCompleted),
@@ -861,8 +862,11 @@ export async function registerRest(
       ? kind === 'web-recorder' ? 'web-reader' : kind === 'playwright-reader' ? 'playwright-reader' : kind === 'console-reader' ? 'console' : kind === 'make' ? 'make' : kind === 'images' ? 'images' : 'chat'
       : parseConversationScope(req.body.scope)
     if (!scope || (scope === 'kanban' && !req.body?.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+    if (req.body?.projectId && !await db.projects.getProject(uid(req), req.body.projectId, req.user!.account!.tenantId, req.user!.account!.tenantKind)) {
+      return reply.code(404).send({ error: 'project not found' })
+    }
     try {
-      const conversation = await db.chat.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope)
+      const conversation = await db.chat.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope, req.user!.account!.tenantId)
       // Новый Make-чат стартует от актуального main: копию обновляет сервер один
       // раз здесь, потому что сама модель Make к репозиторию доступа не имеет.
       if (kind === 'make' && conversation?.projectId) opts.refreshProjectMain?.(uid(req), conversation.projectId)
@@ -875,8 +879,9 @@ export async function registerRest(
 
   app.get<{ Params: { projectId: string }; Querystring: { conversationId?: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
     const userId = uid(req)
-    const privateConversation = await db.chat.ensureKanbanAssistantConversation(userId, req.params.projectId)
-    const requested = req.query.conversationId ? await db.chat.getConversation(userId, req.query.conversationId, { scope: 'kanban', projectId: req.params.projectId }) : null
+    if (!await db.projects.getProject(userId, req.params.projectId, req.user!.account!.tenantId, req.user!.account!.tenantKind)) return reply.code(404).send({ error: 'not found' })
+    const privateConversation = await db.chat.ensureKanbanAssistantConversation(userId, req.params.projectId, req.user!.account!.tenantId)
+    const requested = req.query.conversationId ? await db.chat.getConversation(userId, req.query.conversationId, { scope: 'kanban', projectId: req.params.projectId, tenantId: req.user!.account!.tenantId }) : null
     const conversation = requested?.projectId === req.params.projectId && requested.scope === 'kanban'
       ? requested
       : privateConversation
@@ -914,8 +919,11 @@ export async function registerRest(
     if (!idempotencyKey?.trim() || !title?.trim() || !message) {
       return reply.code(400).send({ error: 'idempotencyKey, title and message are required' })
     }
+    if (projectId && !await db.projects.getProject(uid(req), projectId, req.user!.account!.tenantId, req.user!.account!.tenantKind)) {
+      return reply.code(404).send({ error: 'project not found' })
+    }
     try {
-      return await db.chat.createConversationDraft(uid(req), idempotencyKey, title, projectId ?? null, message)
+      return await db.chat.createConversationDraft(uid(req), idempotencyKey, title, projectId ?? null, message, req.user!.account!.tenantId)
     } catch (err) {
       return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
     }
@@ -924,7 +932,7 @@ export async function registerRest(
   app.get<{ Querystring: { q?: string; scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req, reply) => {
     const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
     if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
-    return await db.chat.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted) })
+    return await db.chat.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted), tenantId: req.user!.account!.tenantId })
   })
 
   /**
@@ -1407,7 +1415,7 @@ export async function registerRest(
     } catch (err) {
       return proxyError(reply, err)
     }
-    const conv = await db.chat.createConversation(u, ccResumeTitle(items))
+    const conv = await db.chat.createConversation(u, ccResumeTitle(items), null, null, undefined, req.user!.account!.tenantId)
     const now = Date.now()
     for (const m of ccResumeMessages(items)) {
       await db.chat.addMessage(u, conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
@@ -1454,7 +1462,7 @@ export async function registerRest(
     } catch (err) {
       return proxyError(reply, err)
     }
-    const conv = await db.chat.createConversation(u, cxResumeTitle(items))
+    const conv = await db.chat.createConversation(u, cxResumeTitle(items), null, null, undefined, req.user!.account!.tenantId)
     const now = Date.now()
     for (const m of cxResumeMessages(items)) {
       await db.chat.addMessage(u, conv.id, m.role, m.text, cxTimeLabel(m.ts, now), m.role === 'ai' ? 'codex' : undefined)
