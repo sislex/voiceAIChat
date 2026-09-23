@@ -42,6 +42,8 @@ interface ProjectTypeRow {
 
 interface ProjectRow {
   id: string
+  tenant_id: string | null
+  tenant_kind: 'personal' | 'team' | null
   project_type_id: string | null
   name: string
   description: string
@@ -625,6 +627,8 @@ export class ProjectsRepo extends BaseRepo {
   private async mapProjectSummary(r: ProjectRow, myRole: string): Promise<ProjectSummary> {
     return {
       id: r.id,
+      ...(r.tenant_id ? { tenantId: r.tenant_id } : {}),
+      ...(r.tenant_kind ? { tenantKind: r.tenant_kind } : {}),
       name: r.name,
       description: r.description,
       typeId: r.project_type_id || DEFAULT_PROJECT_TYPE_ID,
@@ -676,7 +680,7 @@ export class ProjectsRepo extends BaseRepo {
   /** Создаёт проект: владелец-участник + дефолтные колонки (в одной транзакции). */
   async createProject(
     userId: string,
-    args: { name: string; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
+    args: { name: string; tenantId?: string; tenantKind?: 'personal' | 'team'; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
   ): Promise<ProjectDetail> {
     const id = this.newId()
     const ts = this.now()
@@ -685,9 +689,13 @@ export class ProjectsRepo extends BaseRepo {
     // заготовки: пользователь заполнил поле руками.
     const typeId = args.typeId && await this.getProjectType(args.typeId) ? args.typeId : DEFAULT_PROJECT_TYPE_ID
     const seed = await this.projectTypeDefaults(typeId)
+    // Public routes always pass a verified tenant. Nullable ownership preserves
+    // the long-standing low-level fixture API; startup backfill repairs persisted legacy rows.
+    const tenantId = args.tenantId ?? (await this.repos.identity.getAccountAccess(userId))?.tenant.id ?? null
+    const tenantKind = args.tenantKind ?? (tenantId ? 'personal' : null)
     await this.sql.transaction(async () => {
-      await this.sql.run(`INSERT INTO projects (id, project_type_id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode, default_skills_epic, default_skills_story, default_skills_task, ci_base_branch, ci_branch_template, ci_reuse_strategy, test_command)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, typeId, args.name, args.description ?? '', args.gitUrl ?? null, JSON.stringify(args.technologies ?? seed.technologies ?? []), JSON.stringify(args.skills ?? seed.skills ?? []), userId, ts, ts, args.commitPolicy ?? seed.commitPolicy ?? 'agent_commits', args.mergeTransport ?? seed.mergeTransport ?? 'local', args.agentPlanApprovalMode ?? seed.agentPlanApprovalMode ?? 'manual', JSON.stringify(args.defaultSkills?.epic ?? seed.defaultSkills?.epic ?? []), JSON.stringify(args.defaultSkills?.story ?? seed.defaultSkills?.story ?? []), JSON.stringify(args.defaultSkills?.task ?? seed.defaultSkills?.task ?? []), seed.ciBaseBranch ?? 'main', seed.ciBranchTemplate ?? '{task_number}', seed.ciReuseStrategy ?? 'fail', seed.testCommand ?? ''])
+      await this.sql.run(`INSERT INTO projects (id, tenant_id, tenant_kind, project_type_id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode, default_skills_epic, default_skills_story, default_skills_task, ci_base_branch, ci_branch_template, ci_reuse_strategy, test_command)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, tenantId, tenantKind, typeId, args.name, args.description ?? '', args.gitUrl ?? null, JSON.stringify(args.technologies ?? seed.technologies ?? []), JSON.stringify(args.skills ?? seed.skills ?? []), userId, ts, ts, args.commitPolicy ?? seed.commitPolicy ?? 'agent_commits', args.mergeTransport ?? seed.mergeTransport ?? 'local', args.agentPlanApprovalMode ?? seed.agentPlanApprovalMode ?? 'manual', JSON.stringify(args.defaultSkills?.epic ?? seed.defaultSkills?.epic ?? []), JSON.stringify(args.defaultSkills?.story ?? seed.defaultSkills?.story ?? []), JSON.stringify(args.defaultSkills?.task ?? seed.defaultSkills?.task ?? []), seed.ciBaseBranch ?? 'main', seed.ciBranchTemplate ?? '{task_number}', seed.ciReuseStrategy ?? 'fail', seed.testCommand ?? ''])
 
       await this.sql.run(`INSERT INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'owner', ?)`, [id, userId, ts])
       // Колонки берутся из заготовок типа; у «Разработки ПО» их нет, и остаётся
@@ -719,15 +727,16 @@ export class ProjectsRepo extends BaseRepo {
     return (await this.getProject(userId, id)) as ProjectDetail
   }
 
-  async countOwnedProjects(userId: string): Promise<number> {
-    const row = (await this.sql.get(`SELECT COUNT(*) AS count FROM project_members WHERE username = ? AND role = 'owner'`, [userId])) as { count: number }
+  async countOwnedProjects(userId: string, tenantId?: string, tenantKind?: 'personal' | 'team'): Promise<number> {
+    const row = (await this.sql.get(`SELECT COUNT(*) AS count FROM project_members m JOIN projects p ON p.id = m.project_id
+      WHERE m.username = ? AND m.role = 'owner' AND (? IS NULL OR p.tenant_id = ? OR (? = 'personal' AND p.tenant_kind = 'personal'))`, [userId, tenantId ?? null, tenantId ?? null, tenantKind ?? null])) as { count: number }
     return row.count
   }
 
-  async listProjects(userId: string): Promise<ProjectSummary[]> {
+  async listProjects(userId: string, tenantId?: string, tenantKind?: 'personal' | 'team'): Promise<ProjectSummary[]> {
     const rows = (await this.sql.all(`SELECT p.*, m.role AS my_role FROM projects p
          JOIN project_members m ON m.project_id = p.id
-         WHERE m.username = ? ORDER BY p.updated_at DESC`, [userId])) as Array<ProjectRow & { my_role: string }>
+         WHERE m.username = ? AND (? IS NULL OR p.tenant_id = ? OR (? = 'personal' AND p.tenant_kind = 'personal')) ORDER BY p.updated_at DESC`, [userId, tenantId ?? null, tenantId ?? null, tenantKind ?? null])) as Array<ProjectRow & { my_role: string }>
     return await Promise.all(rows.map(async (r) => await this.mapProjectSummary(r, r.my_role)))
   }
 
@@ -736,10 +745,10 @@ export class ProjectsRepo extends BaseRepo {
     return rows.map(row => row.username)
   }
 
-  async getProject(userId: string, id: string): Promise<ProjectDetail | null> {
+  async getProject(userId: string, id: string, tenantId?: string, tenantKind?: 'personal' | 'team'): Promise<ProjectDetail | null> {
     const row = (await this.sql.get(`SELECT p.*, m.role AS my_role FROM projects p
          JOIN project_members m ON m.project_id = p.id
-         WHERE p.id = ? AND m.username = ?`, [id, userId])) as (ProjectRow & { my_role: string }) | undefined
+         WHERE p.id = ? AND m.username = ? AND (? IS NULL OR p.tenant_id = ? OR (? = 'personal' AND p.tenant_kind = 'personal'))`, [id, userId, tenantId ?? null, tenantId ?? null, tenantKind ?? null])) as (ProjectRow & { my_role: string }) | undefined
     if (!row) return null
     const members = (
       (await this.sql.all(`SELECT pm.username, pm.role, pm.added_at, u.blocked FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? ORDER BY pm.added_at ASC`, [id])) as Array<ProjectMemberRow & { blocked: number }>
@@ -826,6 +835,30 @@ export class ProjectsRepo extends BaseRepo {
       machines,
       defaultAgentId: row.default_agent_id ?? null
     }
+  }
+
+  async projectTenant(projectId: string): Promise<{ id: string; kind: 'personal' | 'team' } | null> {
+    const row = await this.sql.get<{ tenant_id: string | null; tenant_kind: 'personal' | 'team' | null }>('SELECT tenant_id, tenant_kind FROM projects WHERE id = ?', [projectId])
+    return row?.tenant_id ? { id: row.tenant_id, kind: row.tenant_kind ?? 'personal' } : null
+  }
+
+  async backfillTenantIds(resolve: (userName: string) => Promise<string | null>): Promise<void> {
+    await this.sql.run("UPDATE projects SET tenant_kind = 'personal' WHERE tenant_kind IS NULL OR tenant_kind = ''")
+    const rows = await this.sql.all<{ created_by: string }>('SELECT DISTINCT created_by FROM projects WHERE tenant_id IS NULL OR tenant_id = \'\'')
+    for (const row of rows) {
+      const tenantId = await resolve(row.created_by)
+      if (tenantId) await this.sql.run('UPDATE projects SET tenant_id = ? WHERE created_by = ? AND (tenant_id IS NULL OR tenant_id = \'\')', [tenantId, row.created_by])
+    }
+  }
+
+  async transferTenant(userId: string, projectId: string, currentTenantId: string, targetTenantId: string, targetTenantKind: 'personal' | 'team'): Promise<ProjectDetail | null> {
+    if (!(await this.isProjectOwner(userId, projectId))) return null
+    return this.sql.transaction(async () => {
+      const changed = await this.sql.run('UPDATE projects SET tenant_id = ?, tenant_kind = ?, updated_at = ? WHERE id = ? AND tenant_id = ?', [targetTenantId, targetTenantKind, this.now(), projectId, currentTenantId])
+      if (changed.changes !== 1) return null
+      await this.repos.chat.moveProjectToTenant(projectId, targetTenantId)
+      return this.getProject(userId, projectId, targetTenantId, targetTenantKind)
+    })
   }
 
   async updateProject(

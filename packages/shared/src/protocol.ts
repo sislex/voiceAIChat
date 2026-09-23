@@ -406,6 +406,7 @@ export const REST = {
   // --- Проекты + канбан ---
   projects: '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
+  projectTenant: (id: string) => `/api/projects/${encodeURIComponent(id)}/tenant`,
   // Дерево типов проекта: каталог общий, решения по публикации — под /api/admin/.
   projectInvitations: (id: string) => `/api/projects/${encodeURIComponent(id)}/invitations`,
   projectInvitation: (id: string, invitationId: string) => `/api/projects/${encodeURIComponent(id)}/invitations/${encodeURIComponent(invitationId)}`,

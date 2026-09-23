@@ -405,7 +405,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     const conv = await deps.db.chat.getConversation(userId, conversationId)
     const accountedTurn = !!deps.accounting && !!conv
-    const entitlements = await deps.db.identity.getAccountAccess(userId)
+    const entitlements = await deps.db.identity.getAccountAccess(userId, conv?.tenantId)
     if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
       broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : 'Разговор недоступен.' }, userId)
       return
