@@ -38,7 +38,7 @@ describe('REST: аутентификация', () => {
       expect(response.headers['access-control-allow-origin']).toBe(origin)
       expect(response.headers['access-control-allow-credentials']).toBe('true')
       expect(response.headers['access-control-allow-methods']).toContain('POST')
-      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id')
+      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-request-id')
       const login = await app.inject({
         method: 'POST',
         url: '/api/session/login',
@@ -94,6 +94,22 @@ describe('REST: аутентификация', () => {
       payload: { name: 'user', password: 'x' }
     })
     expect(bad.statusCode).toBe(401)
+  })
+
+  it('returns and preserves request correlation while exposing operations metrics only to admins', async () => {
+    const health = await app.inject({ method: 'GET', url: '/api/health', headers: { 'x-request-id': 'browser:request-1' } })
+    expect(health.headers['x-request-id']).toBe('browser:request-1')
+    const status = await inj({ method: 'GET', url: '/api/admin/operations/status' })
+    expect(status.statusCode).toBe(200)
+    expect(status.headers['cache-control']).toBe('no-store')
+    expect(status.json()).toMatchObject({ inFlight: 1, requests: expect.any(Number), failures: expect.any(Number), alerts: expect.any(Array) })
+    const metrics = await inj({ method: 'GET', url: '/api/admin/operations/metrics' })
+    expect(metrics.statusCode).toBe(200)
+    expect(metrics.headers['content-type']).toContain('text/plain')
+    expect(metrics.body).toContain('sislexa_core_http_requests_total')
+    await db.identity.createUser('metrics-user', '', 'developer')
+    const token = signToken({ name: 'metrics-user', role: 'developer' }, SECRET)
+    expect((await app.inject({ method: 'GET', url: '/api/admin/operations/status', headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(403)
   })
 
   it('сессии: список с текущей, «выйти везде» отзывает остальные, отзыв одной, админ видит и отзывает (auth-roadmap п.4)', async () => {

@@ -47,7 +47,7 @@ describe('registerMakeProxy', () => {
     expect(res.headers['set-cookie']).toEqual(['vc_pub_x=1; Path=/'])
     expect(seen).toHaveLength(1)
     expect(seen[0]).toMatchObject({ method: 'PUT', url: '/api/make/c1/file?rev=3', body: '{"path":"a.css","content":"x"}' })
-    expect(seen[0]!.headers).toMatchObject({ authorization: 'Bearer t', cookie: 'vc_session=s', 'x-vc-csrf': 'c', 'content-type': 'application/json', 'x-forwarded-host': 'stand.local' })
+    expect(seen[0]!.headers).toMatchObject({ authorization: 'Bearer t', cookie: 'vc_session=s', 'x-vc-csrf': 'c', 'content-type': 'application/json', 'x-forwarded-host': 'stand.local', 'x-request-id': expect.any(String) })
     expect(seen[0]!.headers.host).not.toBe('stand.local')
   })
 

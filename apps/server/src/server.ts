@@ -1,6 +1,6 @@
 import { registerBrowserUi } from './browserUi/routes.js'
 import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
-import { registerHttpDiagnostics } from './httpDiagnostics.js'
+import { registerHttpDiagnostics, requestIdOf, REQUEST_ID_HEADER } from './httpDiagnostics.js'
 import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
 import { registerBillingProxy } from './billingBridge.js'
 import { registerAnalyticsProxy } from './analyticsBridge.js'
@@ -55,7 +55,7 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
-import { registerAuth, uid } from "@sislexa/identity/server/users/auth"
+import { registerAuth, requireAdmin, uid } from "@sislexa/identity/server/users/auth"
 import { createManagedChatStorage } from './chatStorage.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
@@ -311,8 +311,11 @@ printf 'BASE_SHA=%s\\n' "$local_sha"`
 }
 
 export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false })
-  registerHttpDiagnostics(app)
+  const app = Fastify({
+    logger: false,
+    genReqId: request => requestIdOf(request.headers[REQUEST_ID_HEADER])
+  })
+  const httpDiagnostics = registerHttpDiagnostics(app)
   opts = { ...opts, config: { ...opts.config } }
   const component = opts.config.componentConfigPath ? await createComponentRuntime({
     configFile: opts.config.componentConfigPath,
@@ -343,7 +346,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   const corsOrigins = new Set(opts.config.corsOrigins)
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id'
+  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-request-id'
   app.decorateRequest('corsAllowed', false)
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
@@ -352,6 +355,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       req.corsAllowed = true
       reply.header('access-control-allow-origin', origin)
       reply.header('access-control-allow-credentials', 'true')
+      reply.header('access-control-expose-headers', REQUEST_ID_HEADER)
       reply.header('vary', 'Origin')
       if (req.method === 'OPTIONS') {
         reply.header('access-control-allow-methods', corsMethods)
@@ -426,6 +430,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerAccountAccess(app, db)
   registerBillingProxy(app, managedBilling)
   registerAnalyticsProxy(app, managedAnalytics)
+  app.get(REST.adminOperationsStatus, { preHandler: requireAdmin }, async (_req, reply) => {
+    reply.header('cache-control', 'no-store')
+    return httpDiagnostics.snapshot()
+  })
+  app.get(REST.adminOperationsMetrics, { preHandler: requireAdmin }, async (_req, reply) =>
+    reply
+      .header('cache-control', 'no-store')
+      .type('text/plain; version=0.0.4; charset=utf-8')
+      .send(httpDiagnostics.prometheus())
+  )
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     application: applicationRuntimeMetadata('core', process.env),

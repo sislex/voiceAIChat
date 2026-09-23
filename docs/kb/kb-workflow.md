@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-08-31
-checked: 97d52de5
+updated: 2026-09-23
+checked: d59fcff6
 areas:
   - scripts/kb.mjs
   - AGENTS.md
@@ -23,8 +23,10 @@ areas:
 
 ## Уровни (от дешёвого к дорогому)
 
-1. **`AGENTS.md` в корне** — читается всегда, поэтому держится в пределах ~200 строк:
-   карта монорепо, команды, гейт, «что нужно знать до первой правки», указатели.
+1. **`AGENTS.md` в корне** — reads on every session, so keep it near 100 lines:
+   startup safety, the small Core workspace map, common commands, gate rules and
+   links to detailed topics. Repository histories, full command semantics and
+   topic catalogs belong in the KB rather than this always-loaded file.
    `CLAUDE.md` — одна строка `@AGENTS.md`, чтобы у Claude Code и Codex был один
    источник и не было расхождений между двумя файлами.
 2. **`AGENTS.md` внутри пакета** (`apps/*/AGENTS.md`, `packages/*/AGENTS.md`) — то,

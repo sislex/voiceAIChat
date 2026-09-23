@@ -398,6 +398,8 @@ export const REST = {
   agentPinIp: (id: string) => `/api/agents/${encodeURIComponent(id)}/pin-ip`,
   adminMachineMetrics: '/api/admin/machines/metrics',
   adminMakeMetrics: '/api/admin/make/metrics',
+  adminOperationsMetrics: '/api/admin/operations/metrics',
+  adminOperationsStatus: '/api/admin/operations/status',
   adminModelPrice: (provider: string, model: string) => '/api/admin/model-prices/' + encodeURIComponent(provider) + '/' + encodeURIComponent(model),
   adminLlmEngine: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}`,
   adminLlmEngineHealth: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}/health`,
