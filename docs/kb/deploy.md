@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-23
-checked: c6c97eb1
+checked: 8f744434
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -1770,3 +1770,55 @@ archive passed `pg_restore --list`, while this was not a full restore drill.
 Rollback can reactivate Core UI 1.3.0 without restarting Core. A backend rollback
 uses the retained 0.1.328 release checkout/image and must also remove the Analytics
 Compose/config additions as one configuration change.
+
+## Team tenants and shared budgets (Core 0.1.330)
+
+Core 0.1.330 (`8f7444340e7490a518515c6658a0e11e46891f84`) deployed through the
+installed `voicechat-deploy` flow on 2026-09-23. Production runs Identity 1.4.2
+(`c7aaebd15a607887e137d997a9efd1cdcd6ebcaa`), Billing 1.2.2
+(`bf811d60c3a7f4764910ce94b5d67fa8076e891c`) and the unchanged Analytics
+1.2.2. All ten managed components reported ready. The active operator overlay is
+`/etc/voicechat/prebuilt-0.1.330.yml`; component configuration remains under
+`/etc/voicechat/components-0.1.315`.
+
+Billing 1.2.2 forwards `x-sislexa-tenant-id` when it asks Identity for a live user
+verdict. Identity remains responsible for membership validation, and Billing still
+rejects a returned tenant that differs from the requested tenant. Without this
+forwarding, a valid team request was verified in the user's personal tenant and
+failed with `tenant_access_denied`. The production acceptance used two users in one
+team with a 100 micro-USD policy: the first 60 micro-USD reservation made a second
+60 micro-USD reservation fail with `budget_exhausted`; releasing the first hold let
+the second user reserve 60. Reservation principals retained the individual user ID
+and shared the team tenant ID. The test policy was restored to unlimited afterward.
+
+The same acceptance created a team, invited and accepted a member, rejected an
+outsider's selected-tenant request, transferred a project and its project
+conversation from a personal tenant, and verified that the personal context no
+longer exposed them. Project ACLs remain explicit inside a team: the invited tenant
+member received project detail access only after the project owner added that user
+as a project member. Temporary projects, teams, accounts and sessions were deleted
+after acceptance.
+
+Core UI 1.4.0 (`0d8c68a916715915c7cc8d61bbf018fa76387942`) was installed and
+activated with `voicechat-ui-deploy`. Core's container ID and start time did not
+change. UI 1.3.1 remains the previous activation for immediate rollback.
+Production Chromium acceptance signed in, opened `#/account`, listed personal and
+team workspaces, selected the team, rendered its member and role, and rendered the
+cost, token and active-time sections.
+
+The first Core image attempt copied 123 files with mode `0600` and two directories
+with mode `0700` from the production release checkout. The runtime drops to the
+`node` user, so it first failed to read `config.ts` and then could not traverse the
+`browserUi` directory. Core stayed on 0.1.329 while the checkout and image modes
+were normalized, then the exact 0.1.330 source was redeployed successfully. When an
+image is built from an operator checkout, verify that every tracked runtime file is
+readable and every tracked parent directory is traversable by the runtime user;
+also run a read probe as that user before changing the active overlay.
+
+The pre-deploy backup is
+`/var/backups/voicechat/sislexa-team-tenants-20260923T005057Z`; its workstation
+copy is `.sislexa-backups/team-tenants-20260923T005057Z`. The PostgreSQL custom
+archive passed `pg_restore --list` with 1,155 entries, and the copied archive and
+Billing snapshot hashes match their server copies. This validated archive
+readability, not a restore drill. The 0.1.329 Core image, Identity 1.3.2 image,
+Billing 1.2.1 image and UI 1.3.1 release remain available as rollback inputs.
