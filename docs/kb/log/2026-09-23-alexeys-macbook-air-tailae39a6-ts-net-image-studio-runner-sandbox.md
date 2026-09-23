@@ -14,6 +14,7 @@ author: alexeyrozhnov
 - Released and deployed LLM Runner 0.3.3 with Pillow and ImageMagick.
 - Released and deployed LLM Runner 0.3.4 with the isolated profile as the default workspace.
 - Verified a real Codex `acceptEdits` run without `cwd` that created a PNG readable through the Runner file API.
+- Recorded the external GitHub billing block on the 0.3.4 GHCR publish job; the production image was built and verified directly on the runner host.
 
 ## New facts
 

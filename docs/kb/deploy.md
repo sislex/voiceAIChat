@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-23
-checked: 0b183357
+checked: 8ab621b1
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -1838,8 +1838,11 @@ the Image Studio prompt. LLM Runner 0.3.3 adds Python Pillow and ImageMagick.
 Version 0.3.4 (`63514a5eda882272100c7cb426aabc72f85cdd56`) also defaults a
 user-scoped run without a project `cwd` to the user's isolated profile home. This
 is writable by Codex and is the same root exposed through the authenticated
-Runner file API. PRs #12 through #14, their release workflows, and all local
-gates passed.
+Runner file API. PRs #12 through #14, their release gates, and all local gates
+passed. The 0.3.4 GHCR publish job was blocked before runner allocation by the
+GitHub account billing/spending limit; production therefore uses the same
+verified image built directly on the runner host until registry publication can
+be retried after the account setting is corrected.
 
 Production runs image `sislexa-llm-runner:0.3.4-63514a5eda88`; all three runner
 containers are healthy. Pillow and ImageMagick produced valid PNGs. A real Codex
