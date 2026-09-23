@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-23
-checked: 8f06c3a6
+checked: 964cd5de
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -17,6 +17,18 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Request correlation and operations endpoints
+
+HTTP responses include `x-request-id`. Core accepts only bounded visible
+identifier characters from a caller and otherwise generates a UUID. The validated
+value crosses Core proxies and public Billing/Analytics calls, but is never an
+authentication or idempotency key. Browser CORS allows the request header and
+exposes the response header.
+
+`REST.adminOperationsStatus` returns bounded HTTP counters and active alerts;
+`REST.adminOperationsMetrics` returns the same process telemetry in Prometheus
+text form. Both routes require a system administrator and disable caching.
 
 ## Development preview contracts
 

@@ -34,6 +34,7 @@ it('authenticates and checks cookie CSRF before forwarding only user credentials
   expect(requests[0]!.headers.get('authorization')).toBe('Bearer '+token)
   expect(requests[0]!.headers.get('cookie')).toBeNull()
   expect(requests[0]!.headers.get('x-vc-csrf')).toBeNull()
+  expect(requests[0]!.headers.get('x-request-id')).toBeTruthy()
   expect(requests[0]!.url).toBe('http://billing.test/api/billing/policy')
   expect(response.headers['cache-control']).toBe('no-store')
 })

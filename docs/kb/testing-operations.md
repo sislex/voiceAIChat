@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-23
-checked: 12b309d9
+checked: 964cd5de
 areas:
   - package.json
   - scripts
@@ -798,6 +798,39 @@ Caddy завершает HTTPS и проксирует HTTP/WebSocket на Fasti
 Machine tokens восстановить из hash нельзя. Потеря БД требует перерегистрации машин. Потеря session secret инвалидирует пользовательские bearer tokens, но не пароли и machine token hashes.
 
 Перед обновлением: backup data volume, зафиксировать текущий image/commit, выполнить typecheck/tests/build, затем rolling restart. Схема обновляется идемпотентно при старте; обратимость конкретной миграции нужно оценивать по `database.ts`.
+
+### Operations correlation, metrics and recovery
+
+Core assigns every HTTP request a safe `x-request-id`, preserves a valid incoming
+value and returns it in the response. Generated IDs are UUIDs. Service proxies
+overwrite the forwarded header with the validated Core request ID; Billing and
+Analytics public transports and standalone-service `/internal/whoami` calls carry
+the same value. The ID is correlation only and never grants authority. Structured
+slow/5xx logs include it while retaining route templates instead of user/resource
+IDs, query strings, credentials or bodies.
+
+Admins can read the bounded five-minute status at
+`GET /api/admin/operations/status` and Prometheus text at
+`GET /api/admin/operations/metrics`. Route labels use registered templates, so
+cardinality cannot grow with user IDs. Status raises `http_5xx_rate` after five
+recent failures, `http_slow_rate` after ten requests lasting at least two seconds,
+and `http_in_flight` at 100 concurrent requests. These endpoints require the
+normal live admin session and return `no-store`.
+
+`npm run operations:restore-drill -- <manifest>` performs an actual disposable
+PostgreSQL restore with `pg_restore --exit-on-error`, restores copied SQLite
+snapshots and runs `PRAGMA integrity_check`, and safely extracts declared file
+archives. The JSON report contains only names, counts, sizes and SHA-256 values.
+Use `deploy/operations/restore-manifest.example.json` as the schema. A synthetic
+custom PostgreSQL dump, Billing SQLite ledger and runner archive passed the real
+drill on 2026-09-23.
+
+`npm run operations:backup-retention -- --root <absolute-dir>` is dry-run by
+default. It keeps at least two newest recovery points plus daily, weekly and
+monthly representatives (defaults: 5 newest, 14 daily, 8 weekly, 12 monthly).
+Only direct, non-hidden, real directories are candidates; symlinks and files are
+ignored. Review the JSON plan before adding `--apply`. Run a successful restore
+drill against the retained set before applying a production retention plan.
 
 ## Замер расхода CI-ранов
 

@@ -1,7 +1,7 @@
 # Sislexa delivery roadmap
 
-Updated: 2026-09-21.
-Status: implementation in progress; no new end-to-end milestone is production-complete.
+Updated: 2026-09-23.
+Status: 8 of 15 deliverables are production-complete; Operations is in progress.
 
 ## Baseline and repository ownership
 
@@ -50,8 +50,23 @@ can change implementation order; an unchecked item is not production-complete.
 | 14 | Third-party tool SDK | Documented extension contracts, declared permissions, compatibility checks, install flow and an independently built sample tool |
 | 15 | Public-launch readiness | Onboarding and demos, feedback flow, measured capacity targets, load/failure tests and recovery evidence; launch exposure follows the agreed product configuration |
 
-Progress: 0/15 new deliverables complete. Existing foundation code is reused but
-does not satisfy the end-to-end acceptance criteria on its own.
+Production status:
+
+| Deliverables | Status | Evidence |
+| --- | --- | --- |
+| 1-3: limits, verified context, reservation/settlement | Complete | Core 0.1.318 completed real Chat accounting; Core 0.1.329 extended immutable origin accounting to every stored conversation kind. Billing 1.2.2 and Core 0.1.330 verified concurrent shared-tenant admission. |
+| 4-5: usage dashboard and active time | Complete | Analytics 1.2.2 and Core UI 1.3.1 passed production browser acceptance for cost, tokens, percentage attribution, active time and activity ingestion. |
+| 6: team tenants | Complete | Identity 1.4.2, Billing 1.2.2 and Core/UI 0.1.330/1.4.0 passed invitation, tenant selection, transfer, ACL isolation and shared-budget acceptance. |
+| 7: prices, subscriptions and payments | Waiting for product inputs | Provider, merchant account, currency, offers and renewal/refund rules are intentionally not invented. |
+| 8: remaining application extraction | Complete | Core 0.1.324 removed application internals and tests; Core UI, Agent and Desktop ownership completed in 0.1.325-0.1.327. LLM Runner 0.3.5 uses its independent server-owned release flow. |
+| 9: Component Release Center | Complete | Component compatibility, immutable owner artifacts, application deployment records, independent browser activation and rollback are implemented and production-tested. |
+| 10: Operations | In progress | Request correlation, bounded HTTP metrics/alerts, backup retention planning and an executable full restore drill are implemented on the current branch; release evidence remains required. |
+| 11-15 | Planned | Product flows, automation completion, shared knowledge, third-party SDK acceptance and public-launch readiness remain separate milestones. |
+
+Progress: **8/15 complete**, **1/15 in progress**, **6/15 remaining or waiting
+for product inputs**. Deployment evidence is maintained in
+`docs/kb/deploy.md`; this roadmap no longer repeats release-specific paths and
+hashes.
 
 ## Delivery sequence
 
@@ -86,7 +101,7 @@ inputs do not block accounting, analytics, team development or isolated tests.
 There is no fixed total-time commitment: estimates should follow completion of
 the first vertical accounting slice and validation against real execution paths.
 
-## Foundation increment
+## Delivered increments
 
 SDK 1.0.0, Identity 1.2.0 and Billing 1.0.0 are published independently. They provide
 portable operation contracts, stable user IDs and a transactionally tested ledger.
@@ -115,3 +130,8 @@ work remain pending. See `chat-execution-accounting.md` and `docs/kb/deploy.md`.
 Core 0.1.319 additionally closes an existing WebSocket initialization gap discovered
 during that acceptance. An immediate post-snapshot command now enters the ordered
 queue, with live exactly-once rejection and balance continuity verified.
+
+Core 0.1.329 completed cross-service origin accounting and shipped Analytics
+account/activity reporting. Core 0.1.330 added team tenants, resource transfer and
+shared budget admission. The extraction sequence completed through Core 0.1.327,
+and LLM Runner 0.3.5 removed its remaining GitHub Actions publication dependency.
