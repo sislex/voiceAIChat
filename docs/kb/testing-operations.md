@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-22
-checked: 7c448620
+updated: 2026-09-23
+checked: 12b309d9
 areas:
   - package.json
   - scripts
@@ -877,7 +877,10 @@ measurements directly. Errors and signals stop every stage; timing artifacts liv
 in `artifacts/gate-timings/`. Functional Core browser suites use at most two workers;
 resource timing and native Electron input remain serial. Successful full Core
 fallbacks suppress duplicate functional suites, but never suppress explicitly
-selected performance suites.
+selected performance suites. Routine settings/onboarding runs do not rewrite the
+reviewed screenshots tracked under `artifacts/onboarding/`. Set
+`VC_VISUAL_ARTIFACTS=artifacts/onboarding` only when intentionally refreshing that
+evidence, or set `VC_VISUAL_FAILURE_ARTIFACTS` to capture failure-only diagnostics.
 
 `npm run verify:frontend` runs `frontend:build-gates`: product artifact verification,
 Core UI artifact verification and browser route budgets. React builds, Storybook
