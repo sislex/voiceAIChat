@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-23
-checked: 248f6d43
+checked: 9e028b00
 areas:
   - package.json
   - scripts
@@ -659,7 +659,7 @@ but 9 values were supplied`). Несколько серверов получаю
 
 REST-набор разрезан на `rest.auth`, `rest.admin`, `rest.conversations`, `rest.machines`, `rest.files`, а общая обвязка живёт в `apps/server/src/routes/restHarness.ts` (`setupRestHarness()`; имя без `.test.ts`, иначе файл попал бы в `include` как набор без тестов). Причина — Vitest параллелит по файлам, а не по describe: единый `rest.test.ts` на 2503 строки и 138 тестов шёл 23–26 с и был критическим путём всего пакета. После разрезки те же 138 тестов идут 15 с, а пакет целиком — 53–55 с против 71–104 с (замеры A/B в одной сессии). Тела тестов при разрезке не переписывались: каждый файл получает изменяемые поля обвязки в свой `beforeEach` (`({ app, db, token } = harness)`), который регистрируется после хука обвязки, а стабильные (`inj`, `sentMails`, `triggerDeploy`, `SECRET`, `U`) — деструктуризацией.
 
-Server HTTP тестируется `app.inject()` с `:memory:` SQLite. WebSocket поднимает ephemeral listener и реальный ws-клиент, но engines/CLI заменяются fake. Spawn, fetch, filesystem и resource probes инъектируются. Тест никогда не использует настоящий HOME или найденные repo-модели; `VITEST` отключает autodiscovery. Глобальный `testTimeout` server-набора — 30 секунд. Раньше стояло 10 минут с обоснованием «полный merge-гейт запускает пакеты параллельно и сажает их на один воркер»; обоснование отменилось вместе с `--maxWorkers=1`, а десять минут маскировали зависший `listen`/ws вместо быстрого падения. Многошаговые оркестраторы (CI-, merge- и release-раны) тестируются тем же приёмом: реальный `CommandExecutor` заменяется `vi.fn`, который узнаёт скрипт по подстроке и отдаёт заготовленный stdout, а `now` инъектируется счётчиком, поэтому порядок команд и длительности детерминированы без git, сети и CLI (образец — `merge/runManager.test.ts`, разбор в [features/merge-runner.md](features/merge-runner.md)).
+Server HTTP тестируется `app.inject()` с `:memory:` SQLite. WebSocket поднимает ephemeral listener и реальный ws-клиент, но engines/CLI заменяются fake. Spawn, fetch, filesystem и resource probes инъектируются. Тест никогда не использует настоящий HOME или найденные repo-модели; `VITEST` отключает autodiscovery. Глобальные `testTimeout` и `hookTimeout` server-набора — 60 секунд. Раньше test timeout стоял 10 минут с обоснованием «полный merge-гейт запускает пакеты параллельно и сажает их на один воркер»; обоснование отменилось вместе с `--maxWorkers=1`, а десять минут маскировали зависший `listen`/ws вместо быстрого падения. Многошаговые оркестраторы (CI-, merge- и release-раны) тестируются тем же приёмом: реальный `CommandExecutor` заменяется `vi.fn`, который узнаёт скрипт по подстроке и отдаёт заготовленный stdout, а `now` инъектируется счётчиком, поэтому порядок команд и длительности детерминированы без git, сети и CLI (образец — `merge/runManager.test.ts`, разбор в [features/merge-runner.md](features/merge-runner.md)).
 
 Исполнитель LLM (`apps/llm-runner`) тестируется как сервер — `app.inject()` и фейковый `spawn`, — но поток `/v1/run` проверяется только через реальный `listen()` и построчное чтение `fetch`: `inject()` отдаёт тело целиком и не показал бы, что строки не буферизуются. Тем же `inject()` покрываются профильные файловые API `/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`: тесты заводят временный `dataDir`, создают профили `cli-users/<base64url(user)>` и проверяют, что формы ответов совпадают с прежними серверными роутами. Bearer в тестах обязательно ASCII: значение заголовка — ByteString, и `fetch` с кириллическим токеном падает до запроса.
 
@@ -706,6 +706,14 @@ release-gate failure that passes both as a focused test and as its complete file
 `apps/server/vitest.config.ts` держит `testTimeout: 60_000` не потому, что тесты
 медленные: самый долгий тест пакета идёт **5 секунд** на свободной машине, а весь
 набор (1781 тест) — полторы минуты. Запас нужен на конкуренцию прогонов.
+
+Тот же конфиг задаёт `hookTimeout: 60_000`. Vitest ограничивает `beforeEach`,
+`afterEach`, `beforeAll` и `afterAll` отдельным дефолтом в 10 секунд, поэтому
+одного увеличенного `testTimeout` недостаточно: под высокой CPU-нагрузкой
+инициализация Fastify/SQLite не успевала завершиться, и один release gate ронял
+11 несвязанных тестов в четырёх файлах сообщением `Hook timed out in 10000ms`.
+Этот лимит остаётся конечным и равен лимиту теста, поэтому зависший cleanup или
+server startup по-прежнему обнаруживается за минуту.
 
 Регрессия ходит в собственном worktree одновременно с другими прогонами на тех
 же восьми ядрах, и vitest каждого из них берёт примерно по воркеру на ядро.
