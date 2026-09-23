@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-23
-checked: 8ab621b1
+checked: e323dc41
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -1840,9 +1840,8 @@ user-scoped run without a project `cwd` to the user's isolated profile home. Thi
 is writable by Codex and is the same root exposed through the authenticated
 Runner file API. PRs #12 through #14, their release gates, and all local gates
 passed. The 0.3.4 GHCR publish job was blocked before runner allocation by the
-GitHub account billing/spending limit; production therefore uses the same
-verified image built directly on the runner host until registry publication can
-be retried after the account setting is corrected.
+GitHub account billing/spending limit. That incident led to the server-owned
+release flow described below; no account or registry fix is now required.
 
 Production runs image `sislexa-llm-runner:0.3.4-63514a5eda88`; all three runner
 containers are healthy. Pillow and ImageMagick produced valid PNGs. A real Codex
@@ -1856,3 +1855,33 @@ The deployment preserved the six runner volumes. Its stopped-writer archive is
 The final 0.3.4 configuration and rollback inventory are in
 `/var/backups/llm-runner/0.3.4-63514a5eda88`; the previous 0.3.3 image remains
 available for rollback.
+
+## Server-owned LLM Runner releases (0.3.5)
+
+LLM Runner PR #15 removed its GitHub Actions workflow and GHCR dependency.
+Release tag `v0.3.5` at commit
+`ad0819ab77d17eb4abfc993f7a603de8499f1440` created no Actions run. The dedicated
+runner host now checks out the exact tag, reruns the canonical gate, Compose
+tests and dependency audit, builds the `linux/amd64` image, then checks the
+authenticated API, Bubblewrap, Pillow and ImageMagick in a disposable container.
+It writes an atomic release manifest only after every check succeeds.
+
+The first server-owned run passed 489 Vitest cases, eight operational Node tests,
+four package/release tests, five Compose tests and an audit with zero
+vulnerabilities. Its manifest is
+`/opt/llm-runner/releases/ad0819ab77d17eb4abfc993f7a603de8499f1440/release.json`.
+Production pins immutable image ID
+`sha256:5e18dcd5db0813b67f57a5da259041b1b12d49949895d5d13407a7fe6e654f7c`
+instead of a mutable tag. Work, personal and callbacks are healthy; both
+executors report zero active runs. The work service retains
+`no-new-privileges`, `seccomp=unconfined`, and `apparmor=llm-runner-bwrap`, with
+no added capabilities and without privileged mode.
+
+The first deployment attempt passed both new-image smoke checks, then its
+operator helper failed while writing the persistent image reference. Automatic
+recovery restored 0.3.4 and reopened Core and automation. The corrected second
+attempt deployed 0.3.5 and atomically updated `RUNNER_IMAGE`. Records are in
+`/var/backups/llm-runner/0.3.5-ad0819ab77d1` and
+`/var/backups/llm-runner/0.3.5-ad0819ab77d1-attempt2`; 0.3.3 and 0.3.4 remain as
+rollback images. Core, automation, Image Studio API/UI and the public signup
+probe were healthy after deployment.
