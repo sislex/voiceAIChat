@@ -24,9 +24,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 19 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 36 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1626 коммит(ов) в areas после сверки: 36c5f041 docs(kb): clarify Make handoff replay … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1627 коммит(ов) в areas после сверки: 66177014 test: review Electron settings CSS budget … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 59 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-22 | ⚠ 8 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 27 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 395 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
@@ -54,18 +54,18 @@
 
 ## Журнал сессий
 
-Всего записей: 935. Последние:
+Всего записей: 936. Последние:
 
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md) — team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md) — server-owned-runner-release
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-route-budget-font-css.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-route-budget-font-css.md) — release-route-budget-font-css
+- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-delete-local-branch.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-delete-local-branch.md) — release-delete-local-branch
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md) — production-0-1-330-team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md) — production-0-1-329-analytics-ui
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-operations-correlation-recovery.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-operations-correlation-recovery.md) — operations-correlation-recovery
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-image-studio-runner-sandbox.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-image-studio-runner-sandbox.md) — image-studio-runner-sandbox
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-gate-all-readonly-artifacts.md) — gate-all-readonly-artifacts
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-chat-to-make-replay.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-chat-to-make-replay.md) — chat-to-make-replay
-- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-chat-to-make-handoff.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-chat-to-make-handoff.md) — chat-to-make-handoff
 
 ## Исторические планы
 
