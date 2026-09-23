@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-23
-checked: 964cd5de
+checked: 248f6d43
 areas:
   - package.json
   - scripts
@@ -1051,6 +1051,14 @@ renderer through CDP, parking the pointer at a neutral corner before navigation
 and after sign-in. This keeps the no-optional-intent scenario isolated from
 accidental account/settings hover preloads while retaining resource exclusions,
 viewport comparisons and all size limits.
+
+The September 23 Core 0.1.331 release gate observed a larger, separately
+fingerprinted Google Fonts CSS response on the direct Electron Settings cold and
+warm routes. Immutable application CSS fingerprints were unchanged. Those two
+raw-CSS limits were reviewed from 385500 to 386900 bytes: the observed 386127
+bytes plus 0.2 percent, rounded up to 100 bytes. Compressed limits, JS limits,
+Settings navigation and forbidden-resource checks were not relaxed. Evidence is
+retained in `frontend-quality/measurements/google-fonts-variation-20260923/`.
 
 The Core web-host gate owns the retained sessions, settings, projects and Git-pane
 browser suites. A catalog regression check enumerates every remaining Core E2E
