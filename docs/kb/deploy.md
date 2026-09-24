@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-23
-checked: e323dc41
+updated: 2026-09-24
+checked: 1e76f182
 areas:
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
@@ -1885,3 +1885,63 @@ attempt deployed 0.3.5 and atomically updated `RUNNER_IMAGE`. Records are in
 `/var/backups/llm-runner/0.3.5-ad0819ab77d1-attempt2`; 0.3.3 and 0.3.4 remain as
 rollback images. Core, automation, Image Studio API/UI and the public signup
 probe were healthy after deployment.
+
+## Delivery Control coordinator foundation (2026-09-24)
+
+The independent coordinator API 0.2.0 runs on the LLM Runner host
+`45.135.182.251`, reached through Core `89.125.68.35` and WireGuard `10.77.0.2`.
+`delivery-control.service` uses a dedicated unprivileged account, a 256 MiB memory
+limit and 50% CPU quota. API access is loopback-only at `127.0.0.1:8798`.
+The independent PostgreSQL 17 container `delivery-control-postgres` listens on
+`127.0.0.1:15478`, uses volume `delivery-control-postgres-data`, and is capped at
+384 MiB / 0.5 CPU. All three LLM Runner container IDs, start times and health states
+were unchanged by this deployment.
+
+The owner repository is [sislex/delivery-control](https://github.com/sislex/delivery-control).
+The current published/deployed source is
+`c8cb8e3afcc8a9f788be9037a146159069650e22`, installed at
+`/opt/delivery-control/releases/0.2.0-c8cb8e3afcc8`. Source archive SHA-256:
+`ed38bedc40c85cd788b7aacfc19f6ce96efde3408e21e07240b2b87276acf2cb`.
+Archives are retained under `/opt/delivery-control/artifacts`; `release.json`
+records provenance, acceptance and activation. The initial 0.1.0 release at
+`/opt/delivery-control/releases/0.1.0-77fab9c7cb36` remains available for rollback.
+Rolling back from state schema v2 requires restoring the matching v1 database
+backup as well as the old service unit; source-only rollback is incompatible.
+
+Credentials stay private under `/etc/delivery-control`. The daily
+`delivery-control-backup.timer` writes dumps to `/var/backups/delivery-control`;
+initial bootstrap included a disposable restore drill. The pre-v2 migration backup
+is `control-20260924T151923Z.dump` in that directory, with a SHA-256 sidecar.
+Automatic retention and the complete artifact backup workflow belong to B04.
+
+The shared-chat run is pinned to Core commit
+`1e76f1828e8cc8fcb3203d9820007677ce1c5aa0`: 37 tasks, **S0 paused**.
+B01, B02 and B03 are recorded as done through explicit external bootstrap
+acceptance, with source commit and validation evidence. This records operator-led
+implementation rather than inventing worker attempts. B04–B06 remain blocked;
+no product task has started and no production worker machine is enrolled.
+
+The API now verifies the pinned Markdown against its compiled manifest and DAG,
+reserves machine resources, fences task and role leases, and shares bounded patch
+artifacts alongside durable events and idempotent commands. Migration to JSONB
+state v2 pauses old runs and requires source verification. Separate host supervisors
+provide multiple independent slots, per-attempt clones/runtime names, Codex
+execution, owner gates, process cleanup and restart recovery. Scheduling budgets
+are not OS resource containment; external runtime lifecycle needs owner adapters.
+Enrollment and persistent user-service instructions are in the owner repository's
+[worker guide](https://github.com/sislex/delivery-control/blob/c8cb8e3afcc8a9f788be9037a146159069650e22/docs/workers.md).
+
+Owner typecheck/tests/build and disposable PostgreSQL integration passed on the
+workstation and Linux deployment host. A three-slot fault scenario verified killed
+worker/descendant cleanup, sibling completion, new-epoch retry and supervisor
+restart. Three real Codex CLI workers independently produced gated fixture patches.
+Worker service installers were supplied but not installed as production workers.
+B04–B06 still own dashboard/draining, full artifact handling, publication/release,
+automated QA/defect repair and stage acceptance. No stage-advance API exists.
+
+Operators can forward local `18798` to runner loopback `8798` through Core using
+`HostKeyAlias=45.135.182.251` for the existing verified host key. Local connection
+metadata and the private administrator token are under
+`~/.config/sislexa/delivery-control`; never distribute them to ordinary workers.
+Each physical worker machine needs its own token and one supervisor with separate
+slots; multiple agents must not share task checkouts or enroll one host twice.
