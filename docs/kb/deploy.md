@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-24
-checked: 4b2c9a4b
+checked: 95eaf002
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -1911,7 +1911,7 @@ probe were healthy after deployment.
 
 ## Delivery Control coordinator foundation (2026-09-24)
 
-The independent coordinator API 0.2.0 runs on the LLM Runner host
+The independent coordinator API 0.3.0 runs on the LLM Runner host
 `45.135.182.251`, reached through Core `89.125.68.35` and WireGuard `10.77.0.2`.
 `delivery-control.service` uses a dedicated unprivileged account, a 256 MiB memory
 limit and 50% CPU quota. API access is loopback-only at `127.0.0.1:8798`.
@@ -1922,45 +1922,64 @@ were unchanged by this deployment.
 
 The owner repository is [sislex/delivery-control](https://github.com/sislex/delivery-control).
 The current published/deployed source is
-`c8cb8e3afcc8a9f788be9037a146159069650e22`, installed at
-`/opt/delivery-control/releases/0.2.0-c8cb8e3afcc8`. Source archive SHA-256:
-`ed38bedc40c85cd788b7aacfc19f6ce96efde3408e21e07240b2b87276acf2cb`.
+`b4207519477d8c11afd4ebc9ffaa62e4fada2a76`, installed at
+`/opt/delivery-control/releases/0.3.0-b4207519477d`. Source archive SHA-256:
+`0c9e9ef846483e6a95c0e154ac57da34a0d209079e9beee6ad40f48837006c44`.
 Archives are retained under `/opt/delivery-control/artifacts`; `release.json`
-records provenance, acceptance and activation. The initial 0.1.0 release at
-`/opt/delivery-control/releases/0.1.0-77fab9c7cb36` remains available for rollback.
-Rolling back from state schema v2 requires restoring the matching v1 database
-backup as well as the old service unit; source-only rollback is incompatible.
+records provenance, acceptance and activation. The previous release at
+`/opt/delivery-control/releases/0.2.0-c8cb8e3afcc8` and its service unit remain
+available. Rolling back from state schema v3 requires restoring the matching v2
+snapshot as well as the old service unit; source-only rollback is incompatible.
+The pre-v3 migration snapshot is
+`/var/backups/delivery-control/control-20260924T181654Z-a67e87811a1d.dump`, with
+its private JSON checksum manifest. Migration adds reviewed retry limits while
+preserving the paused run, task evidence and source verification.
 
 Credentials stay private under `/etc/delivery-control`. The daily
-`delivery-control-backup.timer` writes dumps to `/var/backups/delivery-control`;
-initial bootstrap included a disposable restore drill. The pre-v2 migration backup
-is `control-20260924T151923Z.dump` in that directory, with a SHA-256 sidecar.
-Automatic retention and the complete artifact backup workflow belong to B04.
+`delivery-control-backup.timer` now invokes the 0.3.0 backup script with the exact
+release identifier. One consistent PostgreSQL snapshot contains state, events,
+command receipts and artifact metadata/bytes. Retention keeps 14 validated
+archive/manifest pairs; legacy files are preserved and reported separately.
+The updated oneshot service completed successfully. A synthetic disposable
+restore drill verified binary hashes, paused recovery, invalidated sessions,
+retention and corruption refusal. Backups remain local; encrypted off-host
+replication and secret escrow have not been provisioned. See the owner's
+[backup and recovery procedure](https://github.com/sislex/delivery-control/blob/b4207519477d8c11afd4ebc9ffaa62e4fada2a76/docs/backup-restore.md).
 
 The shared-chat run is pinned to Core commit
 `1e76f1828e8cc8fcb3203d9820007677ce1c5aa0`: 37 tasks, **S0 paused**.
-B01, B02 and B03 are recorded as done through explicit external bootstrap
-acceptance, with source commit and validation evidence. This records operator-led
-implementation rather than inventing worker attempts. B04–B06 remain blocked;
+B01–B05 are recorded as done through explicit external bootstrap acceptance,
+with published source commits and validation evidence. B05's Core implementation
+is `95eaf002fa9c266891e0ba837c463ac0b2be8395` (see
+[release adapter](../delivery-release-adapter.md)). Acceptance records operator-led
+implementation rather than inventing worker attempts. B06 remains blocked;
 no product task has started and no production worker machine is enrolled.
 
-The API now verifies the pinned Markdown against its compiled manifest and DAG,
-reserves machine resources, fences task and role leases, and shares bounded patch
-artifacts alongside durable events and idempotent commands. Migration to JSONB
-state v2 pauses old runs and requires source verification. Separate host supervisors
-provide multiple independent slots, per-attempt clones/runtime names, Codex
-execution, owner gates, process cleanup and restart recovery. Scheduling budgets
-are not OS resource containment; external runtime lifecycle needs owner adapters.
-Enrollment and persistent user-service instructions are in the owner repository's
-[worker guide](https://github.com/sislex/delivery-control/blob/c8cb8e3afcc8a9f788be9037a146159069650e22/docs/workers.md).
+The API verifies pinned Markdown against its compiled manifest and DAG, reserves
+machine resources, fences task and role leases, and shares durable events and
+idempotent commands. Separate host supervisors provide independent slots,
+per-attempt clones/runtime names, Codex execution, owner gates, process cleanup
+and restart recovery. Scheduling budgets are not OS resource containment;
+external runtime lifecycle needs owner adapters. The operator CLI adds grouped
+queue/workspace/resource visibility, drain/undrain, cancellation with cleanup
+acknowledgment and reviewed retries. Immutable chunked artifacts have per-file,
+per-attempt and global quotas, with 30-day retention protecting active/review-pending
+work. Operator mutation journals preserve idempotency keys across restarts.
+Enrollment and persistent user-service instructions are in the owner's
+[worker guide](https://github.com/sislex/delivery-control/blob/b4207519477d8c11afd4ebc9ffaa62e4fada2a76/docs/workers.md);
+shared status and audited commands are in the
+[operator guide](https://github.com/sislex/delivery-control/blob/b4207519477d8c11afd4ebc9ffaa62e4fada2a76/docs/operator-cli.md).
 
-Owner typecheck/tests/build and disposable PostgreSQL integration passed on the
-workstation and Linux deployment host. A three-slot fault scenario verified killed
-worker/descendant cleanup, sibling completion, new-epoch retry and supervisor
-restart. Three real Codex CLI workers independently produced gated fixture patches.
-Worker service installers were supplied but not installed as production workers.
-B04–B06 still own dashboard/draining, full artifact handling, publication/release,
-automated QA/defect repair and stage acceptance. No stage-advance API exists.
+B04 owner typecheck/tests/build passed on macOS and Linux. Three disposable
+PostgreSQL API scenarios and three-slot fault/cancellation scenarios verified
+migration, artifact integrity/quotas/retention, sibling independence, command
+cleanup, fresh-epoch retry and supervisor restart. The earlier B03 proof used
+three real Codex CLI workers producing independently gated fixture patches.
+Core's full B05 gate passed, including release adapter lock/fencing/recovery
+regressions, workspace suites, build and browser integration. Worker service
+installers remain uninstalled on production. B06 still owns trusted publication,
+verifier integration, browser activation commissioning, release/QA/defect
+orchestration and stage acceptance. No stage-advance API exists.
 
 Operators can forward local `18798` to runner loopback `8798` through Core using
 `HostKeyAlias=45.135.182.251` for the existing verified host key. Local connection
