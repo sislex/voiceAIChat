@@ -1,8 +1,11 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-24
-checked: 1e76f182
+checked: 4b2c9a4b
 areas:
+  - scripts/delivery-release.mjs
+  - scripts/delivery-release-lock.py
+  - scripts/delivery-release-command.py
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
   - apps/server/src/browserUi
@@ -23,6 +26,26 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Delivery-control release tooling (S0 B05)
+
+`scripts/delivery-release.mjs` exposes the versioned tooling adapter for exact-SHA
+owner gates, immutable release-set manifests and observed OCI application releases.
+It reuses the existing application catalog, public release contracts and Docker
+deployment/rollback adapter. `scripts/delivery-release-lock.py` holds the same host
+flock as Core/UI deployment; the durable journal fences epochs, deduplicates
+completed effects and blocks new releases after an uncertain outcome until explicit
+observation proves recovery. No product runtime or production release is changed
+by installing the tooling. The host must provide a trusted live lease verifier and
+run authorization before effects can execute.
+
+[Protocol, configuration and B06 handoff](../delivery-release-adapter.md) document
+the exact commands, evidence and supported scope. The initial deployment adapter
+handles existing OCI applications with unchanged data formats. Independent browser
+activation uses its existing owner interface and requires B06 commissioning;
+irreversible migrations fail closed. Isolated no-op, failed-release recovery,
+interrupted reconciliation and real process-lock tests do not constitute a
+production rollout or acceptance of S0.
 
 ## Independent browser release rollout (2026-09-22)
 
