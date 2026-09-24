@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-24
-checked: 95eaf002
+updated: 2026-09-25
+checked: 8b13348e
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -1911,7 +1911,7 @@ probe were healthy after deployment.
 
 ## Delivery Control coordinator foundation (2026-09-24)
 
-The independent coordinator API 0.3.0 runs on the LLM Runner host
+The independent coordinator API 0.3.1 runs on the LLM Runner host
 `45.135.182.251`, reached through Core `89.125.68.35` and WireGuard `10.77.0.2`.
 `delivery-control.service` uses a dedicated unprivileged account, a 256 MiB memory
 limit and 50% CPU quota. API access is loopback-only at `127.0.0.1:8798`.
@@ -1922,21 +1922,22 @@ were unchanged by this deployment.
 
 The owner repository is [sislex/delivery-control](https://github.com/sislex/delivery-control).
 The current published/deployed source is
-`b4207519477d8c11afd4ebc9ffaa62e4fada2a76`, installed at
-`/opt/delivery-control/releases/0.3.0-b4207519477d`. Source archive SHA-256:
-`0c9e9ef846483e6a95c0e154ac57da34a0d209079e9beee6ad40f48837006c44`.
+`a2963b67b12fc6dc68d869e28ebc7d72f77c0b62`, installed at
+`/opt/delivery-control/releases/0.3.1-a2963b67b12f`. Source archive SHA-256:
+`591612eb481c0ba4dffed501bef6323ae20c13b333d97985aca1ae855f4f406c`.
 Archives are retained under `/opt/delivery-control/artifacts`; `release.json`
-records provenance, acceptance and activation. The previous release at
-`/opt/delivery-control/releases/0.2.0-c8cb8e3afcc8` and its service unit remain
-available. Rolling back from state schema v3 requires restoring the matching v2
-snapshot as well as the old service unit; source-only rollback is incompatible.
+records provenance, acceptance and activation. The immediately previous 0.3.0 installation and saved service unit remain
+available; both use state schema v3. The pre-0.3.1 backup is
+`/var/backups/delivery-control/control-20260924T224842Z-0bcd6723b857.dump`.
+The older 0.2.0 installation uses schema v2: rolling back to that version requires
+the matching v2 snapshot as well as its unit; source-only rollback is incompatible.
 The pre-v3 migration snapshot is
 `/var/backups/delivery-control/control-20260924T181654Z-a67e87811a1d.dump`, with
 its private JSON checksum manifest. Migration adds reviewed retry limits while
 preserving the paused run, task evidence and source verification.
 
 Credentials stay private under `/etc/delivery-control`. The daily
-`delivery-control-backup.timer` now invokes the 0.3.0 backup script with the exact
+`delivery-control-backup.timer` now invokes the 0.3.1 backup script with the exact
 release identifier. One consistent PostgreSQL snapshot contains state, events,
 command receipts and artifact metadata/bytes. Retention keeps 14 validated
 archive/manifest pairs; legacy files are preserved and reported separately.
@@ -1944,16 +1945,18 @@ The updated oneshot service completed successfully. A synthetic disposable
 restore drill verified binary hashes, paused recovery, invalidated sessions,
 retention and corruption refusal. Backups remain local; encrypted off-host
 replication and secret escrow have not been provisioned. See the owner's
-[backup and recovery procedure](https://github.com/sislex/delivery-control/blob/b4207519477d8c11afd4ebc9ffaa62e4fada2a76/docs/backup-restore.md).
+[backup and recovery procedure](https://github.com/sislex/delivery-control/blob/a2963b67b12fc6dc68d869e28ebc7d72f77c0b62/docs/backup-restore.md).
 
 The shared-chat run is pinned to Core commit
-`1e76f1828e8cc8fcb3203d9820007677ce1c5aa0`: 37 tasks, **S0 paused**.
+`1e76f1828e8cc8fcb3203d9820007677ce1c5aa0`: 37 tasks, **S0 implementing** at the 0.3.1 commissioning checkpoint.
+Read the control API for subsequent live status; this document is not a queue lock.
 B01–B05 are recorded as done through explicit external bootstrap acceptance,
 with published source commits and validation evidence. B05's Core implementation
 is `95eaf002fa9c266891e0ba837c463ac0b2be8395` (see
 [release adapter](../delivery-release-adapter.md)). Acceptance records operator-led
-implementation rather than inventing worker attempts. B06 remains blocked;
-no product task has started and no production worker machine is enrolled.
+implementation rather than inventing worker attempts. B06 is executing through the real queue on one enrolled machine,
+`alexeys-macbook-air`, with one slot `alexeys-macbook-air-w0`. No S1 product task
+has started and S0 is not accepted.
 
 The API verifies pinned Markdown against its compiled manifest and DAG, reserves
 machine resources, fences task and role leases, and shares durable events and
@@ -1966,9 +1969,9 @@ acknowledgment and reviewed retries. Immutable chunked artifacts have per-file,
 per-attempt and global quotas, with 30-day retention protecting active/review-pending
 work. Operator mutation journals preserve idempotency keys across restarts.
 Enrollment and persistent user-service instructions are in the owner's
-[worker guide](https://github.com/sislex/delivery-control/blob/b4207519477d8c11afd4ebc9ffaa62e4fada2a76/docs/workers.md);
+[worker guide](https://github.com/sislex/delivery-control/blob/a2963b67b12fc6dc68d869e28ebc7d72f77c0b62/docs/workers.md);
 shared status and audited commands are in the
-[operator guide](https://github.com/sislex/delivery-control/blob/b4207519477d8c11afd4ebc9ffaa62e4fada2a76/docs/operator-cli.md).
+[operator guide](https://github.com/sislex/delivery-control/blob/a2963b67b12fc6dc68d869e28ebc7d72f77c0b62/docs/operator-cli.md).
 
 B04 owner typecheck/tests/build passed on macOS and Linux. Three disposable
 PostgreSQL API scenarios and three-slot fault/cancellation scenarios verified
@@ -1976,8 +1979,7 @@ migration, artifact integrity/quotas/retention, sibling independence, command
 cleanup, fresh-epoch retry and supervisor restart. The earlier B03 proof used
 three real Codex CLI workers producing independently gated fixture patches.
 Core's full B05 gate passed, including release adapter lock/fencing/recovery
-regressions, workspace suites, build and browser integration. Worker service
-installers remain uninstalled on production. B06 still owns trusted publication,
+regressions, workspace suites, build and browser integration. B06 still owns trusted publication,
 verifier integration, browser activation commissioning, release/QA/defect
 orchestration and stage acceptance. No stage-advance API exists.
 
@@ -1987,3 +1989,33 @@ metadata and the private administrator token are under
 `~/.config/sislexa/delivery-control`; never distribute them to ordinary workers.
 Each physical worker machine needs its own token and one supervisor with separate
 slots; multiple agents must not share task checkouts or enroll one host twice.
+
+
+The installed Mac worker and restricted SSH tunnel are persistent per-user
+LaunchAgents, started at login. The tunnel uses a forwarding-only account through
+Core to the coordinator and exposes local `127.0.0.1:18798`; it cannot open a shell
+or forward arbitrary destinations. Worker configuration and its own token remain
+private under `~/.config/sislexa/delivery-control`. Tools are in
+`~/.local/share/sislexa/delivery-control`; task clones are under the separate
+`~/.local/share/sislexa/delivery-workspaces` root. LaunchAgent labels are
+`com.sislexa.delivery-worker.alexeys-macbook-air` and
+`com.sislexa.delivery-tunnel.alexeys-macbook-air`. Enrollment is not repeated when
+opening another interactive CLI session; additional slots require reviewed capacity.
+
+The one-worker B06 trial found and corrected reclaimable-memory admission,
+explicit non-secret runtime-variable handoff, source-expression false positives
+in patch scanning, and loss of blocked summaries/partial patches. Version 0.3.1
+retains blocked work for review and prevents blind model retries. Its owner gate
+passed on macOS and Linux; three disposable PostgreSQL API scenarios and a
+three-process deterministic blocked-result rehearsal passed. That rehearsal did
+not enroll more real model workers. See the owner
+[0.3.1 evidence](https://github.com/sislex/delivery-control/blob/a2963b67b12fc6dc68d869e28ebc7d72f77c0b62/docs/acceptance-0.3.1.md).
+
+B06 attempt 1 returned blocked. Its partial control-plane implementation is
+preserved on `delivery/shared-chat-v1/B06-checkpoint`, not in deployed main. The
+continuation base `d96d193d02f4b622a789d73fc44a8c7b0c9e2351` combines this work with
+0.3.1 and explicit remaining implementation criteria; its 33 owner tests, build
+and four fresh PostgreSQL scenarios passed. Attempt 2 runs from that exact base
+in a new isolated clone. Concrete trusted publication/release adapters and the
+automatic QA/defect/stage workflow still require completion and commissioning.
+The live coordinator remains on schema v3; no partial v4 migration was deployed.
